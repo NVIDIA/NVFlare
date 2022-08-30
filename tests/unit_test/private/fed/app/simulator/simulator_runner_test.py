@@ -48,11 +48,11 @@ class TestSimulatorRunner:
     @patch("nvflare.private.fed.app.deployer.simulator_deployer.FederatedClient.register")
     @patch("nvflare.private.fed.app.deployer.simulator_deployer.FederatedClient.start_heartbeat")
     @patch("nvflare.private.fed.app.deployer.simulator_deployer.FedAdminAgent")
-    def test_valid_job_simulate_setup(self, mock_server,  mock_admin, mock_register, mock_heartbeat, mock_agent):
+    def test_valid_job_simulate_setup(self, mock_server, mock_admin, mock_register, mock_heartbeat, mock_agent):
         workspace = tempfile.mkdtemp()
         parser = self._create_parser()
         job_folder = os.path.join(os.path.dirname(__file__), "../../../../data/jobs/valid_job")
-        args = parser.parse_args([job_folder, '-o' + workspace, '-t 1'])
+        args = parser.parse_args([job_folder, "-o" + workspace, "-t 1"])
         runner = SimulatorRunner(args)
         assert runner.setup()
 
@@ -67,11 +67,11 @@ class TestSimulatorRunner:
     @patch("nvflare.private.fed.app.deployer.simulator_deployer.FederatedClient.register")
     @patch("nvflare.private.fed.app.deployer.simulator_deployer.FederatedClient.start_heartbeat")
     @patch("nvflare.private.fed.app.deployer.simulator_deployer.FedAdminAgent")
-    def test_client_names_setup(self, mock_server,  mock_admin, mock_register, mock_heartbeat, mock_agent):
+    def test_client_names_setup(self, mock_server, mock_admin, mock_register, mock_heartbeat, mock_agent):
         workspace = tempfile.mkdtemp()
         parser = self._create_parser()
         job_folder = os.path.join(os.path.dirname(__file__), "../../../../data/jobs/valid_job")
-        args = parser.parse_args([job_folder, '-o' + workspace, '-c site-a', '-t 1'])
+        args = parser.parse_args([job_folder, "-o" + workspace, "-c site-a", "-t 1"])
         runner = SimulatorRunner(args)
         assert runner.setup()
 
@@ -86,20 +86,22 @@ class TestSimulatorRunner:
     @patch("nvflare.private.fed.app.deployer.simulator_deployer.FederatedClient.register")
     @patch("nvflare.private.fed.app.deployer.simulator_deployer.FederatedClient.start_heartbeat")
     @patch("nvflare.private.fed.app.deployer.simulator_deployer.FedAdminAgent")
-    def test_no_app_for_client(self, mock_server,  mock_admin, mock_register, mock_heartbeat, mock_agent):
+    def test_no_app_for_client(self, mock_server, mock_admin, mock_register, mock_heartbeat, mock_agent):
         workspace = tempfile.mkdtemp()
         parser = self._create_parser()
         job_folder = os.path.join(os.path.dirname(__file__), "../../../../data/jobs/valid_job")
-        args = parser.parse_args([job_folder, '-o' + workspace, '-n 3', '-t 1'])
+        args = parser.parse_args([job_folder, "-o" + workspace, "-n 3", "-t 1"])
         runner = SimulatorRunner(args)
         assert not runner.setup()
 
-    @pytest.mark.parametrize("client_names, gpus, expected_split_names", [
-                                (["1", "2", "3", "4"], ["0", "1"], [["1", "3"], ["2", "4"]]),
-                                (["1", "2", "3", "4", "5"], ["0", "1"], [["1", "3", "5"], ["2", "4"]]),
-                                (["1", "2", "3", "4", "5"], ["0", "1", "2"], [["1", "4"], ["2", "5"], ["3"]])
-                                ]
-                             )
+    @pytest.mark.parametrize(
+        "client_names, gpus, expected_split_names",
+        [
+            (["1", "2", "3", "4"], ["0", "1"], [["1", "3"], ["2", "4"]]),
+            (["1", "2", "3", "4", "5"], ["0", "1"], [["1", "3", "5"], ["2", "4"]]),
+            (["1", "2", "3", "4", "5"], ["0", "1", "2"], [["1", "4"], ["2", "5"], ["3"]]),
+        ],
+    )
     def test_split_names(self, client_names, gpus, expected_split_names):
         runner = SimulatorRunner(Namespace())
         split_names = runner.split_names(client_names, gpus)

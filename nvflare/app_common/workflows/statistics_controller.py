@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Callable, Dict, List
+from typing import Callable, Dict, List, Optional
 
 from nvflare.apis.client import Client
 from nvflare.apis.dxo import from_shareable
@@ -20,7 +20,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import ClientTask, Controller, Task
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
-from nvflare.app_common.abstract.statistics_spec import Histogram, MetricConfig
+from nvflare.app_common.abstract.statistics_spec import Bin, Histogram, MetricConfig
 from nvflare.app_common.abstract.statistics_writer import StatisticsWriter
 from nvflare.app_common.app_constant import StatisticsConstants as StC
 from nvflare.app_common.statistics.numeric_stats import get_global_stats
@@ -29,7 +29,14 @@ from nvflare.fuel.utils import fobs
 
 
 class StatisticsController(Controller):
-    def __init__(self, metric_configs: Dict[str, dict], writer_id: str):
+    def __init__(
+        self,
+        metric_configs: Dict[str, dict],
+        writer_id: str,
+        result_wait_timeout: int = 60,
+        precision=4,
+        min_clients: Optional[int] = None,
+    ):
         """
         Args:
             metric_configs: defines the input statistic metrics to be computed and each metric's configuration.
@@ -89,6 +96,15 @@ class StatisticsController(Controller):
 
             writer_id:    ID for StatisticsWriter. The StatisticWriter will save the result to output specified by the
                           StatisticsWriter
+
+            result_wait_timeout: numbers of seconds to wait until we received all results.
+                                 Notice this is after the min_clients have arrived, and we wait for result process
+                                 callback, this becomes important if the data size to be processed is large
+
+            precision:  number of percision digits
+            min_clients: if specified, min number of clients we have to wait before process.
+
+
         """
         super().__init__()
         self.metric_configs: Dict[str, dict] = metric_configs
@@ -97,11 +113,25 @@ class StatisticsController(Controller):
         self.client_metrics = {}
         self.global_metrics = {}
         self.client_features = {}
+        self.result_wait_timeout = result_wait_timeout
+        self.precision = precision
+        self.min_clients = min_clients
         self.result_callback_fns: Dict[str, Callable] = {
             StC.STATS_1st_METRICS: self.results_cb,
             StC.STATS_2nd_METRICS: self.results_cb,
         }
         fobs_registration()
+        self.fl_ctx = None
+
+    def start_controller(self, fl_ctx: FLContext):
+        if self.metric_configs is None or len(self.metric_configs) == 0:
+            self.system_panic(
+                "At least one metric_config must be configured for task StatisticsController", fl_ctx=fl_ctx
+            )
+        self.fl_ctx = fl_ctx
+        clients = fl_ctx.get_engine().get_clients()
+        if not self.min_clients:
+            self.min_clients = len(clients)
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
 
@@ -109,18 +139,18 @@ class StatisticsController(Controller):
         if abort_signal.triggered:
             return False
 
-        clients = fl_ctx.get_engine().get_clients()
-        self.metrics_task_flow(abort_signal, fl_ctx, clients, StC.STATS_1st_METRICS)
-        self.metrics_task_flow(abort_signal, fl_ctx, clients, StC.STATS_2nd_METRICS)
+        self.metrics_task_flow(abort_signal, fl_ctx, StC.STATS_1st_METRICS)
+        self.metrics_task_flow(abort_signal, fl_ctx, StC.STATS_2nd_METRICS)
+
+        if not self._wait_for_all_results(
+            self.result_wait_timeout, self.min_clients, self.client_metrics, abort_signal
+        ):
+            return False
+
+        self.log_info(fl_ctx, "start post processing")
         self.post_fn(self.task_name, fl_ctx)
 
         self.log_info(fl_ctx, f"task {self.task_name} control flow end.")
-
-    def start_controller(self, fl_ctx: FLContext):
-        if self.metric_configs is None or len(self.metric_configs) == 0:
-            self.system_panic(
-                "At least one metric_config must be configured for task StatisticsController", fl_ctx=fl_ctx
-            )
 
     def stop_controller(self, fl_ctx: FLContext):
         pass
@@ -130,7 +160,7 @@ class StatisticsController(Controller):
     ):
         pass
 
-    def metrics_task_flow(self, abort_signal: Signal, fl_ctx: FLContext, clients: List[Client], metric_task: str):
+    def metrics_task_flow(self, abort_signal: Signal, fl_ctx: FLContext, metric_task: str):
 
         self.log_info(fl_ctx, f"start prepare inputs for task {metric_task}")
         inputs = self._prepare_inputs(metric_task, fl_ctx)
@@ -146,9 +176,9 @@ class StatisticsController(Controller):
         self.broadcast_and_wait(
             task=task,
             targets=None,
-            min_responses=len(clients),
+            min_responses=self.min_clients,
             fl_ctx=fl_ctx,
-            wait_time_after_min_received=1,
+            wait_time_after_min_received=3,
             abort_signal=abort_signal,
         )
 
@@ -171,6 +201,7 @@ class StatisticsController(Controller):
             metric_task = client_result[StC.METRIC_TASK_KEY]
             self.log_info(fl_ctx, f"handle client {client_name} results for metrics task: {metric_task}")
             metrics = fobs.loads(client_result[metric_task])
+
             for metric in metrics:
                 if metric not in self.client_metrics:
                     self.client_metrics[metric] = {client_name: metrics[metric]}
@@ -229,16 +260,26 @@ class StatisticsController(Controller):
                                 feature_name
                             ]
 
+        precision = self.precision
         for metric in filtered_global_metrics:
             for ds in self.global_metrics[metric]:
                 global_dataset = f"{StC.GLOBAL}-{ds}"
                 for feature_name in self.global_metrics[metric][ds]:
                     if metric == StC.STATS_HISTOGRAM:
                         hist: Histogram = self.global_metrics[metric][ds][feature_name]
+                        buckets = []
+                        for bucket in hist.bins:
+                            buckets.append(
+                                Bin(
+                                    round(bucket.low_value, precision),
+                                    round(bucket.high_value, precision),
+                                    bucket.sample_count,
+                                )
+                            )
                         result[feature_name][metric][global_dataset] = hist.bins
                     else:
                         result[feature_name][metric].update(
-                            {global_dataset: self.global_metrics[metric][ds][feature_name]}
+                            {global_dataset: round(self.global_metrics[metric][ds][feature_name], precision)}
                         )
 
         return result
@@ -295,3 +336,47 @@ class StatisticsController(Controller):
 
     def _get_result_cb(self, metric_task: str):
         return self.result_callback_fns[metric_task]
+
+    def _wait_for_all_results(
+        self, result_wait_timeout: int, requested_client_size: int, client_metrics: dict, abort_signal=None
+    ) -> bool:
+        """
+            for each metric, we check if the number of requested clients (min_clients or all clients)
+            is available, if not, we wait until result_wait_timeout.
+            result_wait_timeout is reset for next metric. result_wait_timeout is per metrics, not overall
+            timeout for all results.
+        Args:
+            result_wait_timeout: timeout we have to wait for each metric. reset for each metric
+            requested_client_size: requested client size, usually min_clients or all clients
+            client_metrics: client specific metrics received so far
+            abort_signal:  abort signal
+
+        Returns:
+
+        """
+
+        # record of each metric, number of clients processed
+        metric_client_received = {}
+
+        # current metrics obtained so far (across all clients)
+        metric_names = client_metrics.keys()
+        for m in metric_names:
+            metric_client_received[m] = len(client_metrics[m].keys())
+
+        timeout = result_wait_timeout
+        sleep_time = 5
+        for m in metric_client_received:
+            if requested_client_size > metric_client_received[m]:
+                t = 0
+                while t < timeout and requested_client_size > metric_client_received[m]:
+
+                    if abort_signal and abort_signal.triggered:
+                        return False
+
+                    self.log_info(f"not all client received the metric {m}, need to wait for {sleep_time} seconds.")
+                    time.sleep(sleep_time)
+                    t += sleep_time
+                    # check and update number of client processed for metric again
+                    metric_client_received[m] = len(client_metrics[m].keys())
+
+        return True

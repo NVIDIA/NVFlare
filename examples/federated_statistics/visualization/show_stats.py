@@ -37,7 +37,7 @@ def show_stats(data, white_list_features=[]):
         display(df)
 
 
-def prepare_histogram_data(data, white_list_features=[]):
+def prepare_histogram_data(data, display_format="percent", white_list_features=[]):
     all_features = [k for k in data]
     target_features = get_target_features(all_features, white_list_features)
 
@@ -46,6 +46,7 @@ def prepare_histogram_data(data, white_list_features=[]):
 
     for feature in target_features:
         xs = data[feature]['histogram']
+        counts = data[feature]['count']
         hists = {}
         feature_edges[feature] = []
         for i, ds in enumerate(xs):
@@ -54,15 +55,20 @@ def prepare_histogram_data(data, white_list_features=[]):
             for bucket in ds_hist:
                 if i == 0:
                     feature_edges[feature].append(bucket[0])
-                ds_bucket_counts.append(bucket[2])
+                if display_format == "percent":
+                    ds_bucket_counts.append(round(bucket[2] / counts[ds], 2))
+                else:
+                    ds_bucket_counts.append(bucket[2])
+
                 hists[ds] = ds_bucket_counts
         feature_hists[feature] = hists
 
     return feature_hists, feature_edges
 
 
-def show_histograms(data, white_list_features=[]):
-    (hists, edges) = prepare_histogram_data(data)
+def show_histograms(data, display_format="percent", white_list_features=[]):
+    print("prepare")
+    (hists, edges) = prepare_histogram_data(data, display_format, white_list_features)
 
     all_features = [k for k in edges]
     target_features = get_target_features(all_features, white_list_features)
@@ -71,5 +77,5 @@ def show_histograms(data, white_list_features=[]):
         hist_data = hists[feature]
         index = edges[feature]
         df = pd.DataFrame(hist_data, index=index)
-        axes = df.plot.bar(rot=30)
-        axes = df.plot.bar(rot=30, subplots=True)
+        axes = df.plot.line(rot=40)
+        axes = df.plot.line(rot=40, subplots=True)
