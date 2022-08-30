@@ -146,7 +146,7 @@ class XGBoostTreeFedLearner(Learner):
 
     def local_boost_bagging(self, param):
         # global model with num_parallel_tree
-        param_global = get_training_parameters_bagging()
+        param_global = self.get_training_parameters_bagging()
         # validate global model for bagging mode
         bst_global = xgb.Booster(param_global, model_file=self.global_model_path)
         y_pred = bst_global.predict(self.dmat_valid)
@@ -212,7 +212,7 @@ class XGBoostTreeFedLearner(Learner):
         model_global = dxo.data
 
         # xgboost parameters
-        param = get_training_parameters_single()
+        param = self.get_training_parameters_single()
 
         if not model_global:
             # First round

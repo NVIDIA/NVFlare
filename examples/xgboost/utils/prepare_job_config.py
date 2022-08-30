@@ -50,7 +50,7 @@ def main():
         "higgs_"
         + str(args.site_num)
         + "_"
-        + args.train_mode
+        + args.training_mode
         + "_"
         + args.split_method
         + "_split"
@@ -74,7 +74,7 @@ def main():
     shutil.copyfile(os.path.join(base_path, "meta.json"), meta_config_filename)
     shutil.copyfile(os.path.join(base_path, "higgs_base/config", "config_fed_client.json"), client_config_filename)
     shutil.copyfile(
-        os.path.join(base_path, "higgs_base/config", "config_fed_server_" + args.train_mode + ".json"),
+        os.path.join(base_path, "higgs_base/config", "config_fed_server_" + args.training_mode + ".json"),
         server_config_filename,
     )
     shutil.copyfile(os.path.join(args.data_split_path, data_split_name), data_split_filename)
@@ -102,7 +102,7 @@ def main():
         client_config["components"][0]["args"]["num_tree_bagging"] = 1
         server_config["workflows"][0]["args"]["num_rounds"] = int(args.round_num / args.site_num)
     else:
-        print(f"Training mode {args.train_mode} not supported")
+        print(f"Training mode {args.training_mode} not supported")
         return False
     # write jsons
     write_json(meta_config, meta_config_filename)
