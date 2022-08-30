@@ -182,6 +182,10 @@ def security_init(secure_train: bool,
         sys.exit(1)
 
 
+def security_close():
+    AuditService.close()
+
+
 def get_job_meta_from_workspace(workspace: Workspace, job_id: str) -> dict:
     job_meta_file_path = workspace.get_job_meta_path(job_id)
     with open(job_meta_file_path) as file:

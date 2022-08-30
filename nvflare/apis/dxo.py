@@ -25,7 +25,7 @@ class DataKind(object):
     METRICS = "METRICS"
     MODEL = "MODEL"
     ANALYTIC = "ANALYTIC"
-    COLLECTION = "COLLECTION"  # Dict of DXO objects
+    COLLECTION = "COLLECTION"  # Dict or List of DXO objects
 
 
 class MetaKey(object):
@@ -189,36 +189,3 @@ def from_bytes(data: bytes) -> DXO:
         return x
     else:
         raise ValueError("Data bytes are from type {} and do not represent a valid DXO instance.".format(type(x)))
-
-
-def find_kinds(dxo: DXO, kinds: [str]) -> ([DXO], [DXO]):
-    """Find all DXO objects of specified kinds from the given dxo object.
-    Note: the given object could be a COLLECTION of DXOs, which could be collections too.
-    This function traverse the DXO tree to find all DXOs of specified kinds
-
-    The specified kinds should not include COLLECTION.
-
-    Args:
-        dxo: the dxo from which to find DXO objects
-        kinds: data kinds of interest
-
-    Returns: two lists of DXO objects: the first contains objects in the kinds, 2nd contains objects
-    not in the kinds.
-
-    """
-    in_list = []
-    out_list = []
-    _do_find_kinds(dxo, kinds, in_list, out_list)
-    return in_list, out_list
-
-
-def _do_find_kinds(dxo: DXO, kinds: [str], in_list: [DXO], out_list: [DXO]):
-    if dxo.data_kind == DataKind.COLLECTION:
-        if isinstance(dxo.data, dict):
-            for _, dxo_obj in dxo.data.items():
-                if isinstance(dxo_obj, DXO):
-                    _do_find_kinds(dxo_obj, kinds, in_list, out_list)
-    elif dxo.data_kind in kinds:
-        in_list.append(dxo)
-    else:
-        out_list.append(dxo)

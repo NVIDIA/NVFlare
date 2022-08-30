@@ -189,6 +189,7 @@ def main():
 
     exe_thread.join()
     event_thread.join()
+    AuditService.close()
 
 
 def _create_connection(listen_port):

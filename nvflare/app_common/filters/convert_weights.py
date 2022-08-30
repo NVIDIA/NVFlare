@@ -86,6 +86,8 @@ class ConvertWeights(DXOFilter):
         if not base_weights:
             return None
 
+        scope_props = fl_ctx.get_prop(key=FLContextKey.SCOPE_PROPERTIES)
+
         processed_algo = dxo.get_meta_prop(MetaKey.PROCESSED_ALGORITHM, None)
         if processed_algo:
             self.log_info(fl_ctx,

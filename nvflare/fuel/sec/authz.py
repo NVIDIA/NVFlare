@@ -36,13 +36,13 @@ class Person(object):
 
             for r in role:
                 if not isinstance(r, str):
-                    raise TypeError('role value must be a str but got {}'.format(type(r)))
+                    raise TypeError(f'role value must be a str but got {type(r)}')
                 self.roles.append(_normalize_str(r))
         else:
-            raise TypeError('role must be a str or list of str but got {}'.format(type(role)))
+            raise TypeError(f'role must be a str or list of str but got {type(role)}')
 
     def __str__(self):
-        return "{}:{}:{}".format(self.name, self.org, self.roles[0])
+        return f"{self.name}:{self.org}:{self.roles[0]}"
 
 
 class AuthzContext(object):
@@ -156,7 +156,7 @@ class _RoleRightConditions(object):
 
         if v in ['all', 'any']:
             ev = TrueEvaluator()
-        elif v in ['none']:
+        elif v in ['none', 'no']:
             ev = FalseEvaluator()
         else:
             parts = v.split(':')
@@ -169,9 +169,9 @@ class _RoleRightConditions(object):
                 elif target_type in ['n', 'name']:
                     ev = UserNameEvaluator(target_value)
                 else:
-                    return 'bad condition expression "{}": invalid type "{}"'.format(exp, target_type)
+                    return f'bad condition expression "{exp}": invalid type "{target_type}"'
             else:
-                return 'bad condition expression "{}"'.format(exp)
+                return f'bad condition expression "{exp}"'
 
         if blocked:
             self.blocked_conditions.append(ev)
@@ -208,7 +208,7 @@ class _RoleRightConditions(object):
                     # this is an error
                     return err
         else:
-            return "bad condition expression type - expect str or list but got {}".format(type(exp))
+            return f"bad condition expression type - expect str or list but got {type(exp)}"
 
 
 class Policy(object):
@@ -301,7 +301,7 @@ def parse_policy_config(config: dict, right_categories: dict):
 
     """
     if not isinstance(config, dict):
-        return None, "policy definition must be a dict but got {}".format(type(config))
+        return None, f"policy definition must be a dict but got {type(config)}"
 
     if not config:
         # empty policy
@@ -332,12 +332,12 @@ def parse_policy_config(config: dict, right_categories: dict):
         return None, "missing permissions"
 
     if not isinstance(permissions, dict):
-        return None, "invalid permissions: expect a dict but got {}".format(type(permissions))
+        return None, f"invalid permissions: expect a dict but got {type(permissions)}"
 
     # permissions is a dict of role => rights;
     for role_name, right_conf in permissions.items():
         if not isinstance(role_name, str):
-            return None, 'bad role name: expect a str but got {}'.format(type(role_name))
+            return None, f'bad role name: expect a str but got {type(role_name)}'
 
         role_name = _normalize_str(role_name)
         roles.append(role_name)
@@ -353,12 +353,12 @@ def parse_policy_config(config: dict, right_categories: dict):
             continue
 
         if not isinstance(right_conf, dict):
-            return None, 'bad right config: expect a dict but got {}'.format(type(right_conf))
+            return None, f'bad right config: expect a dict but got {type(right_conf)}'
 
         # process right categories
         for right, exp in right_conf.items():
             if not isinstance(right, str):
-                return None, 'bad right name: expect a str but got {}'.format(type(right))
+                return None, f'bad right name: expect a str but got {type(right)}'
 
             right = _normalize_str(right)
 
@@ -419,9 +419,7 @@ class Authorizer(object):
         if not ctx:
             return True, ""
 
-        assert isinstance(ctx, AuthzContext), \
-            "ctx must be AuthzContext but got {}".format(type(ctx))
-
+        assert isinstance(ctx, AuthzContext), f"ctx must be AuthzContext but got {type(ctx)}"
         assert isinstance(ctx.user, Person), "program error: no user in ctx!"
         if 'super' in ctx.user.roles:
             # use this for testing purpose
@@ -432,7 +430,7 @@ class Authorizer(object):
             if err:
                 return False, err
             else:
-                return False, "user '{}' is not authorized for '{}'".format(ctx.user.name, ctx.right)
+                return False, f"user '{ctx.user.name}' is not authorized for '{ctx.right}'"
 
         return True, ""
 

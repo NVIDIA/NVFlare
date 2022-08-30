@@ -117,6 +117,7 @@ def main():
                 command_agent.shutdown()
             if deployer:
                 deployer.close()
+            AuditService.close()
 
     except ConfigError as ex:
         logger.exception(f"ConfigError: {ex}", exc_info=True)

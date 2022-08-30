@@ -204,6 +204,7 @@ def main():
             federated_client.close()
         if thread and thread.is_alive():
             thread.join()
+        AuditService.close()
 
 
 def remove_restart_file(workspace: Workspace):

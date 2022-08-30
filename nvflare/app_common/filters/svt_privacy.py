@@ -47,7 +47,7 @@ class SVTPrivacy(DXOFilter):
 
         super().__init__(
             supported_data_kinds=[DataKind.WEIGHTS, DataKind.WEIGHT_DIFF],
-            data_kinds_to_filter=[DataKind.WEIGHT_DIFF])
+            data_kinds_to_filter=data_kinds)
 
         self.frac = fraction  # fraction of the model to upload
         self.eps_1 = epsilon

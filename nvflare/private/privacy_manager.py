@@ -21,7 +21,7 @@ class Scope(object):
 
     def __init__(self):
         self.name = ""
-        self.props = None
+        self.props = {}
         self.task_data_filters = []
         self.task_result_filters = []
 

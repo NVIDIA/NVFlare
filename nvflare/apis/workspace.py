@@ -37,11 +37,15 @@ class Workspace:
                         provisioned content
                         fed_client.json
                     run_1
-                        config (required)
-                            configurations
-                        custom (optional)
-                            custom python code
-                        other_folder (app defined)
+                        app
+                            config (required)
+                                configurations
+                            custom (optional)
+                                custom python code
+                            other_folder (app defined)
+                        log.txt
+                        job_meta.json
+                        ...
 
         Args:
             root_dir: root directory of the workspace

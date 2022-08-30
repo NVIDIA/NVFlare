@@ -17,16 +17,16 @@ import threading
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReservedTopic
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReservedTopic, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import WorkflowError
 from nvflare.apis.server_engine_spec import ServerEngineSpec
-from nvflare.apis.shareable import ReservedHeaderKey, Shareable
+from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
+from nvflare.apis.utils.fl_context_utils import add_job_audit_event
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 from nvflare.private.privacy_manager import Scope
-from nvflare.fuel.sec.audit import AuditService
 
 
 class ServerRunnerConfig(object):
@@ -146,7 +146,6 @@ class ServerRunner(FLComponent):
     def run(self):
         with self.engine.new_context() as fl_ctx:
             self.log_info(fl_ctx, "Server runner starting ...")
-
             self.log_debug(fl_ctx, "firing event EventType.START_RUN")
             fl_ctx.set_prop(ReservedKey.RUN_ABORT_SIGNAL, self.abort_signal, private=True, sticky=True)
             self.fire_event(EventType.START_RUN, fl_ctx)
@@ -268,20 +267,13 @@ class ServerRunner(FLComponent):
                 task_data.set_header(ReservedHeaderKey.TASK_NAME, task_name)
                 task_data.add_cookie(ReservedHeaderKey.WORKFLOW, self.current_wf.id)
 
+            fl_ctx.set_prop(FLContextKey.TASK_NAME, value=task_name, private=True, sticky=False)
+            fl_ctx.set_prop(FLContextKey.TASK_ID, value=task_id, private=True, sticky=False)
+            fl_ctx.set_prop(FLContextKey.TASK_DATA, value=task_data, private=True, sticky=False)
+
             self.log_info(fl_ctx, f"assigned task to client {client.name}: name={task_name}, id={task_id}")
-            audit_event_id = AuditService.add_job_event(
-                job_id=fl_ctx.get_job_id(),
-                task_name=task_name,
-                task_id = task_id,
-                msg=f'assigned task to client "{client.name}"'
-            )
-            task_data.set_header(ReservedHeaderKey.AUDIT_EVENT_ID, audit_event_id)
 
             # filter task data
-            fl_ctx.set_prop(FLContextKey.TASK_NAME, value=task_name, private=True, sticky=False)
-            fl_ctx.set_prop(FLContextKey.TASK_DATA, value=task_data, private=True, sticky=False)
-            fl_ctx.set_prop(FLContextKey.TASK_ID, value=task_id, private=True, sticky=False)
-
             self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_DATA_FILTER")
             self.fire_event(EventType.BEFORE_TASK_DATA_FILTER, fl_ctx)
 
@@ -316,6 +308,13 @@ class ServerRunner(FLComponent):
             self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_DATA_FILTER")
             self.fire_event(EventType.AFTER_TASK_DATA_FILTER, fl_ctx)
             self.log_info(fl_ctx, "sent task assignment to client")
+
+            audit_event_id = add_job_audit_event(
+                fl_ctx=fl_ctx,
+                msg=f'sent task to client "{client.name}"'
+            )
+            task_data.set_header(ReservedHeaderKey.AUDIT_EVENT_ID, audit_event_id)
+
             return task_name, task_id, task_data
         except BaseException as e:
             self.log_exception(fl_ctx, f"Error processing client task request: {e}; asked client to try again later")
@@ -343,21 +342,18 @@ class ServerRunner(FLComponent):
             self.log_error(fl_ctx, "invalid result submission: must be Shareable but got {}".format(type(result)))
             return
 
-        client_audit_event_id = result.get_header(ReservedHeaderKey.AUDIT_EVENT_ID, "")
-        AuditService.add_job_event(
-            job_id=fl_ctx.get_job_id(),
-            task_name=task_name,
-            task_id=task_id,
-            ref=client_audit_event_id,
-            msg=f"received result from client '{client.name}'"
-        )
-
         # set the reply prop so log msg context could include RC from it
         fl_ctx.set_prop(FLContextKey.REPLY, result, private=True, sticky=False)
-
         fl_ctx.set_prop(FLContextKey.TASK_NAME, value=task_name, private=True, sticky=False)
         fl_ctx.set_prop(FLContextKey.TASK_RESULT, value=result, private=True, sticky=False)
         fl_ctx.set_prop(FLContextKey.TASK_ID, value=task_id, private=True, sticky=False)
+
+        client_audit_event_id = result.get_header(ReservedHeaderKey.AUDIT_EVENT_ID, "")
+        add_job_audit_event(
+            fl_ctx=fl_ctx,
+            ref=client_audit_event_id,
+            msg=f"received result from client '{client.name}'"
+        )
 
         if self.status != "started":
             self.log_info(fl_ctx, "ignored result submission since server runner's status is {}".format(self.status))
@@ -378,30 +374,6 @@ class ServerRunner(FLComponent):
         result.set_header(ReservedHeaderKey.TASK_ID, task_id)
         result.set_peer_props(peer_ctx.get_all_public_props())
 
-        # filter task result
-        self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_RESULT_FILTER")
-        self.fire_event(EventType.BEFORE_TASK_RESULT_FILTER, fl_ctx)
-
-        filter_list = []
-        scope_object = fl_ctx.get_prop(FLContextKey.SCOPE_OBJECT)
-        if scope_object and scope_object.task_result_filters:
-            filter_list.extend(scope_object.task_result_filters)
-
-        task_filter_list = self.config.task_result_filters.get(task_name)
-        if task_filter_list:
-            filter_list.extend(task_filter_list)
-
-        if filter_list:
-            for f in filter_list:
-                try:
-                    result = f.process(result, fl_ctx)
-                except BaseException as e:
-                    self.log_exception(fl_ctx, "Error processing in task result filter {}: {}".format(type(f), e))
-                    return
-
-        self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_RESULT_FILTER")
-        self.fire_event(EventType.AFTER_TASK_RESULT_FILTER, fl_ctx)
-
         with self.wf_lock:
             try:
                 if self.current_wf is None:
@@ -417,6 +389,33 @@ class ServerRunner(FLComponent):
                         ),
                     )
                     return
+
+                # filter task result
+                self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_RESULT_FILTER")
+                self.fire_event(EventType.BEFORE_TASK_RESULT_FILTER, fl_ctx)
+
+                filter_list = []
+                scope_object = fl_ctx.get_prop(FLContextKey.SCOPE_OBJECT)
+                if scope_object and scope_object.task_result_filters:
+                    filter_list.extend(scope_object.task_result_filters)
+
+                task_filter_list = self.config.task_result_filters.get(task_name)
+                if task_filter_list:
+                    filter_list.extend(task_filter_list)
+
+                if filter_list:
+                    for f in filter_list:
+                        try:
+                            result = f.process(result, fl_ctx)
+                        except BaseException as e:
+                            self.log_exception(fl_ctx,
+                                               "Error processing in task result filter {}: {}".format(type(f), e))
+
+                            result = make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR)
+                            break
+
+                self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_RESULT_FILTER")
+                self.fire_event(EventType.AFTER_TASK_RESULT_FILTER, fl_ctx)
 
                 self.log_debug(fl_ctx, "firing event EventType.BEFORE_PROCESS_SUBMISSION")
                 self.fire_event(EventType.BEFORE_PROCESS_SUBMISSION, fl_ctx)
