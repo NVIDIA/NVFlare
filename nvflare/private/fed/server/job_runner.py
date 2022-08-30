@@ -58,7 +58,7 @@ class JobRunner(FLComponent):
             engine = fl_ctx.get_engine()
             self.scheduler = engine.get_component(SystemComponents.JOB_SCHEDULER)
         elif event_type in [EventType.JOB_COMPLETED, EventType.JOB_ABORTED, EventType.JOB_CANCELLED]:
-            self._save_workspace(fl_ctx)
+                self._save_workspace(fl_ctx)
 
     def _make_deploy_message(self, job: Job, app_data, app_name):
         message = Message(topic=TrainingTopic.DEPLOY, body=app_data)
@@ -315,7 +315,7 @@ class JobRunner(FLComponent):
         job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
 
         job_manager.save_workspace(job_id, workspace_data, fl_ctx)
-        shutil.rmtree(workspace)
+        shutil.rmtree(run_dir)
 
     def run(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
@@ -343,7 +343,7 @@ class JobRunner(FLComponent):
                                 if deploy_detail:
                                     job_manager.update_meta(
                                         ready_job.job_id,
-                                        {JobMetaKey.JOB_DEPLOY_DETAIL: deploy_detail},
+                                        {JobMetaKey.JOB_DEPLOY_DETAIL.value: deploy_detail},
                                         fl_ctx)
 
                                 self._start_run(
@@ -365,7 +365,7 @@ class JobRunner(FLComponent):
                                 if deploy_detail:
                                     job_manager.update_meta(
                                         ready_job.job_id,
-                                        {JobMetaKey.JOB_DEPLOY_DETAIL: deploy_detail},
+                                        {JobMetaKey.JOB_DEPLOY_DETAIL.value: deploy_detail},
                                         fl_ctx)
 
                                 self.fire_event(EventType.JOB_ABORTED, fl_ctx)

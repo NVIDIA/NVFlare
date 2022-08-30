@@ -56,7 +56,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                     description="remove a FL client",
                     usage="remove_client <client-name>",
                     handler_func=self.remove_client,
-                    authz_func=self.command_authz_required,
+                    authz_func=self.authorize_client_operation,
                     visible=True,
                     confirm=ConfirmMethod.AUTH,
                 ),
@@ -178,9 +178,9 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         engine = conn.app_ctx
         if not isinstance(engine, ServerEngineInternalSpec):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
-        engine.remove_clients(clients)
         message = new_message(conn, topic=TrainingTopic.RESTART, body="", require_authz=True)
         replies = self.send_request_to_clients(conn, message)
+        engine.remove_clients(clients)
         return self._process_replies_to_string(conn, replies)
 
     def restart(self, conn: Connection, args: List[str]):

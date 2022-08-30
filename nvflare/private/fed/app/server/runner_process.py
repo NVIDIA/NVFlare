@@ -66,10 +66,6 @@ def main():
     args.snapshot = kv_list.get("restore_snapshot")
 
     workspace = Workspace(root_dir=args.workspace, site_name='server')
-    log_file = workspace.get_app_log_file_path(args.job_id)
-    add_logfile_handler(log_file)
-    logger = logging.getLogger("runner_process")
-    logger.info("Runner_process started.")
 
     command_agent = None
     try:
@@ -84,6 +80,11 @@ def main():
             workspace=workspace,
             kv_list=args.set,
         )
+        log_file = workspace.get_app_log_file_path(args.job_id)
+        add_logfile_handler(log_file)
+        logger = logging.getLogger("runner_process")
+        logger.info("Runner_process started.")
+
         log_level = os.environ.get("FL_LOG_LEVEL", "")
         numeric_level = getattr(logging, log_level.upper(), None)
         if isinstance(numeric_level, int):
@@ -93,6 +94,7 @@ def main():
             logger.warning("loglevel warn enabled")
             logger.error("loglevel error enabled")
             logger.critical("loglevel critical enabled")
+
         conf.configure()
 
         deployer = conf.deployer

@@ -113,10 +113,6 @@ def main():
 
     app_root = workspace.get_app_dir(str(args.job_id))
 
-    log_file = workspace.get_app_log_file_path(args.job_id)
-    add_logfile_handler(log_file)
-    logger = logging.getLogger("worker_process")
-    logger.info("Worker_process started.")
 
     try:
         # start parent process checking thread
@@ -128,6 +124,11 @@ def main():
             kv_list=args.set,
         )
         conf.configure()
+
+        log_file = workspace.get_app_log_file_path(args.job_id)
+        add_logfile_handler(log_file)
+        logger = logging.getLogger("worker_process")
+        logger.info("Worker_process started.")
 
         deployer = conf.base_deployer
         federated_client = deployer.create_fed_client(args, args.sp_target)

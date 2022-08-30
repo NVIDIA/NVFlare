@@ -57,3 +57,5 @@ class AppAuthzService(object):
         authorized, err = AuthorizationService.authorize(ctx)
         if not authorized:
             return False, 'BYOC not authorized'
+
+        return True, ""

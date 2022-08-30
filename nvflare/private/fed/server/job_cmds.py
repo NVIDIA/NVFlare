@@ -110,7 +110,7 @@ class JobCommandModule(CommandModule, CommandUtil):
                     description="abort the client current task execution",
                     usage="abort_task job_id <client-name>",
                     handler_func=self.abort_task,
-                    authz_func=self.authorize_job,
+                    authz_func=self.authorize_abort_client_operation,
                 ),
                 CommandSpec(
                     name=AdminCommandNames.CLONE_JOB,
@@ -428,9 +428,9 @@ class JobCommandModule(CommandModule, CommandUtil):
                     )
 
                 # set submitter info
-                meta[JobMetaKey.SUBMITTER_NAME] = conn.get_prop(ConnProps.USER_NAME, '')
-                meta[JobMetaKey.SUBMITTER_ORG] = conn.get_prop(ConnProps.USER_ORG, '')
-                meta[JobMetaKey.SUBMITTER_ROLE] = conn.get_prop(ConnProps.USER_ROLE, '')
+                meta[JobMetaKey.SUBMITTER_NAME.value] = conn.get_prop(ConnProps.USER_NAME, '')
+                meta[JobMetaKey.SUBMITTER_ORG.value] = conn.get_prop(ConnProps.USER_ORG, '')
+                meta[JobMetaKey.SUBMITTER_ROLE.value] = conn.get_prop(ConnProps.USER_ROLE, '')
 
                 meta = job_def_manager.create(meta, data_bytes, fl_ctx)
                 conn.append_string("Submitted job: {}".format(meta.get(JobMetaKey.JOB_ID)))
@@ -476,7 +476,7 @@ class JobCommandModule(CommandModule, CommandUtil):
                     conn.append_string(ftd.DOWNLOAD_URL_MARKER + download_job_url + job_id)
                     return
 
-                self._unzip_data(job_data, download_dir, job_id)
+                self._unzip_data(download_dir, job_data, job_id)
         except Exception as e:
             conn.append_error("Exception occurred trying to get job from store: " + str(e))
             return
