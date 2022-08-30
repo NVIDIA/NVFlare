@@ -17,16 +17,19 @@ import json
 import os
 import shutil
 
-parser = argparse.ArgumentParser(description="generate train configs for HIGGS dataset")
-parser.add_argument("--data_split_path", type=str, default="./data_splits", help="Path to data split folder")
-parser.add_argument("--job_config_path_root", type=str, default="./job_configs", help="Path to job config folder")
-parser.add_argument("--base_job_name", type=str, default="higgs_base", help="Job name of base config")
-parser.add_argument("--site_num", type=int, default=5, help="Total number of sites")
-parser.add_argument("--round_num", type=int, default=100, help="Total number of training rounds")
-parser.add_argument("--train_mode", type=str, default="bagging", help="Training mode")
-parser.add_argument("--split_method", type=str, default="uniform", help="How to split the dataset")
-parser.add_argument("--lr_mode", type=str, default="uniform", help="Whether to use uniform or scaled shrinkage")
-parser.add_argument("--nthread", type=int, default=16, help="nthread for xgboost")
+
+def job_config_args_parser():
+    parser = argparse.ArgumentParser(description="generate train configs for HIGGS dataset")
+    parser.add_argument("--data_split_path", type=str, default="./data_splits", help="Path to data split folder")
+    parser.add_argument("--job_config_path_root", type=str, default="./job_configs", help="Path to job config folder")
+    parser.add_argument("--base_job_name", type=str, default="higgs_base", help="Job name of base config")
+    parser.add_argument("--site_num", type=int, default=5, help="Total number of sites")
+    parser.add_argument("--round_num", type=int, default=100, help="Total number of training rounds")
+    parser.add_argument("--training_mode", type=str, default="bagging", help="Training mode")
+    parser.add_argument("--split_method", type=str, default="uniform", help="How to split the dataset")
+    parser.add_argument("--lr_mode", type=str, default="uniform", help="Whether to use uniform or scaled shrinkage")
+    parser.add_argument("--nthread", type=int, default=16, help="nthread for xgboost")
+    return parser
 
 
 def read_json(filename):
@@ -41,6 +44,7 @@ def write_json(data, filename):
 
 
 def main():
+    parser = job_config_args_parser()
     args = parser.parse_args()
     job_name = (
         "higgs_"
@@ -87,13 +91,14 @@ def main():
     client_config["components"][0]["args"]["data_split_filename"] = data_split_name
     client_config["components"][0]["args"]["lr_mode"] = args.lr_mode
     client_config["components"][0]["args"]["nthread"] = args.nthread
+    client_config["components"][0]["args"]["training_mode"] = args.training_mode
 
-    if args.train_mode == "bagging":
+    if args.training_mode == "bagging":
         client_config["components"][0]["args"]["num_tree_bagging"] = args.site_num
         server_config["workflows"][0]["args"]["num_rounds"] = args.round_num + 1
         # update server config
         server_config["workflows"][0]["args"]["min_clients"] = args.site_num
-    elif args.train_mode == "cyclic":
+    elif args.training_mode == "cyclic":
         client_config["components"][0]["args"]["num_tree_bagging"] = 1
         server_config["workflows"][0]["args"]["num_rounds"] = int(args.round_num / args.site_num)
     else:

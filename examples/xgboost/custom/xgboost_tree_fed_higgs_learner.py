@@ -29,6 +29,7 @@ class XGBoostTreeFedHiggsLearner(XGBoostTreeFedLearner):
     def __init__(
         self,
         data_split_filename,
+        training_mode,
         num_tree_bagging: int = 1,
         lr_mode: str = "uniform",
         local_model_path: str = "model.json",
@@ -41,6 +42,7 @@ class XGBoostTreeFedHiggsLearner(XGBoostTreeFedLearner):
         train_task_name: str = AppConstants.TASK_TRAIN,
     ):
         super().__init__(
+            training_mode=training_mode,
             num_tree_bagging=num_tree_bagging,
             lr_mode=lr_mode,
             local_model_path=local_model_path,
