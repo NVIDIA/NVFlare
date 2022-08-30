@@ -1,16 +1,15 @@
-from .api_spec import ServiceFinder
-
 from nvflare.apis.overseer_spec import OverseerAgent
 from nvflare.fuel.hci.reg import CommandModule
 from nvflare.ha.ha_admin_cmds import HACommandModule
 
+from .api_spec import ServiceFinder
+
 
 class ServiceFinderByOverseer(ServiceFinder):
-
-    def __init__(self,
-                 overseer_agent: OverseerAgent):
-        assert isinstance(overseer_agent, OverseerAgent), \
-            "overseer_agent must be OverseerAgent but got {}".format(type(overseer_agent))
+    def __init__(self, overseer_agent: OverseerAgent):
+        assert isinstance(overseer_agent, OverseerAgent), "overseer_agent must be OverseerAgent but got {}".format(
+            type(overseer_agent)
+        )
 
         self.overseer_agent = overseer_agent
         self.sp_address_changed_cb = None
@@ -18,24 +17,15 @@ class ServiceFinderByOverseer(ServiceFinder):
         self.port = 0
         self.ssid = ""
 
-    def set_secure_context(
-            self,
-            ca_cert_path: str,
-            cert_path: str,
-            private_key_path: str):
-        self.overseer_agent.set_secure_context(
-            ca_path=ca_cert_path,
-            cert_path=cert_path,
-            prv_key_path=private_key_path
-        )
+    def set_secure_context(self, ca_cert_path: str, cert_path: str, private_key_path: str):
+        self.overseer_agent.set_secure_context(ca_path=ca_cert_path, cert_path=cert_path, prv_key_path=private_key_path)
 
-    def get_command_module(self) ->CommandModule:
+    def get_command_module(self) -> CommandModule:
         return HACommandModule(self.overseer_agent)
 
     def start(self, sp_address_changed_cb):
         if not callable(sp_address_changed_cb):
-            raise TypeError('sp_address_changed_cb must be callable but got {}'.format(
-                type(sp_address_changed_cb)))
+            raise TypeError("sp_address_changed_cb must be callable but got {}".format(type(sp_address_changed_cb)))
 
         self.sp_address_changed_cb = sp_address_changed_cb
         self.overseer_agent.start(self._overseer_callback)

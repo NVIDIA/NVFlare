@@ -89,17 +89,12 @@ class ClientRunManager(ClientEngineExecutorSpec):
         # get job meta!
         job_ctx_props = create_job_processing_context_properties(workspace, job_id)
         self.fl_ctx_mgr = FLContextManager(
-            engine=self,
-            identity_name=client_name,
-            job_id=job_id,
-            public_stickers={},
-            private_stickers=job_ctx_props
+            engine=self, identity_name=client_name, job_id=job_id, public_stickers={}, private_stickers=job_ctx_props
         )
 
         self.run_info = ClientRunInfo(job_id=job_id)
 
-        self.widgets = {WidgetID.INFO_COLLECTOR: InfoCollector(),
-                        WidgetID.FED_EVENT_RUNNER: ClientFedEventRunner()}
+        self.widgets = {WidgetID.INFO_COLLECTOR: InfoCollector(), WidgetID.FED_EVENT_RUNNER: ClientFedEventRunner()}
         for _, widget in self.widgets.items():
             self.handlers.append(widget)
 

@@ -25,10 +25,10 @@ import psutil
 
 from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants
 from nvflare.apis.workspace import Workspace
+from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import EngineConstant
-from nvflare.private.privacy_manager import PrivacyService
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger, create_privacy_manager
 from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
 from nvflare.private.fed.client.client_run_manager import ClientRunManager
@@ -36,7 +36,7 @@ from nvflare.private.fed.client.client_runner import ClientRunner, ClientRunnerC
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.client.command_agent import CommandAgent
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler
-from nvflare.fuel.sec.audit import AuditService
+from nvflare.private.privacy_manager import PrivacyService
 
 
 def check_parent_alive(parent_pid, stop_event: threading.Event):
@@ -112,7 +112,6 @@ def main():
     federated_client = None
 
     app_root = workspace.get_app_dir(str(args.job_id))
-
 
     try:
         # start parent process checking thread

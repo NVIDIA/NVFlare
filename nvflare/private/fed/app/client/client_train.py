@@ -20,18 +20,18 @@ import sys
 import time
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import WorkspaceConstants, SiteType
+from nvflare.apis.fl_constant import SiteType, WorkspaceConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import AppFolderConstants, SSLConstants
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger, create_privacy_manager
-from nvflare.private.privacy_manager import PrivacyService
 from nvflare.private.fed.client.admin import FedAdminAgent
 from nvflare.private.fed.client.admin_msg_sender import AdminMessageSender
 from nvflare.private.fed.client.client_engine import ClientEngine
 from nvflare.private.fed.client.fed_client import FederatedClient
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler, security_init, security_close
+from nvflare.private.fed.utils.fed_utils import add_logfile_handler, security_close, security_init
+from nvflare.private.privacy_manager import PrivacyService
 
 
 def main():
@@ -41,9 +41,7 @@ def main():
         raise RuntimeError("Python versions 3.6 and below are not supported. Please use Python 3.8 or 3.7.")
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
-    parser.add_argument(
-        "--fed_client", "-s", type=str, help="client config json file", required=True
-    )
+    parser.add_argument("--fed_client", "-s", type=str, help="client config json file", required=True)
     parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
     parser.add_argument("--local_rank", type=int, default=0)
 
@@ -85,11 +83,13 @@ def main():
         add_logfile_handler(log_file)
 
         deployer = conf.base_deployer
-        security_init(secure_train=deployer.secure_train,
-                      site_org=conf.site_org,
-                      workspace=workspace,
-                      app_validator=conf.app_validator,
-                      site_type=SiteType.CLIENT)
+        security_init(
+            secure_train=deployer.secure_train,
+            site_org=conf.site_org,
+            workspace=workspace,
+            app_validator=conf.app_validator,
+            site_type=SiteType.CLIENT,
+        )
 
         # initialize Privacy Service
         privacy_manager = create_privacy_manager(workspace, names_only=True)

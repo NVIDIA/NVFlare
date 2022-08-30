@@ -16,13 +16,13 @@ from abc import ABC, abstractmethod
 from typing import List
 
 from nvflare.fuel.hci.conn import Connection
+from nvflare.fuel.hci.proto import CredentialType, InternalCommands
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
-from nvflare.fuel.hci.security import verify_password, IdentityKey
+from nvflare.fuel.hci.security import IdentityKey, verify_password
 from nvflare.fuel.hci.server.constants import ConnProps
-from nvflare.fuel.hci.proto import InternalCommands, CredentialType
 
 from .reg import CommandFilter
-from .sess import SessionManager, Session
+from .sess import Session, SessionManager
 
 
 class Authenticator(ABC):
@@ -137,11 +137,7 @@ class LoginModule(CommandModule, CommandFilter):
             conn.append_string("REJECT")
             return
 
-        session = self.session_mgr.create_session(
-            user_name=user_name,
-            user_org='global',
-            user_role='super'
-        )
+        session = self.session_mgr.create_session(user_name=user_name, user_org="global", user_role="super")
         conn.append_string("OK")
         conn.append_token(session.token)
 
@@ -168,8 +164,9 @@ class LoginModule(CommandModule, CommandFilter):
 
         session = self.session_mgr.create_session(
             user_name=identity[IdentityKey.NAME],
-            user_org=identity.get(IdentityKey.ORG, ''),
-            user_role=identity.get(IdentityKey.ROLE, ''))
+            user_org=identity.get(IdentityKey.ORG, ""),
+            user_role=identity.get(IdentityKey.ROLE, ""),
+        )
         conn.append_string("OK")
         conn.append_token(session.token)
 
@@ -181,9 +178,7 @@ class LoginModule(CommandModule, CommandFilter):
         conn.append_string("OK")
 
     def pre_command(self, conn: Connection, args: List[str]):
-        if args[0] in [InternalCommands.PWD_LOGIN,
-                       InternalCommands.CERT_LOGIN,
-                       InternalCommands.CHECK_SESSION]:
+        if args[0] in [InternalCommands.PWD_LOGIN, InternalCommands.CERT_LOGIN, InternalCommands.CHECK_SESSION]:
             # skip login and check session commands
             return True
 

@@ -1,9 +1,8 @@
 class State(object):
-
     def __init__(self, name: str):
-        assert isinstance(name, str), 'name must be str but got {}'.format(type(name))
+        assert isinstance(name, str), "name must be str but got {}".format(type(name))
         name = name.strip()
-        assert len(name) > 0, 'name must not be empty'
+        assert len(name) > 0, "name must not be empty"
         self.name = name
         self.fsm = None
 
@@ -24,7 +23,7 @@ class FSM(object):
     def __init__(self, name: str):
         self.name = name
         self.props = {}
-        self.states = {}   # state name => State
+        self.states = {}  # state name => State
         self.current_state = None
         self.error = None
 
@@ -35,7 +34,7 @@ class FSM(object):
         return self.props.get(name, default=default)
 
     def add_state(self, state: State):
-        assert isinstance(state, State), 'state must be State but got {}'.format(type(state))
+        assert isinstance(state, State), "state must be State but got {}".format(type(state))
         s = self.states.get(state.name, None)
         assert s is None, 'duplicate state "{}"'.format(state.name)
         state.fsm = self
@@ -53,12 +52,12 @@ class FSM(object):
         try:
             self.current_state = self._try_execute(**kwargs)
         except BaseException as ex:
-            self.error = f'exception occurred in state execution: {ex}'
+            self.error = f"exception occurred in state execution: {ex}"
             self.current_state = None
         return self.current_state
 
     def _try_execute(self, **kwargs) -> State:
-        assert self.current_state, 'FSM has no current state'
+        assert self.current_state, "FSM has no current state"
         next_state_name = self.current_state.execute(**kwargs)
         if next_state_name:
             if next_state_name == FSM.STATE_NAME_EXIT:

@@ -17,11 +17,10 @@ import time
 from typing import List
 
 from nvflare.fuel.hci.conn import Connection
+from nvflare.fuel.hci.proto import InternalCommands
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.security import make_session_token
 from nvflare.fuel.utils.time_utils import time_to_string
-from nvflare.fuel.hci.proto import InternalCommands
-
 
 LIST_SESSIONS_CMD_NAME = InternalCommands.LIST_SESSIONS
 CHECK_SESSION_CMD_NAME = InternalCommands.CHECK_SESSION

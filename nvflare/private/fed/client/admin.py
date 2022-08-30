@@ -92,12 +92,7 @@ class RequestProcessor(object):
 class FedAdminAgent(object):
     """FedAdminAgent communicate with the FedAdminServer."""
 
-    def __init__(self,
-                 client_name,
-                 sender: Sender,
-                 app_ctx,
-                 req_poll_interval=0.5,
-                 process_poll_interval=0.1):
+    def __init__(self, client_name, sender: Sender, app_ctx, req_poll_interval=0.5, process_poll_interval=0.1):
         """Init the FedAdminAgent.
 
         Args:
@@ -139,8 +134,7 @@ class FedAdminAgent(object):
 
         topics = processor.get_topics()
         for topic in topics:
-            assert topic not in self.processors, \
-                "duplicate processors for topic {}".format(topic)
+            assert topic not in self.processors, "duplicate processors for topic {}".format(topic)
             self.processors[topic] = processor
 
     def start(self):
@@ -200,35 +194,31 @@ class FedAdminAgent(object):
 
                         # see whether pre-authorization is needed
                         authz_flag = req.get_header(RequestHeader.REQUIRE_AUTHZ)
-                        require_authz = authz_flag =="true"
+                        require_authz = authz_flag == "true"
                         if require_authz:
                             # authorize this command!
                             cmd = req.get_header(RequestHeader.ADMIN_COMMAND, None)
                             if cmd:
                                 user = Person(
-                                    name=req.get_header(RequestHeader.USER_NAME, ''),
-                                    org=req.get_header(RequestHeader.USER_ORG, ''),
-                                    role=req.get_header(RequestHeader.USER_ROLE, '')
+                                    name=req.get_header(RequestHeader.USER_NAME, ""),
+                                    org=req.get_header(RequestHeader.USER_ORG, ""),
+                                    role=req.get_header(RequestHeader.USER_ROLE, ""),
                                 )
                                 submitter = Person(
-                                    name=req.get_header(RequestHeader.SUBMITTER_NAME, ''),
-                                    org=req.get_header(RequestHeader.SUBMITTER_ORG, ''),
-                                    role=req.get_header(RequestHeader.SUBMITTER_ROLE, '')
+                                    name=req.get_header(RequestHeader.SUBMITTER_NAME, ""),
+                                    org=req.get_header(RequestHeader.SUBMITTER_ORG, ""),
+                                    role=req.get_header(RequestHeader.SUBMITTER_ROLE, ""),
                                 )
 
-                                authz_ctx = AuthzContext(
-                                    user=user,
-                                    submitter=submitter,
-                                    right=cmd
-                                )
+                                authz_ctx = AuthzContext(user=user, submitter=submitter, right=cmd)
 
                                 authorized, err = AuthorizationService.authorize(authz_ctx)
                                 if err:
                                     reply = error_reply(err)
                                 elif not authorized:
-                                    reply = error_reply('not_authorized')
+                                    reply = error_reply("not_authorized")
                             else:
-                                reply = error_reply('requires authz but missing admin command')
+                                reply = error_reply("requires authz but missing admin command")
 
                         if not reply:
                             reply = processor.process(req, self.app_ctx)

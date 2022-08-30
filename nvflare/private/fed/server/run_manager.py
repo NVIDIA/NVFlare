@@ -72,11 +72,7 @@ class RunManager:
             job_ctx_props = {}
 
         self.fl_ctx_mgr = FLContextManager(
-            engine=engine,
-            identity_name=server_name,
-            job_id=job_id,
-            public_stickers={},
-            private_stickers=job_ctx_props
+            engine=engine, identity_name=server_name, job_id=job_id, public_stickers={}, private_stickers=job_ctx_props
         )
 
         self.workspace = workspace

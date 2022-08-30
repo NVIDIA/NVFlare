@@ -38,8 +38,13 @@ def new_message(conn: Connection, topic, body, require_authz: bool) -> Message:
         msg.set_header(RequestHeader.REQUIRE_AUTHZ, str(require_authz).lower())
 
     props_to_copy = [
-        ConnProps.EVENT_ID, ConnProps.USER_NAME, ConnProps.USER_ROLE, ConnProps.USER_ORG,
-        ConnProps.SUBMITTER_NAME, ConnProps.SUBMITTER_ORG, ConnProps.SUBMITTER_ROLE
+        ConnProps.EVENT_ID,
+        ConnProps.USER_NAME,
+        ConnProps.USER_ROLE,
+        ConnProps.USER_ORG,
+        ConnProps.SUBMITTER_NAME,
+        ConnProps.SUBMITTER_ORG,
+        ConnProps.SUBMITTER_ROLE,
     ]
 
     for p in props_to_copy:
@@ -172,7 +177,7 @@ class FedAdminServer(AdminServer):
         server_cert_file_name,
         server_key_file_name,
         accepted_client_cns=None,
-        download_job_url=""
+        download_job_url="",
     ):
         """The FedAdminServer is the framework for developing admin commands.
 
@@ -250,8 +255,8 @@ class FedAdminServer(AdminServer):
             extra_conn_props={
                 ConnProps.DOWNLOAD_DIR: file_download_dir,
                 ConnProps.UPLOAD_DIR: file_upload_dir,
-                ConnProps.DOWNLOAD_JOB_URL: download_job_url
-            }
+                ConnProps.DOWNLOAD_JOB_URL: download_job_url,
+            },
         )
 
         self.clients = {}  # token => _Client

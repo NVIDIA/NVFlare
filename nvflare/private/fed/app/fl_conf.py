@@ -23,9 +23,9 @@ from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.json_scanner import Node
 from nvflare.fuel.utils.wfconf import ConfigContext, ConfigError
 from nvflare.private.defs import SSLConstants
+from nvflare.private.fed.utils.fed_utils import configure_logging
 from nvflare.private.json_configer import JsonConfigurator
 from nvflare.private.privacy_manager import PrivacyManager, Scope
-from nvflare.private.fed.utils.fed_utils import configure_logging
 
 from .deployer.base_client_deployer import BaseClientDeployer
 from .deployer.server_deployer import ServerDeployer
@@ -38,11 +38,7 @@ FL_MODULES = ["server", "client", "app"]
 class FLServerStarterConfiger(JsonConfigurator):
     """FL Server startup configer."""
 
-    def __init__(
-        self,
-        workspace: Workspace,
-        kv_list=None
-    ):
+    def __init__(self, workspace: Workspace, kv_list=None):
         """Init the FLServerStarterConfiger.
 
         Args:
@@ -96,14 +92,15 @@ class FLServerStarterConfiger(JsonConfigurator):
         try:
             for server in self.config_data["servers"]:
                 if server.get(SSLConstants.PRIVATE_KEY):
-                    server[SSLConstants.PRIVATE_KEY] = \
-                        self.workspace.get_file_path_in_startup(server[SSLConstants.PRIVATE_KEY])
+                    server[SSLConstants.PRIVATE_KEY] = self.workspace.get_file_path_in_startup(
+                        server[SSLConstants.PRIVATE_KEY]
+                    )
                 if server.get(SSLConstants.CERT):
-                    server[SSLConstants.CERT] = \
-                        self.workspace.get_file_path_in_startup(server[SSLConstants.CERT])
+                    server[SSLConstants.CERT] = self.workspace.get_file_path_in_startup(server[SSLConstants.CERT])
                 if server.get(SSLConstants.ROOT_CERT):
-                    server[SSLConstants.ROOT_CERT] = \
-                        self.workspace.get_file_path_in_startup(server[SSLConstants.ROOT_CERT])
+                    server[SSLConstants.ROOT_CERT] = self.workspace.get_file_path_in_startup(
+                        server[SSLConstants.ROOT_CERT]
+                    )
         except BaseException:
             raise ValueError(f"Server config error: '{self.server_config_file_names}'")
 
@@ -189,11 +186,7 @@ class FLServerStarterConfiger(JsonConfigurator):
 class FLClientStarterConfiger(JsonConfigurator):
     """FL Client startup configer."""
 
-    def __init__(
-        self,
-        workspace: Workspace,
-        kv_list=None
-    ):
+    def __init__(self, workspace: Workspace, kv_list=None):
         """Init the FLClientStarterConfiger.
 
         Args:
@@ -283,14 +276,13 @@ class FLClientStarterConfiger(JsonConfigurator):
         try:
             client = self.config_data["client"]
             if client.get(SSLConstants.PRIVATE_KEY):
-                client[SSLConstants.PRIVATE_KEY] = \
-                    self.workspace.get_file_path_in_startup(client[SSLConstants.PRIVATE_KEY])
+                client[SSLConstants.PRIVATE_KEY] = self.workspace.get_file_path_in_startup(
+                    client[SSLConstants.PRIVATE_KEY]
+                )
             if client.get(SSLConstants.CERT):
-                client[SSLConstants.CERT] = \
-                    self.workspace.get_file_path_in_startup(client[SSLConstants.CERT])
+                client[SSLConstants.CERT] = self.workspace.get_file_path_in_startup(client[SSLConstants.CERT])
             if client.get(SSLConstants.ROOT_CERT):
-                client[SSLConstants.ROOT_CERT] = \
-                    self.workspace.get_file_path_in_startup(client[SSLConstants.ROOT_CERT])
+                client[SSLConstants.ROOT_CERT] = self.workspace.get_file_path_in_startup(client[SSLConstants.ROOT_CERT])
         except BaseException:
             raise ValueError(f"Client config error: '{self.client_config_file_names}'")
 
@@ -390,7 +382,6 @@ class FLAdminClientStarterConfigurator(JsonConfigurator):
 
 
 class PrivacyConfiger(JsonConfigurator):
-
     def __init__(self, workspace: Workspace, names_only: bool):
         """Uses the json configuration to start the FL admin client.
 
@@ -469,9 +460,7 @@ class PrivacyConfiger(JsonConfigurator):
 
     def finalize_config(self, config_ctx: ConfigContext):
         self.privacy_manager = PrivacyManager(
-            scopes=self.scopes,
-            default_scope_name=self.default_scope_name,
-            components=self.components
+            scopes=self.scopes, default_scope_name=self.default_scope_name, components=self.components
         )
 
 

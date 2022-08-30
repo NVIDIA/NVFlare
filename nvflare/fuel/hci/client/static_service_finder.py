@@ -16,11 +16,10 @@ from .api_spec import ServiceFinder
 
 
 class StaticServiceFinder(ServiceFinder):
-
     def __init__(self, host: str, port: int):
         self.host = host
         self.port = port
-        self.ssid = '1234'
+        self.ssid = "1234"
 
     def start(self, service_address_changed_cb):
         service_address_changed_cb(self.host, self.port, self.ssid)

@@ -12,20 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import numpy as np
 from typing import List, Union
 
-from nvflare.apis.dxo import DXO, MetaKey, DataKind
+import numpy as np
+
+from nvflare.apis.dxo import DXO, DataKind, MetaKey
 from nvflare.apis.dxo_filter import DXOFilter
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 
 
 class PercentilePrivacy(DXOFilter):
-    def __init__(self,
-                 percentile=10,
-                 gamma=0.01,
-                 data_kinds: List[str]=None):
+    def __init__(self, percentile=10, gamma=0.01, data_kinds: List[str] = None):
         """Implementation of "largest percentile to share" privacy preserving policy.
 
         Shokri and Shmatikov, Privacy-preserving deep learning, CCS '15
@@ -39,9 +37,7 @@ class PercentilePrivacy(DXOFilter):
         if not data_kinds:
             data_kinds = [DataKind.WEIGHT_DIFF]
 
-        super().__init__(
-            supported_data_kinds=[DataKind.WEIGHTS, DataKind.WEIGHT_DIFF],
-            data_kinds_to_filter=data_kinds)
+        super().__init__(supported_data_kinds=[DataKind.WEIGHTS, DataKind.WEIGHT_DIFF], data_kinds_to_filter=data_kinds)
 
         # must be in 0..100, only update abs diff greater than percentile
         self.percentile = percentile

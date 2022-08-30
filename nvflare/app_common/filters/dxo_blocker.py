@@ -14,16 +14,14 @@
 
 from typing import List, Union
 
+from nvflare.apis.dxo_filter import DXO, DXOFilter
 from nvflare.apis.filter import ContentBlockedException
-from nvflare.apis.dxo_filter import DXOFilter, DXO
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 
 
 class DXOBlocker(DXOFilter):
-    def __init__(self,
-                 data_kinds: List[str],
-                 allow_data_kinds: bool=False):
+    def __init__(self, data_kinds: List[str], allow_data_kinds: bool = False):
         """Block certain kinds of DXO objects.
 
         Args:
@@ -31,10 +29,7 @@ class DXOBlocker(DXOFilter):
             the list; If False, block everything in the configured list.
             data_kinds: kinds of DXO object to block
         """
-        super().__init__(
-            supported_data_kinds=[],    # support all kinds
-            data_kinds_to_filter=[]
-        )
+        super().__init__(supported_data_kinds=[], data_kinds_to_filter=[])  # support all kinds
         if not data_kinds:
             raise ValueError("data_kinds must be non-empty")
         if not isinstance(data_kinds, list):

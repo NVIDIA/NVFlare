@@ -13,13 +13,13 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import Union, List, Dict
+from typing import Dict, List, Union
 
-from .filter import Filter, FilterContextKey
-from .shareable import Shareable
-from .fl_context import FLContext
-from .fl_constant import ReturnCode
 from .dxo import DXO, DataKind, from_shareable
+from .filter import Filter, FilterContextKey
+from .fl_constant import ReturnCode
+from .fl_context import FLContext
+from .shareable import Shareable
 from .utils.fl_context_utils import add_job_audit_event
 
 
@@ -28,9 +28,7 @@ class DXOFilter(Filter, ABC):
     This is the base class for DXO-based filters
     """
 
-    def __init__(self,
-                 supported_data_kinds: Union[None, List[str]],
-                 data_kinds_to_filter: Union[None, List[str]]):
+    def __init__(self, supported_data_kinds: Union[None, List[str]], data_kinds_to_filter: Union[None, List[str]]):
         """
 
         Args:
@@ -102,8 +100,7 @@ class DXOFilter(Filter, ABC):
             # not filtered
             result = dxo
         elif not isinstance(result, DXO):
-            raise RuntimeError(
-                f"Result from {filter_name} is {type(result)} - must be DXO")
+            raise RuntimeError(f"Result from {filter_name} is {type(result)} - must be DXO")
         else:
             if result != dxo:
                 # result is a new DXO - copy filter history from original dxo
@@ -113,10 +110,7 @@ class DXOFilter(Filter, ABC):
             chain_type = self.get_prop(FilterContextKey.CHAIN_TYPE, "?")
             source = self.get_prop(FilterContextKey.SOURCE, "?")
 
-            add_job_audit_event(
-                fl_ctx=fl_ctx,
-                msg=f"applied filter: {filter_name}@{source} on {chain_type}"
-            )
+            add_job_audit_event(fl_ctx=fl_ctx, msg=f"applied filter: {filter_name}@{source} on {chain_type}")
 
         return result
 

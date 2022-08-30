@@ -191,15 +191,11 @@ class ServerEngine(ServerEngineInternalSpec):
     def validate_clients(self, client_names: List[str]) -> Tuple[List[Client], List[str]]:
         return self._get_all_clients_from_inputs(client_names)
 
-    def start_app_on_server(self,
-                            run_number: str,
-                            job_id: str=None,
-                            job_clients=None,
-                            snapshot=None) -> str:
+    def start_app_on_server(self, run_number: str, job_id: str = None, job_clients=None, snapshot=None) -> str:
         if run_number in self.run_processes.keys():
             return f"Server run_{run_number} already started."
         else:
-            workspace = Workspace(root_dir=self.args.workspace, site_name='server')
+            workspace = Workspace(root_dir=self.args.workspace, site_name="server")
             app_root = workspace.get_app_dir(run_number)
             if not os.path.exists(app_root):
                 return "Server app does not exist. Please deploy the server app before starting."
@@ -209,8 +205,7 @@ class ServerEngine(ServerEngineInternalSpec):
 
             open_ports = get_open_ports(2)
             self._start_runner_process(
-                self.args, app_root, run_number, app_custom_folder, open_ports,
-                job_id, job_clients, snapshot
+                self.args, app_root, run_number, app_custom_folder, open_ports, job_id, job_clients, snapshot
             )
 
             threading.Thread(target=self._listen_command, args=(open_ports[0], run_number)).start()
@@ -268,8 +263,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 break
 
     def _start_runner_process(
-            self, args, app_root, run_number, app_custom_folder, open_ports,
-            job_id, job_clients, snapshot
+        self, args, app_root, run_number, app_custom_folder, open_ports, job_id, job_clients, snapshot
     ):
         new_env = os.environ.copy()
         if app_custom_folder != "":
@@ -285,21 +279,21 @@ class ServerEngine(ServerEngineInternalSpec):
             command_options += " " + t
 
         command = (
-                sys.executable
-                + " -m nvflare.private.fed.app.server.runner_process -m "
-                + args.workspace
-                + " -s fed_server.json -r "
-                + app_root
-                + " -n "
-                + str(run_number)
-                + " -p "
-                + str(listen_port)
-                + " -c "
-                + str(open_ports[0])
-                + " --set"
-                + command_options
-                + " print_conf=True restore_snapshot="
-                + str(restore_snapshot)
+            sys.executable
+            + " -m nvflare.private.fed.app.server.runner_process -m "
+            + args.workspace
+            + " -s fed_server.json -r "
+            + app_root
+            + " -n "
+            + str(run_number)
+            + " -p "
+            + str(listen_port)
+            + " -c "
+            + str(open_ports[0])
+            + " --set"
+            + command_options
+            + " print_conf=True restore_snapshot="
+            + str(restore_snapshot)
         )
         # use os.setsid to create new process group ID
 

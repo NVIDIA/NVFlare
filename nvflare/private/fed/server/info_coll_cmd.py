@@ -18,8 +18,8 @@ from typing import List
 from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModuleSpec, CommandSpec
-from nvflare.private.defs import InfoCollectorTopic, RequestHeader
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
+from nvflare.private.defs import InfoCollectorTopic, RequestHeader
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
 from nvflare.widgets.info_collector import InfoCollector
@@ -115,10 +115,7 @@ class InfoCollectorCommandModule(JobCommandModule, CommandUtil):
             result = engine.show_stats(job_id)
             conn.append_any(result)
         elif target_type == self.TARGET_TYPE_CLIENT:
-            message = new_message(conn,
-                                  topic=InfoCollectorTopic.SHOW_STATS,
-                                  body="",
-                                  require_authz=True)
+            message = new_message(conn, topic=InfoCollectorTopic.SHOW_STATS, body="", require_authz=True)
             message.set_header(RequestHeader.JOB_ID, job_id)
             replies = self.send_request_to_clients(conn, message)
             self._process_stats_replies(conn, replies)
@@ -138,10 +135,7 @@ class InfoCollectorCommandModule(JobCommandModule, CommandUtil):
             result = engine.get_errors(job_id)
             conn.append_any(result)
         elif target_type == self.TARGET_TYPE_CLIENT:
-            message = new_message(conn,
-                                  topic=InfoCollectorTopic.SHOW_ERRORS,
-                                  body="",
-                                  require_authz=True)
+            message = new_message(conn, topic=InfoCollectorTopic.SHOW_ERRORS, body="", require_authz=True)
             replies = self.send_request_to_clients(conn, message)
             self._process_stats_replies(conn, replies)
 
