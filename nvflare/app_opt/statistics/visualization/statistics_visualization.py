@@ -1,0 +1,83 @@
+# Copyright (c) 2022, NVIDIA CORPORATION.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+from nvflare.utils.import_utils import optional_import
+
+
+class Visualization:
+    def import_modules(self):
+        display, import_flag = optional_import(module="IPython.display", name="display")
+        if not import_flag:
+            print(display.failure)
+
+        pd, import_flag = optional_import(module="pandas")
+        if not import_flag:
+            print(pd.failure)
+        return display, pd
+
+    def show_stats(self, data, white_list_features=[]):
+        display, pd = self.import_modules()
+        all_features = [k for k in data]
+        target_features = self._get_target_features(all_features, white_list_features)
+        for feature in target_features:
+            print(f"\n{feature}\n")
+            feature_metrics = data[feature]
+            df = pd.DataFrame.from_dict(feature_metrics)
+            display(df)
+
+    def show_histograms(self, data, display_format="percent", white_list_features=[]):
+        display, pd = self.import_modules()
+        (hists, edges) = self._prepare_histogram_data(data, display_format, white_list_features)
+        all_features = [k for k in edges]
+        target_features = self._get_target_features(all_features, white_list_features)
+
+        for feature in target_features:
+            hist_data = hists[feature]
+            index = edges[feature]
+            df = pd.DataFrame(hist_data, index=index)
+            axes = df.plot.line(rot=40, title=feature)
+            axes = df.plot.line(rot=40, subplots=True, title=feature)
+
+    def _prepare_histogram_data(self, data, display_format="percent", white_list_features=[]):
+        all_features = [k for k in data]
+        target_features = self._get_target_features(all_features, white_list_features)
+
+        feature_hists = {}
+        feature_edges = {}
+
+        for feature in target_features:
+            xs = data[feature]["histogram"]
+            counts = data[feature]["count"]
+            hists = {}
+            feature_edges[feature] = []
+            for i, ds in enumerate(xs):
+                ds_hist = xs[ds]
+                ds_bucket_counts = []
+                for bucket in ds_hist:
+                    if i == 0:
+                        feature_edges[feature].append(bucket[0])
+                    if display_format == "percent":
+                        ds_bucket_counts.append(round(bucket[2] / counts[ds], 2))
+                    else:
+                        ds_bucket_counts.append(bucket[2])
+
+                    hists[ds] = ds_bucket_counts
+            feature_hists[feature] = hists
+
+        return feature_hists, feature_edges
+
+    def _get_target_features(self, all_features, white_list_features=[]):
+        target_features = white_list_features
+        if not white_list_features:
+            target_features = all_features
+        return target_features
