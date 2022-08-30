@@ -32,6 +32,7 @@ from nvflare.app_common.app_constant import AppConstants
 class XGBoostTreeFedLearner(Learner):
     def __init__(
         self,
+        training_mode,
         num_tree_bagging: int = 1,
         lr_mode: str = "uniform",
         local_model_path: str = "model.json",
@@ -44,6 +45,7 @@ class XGBoostTreeFedLearner(Learner):
         train_task_name: str = AppConstants.TASK_TRAIN,
     ):
         super().__init__()
+        self.training_mode = training_mode
         self.num_tree_bagging = num_tree_bagging
         self.lr_mode = lr_mode
         self.local_model_path = local_model_path
@@ -87,20 +89,29 @@ class XGBoostTreeFedLearner(Learner):
             )
             return make_reply(ReturnCode.TASK_ABORTED)
 
-        if self.num_tree_bagging > 1:
+        if self.training_mode not in ["cyclic", "bagging"]:
+            self.log_error(
+                fl_ctx,
+                f"Only support [cyclic] or [bagging] mode, but got {self.training_mode}",
+            )
+            return make_reply(ReturnCode.TASK_ABORTED)
+
+        self.set_lr()
+        # load data, this is task-specific
+        self.load_data(fl_ctx)
+
+    def set_lr(self):
+        if self.training_mode == "bagging":
             # Bagging mode
             if self.lr_mode == "uniform":
                 # uniform lr, gloabl learnining_rate scaled by num_tree_bagging for bagging
                 self.lr = self.base_lr / self.num_tree_bagging
-            else:
+            elif self.lr_mode == "scaled":
                 # scaled lr, global learning_rate scaled by data size percentage
                 self.lr = self.base_lr * site_index["lr_scale"]
-        else:
+        elif self.training_mode == "cyclic":
             # Cyclic mode, directly use the base learning_rate
             self.lr = self.base_lr
-
-        # load data, this is task-specific
-        self.load_data(fl_ctx)
 
     @abstractmethod
     def load_data(self, fl_ctx: FLContext):
@@ -113,6 +124,78 @@ class XGBoostTreeFedLearner(Learner):
         self.valid_y: array for validation metric computation
         """
         raise NotImplementedError
+
+    def get_training_parameters_single(self):
+        param = {}
+        param["objective"] = self.objective
+        param["eta"] = self.lr
+        param["max_depth"] = self.max_depth
+        param["eval_metric"] = self.eval_metric
+        param["nthread"] = self.nthread
+        return param
+
+    def get_training_parameters_bagging(self):
+        param = {}
+        param["objective"] = self.objective
+        param["eta"] = self.lr
+        param["max_depth"] = self.max_depth
+        param["eval_metric"] = self.eval_metric
+        param["nthread"] = self.nthread
+        param["num_parallel_tree"] = self.num_tree_bagging
+        return param
+
+    def local_boost_bagging(self, param):
+        # global model with num_parallel_tree
+        param_global = get_training_parameters_bagging()
+        # validate global model for bagging mode
+        bst_global = xgb.Booster(param_global, model_file=self.global_model_path)
+        y_pred = bst_global.predict(self.dmat_valid)
+        auc = roc_auc_score(self.valid_y, y_pred)
+        self.log_info(
+            fl_ctx,
+            f"Global AUC {auc}",
+        )
+        self.writer.add_scalar("AUC", auc, bst_global.num_boosted_rounds() - 1)
+        # Bagging mode, use set_base_margin
+        # return only 1 tree
+        # Compute margin on site's data
+        ptrain = bst_global.predict(self.dmat_train, output_margin=True)
+        pvalid = bst_global.predict(self.dmat_valid, output_margin=True)
+        # Set margin
+        self.dmat_train.set_base_margin(ptrain)
+        self.dmat_valid.set_base_margin(pvalid)
+        # Boost a tree under tree param setting
+        bst = xgb.train(
+            param,
+            self.dmat_train,
+            num_boost_round=self.trees_per_round,
+            evals=[(self.dmat_valid, "validate"), (self.dmat_train, "train")],
+        )
+        # Reset the base margin for next round
+        self.dmat_train.set_base_margin([])
+        self.dmat_valid.set_base_margin([])
+        return bst
+
+    def local_boost_cyclic(self, param):
+        # Cyclic mode
+        # starting from global model
+        # return the whole boosting tree series
+        bst = xgb.train(
+            param,
+            self.dmat_train,
+            num_boost_round=self.trees_per_round,
+            xgb_model=self.global_model_path,
+            evals=[(self.dmat_valid, "validate"), (self.dmat_train, "train")],
+        )
+        # Validate model after training for Cyclic mode
+        y_pred = bst.predict(self.dmat_valid)
+        auc = roc_auc_score(self.valid_y, y_pred)
+        self.log_info(
+            fl_ctx,
+            f"Client {self.client_id} AUC after training: {auc}",
+        )
+        self.writer.add_scalar("AUC", auc, bst.num_boosted_rounds() - 1)
+        return bst
 
     def train(
         self,
@@ -129,27 +212,7 @@ class XGBoostTreeFedLearner(Learner):
         model_global = dxo.data
 
         # xgboost parameters
-        param = {}
-        param["objective"] = self.objective
-        param["eta"] = self.lr
-        param["max_depth"] = self.max_depth
-        param["eval_metric"] = self.eval_metric
-        param["nthread"] = self.nthread
-
-        param_global = {}
-        param_global["objective"] = param["objective"]
-        param_global["max_depth"] = param["max_depth"]
-        param_global["eval_metric"] = param["eval_metric"]
-        param_global["nthread"] = param["nthread"]
-
-        if self.num_tree_bagging > 1:
-            # Bagging aggregation mode
-            # set the global model param
-            self.log_info(
-                fl_ctx,
-                "Training in bagging aggregation mode",
-            )
-            param_global["num_parallel_tree"] = self.num_tree_bagging
+        param = get_training_parameters_single()
 
         if not model_global:
             # First round
@@ -163,7 +226,6 @@ class XGBoostTreeFedLearner(Learner):
                 num_boost_round=self.trees_per_round,
                 evals=[(self.dmat_valid, "validate"), (self.dmat_train, "train")],
             )
-            bst.save_model(self.local_model_path)
         else:
             self.log_info(
                 fl_ctx,
@@ -174,55 +236,11 @@ class XGBoostTreeFedLearner(Learner):
                 json.dump(model_global, f)
 
             # train local model starting with global model
-            if self.num_tree_bagging > 1:
-                # validate global model for bagging mode
-                bst_global = xgb.Booster(param_global, model_file=self.global_model_path)
-                y_pred = bst_global.predict(self.dmat_valid)
-                auc = roc_auc_score(self.valid_y, y_pred)
-                self.log_info(
-                    fl_ctx,
-                    f"Global AUC {auc}",
-                )
-                self.writer.add_scalar("AUC", auc, bst_global.num_boosted_rounds() - 1)
-                # Bagging mode, use set_base_margin
-                # return only 1 tree
-                # Compute margin on site's data
-                ptrain = bst_global.predict(self.dmat_train, output_margin=True)
-                pvalid = bst_global.predict(self.dmat_valid, output_margin=True)
-                # Set margin
-                self.dmat_train.set_base_margin(ptrain)
-                self.dmat_valid.set_base_margin(pvalid)
-                # Boost a tree under tree param setting
-                bst = xgb.train(
-                    param,
-                    self.dmat_train,
-                    num_boost_round=self.trees_per_round,
-                    evals=[(self.dmat_valid, "validate"), (self.dmat_train, "train")],
-                )
-                # Reset the base margin for next round
-                self.dmat_train.set_base_margin([])
-                self.dmat_valid.set_base_margin([])
-                bst.save_model(self.local_model_path)
-            else:
-                # Cyclic mode
-                # starting from global model
-                # return the whole boosting tree series
-                bst = xgb.train(
-                    param,
-                    self.dmat_train,
-                    num_boost_round=self.trees_per_round,
-                    xgb_model=self.global_model_path,
-                    evals=[(self.dmat_valid, "validate"), (self.dmat_train, "train")],
-                )
-                # Validate model after training for Cyclic mode
-                y_pred = bst.predict(self.dmat_valid)
-                auc = roc_auc_score(self.valid_y, y_pred)
-                self.log_info(
-                    fl_ctx,
-                    f"Client {self.client_id} AUC after training: {auc}",
-                )
-                self.writer.add_scalar("AUC", auc, bst.num_boosted_rounds() - 1)
-                bst.save_model(self.local_model_path)
+            if self.training_mode == "bagging":
+                bst = self.local_boost_bagging(param)
+            elif self.training_mode == "cyclic":
+                bst = self.local_boost_cyclic(param)
+        bst.save_model(self.local_model_path)
 
         # report updated model in shareable
         with open(self.local_model_path) as json_file:

@@ -21,16 +21,33 @@ import xgboost as xgb
 from sklearn.metrics import roc_auc_score
 from torch.utils.tensorboard import SummaryWriter
 
-parser = argparse.ArgumentParser(description="Centralized XGBoost training with random forest options")
-parser.add_argument("--num_parallel_tree", type=int, default=1, help="num_parallel_tree for random forest setting")
-parser.add_argument("--subsample", type=float, default=1, help="subsample for random forest setting")
+
+def xgboost_args_parser():
+    parser = argparse.ArgumentParser(description="Centralized XGBoost training with random forest options")
+    parser.add_argument("--data_path", type=str, default="./dataset/HIGGS_UCI.csv", help="path to dataset file")
+    parser.add_argument("--num_parallel_tree", type=int, default=1, help="num_parallel_tree for random forest setting")
+    parser.add_argument("--subsample", type=float, default=1, help="subsample for random forest setting")
+    return parser
+
+
+def get_training_parameters(args):
+    param = {}
+    param["objective"] = "binary:logistic"
+    param["eta"] = 0.1
+    param["max_depth"] = 8
+    param["eval_metric"] = "auc"
+    param["nthread"] = 16
+    param["num_parallel_tree"] = args.num_parallel_tree
+    param["subsample"] = args.subsample
+    return param
 
 
 def main():
+    parser = xgboost_args_parser()
     args = parser.parse_args()
     # Specify training params
     model_name = "centralized_" + str(args.num_parallel_tree) + "_" + str(args.subsample)
-    data_path = "./dataset/HIGGS_UCI.csv"
+    data_path = args.data_path
     model_path_root = "./workspaces/" + model_name
     round_num = 100
 
@@ -64,14 +81,7 @@ def main():
     # setup parameters for xgboost
     # use logistic regression loss for binary classification
     # use auc as metric
-    param = {}
-    param["objective"] = "binary:logistic"
-    param["eta"] = 0.1
-    param["max_depth"] = 8
-    param["eval_metric"] = "auc"
-    param["nthread"] = 16
-    param["num_parallel_tree"] = args.num_parallel_tree
-    param["subsample"] = args.subsample
+    param = get_training_parameters(args)
 
     # xgboost training
     start = time.time()

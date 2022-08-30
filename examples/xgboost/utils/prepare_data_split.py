@@ -17,13 +17,18 @@ import json
 
 import numpy as np
 
-parser = argparse.ArgumentParser(description="generate data split for HIGGS dataset")
-parser.add_argument("--site_num", type=int, default=5, help="Total number of sites")
-parser.add_argument("--site_name", type=str, default="site-", help="Site name prefix")
-parser.add_argument("--size_total", type=int, default=11000000, help="Total number of instances, default 11 million")
-parser.add_argument("--size_valid", type=int, default=1000000, help="Validation size, default 1 million")
-parser.add_argument("--split_method", type=str, default="uniform", help="How to split the dataset")
-parser.add_argument("--out_path", type=str, default="data_splits/data_split.json", help="Path to json file")
+
+def data_split_args_parser():
+    parser = argparse.ArgumentParser(description="generate data split for HIGGS dataset")
+    parser.add_argument("--site_num", type=int, default=5, help="Total number of sites")
+    parser.add_argument("--site_name", type=str, default="site-", help="Site name prefix")
+    parser.add_argument(
+        "--size_total", type=int, default=11000000, help="Total number of instances, default 11 million"
+    )
+    parser.add_argument("--size_valid", type=int, default=1000000, help="Validation size, default 1 million")
+    parser.add_argument("--split_method", type=str, default="uniform", help="How to split the dataset")
+    parser.add_argument("--out_path", type=str, default="data_splits/data_split.json", help="Path to json file")
+    return parser
 
 
 def split_num_proportion(n, site_num, option: str):
@@ -72,7 +77,8 @@ def train_config_gen(site_num, site_name, size_total, size_valid, split_method, 
         json.dump(json_data, f, indent=4)
 
 
-if __name__ == "__main__":
+def main():
+    parser = data_split_args_parser()
     args = parser.parse_args()
     train_config_gen(
         site_num=args.site_num,
@@ -82,3 +88,7 @@ if __name__ == "__main__":
         split_method=args.split_method,
         out_path=args.out_path,
     )
+
+
+if __name__ == "__main__":
+    main()
