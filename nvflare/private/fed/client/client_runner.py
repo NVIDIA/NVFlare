@@ -339,7 +339,7 @@ class ClientRunner(FLComponent):
                 msg=f"submit result: {ReturnCode.EXECUTION_RESULT_ERROR}",
             )
 
-        return self._reply_and_audit(reply=reply, ref=server_audit_event_id, fl_ctx=fl_ctx, msg=f"submit result OK")
+        return self._reply_and_audit(reply=reply, ref=server_audit_event_id, fl_ctx=fl_ctx, msg="submit result OK")
 
     def _try_run(self):
         task_fetch_interval = self.task_fetch_interval

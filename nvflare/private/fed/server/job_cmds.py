@@ -290,7 +290,7 @@ class JobCommandModule(CommandModule, CommandUtil):
     def delete_job(self, conn: Connection, args: List[str]):
         job = conn.get_prop(self.JOB)
         if not job:
-            conn.append_error(f"program error: job not set in conn")
+            conn.append_error("program error: job not set in conn")
             return
 
         job_id = conn.get_prop(self.JOB_ID)

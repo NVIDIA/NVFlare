@@ -16,7 +16,6 @@
 
 import argparse
 import copy
-import logging
 import os
 import threading
 import time
@@ -24,7 +23,7 @@ import traceback
 from multiprocessing.connection import Client, Listener
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
