@@ -29,6 +29,7 @@ def define_simulator_parser(simulator_parser):
     simulator_parser.add_argument("-p", "--threads", type=int, help="number of parallel running clients")
     simulator_parser.add_argument("-gpu", "--gpu", type=str, help="list of GPU Device Ids, comma separated")
 
+
 def run_simulator(simulator_args):
     simulator_driver = SimulatorRunner(simulator_args)
     run_status = 1
@@ -36,7 +37,6 @@ def run_simulator(simulator_args):
         run_status = simulator.run()
 
     return run_status
-
 
 
 if __name__ == "__main__":

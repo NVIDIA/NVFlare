@@ -43,11 +43,7 @@ def is_provision(cmd_args) -> bool:
 
 
 def is_simulator(cmd_args) -> bool:
-    return (
-        hasattr(cmd_args, "job_folder")
-        or hasattr(cmd_args, "clients")
-        or hasattr(cmd_args, "threads")
-    )
+    return hasattr(cmd_args, "job_folder") or hasattr(cmd_args, "clients") or hasattr(cmd_args, "threads")
 
 
 #
