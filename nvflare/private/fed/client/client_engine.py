@@ -32,7 +32,7 @@ from nvflare.private.admin_defs import Message
 from nvflare.private.defs import ERROR_MSG_PREFIX, ClientStatusKey, EngineConstant
 from nvflare.private.event import fire_event
 from nvflare.private.fed.utils.app_deployer import AppDeployer
-
+from nvflare.private.fed.utils.fed_utils import security_close
 from .client_engine_internal_spec import ClientEngineInternalSpec
 from .client_executor import ProcessExecutor
 from .client_run_manager import ClientRunInfo
@@ -292,6 +292,7 @@ def _shutdown_client(federated_client, admin_agent, touch_file):
             federated_client.process.terminate()
 
         admin_agent.shutdown()
+        security_close()
     except BaseException as e:
         traceback.print_exc()
         print("Failed to shutdown client: " + str(e))

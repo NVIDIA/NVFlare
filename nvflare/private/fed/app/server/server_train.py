@@ -130,7 +130,7 @@ def main():
     except ConfigError as ex:
         print("ConfigError:", str(ex))
     finally:
-        security_close()
+        pass
 
 
 def create_admin_server(fl_server: FederatedServer, server_conf=None, args=None, secure_train=False):

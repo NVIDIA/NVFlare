@@ -132,7 +132,7 @@ def main():
     except ConfigError as ex:
         print("ConfigError:", str(ex))
     finally:
-        security_close()
+        pass
 
     sys.exit(0)
 
