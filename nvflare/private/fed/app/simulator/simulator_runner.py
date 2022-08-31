@@ -210,6 +210,8 @@ class SimulatorRunner(FLComponent):
             # wait for the server app is started
             while self.services.engine.engine_info.status != MachineStatus.STARTED:
                 time.sleep(1.0)
+                if not server_thread.is_alive():
+                    raise RuntimeError("Could not start the Server App.")
 
             if self.args.gpu:
                 self.args.threads = 1
