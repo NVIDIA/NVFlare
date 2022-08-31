@@ -42,9 +42,10 @@ class TestOptionalImport:
         with pytest.raises(LazyImportError):
             print(torch.nn)  # trying to access a module for which there isn't a proper version imported
 
-        conv, flag = optional_import(module="torch.nn.functional", name="conv1d")
-        print(conv)
-        assert flag == True
+        # if you have torch installed. uncomment this line
+        # conv, flag = optional_import(module="torch.nn.functional", name="conv1d")
+        # print(conv)
+        # assert flag == True
 
         with pytest.raises(LazyImportError):
             conv, flag = optional_import(module="torch", op=">=", version="42")
