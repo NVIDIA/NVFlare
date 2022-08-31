@@ -190,7 +190,8 @@ class FederatedClientBase:
 
             return task
         except FLCommunicationError as e:
-            self.logger.info(e)
+            if e:
+                self.logger.info(e)
 
     def push_execute_result(self, project_name, shareable: Shareable, fl_ctx: FLContext):
         """Submit execution results of a task to server.
@@ -219,7 +220,8 @@ class FederatedClientBase:
 
             return message
         except FLCommunicationError as e:
-            self.logger.info(e)
+            if e:
+                self.logger.info(e)
 
     def send_aux_message(self, project_name, topic: str, shareable: Shareable, timeout: float, fl_ctx: FLContext):
         """Send auxiliary message to the server.
@@ -242,7 +244,8 @@ class FederatedClientBase:
 
             return message
         except FLCommunicationError as e:
-            self.logger.info(e)
+            if e:
+                self.logger.info(e)
 
     def send_heartbeat(self, project_name):
         try:
