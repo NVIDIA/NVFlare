@@ -122,10 +122,10 @@ class CertBuilder(Builder):
         subject = participant.subject
         subject_org = participant.org
         if participant.type == "admin":
-            roles = participant.props.get("roles")
+            role = participant.props.get("role")
         else:
-            roles = None
-        cert = self._generate_cert(subject, subject_org, self.issuer, self.pri_key, pub_key, roles=roles)
+            role = None
+        cert = self._generate_cert(subject, subject_org, self.issuer, self.pri_key, pub_key, role=role)
         return pri_key, cert
 
     def _generate_keys(self):
@@ -134,9 +134,9 @@ class CertBuilder(Builder):
         return pri_key, pub_key
 
     def _generate_cert(
-        self, subject, subject_org, issuer, signing_pri_key, subject_pub_key, valid_days=360, ca=False, roles=None
+        self, subject, subject_org, issuer, signing_pri_key, subject_pub_key, valid_days=360, ca=False, role=None
     ):
-        x509_subject = self._x509_name(subject, subject_org, roles)
+        x509_subject = self._x509_name(subject, subject_org, role)
         x509_issuer = self._x509_name(issuer)
         builder = (
             x509.CertificateBuilder()
@@ -167,16 +167,12 @@ class CertBuilder(Builder):
             )
         return builder.sign(signing_pri_key, hashes.SHA256(), default_backend())
 
-    def _x509_name(self, cn_name, org_name=None, roles=None):
+    def _x509_name(self, cn_name, org_name=None, role=None):
         name = [x509.NameAttribute(NameOID.COMMON_NAME, cn_name)]
         if org_name is not None:
             name.append(x509.NameAttribute(NameOID.ORGANIZATION_NAME, org_name))
-        if roles:
-            if isinstance(roles, list):
-                role_list = "|".join(roles)
-            else:
-                role_list = roles
-            name.append(x509.NameAttribute(NameOID.UNSTRUCTURED_NAME, role_list))
+        if role:
+            name.append(x509.NameAttribute(NameOID.UNSTRUCTURED_NAME, role))
         return x509.Name(name)
 
     def finalize(self, ctx):

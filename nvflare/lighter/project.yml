@@ -54,8 +54,7 @@ participants:
   - name: admin@nvidia.com
     type: admin
     org: nvidia
-    roles:
-      - super
+    role: project_admin
 
 # The same methods in all builders are called in their order defined in builders section
 builders:

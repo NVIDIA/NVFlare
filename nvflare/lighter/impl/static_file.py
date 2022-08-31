@@ -82,11 +82,11 @@ class StaticFileBuilder(Builder):
         admins = self.project.get_participants_by_type("admin", first_only=False)
         privilege_dict = dict()
         for admin in admins:
-            for role in admin.props.get("roles", {}):
-                if role in privilege_dict:
-                    privilege_dict[role].append(admin.subject)
-                else:
-                    privilege_dict[role] = [admin.subject]
+            role = admin.props.get("role")
+            if role in privilege_dict:
+                privilege_dict[role].append(admin.subject)
+            else:
+                privilege_dict[role] = [admin.subject]
         self._write(
             os.path.join(dest_dir, "privilege.yml"),
             yaml.dump(privilege_dict, Dumper=yaml.Dumper),

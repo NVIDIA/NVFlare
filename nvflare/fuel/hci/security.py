@@ -64,6 +64,33 @@ def make_session_token():
     return str(t)
 
 
+def get_identity_info(cert: dict):
+    """Gets the identity information from the provided certificate.
+
+    Args:
+        cert: certificate
+
+    Returns: if the cert is None, returning None.
+             if the cert is a dictinary, returning a dictionary containing three keys, common_name, organization and role.
+
+    """
+    if cert is None:
+        return None
+
+    cn = None
+    role = None
+    organization = None
+    for sub in cert.get("subject", ()):
+        for key, value in sub:
+            if key == "commonName":
+                cn = value
+            elif key == "unstructuredName":
+                role = value
+            elif key == "organizationName":
+                organization = value
+    return {"common_name": cn, "organization": organization, "role": role}
+
+
 def get_certificate_common_name(cert: dict):
     """Gets the common name of the provided certificate.
 
@@ -80,41 +107,3 @@ def get_certificate_common_name(cert: dict):
         for key, value in sub:
             if key == "commonName":
                 return value
-
-
-def get_certificate_roles(cert: dict):
-    """Gets the roles from the unstructuredName field of the provided certificate.
-
-    Args:
-        cert: certificate
-
-    Returns: roles of provided cert
-
-    """
-    if cert is None:
-        return None
-
-    for sub in cert.get("subject", ()):
-        for key, value in sub:
-            if key == "unstructuredName":
-                return value.split("|")
-    return None
-
-
-def get_certificate_org(cert: dict):
-    """Gets the organization from the provided certificate.
-
-    Args:
-        cert: certificate
-
-    Returns: organization of provided cert
-
-    """
-    if cert is None:
-        return None
-
-    for sub in cert.get("subject", ()):
-        for key, value in sub:
-            if key == "organizationName":
-                return value
-    return None
