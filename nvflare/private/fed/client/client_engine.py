@@ -38,6 +38,13 @@ from .client_run_manager import ClientRunInfo
 from .client_status import ClientStatus
 
 
+def _remove_custom_path():
+    regex = re.compile(".*/run_.*/custom")
+    custom_paths = list(filter(regex.search, sys.path))
+    for path in custom_paths:
+        sys.path.remove(path)
+
+
 class ClientEngine(ClientEngineInternalSpec):
     """ClientEngine runs in the client parent process."""
 
@@ -59,7 +66,8 @@ class ClientEngine(ClientEngineInternalSpec):
         self.args = args
         self.rank = rank
         self.client.process = None
-        self.client_executor = ProcessExecutor(client.client_name, os.path.join(args.workspace, "startup"))
+        self.client_executor = ProcessExecutor(os.path.join(args.workspace, "startup"))
+        self.admin_agent = None
 
         self.fl_ctx_mgr = FLContextManager(
             engine=self, identity_name=client_name, job_id="", public_stickers={}, private_stickers={}
@@ -102,7 +110,7 @@ class ClientEngine(ClientEngineInternalSpec):
             job = {
                 ClientStatusKey.APP_NAME: app_name,
                 ClientStatusKey.JOB_ID: job_id,
-                ClientStatusKey.STATUS: self.client_executor.check_status(self.client, job_id),
+                ClientStatusKey.STATUS: self.client_executor.check_status(job_id),
             }
             running_jobs.append(job)
 
@@ -117,7 +125,6 @@ class ClientEngine(ClientEngineInternalSpec):
         job_id: str,
         allocated_resource: dict = None,
         token: str = None,
-        resource_consumer=None,
         resource_manager=None,
     ) -> str:
         status = self.client_executor.get_status(job_id)
@@ -137,7 +144,7 @@ class ClientEngine(ClientEngineInternalSpec):
             try:
                 sys.path.index(app_custom_folder)
             except ValueError:
-                self.remove_custom_path()
+                _remove_custom_path()
                 sys.path.append(app_custom_folder)
         else:
             app_custom_folder = ""
@@ -146,16 +153,14 @@ class ClientEngine(ClientEngineInternalSpec):
 
         open_port = get_open_ports(1)[0]
 
-        self.client_executor.start_train(
+        self.client_executor.start_app(
             self.client,
             job_id,
             self.args,
-            app_root,
             app_custom_folder,
             open_port,
             allocated_resource,
             token,
-            resource_consumer,
             resource_manager,
             list(self.client.servers.values())[0]["target"],
         )
@@ -182,12 +187,6 @@ class ClientEngine(ClientEngineInternalSpec):
                 )
             )
 
-    def remove_custom_path(self):
-        regex = re.compile(".*/run_.*/custom")
-        custom_paths = list(filter(regex.search, sys.path))
-        for path in custom_paths:
-            sys.path.remove(path)
-
     def abort_app(self, job_id: str) -> str:
         status = self.client_executor.get_status(job_id)
         if status == ClientStatus.STOPPED:
@@ -199,7 +198,7 @@ class ClientEngine(ClientEngineInternalSpec):
         if status == ClientStatus.STARTING:
             return "Client app is starting, please wait for client to have started before abort."
 
-        self.client_executor.abort_train(self.client, job_id)
+        self.client_executor.abort_app(job_id)
 
         return "Abort signal has been sent to the client App."
 
@@ -211,14 +210,13 @@ class ClientEngine(ClientEngineInternalSpec):
         if status == ClientStatus.STARTING:
             return "Client app is starting, please wait for started before abort_task."
 
-        self.client_executor.abort_task(self.client, job_id)
+        self.client_executor.abort_task(job_id)
 
         return "Abort signal has been sent to the current task."
 
     def shutdown(self) -> str:
         self.logger.info("Client shutdown...")
         touch_file = os.path.join(self.args.workspace, "shutdown.fl")
-        self.client_executor.close()
         self.fire_event(EventType.SYSTEM_END, self.new_context())
 
         _ = self.executor.submit(lambda p: _shutdown_client(*p), [self.client, self.admin_agent, touch_file])
@@ -229,7 +227,6 @@ class ClientEngine(ClientEngineInternalSpec):
     def restart(self) -> str:
         self.logger.info("Client shutdown...")
         touch_file = os.path.join(self.args.workspace, "restart.fl")
-        self.client_executor.close()
         self.fire_event(EventType.SYSTEM_END, self.new_context())
         _ = self.executor.submit(lambda p: _shutdown_client(*p), [self.client, self.admin_agent, touch_file])
 
@@ -260,7 +257,7 @@ class ClientEngine(ClientEngineInternalSpec):
         self.client_executor.reset_errors(job_id)
 
     def send_aux_command(self, shareable: Shareable, job_id):
-        return self.client_executor.send_aux_command(shareable, job_id)
+        return self.client_executor.process_aux_command(shareable, job_id)
 
     def get_all_job_ids(self):
         return self.client_executor.get_run_processes_keys()

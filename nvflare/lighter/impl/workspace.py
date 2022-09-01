@@ -73,6 +73,8 @@ class WorkspaceBuilder(Builder):
         self._make_dir(dirs)
         dirs = [self.get_transfer_dir(p, ctx) for p in project.participants]
         self._make_dir(dirs)
+        dirs = [self.get_local_dir(p, ctx) for p in project.participants]
+        self._make_dir(dirs)
 
     def finalize(self, ctx: dict):
         if ctx["last_prod_stage"] >= 99:
