@@ -11,30 +11,20 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from collections import OrderedDict
 
-# from __future__ import annotations
-from nvflare.fuel.utils import fobs
+from nvflare.fuel.utils.fobs.decomposers.core_decomposers import OrderedDictDecomposer
 
 
-class Learnable(dict):
-    def to_bytes(self) -> bytes:
-        """Method to serialize the Learnable object into bytes.
+class TestDecomposers:
+    def test_sorted_dict(self):
 
-        Returns:
-            object serialized in bytes.
+        test_list = [(3, "First"), (1, "Middle"), (2, "Last")]
+        test_data = OrderedDict(test_list)
 
-        """
-        return fobs.dumps(self)
+        decomposer = OrderedDictDecomposer()
+        serializable = decomposer.decompose(test_data)
+        result = decomposer.recompose(serializable)
+        new_list = list(result.items())
 
-    @classmethod
-    def from_bytes(cls, data: bytes):
-        """Method to convert the object bytes into Learnable object.
-
-        Args:
-            data: a bytes object
-
-        Returns:
-            an object loaded by FOBS from data
-
-        """
-        return fobs.loads(data)
+        assert test_list == new_list

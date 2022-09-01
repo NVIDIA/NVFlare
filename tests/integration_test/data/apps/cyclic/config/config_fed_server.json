@@ -10,7 +10,7 @@
       "id": "persistor",
       "path": "tests.integration_test.tf2.model_persistor.TF2ModelPersistor",
       "args": {
-        "save_name": "tf2weights.pickle"
+        "save_name": "tf2weights.fobs"
       }
     },
     {

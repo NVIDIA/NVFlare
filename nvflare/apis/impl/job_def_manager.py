@@ -15,7 +15,6 @@
 import datetime
 import os
 import pathlib
-import pickle
 import shutil
 import tempfile
 import time
@@ -29,6 +28,7 @@ from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.storage import StorageException, StorageSpec
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes, zip_directory_to_bytes
+from nvflare.fuel.utils import fobs
 
 
 class _JobFilter(ABC):
@@ -108,7 +108,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
         # write it to the store
         stored_data = {JobDataKey.JOB_DATA.value: uploaded_content, JobDataKey.WORKSPACE_DATA.value: None}
         store = self._get_job_store(fl_ctx)
-        store.create_object(self.job_uri(jid), pickle.dumps(stored_data), meta, overwrite_existing=True)
+        store.create_object(self.job_uri(jid), fobs.dumps(stored_data), meta, overwrite_existing=True)
         return meta
 
     def delete(self, jid: str, fl_ctx: FLContext):
@@ -185,12 +185,12 @@ class SimpleJobDefManager(JobDefManagerSpec):
             stored_data = store.get_data(self.job_uri(jid))
         except StorageException:
             return None
-        return pickle.loads(stored_data).get(JobDataKey.JOB_DATA.value)
+        return fobs.loads(stored_data).get(JobDataKey.JOB_DATA.value)
 
     def get_job_data(self, jid: str, fl_ctx: FLContext) -> dict:
         store = self._get_job_store(fl_ctx)
         stored_data = store.get_data(self.job_uri(jid))
-        return pickle.loads(stored_data)
+        return fobs.loads(stored_data)
 
     def set_status(self, jid: str, status: RunStatus, fl_ctx: FLContext):
         meta = {JobMetaKey.STATUS.value: status.value}
@@ -259,6 +259,6 @@ class SimpleJobDefManager(JobDefManagerSpec):
     def save_workspace(self, jid: str, data: bytes, fl_ctx: FLContext):
         store = self._get_job_store(fl_ctx)
         stored_data = store.get_data(self.job_uri(jid))
-        job_data = pickle.loads(stored_data)
+        job_data = fobs.loads(stored_data)
         job_data[JobDataKey.WORKSPACE_DATA.value] = data
-        store.update_data(self.job_uri(jid), pickle.dumps(job_data))
+        store.update_data(self.job_uri(jid), fobs.dumps(job_data))

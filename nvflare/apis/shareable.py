@@ -12,8 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pickle
-
+from ..fuel.utils import fobs
 from .fl_constant import ReservedKey, ReturnCode
 
 
@@ -113,7 +112,7 @@ class Shareable(dict):
             object serialized in bytes.
 
         """
-        return pickle.dumps(self)
+        return fobs.dumps(self)
 
     @classmethod
     def from_bytes(cls, data: bytes):
@@ -123,10 +122,10 @@ class Shareable(dict):
             data: a bytes object
 
         Returns:
-            an object loaded by pickle from data
+            an object loaded by FOBS from data
 
         """
-        return pickle.loads(data)
+        return fobs.loads(data)
 
 
 # some convenience functions

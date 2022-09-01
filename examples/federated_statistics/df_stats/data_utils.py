@@ -6,7 +6,7 @@ import sys
 import wget
 from pyhocon import ConfigFactory
 
-from nvflare.lighter.poc_commands import is_poc_ready, get_nvflare_home
+from nvflare.lighter.poc_commands import get_nvflare_home, is_poc_ready
 
 
 def get_poc_workspace():
