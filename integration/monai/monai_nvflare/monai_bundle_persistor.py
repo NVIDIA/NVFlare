@@ -70,7 +70,6 @@ class MONAIBundlePersistor(PTFileModelPersistor):
         self.source_ckpt_filename = source_ckpt_filename
 
         self.train_parser = None
-        self.network = None
 
     def handle_event(self, event: str, fl_ctx: FLContext):
         if event == EventType.START_RUN:
