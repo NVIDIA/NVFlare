@@ -53,7 +53,7 @@ and assign them to the appropriate GPU device using the `--gpu` argument.
 python3 -u -m nvflare.private.fed.app.simulator.simulator job -o /tmp/nvflare/sim_spleen_ct_seg --thread 2 --client_list site-1,site-2 --gpu 0,1
 ```
 
-### 4.3 TensorBoard visualization
+#### 4.3 TensorBoard visualization
 To monitor the training job, you can start tensorboard:
 ```
 tensorboard --logdir /tmp/nvflare/sim_spleen_ct_seg
@@ -78,13 +78,13 @@ In order to load a pretrained model provided in the MONAI bundle, define the `so
 
 ### 5. Run NVFlare in POC mode
 
-### 5.1 Prepare POC workspace
+#### 5.1 Prepare POC workspace
 To run FL experiments in POC mode, create your local FL workspace the below command.  
 ```
 nvflare poc -n 2 --prepare
 ```
 
-### 5.2 Start server and clients
+#### 5.2 Start server and clients
 Then, start the FL system using without admin console
 ```
 nvflare poc --start -ex admin
