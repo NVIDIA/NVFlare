@@ -33,20 +33,38 @@ class Auditor(object):
 
     def add_event(self, user: str, action: str, ref: str = "", msg: str = "") -> str:
         event_id = uuid.uuid4()
-        event_id_str = "{}".format(event_id)
+        parts = [
+            f"[E:{event_id}]",
+            f"[R:{ref}]" if ref else "",
+            f"[T:{datetime.now()}]",
+            f"[U:{user}]",
+            f"[A:{action}]",
+            msg if msg else "",
+        ]
 
-        if len(ref) > 0:
-            ref = " [R:{}] ".format(ref)
-        else:
-            ref = " "
-
-        if len(msg) > 0:
-            msg = " [M:{}]".format(msg)
-
-        line = "[E:{}]{}[T:{}] [U:{}] [A:{}]{}\n".format(event_id, ref, datetime.now(), user, action, msg)
-        self.audit_file.write(line)
+        line = "".join(parts)
+        self.audit_file.write(line + "\n")
         self.audit_file.flush()
-        return event_id_str
+        return str(event_id)
+
+    def add_job_event(
+        self, job_id: str, scope_name: str = "", task_name: str = "", task_id: str = "", ref: str = "", msg: str = ""
+    ) -> str:
+        event_id = uuid.uuid4()
+        parts = [
+            f"[E:{event_id}]",
+            f"[R:{ref}]" if ref else "",
+            f"[T:{datetime.now()}]",
+            f"[S:{scope_name}]" if scope_name else "",
+            f"[J:{job_id}]",
+            f"[A:{task_name}#{task_id}]" if task_name else "",
+            msg if msg else "",
+        ]
+
+        line = "".join(parts)
+        self.audit_file.write(line + "\n")
+        self.audit_file.flush()
+        return str(event_id)
 
     def close(self):
         if self.audit_file is not None:
@@ -74,6 +92,16 @@ class AuditService(object):
         if not AuditService.the_auditor:
             return ""
         return AuditService.the_auditor.add_event(user, action, ref, msg)
+
+    @staticmethod
+    def add_job_event(
+        job_id: str, scope_name: str = "", task_name: str = "", task_id: str = "", ref: str = "", msg: str = ""
+    ) -> str:
+        if not AuditService.the_auditor:
+            return ""
+        return AuditService.the_auditor.add_job_event(
+            scope_name=scope_name, job_id=job_id, task_name=task_name, task_id=task_id, ref=ref, msg=msg
+        )
 
     @staticmethod
     def close():

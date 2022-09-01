@@ -47,7 +47,7 @@ class SimulatorDeployer(ServerDeployer):
             cmd_modules=self.cmd_modules,
             args=args,
             secure_train=secure_train,
-            enable_byoc=self.enable_byoc,
+            # enable_byoc=self.enable_byoc,
             snapshot_persistor=self.snapshot_persistor,
             overseer_agent=self.overseer_agent,
         )

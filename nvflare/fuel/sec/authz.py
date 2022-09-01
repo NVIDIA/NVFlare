@@ -13,404 +13,45 @@
 # limitations under the License.
 
 import time
-from typing import List
+
+_KEY_PERMISSIONS = "permissions"
+_KEY_FORMAT_VERSION = "format_version"
+_TARGET_SITE = "site"
+_TARGET_SUBMITTER = "submitter"
+_ANY_RIGHT = "*"
 
 
-def _validate_value(type_def: dict, value):
-    value_type = type_def.get("type", "bool")
-    if value_type == "bool":
-        if value not in [True, False]:
-            return False
-    elif not isinstance(value, (int, float)):
-        return False
-    return True
+class Person(object):
+    def __init__(self, name: str, org: str, role):
+        self.name = _normalize_str(name)
+        self.org = _normalize_str(org)
+        self.roles = []
+        if isinstance(role, str):
+            self.roles.append(_normalize_str(role))
+        elif isinstance(role, list):
+            if len(role) <= 0:
+                raise TypeError("roles not specified - it must be a list of strings")
 
-
-def validate_policy_config(config: dict) -> str:
-    """Validates that an authorization policy configuration has the right syntax.
-
-    Args:
-        config: configuration dictionary to validate
-
-    Returns: empty string if there are no errors, else a string describing the error encountered
-
-    """
-    if not isinstance(config, dict):
-        return "policy definition must be a dict"
-
-    # validate rules
-    policy_rules = config.get("rules", None)
-    if not policy_rules:
-        return "missing rules in policy"
-    if not isinstance(policy_rules, dict):
-        return "rules must be dict"
-    for rule_name, rule_def in policy_rules.items():
-        if not isinstance(rule_def, dict):
-            return 'bad rule "{}": must be a dict'.format(rule_name)
-
-        default_value = rule_def.get("default", None)
-        if default_value is None:
-            return 'bad rule "{}": missing default value'.format(rule_name)
-
-        rule_type = rule_def.get("type", "bool")
-        if rule_type not in ["bool", "int"]:
-            return 'bad rule "{}": invalid type "{}"'.format(rule_name, rule_type)
-
-        if not _validate_value(rule_def, default_value):
-            return 'bad rule "{}": invalid default "{}"'.format(rule_name, default_value)
-
-    # validate rights
-    policy_rights = config.get("rights", None)
-    if not policy_rights:
-        return "missing rights in policy"
-    if not isinstance(policy_rights, dict):
-        return "rights must be dict"
-    for right_name, right_def in policy_rights.items():
-        if not isinstance(right_def, dict):
-            return 'bad right "{}": must be a dict'.format(right_name)
-
-        precond = right_def.get("precond", None)
-        if precond is not None and precond not in ["selfOrg"]:
-            return 'bad right "{}": unknown precond "{}"'.format(right_name, precond)
-
-        default_value = right_def.get("default", None)
-        if default_value is None:
-            return 'bad right "{}": missing default value'.format(right_name)
-
-        right_type = right_def.get("type", "bool")
-        if right_type not in ["bool", "int"]:
-            return 'bad right "{}": invalid type "{}"'.format(right_name, right_type)
-
-        if not _validate_value(right_def, default_value):
-            return 'bad right "{}": invalid default "{}"'.format(right_name, default_value)
-
-    # validate roles
-    policy_roles = config.get("roles", {})
-    if policy_roles:
-        if not isinstance(policy_roles, dict):
-            return "roles must be dict"
-
-        for role_name, role_desc in policy_roles.items():
-            if not isinstance(role_name, str):
-                return 'bad role name "{}": must be str'.format(role_name)
-            if not isinstance(role_desc, str):
-                return 'bad role desc "{}": must be str'.format(role_desc)
-
-    # validate groups
-    policy_groups = config.get("groups", {})
-    if policy_groups:
-        if not isinstance(policy_groups, dict):
-            return "groups must be dict"
-
-        for grp_name, grp_def in policy_groups.items():
-            if not isinstance(grp_def, dict):
-                return 'bad group "{}": group def must be dict'.format(grp_name)
-            rules = grp_def.get("rules", None)
-            if rules:
-                if not isinstance(rules, dict):
-                    return 'bad group "{}": rules must be dict'.format(grp_name)
-                for rule_name, rule_value in rules.items():
-                    rule_def = policy_rules.get(rule_name, None)
-                    if not rule_def:
-                        return 'bad group "{}": unknown rule "{}"'.format(grp_name, rule_name)
-                    if not _validate_value(rule_def, rule_value):
-                        return 'bad group "{}": invalid value "{}" for rule "{}"'.format(
-                            grp_name, rule_value, rule_name
-                        )
-
-            role_rights = grp_def.get("role_rights", None)
-            if role_rights:
-                if not isinstance(role_rights, dict):
-                    return 'bad group "{}": role_rights must be dict'.format(grp_name)
-                for role_name, rights in role_rights.items():
-                    if not isinstance(rights, dict):
-                        return 'bad group "{}": rights of role "{}" must be dict'.format(grp_name, role_name)
-                    for right_name, right_value in rights.items():
-                        right_def = policy_rights.get(right_name, None)
-                        if not right_def:
-                            return 'bad group "{}": unknown right "{}" in role "{}" must be dict'.format(
-                                grp_name, right_name, role_name
-                            )
-                        if not _validate_value(right_def, right_value):
-                            return 'bad group "{}": invalid value "{}" for right "{}" in role "{}" must be dict'.format(
-                                grp_name, right_value, right_name, role_name
-                            )
-
-    # validate orgs
-    policy_orgs = config.get("orgs", None)
-    if not policy_orgs:
-        return "missing orgs in policy"
-
-    if not isinstance(policy_orgs, dict):
-        return "orgs must be a dict"
-
-    for org_name, groups in policy_orgs.items():
-        if not isinstance(groups, list):
-            return 'bad org "{}": groups must be a list'.format(org_name)
-        if len(groups) <= 0:
-            return 'bad org "{}": groups not defined'.format(org_name)
-        for grp_name in groups:
-            if not isinstance(grp_name, str):
-                return 'bad org "{}": group name must be str'.format(org_name)
-            grp_def = policy_groups.get(grp_name, None)
-            if not grp_def:
-                return 'bad org "{}": undefined group "{}"'.format(org_name, grp_name)
-
-    # validate users
-    policy_users = config.get("users", None)
-    if not policy_users:
-        return "missing users in policy"
-
-    if not isinstance(policy_users, dict):
-        return "users must be dict"
-
-    for user_name, user_def in policy_users.items():
-        if not isinstance(user_def, dict):
-            return 'bad user "{}": definition must be dict'.format(user_name)
-        org_name = user_def.get("org", None)
-        if not org_name:
-            return 'bad user "{}": missing org'.format(user_name)
-
-        org_def = policy_orgs.get(org_name)
-        if not org_def:
-            return 'bad user "{}": undefined org "{}"'.format(user_name, org_name)
-
-        roles = user_def.get("roles", None)
-        if not roles:
-            return 'bad user "{}": missing roles'.format(user_name)
-        if not isinstance(roles, list):
-            return 'bad user "{}": roles must be list'.format(user_name)
-        if len(roles) <= 0:
-            return 'bad user "{}": no roles defined'.format(user_name)
-        for role_name in roles:
-            if not isinstance(role_name, str):
-                return 'bad user "{}": role name must be str'.format(user_name)
-            role_def = policy_roles.get(role_name, None)
-            if not role_def:
-                return 'bad user "{}": undefined role "{}" must be str'.format(user_name, role_name)
-
-    # validate sites
-    sites = config.get("sites", None)
-    if not sites:
-        return "missing sites in policy"
-
-    if not isinstance(sites, dict):
-        return "sites must be dict"
-
-    for site_name, org_name in sites.items():
-        if org_name not in policy_orgs:
-            return 'bad site "{}": undefined org "{}"'.format(site_name, org_name)
-
-    return ""
-
-
-def _group_rule_key(grp_name: str, rule_name: str):
-    return grp_name + ":" + rule_name
-
-
-def _group_role_right_key(grp_name: str, role_name: str, right_name: str):
-    return grp_name + ":" + role_name + ":" + right_name
-
-
-def _eval_bool(space: dict, keys: [str]):
-    exit_value = None
-    for k in keys:
-        value = space.get(k, None)
-        if value:
-            return True
-        if value is not None:
-            exit_value = False
-    return exit_value
-
-
-def _eval_int(space: dict, keys: [str]):
-    exit_value = None
-    for k in keys:
-        value = space.get(k, None)
-        if value is not None:
-            if exit_value is None or exit_value < value:
-                exit_value = value
-    return exit_value
-
-
-class Policy(object):
-    def __init__(self, conf: dict):
-        """The authorization policy definition.
-
-        Authorization policy definition with methods to access information about the policy. Init creates the internal
-        representation of the policy from a config dictionary.
-
-        Policy evaluation result:
-
-        For bool type of rules or rights:
-
-            True - the rule is satisfied or the right is granted
-            False - the rule is not satisfied; the right iis not granted
-            None - the rule or right is not applicable (precondition not met)
-
-        For int type or rules or rights:
-
-            Number - the value of the evaluation
-            None - the rule or right is not applicable (precondition not met)
-
-        Args:
-            conf (dict): the configuration dictionary with keys=groups, users, rights, rules, sites, orgs
-        """
-        self.config = conf
-        self.preconf_valuators = {"selfOrg": self._eval_precond_self_org}
-
-        # compute the rule and right spaces
-        self.rule_space = {}
-        self.right_space = {}
-        groups = conf["groups"]
-        for grp_name, grp_def in groups.items():
-            rules = grp_def.get("rules", None)
-            if rules:
-                for rule_name, rule_value in rules.items():
-                    key = _group_rule_key(grp_name, rule_name)
-                    self.rule_space[key] = rule_value
-
-            role_rights = grp_def.get("role_rights", None)
-            if role_rights:
-                for role_name, rights in role_rights.items():
-                    for right_name, right_value in rights.items():
-                        key = _group_role_right_key(grp_name, role_name, right_name)
-                        self.right_space[key] = right_value
-
-    def get_config(self):
-        return self.config
-
-    def _eval_precond(self, precond: str, user_name: str, org_name: str):
-        evaluator = self.preconf_valuators.get(precond, None)
-        if not evaluator:
-            return None
+            for r in role:
+                if not isinstance(r, str):
+                    raise TypeError(f"role value must be a str but got {type(r)}")
+                self.roles.append(_normalize_str(r))
         else:
-            return evaluator(user_name, org_name)
+            raise TypeError(f"role must be a str or list of str but got {type(role)}")
 
-    def _eval_precond_self_org(self, user_name: str, org_name: str):
-        users = self.config["users"]
-        user = users[user_name]
-        return user["org"] == org_name
-
-    def _get_org_groups(self, org_name: str):
-        orgs = self.config["orgs"]
-        return orgs.get(org_name, None)
-
-    def evaluate_rule_on_org(self, rule_name: str, org_name: str):
-        rules = self.config["rules"]
-        rule_def = rules.get(rule_name, None)
-        if not rule_def:
-            return None, 'undefined rule "{}"'.format(rule_name)
-
-        rule_type = rule_def.get("type", "bool")
-        groups = self._get_org_groups(org_name)
-        if not groups:
-            return None, 'unknown org "{}"'.format(org_name)
-
-        keys = []
-        for grp_name in groups:
-            keys.append(_group_rule_key(grp_name, rule_name))
-
-        if rule_type == "bool":
-            result = _eval_bool(space=self.rule_space, keys=keys)
-        else:
-            result = _eval_bool(space=self.rule_space, keys=keys)
-
-        if result is None:
-            result = rule_def["default"]
-        return result, ""
-
-    def _get_org_of_site(self, site_name):
-        sites = self.config["sites"]
-        return sites.get(site_name, None)
-
-    def evaluate_rule_on_site(self, rule_name: str, site_name: str):
-        org_name = self._get_org_of_site(site_name)
-        if not org_name:
-            return None, 'unknown site "{}"'.format(site_name)
-        return self.evaluate_rule_on_org(rule_name, org_name)
-
-    def evaluate_user_right_on_org(self, right_name: str, user_name: str, org_name: str):
-        rights = self.config["rights"]
-        right_def = rights.get(right_name, None)
-        if not right_def:
-            return None, 'undefined right "{}"'.format(right_name)
-
-        right_type = right_def.get("type", "bool")
-        groups = self._get_org_groups(org_name)
-        if not groups:
-            return None, 'unknown org "{}"'.format(org_name)
-
-        users = self.config["users"]
-        user = users.get(user_name, None)
-        if not user:
-            return None, 'unknown user "{}"'.format(user_name)
-
-        precond = right_def.get("precond", None)
-        if precond:
-            matched = self._eval_precond(precond, user_name, org_name)
-            if not matched:
-                if right_type == "bool":
-                    return False, ""
-                else:
-                    return 0, ""
-
-        roles = user["roles"]
-        keys = []
-        for grp_name in groups:
-            for role_name in roles:
-                keys.append(_group_role_right_key(grp_name, role_name, right_name))
-
-        if right_type == "bool":
-            result = _eval_bool(self.right_space, keys)
-        else:
-            result = _eval_int(self.right_space, keys)
-
-        if result is None:
-            result = right_def["default"]
-        return result, ""
-
-    def evaluate_user_right_on_site(self, right_name: str, user_name: str, site_name: str):
-        org_name = self._get_org_of_site(site_name)
-        if not org_name:
-            return None, 'unknown site "{}"'.format(site_name)
-        return self.evaluate_user_right_on_org(right_name, user_name, org_name)
-
-    def get_user(self, user_name: str):
-        users = self.config["users"]
-        return users.get(user_name, None)
-
-    def get_users(self):
-        return self.config["users"]
-
-    def get_sites(self):
-        return self.config["sites"]
-
-    def get_rights(self):
-        return self.config["rights"]
-
-    def get_rules(self):
-        return self.config["rules"]
-
-    def get_right_type(self, right_name: str):
-        rights = self.config["rights"]
-        right_def = rights.get(right_name, None)
-        if not right_def:
-            return None
-        return right_def.get("type", "bool")
+    def __str__(self):
+        return f"{self.name}:{self.org}:{self.roles[0]}"
 
 
 class AuthzContext(object):
-    def __init__(self, user_name: str, site_names: List[str]):
-        """Base class to contain context data for authorization.
-
-        Args:
-            user_name (str): user name to be checked
-            site_names (List[str]): site names to be checked against
-        """
-        self.user_name = user_name
-        self.site_names = site_names
+    def __init__(self, right: str, user: Person, submitter: Person = None):
+        """Base class to contain context data for authorization."""
+        self.right = right
+        self.user = user
+        self.submitter = submitter
         self.attrs = {}
+        if not submitter:
+            self.submitter = Person("", "", "")
 
     def set_attr(self, key: str, value):
         self.attrs[key] = value
@@ -419,34 +60,386 @@ class AuthzContext(object):
         return self.attrs.get(key, default)
 
 
-class Authorizer(object):
+class ConditionEvaluator(object):
+    def evaluate(self, site_org: str, ctx: AuthzContext) -> bool:
+        pass
+
+
+class UserOrgEvaluator(ConditionEvaluator):
+    def __init__(self, target):
+        self.target = target
+
+    def evaluate(self, site_org: str, ctx: AuthzContext):
+        if self.target == _TARGET_SITE:
+            return ctx.user.org == site_org
+        elif self.target == _TARGET_SUBMITTER:
+            return ctx.user.org == ctx.submitter.org
+        else:
+            return ctx.user.org == self.target
+
+
+class UserNameEvaluator(ConditionEvaluator):
+    def __init__(self, target: str):
+        self.target = target
+
+    def evaluate(self, site_org: str, ctx: AuthzContext):
+        if self.target == _TARGET_SUBMITTER:
+            return ctx.user.name == ctx.submitter.name
+        else:
+            return ctx.user.name == self.target
+
+
+class TrueEvaluator(ConditionEvaluator):
+    def evaluate(self, site_org: str, ctx: AuthzContext) -> bool:
+        return True
+
+
+class FalseEvaluator(ConditionEvaluator):
+    def evaluate(self, site_org: str, ctx: AuthzContext) -> bool:
+        return False
+
+
+class _RoleRightConditions(object):
     def __init__(self):
+        self.allowed_conditions = []
+        self.blocked_conditions = []
+        self.exp = None
+
+    def _any_condition_matched(self, conds: [ConditionEvaluator], site_org: str, ctx: AuthzContext):
+        # if any condition is met, return True
+        # only when all conditions fail to match, return False
+        for e in conds:
+            matched = e.evaluate(site_org, ctx)
+            if matched:
+                return True
+        return False
+
+    def evaluate(self, site_org: str, ctx: AuthzContext):
+        # first evaluate blocked list
+        if self.blocked_conditions:
+            if self._any_condition_matched(self.blocked_conditions, site_org, ctx):
+                # if any block condition is met, return False
+                # print("blocked")
+                return False
+
+        # evaluate allowed list
+        if self.allowed_conditions:
+            if self._any_condition_matched(self.allowed_conditions, site_org, ctx):
+                # print("allowed")
+                return True
+            else:
+                # all allowed conditions failed
+                # print("not allowed")
+                return False
+
+        # no allowed list specified - only blocked list specified
+        # we got here since no blocked condition matched
+        return True
+
+    def _parse_one_expression(self, exp) -> str:
+        v = _normalize_str(exp)
+        blocked = False
+        parts = v.split()
+        if len(parts) == 2 and parts[0] == "not":
+            blocked = True
+            v = parts[1]
+
+        if v in ["all", "any"]:
+            ev = TrueEvaluator()
+        elif v in ["none", "no"]:
+            ev = FalseEvaluator()
+        else:
+            parts = v.split(":")
+            if len(parts) == 2:
+                target_type = _normalize_str(parts[0])
+                target_value = _normalize_str(parts[1])
+
+                if target_type in ["o", "org"]:
+                    ev = UserOrgEvaluator(target_value)
+                elif target_type in ["n", "name"]:
+                    ev = UserNameEvaluator(target_value)
+                else:
+                    return f'bad condition expression "{exp}": invalid type "{target_type}"'
+            else:
+                return f'bad condition expression "{exp}"'
+
+        if blocked:
+            self.blocked_conditions.append(ev)
+        else:
+            self.allowed_conditions.append(ev)
+        return ""
+
+    def parse_expression(self, exp):
+        """
+        Parse the value expression into a list of condition(s)
+
+
+        Args:
+            exp: expression to be parsed
+
+        Returns:
+            A list of conditions if exp is valid. Each condition is expressed as str to be evaluated.
+            Return an error str if value is invalid
+
+        """
+        self.exp = exp
+        if isinstance(exp, str):
+            return self._parse_one_expression(exp)
+
+        if isinstance(exp, list):
+            # we expect the list contains str only
+            if not exp:
+                # empty list
+                return "bad condition expression - no conditions specified"
+
+            for ex in exp:
+                err = self._parse_one_expression(ex)
+                if err:
+                    # this is an error
+                    return err
+        else:
+            return f"bad condition expression type - expect str or list but got {type(exp)}"
+
+
+class Policy(object):
+    def __init__(self, config: dict, role_right_map: dict, roles: list, rights: list, role_rights: dict):
+        self.config = config
+        self.role_right_map = role_right_map
+        self.roles = roles
+        self.rights = rights
+        self.roles.sort()
+        self.rights.sort()
+        self.role_rights = role_rights
+
+    def get_rights(self):
+        return self.rights
+
+    def get_roles(self):
+        return self.roles
+
+    def _eval_for_role(self, role: str, site_org: str, ctx: AuthzContext):
+        conds = self.role_right_map.get(_role_right_key(role, _ANY_RIGHT))
+        if not conds:
+            conds = self.role_right_map.get(_role_right_key(role, ctx.right))
+
+        if not conds:
+            return False
+
+        assert isinstance(conds, _RoleRightConditions)
+        return conds.evaluate(site_org, ctx)
+
+    def evaluate(self, site_org: str, ctx: AuthzContext):
+        """
+
+        Args:
+            site_org:
+            right: right to be evaluated
+            ctx:
+
+        Returns: a tuple of (result, error)
+
+        """
+        site_org = _normalize_str(site_org)
+        for role in ctx.user.roles:
+            permitted = self._eval_for_role(role=role, site_org=site_org, ctx=ctx)
+            if permitted:
+                # permitted if any role is okay
+                return True, ""
+        return False, ""
+
+
+def _normalize_str(s: str) -> str:
+    return " ".join(s.lower().split())
+
+
+def _role_right_key(role_name: str, right_name: str):
+    return role_name + ":" + right_name
+
+
+def _add_role_right_conds(role, right, conds, rr_map: dict, rights, right_conds):
+    right_conds[right] = conds.exp
+    rr_map[_role_right_key(role, right)] = conds
+    if right not in rights:
+        rights.append(right)
+
+
+def parse_policy_config(config: dict, right_categories: dict):
+    """Validates that an authorization policy configuration has the right syntax.
+
+    Args:
+        config: configuration dictionary to validate
+        right_categories: a dict of right => category mapping
+
+    Returns: a Policy object if no error, a string describing the error encountered
+
+    """
+    if not isinstance(config, dict):
+        return None, f"policy definition must be a dict but got {type(config)}"
+
+    if not config:
+        # empty policy
+        return None, "policy definition is empty"
+
+    role_right_map = {}
+    role_rights = {}
+    roles = []
+    rights = []
+
+    # Compute category => right list
+    cat_to_rights = {}
+    if right_categories:
+        for r, c in right_categories.items():
+            right_list = cat_to_rights.get(c)
+            if not right_list:
+                right_list = []
+            right_list.append(r)
+            cat_to_rights[c] = right_list
+
+    # check version
+    format_version = config.get(_KEY_FORMAT_VERSION)
+    if not format_version or format_version != "1.0":
+        return None, "missing or invalid policy format_version: must be 1.0"
+
+    permissions = config.get(_KEY_PERMISSIONS)
+    if not permissions:
+        return None, "missing permissions"
+
+    if not isinstance(permissions, dict):
+        return None, f"invalid permissions: expect a dict but got {type(permissions)}"
+
+    # permissions is a dict of role => rights;
+    for role_name, right_conf in permissions.items():
+        if not isinstance(role_name, str):
+            return None, f"bad role name: expect a str but got {type(role_name)}"
+
+        role_name = _normalize_str(role_name)
+        roles.append(role_name)
+        right_conds = {}  # rights of this role
+        role_rights[role_name] = right_conds
+
+        if isinstance(right_conf, str) or isinstance(right_conf, list):
+            conds = _RoleRightConditions()
+            err = conds.parse_expression(right_conf)
+            if err:
+                return None, err
+            _add_role_right_conds(role_name, _ANY_RIGHT, conds, role_right_map, rights, right_conds)
+            continue
+
+        if not isinstance(right_conf, dict):
+            return None, f"bad right config: expect a dict but got {type(right_conf)}"
+
+        # process right categories
+        for right, exp in right_conf.items():
+            if not isinstance(right, str):
+                return None, f"bad right name: expect a str but got {type(right)}"
+
+            right = _normalize_str(right)
+
+            # see whether this is a right category
+            right_list = cat_to_rights.get(right)
+            if not right_list:
+                # this is a regular right - skip it
+                continue
+
+            conds = _RoleRightConditions()
+            err = conds.parse_expression(exp)
+            if err:
+                return None, err
+
+            # all rights in the category share the same conditions
+            _add_role_right_conds(role_name, right, conds, role_right_map, rights, right_conds)
+            for r in right_list:
+                _add_role_right_conds(role_name, r, conds, role_right_map, rights, right_conds)
+
+        # process regular rights, which may override the rights from categories
+        for right, exp in right_conf.items():
+            right = _normalize_str(right)
+
+            # see whether this is a right category
+            right_list = cat_to_rights.get(right)
+            if right_list:
+                # this is category - already processed
+                continue
+
+            conds = _RoleRightConditions()
+            err = conds.parse_expression(exp)
+            if err:
+                return None, err
+
+            # this may cause the same right to be overwritten in the map
+            _add_role_right_conds(role_name, right, conds, role_right_map, rights, right_conds)
+
+    return Policy(config=config, role_right_map=role_right_map, role_rights=role_rights, roles=roles, rights=rights), ""
+
+
+class Authorizer(object):
+    def __init__(self, site_org: str, right_categories: dict = None):
         """Base class containing the authorization policy."""
+        self.site_org = _normalize_str(site_org)
+        self.right_categories = right_categories
         self.policy = None
         self.last_load_time = None
 
     def get_policy(self) -> Policy:
         return self.policy
 
-    def authorize(self, ctx: AuthzContext) -> (object, str):
+    def authorize(self, ctx: AuthzContext) -> (bool, str):
+        if not ctx:
+            return True, ""
+
+        assert isinstance(ctx, AuthzContext), f"ctx must be AuthzContext but got {type(ctx)}"
+        assert isinstance(ctx.user, Person), "program error: no user in ctx!"
+        if "super" in ctx.user.roles:
+            # use this for testing purpose
+            return True, ""
+
+        authorized, err = self.evaluate(ctx)
+        if not authorized:
+            if err:
+                return False, err
+            else:
+                return False, f"user '{ctx.user.name}' is not authorized for '{ctx.right}'"
+
         return True, ""
 
-    def evaluate_user_right_on_site(self, right_name: str, user_name: str, site_name: str):
-        if not self.policy:
-            return None, "policy not defined"
-        return self.policy.evaluate_user_right_on_site(right_name=right_name, user_name=user_name, site_name=site_name)
-
-    def evaluate_rule_on_site(self, rule_name: str, site_name: str):
+    def evaluate(self, ctx: AuthzContext):
         if not self.policy:
             return None, "policy not defined"
 
-        return self.policy.evaluate_rule_on_site(rule_name=rule_name, site_name=site_name)
+        return self.policy.evaluate(ctx=ctx, site_org=self.site_org)
 
     def load_policy(self, policy_config: dict) -> str:
-        err = validate_policy_config(policy_config)
+        policy, err = parse_policy_config(policy_config, self.right_categories)
         if err:
+            # this is an error
             return err
 
-        self.policy = Policy(policy_config)
+        self.policy = policy
         self.last_load_time = time.time()
         return ""
+
+
+class AuthorizationService(object):
+
+    the_authorizer = None
+
+    @staticmethod
+    def initialize(authorizer: Authorizer) -> (Authorizer, str):
+        assert isinstance(authorizer, Authorizer), "authorizer must be Authorizer but got {}".format(type(authorizer))
+
+        if not AuthorizationService.the_authorizer:
+            # authorizer is not loaded
+            AuthorizationService.the_authorizer = authorizer
+
+        return AuthorizationService.the_authorizer, ""
+
+    @staticmethod
+    def get_authorizer():
+        return AuthorizationService.the_authorizer
+
+    @staticmethod
+    def authorize(ctx: AuthzContext):
+        if not AuthorizationService.the_authorizer:
+            # no authorizer - assume that authorization is not required
+            return True, ""
+        return AuthorizationService.the_authorizer.authorize(ctx)

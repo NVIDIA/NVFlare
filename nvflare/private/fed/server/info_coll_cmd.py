@@ -15,9 +15,10 @@
 import json
 from typing import List
 
-from nvflare.apis.fl_constant import AdminCommandNames, WorkspaceConstants
+from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.fuel.hci.conn import Connection
-from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
+from nvflare.fuel.hci.reg import CommandModuleSpec, CommandSpec
+from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.private.defs import InfoCollectorTopic, RequestHeader
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
@@ -25,9 +26,10 @@ from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import WidgetID
 
 from .cmd_utils import CommandUtil
+from .job_cmds import JobCommandModule
 
 
-class InfoCollectorCommandModule(CommandModule, CommandUtil):
+class InfoCollectorCommandModule(JobCommandModule, CommandUtil):
     """This class is for server side info collector commands.
 
     NOTE: we only support Server side info collector commands for now,
@@ -61,7 +63,7 @@ class InfoCollectorCommandModule(CommandModule, CommandUtil):
                     description="reset errors",
                     usage="reset_errors",
                     handler_func=self.reset_errors,
-                    authz_func=self.authorize_info_collection,
+                    authz_func=self.command_authz_required,
                     visible=True,
                 ),
             ],
@@ -70,14 +72,11 @@ class InfoCollectorCommandModule(CommandModule, CommandUtil):
     def authorize_info_collection(self, conn: Connection, args: List[str]):
         if len(args) != 3:
             conn.append_error("syntax error: missing job_id and target")
-            return False, None
+            return PreAuthzReturnCode.ERROR
 
-        run_destination = args[1].lower()
-        if not run_destination.startswith(WorkspaceConstants.WORKSPACE_PREFIX):
-            conn.append_error("syntax error: run_destination must be run_XXX")
-            return False, None
-        job_id = run_destination[len(WorkspaceConstants.WORKSPACE_PREFIX) :]
-        conn.set_prop(self.JOB_ID, job_id)
+        rt = self.authorize_job(conn, args)
+        if rt == PreAuthzReturnCode.ERROR:
+            return rt
 
         engine = conn.app_ctx
         if not isinstance(engine, ServerEngineInternalSpec):
@@ -86,14 +85,15 @@ class InfoCollectorCommandModule(CommandModule, CommandUtil):
         collector = engine.get_widget(WidgetID.INFO_COLLECTOR)
         if not collector:
             conn.append_error("info collector not available")
-            return False, None
+            return PreAuthzReturnCode.ERROR
 
         if not isinstance(collector, InfoCollector):
             conn.append_error("system error: info collector not right object")
-            return False, None
+            return PreAuthzReturnCode.ERROR
 
         conn.set_prop(self.CONN_KEY_COLLECTOR, collector)
 
+        job_id = conn.get_prop(self.JOB_ID)
         run_info = engine.get_app_run_info(job_id)
         if not run_info:
             conn.append_string(
@@ -101,14 +101,8 @@ class InfoCollectorCommandModule(CommandModule, CommandUtil):
                     job_id
                 )
             )
-            return False, None
-
-        # return True, FLAuthzContext.new_authz_context(
-        #     site_names=['server'],
-        #     actions=[Action.VIEW])
-        auth_args = [args[0]]
-        auth_args.extend(args[2:])
-        return self.authorize_view(conn, auth_args)
+            return PreAuthzReturnCode.ERROR
+        return rt
 
     def show_stats(self, conn: Connection, args: List[str]):
         engine = conn.app_ctx
@@ -121,7 +115,7 @@ class InfoCollectorCommandModule(CommandModule, CommandUtil):
             result = engine.show_stats(job_id)
             conn.append_any(result)
         elif target_type == self.TARGET_TYPE_CLIENT:
-            message = new_message(conn, topic=InfoCollectorTopic.SHOW_STATS, body="")
+            message = new_message(conn, topic=InfoCollectorTopic.SHOW_STATS, body="", require_authz=True)
             message.set_header(RequestHeader.JOB_ID, job_id)
             replies = self.send_request_to_clients(conn, message)
             self._process_stats_replies(conn, replies)
@@ -141,7 +135,7 @@ class InfoCollectorCommandModule(CommandModule, CommandUtil):
             result = engine.get_errors(job_id)
             conn.append_any(result)
         elif target_type == self.TARGET_TYPE_CLIENT:
-            message = new_message(conn, topic=InfoCollectorTopic.SHOW_ERRORS, body="")
+            message = new_message(conn, topic=InfoCollectorTopic.SHOW_ERRORS, body="", require_authz=True)
             replies = self.send_request_to_clients(conn, message)
             self._process_stats_replies(conn, replies)
 

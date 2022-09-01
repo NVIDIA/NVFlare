@@ -14,17 +14,18 @@
 
 """FL Server / Client startup configer."""
 
-import logging
-import logging.config
 import os
 import re
 
 from nvflare.apis.fl_component import FLComponent
+from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.json_scanner import Node
 from nvflare.fuel.utils.wfconf import ConfigContext, ConfigError
 from nvflare.private.defs import SSLConstants
+from nvflare.private.fed.utils.fed_utils import configure_logging
 from nvflare.private.json_configer import JsonConfigurator
+from nvflare.private.privacy_manager import PrivacyManager, Scope
 
 from .deployer.base_client_deployer import BaseClientDeployer
 from .deployer.server_deployer import ServerDeployer
@@ -37,22 +38,12 @@ FL_MODULES = ["server", "client", "app"]
 class FLServerStarterConfiger(JsonConfigurator):
     """FL Server startup configer."""
 
-    def __init__(
-        self,
-        app_root: str,
-        server_config_file_name=None,
-        log_config_file_name=None,
-        kv_list=None,
-        logging_config=True,
-    ):
+    def __init__(self, workspace: Workspace, kv_list=None):
         """Init the FLServerStarterConfiger.
 
         Args:
-            app_root: application root
-            server_config_file_name: server config filename
-            log_config_file_name: log config filename
+            workspace: the workspace object
             kv_list: key value pair list
-            logging_config: True/False
         """
         base_pkgs = FL_PACKAGES
         module_names = FL_MODULES
@@ -63,16 +54,14 @@ class FLServerStarterConfiger(JsonConfigurator):
         else:
             self.cmd_vars = {}
 
-        if logging_config:
-            log_config_file_path = os.path.join(app_root, log_config_file_name)
-            assert os.path.isfile(log_config_file_path), "missing log config file {}".format(log_config_file_path)
-            logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
+        configure_logging(workspace)
 
-        server_config_file_name = os.path.join(app_root, server_config_file_name)
+        server_startup_file_path = workspace.get_server_startup_file_path()
+        resource_config_path = workspace.get_resources_file_path()
 
         JsonConfigurator.__init__(
             self,
-            config_file_name=server_config_file_name,
+            config_file_name=[server_startup_file_path, resource_config_path],
             base_pkgs=base_pkgs,
             module_names=module_names,
             exclude_libs=True,
@@ -81,14 +70,14 @@ class FLServerStarterConfiger(JsonConfigurator):
         self.components = {}  # id => component
         self.handlers = []
 
-        self.app_root = app_root
-        self.server_config_file_name = server_config_file_name
+        self.workspace = workspace
+        self.server_config_file_names = [server_startup_file_path, resource_config_path]
 
         self.deployer = None
         self.app_validator = None
-        self.enable_byoc = False
         self.snapshot_persistor = None
         self.overseer_agent = None
+        self.site_org = ""
 
     def start_config(self, config_ctx: ConfigContext):
         """Start the config process.
@@ -103,13 +92,17 @@ class FLServerStarterConfiger(JsonConfigurator):
         try:
             for server in self.config_data["servers"]:
                 if server.get(SSLConstants.PRIVATE_KEY):
-                    server[SSLConstants.PRIVATE_KEY] = os.path.join(self.app_root, server[SSLConstants.PRIVATE_KEY])
+                    server[SSLConstants.PRIVATE_KEY] = self.workspace.get_file_path_in_startup(
+                        server[SSLConstants.PRIVATE_KEY]
+                    )
                 if server.get(SSLConstants.CERT):
-                    server[SSLConstants.CERT] = os.path.join(self.app_root, server[SSLConstants.CERT])
+                    server[SSLConstants.CERT] = self.workspace.get_file_path_in_startup(server[SSLConstants.CERT])
                 if server.get(SSLConstants.ROOT_CERT):
-                    server[SSLConstants.ROOT_CERT] = os.path.join(self.app_root, server[SSLConstants.ROOT_CERT])
-        except Exception:
-            raise ValueError("Server config error: '{}'".format(self.server_config_file_name))
+                    server[SSLConstants.ROOT_CERT] = self.workspace.get_file_path_in_startup(
+                        server[SSLConstants.ROOT_CERT]
+                    )
+        except BaseException:
+            raise ValueError(f"Server config error: '{self.server_config_file_names}'")
 
     def build_component(self, config_dict):
         t = super().build_component(config_dict)
@@ -130,10 +123,6 @@ class FLServerStarterConfiger(JsonConfigurator):
 
         element = node.element
         path = node.path()
-
-        if path == "enable_byoc":
-            self.enable_byoc = element
-            return
 
         if path == "app_validator" and isinstance(element, dict):
             self.app_validator = self.build_component(element)
@@ -172,8 +161,6 @@ class FLServerStarterConfiger(JsonConfigurator):
         secure_train = False
         if self.cmd_vars.get("secure_train"):
             secure_train = self.cmd_vars["secure_train"]
-        if not secure_train:
-            self.enable_byoc = True
 
         custom_validators = [self.app_validator] if self.app_validator else []
         self.app_validator = FLAppValidator(custom_validators=custom_validators)
@@ -183,7 +170,7 @@ class FLServerStarterConfiger(JsonConfigurator):
             "app_validator": self.app_validator,
             "server_config": self.config_data["servers"],
             "server_host": self.cmd_vars.get("host", None),
-            "enable_byoc": self.enable_byoc,
+            "site_org": self.cmd_vars.get("org", ""),
             "snapshot_persistor": self.snapshot_persistor,
             "overseer_agent": self.overseer_agent,
             "server_components": self.components,
@@ -193,27 +180,18 @@ class FLServerStarterConfiger(JsonConfigurator):
         deployer = ServerDeployer()
         deployer.build(build_ctx)
         self.deployer = deployer
+        self.site_org = build_ctx["site_org"]
 
 
 class FLClientStarterConfiger(JsonConfigurator):
     """FL Client startup configer."""
 
-    def __init__(
-        self,
-        app_root: str,
-        client_config_file_name=None,
-        log_config_file_name=None,
-        kv_list=None,
-        logging_config=True,
-    ):
+    def __init__(self, workspace: Workspace, kv_list=None):
         """Init the FLClientStarterConfiger.
 
         Args:
-            app_root: application root
-            client_config_file_name: client config filename
-            log_config_file_name: log config filename
+            workspace: the workspace object
             kv_list: key value pair list
-            logging_config: True/False
         """
         base_pkgs = FL_PACKAGES
         module_names = FL_MODULES
@@ -224,16 +202,14 @@ class FLClientStarterConfiger(JsonConfigurator):
         else:
             self.cmd_vars = {}
 
-        if logging_config:
-            log_config_file_path = os.path.join(app_root, log_config_file_name)
-            assert os.path.isfile(log_config_file_path), "missing log config file {}".format(log_config_file_path)
-            logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
+        configure_logging(workspace)
 
-        client_config_file_name = os.path.join(app_root, client_config_file_name)
+        client_startup_file_path = workspace.get_client_startup_file_path()
+        resources_file_path = workspace.get_resources_file_path()
 
         JsonConfigurator.__init__(
             self,
-            config_file_name=client_config_file_name,
+            config_file_name=[client_startup_file_path, resources_file_path],
             base_pkgs=base_pkgs,
             module_names=module_names,
             exclude_libs=True,
@@ -242,11 +218,12 @@ class FLClientStarterConfiger(JsonConfigurator):
         self.components = {}  # id => component
         self.handlers = []
 
-        self.app_root = app_root
-        self.client_config_file_name = client_config_file_name
-        self.enable_byoc = False
+        self.workspace = workspace
+        self.client_config_file_names = [client_startup_file_path, resources_file_path]
         self.base_deployer = None
         self.overseer_agent = None
+        self.site_org = ""
+        self.app_validator = None
 
     def process_config_element(self, config_ctx: ConfigContext, node: Node):
         """Process config element.
@@ -258,8 +235,8 @@ class FLClientStarterConfiger(JsonConfigurator):
         element = node.element
         path = node.path()
 
-        if path == "enable_byoc":
-            self.enable_byoc = element
+        if path == "app_validator" and isinstance(element, dict):
+            self.app_validator = self.build_component(element)
             return
 
         if path == "overseer_agent":
@@ -299,13 +276,15 @@ class FLClientStarterConfiger(JsonConfigurator):
         try:
             client = self.config_data["client"]
             if client.get(SSLConstants.PRIVATE_KEY):
-                client[SSLConstants.PRIVATE_KEY] = os.path.join(self.app_root, client[SSLConstants.PRIVATE_KEY])
+                client[SSLConstants.PRIVATE_KEY] = self.workspace.get_file_path_in_startup(
+                    client[SSLConstants.PRIVATE_KEY]
+                )
             if client.get(SSLConstants.CERT):
-                client[SSLConstants.CERT] = os.path.join(self.app_root, client[SSLConstants.CERT])
+                client[SSLConstants.CERT] = self.workspace.get_file_path_in_startup(client[SSLConstants.CERT])
             if client.get(SSLConstants.ROOT_CERT):
-                client[SSLConstants.ROOT_CERT] = os.path.join(self.app_root, client[SSLConstants.ROOT_CERT])
-        except Exception:
-            raise ValueError("Client config error: '{}'".format(self.client_config_file_name))
+                client[SSLConstants.ROOT_CERT] = self.workspace.get_file_path_in_startup(client[SSLConstants.ROOT_CERT])
+        except BaseException:
+            raise ValueError(f"Client config error: '{self.client_config_file_names}'")
 
     def finalize_config(self, config_ctx: ConfigContext):
         """Finalize the config process.
@@ -316,21 +295,22 @@ class FLClientStarterConfiger(JsonConfigurator):
         secure_train = False
         if self.cmd_vars.get("secure_train"):
             secure_train = self.cmd_vars["secure_train"]
-        if not secure_train:
-            self.enable_byoc = True
 
         build_ctx = {
             "client_name": self.cmd_vars.get("uid", ""),
+            "site_org": self.cmd_vars.get("org", ""),
             "server_config": self.config_data.get("servers", []),
             "client_config": self.config_data["client"],
             "secure_train": secure_train,
             "server_host": self.cmd_vars.get("host", None),
-            "enable_byoc": self.enable_byoc,
             "overseer_agent": self.overseer_agent,
             "client_components": self.components,
             "client_handlers": self.handlers,
         }
 
+        custom_validators = [self.app_validator] if self.app_validator else []
+        self.app_validator = FLAppValidator(custom_validators=custom_validators)
+        self.site_org = build_ctx["site_org"]
         self.base_deployer = BaseClientDeployer()
         self.base_deployer.build(build_ctx)
 
@@ -338,28 +318,27 @@ class FLClientStarterConfiger(JsonConfigurator):
 class FLAdminClientStarterConfigurator(JsonConfigurator):
     """FL Admin Client startup configurator."""
 
-    def __init__(self, app_root: str, admin_config_file_name=None):
+    def __init__(self, workspace: Workspace):
         """Uses the json configuration to start the FL admin client.
 
         Args:
-            app_root: application root
-            admin_config_file_name: admin config filename
+            workspace: the workspace object
         """
         base_pkgs = FL_PACKAGES
         module_names = FL_MODULES
 
-        admin_config_file_name = os.path.join(app_root, admin_config_file_name)
+        admin_config_file_path = workspace.get_admin_startup_file_path()
 
         JsonConfigurator.__init__(
             self,
-            config_file_name=admin_config_file_name,
+            config_file_name=admin_config_file_path,
             base_pkgs=base_pkgs,
             module_names=module_names,
             exclude_libs=True,
         )
 
-        self.app_root = app_root
-        self.admin_config_file_name = admin_config_file_name
+        self.workspace = workspace
+        self.admin_config_file_path = admin_config_file_path
         self.base_deployer = None
         self.overseer_agent = None
 
@@ -388,14 +367,110 @@ class FLAdminClientStarterConfigurator(JsonConfigurator):
         try:
             admin = self.config_data["admin"]
             if admin.get("client_key"):
-                admin["client_key"] = os.path.join(self.app_root, admin["client_key"])
+                admin["client_key"] = self.workspace.get_file_path_in_startup(admin["client_key"])
             if admin.get("client_cert"):
-                admin["client_cert"] = os.path.join(self.app_root, admin["client_cert"])
+                admin["client_cert"] = self.workspace.get_file_path_in_startup(admin["client_cert"])
             if admin.get("ca_cert"):
-                admin["ca_cert"] = os.path.join(self.app_root, admin["ca_cert"])
+                admin["ca_cert"] = self.workspace.get_file_path_in_startup(admin["ca_cert"])
+
             if admin.get("upload_dir"):
-                admin["upload_dir"] = os.path.join(os.path.dirname(self.app_root), admin["upload_dir"])
+                admin["upload_dir"] = self.workspace.get_file_path_in_root(admin["upload_dir"])
             if admin.get("download_dir"):
-                admin["download_dir"] = os.path.join(os.path.dirname(self.app_root), admin["download_dir"])
+                admin["download_dir"] = self.workspace.get_file_path_in_root(admin["download_dir"])
         except Exception:
-            raise ValueError("Client config error: '{}'".format(self.admin_config_file_name))
+            raise ValueError(f"Client config error: '{self.admin_config_file_path}'")
+
+
+class PrivacyConfiger(JsonConfigurator):
+    def __init__(self, workspace: Workspace, names_only: bool):
+        """Uses the json configuration to start the FL admin client.
+
+        Args:
+            workspace: the workspace object
+        """
+        self.privacy_manager = None
+        self.scopes = []
+        self.default_scope_name = None
+        self.components = {}
+        self.current_scope = None
+        self.names_only = names_only
+
+        privacy_file_path = workspace.get_site_privacy_file_path()
+        JsonConfigurator.__init__(
+            self,
+            config_file_name=privacy_file_path,
+            base_pkgs=FL_PACKAGES,
+            module_names=FL_MODULES,
+            exclude_libs=True,
+        )
+
+    def process_config_element(self, config_ctx: ConfigContext, node: Node):
+        """Process config element.
+
+        Args:
+            config_ctx: config context
+            node: element node
+        """
+        element = node.element
+        path = node.path()
+
+        if re.search(r"^scopes\.#[0-9]+$", path):
+            scope = Scope()
+            self.current_scope = scope
+            self.scopes.append(scope)
+            return
+
+        if re.search(r"^scopes\.#[0-9]+\.name$", path):
+            self.current_scope.set_name(element)
+            return
+
+        if path == "default_scope":
+            self.default_scope_name = element
+            return
+
+        if not self.names_only:
+            if re.search(r"^scopes\.#[0-9]+\.properties$", path):
+                self.current_scope.set_props(element)
+                return
+
+            if re.search(r"^scopes.#[0-9]+\.task_data_filters\.#[0-9]+$", path):
+                f = self.build_component(element)
+                self.current_scope.add_task_data_filter(f)
+                return
+
+            if re.search(r"^scopes.#[0-9]+\.task_result_filters\.#[0-9]+$", path):
+                f = self.build_component(element)
+                self.current_scope.add_task_result_filter(f)
+                return
+
+            if re.search(r"^components\.#[0-9]+$", path):
+                c = self.build_component(element)
+                cid = element.get("id", None)
+                if not cid:
+                    raise ConfigError("missing component id")
+
+                if not isinstance(cid, str):
+                    raise ConfigError('"id" must be str but got {}'.format(type(cid)))
+
+                if cid in self.components:
+                    raise ConfigError('duplicate component id "{}"'.format(cid))
+
+                self.components[cid] = c
+                return
+
+    def finalize_config(self, config_ctx: ConfigContext):
+        self.privacy_manager = PrivacyManager(
+            scopes=self.scopes, default_scope_name=self.default_scope_name, components=self.components
+        )
+
+
+def create_privacy_manager(workspace: Workspace, names_only: bool):
+    privacy_file_path = workspace.get_site_privacy_file_path()
+    if not os.path.isfile(privacy_file_path):
+        # privacy policy not defined
+        mgr = PrivacyManager(scopes=None, default_scope_name=None, components=None)
+    else:
+        configer = PrivacyConfiger(workspace, names_only)
+        configer.configure()
+        mgr = configer.privacy_manager
+    return mgr

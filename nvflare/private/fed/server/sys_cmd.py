@@ -51,7 +51,7 @@ class SystemCommandModule(CommandModule, CommandUtil):
                     description="get the system info",
                     usage="sys_info server|client <client-name> ...",
                     handler_func=self.sys_info,
-                    authz_func=self.authorize_operate,
+                    authz_func=self.authorize_server_operation,
                     visible=True,
                 ),
                 CommandSpec(
@@ -59,7 +59,7 @@ class SystemCommandModule(CommandModule, CommandUtil):
                     description="get the resources info",
                     usage="report_resources server | client <client-name> ...",
                     handler_func=self.report_resources,
-                    authz_func=self.authorize_operate,
+                    authz_func=self.authorize_server_operation,
                     visible=True,
                 ),
             ],
@@ -87,7 +87,7 @@ class SystemCommandModule(CommandModule, CommandUtil):
             return
 
         if target_type == self.TARGET_TYPE_CLIENT:
-            message = new_message(conn, topic=SysCommandTopic.SYS_INFO, body="")
+            message = new_message(conn, topic=SysCommandTopic.SYS_INFO, body="", require_authz=True)
             replies = self.send_request_to_clients(conn, message)
             self._process_replies(conn, replies)
             return

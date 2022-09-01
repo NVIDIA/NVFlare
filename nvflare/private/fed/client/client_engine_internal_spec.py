@@ -49,17 +49,21 @@ class ClientEngineInternalSpec(ClientEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def deploy_app(self, app_name: str, job_id: str, client_name: str, app_data) -> str:
-        """Deploys the app to specified run.
+    def deploy_app(self, app_name: str, job_id: str, job_meta: dict, client_name: str, app_data) -> str:
+        """Deploy the app to specified run.
 
         Args:
+            submitter_name: name of the job submitter
+            submitter_org: org of the job submitter
+            submitter_role: role of the job submitter
             app_name: FL_app name
             job_id: job that the app is to be deployed to
+            job_meta: meta data of the job that the app belongs to
             client_name: name of the client
             app_data: zip data of the app
 
         Returns:
-            A string message.
+            A error message if any; empty str is okay.
         """
         pass
 
