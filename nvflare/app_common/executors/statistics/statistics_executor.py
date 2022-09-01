@@ -14,6 +14,8 @@
 import random
 from typing import Dict, List, Optional
 
+import numpy as np
+
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
@@ -21,7 +23,7 @@ from nvflare.apis.fl_constant import ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
-from nvflare.app_common.abstract.statistics_spec import Feature, Histogram, MetricConfig, Statistics
+from nvflare.app_common.abstract.statistics_spec import Feature, Histogram, HistogramType, MetricConfig, Statistics
 from nvflare.app_common.app_constant import StatisticsConstants as StC
 from nvflare.app_common.executors.statistics.statistics_executor_exception import StatisticExecutorException
 from nvflare.app_common.statistics.numeric_stats import filter_numeric_features
@@ -153,14 +155,14 @@ class StatisticsExecutor(Executor):
         try:
             result = self._client_exec(task_name, shareable, fl_ctx, abort_signal)
             if result:
-                dxo = DXO(data_kind=DataKind.ANALYTIC, data=result)
+                dxo = DXO(data_kind=DataKind.STATISTICS, data=result)
                 return dxo.to_shareable()
             else:
-                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+                return make_reply(ReturnCode.EXECUTION_RESULT_ERROR)
 
         except BaseException as e:
             self.log_exception(fl_ctx, f"Task {task_name} failed. Exception: {e.__str__()}")
-            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+            return make_reply(ReturnCode.EXECUTION_RESULT_ERROR)
 
     def _client_exec(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         client_name = fl_ctx.get_prop(ReservedKey.CLIENT_NAME)
@@ -207,7 +209,7 @@ class StatisticsExecutor(Executor):
                 count = self.get_count(ds_name, feature.feature_name, count_config, shareable, fl_ctx)
                 if count < self.min_count:
                     raise StatisticExecutorException(
-                        f" dataset {ds_name} feature{feature_name} item count is "
+                        f" dataset {ds_name} feature '{feature_name}' item count is "
                         f"less than required minimum count {self.min_count} for client {client_name} "
                     )
 
@@ -248,29 +250,35 @@ class StatisticsExecutor(Executor):
     def get_variance_with_mean(
         self, dataset_name: str, feature_name: str, metric_config: MetricConfig, inputs: Shareable, fl_ctx: FLContext
     ) -> float:
-        global_mean = inputs[StC.STATS_GLOBAL_MEAN][dataset_name][feature_name]
-        global_count = inputs[StC.STATS_GLOBAL_COUNT][dataset_name][feature_name]
-        result = self.stats_generator.variance_with_mean(dataset_name, feature_name, global_mean, global_count)
-        result = round(result, self.precision)
-        return result
+        if StC.STATS_GLOBAL_MEAN in inputs and StC.STATS_GLOBAL_COUNT in inputs:
+            global_mean = inputs[StC.STATS_GLOBAL_MEAN][dataset_name][feature_name]
+            global_count = inputs[StC.STATS_GLOBAL_COUNT][dataset_name][feature_name]
+            result = self.stats_generator.variance_with_mean(dataset_name, feature_name, global_mean, global_count)
+            result = round(result, self.precision)
+            return result
+        else:
+            return np.NaN
 
     def get_histogram(
         self, dataset_name: str, feature_name: str, metric_config: MetricConfig, inputs: Shareable, fl_ctx: FLContext
     ) -> Histogram:
-        global_min_value = inputs[StC.STATS_MIN][dataset_name][feature_name]
-        global_max_value = inputs[StC.STATS_MAX][dataset_name][feature_name]
-        hist_config: dict = metric_config.config
-        num_of_bins: int = self.get_number_of_bins(feature_name, hist_config)
-        bin_range: List[int] = self.get_bin_range(feature_name, global_min_value, global_max_value, hist_config)
-        item_count = self.stats_generator.count(dataset_name, feature_name)
-        if num_of_bins >= item_count * self.max_bins_percent:
-            raise ValueError(
-                f"number of bins: {num_of_bins} needs to smaller than item count: {round(item_count * self.max_bins_percent)} "
-                f"for feature '{feature_name}' in dataset '{dataset_name}'"
-            )
+        if StC.STATS_MIN in inputs and StC.STATS_MAX in inputs:
+            global_min_value = inputs[StC.STATS_MIN][dataset_name][feature_name]
+            global_max_value = inputs[StC.STATS_MAX][dataset_name][feature_name]
+            hist_config: dict = metric_config.config
+            num_of_bins: int = self.get_number_of_bins(feature_name, hist_config)
+            bin_range: List[int] = self.get_bin_range(feature_name, global_min_value, global_max_value, hist_config)
+            item_count = self.stats_generator.count(dataset_name, feature_name)
+            if num_of_bins >= item_count * self.max_bins_percent:
+                raise ValueError(
+                    f"number of bins: {num_of_bins} needs to smaller than item count: {round(item_count * self.max_bins_percent)} "
+                    f"for feature '{feature_name}' in dataset '{dataset_name}'"
+                )
 
-        result = self.stats_generator.histogram(dataset_name, feature_name, num_of_bins, bin_range[0], bin_range[1])
-        return result
+            result = self.stats_generator.histogram(dataset_name, feature_name, num_of_bins, bin_range[0], bin_range[1])
+            return result
+        else:
+            return Histogram(HistogramType.STANDARD, list())
 
     def get_max_value(
         self, dataset_name: str, feature_name: str, metric_config: MetricConfig, inputs: Shareable, fl_ctx: FLContext
