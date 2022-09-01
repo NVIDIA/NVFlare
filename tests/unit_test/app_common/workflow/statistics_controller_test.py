@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import pytest
+
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.statistics_spec import MetricConfig
 from nvflare.app_common.app_constant import StatisticsConstants as SC
@@ -66,6 +68,24 @@ class TestStatisticsController:
             else:
                 assert mc.config == {"*": {"bins": 10}, "Age": {"bins": 5, "range": [0, 120]}}
 
+    def test_wait_for_all_results(self):
+
+        # waiting for 1 more client
+        client_metrics = {
+            "count": {"site-1": {}},
+            "mean": {"site-2": {}},
+            "sum": {"site-3": {}},
+            "stddev": {"site-4": {}},
+        }
+        import time
+
+        t0 = time.time()
+        self.stats_controller._wait_for_all_results(0.5, 3, client_metrics, 0.1)
+        t = time.time()
+        second_spent = t - t0
+        # for 4 metrics, each have 0.5 second timeout
+        assert second_spent > 0.5 * 4
+
     def test_prepare_input(self):
         xs = self.stats_controller._prepare_inputs(SC.STATS_1st_METRICS, None)
         assert xs[SC.METRIC_TASK_KEY] == SC.STATS_1st_METRICS
@@ -83,3 +103,14 @@ class TestStatisticsController:
         xs = self.stats_controller._prepare_inputs(SC.STATS_2nd_METRICS, None)
         assert xs[SC.METRIC_TASK_KEY] == SC.STATS_2nd_METRICS
         assert fobs.loads(xs[SC.STATS_TARGET_METRICS]).sort() == SC.ordered_metrics[SC.STATS_2nd_METRICS].sort()
+
+    def test_validate_min_clients(self):
+
+        # waiting for 1 more client
+        client_metrics = {
+            "count": {"site-1": {}},
+            "mean": {"site-2": {}},
+            "sum": {"site-3": {}},
+            "stddev": {"site-4": {}},
+        }
+        assert self.stats_controller._validate_min_clients(5, client_metrics) == False
