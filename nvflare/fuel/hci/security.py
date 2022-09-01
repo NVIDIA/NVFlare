@@ -20,8 +20,8 @@ import uuid
 
 class IdentityKey(object):
 
-    NAME = "name"
-    ORG = "org"
+    NAME = "common_name"
+    ORG = "organization"
     ROLE = "role"
 
 

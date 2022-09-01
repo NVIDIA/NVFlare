@@ -20,8 +20,7 @@ import traceback
 
 from nvflare.fuel.hci.conn import Connection, receive_til_end
 from nvflare.fuel.hci.proto import validate_proto
-from nvflare.fuel.hci.security import IdentityKey, get_certificate_identity
-
+from nvflare.fuel.hci.security import IdentityKey, get_identity_info
 from .constants import ConnProps
 from .reg import ServerCommandRegister
 
@@ -47,7 +46,7 @@ class _MsgHandler(socketserver.BaseRequestHandler):
                 conn.set_props(self.server.cmd_reg.conn_props)
 
             if self.server.use_ssl:
-                identity = get_certificate_identity(self.request.getpeercert())
+                identity = get_identity_info(self.request.getpeercert())
                 conn.set_prop(ConnProps.CLIENT_IDENTITY, identity)
                 valid = self.server.validate_client_cn(identity[IdentityKey.NAME])
             else:
