@@ -71,7 +71,7 @@ In order to load a pretrained model provided in the MONAI bundle, define the `so
         "bundle_root": "config/spleen_ct_segmentation",
         "source_ckpt_filename": "models/model.pt"
       }
-    },
+    }
 ```
 
 > **_NOTE:_** For more information about the simulator, see [here](https://nvflare.readthedocs.io).
