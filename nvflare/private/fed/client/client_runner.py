@@ -85,6 +85,9 @@ class ClientRunner(FLComponent):
         self.end_run_fired = False
         self.end_run_lock = threading.Lock()
 
+        self._register_aux_message_handler(engine)
+
+    def _register_aux_message_handler(self, engine):
         engine.register_aux_message_handler(topic=ReservedTopic.END_RUN, message_handle_func=self._handle_end_run)
         engine.register_aux_message_handler(topic=ReservedTopic.ABORT_ASK, message_handle_func=self._handle_abort_task)
 
@@ -239,70 +242,65 @@ class ClientRunner(FLComponent):
                     self.log_info(fl_ctx, "run abort signal received")
                     break
 
-                # reset to default fetch interval
-                task_fetch_interval = self.task_fetch_interval
-                self.log_debug(fl_ctx, "fetching task from server ...")
-                task = self.engine.get_task_assignment(fl_ctx)
-                if not task:
-                    self.log_debug(fl_ctx, "no task received - will try in {} secs".format(task_fetch_interval))
-                    continue
+                task_fetch_interval, _ = self.run_one_task(fl_ctx)
 
-                if task.name == SpecialTaskName.END_RUN:
-                    self.log_info(fl_ctx, "server asked to end the run")
-                    break
+    def run_one_task(self, fl_ctx):
+        # reset to default fetch interval
+        task_fetch_interval = self.task_fetch_interval
+        self.log_debug(fl_ctx, "fetching task from server ...")
+        task = self.engine.get_task_assignment(fl_ctx)
+        task_processed = False
+        if not task:
+            self.log_debug(fl_ctx, "no task received - will try in {} secs".format(task_fetch_interval))
+            # continue
 
-                if task.name == SpecialTaskName.TRY_AGAIN:
-                    task_data = task.data
-                    if task_data and isinstance(task_data, Shareable):
-                        task_fetch_interval = task_data.get(TaskConstant.WAIT_TIME, self.task_fetch_interval)
-                    self.log_debug(
-                        fl_ctx, "server asked to try again - will try in {} secs".format(task_fetch_interval)
-                    )
-                    continue
+        elif task.name == SpecialTaskName.END_RUN:
+            self.log_info(fl_ctx, "server asked to end the run")
+            # break
+            self.asked_to_stop = True
 
-                self.log_info(fl_ctx, "got task assignment: name={}, id={}".format(task.name, task.task_id))
+        elif task.name == SpecialTaskName.TRY_AGAIN:
+            task_data = task.data
+            if task_data and isinstance(task_data, Shareable):
+                task_fetch_interval = task_data.get(TaskConstant.WAIT_TIME, self.task_fetch_interval)
+            self.log_debug(fl_ctx, "server asked to try again - will try in {} secs".format(task_fetch_interval))
+            # continue
 
-                # create a new task abort signal
-                task_reply = self._process_task(task, fl_ctx)
+        else:
+            self.log_info(fl_ctx, "got task assignment: name={}, id={}".format(task.name, task.task_id))
 
-                if not isinstance(task_reply, Shareable):
-                    raise TypeError("task_reply must be Shareable, but got {}".format(type(task_reply)))
-                self.log_debug(fl_ctx, "firing event EventType.BEFORE_SEND_TASK_RESULT")
-                self.fire_event(EventType.BEFORE_SEND_TASK_RESULT, fl_ctx)
+            # create a new task abort signal
+            task_reply = self._process_task(task, fl_ctx)
 
-                # set the cookie in the reply!
-                task_data = task.data
-                if not isinstance(task_data, Shareable):
-                    raise TypeError("task_data must be Shareable, but got {}".format(type(task_data)))
+            if not isinstance(task_reply, Shareable):
+                raise TypeError("task_reply must be Shareable, but got {}".format(type(task_reply)))
+            self.log_debug(fl_ctx, "firing event EventType.BEFORE_SEND_TASK_RESULT")
+            self.fire_event(EventType.BEFORE_SEND_TASK_RESULT, fl_ctx)
 
-                cookie_jar = task_data.get_cookie_jar()
-                if cookie_jar:
-                    task_reply.set_cookie_jar(cookie_jar)
+            # set the cookie in the reply!
+            task_data = task.data
+            if not isinstance(task_data, Shareable):
+                raise TypeError("task_data must be Shareable, but got {}".format(type(task_data)))
 
-                reply_sent = self.engine.send_task_result(task_reply, fl_ctx)
-                if reply_sent:
-                    self.log_info(
-                        fl_ctx, "result sent to server for task: name={}, id={}".format(task.name, task.task_id)
-                    )
-                else:
-                    self.log_error(
-                        fl_ctx,
-                        "failed to send result to server for task: name={}, id={}".format(task.name, task.task_id),
-                    )
-                self.log_debug(fl_ctx, "firing event EventType.AFTER_SEND_TASK_RESULT")
-                self.fire_event(EventType.AFTER_SEND_TASK_RESULT, fl_ctx)
+            cookie_jar = task_data.get_cookie_jar()
+            if cookie_jar:
+                task_reply.set_cookie_jar(cookie_jar)
+
+            reply_sent = self.engine.send_task_result(task_reply, fl_ctx)
+            if reply_sent:
+                self.log_info(fl_ctx, "result sent to server for task: name={}, id={}".format(task.name, task.task_id))
+            else:
+                self.log_error(
+                    fl_ctx,
+                    "failed to send result to server for task: name={}, id={}".format(task.name, task.task_id),
+                )
+            self.log_debug(fl_ctx, "firing event EventType.AFTER_SEND_TASK_RESULT")
+            self.fire_event(EventType.AFTER_SEND_TASK_RESULT, fl_ctx)
+            task_processed = True
+        return task_fetch_interval, task_processed
 
     def run(self, app_root, args):
-        with self.engine.new_context() as fl_ctx:
-            self.fire_event(EventType.ABOUT_TO_START_RUN, fl_ctx)
-            fl_ctx.set_prop(FLContextKey.APP_ROOT, app_root, sticky=True)
-            fl_ctx.set_prop(FLContextKey.ARGS, args, sticky=True)
-            fl_ctx.set_prop(ReservedKey.RUN_ABORT_SIGNAL, self.run_abort_signal, private=True, sticky=True)
-            self.log_debug(fl_ctx, "firing event EventType.START_RUN")
-            self.fire_event(EventType.START_RUN, fl_ctx)
-            self.log_info(fl_ctx, "client runner started")
-        with self.end_run_lock:
-            self.end_run_fired = False
+        self.init_run(app_root, args)
 
         try:
             self._try_run()
@@ -314,6 +312,18 @@ class ClientRunner(FLComponent):
             self._abort_current_task()
 
             self.end_run_events_sequence("run method")
+
+    def init_run(self, app_root, args):
+        with self.engine.new_context() as fl_ctx:
+            self.fire_event(EventType.ABOUT_TO_START_RUN, fl_ctx)
+            fl_ctx.set_prop(FLContextKey.APP_ROOT, app_root, sticky=True)
+            fl_ctx.set_prop(FLContextKey.ARGS, args, sticky=True)
+            fl_ctx.set_prop(ReservedKey.RUN_ABORT_SIGNAL, self.run_abort_signal, private=True, sticky=True)
+            self.log_debug(fl_ctx, "firing event EventType.START_RUN")
+            self.fire_event(EventType.START_RUN, fl_ctx)
+            self.log_info(fl_ctx, "client runner started")
+        with self.end_run_lock:
+            self.end_run_fired = False
 
     def _abort_current_task(self):
         with self.task_lock:

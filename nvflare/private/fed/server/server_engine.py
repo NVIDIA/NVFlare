@@ -14,7 +14,6 @@
 
 import copy
 import logging
-import multiprocessing
 import os
 import pickle
 import re
@@ -120,7 +119,7 @@ class ServerEngine(ServerEngineInternalSpec):
         self.parent_conn_lock = Lock()
         self.job_runner = None
         self.job_def_manager = None
-        self.snapshot_lock = multiprocessing.Lock()
+        # self.snapshot_lock = multiprocessing.Lock()
 
     def _get_server_app_folder(self):
         return WorkspaceConstants.APP_PREFIX + "server"
