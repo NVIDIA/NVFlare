@@ -23,10 +23,10 @@ from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
 
 def define_simulator_parser(simulator_parser):
     simulator_parser.add_argument("job_folder")
-    simulator_parser.add_argument("-o", "--workspace", type=str, help="WORKSPACE folder", required=True)
+    simulator_parser.add_argument("-w", "--workspace", type=str, help="WORKSPACE folder", required=True)
     simulator_parser.add_argument("-n", "--clients", type=int, help="number of clients")
     simulator_parser.add_argument("-c", "--client_list", type=str, help="client names list")
-    simulator_parser.add_argument("-p", "--threads", type=int, help="number of parallel running clients")
+    simulator_parser.add_argument("-t", "--threads", type=int, help="number of parallel running clients")
     simulator_parser.add_argument("-gpu", "--gpu", type=str, help="list of GPU Device Ids, comma separated")
 
 
