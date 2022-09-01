@@ -99,11 +99,17 @@ class Builder(ABC):
     def get_wip_dir(self, ctx: dict):
         return ctx.get("wip_dir")
 
-    def get_kit_dir(self, participate: Participant, ctx: dict):
-        return os.path.join(self.get_wip_dir(ctx), participate.name, "startup")
+    def get_ws_dir(self, participate: Participant, ctx: dict):
+        return os.path.join(self.get_wip_dir(ctx), participate.name)
 
-    def get_transfer_dir(self, participate: Participant, ctx: dict):
-        return os.path.join(self.get_wip_dir(ctx), participate.name, "transfer")
+    def get_kit_dir(self, participant: Participant, ctx: dict):
+        return os.path.join(self.get_ws_dir(participant, ctx), "startup")
+
+    def get_transfer_dir(self, participant: Participant, ctx: dict):
+        return os.path.join(self.get_ws_dir(participant, ctx), "transfer")
+
+    def get_local_dir(self, participant: Participant, ctx: dict):
+        return os.path.join(self.get_ws_dir(participant, ctx), "local")
 
     def get_state_dir(self, ctx: dict):
         return ctx.get("state_dir")
