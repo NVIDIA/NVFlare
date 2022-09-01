@@ -33,25 +33,6 @@ def check_python_version():
         raise RuntimeError("Python versions 3.6 and below are not supported. Please use Python 3.8 or 3.7.")
 
 
-def is_provision(cmd_args) -> bool:
-    return (
-        hasattr(cmd_args, "add_user")
-        or hasattr(cmd_args, "add_client")
-        or hasattr(cmd_args, "project_file")
-        or hasattr(cmd_args, "ui_tool")
-    )
-
-
-def is_simulator(cmd_args) -> bool:
-    return hasattr(cmd_args, "job_folder") or hasattr(cmd_args, "clients") or hasattr(cmd_args, "threads")
-
-
-#
-# def is_preflight_checker(cmd_args) -> bool:
-#     print(cmd_args)
-#     return hasattr(cmd_args, "package_root") or hasattr(cmd_args, "packages]")
-#
-#
 # def def_provision_parser(sub_cmd):
 #     cmd = CMD_PROVISION
 #     provision_parser = sub_cmd.add_parser(cmd)
@@ -75,7 +56,7 @@ def def_simulator_parser(sub_cmd):
 
 def parse_args(prog_name: str):
     _parser = argparse.ArgumentParser(description=prog_name)
-    sub_cmd = _parser.add_subparsers(description="sub command parser")
+    sub_cmd = _parser.add_subparsers(description="sub command parser", dest="sub_command")
     sub_cmd_parsers = {}
     sub_cmd_parsers.update(def_poc_parser(sub_cmd))
     # sub_cmd_parsers.update(def_preflight_check_parser(sub_cmd))
@@ -83,19 +64,6 @@ def parse_args(prog_name: str):
     sub_cmd_parsers.update(def_simulator_parser(sub_cmd))
 
     return _parser, _parser.parse_args(), sub_cmd_parsers
-
-
-def get_sub_cmd(prog_args):
-    if is_poc(prog_args):
-        return CMD_POC
-    # elif is_provision(prog_args):
-    #     return CMD_PROVISION
-    # elif is_preflight_checker(prog_args):
-    #     return CMD_PREFLIGHT_CHECK
-    elif is_simulator(prog_args):
-        return CMD_SIMULATOR
-    else:
-        return None
 
 
 handlers = {
@@ -112,7 +80,7 @@ def run(prog_name):
     prog_parser, prog_args, sub_cmd_parsers = parse_args(prog_name)
     sub_cmd = None
     try:
-        sub_cmd = get_sub_cmd(prog_args)
+        sub_cmd = prog_args.sub_command
         if sub_cmd:
             handlers[sub_cmd](prog_args)
         else:
