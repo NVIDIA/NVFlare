@@ -17,6 +17,7 @@ import os
 import shutil
 import tempfile
 from unittest.mock import patch
+from argparse import Namespace
 
 import pytest
 
@@ -100,6 +101,6 @@ class TestSimulatorRunner:
                                 ]
                              )
     def test_split_names(self, client_names, gpus, expected_split_names):
-        runner = SimulatorRunner(None)
+        runner = SimulatorRunner(Namespace())
         split_names = runner.split_names(client_names, gpus)
         assert sorted(split_names) == sorted(expected_split_names)
