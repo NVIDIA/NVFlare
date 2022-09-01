@@ -32,9 +32,11 @@ def define_simulator_parser(simulator_parser):
 
 def run_simulator(simulator_args):
     simulator_driver = SimulatorRunner(simulator_args)
-    run_status = 1
+
     if simulator_driver.setup():
-        run_status = simulator.run()
+        run_status = simulator_driver.run()
+    else:
+        run_status = 1
 
     return run_status
 
