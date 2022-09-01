@@ -729,15 +729,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
     def start_run(self, job_id, run_root, conf, args, snapshot):
         # Create the FL Engine
         workspace = Workspace(args.workspace, "server", args.config_folder)
-        self.run_manager = RunManager(
-            server_name=self.project_name,
-            engine=self.engine,
-            job_id=job_id,
-            workspace=workspace,
-            components=self.runner_config.components,
-            client_manager=self.client_manager,
-            handlers=self.runner_config.handlers,
-        )
+        self.run_manager = self.create_run_manager(workspace, job_id)
         self.engine.set_run_manager(self.run_manager)
         self.engine.set_configurator(conf)
         self.engine.asked_to_stop = False
@@ -780,6 +772,17 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             self.engine.engine_info.status = MachineStatus.STOPPED
             self.engine.run_manager = None
             self.run_manager = None
+
+    def create_run_manager(self, workspace, job_id):
+        return RunManager(
+            server_name=self.project_name,
+            engine=self.engine,
+            job_id=job_id,
+            workspace=workspace,
+            components=self.runner_config.components,
+            client_manager=self.client_manager,
+            handlers=self.runner_config.handlers,
+        )
 
     def abort_run(self):
         with self.engine.new_context() as fl_ctx:

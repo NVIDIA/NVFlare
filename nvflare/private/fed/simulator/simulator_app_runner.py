@@ -13,12 +13,29 @@
 # limitations under the License.
 
 from nvflare.private.fed.client.client_app_runner import ClientAppRunner
+from nvflare.private.fed.client.client_run_manager import ClientRunManager
 from nvflare.private.fed.server.server_app_runner import ServerAppRunner
+
+
+class SimulatorClientRunManager(ClientRunManager):
+    def create_job_processing_context_properties(self, workspace, job_id):
+        return {}
 
 
 class SimulatorClientAppRunner(ClientAppRunner):
     def start_command_agent(self, args, client_runner, federated_client, fl_ctx):
         pass
+
+    def create_run_manageer(self, args, conf, federated_client, workspace):
+        return SimulatorClientRunManager(
+            client_name=args.client_name,
+            job_id=args.job_id,
+            workspace=workspace,
+            client=federated_client,
+            components=conf.runner_config.components,
+            handlers=conf.runner_config.handlers,
+            conf=conf,
+        )
 
 
 class SimulatorServerAppRunner(ServerAppRunner):

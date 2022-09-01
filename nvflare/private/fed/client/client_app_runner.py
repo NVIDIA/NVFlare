@@ -40,15 +40,7 @@ class ClientAppRunner:
         )
         conf.configure()
         workspace = Workspace(args.workspace, args.client_name, config_folder)
-        run_manager = ClientRunManager(
-            client_name=args.client_name,
-            job_id=args.job_id,
-            workspace=workspace,
-            client=federated_client,
-            components=conf.runner_config.components,
-            handlers=conf.runner_config.handlers,
-            conf=conf,
-        )
+        run_manager = self.create_run_manageer(args, conf, federated_client, workspace)
         federated_client.run_manager = run_manager
         with run_manager.new_context() as fl_ctx:
             fl_ctx.set_prop(FLContextKey.CLIENT_NAME, args.client_name, private=False)
@@ -65,6 +57,17 @@ class ClientAppRunner:
 
             self.start_command_agent(args, client_runner, federated_client, fl_ctx)
         return client_runner
+
+    def create_run_manageer(self, args, conf, federated_client, workspace):
+        return ClientRunManager(
+            client_name=args.client_name,
+            job_id=args.job_id,
+            workspace=workspace,
+            client=federated_client,
+            components=conf.runner_config.components,
+            handlers=conf.runner_config.handlers,
+            conf=conf,
+        )
 
     def start_command_agent(self, args, client_runner, federated_client, fl_ctx):
         # Start the command agent

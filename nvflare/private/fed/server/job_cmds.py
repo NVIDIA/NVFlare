@@ -23,8 +23,7 @@ from typing import Dict, List
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
 from nvflare.apis.fl_constant import AdminCommandNames
-from nvflare.apis.job_def import Job, JobDataKey, JobMetaKey
-from nvflare.apis.job_def import TopDir
+from nvflare.apis.job_def import Job, JobDataKey, JobMetaKey, TopDir
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.apis.utils.common_utils import get_size
 from nvflare.fuel.hci.base64_utils import b64str_to_bytes, bytes_to_b64str
@@ -34,14 +33,19 @@ from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.hci.table import Table
-from nvflare.fuel.hci.zip_utils import convert_legacy_zip, unzip_all_from_bytes, zip_directory_to_bytes
-from nvflare.fuel.hci.zip_utils import ls_zip_from_bytes
+from nvflare.fuel.hci.zip_utils import (
+    convert_legacy_zip,
+    ls_zip_from_bytes,
+    unzip_all_from_bytes,
+    zip_directory_to_bytes,
+)
 from nvflare.fuel.utils.argument_utils import SafeArgumentParser
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
+
 from .cmd_utils import CommandUtil
 
 META_FILE = "meta.json"

@@ -67,7 +67,7 @@ class RunManager:
         self.add_handler(self.aux_runner)
 
         if job_id:
-            job_ctx_props = create_job_processing_context_properties(workspace, job_id)
+            job_ctx_props = self.create_job_processing_context_properties(workspace, job_id)
         else:
             job_ctx_props = {}
 
@@ -106,3 +106,6 @@ class RunManager:
 
     def add_handler(self, handler: FLComponent):
         self.handlers.append(handler)
+
+    def create_job_processing_context_properties(self, workspace, job_id):
+        return create_job_processing_context_properties(workspace, job_id)
