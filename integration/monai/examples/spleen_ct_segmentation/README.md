@@ -62,11 +62,11 @@ With the default setting and running on multiple gpus (section 4.2), the expecte
 
 ![training curve](./tb_plot.png)
 
-In order to load a pretrained model provided in the MONAI bundle, define the `source_ckpt_filename` argument of `MONAIBundlePersistor` in "config_fed_server.json", e.g.:
+In order to load a pretrained model provided in the MONAI bundle, define the `source_ckpt_filename` argument of `MonaiBundlePersistor` in "config_fed_server.json", e.g.:
 ```
     {
       "id": "persistor",
-      "path": "monai_nvflare.monai_bundle_persistor.MONAIBundlePersistor",
+      "path": "monai_nvflare.monai_bundle_persistor.MonaiBundlePersistor",
       "args": {
         "bundle_root": "config/spleen_ct_segmentation",
         "source_ckpt_filename": "models/model.pt"

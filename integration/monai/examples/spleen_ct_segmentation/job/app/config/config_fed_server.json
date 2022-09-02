@@ -12,7 +12,7 @@
   "components": [
     {
       "id": "persistor",
-      "path": "monai_nvflare.monai_bundle_persistor.MONAIBundlePersistor",
+      "path": "monai_nvflare.monai_bundle_persistor.MonaiBundlePersistor",
       "args": {
         "bundle_root": "config/spleen_ct_segmentation"
       }

@@ -26,7 +26,7 @@ from nvflare.app_common.app_constant import DefaultCheckpointFileName
 from nvflare.app_common.pt.pt_file_model_persistor import PTFileModelPersistor
 
 
-class MONAIBundlePersistor(PTFileModelPersistor):
+class MonaiBundlePersistor(PTFileModelPersistor):
     def __init__(
         self,
         bundle_root: str,
