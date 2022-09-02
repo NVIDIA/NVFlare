@@ -14,17 +14,23 @@
 
 import os
 
-import xgboost as xgb
-from xgboost import callback
-
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.app_opt.xgboost.learner_base import XGBFedLearnerBase, XGBoostParams
+from nvflare.utils.import_utils import optional_import
 
 
 class XGBFedLearner(XGBFedLearnerBase):
     def xgb_train(self, params: XGBoostParams, fl_ctx: FLContext) -> Shareable:
+        xgb, flag = optional_import(module="xgboost")
+        if not flag:
+            self.log_error(fl_ctx, "Can't import xgboost")
+            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+        callback, flag = optional_import(module="xgboost.callback")
+        if not flag:
+            self.log_error(fl_ctx, "Can't import xgboost.callback")
+            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
         with xgb.rabit.RabitContext([e.encode() for e in params.rabit_env]):
 
             # Load file, file will not be sharded in federated mode.

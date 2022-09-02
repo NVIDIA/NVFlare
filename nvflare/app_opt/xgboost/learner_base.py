@@ -74,7 +74,7 @@ class XGBFedLearnerBase(Learner, ABC):
         self.rank = None
         self.world_size = None
         self.client_id = None
-        self._server_cert_path = None
+        self._ca_cert_path = None
         self._client_key_path = None
         self._client_cert_path = None
 
@@ -89,9 +89,9 @@ class XGBFedLearnerBase(Learner, ABC):
     def _get_certificates(self, fl_ctx: FLContext):
         workspace: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
         bin_folder = workspace.get_startup_kit_dir()
-        server_cert_path = os.path.join(bin_folder, "rootCA.pem")
-        if not os.path.exists(server_cert_path):
-            self.log_error(fl_ctx, "Missing server certificate (rootCA.pem)")
+        ca_cert_path = os.path.join(bin_folder, "rootCA.pem")
+        if not os.path.exists(ca_cert_path):
+            self.log_error(fl_ctx, "Missing ca certificate (rootCA.pem)")
             return False
         client_key_path = os.path.join(bin_folder, "client.key")
         if not os.path.exists(client_key_path):
@@ -101,7 +101,7 @@ class XGBFedLearnerBase(Learner, ABC):
         if not os.path.exists(client_cert_path):
             self.log_error(fl_ctx, "Missing client certificate (client.crt)")
             return False
-        self._server_cert_path = server_cert_path
+        self._ca_cert_path = ca_cert_path
         self._client_key_path = client_key_path
         self._client_cert_path = client_cert_path
 
@@ -122,24 +122,24 @@ class XGBFedLearnerBase(Learner, ABC):
             return make_reply(ReturnCode.ERROR)
 
         world_size = shareable.get_header(XGBShareableHeader.WORLD_SIZE)
-        if not world_size:
+        if world_size is None:
             self.log_error(fl_ctx, f"Train failed in client {client_name}: missing xgboost world size in header.")
             return make_reply(ReturnCode.ERROR)
 
         xgb_fl_server_port = shareable.get_header(XGBShareableHeader.XGB_FL_SERVER_PORT)
-        if not xgb_fl_server_port:
+        if xgb_fl_server_port is None:
             self.log_error(fl_ctx, f"Train failed in client {client_name}: missing xgboost FL server port in header.")
             return make_reply(ReturnCode.ERROR)
 
         server_address = _get_server_address(fl_ctx)
-        if not server_address:
-            self.log_error(fl_ctx, "Can't get NVFlare server address")
+        if server_address is None:
+            self.log_error(fl_ctx, f"Train failed in client {client_name}: Can't get NVFlare server address")
             return make_reply(ReturnCode.ERROR)
 
-        secure_grpc = shareable.get_header(XGBShareableHeader.XGB_FL_SERVER_SECURE)
-        if not secure_grpc:
-            self.log_info(fl_ctx, "Use insecure GRPC since secure grpc flag is missing in header.")
-            secure_grpc = False
+        secure_comm = shareable.get_header(XGBShareableHeader.XGB_FL_SERVER_SECURE)
+        if secure_comm is None:
+            self.log_error(fl_ctx, f"Train failed in client {client_name}: missing xgboost secure_comm in header.")
+            return make_reply(ReturnCode.ERROR)
 
         self.rank = rank_map[client_name]
         self.world_size = world_size
@@ -153,13 +153,13 @@ class XGBFedLearnerBase(Learner, ABC):
             f"federated_world_size={self.world_size}",
             f"federated_rank={self.rank}",
         ]
-        if secure_grpc:
+        if secure_comm:
             if not self._get_certificates(fl_ctx):
                 return make_reply(ReturnCode.ERROR)
 
             rabit_env.extend(
                 [
-                    f"federated_server_cert={self._server_cert_path}",
+                    f"federated_server_cert={self._ca_cert_path}",
                     f"federated_client_key={self._client_key_path}",
                     f"federated_client_cert={self._client_cert_path}",
                 ]

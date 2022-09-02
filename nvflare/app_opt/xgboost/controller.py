@@ -16,8 +16,6 @@ import multiprocessing
 import os
 import traceback
 
-import xgboost.federated
-
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import Task
 from nvflare.apis.fl_constant import FLContextKey
@@ -28,6 +26,7 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.utils.import_utils import optional_import
 
 from .constants import XGBShareableHeader
 
@@ -55,6 +54,9 @@ class XGBFedController(Controller):
         self._rank_map = None
         self._secure = False
         self._train_timeout = train_timeout
+        self._server_cert_path = None
+        self._server_key_path = None
+        self._ca_cert_path = None
 
     def _get_certificates(self, fl_ctx: FLContext):
         workspace: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
@@ -67,16 +69,21 @@ class XGBFedController(Controller):
         if not os.path.exists(server_key_path):
             self.log_error(fl_ctx, "Missing server key (server.key)")
             return False
-        client_cert_path = os.path.join(bin_folder, "rootCA.pem")
-        if not os.path.exists(client_cert_path):
-            self.log_error(fl_ctx, "Missing client certificate (rootCA.pem)")
+        ca_cert_path = os.path.join(bin_folder, "rootCA.pem")
+        if not os.path.exists(ca_cert_path):
+            self.log_error(fl_ctx, "Missing ca certificate (rootCA.pem)")
             return False
         self._server_cert_path = server_cert_path
         self._server_key_path = server_key_path
-        self._client_cert_path = client_cert_path
+        self._ca_cert_path = ca_cert_path
 
     def start_controller(self, fl_ctx: FLContext):
         self.log_info(fl_ctx, f"Initializing {self.__class__.__name__} workflow.")
+        xgb_federated, flag = optional_import(module="xgboost.federated")
+        if not flag:
+            self.log_error(fl_ctx, "Can't import xgboost.federated")
+            return
+
         # Assumption: all clients are used
         clients = self._engine.get_clients()
         # Sort by client name so rank is consistent
@@ -90,17 +97,19 @@ class XGBFedController(Controller):
 
         self.log_info(fl_ctx, f"Starting XGBoost FL server on port {self._port}")
 
-        if not self._get_certificates(fl_ctx):
-            self.log_info(fl_ctx, "Can't get required certificates for XGB FL server, use insecure mode.")
+        self._secure = self._engine.server.secure_train
+        if self._secure:
+            if not self._get_certificates(fl_ctx):
+                self.log_error(fl_ctx, "Can't get required certificates for XGB FL server in secure mode.")
+                return
             self._xgb_fl_server = multiprocessing.Process(
-                target=xgboost.federated.run_federated_server, args=(self._port, len(clients))
+                target=xgb_federated.run_federated_server,
+                args=(self._port, len(clients), self._server_key_path, self._server_cert_path, self._ca_cert_path),
             )
         else:
             self._xgb_fl_server = multiprocessing.Process(
-                target=xgboost.federated.run_federated_server,
-                args=(self._port, len(clients), self._server_key_path, self._server_cert_path, self._client_cert_path),
+                target=xgb_federated.run_federated_server, args=(self._port, len(clients))
             )
-            self._secure = True
         self._xgb_fl_server.start()
 
     def stop_controller(self, fl_ctx: FLContext):
@@ -111,7 +120,7 @@ class XGBFedController(Controller):
     def process_result_of_unknown_task(
         self, client: Client, task_name, client_task_id, result: Shareable, fl_ctx: FLContext
     ):
-        self.log_warning(fl_ctx, f"Unknown task: {task_name} from client {client.name}.")
+        self.log_error(fl_ctx, f"Unknown task: {task_name} from client {client.name}.")
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext) -> None:
         try:
