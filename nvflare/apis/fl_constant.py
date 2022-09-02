@@ -233,9 +233,6 @@ class SnapshotKey(object):
 
 
 class RunProcessKey(object):
-    COLLECTIVE_LISTEN_PORT = "_collective_listen_port"
-    COLLECTIVE_CONNECTION = "_collective_conn"
-    COLLECTIVE_CONNECTION_WAITER = "_collective_conn_waiter"
     LISTEN_PORT = "_listen_port"
     CONNECTION = "_conn"
     CHILD_PROCESS = "_child_process"
