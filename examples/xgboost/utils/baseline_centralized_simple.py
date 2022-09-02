@@ -46,7 +46,7 @@ def main():
     parser = xgboost_args_parser()
     args = parser.parse_args()
     # Specify training params
-    model_name = "centralized_" + str(args.num_parallel_tree) + "_" + str(args.subsample)
+    model_name = "centralized_simple_" + str(args.num_parallel_tree) + "_" + str(args.subsample)
     data_path = args.data_path
     model_path_root = "./workspaces/" + model_name
     round_num = 100
@@ -82,34 +82,14 @@ def main():
     # use logistic regression loss for binary classification
     # use auc as metric
     param = get_training_parameters(args)
-
+    writer.add_scalar("AUC", 0, 0)
     # xgboost training
     start = time.time()
-    for round in range(round_num):
-        # Train model
-        if os.path.exists(model_path):
-            # Validate the last round's model
-            bst_last = xgb.Booster(param, model_file=model_path)
-            y_pred = bst_last.predict(dmat_valid)
-            roc = roc_auc_score(y_higgs[0:1000000], y_pred)
-            print(f"Round: {bst_last.num_boosted_rounds()} model testing AUC {roc}")
-            writer.add_scalar("AUC", roc, round - 1)
-            # Train new model
-            print(f"Round: {round} Base ", end="")
-            bst = xgb.train(
-                param,
-                dmat_train,
-                num_boost_round=1,
-                xgb_model=model_path,
-                evals=[(dmat_valid, "validate"), (dmat_train, "train")],
-            )
-        else:
-            # Round 0
-            print(f"Round: {round} Base ", end="")
-            bst = xgb.train(
-                param, dmat_train, num_boost_round=1, evals=[(dmat_valid, "validate"), (dmat_train, "train")]
-            )
-        bst.save_model(model_path)
+    # 100 Round in one training session
+    bst = xgb.train(
+        param, dmat_train, num_boost_round=round_num, evals=[(dmat_valid, "validate"), (dmat_train, "train")]
+    )
+    bst.save_model(model_path)
 
     end = time.time()
     lapse_time = end - start
