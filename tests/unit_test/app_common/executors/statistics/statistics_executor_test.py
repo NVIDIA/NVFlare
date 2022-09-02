@@ -130,7 +130,7 @@ class TestStatisticsExecutor:
             histogram = self.stats_executor.get_histogram("train", "Age", metric_config, inputs, None)
         assert (
             # local count * max_bins_percent = 6* 0.7 = 4.2 -> round to 4.
-            str(e.value) == "number of bins: 10 needs to smaller than item "
+            str(e.value) == "number of bins: 10 needs to be smaller than item "
             "count: 4 for feature 'Age' in dataset 'train'"
         )
 
