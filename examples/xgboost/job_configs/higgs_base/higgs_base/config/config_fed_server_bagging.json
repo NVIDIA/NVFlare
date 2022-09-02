@@ -11,19 +11,19 @@
   "components": [
     {
       "id": "persistor",
-      "name": "JSONModelPersistor",
+      "path": "nvflare.app_common.model_persistors.json_model_persistor.JSONModelPersistor",
       "args": {
         "save_name": "xgboost_model.json"
       }
     },
     {
       "id": "shareable_generator",
-      "name": "XGBModelShareableGenerator",
+      "path": "nvflare.app_common.shareablegenerators.xgb_model_shareable_generator.XGBModelShareableGenerator",
       "args": {}
     },
     {
       "id": "aggregator",
-      "name": "XGBoostBaggingAggregator",
+      "path": "nvflare.app_common.aggregators.xgboost_bagging_aggregator.XGBoostBaggingAggregator",
       "args": {}
     }
   ],
