@@ -79,10 +79,10 @@ class SimulatorRunner(FLComponent):
             self.job_folder, self.workspace, self.clients, self.n_clients, self.threads, self.gpu
         )
 
-        if self.args.n_clients:
-            self.client_names = self.args.n_clients.strip().split(",")
-        elif self.args.clients:
-            for i in range(self.args.clients):
+        if self.args.clients:
+            self.client_names = self.args.clients.strip().split(",")
+        elif self.args.n_clients:
+            for i in range(self.args.n_clients):
                 self.client_names.append("site-" + str(i + 1))
 
         log_config_file_path = os.path.join(self.args.workspace, "startup", "log.config")
