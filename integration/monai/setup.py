@@ -11,12 +11,49 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import datetime
+import os
+from setuptools import find_packages, setup
 
-from setuptools import setup
+# read the contents of your README file
+this_directory = os.path.abspath(os.path.dirname(__file__))
+with open(os.path.join(this_directory, "README.md"), encoding="utf-8") as f:
+    long_description = f.read()
+
+release = os.environ.get("MONAI_NVFL_RELEASE")
+if release == "1":
+    package_name = "monai-nvflare"
+    version = "0.1.0"
+else:
+    package_name = "monai-nvflare-nightly"
+    today = datetime.date.today().timetuple()
+    year = today[0] % 1000
+    month = today[1]
+    day = today[2]
+    version = f"0.1.{year:02d}{month:02d}{day:02d}"
 
 setup(
-    name="monai_nvflare",
-    version="0.1.0",
-    py_modules=["monai_nvflare"],
+    name=package_name,
+    version=version,
+    description="MONAI NVIDIA FLARE integration",
+    url="https://github.com/NVIDIA/NVFlare",
+    package_dir={"monai_nvflare": "monai_nvflare"},
+    packages=find_packages(
+        where=".",
+        include=[
+            "*",
+        ],
+        exclude=["tests", "tests.*"],
+    ),
+    license_files=("LICENSE",),
+    classifiers=[
+        "Programming Language :: Python :: 3.7",
+        "Programming Language :: Python :: 3.8",
+        "License :: OSI Approved :: Apache Software License",
+        "Operating System :: POSIX :: Linux",
+    ],
+    long_description=long_description,
+    long_description_content_type="text/markdown",
+    python_requires=">=3.7,<3.9",
     install_requires=["pytorch-ignite", "monai", "nvflare"],
 )

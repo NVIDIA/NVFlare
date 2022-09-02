@@ -55,7 +55,7 @@ class TestSimulatorRunner:
         workspace = tempfile.mkdtemp()
         job_folder = os.path.join(os.path.dirname(__file__), "../../../../data/jobs/valid_job")
         runner = SimulatorRunner(job_folder=job_folder,
-                                 workspace=workspace, n_clients="site-a", threads=1)
+                                 workspace=workspace, clients="site-a", threads=1)
         assert runner.setup()
 
         expected_clients = ["site-a"]
@@ -73,7 +73,7 @@ class TestSimulatorRunner:
         workspace = tempfile.mkdtemp()
         job_folder = os.path.join(os.path.dirname(__file__), "../../../../data/jobs/valid_job")
         runner = SimulatorRunner(job_folder=job_folder,
-                                 workspace=workspace, clients=3, threads=1)
+                                 workspace=workspace, n_clients=3, threads=1)
         assert not runner.setup()
 
     @pytest.mark.parametrize(
