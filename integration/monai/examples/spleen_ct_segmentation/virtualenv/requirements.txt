@@ -1,0 +1,5 @@
+tensorboard
+tqdm
+monai[ignite,nibabel,fire]>=1.0
+nvflare>=2.2
+monai_nvflare>=0.1.0
