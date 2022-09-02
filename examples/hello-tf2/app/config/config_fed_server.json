@@ -10,7 +10,7 @@
       "id": "persistor",
       "path": "tf2_model_persistor.TF2ModelPersistor",
       "args": {
-        "save_name": "tf2weights.pickle"
+        "save_name": "tf2weights.fobs"
       }
     },
     {

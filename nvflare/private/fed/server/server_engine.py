@@ -15,7 +15,6 @@
 import copy
 import logging
 import os
-import pickle
 import re
 import shlex
 import shutil
@@ -51,6 +50,7 @@ from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci.zip_utils import zip_directory_to_bytes
+from nvflare.fuel.utils import fobs
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
@@ -72,7 +72,7 @@ class ClientConnection:
         self.client = client
 
     def send(self, data):
-        data = pickle.dumps(data)
+        data = fobs.dumps(data)
         self.client.send(data)
 
     def recv(self):
@@ -574,7 +574,7 @@ class ServerEngine(ServerEngineInternalSpec):
         # Send the aux messages through admin_server
         request.set_peer_props(fl_ctx.get_all_public_props())
 
-        message = Message(topic=ReservedTopic.AUX_COMMAND, body=pickle.dumps(request))
+        message = Message(topic=ReservedTopic.AUX_COMMAND, body=fobs.dumps(request))
         message.set_header(RequestHeader.JOB_ID, str(fl_ctx.get_prop(FLContextKey.CURRENT_RUN)))
         requests = {}
         for n in targets:
@@ -586,7 +586,7 @@ class ServerEngine(ServerEngineInternalSpec):
             client_name = self.get_client_name_from_token(r.client_token)
             if r.reply:
                 try:
-                    results[client_name] = pickle.loads(r.reply.body)
+                    results[client_name] = fobs.loads(r.reply.body)
                 except BaseException:
                     results[client_name] = make_reply(ReturnCode.COMMUNICATION_ERROR)
                     self.logger.error(
@@ -736,7 +736,7 @@ class ServerEngine(ServerEngineInternalSpec):
             # assume server resource is unlimited
             if site_name == "server":
                 continue
-            request = Message(topic=TrainingTopic.CHECK_RESOURCE, body=pickle.dumps(resource_requirements))
+            request = Message(topic=TrainingTopic.CHECK_RESOURCE, body=fobs.dumps(resource_requirements))
             client = self.get_client_from_name(site_name)
             if client:
                 requests.update({client.token: request})
@@ -747,7 +747,7 @@ class ServerEngine(ServerEngineInternalSpec):
         for r in replies:
             site_name = self.get_client_name_from_token(r.client_token)
             if r.reply:
-                resp = pickle.loads(r.reply.body)
+                resp = fobs.loads(r.reply.body)
                 result[site_name] = (
                     resp.get_header(ShareableHeader.CHECK_RESOURCE_RESULT, False),
                     resp.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, ""),
@@ -764,7 +764,7 @@ class ServerEngine(ServerEngineInternalSpec):
             check_result, token = result
             if check_result and token:
                 resource_requirements = resource_reqs[site_name]
-                request = Message(topic=TrainingTopic.CANCEL_RESOURCE, body=pickle.dumps(resource_requirements))
+                request = Message(topic=TrainingTopic.CANCEL_RESOURCE, body=fobs.dumps(resource_requirements))
                 request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
                 client = self.get_client_from_name(site_name)
                 if client:
@@ -777,7 +777,7 @@ class ServerEngine(ServerEngineInternalSpec):
         for site, dispatch_info in client_sites.items():
             resource_requirement = dispatch_info.resource_requirements
             token = dispatch_info.token
-            request = Message(topic=TrainingTopic.START_JOB, body=pickle.dumps(resource_requirement))
+            request = Message(topic=TrainingTopic.START_JOB, body=fobs.dumps(resource_requirement))
             request.set_header(RequestHeader.JOB_ID, job_id)
             request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
             client = self.get_client_from_name(site)

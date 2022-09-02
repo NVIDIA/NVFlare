@@ -12,18 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import tensorflow as tf
 import numpy as np
+import tensorflow as tf
+from tf2_net import Net
 
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
-from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
+from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
-
-from tf2_net import Net
 
 
 class SimpleTrainer(Executor):

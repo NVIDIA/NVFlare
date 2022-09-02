@@ -23,7 +23,7 @@ class SignatureBuilder(Builder):
     """Sign files with rootCA's private key.
 
     Creates signatures for all the files signed with the root CA for the startup kits so that they
-    can be cryptographically verified to ensure any tampering is detected. This builder writes the signature.pkl file.
+    can be cryptographically verified to ensure any tampering is detected. This builder writes the signature.json file.
     """
 
     def _do_sign(self, root_pri_key, dest_dir):

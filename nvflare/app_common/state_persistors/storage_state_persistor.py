@@ -13,11 +13,11 @@
 # limitations under the License.
 
 import os
-import pickle
 
 from nvflare.apis.fl_snapshot import FLSnapshot, RunSnapshot
 from nvflare.apis.state_persistor import StatePersistor
 from nvflare.apis.storage import StorageSpec
+from nvflare.fuel.utils import fobs
 
 
 class StorageStatePersistor(StatePersistor):
@@ -45,9 +45,7 @@ class StorageStatePersistor(StatePersistor):
         if snapshot.completed:
             full_uri = self.storage.delete_object(path)
         else:
-            full_uri = self.storage.create_object(
-                uri=path, data=pickle.dumps(snapshot), meta={}, overwrite_existing=True
-            )
+            full_uri = self.storage.create_object(uri=path, data=fobs.dumps(snapshot), meta={}, overwrite_existing=True)
 
         return full_uri
 
@@ -60,7 +58,7 @@ class StorageStatePersistor(StatePersistor):
         all_items = self.storage.list_objects(self.uri_root)
         fl_snapshot = FLSnapshot()
         for item in all_items:
-            snapshot = pickle.loads(self.storage.get_data(item))
+            snapshot = fobs.loads(self.storage.get_data(item))
             fl_snapshot.add_snapshot(snapshot.job_id, snapshot)
         return fl_snapshot
 
@@ -75,7 +73,7 @@ class StorageStatePersistor(StatePersistor):
 
         """
         path = os.path.join(self.uri_root, job_id)
-        snapshot = pickle.loads(self.storage.get_data(uri=path))
+        snapshot = fobs.loads(self.storage.get_data(uri=path))
         return snapshot
 
     def delete(self):

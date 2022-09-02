@@ -12,18 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict, Optional, List
+from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
+from load_data_utils import get_app_paths, load_config
 from pandas.core.series import Series
 
-from load_data_utils import get_app_paths, load_config
 from nvflare.apis.fl_constant import ReservedKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.abstract.statistics_spec import Statistics,BinRange, Histogram, HistogramType, Feature
-from nvflare.app_common.statistics.numpy_utils import get_std_histogram_buckets
-from nvflare.app_common.statistics.numpy_utils import dtype_to_data_type
+from nvflare.app_common.abstract.statistics_spec import BinRange, Feature, Histogram, HistogramType, Statistics
+from nvflare.app_common.statistics.numpy_utils import dtype_to_data_type, get_std_histogram_buckets
 
 
 class DFStatistics(Statistics):

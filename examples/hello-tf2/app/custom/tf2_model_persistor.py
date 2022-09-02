@@ -12,23 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
-import pickle
 import json
+import os
 
 import tensorflow as tf
+from tf2_net import Net
+
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.abstract.model import ModelLearnable
+from nvflare.app_common.abstract.model import ModelLearnable, make_model_learnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
-from tf2_net import Net
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.abstract.model import make_model_learnable
+from nvflare.fuel.utils import fobs
 
 
 class TF2ModelPersistor(ModelPersistor):
-    def __init__(self, save_name="tf2_model.pkl"):
+    def __init__(self, save_name="tf2_model.fobs"):
         super().__init__()
         self.save_name = save_name
 
@@ -65,7 +65,7 @@ class TF2ModelPersistor(ModelPersistor):
             self.log_dir = os.path.join(app_root, log_dir)
         else:
             self.log_dir = app_root
-        self._pkl_save_path = os.path.join(self.log_dir, self.save_name)
+        self._fobs_save_path = os.path.join(self.log_dir, self.save_name)
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
 
@@ -81,10 +81,10 @@ class TF2ModelPersistor(ModelPersistor):
             Model object
         """
 
-        if os.path.exists(self._pkl_save_path):
+        if os.path.exists(self._fobs_save_path):
             self.logger.info("Loading server weights")
-            with open(self._pkl_save_path, "rb") as f:
-                model_learnable = pickle.load(f)
+            with open(self._fobs_save_path, "rb") as f:
+                model_learnable = fobs.load(f)
         else:
             self.logger.info("Initializing server model")
             network = Net()
@@ -108,5 +108,5 @@ class TF2ModelPersistor(ModelPersistor):
         """
         model_learnable_info = {k: str(type(v)) for k, v in model_learnable.items()}
         self.logger.info(f"Saving aggregated server weights: \n {model_learnable_info}")
-        with open(self._pkl_save_path, "wb") as f:
-            pickle.dump(model_learnable, f)
+        with open(self._fobs_save_path, "wb") as f:
+            fobs.dump(model_learnable, f)
