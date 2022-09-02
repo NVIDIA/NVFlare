@@ -54,6 +54,9 @@ class CommandUtil(object):
         auth_args = [args[0], self.TARGET_TYPE_CLIENT]
         auth_args.extend(args[2:])
 
+        job_id = args[1].lower()
+        conn.set_prop(self.JOB_ID, job_id)
+
         err = self.validate_command_targets(conn, auth_args[1:])
         if err:
             conn.append_error(err)
