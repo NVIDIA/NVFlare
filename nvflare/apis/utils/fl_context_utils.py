@@ -34,6 +34,7 @@ def get_serializable_data(fl_ctx: FLContext):
 
 
 def generate_log_message(fl_ctx: FLContext, msg: str):
+    _identity_ = "identity"
     _my_run = "run"
     _peer_run = "peer_run"
     _peer_name = "peer"
@@ -43,6 +44,7 @@ def generate_log_message(fl_ctx: FLContext, msg: str):
     _wf = "wf"
 
     all_kvs = {}
+    all_kvs[_identity_] = fl_ctx.get_identity_name()
     my_run = fl_ctx.get_job_id()
     if not my_run:
         my_run = "?"
@@ -80,7 +82,7 @@ def generate_log_message(fl_ctx: FLContext, msg: str):
         rc = reply.get_return_code("OK")
         all_kvs[_rc] = rc
 
-    item_order = [_my_run, _wf, _peer_name, _peer_run, _rc, _task_name, _task_id]
+    item_order = [_identity_, _my_run, _wf, _peer_name, _peer_run, _rc, _task_name, _task_id]
     ctx_items = []
     for item in item_order:
         if item in all_kvs:

@@ -47,7 +47,8 @@ class DockerBuilder(Builder):
         for i in range(len(info_dict["command"])):
             if info_dict["command"][i] == "flserver":
                 info_dict["command"][i] = server.name
-                break
+            if info_dict["command"][i] == "org=__org_name__":
+                info_dict["command"][i] = f"org={server.org}"
         self.services[server.name] = info_dict
 
     def _build_client(self, client, ctx):
@@ -58,6 +59,8 @@ class DockerBuilder(Builder):
                 info_dict["command"][i] = client.name
             if info_dict["command"][i] == "uid=__flclient__":
                 info_dict["command"][i] = f"uid={client.name}"
+            if info_dict["command"][i] == "org=__org_name__":
+                info_dict["command"][i] = f"org={client.org}"
 
         self.services[client.name] = info_dict
 

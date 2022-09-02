@@ -24,16 +24,12 @@ import time
 import psutil
 
 from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants
-from nvflare.apis.workspace import Workspace
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import EngineConstant
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger
-from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
-from nvflare.private.fed.client.client_run_manager import ClientRunManager
-from nvflare.private.fed.client.client_runner import ClientRunner
+from nvflare.private.fed.client.client_app_runner import ClientAppRunner
 from nvflare.private.fed.client.client_status import ClientStatus
-from nvflare.private.fed.client.command_agent import CommandAgent
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler
 
 
@@ -102,7 +98,7 @@ def main():
     thread = None
     stop_event = threading.Event()
     deployer = None
-    command_agent = None
+    client_app_runner = None
     federated_client = None
 
     startup = args.startup
@@ -144,51 +140,16 @@ def main():
         federated_client.fl_ctx.set_prop(EngineConstant.FL_TOKEN, args.token, private=False)
         federated_client.fl_ctx.set_prop(FLContextKey.WORKSPACE_ROOT, args.workspace, private=True)
 
-        client_config_file_name = os.path.join(app_root, args.client_config)
-        conf = ClientJsonConfigurator(
-            config_file_name=client_config_file_name,
-        )
-        conf.configure()
-
-        workspace = Workspace(args.workspace, args.client_name, config_folder)
-        run_manager = ClientRunManager(
-            client_name=args.client_name,
-            job_id=args.job_id,
-            workspace=workspace,
-            client=federated_client,
-            components=conf.runner_config.components,
-            handlers=conf.runner_config.handlers,
-            conf=conf,
-        )
-        federated_client.run_manager = run_manager
-
-        with run_manager.new_context() as fl_ctx:
-            fl_ctx.set_prop(FLContextKey.CLIENT_NAME, args.client_name, private=False)
-            fl_ctx.set_prop(EngineConstant.FL_TOKEN, args.token, private=False)
-            fl_ctx.set_prop(FLContextKey.WORKSPACE_ROOT, args.workspace, private=True)
-            fl_ctx.set_prop(FLContextKey.ARGS, args, sticky=True)
-            fl_ctx.set_prop(FLContextKey.APP_ROOT, app_root, private=True, sticky=True)
-            fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True)
-            fl_ctx.set_prop(FLContextKey.SECURE_MODE, secure_train, private=True, sticky=True)
-
-            client_runner = ClientRunner(config=conf.runner_config, job_id=args.job_id, engine=run_manager)
-            run_manager.add_handler(client_runner)
-            fl_ctx.set_prop(FLContextKey.RUNNER, client_runner, private=True)
-
-            # Start the command agent
-            command_agent = CommandAgent(federated_client, int(args.listen_port), client_runner)
-            command_agent.start(fl_ctx)
-
-        federated_client.status = ClientStatus.STARTED
-        client_runner.run(app_root, args)
+        client_app_runner = ClientAppRunner()
+        client_app_runner.start_run(app_root, args, config_folder, federated_client, secure_train)
 
     except BaseException as e:
         logger.error(f"FL client execution exception: {e}", exc_info=True)
         raise e
     finally:
         stop_event.set()
-        if command_agent:
-            command_agent.shutdown()
+        if client_app_runner:
+            client_app_runner.close()
         if deployer:
             deployer.close()
         if federated_client:

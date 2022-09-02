@@ -108,7 +108,8 @@ class FederatedClientBase:
                     prv_key_path=client_args["ssl_private_key"],
                 )
 
-        self.overseer_agent.start(self.overseer_callback)
+        if self.overseer_agent:
+            self.overseer_agent.start(self.overseer_callback)
 
     def _init_agent(self, args=None):
         kv_list = parse_vars(args.set)
@@ -189,7 +190,8 @@ class FederatedClientBase:
 
             return task
         except FLCommunicationError as e:
-            self.logger.info(e)
+            if e:
+                self.logger.info(e)
 
     def push_execute_result(self, project_name, shareable: Shareable, fl_ctx: FLContext):
         """Submit execution results of a task to server.
@@ -218,7 +220,8 @@ class FederatedClientBase:
 
             return message
         except FLCommunicationError as e:
-            self.logger.info(e)
+            if e:
+                self.logger.info(e)
 
     def send_aux_message(self, project_name, topic: str, shareable: Shareable, timeout: float, fl_ctx: FLContext):
         """Send auxiliary message to the server.
@@ -241,7 +244,8 @@ class FederatedClientBase:
 
             return message
         except FLCommunicationError as e:
-            self.logger.info(e)
+            if e:
+                self.logger.info(e)
 
     def send_heartbeat(self, project_name):
         try:
@@ -353,8 +357,9 @@ class FederatedClientBase:
 
     def close(self):
         """Quit the remote federated server, close the local session."""
-        self.logger.info("Shutting down client")
-        self.overseer_agent.end()
+        self.logger.info(f"Shutting down client: {self.client_name}")
+        if self.overseer_agent:
+            self.overseer_agent.end()
 
         return 0
 

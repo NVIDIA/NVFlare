@@ -22,16 +22,11 @@ from nvflare.ha.overseer.utils import (
     get_all_sp,
     get_primary_sp,
     get_system_state,
-    load_privilege,
     promote_sp,
     set_system_state,
     simple_PSP_policy,
     update_sp_state,
 )
-
-privilege_dict = load_privilege()
-if not privilege_dict:
-    print("Privilege file is tampered.  Privileged API disabled.")
 
 heartbeat_timeout = os.environ.get("NVFL_OVERSEER_HEARTBEAT_TIMEOUT", "10")
 try:
@@ -65,7 +60,7 @@ def heartbeat():
 
 @app.route("/api/v1/promote", methods=["GET", "POST"])
 def promote():
-    if app.config.get("DEBUG") is not True and request.headers.get("X-USER") not in privilege_dict.get("super", {}):
+    if app.config.get("DEBUG") is not True and request.headers.get("X-ROLE") != "project_admin":
         return jsonify({"Error": "No rights"})
     if request.method == "POST":
         req = request.json
@@ -84,7 +79,7 @@ def promote():
 
 @app.route("/api/v1/state", methods=["POST"])
 def state():
-    if app.config.get("DEBUG") is not True and request.headers.get("X-USER") not in privilege_dict.get("super", {}):
+    if app.config.get("DEBUG") is not True and request.headers.get("X-ROLE") != "project_admin":
         return jsonify({"Error": "No rights"})
     req = request.json
     state = req.get("state")
@@ -96,7 +91,7 @@ def state():
 
 @app.route("/api/v1/refresh")
 def refresh():
-    if request.headers.get("X-USER") not in privilege_dict.get("super", {}):
+    if app.config.get("DEBUG") is not True and request.headers.get("X-ROLE") != "project_admin":
         return jsonify({"Error": "No rights"})
     return jsonify({"Status": "Error.  API disabled."})
 

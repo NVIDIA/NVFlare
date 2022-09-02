@@ -129,6 +129,8 @@ class BaseServer(ABC):
         except RuntimeError:
             self.logger.info("canceling sync locks")
         try:
+            if self.admin_server:
+                self.admin_server.stop()
             if self.grpc_server:
                 self.grpc_server.stop(0)
         finally:
@@ -278,9 +280,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         # Additional fields for CurrentTask meta_data in GetModel API.
         self.current_model_meta_data = {}
 
-        self.engine = ServerEngine(
-            server=self, args=args, client_manager=self.client_manager, snapshot_persistor=snapshot_persistor
-        )
+        self.engine = self._create_server_engine(args, snapshot_persistor)
         self.run_manager = None
         self.server_runner = None
 
@@ -296,6 +296,11 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         self.snapshot_persistor = snapshot_persistor
 
         self._collective_comm_timeout = collective_command_timeout
+
+    def _create_server_engine(self, args, snapshot_persistor):
+        return ServerEngine(
+            server=self, args=args, client_manager=self.client_manager, snapshot_persistor=snapshot_persistor
+        )
 
     def get_current_model_meta_data(self):
         """Get the model metadata, which usually contains additional fields."""
@@ -886,5 +891,9 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
     def close(self):
         """Shutdown the server."""
         self.logger.info("shutting down server")
-        self.overseer_agent.end()
+        self.shutdown = True
+        if self.engine:
+            self.engine.close()
+        if self.overseer_agent:
+            self.overseer_agent.end()
         return super().close()

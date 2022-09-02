@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import collections
-import json
 
 
 def update(d, u):
@@ -49,8 +48,3 @@ def extract_first_level_primitive(d):
         if type(v) in (int, float, bool, str):
             result[k] = v
     return result
-
-
-def save_to_json(data, path, sort_keys=False, indent=None):
-    with open(path, "w") as f:
-        json.dump(data, f, sort_keys=sort_keys, indent=indent)
