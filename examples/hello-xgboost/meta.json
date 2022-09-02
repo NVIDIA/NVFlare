@@ -1,11 +1,9 @@
 {
-  "name": "mpi",
+  "name": "hello-xgboost",
   "resource_spec": {},
   "deploy_map": {
-    "app_server": [
-      "server"
-    ],
-    "app_client": [
+    "app": [
+      "server",
       "site-1",
       "site-2"
     ]
