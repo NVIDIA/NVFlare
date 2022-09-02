@@ -18,15 +18,22 @@
 
   "task_result_filters": [],
   "task_data_filters": [],
-
   "components": [
     {
       "id": "xgboost-learner",
-      "path": "custom.xgboost_learner.XGBoostLearner",
+      "path": "custom.xgboost_tree_fed_higgs_learner.XGBoostTreeFedHiggsLearner",
       "args": {
-        "train_config_filename": "config_train.json",
-        "num_parallel_tree": 5,
-        "lr_mode": "scaled"
+        "data_split_filename": "data_split.json",
+        "training_mode": "bagging",
+        "num_tree_bagging": 5,
+        "lr_mode": "scaled",
+        "local_model_path": "model.json",
+        "global_model_path": "model_global.json",
+        "learning_rate": 0.1,
+        "objective": "binary:logistic",
+        "max_depth": 8,
+        "eval_metric": "auc",
+        "nthread": 16
       }
     }
   ]
