@@ -54,7 +54,7 @@ readme_fs: |
   start.sh
   sub_start.sh
   stop_fl.sh
-  signature.pkl
+  signature.json
 
   Run start.sh to start the server.
 

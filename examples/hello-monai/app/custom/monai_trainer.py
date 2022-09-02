@@ -16,6 +16,8 @@ from typing import Dict
 
 import numpy as np
 import torch
+from train_configer import TrainConfiger
+
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
@@ -24,8 +26,6 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
-
-from train_configer import TrainConfiger
 
 
 class MONAITrainer(Executor):

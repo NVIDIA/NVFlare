@@ -55,7 +55,7 @@ class TestSimulatorRunner:
         workspace = tempfile.mkdtemp()
         job_folder = os.path.join(os.path.dirname(__file__), "../../../../data/jobs/valid_job")
         runner = SimulatorRunner(job_folder=job_folder,
-                                 workspace=workspace, n_clients="site-1", threads=1)
+                                 workspace=workspace, clients="site-1", threads=1)
         assert runner.setup()
 
         expected_clients = ["site-1"]
@@ -73,7 +73,7 @@ class TestSimulatorRunner:
         workspace = tempfile.mkdtemp()
         job_folder = os.path.join(os.path.dirname(__file__), "../../../../data/jobs/valid_job")
         runner = SimulatorRunner(job_folder=job_folder,
-                                 workspace=workspace, clients=3, threads=1)
+                                 workspace=workspace, n_clients=3, threads=1)
         assert not runner.setup()
 
     @pytest.mark.parametrize("client_names, gpus, expected_split_names", [

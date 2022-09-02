@@ -13,8 +13,7 @@
 # limitations under the License.
 
 # from __future__ import annotations
-
-import pickle
+from nvflare.fuel.utils import fobs
 
 
 class Learnable(dict):
@@ -25,7 +24,7 @@ class Learnable(dict):
             object serialized in bytes.
 
         """
-        return pickle.dumps(self)
+        return fobs.dumps(self)
 
     @classmethod
     def from_bytes(cls, data: bytes):
@@ -35,7 +34,7 @@ class Learnable(dict):
             data: a bytes object
 
         Returns:
-            an object loaded by pickle from data
+            an object loaded by FOBS from data
 
         """
-        return pickle.loads(data)
+        return fobs.loads(data)

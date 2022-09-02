@@ -1,4 +1,4 @@
-# Federated Learning for XGBoost 
+# Tree-based Federated Learning for XGBoost 
 
 ## Introduction to XGBoost and HIGGS Data
 
@@ -10,11 +10,31 @@ which is an optimized distributed gradient boosting library.
 ### HIGGS
 This example illustrates a binary classification task based on [HIGGS dataset](https://archive.ics.uci.edu/ml/datasets/HIGGS). This dataset contains 11 million instances, each with 28 attributes.
 
+## Federated Training of XGBoost under Tree-based Schemes
+Several mechanisms have been proposed for training an XGBoost model under federated learning setting. In this example, we illustrate the use of NVFlare under horizontal federated learning, and tree-based collaboration.
+### Horizontal Federated Learning
+Under horizontal setting, each participant / client joining the federated learning will have part of the whole data / instances, while each instance has full features. This is in contrast to vertical federated learning, where each client has part of the feature values.
+### Tree-based Collaboration
+There are multiple ways to perform federated collaboration for XGBoost training, this example shows tree-based methods: the trees will be independently trained on each client's local data without collecting the global knowledge. Trained trees will be collected and passed to server / other clients for aggregation and further training.  
+
+#### Cyclic Training 
+
+"Cyclic XGBoost" is one way of performing tree-based federated boosting with multiple sites: at each round of tree boosting, instead of relying on the whole data statistics collected from all clients, the boosting relies on only 1 client's local data. The resulting tree sequence is then forwarded to the next client for next round's boosting. Such training scheme have been proposed in literatures [1] [2].
+
+#### Bagging Aggregation
+
+"Bagging XGBoost" is another way of performing tree-based federated boosting with multiple sites: at each round of tree boosting, all sites start from the same "global model", and boost a number of trees (in current example, 1 tree) based on their local data. The resulting trees are then send to server. A bagging aggregation scheme is applied to all the submitted trees to update the global model, which is further distributed to all clients for next round's boosting. 
+
+This scheme bears certain similarity to the [Random Forest mode](https://xgboost.readthedocs.io/en/stable/tutorials/rf.html) of XGBoost, where a `num_parallel_tree` is boosted based on random row/col splits, rather than a single tree. Under federated learning setting, such split is fixed to clients rather than random and without column subsampling. 
+
+In addition to basic uniform shrinkage setting where all clients have the same learning rate, based on our research, we enabled scaled shrinkage across clients for weighted aggregation according to each client's data size, which is shown to significantly improve the model's performance on non-uniform quantity splits over HIGGS data.
+
 ## Data Preparation
-To run the examples, we first download the dataset, which is a single `.csv` file. The dataset will be downloaded, uncompressed, and stored under `./dataset` as `./dataset/HIGGS.csv`.
+### Download and Store Data
+To run the examples, we first download the dataset from the HIGGS link above, which is a single `.csv` file. The dataset will be downloaded, uncompressed, and stored under `./dataset` as `{PWD}/dataset/HIGGS.csv`.
 
 ### Data Split
-Since HIGGS dataset is already randomly recorded, data split will be specified by the continuous index ranges for each client, rather than a vector of random instance indices. We provide four options to split the dataset: 
+Since HIGGS dataset is already randomly recorded, data split will be specified by the continuous index ranges for each client, rather than a vector of random instance indices. We provide four options to split the dataset to simulate the non-uniformity in data quantity: 
 
 1. uniform: all clients has the same amount of data 
 2. linear: the amount of data is linearly correlated with the client ID (1 to M)
@@ -23,16 +43,25 @@ Since HIGGS dataset is already randomly recorded, data split will be specified b
 
 The choice of data split depends on dataset and the number of participants. For a large dataset as HIGGS, if the number of clients is small (e.g. 5), each client will still have sufficient data to train on with uniform split, and hence exponential would be used to observe the performance drop caused by non-uniform data split. If the number of clients is large (e.g. 20), exponential split will be too aggressive, and linear/square should be used.
 
-Data splits used in the following experiment and other training configurations can be generated with
+Data splits used in the following experiment can be generated with
 ```
-bash train_config_gen.sh
+bash data_split_gen.sh
 ```
-The folder `./train_configs` contains all pre-generated training configuration files used in this example.
+To be specific, this script calls the python script `./utils/prepare_data_split.py`. The arguments are:
+- site_num: total number of sites
+- site_name: site name prefix
+- size_total: total number of instances, for HIGGS dataset it is 11 million
+- size_valid: validation size, for the experiments here, it is 1 million, indicating the first 1 million instances will be used as standalone validation set. 
+- split_method: how to split the dataset, can be uniform, linear, square, and exponential
+- out_path: output path for the data split json file 
+This will generate data splits for two client sizes: 5 and 20, and 3 split conditions: uniform, square, and exponential. Users can further customize it for more experiments.
+> **_NOTE:_** The generated train config files will be stored in the folder `./data_splits`, and will be used by job_configs by specifying the path within `config_fed_client.json` 
 
-## Environment Preparation
-### Install NVIDIA FLARE
+## Run automated experiments
+To run this example with NVFlare, follow the below steps.
+### Environment Preparation
 Follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions.
-Install additional requirements:
+Install additional requirements for this xgboost example:
 ```
 python3 -m pip install pandas
 python3 -m pip install xgboost
@@ -46,7 +75,6 @@ python3 -m pip install tensorflow
 python3 -m pip install seaborn
 ```
 ### Set up FL workspace
-
 Follow the [Quickstart](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions to set up your POC ("proof of concept") workspace.
 
 Here, we run the following script
@@ -59,55 +87,23 @@ bash create_poc_workspace.sh 20
 ```
 for our two experimental settings: 5-client and 20-client.
 
-## Federated Training of XGBoost under Cyclic and Bagging Training Schemes
-### Cyclic Training 
-
-"Cyclic XGBoost" is one way of performing federated tree boosting with multiple sites: at each round of tree boosting, instead of relying on the whole data statistics collected from all clients, the boosting relies on only 1 client's local data. The resulting tree sequence is then forwarded to the next client for next round's boosting. Such training scheme have been proposed in literatures [1] [2].
-
-### Bagging Aggregation
-
-"Bagging XGBoost" is one way of performing federated tree boosting with multiple sites: at each round of tree boosting, all sites start from the same "global model", and boost a number of trees based on their local data. The resulting trees are then send to server. A bagging aggregation scheme is applied to all the submitted trees to update the global model, which is further distributed to all clients for next round's boosting. 
-
-This scheme is similar to the [Random Forest mode](https://xgboost.readthedocs.io/en/stable/tutorials/rf.html) of XGBoost, where a `num_parallel_tree` is boosted based on random row/col splits, rather than a single tree. Under federated learning setting, such split is fixed to clients rather than random. 
-
-In addition to basic uniform shrinkage setting where all clients have the same learning rate, based on our research, we enabled scaled shrinkage across clients for weighted aggregation according to each client's data size.
-
-
-## Run automated experiments
-### Prepare training configs with data splits
-First, we prepare the configs for several training data splits and scenarios by running
-```
-bash train_config_gen.sh
-```
-To be specific, this script calls the python script `./utils/prepare_train_config.py`. The arguments are:
-- site_num: total number of sites
-- nthread: nthread parameter for xgboost, this is set according to system resource 
-- size_total: total number of instances, for HIGGS dataset it is 11 million
-- size_valid: validation size, for the experiments here, it is 1 million, indicating the first 1 million instances will be used as standalone validation set. 
-- split_method: how to split the dataset, can be uniform, linear, square, and exponential
-- lr_mode: whether to use uniform or scaled shrinkage
-This will generate data splits for two client sizes: 5 and 20, and 3 split conditions: uniform, square, and exponential. Users can further customize it for more experiments.
-> **_NOTE:_** The generated train config files will be stored in the folder `./train_configs`, and will be used by job_configs by specifying it with `config_fed_client.json` 
-
-
 ### Prepare job configs under various training schemes
 We then prepare the job configs for NVFlare jobs corresponding to various settings by running
 ```
 bash job_config_gen.sh
 ```
-To be specific, this script calls the python script `./utils/prepare_job_config.py`. It modifies settings from a base config `./job_configs/higgs_base`, and relies on the train_configs generated in the last step.
+To be specific, this script calls the python script `./utils/prepare_job_config.py`. It modifies settings from a base config `./job_configs/higgs_base`, and copies the correct data split file generated in the data preparation step.
 
 Here, we generated in total 10 different configs: five for each of the 5/20-client settings:
+- cyclic training with uniform data split 
+- cyclic training with non-uniform data split 
 - bagging training with uniform data split and uniform shrinkage 
 - bagging training with non-uniform data split and uniform shrinkage 
 - bagging training with non-uniform data split and scaled shrinkage
-- cyclic training with uniform data split 
-- cyclic training with non-uniform data split 
 
-Cyclic training always use uniform shrinkage 
-> **_NOTE:_** The generated job config files will be stored in the folder `./job_configs`
+> **_NOTE:_** Cyclic training always use uniform shrinkage. The generated job config files will be stored in the folder `./job_configs`
 
-### Start the FL system and submit jobs
+### Option 1: start the FL system and submit jobs
 Next, we will start the FL system and submit jobs to start FL training automatically.
 
 Start the FL system with either 5 clients or 20 clients
@@ -126,6 +122,8 @@ The [submit_job.sh](./submit_job.sh) script follows the pattern:
 bash ./submit_job.sh [client_num] [training_option] [split] [lr_scheme]
 ```
 The arguments control which config to use.  
+
+### Option 2: run all jobs together
 To run all experiments under 5-client or 20-client settings in one command, simply run
 ```
 bash run_experiment_5.sh
@@ -145,12 +143,17 @@ shutdown server
 > **_NOTE:_** For more information about the Admin client, see [here](https://nvflare.readthedocs.io/en/main/user_guide/operation.html).
 
 ## Results on 5- and 20-client under various training settings
-For comparison, we train a baseline model in a centralized manner with same round of training
+For comparison, we train baseline models in a centralized manner with same round of training
 ```
-python3 ./utils/baseline_centralized.py
+bash run_experiment_centralized.sh
 ```
+This will train several models w/ and w/o random forest settings. The results are shown below.
 
-Let's summarize the result of the experiments run above. We compare the AUC scores of 
+![Centralized validation curve](./figs/Centralized.png)
+
+As shown, random forest may not yield significant performance gain, and can even make the accuracy worse if subsample rate is too low (e.g. 0.05).
+
+Let's then summarize the result of the federated learning experiments run above. We compare the AUC scores of 
 the model on a standalone validation set consisted of the first 1 million instances of HIGGS dataset.
 
 We provide a script for plotting the tensorboard records, running
@@ -158,6 +161,7 @@ We provide a script for plotting the tensorboard records, running
 python3 ./utils/plot_tensorboard_events.py
 ```
 The resulting validation AUC curves (no smoothing) are shown below:
+
 ![5 clients validation curve](./figs/5_client.png)
 ![20 clients validation curve](./figs/20_client.png)
 

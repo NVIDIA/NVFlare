@@ -17,15 +17,19 @@ import json
 import os
 import shutil
 
-parser = argparse.ArgumentParser(description="generate train configs for HIGGS dataset")
-parser.add_argument("--train_config_path", type=str, default="./train_configs", help="Path to train config folder")
-parser.add_argument("--job_config_path_root", type=str, default="./job_configs", help="Path to job config folder")
-parser.add_argument("--base_job_name", type=str, default="higgs_base", help="Job name of base config")
-parser.add_argument("--site_num", type=int, default=5, help="Total number of sites")
-parser.add_argument("--round_num", type=int, default=100, help="Total number of training rounds")
-parser.add_argument("--train_mode", type=str, default="bagging", help="Training mode")
-parser.add_argument("--split_method", type=str, default="uniform", help="How to split the dataset")
-parser.add_argument("--lr_mode", type=str, default="uniform", help="Whether to use uniform or scaled shrinkage")
+
+def job_config_args_parser():
+    parser = argparse.ArgumentParser(description="generate train configs for HIGGS dataset")
+    parser.add_argument("--data_split_path", type=str, default="./data_splits", help="Path to data split folder")
+    parser.add_argument("--job_config_path_root", type=str, default="./job_configs", help="Path to job config folder")
+    parser.add_argument("--base_job_name", type=str, default="higgs_base", help="Job name of base config")
+    parser.add_argument("--site_num", type=int, default=5, help="Total number of sites")
+    parser.add_argument("--round_num", type=int, default=100, help="Total number of training rounds")
+    parser.add_argument("--training_mode", type=str, default="bagging", help="Training mode")
+    parser.add_argument("--split_method", type=str, default="uniform", help="How to split the dataset")
+    parser.add_argument("--lr_mode", type=str, default="uniform", help="Whether to use uniform or scaled shrinkage")
+    parser.add_argument("--nthread", type=int, default=16, help="nthread for xgboost")
+    return parser
 
 
 def read_json(filename):
@@ -40,12 +44,13 @@ def write_json(data, filename):
 
 
 def main():
+    parser = job_config_args_parser()
     args = parser.parse_args()
     job_name = (
         "higgs_"
         + str(args.site_num)
         + "_"
-        + args.train_mode
+        + args.training_mode
         + "_"
         + args.split_method
         + "_split"
@@ -53,7 +58,7 @@ def main():
         + args.lr_mode
         + "_lr"
     )
-    train_config_name = "config_train_" + str(args.site_num) + "_" + args.split_method + ".json"
+    data_split_name = "data_split_" + str(args.site_num) + "_" + args.split_method + ".json"
     target_path = os.path.join(args.job_config_path_root, job_name)
     target_config_path = os.path.join(target_path, job_name, "config")
     base_path = os.path.join(args.job_config_path_root, args.base_job_name)
@@ -65,14 +70,14 @@ def main():
     meta_config_filename = os.path.join(target_path, "meta.json")
     client_config_filename = os.path.join(target_config_path, "config_fed_client.json")
     server_config_filename = os.path.join(target_config_path, "config_fed_server.json")
-    train_config_filename = os.path.join(target_config_path, train_config_name)
+    data_split_filename = os.path.join(target_config_path, data_split_name)
     shutil.copyfile(os.path.join(base_path, "meta.json"), meta_config_filename)
     shutil.copyfile(os.path.join(base_path, "higgs_base/config", "config_fed_client.json"), client_config_filename)
     shutil.copyfile(
-        os.path.join(base_path, "higgs_base/config", "config_fed_server_" + args.train_mode + ".json"),
+        os.path.join(base_path, "higgs_base/config", "config_fed_server_" + args.training_mode + ".json"),
         server_config_filename,
     )
-    shutil.copyfile(os.path.join(args.train_config_path, train_config_name), train_config_filename)
+    shutil.copyfile(os.path.join(args.data_split_path, data_split_name), data_split_filename)
 
     # adjust file contents according to each job's specs
     meta_config = read_json(meta_config_filename)
@@ -83,18 +88,21 @@ def main():
     meta_config["deploy_map"][job_name] = meta_config["deploy_map"][args.base_job_name]
     del meta_config["deploy_map"][args.base_job_name]
     # update client config
-    client_config["components"][0]["args"]["train_config_filename"] = train_config_name
+    client_config["components"][0]["args"]["data_split_filename"] = data_split_name
     client_config["components"][0]["args"]["lr_mode"] = args.lr_mode
-    if args.train_mode == "bagging":
-        client_config["components"][0]["args"]["num_parallel_tree"] = args.site_num
+    client_config["components"][0]["args"]["nthread"] = args.nthread
+    client_config["components"][0]["args"]["training_mode"] = args.training_mode
+
+    if args.training_mode == "bagging":
+        client_config["components"][0]["args"]["num_tree_bagging"] = args.site_num
         server_config["workflows"][0]["args"]["num_rounds"] = args.round_num + 1
         # update server config
         server_config["workflows"][0]["args"]["min_clients"] = args.site_num
-    elif args.train_mode == "cyclic":
-        client_config["components"][0]["args"]["num_parallel_tree"] = 1
+    elif args.training_mode == "cyclic":
+        client_config["components"][0]["args"]["num_tree_bagging"] = 1
         server_config["workflows"][0]["args"]["num_rounds"] = int(args.round_num / args.site_num)
     else:
-        print(f"Training mode {args.train_mode} not supported")
+        print(f"Training mode {args.training_mode} not supported")
         return False
     # write jsons
     write_json(meta_config, meta_config_filename)
