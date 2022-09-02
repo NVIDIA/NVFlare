@@ -41,7 +41,7 @@ In resource restricted environments where you need to simulate several clients (
 you can run the simulator using:
 
 ```
-python3 -u -m nvflare.private.fed.app.simulator.simulator job -o /tmp/nvflare/sim_spleen_ct_seg --thread 1 -n 2
+python3 -u -m nvflare.private.fed.app.simulator.simulator job --workspace /tmp/nvflare/sim_spleen_ct_seg --threads 1 --clients 2
 ```
 
 #### 4.2 Multiple threads, multiple gpus
@@ -50,7 +50,7 @@ We can also specify the client names via the `--client_list` argument
 and assign them to the appropriate GPU device using the `--gpu` argument.
 
 ```
-python3 -u -m nvflare.private.fed.app.simulator.simulator job -o /tmp/nvflare/sim_spleen_ct_seg --thread 2 --client_list site-1,site-2 --gpu 0,1
+python3 -u -m nvflare.private.fed.app.simulator.simulator job --workspace /tmp/nvflare/sim_spleen_ct_seg --threads 2 --clients 2 --gpu 0,1
 ```
 
 #### 4.3 TensorBoard visualization
