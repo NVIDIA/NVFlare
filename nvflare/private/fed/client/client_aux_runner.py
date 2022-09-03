@@ -95,10 +95,11 @@ class ClientAuxRunner(AuxRunner):
             self.log_error(fl_ctx, "bad reply from peer: expect Shareable but got {}".format(type(reply)))
             return make_reply(ReturnCode.ERROR)
 
+        job_id = fl_ctx.get_job_id()
         rc = reply.get_return_code()
         if rc == ReturnCode.RUN_MISMATCH:
             self.log_info(fl_ctx, "got RUN_MISMATCH - asked engine to abort app")
-            engine.abort_app(job_id=self.run_num, fl_ctx=fl_ctx)
+            engine.abort_app(job_id=job_id, fl_ctx=fl_ctx)
 
         return reply
 
