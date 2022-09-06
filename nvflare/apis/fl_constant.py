@@ -225,7 +225,13 @@ class EventScope(object):
 
 class NonSerializableKeys(object):
 
-    KEYS = [ReservedKey.ENGINE, ReservedKey.MANAGER, ReservedKey.RUNNER]
+    KEYS = [
+        ReservedKey.ENGINE,
+        ReservedKey.MANAGER,
+        ReservedKey.RUNNER,
+        FLContextKey.SCOPE_PROPERTIES,
+        FLContextKey.SCOPE_OBJECT,
+    ]
 
 
 class LogMessageTag(object):

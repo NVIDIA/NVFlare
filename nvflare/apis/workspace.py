@@ -146,3 +146,6 @@ class Workspace:
 
     def get_site_privacy_file_path(self):
         return self.get_file_path_in_site_config(WorkspaceConstants.PRIVACY_CONFIG)
+
+    def get_site_custom_dir(self) -> str:
+        return os.path.join(self.root_dir, WorkspaceConstants.CUSTOM_FOLDER_NAME)

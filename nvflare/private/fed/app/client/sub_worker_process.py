@@ -17,6 +17,7 @@
 import argparse
 import copy
 import os
+import sys
 import threading
 import time
 import traceback
@@ -116,6 +117,9 @@ def main():
     # parent_port = args.parent_port
 
     workspace = Workspace(args.workspace, args.client_name)
+    app_custom_folder = workspace.get_site_custom_dir()
+    if os.path.isdir(app_custom_folder):
+        sys.path.append(app_custom_folder)
     configure_logging(workspace)
 
     SecurityContentService.initialize(content_folder=workspace.get_startup_kit_dir())

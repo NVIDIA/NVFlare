@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+import sys
 
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.workspace import Workspace
@@ -42,6 +43,9 @@ class ClientAppRunner:
         )
         conf.configure()
         workspace = Workspace(args.workspace, args.client_name, config_folder)
+        app_custom_folder = workspace.get_site_custom_dir()
+        if os.path.isdir(app_custom_folder):
+            sys.path.append(app_custom_folder)
 
         runner_config = conf.runner_config
         assert isinstance(runner_config, ClientRunnerConfig)

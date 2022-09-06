@@ -17,6 +17,7 @@
 import argparse
 import logging
 import os
+import sys
 
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
@@ -62,6 +63,9 @@ def main():
     args.snapshot = kv_list.get("restore_snapshot")
 
     workspace = Workspace(root_dir=args.workspace, site_name="server")
+    app_custom_folder = workspace.get_site_custom_dir()
+    if os.path.isdir(app_custom_folder):
+        sys.path.append(app_custom_folder)
 
     command_agent = None
     collective_command_agent = None
