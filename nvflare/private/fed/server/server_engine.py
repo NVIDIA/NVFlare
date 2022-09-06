@@ -60,7 +60,6 @@ from nvflare.widgets.widget import Widget, WidgetID
 
 from .admin import ClientReply
 from .client_manager import ClientManager
-from .collective_comm_waiter import CollectiveCommWaiter
 from .job_runner import JobRunner
 from .run_manager import RunManager
 from .server_engine_internal_spec import EngineInfo, RunInfo, ServerEngineInternalSpec
@@ -205,7 +204,7 @@ class ServerEngine(ServerEngineInternalSpec):
             if self.server.enable_byoc:
                 app_custom_folder = os.path.join(app_root, "custom")
 
-            open_ports = get_open_ports(3)
+            open_ports = get_open_ports(2)
             self._start_runner_process(
                 self.args, app_root, run_number, app_custom_folder, open_ports, job_id, job_clients, snapshot
             )
@@ -289,8 +288,6 @@ class ServerEngine(ServerEngineInternalSpec):
             + str(listen_port)
             + " -c "
             + str(open_ports[0])
-            + " --collective_command_port "
-            + str(open_ports[2])
             + " --set"
             + command_options
             + " print_conf=True restore_snapshot="
@@ -307,8 +304,6 @@ class ServerEngine(ServerEngineInternalSpec):
 
         with self.lock:
             self.run_processes[run_number] = {
-                RunProcessKey.COLLECTIVE_LISTEN_PORT: open_ports[2],
-                RunProcessKey.COLLECTIVE_CONNECTION: None,
                 RunProcessKey.LISTEN_PORT: listen_port,
                 RunProcessKey.CONNECTION: None,
                 RunProcessKey.CHILD_PROCESS: process,
@@ -608,23 +603,6 @@ class ServerEngine(ServerEngineInternalSpec):
                 if return_result:
                     result = command_conn.recv()
         return result
-
-    def get_collective_command_conn(self, job_id):
-        # this function need to be called with self.lock
-        command_conn = self.run_processes.get(job_id, {}).get(RunProcessKey.COLLECTIVE_CONNECTION)
-
-        if not command_conn:
-            try:
-                port = self.run_processes.get(job_id, {}).get(RunProcessKey.COLLECTIVE_LISTEN_PORT)
-                command_waiter = CollectiveCommWaiter()
-                address = ("localhost", port)
-                command_conn = CommandClient(address, authkey="client process secret password".encode())
-                command_conn = ClientConnection(command_conn)
-                self.run_processes[job_id][RunProcessKey.COLLECTIVE_CONNECTION] = command_conn
-                self.run_processes[job_id][RunProcessKey.COLLECTIVE_CONNECTION_WAITER] = command_waiter
-            except Exception:
-                pass
-        return command_conn
 
     def get_command_conn(self, job_id):
         # this function need to be called with self.lock
