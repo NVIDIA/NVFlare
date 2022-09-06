@@ -12,11 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import argparse
 import os
 import shutil
 import tempfile
-from argparse import Namespace
 from unittest.mock import patch
 
 import pytest
@@ -31,18 +29,6 @@ class TestSimulatorRunner:
     def teardown_method(self) -> None:
         shutil.rmtree(self.workspace)
 
-    def _create_parser(self):
-        parser = argparse.ArgumentParser()
-        parser.add_argument("job_folder")
-        parser.add_argument("--workspace", "-o", type=str, help="WORKSPACE folder", required=True)
-        parser.add_argument("--clients", "-n", type=int, help="number of clients")
-        parser.add_argument("--client_list", "-c", type=str, help="client names list")
-        parser.add_argument("--threads", "-t", type=int, help="number of running threads", required=True)
-        parser.add_argument("--gpu", "-gpu", type=str, help="list of GPUs")
-        parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
-
-        return parser
-
     @patch("nvflare.private.fed.app.deployer.simulator_deployer.SimulatorServer.deploy")
     @patch("nvflare.private.fed.app.server.server_train.FedAdminServer")
     @patch("nvflare.private.fed.app.deployer.simulator_deployer.FederatedClient.register")
@@ -50,10 +36,8 @@ class TestSimulatorRunner:
     @patch("nvflare.private.fed.app.deployer.simulator_deployer.FedAdminAgent")
     def test_valid_job_simulate_setup(self, mock_server,  mock_admin, mock_register, mock_heartbeat, mock_agent):
         workspace = tempfile.mkdtemp()
-        parser = self._create_parser()
         job_folder = os.path.join(os.path.dirname(__file__), "../../../../data/jobs/valid_job")
-        args = parser.parse_args([job_folder, '-o' + workspace, '-t 1'])
-        runner = SimulatorRunner(args)
+        runner = SimulatorRunner(job_folder=job_folder, workspace=workspace, threads=1)
         assert runner.setup()
 
         expected_clients = ["site-1", "site-2"]
@@ -69,10 +53,9 @@ class TestSimulatorRunner:
     @patch("nvflare.private.fed.app.deployer.simulator_deployer.FedAdminAgent")
     def test_client_names_setup(self, mock_server,  mock_admin, mock_register, mock_heartbeat, mock_agent):
         workspace = tempfile.mkdtemp()
-        parser = self._create_parser()
         job_folder = os.path.join(os.path.dirname(__file__), "../../../../data/jobs/valid_job")
-        args = parser.parse_args([job_folder, '-o' + workspace, '-c site-1', '-t 1'])
-        runner = SimulatorRunner(args)
+        runner = SimulatorRunner(job_folder=job_folder,
+                                 workspace=workspace, clients="site-1", threads=1)
         assert runner.setup()
 
         expected_clients = ["site-1"]
@@ -88,10 +71,9 @@ class TestSimulatorRunner:
     @patch("nvflare.private.fed.app.deployer.simulator_deployer.FedAdminAgent")
     def test_no_app_for_client(self, mock_server,  mock_admin, mock_register, mock_heartbeat, mock_agent):
         workspace = tempfile.mkdtemp()
-        parser = self._create_parser()
         job_folder = os.path.join(os.path.dirname(__file__), "../../../../data/jobs/valid_job")
-        args = parser.parse_args([job_folder, '-o' + workspace, '-n 3', '-t 1'])
-        runner = SimulatorRunner(args)
+        runner = SimulatorRunner(job_folder=job_folder,
+                                 workspace=workspace, n_clients=3, threads=1)
         assert not runner.setup()
 
     @pytest.mark.parametrize("client_names, gpus, expected_split_names", [
@@ -101,6 +83,6 @@ class TestSimulatorRunner:
                                 ]
                              )
     def test_split_names(self, client_names, gpus, expected_split_names):
-        runner = SimulatorRunner(Namespace())
+        runner = SimulatorRunner(job_folder="", workspace="")
         split_names = runner.split_names(client_names, gpus)
         assert sorted(split_names) == sorted(expected_split_names)
