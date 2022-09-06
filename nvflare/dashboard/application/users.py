@@ -80,12 +80,14 @@ def user_blob(id):
     if not Store._is_approved_by_user_id(id):
         return jsonify({"status": "not approved yet"}), 200
     claims = get_jwt()
-    if claims.get("role") == "project_admin" or claims.get("id") == id:
-        pin = request.json.get("pin")
-        fileobj, filename = Store.get_user_blob(pin, id)
-        response = make_response(fileobj.read())
-        response.headers.set("Content-Type", "zip")
-        response.headers.set("Content-Disposition", "attachment", filename=filename)
-        return response
-    else:
+    requester = get_jwt_identity()
+    is_creator = requester == Store._get_email_by_id(id)
+    is_project_admin = claims.get("role") == "project_admin"
+    if not is_creator and not is_project_admin:
         return jsonify({"status": "unauthorized"}), 403
+    pin = request.json.get("pin")
+    fileobj, filename = Store.get_user_blob(pin, id)
+    response = make_response(fileobj.read())
+    response.headers.set("Content-Type", "zip")
+    response.headers.set("Content-Disposition", "attachment", filename=filename)
+    return response
