@@ -36,7 +36,7 @@ if versions["error"]:
     year = today[0] % 1000
     month = today[1]
     day = today[2]
-    version = f"0.0.{year:02d}{month:02d}{day:02d}"
+    version = f"2.2.0.{year:02d}{month:02d}{day:02d}"
 else:
     version = versions["version"]
 
@@ -90,6 +90,7 @@ setup(
         "console_scripts": [
             "provision=nvflare.lighter.provision:main",
             "poc=nvflare.lighter.poc:main",
+            "nvflare=nvflare.lighter.nvflare:main",
             "authz_preview=nvflare.fuel.hci.tools.authz_preview:main",
         ],
     },

@@ -21,16 +21,24 @@ import sys
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
 
 
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("job_folder")
-    parser.add_argument("--workspace", "-o", type=str, help="WORKSPACE folder", required=True)
-    parser.add_argument("--clients", "-n", type=int, help="number of clients")
-    parser.add_argument("--client_list", "-c", type=str, help="client names list")
-    parser.add_argument("--threads", "-p", type=int, help="number of parallel running clients")
-    parser.add_argument("--gpu", "-gpu", type=str, help="list of GPUs")
-    args = parser.parse_args()
-    return args
+def define_simulator_parser(simulator_parser):
+    simulator_parser.add_argument("job_folder")
+    simulator_parser.add_argument("-w", "--workspace", type=str, help="WORKSPACE folder", required=True)
+    simulator_parser.add_argument("-n", "--clients", type=int, help="number of clients")
+    simulator_parser.add_argument("-c", "--client_list", type=str, help="client names list")
+    simulator_parser.add_argument("-t", "--threads", type=int, help="number of parallel running clients")
+    simulator_parser.add_argument("-gpu", "--gpu", type=str, help="list of GPU Device Ids, comma separated")
+
+
+def run_simulator(simulator_args):
+    simulator_driver = SimulatorRunner(simulator_args)
+
+    if simulator_driver.setup():
+        run_status = simulator_driver.run()
+    else:
+        run_status = 1
+
+    return run_status
 
 
 if __name__ == "__main__":
@@ -43,11 +51,9 @@ if __name__ == "__main__":
         raise RuntimeError("Python versions 3.9 and above are not yet supported. Please use Python 3.8 or 3.7.")
     if sys.version_info < (3, 7):
         raise RuntimeError("Python versions 3.6 and below are not supported. Please use Python 3.8 or 3.7.")
-    args = parse_args()
 
-    simulator = SimulatorRunner(args)
-    if simulator.setup():
-        run_status = simulator.run()
-    else:
-        run_status = 1
-    os._exit(run_status)
+    parser = argparse.ArgumentParser()
+    define_simulator_parser(parser)
+    args = parser.parse_args()
+    status = run_simulator(args)
+    os._exit(status)

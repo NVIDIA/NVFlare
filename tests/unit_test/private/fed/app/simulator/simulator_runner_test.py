@@ -16,8 +16,8 @@ import argparse
 import os
 import shutil
 import tempfile
-from unittest.mock import patch
 from argparse import Namespace
+from unittest.mock import patch
 
 import pytest
 
