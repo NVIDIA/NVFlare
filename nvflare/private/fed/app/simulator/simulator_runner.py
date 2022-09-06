@@ -21,6 +21,7 @@ import sys
 import tempfile
 import threading
 import time
+from argparse import Namespace
 from concurrent.futures import ThreadPoolExecutor
 from multiprocessing.connection import Client
 
@@ -43,9 +44,16 @@ from nvflare.security.security import EmptyAuthorizer
 
 
 class SimulatorRunner(FLComponent):
-    def __init__(self, args):
+    def __init__(self, job_folder: str, workspace: str, clients=None, n_clients=None, threads=None, gpu=None):
         super().__init__()
-        self.args = args
+
+        self.job_folder = job_folder
+        self.workspace = workspace
+        self.clients = clients
+        self.n_clients = n_clients
+        self.threads = threads
+        self.gpu = gpu
+
         self.ask_to_stop = False
 
         self.simulator_root = None
@@ -53,13 +61,27 @@ class SimulatorRunner(FLComponent):
         self.deployer = SimulatorDeployer()
         self.client_names = []
 
-        self.args.set = []
+    def _generate_args(self, job_folder: str, workspace: str, clients=None, n_clients=None, threads=None, gpu=None):
+        args = Namespace(
+            job_folder=job_folder,
+            workspace=workspace,
+            clients=clients,
+            n_clients=n_clients,
+            threads=threads,
+            gpu=gpu,
+        )
+        args.set = []
+        return args
 
     def setup(self):
-        if self.args.client_list:
-            self.client_names = self.args.client_list.strip().split(",")
-        elif self.args.clients:
-            for i in range(self.args.clients):
+        self.args = self._generate_args(
+            self.job_folder, self.workspace, self.clients, self.n_clients, self.threads, self.gpu
+        )
+
+        if self.args.clients:
+            self.client_names = self.args.clients.strip().split(",")
+        elif self.args.n_clients:
+            for i in range(self.args.n_clients):
                 self.client_names.append("site-" + str(i + 1))
 
         log_config_file_path = os.path.join(self.args.workspace, "startup", "log.config")
@@ -202,38 +224,41 @@ class SimulatorRunner(FLComponent):
         return split_names
 
     def run(self):
-        try:
-            self.logger.info("Deploy and start the Server App.")
-            server_thread = threading.Thread(target=self.start_server_app, args=[])
-            server_thread.start()
+        if self.setup():
+            try:
+                self.logger.info("Deploy and start the Server App.")
+                server_thread = threading.Thread(target=self.start_server_app, args=[])
+                server_thread.start()
 
-            # wait for the server app is started
-            while self.services.engine.engine_info.status != MachineStatus.STARTED:
-                time.sleep(1.0)
-                if not server_thread.is_alive():
-                    raise RuntimeError("Could not start the Server App.")
+                # wait for the server app is started
+                while self.services.engine.engine_info.status != MachineStatus.STARTED:
+                    time.sleep(1.0)
+                    if not server_thread.is_alive():
+                        raise RuntimeError("Could not start the Server App.")
 
-            if self.args.gpu:
-                self.args.threads = 1
-                gpus = self.args.gpu.split(",")
-                split_client_names = self.split_names(self.client_names, gpus)
-            else:
-                gpus = [None]
-                split_client_names = [self.client_names]
+                if self.args.gpu:
+                    self.args.threads = 1
+                    gpus = self.args.gpu.split(",")
+                    split_client_names = self.split_names(self.client_names, gpus)
+                else:
+                    gpus = [None]
+                    split_client_names = [self.client_names]
 
-            executor = ThreadPoolExecutor(max_workers=len(gpus))
-            for index in range(len(gpus)):
-                client_names = split_client_names[index]
-                executor.submit(lambda p: self.client_run(*p), [client_names, gpus[index]])
+                executor = ThreadPoolExecutor(max_workers=len(gpus))
+                for index in range(len(gpus)):
+                    client_names = split_client_names[index]
+                    executor.submit(lambda p: self.client_run(*p), [client_names, gpus[index]])
 
-            executor.shutdown()
-            server_thread.join()
-            run_status = 0
-        except BaseException as error:
-            self.logger.error(error)
-            run_status = 2
-        finally:
-            self.deployer.close()
+                executor.shutdown()
+                server_thread.join()
+                run_status = 0
+            except BaseException as error:
+                self.logger.error(error)
+                run_status = 2
+            finally:
+                self.deployer.close()
+        else:
+            run_status = 1
         return run_status
 
     def client_run(self, client_names, gpu):

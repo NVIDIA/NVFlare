@@ -15,7 +15,7 @@
 from typing import List, Optional
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, RunProcessKey, ServerCommandKey
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey, RunProcessKey, ServerCommandKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.private.fed.server.server_state import HotState
@@ -84,10 +84,13 @@ class SimulatorServer(FederatedServer):
 
         return shareable, task_id, taskname
 
-    def _submit_update(self, shareable, shared_fl_context):
+    def _submit_update(self, data, shared_fl_context):
         with self.engine.new_context() as fl_ctx:
+            shareable = data.get(ReservedKey.SHAREABLE)
+            shared_fl_ctx = data.get(ReservedKey.SHARED_FL_CONTEXT)
+
             client = shareable.get_header(ServerCommandKey.FL_CLIENT)
-            fl_ctx.set_peer_context(shared_fl_context)
+            fl_ctx.set_peer_context(shared_fl_ctx)
             contribution_task_name = shareable.get_header(ServerCommandKey.TASK_NAME)
             task_id = shareable.get_cookie(FLContextKey.TASK_ID)
             server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)

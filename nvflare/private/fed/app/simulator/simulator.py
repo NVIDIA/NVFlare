@@ -24,10 +24,10 @@ from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("job_folder")
-    parser.add_argument("--workspace", "-o", type=str, help="WORKSPACE folder", required=True)
-    parser.add_argument("--clients", "-n", type=int, help="number of clients")
-    parser.add_argument("--client_list", "-c", type=str, help="client names list")
-    parser.add_argument("--threads", "-p", type=int, help="number of parallel running clients")
+    parser.add_argument("--workspace", "-w", type=str, help="WORKSPACE folder", required=True)
+    parser.add_argument("--n_clients", "-n", type=int, help="number of clients")
+    parser.add_argument("--clients", "-c", type=str, help="client names list")
+    parser.add_argument("--threads", "-t", type=int, help="number of parallel running clients")
     parser.add_argument("--gpu", "-gpu", type=str, help="list of GPUs")
     args = parser.parse_args()
     return args
@@ -45,9 +45,14 @@ if __name__ == "__main__":
         raise RuntimeError("Python versions 3.6 and below are not supported. Please use Python 3.8 or 3.7.")
     args = parse_args()
 
-    simulator = SimulatorRunner(args)
-    if simulator.setup():
-        run_status = simulator.run()
-    else:
-        run_status = 1
+    simulator = SimulatorRunner(
+        job_folder=args.job_folder,
+        workspace=args.workspace,
+        clients=args.clients,
+        n_clients=args.n_clients,
+        threads=args.threads,
+        gpu=args.gpu,
+    )
+    run_status = simulator.run()
+
     os._exit(run_status)
