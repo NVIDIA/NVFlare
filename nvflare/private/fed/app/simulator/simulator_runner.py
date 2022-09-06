@@ -111,7 +111,7 @@ class SimulatorRunner(FLComponent):
 
                 if len(gpus) > len(self.client_names):
                     logging.error(
-                        f"The number of clients ({len(self.client_names)}) must be larger than "
+                        f"The number of clients ({len(self.client_names)}) must be larger than or equal to "
                         f"the number of GPUS: ({len(gpus)})"
                     )
                     sys.exit(-1)
@@ -210,6 +210,8 @@ class SimulatorRunner(FLComponent):
             # wait for the server app is started
             while self.services.engine.engine_info.status != MachineStatus.STARTED:
                 time.sleep(1.0)
+                if not server_thread.is_alive():
+                    raise RuntimeError("Could not start the Server App.")
 
             if self.args.gpu:
                 self.args.threads = 1
