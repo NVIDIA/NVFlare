@@ -46,12 +46,6 @@ def login():
         return jsonify({"status": "unauthenticated"}), 401
 
 
-@app.route("/api/v1/dummy", methods=["GET"])
-def dummy_blob():
-    fileobj = Store.dummy()
-    return jsonify({"status": "ok"})
-
-
 @app.route("/api/v1/overseer/blob", methods=["POST"])
 @jwt_required()
 def overseer_blob():
