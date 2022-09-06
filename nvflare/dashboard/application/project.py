@@ -82,25 +82,6 @@ def server_blob(id):
         return jsonify({"status": "unauthorized"}), 403
 
 
-# @app.route("/api/v1/init", methods=["GET"])
-# def init():
-#     credential = os.environ.get("NVFL_CREDENTIAL")
-#     if credential:
-#         email, password = credential.split(":")
-#         seed_user = {
-#             "name": "Project Admin",
-#             "email": email,
-#             "password": password,
-#             "organization": "",
-#             "role": "project_admin",
-#         }
-#         Store.create_user(seed_user)
-#         Store.create_project()
-#         return jsonify({"status": "ok"})
-#     else:
-#         return jsonify({"status": "unauthorized"}), 403
-
-
 @app.route("/api/v1/project", methods=["PATCH"])
 @jwt_required()
 def set_project():
