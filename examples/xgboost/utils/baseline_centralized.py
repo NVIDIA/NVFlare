@@ -34,7 +34,7 @@ def xgboost_args_parser():
     return parser
 
 
-def prepare_data(data_path: str):
+def prepare_higgs(data_path: str):
     higgs = pd.read_csv(data_path, header=None)
     print(higgs.info())
     print(higgs.head())
@@ -51,7 +51,7 @@ def train_one_by_one(train_data, val_data, xgb_params, num_rounds, val_label, wr
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_model_path = os.path.join(tmp_dir, "model.json")
         # Round 0
-        print(f"Round: 0 Base ", end="")
+        print("Round: 0 Base ", end="")
         bst = xgb.train(
             xgb_params, train_data, num_boost_round=1, evals=[(val_data, "validate"), (train_data, "train")]
         )
@@ -79,8 +79,15 @@ def train_one_by_one(train_data, val_data, xgb_params, num_rounds, val_label, wr
 def get_training_parameters(args):
     # use logistic regression loss for binary classification
     # use auc as metric
-    param = {"objective": "binary:logistic", "eta": 0.1, "max_depth": 8, "eval_metric": "auc", "nthread": 16,
-             "num_parallel_tree": args.num_parallel_tree, "subsample": args.subsample}
+    param = {
+        "objective": "binary:logistic",
+        "eta": 0.1,
+        "max_depth": 8,
+        "eval_metric": "auc",
+        "nthread": 16,
+        "num_parallel_tree": args.num_parallel_tree,
+        "subsample": args.subsample,
+    }
     return param
 
 
@@ -105,7 +112,7 @@ def main():
 
     # Load data
     start = time.time()
-    X_higgs, y_higgs = prepare_data(data_path)
+    X_higgs, y_higgs = prepare_higgs(data_path)
     end = time.time()
     lapse_time = end - start
     print(f"Data loading time: {lapse_time}")
@@ -131,7 +138,7 @@ def main():
             xgb_params=xgb_params,
             num_rounds=num_rounds,
             val_label=y_higgs[0:valid_num],
-            writer=writer
+            writer=writer,
         )
     bst.save_model(model_path)
     end = time.time()

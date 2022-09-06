@@ -78,7 +78,7 @@ class XGBoostTreeFedHiggsLearner(XGBoostTreeFedLearner):
         if "valid" not in data_index.keys():
             self.log_error(
                 fl_ctx,
-                f"Dict of data_index does not contain Validation split",
+                "Dict of data_index does not contain Validation split",
             )
             return make_reply(ReturnCode.TASK_ABORTED)
         site_index = data_index[self.client_id]
