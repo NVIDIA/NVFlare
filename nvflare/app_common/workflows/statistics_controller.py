@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import time
 from typing import Callable, Dict, List, Optional
 
 from nvflare.apis.client import Client
@@ -33,7 +34,7 @@ class StatisticsController(Controller):
         self,
         metric_configs: Dict[str, dict],
         writer_id: str,
-        result_wait_timeout: int = 60,
+        result_wait_timeout: int = 10,
         precision=4,
         min_clients: Optional[int] = None,
     ):
@@ -116,12 +117,21 @@ class StatisticsController(Controller):
         self.result_wait_timeout = result_wait_timeout
         self.precision = precision
         self.min_clients = min_clients
+        self.result_cb_status = {}
+
         self.result_callback_fns: Dict[str, Callable] = {
             StC.STATS_1st_METRICS: self.results_cb,
             StC.STATS_2nd_METRICS: self.results_cb,
         }
         fobs_registration()
         self.fl_ctx = None
+        self.abort_job_in_error = {
+            ReturnCode.EXECUTION_EXCEPTION: True,
+            ReturnCode.TASK_UNKNOWN: True,
+            ReturnCode.EXECUTION_RESULT_ERROR: False,
+            ReturnCode.TASK_DATA_FILTER_ERROR: False,
+            ReturnCode.TASK_RESULT_FILTER_ERROR: False,
+        }
 
     def start_controller(self, fl_ctx: FLContext):
         if self.metric_configs is None or len(self.metric_configs) == 0:
@@ -171,14 +181,15 @@ class StatisticsController(Controller):
         if abort_signal.triggered:
             return False
 
-        task = Task(name=self.task_name, data=inputs, result_received_cb=results_cb_fn)
+        task_props = {StC.METRIC_TASK_KEY: metric_task}
+        task = Task(name=self.task_name, data=inputs, result_received_cb=results_cb_fn, props=task_props)
 
         self.broadcast_and_wait(
             task=task,
             targets=None,
             min_responses=self.min_clients,
             fl_ctx=fl_ctx,
-            wait_time_after_min_received=3,
+            wait_time_after_min_received=1,
             abort_signal=abort_signal,
         )
 
@@ -212,24 +223,42 @@ class StatisticsController(Controller):
             if ds_features:
                 self.client_features.update({client_name: fobs.loads(ds_features)})
 
-        elif rc in [ReturnCode.EXECUTION_EXCEPTION, ReturnCode.TASK_UNKNOWN]:
-            self.system_panic(
-                f"Failed in client-site statistics_executor for {client_name} during task {task_name}."
-                f"statistics controller is exiting.",
-                fl_ctx=fl_ctx,
-            )
-        elif rc in [
-            ReturnCode.EXECUTION_RESULT_ERROR,
-            ReturnCode.TASK_DATA_FILTER_ERROR,
-            ReturnCode.TASK_RESULT_FILTER_ERROR,
-        ]:
+        elif rc in self.abort_job_in_error.keys():
+            abort = self.abort_job_in_error[rc]
+            if abort:
+                self.system_panic(
+                    f"Failed in client-site statistics_executor for {client_name} during task {task_name}."
+                    f"statistics controller is exiting.",
+                    fl_ctx=fl_ctx,
+                )
+                self.log_info(fl_ctx, f"Execution failed for {client_name}")
+            else:
+                self.log_info(fl_ctx, f"Execution result is not received for {client_name}")
 
-            self.system_panic("Execution result is not a shareable. statistics controller is exiting.", fl_ctx=fl_ctx)
+            self.result_cb_status[client_name] = {client_task.task.props[StC.METRIC_TASK_KEY]: False}
+        else:
+            self.result_cb_status[client_name] = {client_task.task.props[StC.METRIC_TASK_KEY]: True}
 
+        self.result_cb_status[client_name] = {client_task.task.props[StC.METRIC_TASK_KEY]: True}
         # Cleanup task result
         client_task.result = None
 
+    def _validate_min_clients(self, min_clients: int, client_metrics: dict) -> bool:
+        self.logger.info("check if min_client result received")
+
+        resulting_clients = {}
+        for metric in client_metrics:
+            resulting_clients.update({metric: len(client_metrics[metric])})
+
+        for metric in resulting_clients:
+            if resulting_clients[metric] < min_clients:
+                return False
+        return True
+
     def post_fn(self, task_name: str, fl_ctx: FLContext):
+
+        if not self._validate_min_clients(self.min_clients, self.client_metrics):
+            self.system_panic(f"not all required {self.min_clients} received, abort the job.", fl_ctx)
 
         self.log_info(fl_ctx, "save statistics result to persistence store")
         ds_stats = self._combine_all_metrics()
@@ -321,12 +350,16 @@ class StatisticsController(Controller):
 
         for tm in target_metrics:
             if tm.name == StC.STATS_HISTOGRAM:
-                inputs[StC.STATS_MIN] = self.global_metrics[StC.STATS_MIN]
-                inputs[StC.STATS_MAX] = self.global_metrics[StC.STATS_MAX]
+                if StC.STATS_MIN in self.global_metrics:
+                    inputs[StC.STATS_MIN] = self.global_metrics[StC.STATS_MIN]
+                if StC.STATS_MAX in self.global_metrics:
+                    inputs[StC.STATS_MAX] = self.global_metrics[StC.STATS_MAX]
 
             if tm.name == StC.STATS_VAR:
-                inputs[StC.STATS_GLOBAL_COUNT] = self.global_metrics[StC.STATS_COUNT]
-                inputs[StC.STATS_GLOBAL_MEAN] = self.global_metrics[StC.STATS_MEAN]
+                if StC.STATS_COUNT in self.global_metrics:
+                    inputs[StC.STATS_GLOBAL_COUNT] = self.global_metrics[StC.STATS_COUNT]
+                if StC.STATS_MEAN in self.global_metrics:
+                    inputs[StC.STATS_GLOBAL_MEAN] = self.global_metrics[StC.STATS_MEAN]
 
         inputs[StC.METRIC_TASK_KEY] = metric_task
 
@@ -334,11 +367,13 @@ class StatisticsController(Controller):
 
         return inputs
 
-    def _get_result_cb(self, metric_task: str):
-        return self.result_callback_fns[metric_task]
-
     def _wait_for_all_results(
-        self, result_wait_timeout: int, requested_client_size: int, client_metrics: dict, abort_signal=None
+        self,
+        result_wait_timeout: float,
+        requested_client_size: int,
+        client_metrics: dict,
+        sleep_time: float = 1,
+        abort_signal=None,
     ) -> bool:
         """
             for each metric, we check if the number of requested clients (min_clients or all clients)
@@ -364,19 +399,21 @@ class StatisticsController(Controller):
             metric_client_received[m] = len(client_metrics[m].keys())
 
         timeout = result_wait_timeout
-        sleep_time = 5
         for m in metric_client_received:
             if requested_client_size > metric_client_received[m]:
                 t = 0
                 while t < timeout and requested_client_size > metric_client_received[m]:
-
                     if abort_signal and abort_signal.triggered:
                         return False
 
-                    self.log_info(f"not all client received the metric {m}, need to wait for {sleep_time} seconds.")
+                    msg = f"not all client received the metric {m}, need to wait for {sleep_time} seconds."
+                    self.logger.info(msg)
                     time.sleep(sleep_time)
                     t += sleep_time
                     # check and update number of client processed for metric again
                     metric_client_received[m] = len(client_metrics[m].keys())
 
         return True
+
+    def _get_result_cb(self, metric_task: str):
+        return self.result_callback_fns[metric_task]
