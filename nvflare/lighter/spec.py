@@ -186,3 +186,4 @@ class Provisioner(object):
             wip_dir = ctx.get("wip_dir")
             if wip_dir:
                 shutil.rmtree(wip_dir)
+        return ctx

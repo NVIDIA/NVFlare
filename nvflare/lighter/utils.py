@@ -21,9 +21,8 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 
 
-def generate_password():
+def generate_password(passlen=16):
     s = "abcdefghijklmnopqrstuvwxyz01234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    passlen = 16
     p = "".join(random.sample(s, passlen))
     return p
 
