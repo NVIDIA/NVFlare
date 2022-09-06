@@ -28,15 +28,15 @@ def repeat_to_length(string_to_expand, length):
 
 
 class Table(object):
-    """
-    Table structure to write to. The headers are set in the init and the data is input to rows before write
-    writes the table.
-
-    Args:
-            headers: headers of the table
-    """
-
     def __init__(self, headers: Optional[List[str]] = None):
+        """A structure with header and rows of records.
+
+        Note:
+            The header will be converted to capital letters.
+
+        Args:
+            headers: headers of the table
+        """
         self.rows = []
         if headers and len(headers) > 0:
             new_headers = []
@@ -45,9 +45,11 @@ class Table(object):
             self.rows.append(new_headers)
 
     def set_rows(self, rows):
+        """Sets the rows of records."""
         self.rows = rows
 
     def add_row(self, row: List[str]):
+        """Adds a record."""
         self.rows.append(row)
 
     def write(self, writer):

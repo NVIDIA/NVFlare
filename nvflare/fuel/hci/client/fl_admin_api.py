@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import os
 import re
 import time
@@ -771,9 +772,9 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         if reply["status"] == APIStatus.SUCCESS:
             status_table = reply["details"][FLDetailKey.STATUS_TABLE]
             list_of_connected_clients = []
-            for row in status_table:
-                if row[0] != "CLIENT NAME":
-                    list_of_connected_clients.append(row[0])
+            # first line is the header of table
+            for row in status_table[1:]:
+                list_of_connected_clients.append(row[0])
             return FLAdminAPIResponse(APIStatus.SUCCESS, {FLDetailKey.CONNECTED_CLIENTS: list_of_connected_clients})
         else:
             return FLAdminAPIResponse(APIStatus.ERROR_RUNTIME, {"message": "runtime error"}, reply)
