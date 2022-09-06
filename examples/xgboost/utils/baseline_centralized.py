@@ -14,6 +14,7 @@
 
 import argparse
 import os
+import tempfile
 import time
 
 import pandas as pd
@@ -27,101 +28,129 @@ def xgboost_args_parser():
     parser.add_argument("--data_path", type=str, default="./dataset/HIGGS_UCI.csv", help="path to dataset file")
     parser.add_argument("--num_parallel_tree", type=int, default=1, help="num_parallel_tree for random forest setting")
     parser.add_argument("--subsample", type=float, default=1, help="subsample for random forest setting")
+    parser.add_argument("--num_rounds", type=int, default=100, help="number of boosting rounds")
+    parser.add_argument("--workspace_root", type=str, default="workspaces", help="workspaces root")
+    parser.add_argument("--train_in_one_session", action="store_true", help="whether to train in one session")
     return parser
 
 
+def prepare_higgs(data_path: str):
+    higgs = pd.read_csv(data_path, header=None)
+    print(higgs.info())
+    print(higgs.head())
+    total_data_num = higgs.shape[0]
+    print(f"Total data count: {total_data_num}")
+    # split to feature and label
+    X_higgs = higgs.iloc[:, 1:]
+    y_higgs = higgs.iloc[:, 0]
+    print(y_higgs.value_counts())
+    return X_higgs, y_higgs
+
+
+def train_one_by_one(train_data, val_data, xgb_params, num_rounds, val_label, writer: SummaryWriter):
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_model_path = os.path.join(tmp_dir, "model.json")
+        # Round 0
+        print("Round: 0 Base ", end="")
+        bst = xgb.train(
+            xgb_params, train_data, num_boost_round=1, evals=[(val_data, "validate"), (train_data, "train")]
+        )
+        bst.save_model(tmp_model_path)
+        for r in range(1, num_rounds):
+            # Validate the last round's model
+            bst_last = xgb.Booster(xgb_params, model_file=tmp_model_path)
+            y_pred = bst_last.predict(val_data)
+            roc = roc_auc_score(val_label, y_pred)
+            print(f"Round: {bst_last.num_boosted_rounds()} model testing AUC {roc}")
+            writer.add_scalar("AUC", roc, r - 1)
+            # Train new model
+            print(f"Round: {r} Base ", end="")
+            bst = xgb.train(
+                xgb_params,
+                train_data,
+                num_boost_round=1,
+                xgb_model=tmp_model_path,
+                evals=[(val_data, "validate"), (train_data, "train")],
+            )
+            bst.save_model(tmp_model_path)
+        return bst
+
+
 def get_training_parameters(args):
-    param = {}
-    param["objective"] = "binary:logistic"
-    param["eta"] = 0.1
-    param["max_depth"] = 8
-    param["eval_metric"] = "auc"
-    param["nthread"] = 16
-    param["num_parallel_tree"] = args.num_parallel_tree
-    param["subsample"] = args.subsample
+    # use logistic regression loss for binary classification
+    # use auc as metric
+    param = {
+        "objective": "binary:logistic",
+        "eta": 0.1,
+        "max_depth": 8,
+        "eval_metric": "auc",
+        "nthread": 16,
+        "num_parallel_tree": args.num_parallel_tree,
+        "subsample": args.subsample,
+    }
     return param
 
 
 def main():
     parser = xgboost_args_parser()
     args = parser.parse_args()
-    # Specify training params
-    model_name = "centralized_" + str(args.num_parallel_tree) + "_" + str(args.subsample)
-    data_path = args.data_path
-    model_path_root = "./workspaces/" + model_name
-    round_num = 100
 
+    # Specify training params
+    if args.train_in_one_session:
+        model_name = "centralized_simple_" + str(args.num_parallel_tree) + "_" + str(args.subsample)
+    else:
+        model_name = "centralized_" + str(args.num_parallel_tree) + "_" + str(args.subsample)
+    data_path = args.data_path
+    num_rounds = args.num_rounds
+    valid_num = 1000000
+
+    exp_root = os.path.join(args.workspace_root, model_name)
     # Set mode file paths
-    model_path = os.path.join(model_path_root, model_name + ".json")
+    model_path = os.path.join(exp_root, "model.json")
     # Set tensorboard output
-    writer = SummaryWriter(model_path_root)
+    writer = SummaryWriter(exp_root)
 
     # Load data
     start = time.time()
-    higgs = pd.read_csv(data_path, header=None)
-    print(higgs.info())
-    print(higgs.head())
-    total_data_num = higgs.shape[0]
-    valid_num = 1000000
-    print(f"Total data count: {total_data_num}")
-    # split to feature and label
-    X_higgs = higgs.iloc[:, 1:]
-    y_higgs = higgs.iloc[:, 0]
-    print(y_higgs.value_counts())
+    X_higgs, y_higgs = prepare_higgs(data_path)
     end = time.time()
     lapse_time = end - start
     print(f"Data loading time: {lapse_time}")
 
-    # construct xgboost DMatrix
-    # split to training and validation
+    # construct training and validation xgboost DMatrix
     dmat_higgs = xgb.DMatrix(X_higgs, label=y_higgs)
     dmat_valid = dmat_higgs.slice(X_higgs.index[0:valid_num])
     dmat_train = dmat_higgs.slice(X_higgs.index[valid_num:])
 
     # setup parameters for xgboost
-    # use logistic regression loss for binary classification
-    # use auc as metric
-    param = get_training_parameters(args)
+    xgb_params = get_training_parameters(args)
 
     # xgboost training
     start = time.time()
-    for round in range(round_num):
-        # Train model
-        if os.path.exists(model_path):
-            # Validate the last round's model
-            bst_last = xgb.Booster(param, model_file=model_path)
-            y_pred = bst_last.predict(dmat_valid)
-            roc = roc_auc_score(y_higgs[0:1000000], y_pred)
-            print(f"Round: {bst_last.num_boosted_rounds()} model testing AUC {roc}")
-            writer.add_scalar("AUC", roc, round - 1)
-            # Train new model
-            print(f"Round: {round} Base ", end="")
-            bst = xgb.train(
-                param,
-                dmat_train,
-                num_boost_round=1,
-                xgb_model=model_path,
-                evals=[(dmat_valid, "validate"), (dmat_train, "train")],
-            )
-        else:
-            # Round 0
-            print(f"Round: {round} Base ", end="")
-            bst = xgb.train(
-                param, dmat_train, num_boost_round=1, evals=[(dmat_valid, "validate"), (dmat_train, "train")]
-            )
-        bst.save_model(model_path)
-
+    if args.train_in_one_session:
+        bst = xgb.train(
+            xgb_params, dmat_train, num_boost_round=num_rounds, evals=[(dmat_valid, "validate"), (dmat_train, "train")]
+        )
+    else:
+        bst = train_one_by_one(
+            train_data=dmat_train,
+            val_data=dmat_valid,
+            xgb_params=xgb_params,
+            num_rounds=num_rounds,
+            val_label=y_higgs[0:valid_num],
+            writer=writer,
+        )
+    bst.save_model(model_path)
     end = time.time()
     lapse_time = end - start
     print(f"Training time: {lapse_time}")
 
     # test model
-    bst = xgb.Booster(param, model_file=model_path)
+    bst = xgb.Booster(xgb_params, model_file=model_path)
     y_pred = bst.predict(dmat_valid)
-    roc = roc_auc_score(y_higgs[0:1000000], y_pred)
+    roc = roc_auc_score(y_higgs[0:valid_num], y_pred)
     print(f"Base model: {roc}")
-    writer.add_scalar("AUC", roc, round_num - 1)
-
+    writer.add_scalar("AUC", roc, num_rounds - 1)
     writer.close()
 
 
