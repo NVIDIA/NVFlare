@@ -308,11 +308,7 @@ if [[ -z $cmd ]]; then
         check_style_type_import nvflare tests;
         fix_style_import nvflare;
         fix_style_import tests;
-<<<<<<< HEAD
         python3 -m pytest --numprocesses=auto --cov=nvflare --cov-report html:cov_html --cov-report xml:cov.xml --junitxml=unit_test.xml tests/unit_test;
-=======
-        python3 -m pytest --numprocesses=auto --cov=nvflare --cov-report html:cov_html --junitxml=unit_test.xml tests/unit_test;
->>>>>>> fix_authz
         "
 else
     cmd="$cmd $target"
