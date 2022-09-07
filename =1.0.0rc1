@@ -1,8 +1,0 @@
-Collecting monai
-  Downloading monai-0.9.1-202207251608-py3-none-any.whl (990 kB)
-     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 990.7/990.7 KB 7.6 MB/s eta 0:00:00
-Requirement already satisfied: numpy>=1.17 in /home/chester/nvflare-env/lib/python3.8/site-packages (from monai) (1.22.4)
-Requirement already satisfied: torch>=1.7 in /home/chester/nvflare-env/lib/python3.8/site-packages (from monai) (1.12.1)
-Requirement already satisfied: typing-extensions in /home/chester/nvflare-env/lib/python3.8/site-packages (from torch>=1.7->monai) (4.3.0)
-Installing collected packages: monai
-Successfully installed monai-0.9.1
