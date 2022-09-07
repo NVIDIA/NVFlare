@@ -117,15 +117,6 @@ class SimulatorRunner(FLComponent):
             if not self.client_names:
                 self.logger.error("Please provide the client names list, or the number of clients to run the simulator")
                 sys.exit(1)
-            if self.args.threads and self.args.threads > len(self.client_names):
-                logging.error("The number of threads to run can not be larger than the number of clients.")
-                sys.exit(-1)
-            if not (self.args.gpu or self.args.threads):
-                logging.error("Please provide the number of threads or provide gpu options to run the simulator.")
-                sys.exit(-1)
-
-            self._validate_client_names(meta, self.client_names)
-
             if self.args.gpu:
                 gpus = self.args.gpu.split(",")
                 if len(gpus) <= 1:
@@ -138,6 +129,19 @@ class SimulatorRunner(FLComponent):
                         f"the number of GPUS: ({len(gpus)})"
                     )
                     sys.exit(-1)
+                if self.args.threads and self.args.threads > 1:
+                    logging.info("When running with multi GPU, each GPU will run with only 1 thread. "
+                                 "Set the Threads to 1.")
+                self.args.threads = 1
+
+            if self.args.threads and self.args.threads > len(self.client_names):
+                logging.error("The number of threads to run can not be larger than the number of clients.")
+                sys.exit(-1)
+            if not (self.args.gpu or self.args.threads):
+                logging.error("Please provide the number of threads or provide gpu options to run the simulator.")
+                sys.exit(-1)
+
+            self._validate_client_names(meta, self.client_names)
 
             # Deploy the FL server
             self.logger.info("Create the Simulator Server.")
@@ -209,7 +213,7 @@ class SimulatorRunner(FLComponent):
                     if p == "server":
                         app = os.path.join(temp_job_folder, app_name)
                         shutil.copytree(app, app_server_root)
-                    else:
+                    elif p in self.client_names:
                         app_client_root = os.path.join(self.simulator_root, "app_" + p)
                         app = os.path.join(temp_job_folder, app_name)
                         shutil.copytree(app, app_client_root)
@@ -238,7 +242,6 @@ class SimulatorRunner(FLComponent):
                         raise RuntimeError("Could not start the Server App.")
 
                 if self.args.gpu:
-                    self.args.threads = 1
                     gpus = self.args.gpu.split(",")
                     split_client_names = self.split_names(self.client_names, gpus)
                 else:

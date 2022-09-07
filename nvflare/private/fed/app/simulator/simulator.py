@@ -32,12 +32,12 @@ def define_simulator_parser(simulator_parser):
 
 def run_simulator(simulator_args):
     simulator = SimulatorRunner(
-        job_folder=args.job_folder,
-        workspace=args.workspace,
-        clients=args.clients,
-        n_clients=args.n_clients,
-        threads=args.threads,
-        gpu=args.gpu,
+        job_folder=simulator_args.job_folder,
+        workspace=simulator_args.workspace,
+        clients=simulator_args.clients,
+        n_clients=simulator_args.n_clients,
+        threads=simulator_args.threads,
+        gpu=simulator_args.gpu,
     )
     run_status = simulator.run()
 
