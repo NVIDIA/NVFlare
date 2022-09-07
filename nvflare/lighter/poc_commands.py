@@ -22,6 +22,7 @@ from typing import Dict, List, Optional
 
 from nvflare.cli_exception import CLIException
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
+from nvflare.cli_exception import CLIException
 from nvflare.lighter.poc import generate_poc
 from nvflare.lighter.service_constants import FlareServiceConstants as SC
 
