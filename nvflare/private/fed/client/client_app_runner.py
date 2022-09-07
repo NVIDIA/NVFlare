@@ -43,7 +43,7 @@ class ClientAppRunner:
         )
         conf.configure()
         workspace = Workspace(args.workspace, args.client_name, config_folder)
-        app_custom_folder = workspace.get_site_custom_dir()
+        app_custom_folder = workspace.get_client_custom_dir()
         if os.path.isdir(app_custom_folder):
             sys.path.append(app_custom_folder)
 
