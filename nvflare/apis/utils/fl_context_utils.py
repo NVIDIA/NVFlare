@@ -17,6 +17,7 @@ import logging
 from nvflare.apis.fl_constant import FLContextKey, NonSerializableKeys
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
+from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.utils import fobs
 
 
