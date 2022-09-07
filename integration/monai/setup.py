@@ -55,5 +55,5 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     python_requires=">=3.7,<3.9",
-    install_requires=["pytorch-ignite", "monai", "nvflare"],
+    install_requires=["pytorch-ignite==0.4.10", "monai==1.0.0rc1", "nvflare"],
 )
