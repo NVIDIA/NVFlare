@@ -79,7 +79,6 @@ class FederatedClient(FederatedClientBase):
         )
 
         self.executors = executors
-        self.enable_byoc = enable_byoc
         self.initialize_fobs()
 
     def initialize_fobs(self):
