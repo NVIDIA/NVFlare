@@ -208,7 +208,9 @@ class Store(object):
 
     @classmethod
     def delete_client(cls, id):
-        Client.query.get(id).delete()
+        client = Client.query.get(id)
+        db.session.delete(client)
+        db.session.commit()
         return add_ok({})
 
     @classmethod
@@ -260,7 +262,7 @@ class Store(object):
     @classmethod
     def _get_email_by_id(cls, id):
         user = User.query.get(id)
-        return user.email
+        return user.email if user else None
 
     @classmethod
     def get_user(cls, id):
@@ -308,7 +310,13 @@ class Store(object):
 
     @classmethod
     def delete_user(cls, id):
-        User.query.get(id).delete()
+        clients = Client.query.filter_by(creator_id=id).all()
+        for client in clients:
+            db.session.delete(client)
+        user = User.query.get(id)
+        db.session.delete(user)
+        db.session.commit()
+
         return add_ok({})
 
     @classmethod
