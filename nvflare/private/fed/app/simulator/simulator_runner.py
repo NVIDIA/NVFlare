@@ -33,6 +33,7 @@ from nvflare.fuel.common.multi_process_executor_constants import CommunicationMe
 from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.hci.zip_utils import convert_legacy_zip, split_path, unzip_all_from_bytes, zip_directory_to_bytes
 from nvflare.fuel.sec.audit import AuditService
+from nvflare.lighter.poc_commands import get_host_gpu_ids
 from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.deployer.simulator_deployer import SimulatorDeployer
 from nvflare.private.fed.client.client_status import ClientStatus
@@ -122,6 +123,12 @@ class SimulatorRunner(FLComponent):
                 sys.exit(1)
             if self.args.gpu:
                 gpus = self.args.gpu.split(",")
+                host_gpus = [str(x) for x in (get_host_gpu_ids())]
+                if host_gpus and not set(gpus).issubset(host_gpus):
+                    wrong_gpus = [x for x in gpus if x not in host_gpus]
+                    logging.error(f"These GPUs does not available: {wrong_gpus}")
+                    sys.exit(-1)
+
                 if len(gpus) <= 1:
                     logging.error("Please provide more than 1 GPU to run the Simulator with multi-GPUs.")
                     sys.exit(-1)
