@@ -68,7 +68,7 @@ class SimulatorServer(FederatedServer):
             handlers,
             args,
             secure_train,
-            enable_byoc,
+            # enable_byoc,
             snapshot_persistor,
             overseer_agent,
         )

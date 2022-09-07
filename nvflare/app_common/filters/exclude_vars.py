@@ -36,7 +36,7 @@ class ExcludeVars(DXOFilter):
                 if not provided or other formats the Shareable remains unchanged.
         """
         if not data_kinds:
-            data_kinds = [DataKind.WEIGHT_DIFF]
+            data_kinds = [DataKind.WEIGHT_DIFF, DataKind.WEIGHTS]
 
         super().__init__(supported_data_kinds=[DataKind.WEIGHTS, DataKind.WEIGHT_DIFF], data_kinds_to_filter=data_kinds)
         self.exclude_vars = exclude_vars

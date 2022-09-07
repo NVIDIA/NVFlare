@@ -41,7 +41,7 @@ class HEModelDecryptor(DXOFilter):
 
         """
         if not data_kinds:
-            data_kinds = [DataKind.WEIGHT_DIFF]
+            data_kinds = [DataKind.WEIGHT_DIFF, DataKind.WEIGHTS]
 
         super().__init__(supported_data_kinds=[DataKind.WEIGHTS, DataKind.WEIGHT_DIFF], data_kinds_to_filter=data_kinds)
 
