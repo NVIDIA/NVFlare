@@ -33,6 +33,7 @@ from nvflare.fuel.common.multi_process_executor_constants import CommunicationMe
 from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.hci.zip_utils import convert_legacy_zip, split_path, unzip_all_from_bytes, zip_directory_to_bytes
 from nvflare.fuel.sec.audit import AuditService
+from nvflare.lighter.poc_commands import get_host_gpu_ids
 from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.deployer.simulator_deployer import SimulatorDeployer
 from nvflare.private.fed.client.client_status import ClientStatus
@@ -60,6 +61,9 @@ class SimulatorRunner(FLComponent):
         self.services = None
         self.deployer = SimulatorDeployer()
         self.client_names = []
+        self.federated_clients = []
+        self.client_config = None
+        self.deploy_args = None
 
     def _generate_args(self, job_folder: str, workspace: str, clients=None, n_clients=None, threads=None, gpu=None):
         args = Namespace(
@@ -116,27 +120,38 @@ class SimulatorRunner(FLComponent):
             if not self.client_names:
                 self.logger.error("Please provide the client names list, or the number of clients to run the simulator")
                 return False
+            if self.args.gpu:
+                gpus = self.args.gpu.split(",")
+                host_gpus = [str(x) for x in (get_host_gpu_ids())]
+                if host_gpus and not set(gpus).issubset(host_gpus):
+                    wrong_gpus = [x for x in gpus if x not in host_gpus]
+                    logging.error(f"These GPUs does not available: {wrong_gpus}")
+                    return False
+
+                if len(gpus) <= 1:
+                    logging.error("Please provide more than 1 GPU to run the Simulator with multi-GPUs.")
+                    return False
+
+                if len(gpus) > len(self.client_names):
+                    logging.error(
+                        f"The number of clients ({len(self.client_names)}) must be larger than or equal to "
+                        f"the number of GPUS: ({len(gpus)})"
+                    )
+                    sys.exit(-1)
+                if self.args.threads and self.args.threads > 1:
+                    logging.info(
+                        "When running with multi GPU, each GPU will run with only 1 thread. " "Set the Threads to 1."
+                    )
+                self.args.threads = 1
+
             if self.args.threads and self.args.threads > len(self.client_names):
-                logging.error("The number of threads to run can not be larger then the number of clients.")
+                logging.error("The number of threads to run can not be larger than the number of clients.")
                 return False
             if not (self.args.gpu or self.args.threads):
                 logging.error("Please provide the number of threads or provide gpu options to run the simulator.")
                 return False
 
             self._validate_client_names(meta, self.client_names)
-
-            if self.args.gpu:
-                gpus = self.args.gpu.split(",")
-                if len(gpus) <= 1:
-                    logging.error("Pleasse provide more than 1 GPU to run the Simulator with multi-GPUs.")
-                    sys.exit(-1)
-
-                if len(gpus) > len(self.client_names):
-                    logging.error(
-                        f"The number of clients ({len(self.client_names)} must be larger than "
-                        f"the number of GPUS: ({len(gpus)})"
-                    )
-                    return False
 
             # Deploy the FL server
             self.logger.info("Create the Simulator Server.")
@@ -208,88 +223,20 @@ class SimulatorRunner(FLComponent):
                     if p == "server":
                         app = os.path.join(temp_job_folder, app_name)
                         shutil.copytree(app, app_server_root)
-                    else:
+                    elif p in self.client_names:
                         app_client_root = os.path.join(self.simulator_root, "app_" + p)
                         app = os.path.join(temp_job_folder, app_name)
                         shutil.copytree(app, app_client_root)
 
-    def split_names(self, client_names: [], gpus: []):
-        split_names = []
+    def split_clients(self, clients: [], gpus: []):
+        split_clients = []
         for _ in gpus:
-            split_names.append([])
+            split_clients.append([])
         index = 0
-        for name in client_names:
-            split_names[index % len(gpus)].append(name)
+        for client in clients:
+            split_clients[index % len(gpus)].append(client)
             index += 1
-        return split_names
-
-    def run(self):
-        if self.setup():
-            try:
-                self.logger.info("Deploy and start the Server App.")
-                server_thread = threading.Thread(target=self.start_server_app, args=[])
-                server_thread.start()
-
-                # wait for the server app is started
-                while self.services.engine.engine_info.status != MachineStatus.STARTED:
-                    time.sleep(1.0)
-                    if not server_thread.is_alive():
-                        raise RuntimeError("Could not start the Server App.")
-
-                if self.args.gpu:
-                    self.args.threads = 1
-                    gpus = self.args.gpu.split(",")
-                    split_client_names = self.split_names(self.client_names, gpus)
-                else:
-                    gpus = [None]
-                    split_client_names = [self.client_names]
-
-                executor = ThreadPoolExecutor(max_workers=len(gpus))
-                for index in range(len(gpus)):
-                    client_names = split_client_names[index]
-                    executor.submit(lambda p: self.client_run(*p), [client_names, gpus[index]])
-
-                executor.shutdown()
-                server_thread.join()
-                run_status = 0
-            except BaseException as error:
-                self.logger.error(error)
-                run_status = 2
-            finally:
-                self.deployer.close()
-        else:
-            run_status = 1
-        return run_status
-
-    def client_run(self, client_names, gpu):
-        client_runner = SimulatorClientRunner(self.args, client_names, self.deployer)
-        client_runner.run(gpu)
-
-    def start_server_app(self):
-        app_server_root = os.path.join(self.simulator_root, "app_server")
-        self.args.server_config = os.path.join("config", AppFolderConstants.CONFIG_FED_SERVER)
-        app_custom_folder = os.path.join(app_server_root, "custom")
-        sys.path.append(app_custom_folder)
-
-        server_app_runner = SimulatorServerAppRunner()
-        snapshot = None
-        server_app_runner.start_server_app(
-            self.services, self.args, app_server_root, self.args.job_id, snapshot, self.logger
-        )
-
-
-class SimulatorClientRunner(FLComponent):
-    def __init__(self, args, client_names: [], deployer):
-        super().__init__()
-        self.args = args
-        self.client_names = client_names
-        self.federated_clients = []
-        self.deployer = deployer
-        self.run_client_index = -1
-
-        self.simulator_root = os.path.join(self.args.workspace, SimulatorConstants.JOB_NAME)
-        self.client_config = None
-        self.deploy_args = None
+        return split_clients
 
     def create_clients(self):
         # Deploy the FL clients
@@ -313,9 +260,76 @@ class SimulatorClientRunner(FLComponent):
             client.simulate_running = False
             client.status = ClientStatus.STARTED
 
+    def run(self):
+        if self.setup():
+            try:
+                self.create_clients()
+
+                self.logger.info("Deploy and start the Server App.")
+                server_thread = threading.Thread(target=self.start_server_app, args=[])
+                server_thread.start()
+
+                # wait for the server app is started
+                while self.services.engine.engine_info.status != MachineStatus.STARTED:
+                    time.sleep(1.0)
+                    if not server_thread.is_alive():
+                        raise RuntimeError("Could not start the Server App.")
+
+                if self.args.gpu:
+                    gpus = self.args.gpu.split(",")
+                    split_clients = self.split_clients(self.federated_clients, gpus)
+                else:
+                    gpus = [None]
+                    split_clients = [self.federated_clients]
+
+                executor = ThreadPoolExecutor(max_workers=len(gpus))
+                for index in range(len(gpus)):
+                    clients = split_clients[index]
+                    executor.submit(lambda p: self.client_run(*p), [clients, gpus[index]])
+
+                executor.shutdown()
+                server_thread.join()
+                run_status = 0
+            except BaseException as error:
+                self.logger.error(error)
+                run_status = 2
+            finally:
+                self.deployer.close()
+        else:
+            run_status = 1
+        return run_status
+
+    def client_run(self, clients, gpu):
+        client_runner = SimulatorClientRunner(self.args, clients, self.client_config, self.deploy_args)
+        client_runner.run(gpu)
+
+    def start_server_app(self):
+        app_server_root = os.path.join(self.simulator_root, "app_server")
+        self.args.server_config = os.path.join("config", AppFolderConstants.CONFIG_FED_SERVER)
+        app_custom_folder = os.path.join(app_server_root, "custom")
+        sys.path.append(app_custom_folder)
+
+        server_app_runner = SimulatorServerAppRunner()
+        snapshot = None
+        server_app_runner.start_server_app(
+            self.services, self.args, app_server_root, self.args.job_id, snapshot, self.logger
+        )
+
+
+class SimulatorClientRunner(FLComponent):
+    def __init__(self, args, clients: [], client_config, deploy_args):
+        super().__init__()
+        self.args = args
+        self.federated_clients = clients
+        self.run_client_index = -1
+
+        self.simulator_root = os.path.join(self.args.workspace, SimulatorConstants.JOB_NAME)
+        self.client_config = client_config
+        self.deploy_args = deploy_args
+
     def run(self, gpu):
         try:
-            self.create_clients()
+            # self.create_clients()
             self.logger.info("Start the clients run simulation.")
             executor = ThreadPoolExecutor(max_workers=self.args.threads)
             lock = threading.Lock()
