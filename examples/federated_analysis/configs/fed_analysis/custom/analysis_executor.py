@@ -88,7 +88,7 @@ class AnalysisExecutor(Executor):
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         self.log_info(fl_ctx, f"Executing {task_name}")
         try:
-            client_name = fl_ctx.get_prop(ReservedKey.CLIENT_NAME)
+            client_name = fl_ctx.get_identity_name()
             if not self._load_data_list(client_name, fl_ctx):
                 self.log_error(fl_ctx, f"Reading data list for client {client_name} failed!")
                 return make_reply(ReturnCode.ERROR)
