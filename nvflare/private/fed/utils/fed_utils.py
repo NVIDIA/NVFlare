@@ -16,8 +16,6 @@ import json
 import logging
 import logging.config
 import os
-import pickle
-import sys
 from logging.handlers import RotatingFileHandler
 from multiprocessing.connection import Listener
 from typing import List
@@ -30,6 +28,7 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.authz import AuthorizationService
 from nvflare.fuel.sec.security_content_service import LoadResult, SecurityContentService
+from nvflare.fuel.utils import fobs
 from nvflare.private.defs import SSLConstants
 from nvflare.private.fed.protos.federated_pb2 import ModelData
 from nvflare.private.fed.utils.numproto import bytes_to_proto
@@ -57,7 +56,7 @@ def make_shareable_data(shareable):
 def make_context_data(fl_ctx):
     shared_fl_ctx = FLContext()
     shared_fl_ctx.set_public_props(fl_ctx.get_all_public_props())
-    props = pickle.dumps(shared_fl_ctx)
+    props = fobs.dumps(shared_fl_ctx)
     context_data = bytes_to_proto(props)
     return context_data
 

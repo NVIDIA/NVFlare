@@ -14,7 +14,6 @@
 
 import logging
 import os
-import pickle
 import shutil
 import threading
 import time
@@ -31,13 +30,12 @@ import nvflare.private.fed.protos.admin_pb2 as admin_msg
 import nvflare.private.fed.protos.admin_pb2_grpc as admin_service
 import nvflare.private.fed.protos.federated_pb2 as fed_msg
 import nvflare.private.fed.protos.federated_pb2_grpc as fed_service
-from nvflare.apis.collective_comm_constants import CollectiveCommandKey, CollectiveCommShareableHeader
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import (
     FLContextKey,
     MachineStatus,
-    RunProcessKey,
+    ReservedKey,
     ServerCommandKey,
     ServerCommandNames,
     SnapshotKey,
@@ -45,8 +43,11 @@ from nvflare.apis.fl_constant import (
 )
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, ReturnCode, Shareable, make_reply
+from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.apis.workspace import Workspace
+from nvflare.app_common.decomposers import common_decomposers
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes
+from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import SpecialTaskName
 from nvflare.private.fed.server.server_runner import ServerRunner
@@ -129,8 +130,6 @@ class BaseServer(ABC):
         except RuntimeError:
             self.logger.info("canceling sync locks")
         try:
-            if self.admin_server:
-                self.admin_server.stop()
             if self.grpc_server:
                 self.grpc_server.stop(0)
         finally:
@@ -238,7 +237,6 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         secure_train=False,
         snapshot_persistor=None,
         overseer_agent=None,
-        collective_command_timeout=600.0,
     ):
         """Federated server services.
 
@@ -252,7 +250,6 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             args: arguments
             secure_train: whether to use secure communication
             enable_byoc: whether to enable custom components
-            collective_command_timeout: timeout for waiting all collective requests from clients
         """
         self.logger = logging.getLogger("FederatedServer")
 
@@ -293,7 +290,8 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         self.server_state: ServerState = ColdState()
         self.snapshot_persistor = snapshot_persistor
 
-        self._collective_comm_timeout = collective_command_timeout
+        flare_decomposers.register()
+        common_decomposers.register()
 
     def _create_server_engine(self, args, snapshot_persistor):
         return ServerEngine(
@@ -410,7 +408,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             token = client.get_token()
 
             # engine = fl_ctx.get_engine()
-            shared_fl_ctx = pickle.loads(proto_to_bytes(request.context["fl_context"]))
+            shared_fl_ctx = fobs.loads(proto_to_bytes(request.context["fl_context"]))
             job_id = str(shared_fl_ctx.get_prop(FLContextKey.CURRENT_RUN))
             # fl_ctx.set_peer_context(shared_fl_ctx)
 
@@ -469,7 +467,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                     }
                     command_conn.send(data)
 
-                    return_data = pickle.loads(command_conn.recv())
+                    return_data = fobs.loads(command_conn.recv())
                     task_name = return_data.get(ServerCommandKey.TASK_NAME)
                     task_id = return_data.get(ServerCommandKey.TASK_ID)
                     shareable = return_data.get(ServerCommandKey.SHAREABLE)
@@ -498,7 +496,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             else:
                 with self.lock:
                     shareable = Shareable.from_bytes(proto_to_bytes(request.data.params["data"]))
-                    shared_fl_context = pickle.loads(proto_to_bytes(request.data.params["fl_context"]))
+                    shared_fl_context = fobs.loads(proto_to_bytes(request.data.params["fl_context"]))
 
                     job_id = str(shared_fl_context.get_prop(FLContextKey.CURRENT_RUN))
                     if job_id not in self.engine.run_processes.keys():
@@ -523,12 +521,11 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                         time_seconds or "less than 1",
                     )
 
-                    task_id = shareable.get_cookie(FLContextKey.TASK_ID)
-                    shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_context)
                     shareable.set_header(ServerCommandKey.FL_CLIENT, client)
                     shareable.set_header(ServerCommandKey.TASK_NAME, contribution_task_name)
+                    data = {ReservedKey.SHAREABLE: shareable, ReservedKey.SHARED_FL_CONTEXT: shared_fl_context}
 
-                    self._submit_update(shareable, shared_fl_context)
+                    self._submit_update(data, shared_fl_context)
 
                     # self.server_runner.process_submission(client, contribution_task_name, task_id, shareable, fl_ctx)
 
@@ -542,14 +539,14 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
             return summary_info
 
-    def _submit_update(self, shareable, shared_fl_context):
+    def _submit_update(self, submit_update_data, shared_fl_context):
         try:
             with self.engine.lock:
                 job_id = shared_fl_context.get_prop(FLContextKey.CURRENT_RUN)
             self.engine.send_command_to_child_runner_process(
                 job_id=job_id,
                 command_name=ServerCommandNames.SUBMIT_UPDATE,
-                command_data=shareable,
+                command_data=submit_update_data,
                 return_result=False,
             )
         except BaseException:
@@ -573,7 +570,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
             shareable = Shareable()
             shareable = shareable.from_bytes(proto_to_bytes(request.data["data"]))
-            shared_fl_context = pickle.loads(proto_to_bytes(request.data["fl_context"]))
+            shared_fl_context = fobs.loads(proto_to_bytes(request.data["fl_context"]))
 
             job_id = str(shared_fl_context.get_prop(FLContextKey.CURRENT_RUN))
             if job_id not in self.engine.run_processes.keys():
@@ -593,8 +590,6 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
             reply = self._aux_communicate(fl_ctx, shareable, shared_fl_context, topic)
 
-            # reply = self.engine.dispatch(topic=topic, request=shareable, fl_ctx=fl_ctx)
-
             aux_reply = fed_msg.AuxReply()
             aux_reply.data.CopyFrom(shareable_to_modeldata(reply, fl_ctx))
 
@@ -610,52 +605,19 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                 ServerCommandKey.COMMAND: ServerCommandNames.AUX_COMMUNICATE,
                 ServerCommandKey.DATA: command_shareable,
             }
-            if shareable.get_header(CollectiveCommShareableHeader.IS_COLLECTIVE_AUX, False):
-                with self.engine.lock:
-                    job_id = str(shared_fl_context.get_prop(FLContextKey.CURRENT_RUN))
-                    command_conn = self.engine.get_collective_command_conn(job_id)
-                    participate_clients = len(self.engine.run_processes[job_id][RunProcessKey.PARTICIPANTS])
-                    command_waiter = self.engine.run_processes[job_id][RunProcessKey.COLLECTIVE_CONNECTION_WAITER]
-                    self.logger.info(f"Collective communication: participate client num is {participate_clients}")
+            with self.engine.lock:
+                job_id = shared_fl_context.get_prop(FLContextKey.CURRENT_RUN)
+                command_conn = self.engine.get_command_conn(str(job_id))
                 if command_conn:
-                    shareable.set_header(CollectiveCommShareableHeader.WORLD_SIZE, participate_clients)
-                    with command_waiter.receive_all:
-                        command_waiter.received_requests += 1
-                        command_conn.send(data)
-                        while True:
-                            if command_waiter.received_requests == participate_clients:
-                                break
-                            if not command_waiter.receive_all.wait(self._collective_comm_timeout):
-                                # Known issue:: IF the number of threads is lower than number of clients (world_size)
-                                #       then this will be DEAD-LOCK
-                                # Assumption: all the client request need to be here to proceed
-                                data[CollectiveCommandKey.TIMEOUT] = f"Timeout for {self._collective_comm_timeout}"
-                                command_conn.send(data)
-                                break
-                        command_waiter.receive_all.notifyAll()
-                        return_data = command_conn.recv()
-                        command_waiter.sent_requests += 1
-                        if command_waiter.sent_requests == participate_clients:
-                            command_waiter.reset()
-                        reply = return_data.get(ServerCommandKey.AUX_REPLY)
-                        child_fl_ctx = return_data.get(ServerCommandKey.FL_CONTEXT)
-                        fl_ctx.props.update(child_fl_ctx)
+                    command_conn.send(data)
+
+                    return_data = command_conn.recv()
+                    reply = return_data.get(ServerCommandKey.AUX_REPLY)
+                    child_fl_ctx = return_data.get(ServerCommandKey.FL_CONTEXT)
+
+                    fl_ctx.props.update(child_fl_ctx)
                 else:
                     reply = make_reply(ReturnCode.ERROR)
-            else:
-                with self.engine.lock:
-                    job_id = shared_fl_context.get_prop(FLContextKey.CURRENT_RUN)
-                    command_conn = self.engine.get_command_conn(str(job_id))
-                    if command_conn:
-                        command_conn.send(data)
-
-                        return_data = command_conn.recv()
-                        reply = return_data.get(ServerCommandKey.AUX_REPLY)
-                        child_fl_ctx = return_data.get(ServerCommandKey.FL_CONTEXT)
-
-                        fl_ctx.props.update(child_fl_ctx)
-                    else:
-                        reply = make_reply(ReturnCode.ERROR)
         except BaseException:
             self.logger.info("Could not connect to server runner process - asked client to end the run")
             reply = make_reply(ReturnCode.COMMUNICATION_ERROR)

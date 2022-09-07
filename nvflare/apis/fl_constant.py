@@ -84,6 +84,7 @@ class ReservedKey(object):
     EVENT_SCOPE = "__event_scope__"
     RUN_ABORT_SIGNAL = "__run_abort_signal__"
     SHAREABLE = "__shareable__"
+    SHARED_FL_CONTEXT = "__shared_fl_context__"
     ARGS = "__args__"
     WORKSPACE_OBJECT = "__workspace_object__"
     RANK_NUMBER = "__rank_number__"
@@ -256,9 +257,6 @@ class SnapshotKey(object):
 
 
 class RunProcessKey(object):
-    COLLECTIVE_LISTEN_PORT = "_collective_listen_port"
-    COLLECTIVE_CONNECTION = "_collective_conn"
-    COLLECTIVE_CONNECTION_WAITER = "_collective_conn_waiter"
     LISTEN_PORT = "_listen_port"
     CONNECTION = "_conn"
     CHILD_PROCESS = "_child_process"

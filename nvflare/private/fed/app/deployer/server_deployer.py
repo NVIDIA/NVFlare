@@ -86,7 +86,6 @@ class ServerDeployer:
             secure_train=secure_train,
             snapshot_persistor=self.snapshot_persistor,
             overseer_agent=self.overseer_agent,
-            collective_command_timeout=first_server.get("collective_command_timeout", 600.0),
         )
         return first_server, services
 
