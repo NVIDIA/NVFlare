@@ -16,7 +16,7 @@ import argparse
 import os
 import sys
 
-from nvflare.lighter.cli_exception import CLIException
+from nvflare.cli_exception import CLIException
 from nvflare.lighter.poc_commands import def_poc_parser, handle_poc_cmd
 from nvflare.private.fed.app.simulator.simulator import define_simulator_parser, run_simulator
 
