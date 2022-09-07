@@ -28,6 +28,7 @@ from nvflare.app_common.statistics.numpy_utils import dtype_to_data_type
 class DFStatistics(Statistics):
     def __init__(self, data_path):
         super().__init__()
+        self.data_root_dir = "/tmp/nvflare/data"
         self.data_path = data_path
         self.data: Optional[Dict[str, pd.DataFrame]] = None
         self.data_features = ["Age", "Workclass", "fnlwgt", "Education", "Education-Num", "Marital Status",
@@ -42,11 +43,8 @@ class DFStatistics(Statistics):
         client_name = fl_ctx.get_prop(ReservedKey.CLIENT_NAME)
         self.log_info(fl_ctx, f"load data for client {client_name}")
         try:
-            workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
-            workspace_dir = workspace.get_root_dir()
             skip_rows = self.skip_rows[client_name]
-            data_path = f"{workspace_dir}/{self.data_path}"
-
+            data_path = f"{self.data_root_dir}/{fl_ctx.get_identity_name()}/{self.data_path}"
             # example of load data from CSV
             df: pd.DataFrame = pd.read_csv(
                 data_path, names=self.data_features, sep=r"\s*,\s*", skiprows=skip_rows, engine="python", na_values="?"
