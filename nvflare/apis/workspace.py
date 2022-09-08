@@ -23,7 +23,7 @@ class Workspace:
 
         NOTE::
 
-            Workspace folder structure:
+            Example of client workspace folder structure:
 
                 Workspace ROOT
                     local

@@ -345,9 +345,8 @@ class AdminAPI(AdminAPISpec):
                     raise TypeError(
                         "cmd_modules must be a list of CommandModule, but got element of type {}".format(type(m))
                     )
-        assert isinstance(service_finder, ServiceFinder), "service_finder should be ServiceFinder but got {}".format(
-            type(service_finder)
-        )
+        if not isinstance(service_finder, ServiceFinder):
+            raise TypeError("service_finder should be ServiceFinder but got {}".format(type(service_finder)))
 
         cmd_module = service_finder.get_command_module()
         if cmd_module:
