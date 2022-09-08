@@ -25,10 +25,9 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.apis.workspace import Workspace
-from nvflare.app_common.app_constant import AppConstants
 from nvflare.utils.import_utils import optional_import
 
-from .constants import XGBShareableHeader
+from .constants import XGB_TRAIN_TASK, XGBShareableHeader
 
 
 class XGBFedController(Controller):
@@ -132,7 +131,7 @@ class XGBFedController(Controller):
             data.set_header(XGBShareableHeader.XGB_FL_SERVER_SECURE, self._secure)
 
             train_task = Task(
-                name=AppConstants.TASK_TRAIN,
+                name=XGB_TRAIN_TASK,
                 data=data,
                 timeout=self._train_timeout,
             )

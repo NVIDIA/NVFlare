@@ -2,9 +2,13 @@
   "name": "hello-xgboost",
   "resource_spec": {},
   "deploy_map": {
-    "app": [
-      "server",
-      "site-1",
+    "app_server": [
+      "server"
+    ],
+    "app_site1": [
+      "site-1"
+    ],
+    "app_site2": [
       "site-2"
     ]
   },
