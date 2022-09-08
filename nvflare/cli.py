@@ -54,6 +54,11 @@ def def_simulator_parser(sub_cmd):
     return {cmd: simulator_parser}
 
 
+def handle_simulator_cmd(simulator_args):
+    status = run_simulator(simulator_args)
+    os._exit(status)
+
+
 def parse_args(prog_name: str):
     _parser = argparse.ArgumentParser(description=prog_name)
     sub_cmd = _parser.add_subparsers(description="sub command parser", dest="sub_command")
@@ -70,7 +75,7 @@ handlers = {
     CMD_POC: handle_poc_cmd,
     # CMD_PROVISION: handle_provision,
     # CMD_PREFLIGHT_CHECK: check_packages,
-    CMD_SIMULATOR: run_simulator,
+    CMD_SIMULATOR: handle_simulator_cmd,
 }
 
 
