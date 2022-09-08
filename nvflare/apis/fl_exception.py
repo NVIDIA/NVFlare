@@ -16,7 +16,7 @@
 class FLCommunicationError(Exception):
     """Base class for fed_learn communication exceptions."""
 
-    def __init__(self, exception):
+    def __init__(self, exception, message):
         """Init the FLCommunicationError.
 
         Args:
@@ -25,6 +25,7 @@ class FLCommunicationError(Exception):
         super().__init__()
         # Copy all the gRPC exception properties into FLCommunicationError instance.
         self.__dict__.update(exception.__dict__)
+        self.message = message
 
 
 class WorkflowError(Exception):
