@@ -47,6 +47,13 @@ def add_ok(obj):
     return obj
 
 
+def inc_dl(model, id):
+    instance = model.query.get(id)
+    instance.download_count = instance.download_count + 1
+    db.session.add(instance)
+    db.session.commit()
+
+
 class Store(object):
     @classmethod
     def ready(cls):
@@ -222,16 +229,17 @@ class Store(object):
     @classmethod
     def get_client_blob(cls, key, id):
         fileobj, filename = gen_client(key, id)
+        inc_dl(Client, id)
         return fileobj, filename
 
     @classmethod
     def create_user(cls, req):
-        name = req.get("name")
+        name = req.get("name", "")
         email = req.get("email")
         password = req.get("password", "")
         password_hash = generate_password_hash(password)
-        organization = req.get("organization")
-        role_name = req.get("role")
+        organization = req.get("organization", "")
+        role_name = req.get("role", "")
         description = req.get("description", "")
         approval_state = req.get("approval_state", 0)
         org = get_or_create(db.session, Organization, name=organization)
@@ -335,4 +343,5 @@ class Store(object):
     @classmethod
     def get_user_blob(cls, key, id):
         fileobj, filename = gen_user(key, id)
+        inc_dl(User, id)
         return fileobj, filename
