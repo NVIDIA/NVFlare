@@ -55,7 +55,7 @@ def overseer_blob():
         fileobj, filename = Store.get_overseer_blob(pin)
         response = make_response(fileobj.read())
         response.headers.set("Content-Type", "zip")
-        response.headers.set("Content-Disposition", "attachment", filename=filename)
+        response.headers.set("Content-Disposition", f'attachment; filename="{filename}"')
         return response
     else:
         return jsonify({"status": "unauthorized"}), 403
@@ -70,7 +70,7 @@ def server_blob(id):
         fileobj, filename = Store.get_server_blob(pin, id == 1)
         response = make_response(fileobj.read())
         response.headers.set("Content-Type", "zip")
-        response.headers.set("Content-Disposition", "attachment", filename=filename)
+        response.headers.set("Content-Disposition", f'attachment; filename="{filename}"')
         return response
     else:
         return jsonify({"status": "unauthorized"}), 403
