@@ -23,7 +23,10 @@ from .store import Store, check_role
 def create_one_user():
     req = request.json
     result = Store.create_user(req)
-    return jsonify(result), 201
+    if result is not None:
+        return jsonify(result), 201
+    else:
+        return jsonify({"status": "conflicting"}), 409
 
 
 @app.route("/api/v1/users", methods=["GET"])
@@ -57,6 +60,7 @@ def update_user(id):
 
     if request.method == "PATCH":
         req = request.json
+        req.pop("email", None)
         if p:
             result = Store.patch_user_by_project_admin(id, req)
         elif c:
