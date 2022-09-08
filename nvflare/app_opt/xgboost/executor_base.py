@@ -15,15 +15,24 @@
 import os
 from abc import ABC, abstractmethod
 
+from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.workspace import Workspace
-from nvflare.app_common.abstract.learner_spec import Learner
 from nvflare.app_common.app_constant import AppConstants
 
-from .constants import XGBShareableHeader
+from .constants import XGB_TRAIN_TASK, XGBShareableHeader
+
+
+def _get_server_address(fl_ctx: FLContext):
+    try:
+        sp_end_point = fl_ctx.get_prop(FLContextKey.SP_END_POINT, "localhost:8002:8003")
+        server_address = sp_end_point.split(":")[0]
+    except BaseException:
+        return None
+    return server_address
 
 
 class XGBoostParams:
@@ -39,20 +48,16 @@ class XGBoostParams:
         self.rabit_env: list = []
 
 
-def _get_server_address(fl_ctx: FLContext):
-    try:
-        engine = fl_ctx.get_engine()
-        server_address = engine.client.overseer_agent.get_primary_sp().name
-    except BaseException:
-        return None
-    return server_address
-
-
-class XGBFedLearnerBase(Learner, ABC):
+class XGBExecutorBase(Executor, ABC):
     def __init__(
-        self, train_data: str, test_data: str, num_rounds: int = 10, early_stopping_round: int = 2, xgboost_params=None
+        self,
+        train_data,
+        test_data,
+        num_rounds,
+        early_stopping_round,
+        xgboost_params,
     ):
-        """Federated XGBoost Learner.
+        """Federated XGBoost Executor.
         This class sets up the training environment for Federated XGBoost. This is an abstract class and xgb_train
         method must be implemented by a subclass.
 
@@ -62,7 +67,6 @@ class XGBFedLearnerBase(Learner, ABC):
             num_rounds: number of boosting rounds
             early_stopping_round: early stopping round
             xgboost_params: parameters to passed in xgb
-
         """
         super().__init__()
 
@@ -71,9 +75,9 @@ class XGBFedLearnerBase(Learner, ABC):
         self.num_rounds = num_rounds
         self.early_stopping_round = early_stopping_round
         self.xgb_params = xgboost_params
+
         self.rank = None
         self.world_size = None
-        self.client_id = None
         self._ca_cert_path = None
         self._client_key_path = None
         self._client_cert_path = None
@@ -82,9 +86,6 @@ class XGBFedLearnerBase(Learner, ABC):
     def xgb_train(self, params: XGBoostParams, fl_ctx: FLContext) -> Shareable:
         """Main XGBoost training method"""
         pass
-
-    def initialize(self, parts: dict, fl_ctx: FLContext):
-        self.client_id = fl_ctx.get_identity_name()
 
     def _get_certificates(self, fl_ctx: FLContext):
         workspace: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
@@ -104,6 +105,20 @@ class XGBFedLearnerBase(Learner, ABC):
         self._ca_cert_path = ca_cert_path
         self._client_key_path = client_key_path
         self._client_cert_path = client_cert_path
+
+    def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
+        self.log_info(fl_ctx, f"Client trainer got task: {task_name}")
+
+        try:
+            if task_name == XGB_TRAIN_TASK:
+                return self.train(shareable, fl_ctx, abort_signal)
+            else:
+                self.log_error(fl_ctx, f"Could not handle task: {task_name}")
+                return make_reply(ReturnCode.TASK_UNKNOWN)
+        except Exception as e:
+            # Task execution error, return EXECUTION_EXCEPTION Shareable
+            self.log_exception(fl_ctx, f"learner execute exception: {e}")
+            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
     def train(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         """XGBoost training task pipeline which handles NVFlare specific tasks"""
@@ -171,13 +186,11 @@ class XGBFedLearnerBase(Learner, ABC):
 
         try:
             result = self.xgb_train(params, fl_ctx)
-        except BaseException:
-            self.log_error(fl_ctx, "Exception happens when running xgb train")
+        except BaseException as e:
+            self.log_error(fl_ctx, f"Exception happens when running xgb train: {e}")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+
+        if not (result and isinstance(result, Shareable)):
+            return make_reply(ReturnCode.EMPTY_RESULT)
+
         return result
-
-    def validate(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
-
-        self.log_error(fl_ctx, "Validation is not supported for XGBoost")
-
-        return make_reply(ReturnCode.TASK_UNSUPPORTED)

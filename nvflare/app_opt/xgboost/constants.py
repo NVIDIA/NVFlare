@@ -13,6 +13,9 @@
 # limitations under the License.
 
 
+XGB_TRAIN_TASK = "train"
+
+
 class XGBShareableHeader:
     WORLD_SIZE = "_world_size"
     RANK_MAP = "_rank_map"
