@@ -154,12 +154,12 @@ class XGBoostBaggingAggregator(Aggregator):
             append_info["id"] = current_round * site_num + site
             json_bagging["learner"]["gradient_booster"]["model"]["trees"].append(append_info)
             json_bagging["learner"]["gradient_booster"]["model"]["tree_info"].append(0)
-        json_bagging["learner"]["attributes"]["best_iteration"] = str(current_round)
+        json_bagging["learner"]["attributes"]["best_iteration"] = str(site_num * (current_round + 1)-1)
         json_bagging["learner"]["attributes"]["best_ntree_limit"] = str(site_num * (current_round + 1))
         json_bagging["learner"]["gradient_booster"]["model"]["gbtree_model_param"]["num_trees"] = str(
             site_num * (current_round + 1)
         )
-        json_bagging["learner"]["gradient_booster"]["model"]["gbtree_model_param"]["num_parallel_tree"] = str(site_num)
+        json_bagging["learner"]["gradient_booster"]["model"]["gbtree_model_param"]["num_parallel_tree"] = "1"
 
         # Save the global bagging model
         with open(global_model_path, "w") as f:
