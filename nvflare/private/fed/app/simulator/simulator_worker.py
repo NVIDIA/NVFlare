@@ -131,7 +131,7 @@ class ClientTaskWorker(FLComponent):
                 time.sleep(interval)
 
         except BaseException as error:
-            self.logger.error(error)
+            self.logger.error(f"ClientTaskWorker run error. {error}")
         finally:
             if admin_agent:
                 admin_agent.shutdown()
@@ -150,6 +150,7 @@ def main():
     parser.add_argument("--client", type=str, help="Client name", required=True)
     parser.add_argument("--port", type=str, help="Listen port", required=True)
     parser.add_argument("--gpu", "-g", type=str, help="gpu index number")
+    parser.add_argument("--parent_pid", type=int, help="parent process pid", required=True)
     args = parser.parse_args()
 
     log_config_file_path = os.path.join(args.workspace, "startup", "log.config")
@@ -171,7 +172,7 @@ def main():
     conn = _create_connection(args.port)
 
     # start parent process checking thread
-    parent_pid = os.getppid()
+    parent_pid = args.parent_pid
     stop_event = threading.Event()
     thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
     thread.start()
