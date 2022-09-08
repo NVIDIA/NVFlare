@@ -84,5 +84,5 @@ class TestSimulatorRunner:
                              )
     def test_split_names(self, client_names, gpus, expected_split_names):
         runner = SimulatorRunner(job_folder="", workspace="")
-        split_names = runner.split_names(client_names, gpus)
+        split_names = runner.split_clients(client_names, gpus)
         assert sorted(split_names) == sorted(expected_split_names)
