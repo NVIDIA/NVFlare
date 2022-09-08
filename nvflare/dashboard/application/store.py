@@ -21,6 +21,12 @@ from .cert import Entity, make_root_cert
 from .models import Capacity, Client, Organization, Project, Role, User, db
 
 
+def check_role(id, claims, requester):
+    is_creator = requester == Store._get_email_by_id(id)
+    is_project_admin = claims.get("role") == "project_admin"
+    return is_creator, is_project_admin
+
+
 def _dict_or_empty(item):
     return item.asdict() if item else {}
 
@@ -230,13 +236,20 @@ class Store(object):
         approval_state = req.get("approval_state", 0)
         org = get_or_create(db.session, Organization, name=organization)
         role = get_or_create(db.session, Role, name=role_name)
-        user = User(
-            email=email, name=name, password_hash=password_hash, description=description, approval_state=approval_state
-        )
-        user.organization_id = org.id
-        user.role_id = role.id
-        db.session.add(user)
-        db.session.commit()
+        try:
+            user = User(
+                email=email,
+                name=name,
+                password_hash=password_hash,
+                description=description,
+                approval_state=approval_state,
+            )
+            user.organization_id = org.id
+            user.role_id = role.id
+            db.session.add(user)
+            db.session.commit()
+        except BaseException:
+            return None
         return add_ok({"user": _dict_or_empty(user)})
 
     @classmethod
