@@ -47,6 +47,13 @@ def add_ok(obj):
     return obj
 
 
+def inc_dl(model, id):
+    instance = model.query.get(id)
+    instance.download_count = instance.download_count + 1
+    db.session.add(instance)
+    db.session.commit()
+
+
 class Store(object):
     @classmethod
     def ready(cls):
@@ -222,6 +229,7 @@ class Store(object):
     @classmethod
     def get_client_blob(cls, key, id):
         fileobj, filename = gen_client(key, id)
+        inc_dl(Client, id)
         return fileobj, filename
 
     @classmethod
@@ -335,4 +343,5 @@ class Store(object):
     @classmethod
     def get_user_blob(cls, key, id):
         fileobj, filename = gen_user(key, id)
+        inc_dl(User, id)
         return fileobj, filename
