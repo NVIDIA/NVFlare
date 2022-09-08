@@ -56,6 +56,7 @@ class XGBFedController(Controller):
         self._server_cert_path = None
         self._server_key_path = None
         self._ca_cert_path = None
+        self._started = False
 
     def _get_certificates(self, fl_ctx: FLContext):
         workspace: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
@@ -110,20 +111,28 @@ class XGBFedController(Controller):
                 target=xgb_federated.run_federated_server, args=(self._port, len(clients))
             )
         self._xgb_fl_server.start()
+        self._started = True
 
     def stop_controller(self, fl_ctx: FLContext):
         self.cancel_all_tasks()
         if self._xgb_fl_server:
             self._xgb_fl_server.terminate()
+        self._started = False
 
     def process_result_of_unknown_task(
         self, client: Client, task_name, client_task_id, result: Shareable, fl_ctx: FLContext
     ):
         self.log_error(fl_ctx, f"Unknown task: {task_name} from client {client.name}.")
 
-    def control_flow(self, abort_signal: Signal, fl_ctx: FLContext) -> None:
+    def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
+        self.log_info(fl_ctx, "Begin XGBoost training phase.")
+        if not self._started:
+            msg = "Controller does not start successfully."
+            self.log_error(fl_ctx, msg)
+            self.system_panic(msg, fl_ctx)
+            return
+
         try:
-            self.log_info(fl_ctx, "Begin XGBoost training phase.")
             data = Shareable()
             data.set_header(XGBShareableHeader.WORLD_SIZE, len(self._participate_clients))
             data.set_header(XGBShareableHeader.RANK_MAP, self._rank_map)
