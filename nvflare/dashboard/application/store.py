@@ -21,6 +21,12 @@ from .cert import Entity, make_root_cert
 from .models import Capacity, Client, Organization, Project, Role, User, db
 
 
+def check_role(id, claims, requester):
+    is_creator = requester == Store._get_email_by_id(id)
+    is_project_admin = claims.get("role") == "project_admin"
+    return is_creator, is_project_admin
+
+
 def _dict_or_empty(item):
     return item.asdict() if item else {}
 

@@ -15,7 +15,8 @@
 import os
 
 from flask import Flask
-from flask_cors import CORS
+
+# from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 from flask_sqlalchemy import SQLAlchemy
 
@@ -27,7 +28,7 @@ def init_app():
     static_folder = os.environ.get("NVFL_DASHBOARD_STATIC_FOLDER", "static")
     app = Flask(__name__, static_url_path="", static_folder=static_folder)
     app.config.from_object("config.Config")
-    CORS(app)
+    # CORS(app)
     db.init_app(app)
     jwt.init_app(app)
     with app.app_context():
