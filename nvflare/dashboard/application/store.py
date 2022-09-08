@@ -234,12 +234,12 @@ class Store(object):
 
     @classmethod
     def create_user(cls, req):
-        name = req.get("name")
+        name = req.get("name", "")
         email = req.get("email")
         password = req.get("password", "")
         password_hash = generate_password_hash(password)
-        organization = req.get("organization")
-        role_name = req.get("role")
+        organization = req.get("organization", "")
+        role_name = req.get("role", "")
         description = req.get("description", "")
         approval_state = req.get("approval_state", 0)
         org = get_or_create(db.session, Organization, name=organization)
