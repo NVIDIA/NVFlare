@@ -112,6 +112,10 @@ class SimulatorRunner(FLComponent):
         if os.path.exists(self.simulator_root):
             shutil.rmtree(self.simulator_root)
 
+        os.makedirs(self.simulator_root)
+        log_file = os.path.join(self.simulator_root, "log.txt")
+        add_logfile_handler(log_file)
+
         try:
             data_bytes, job_name, meta = self.validate_job_data()
 
@@ -125,30 +129,30 @@ class SimulatorRunner(FLComponent):
                 host_gpus = [str(x) for x in (get_host_gpu_ids())]
                 if host_gpus and not set(gpus).issubset(host_gpus):
                     wrong_gpus = [x for x in gpus if x not in host_gpus]
-                    logging.error(f"These GPUs does not available: {wrong_gpus}")
+                    self.logger.error(f"These GPUs are not available: {wrong_gpus}")
                     return False
 
                 if len(gpus) <= 1:
-                    logging.error("Please provide more than 1 GPU to run the Simulator with multi-GPUs.")
+                    self.logger.error("Please provide more than 1 GPU to run the Simulator with multi-GPUs.")
                     return False
 
                 if len(gpus) > len(self.client_names):
-                    logging.error(
+                    self.logger.error(
                         f"The number of clients ({len(self.client_names)}) must be larger than or equal to "
                         f"the number of GPUS: ({len(gpus)})"
                     )
-                    sys.exit(-1)
+                    return False
                 if self.args.threads and self.args.threads > 1:
-                    logging.info(
+                    self.logger.info(
                         "When running with multi GPU, each GPU will run with only 1 thread. " "Set the Threads to 1."
                     )
                 self.args.threads = 1
 
             if self.args.threads and self.args.threads > len(self.client_names):
-                logging.error("The number of threads to run can not be larger than the number of clients.")
+                self.logger.error("The number of threads to run can not be larger than the number of clients.")
                 return False
             if not (self.args.gpu or self.args.threads):
-                logging.error("Please provide the number of threads or provide gpu options to run the simulator.")
+                self.logger.error("Please provide the number of threads or provide gpu options to run the simulator.")
                 return False
 
             self._validate_client_names(meta, self.client_names)
@@ -161,13 +165,11 @@ class SimulatorRunner(FLComponent):
             self.logger.info("Deploy the Apps.")
             self._deploy_apps(job_name, data_bytes, meta)
 
-            log_file = os.path.join(self.args.workspace, SimulatorConstants.JOB_NAME, "log.txt")
-            add_logfile_handler(log_file)
             # self.create_clients(data_bytes, job_name, meta)
             return True
 
         except BaseException as error:
-            self.logger.error(error)
+            self.logger.error(f"Simulator setup error. {error}")
             return False
 
     def validate_job_data(self):
@@ -291,7 +293,7 @@ class SimulatorRunner(FLComponent):
                 server_thread.join()
                 run_status = 0
             except BaseException as error:
-                self.logger.error(error)
+                self.logger.error(f"Simulator run error {error}")
                 run_status = 2
             finally:
                 self.deployer.close()
@@ -339,7 +341,7 @@ class SimulatorClientRunner(FLComponent):
             # wait for the server and client running thread to finish.
             executor.shutdown()
         except BaseException as error:
-            self.logger.error(error)
+            self.logger.error(f"SimulatorClientRunner run error. {error}")
         finally:
             for client in self.federated_clients:
                 # client.engine.shutdown()
@@ -365,7 +367,7 @@ class SimulatorClientRunner(FLComponent):
 
                 client.simulate_running = False
         except BaseException as error:
-            self.logger.error(error)
+            self.logger.error(f"run_client_thread error. {error}")
 
     def do_one_task(self, client, num_of_threads, gpu, lock):
         open_port = get_open_ports(1)[0]
@@ -377,6 +379,8 @@ class SimulatorClientRunner(FLComponent):
             + client.client_name
             + " --port "
             + str(open_port)
+            + " --parent_pid "
+            + str(os.getpid())
         )
         if gpu:
             command += " --gpu " + str(gpu)

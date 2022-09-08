@@ -194,7 +194,7 @@ class Communicator:
                         "client_registration",
                         verbose=self.verbose,
                     )
-                    excep = FLCommunicationError(grpc_error)
+                    excep = FLCommunicationError(grpc_error, "grpc_error:client_registration")
                     if isinstance(grpc_error, grpc.Call):
                         status_code = grpc_error.code()
                         if grpc.StatusCode.UNAUTHENTICATED == status_code:
@@ -247,7 +247,7 @@ class Communicator:
                     return task
                 except grpc.RpcError as grpc_error:
                     self.grpc_error_handler(servers[project_name], grpc_error, "getTask", verbose=self.verbose)
-                    excep = FLCommunicationError(grpc_error)
+                    excep = FLCommunicationError(grpc_error, "grpc_error:getTask")
                     retry -= 1
                     time.sleep(5)
             if self.should_stop:
