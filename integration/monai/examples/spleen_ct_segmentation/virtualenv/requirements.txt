@@ -1,0 +1,8 @@
+tensorboard
+tqdm
+nibabel
+fire
+pytorch-ignite>=0.4.10
+monai==1.0.0rc1
+nvflare>=2.2.0
+monai_nvflare>=0.1.0

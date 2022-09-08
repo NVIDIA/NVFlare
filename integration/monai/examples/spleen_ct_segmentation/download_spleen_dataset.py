@@ -12,12 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from monai.apps.utils import download_and_extract
 
-XGB_TRAIN_TASK = "train"
+
+def download_spleen_dataset():
+    url = "https://msd-for-monai.s3-us-west-2.amazonaws.com/Task09_Spleen.tar"
+    download_and_extract(url=url, filepath="./data/Task09_Spleen.tar", output_dir="./data")
 
 
-class XGBShareableHeader:
-    WORLD_SIZE = "_world_size"
-    RANK_MAP = "_rank_map"
-    XGB_FL_SERVER_PORT = "_server_port"
-    XGB_FL_SERVER_SECURE = "_secure_server"
+if __name__ == "__main__":
+    download_spleen_dataset()

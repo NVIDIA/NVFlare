@@ -578,7 +578,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         if dst == self.TARGET_TYPE_SERVER:
             engine_info = engine.get_engine_info()
             conn.append_string(f"Engine status: {engine_info.status.value}")
-            table = conn.append_table(["Job_id", "App Name"])
+            table = conn.append_table(["job_id", "app name"])
             for job_id, app_name in engine_info.app_names.items():
                 table.add_row([job_id, app_name])
 
@@ -586,7 +586,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             conn.append_string("Registered clients: {} ".format(len(clients)))
 
             if clients:
-                table = conn.append_table(["Client", "Token", "Last Connect Time"])
+                table = conn.append_table(["client", "token", "last connect time"])
                 for c in clients:
                     if not isinstance(c, Client):
                         raise TypeError("c must be Client but got {}".format(type(c)))
@@ -594,11 +594,11 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         elif dst == self.TARGET_TYPE_CLIENT:
             message = new_message(conn, topic=TrainingTopic.CHECK_STATUS, body="")
             replies = self.send_request_to_clients(conn, message)
-            self._process_status_replies(conn, replies)
+            self._process_client_status_replies(conn, replies)
         else:
             conn.append_error("invalid target type {}. Usage: check_status server|client ...".format(dst))
 
-    def _process_status_replies(self, conn, replies):
+    def _process_client_status_replies(self, conn, replies):
         if not replies:
             conn.append_error("no responses from clients")
             return

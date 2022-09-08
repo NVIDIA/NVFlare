@@ -1,0 +1,33 @@
+{
+  "format_version": 2,
+  "data_root": "/dataset/",
+  "components": [],
+  "executors": [
+    {
+      "tasks": [
+        "train"
+      ],
+      "executor": {
+        "id": "Executor",
+        "path": "nvflare.app_opt.xgboost.executor.XGBExecutor",
+        "args": {
+          "train_data": "{data_root}higgs.train.csv.1?format=csv&label_column=0",
+          "test_data": "{data_root}higgs.test.csv.1?format=csv&label_column=0",
+          "num_rounds": 100,
+          "early_stopping_round": 2,
+          "xgboost_params": {
+            "max_depth": 8,
+            "eta": 0.1,
+            "objective": "binary:logistic",
+            "eval_metric": "auc",
+            "tree_method": "gpu_hist",
+            "nthread": 16
+          }
+        }
+      }
+    }
+  ],
+
+  "task_result_filters": [],
+  "task_data_filters": []
+}
