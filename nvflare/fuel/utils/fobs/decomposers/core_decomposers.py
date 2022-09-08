@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Decomposers for Python builtin objects."""
+from collections import OrderedDict
 from datetime import datetime
 from typing import Any
 
@@ -40,6 +41,18 @@ class SetDecomposer(Decomposer):
 
     def recompose(self, data: Any) -> set:
         return set(data)
+
+
+class OrderedDictDecomposer(Decomposer):
+    @staticmethod
+    def supported_type():
+        return OrderedDict
+
+    def decompose(self, target: OrderedDict) -> Any:
+        return list(target.items())
+
+    def recompose(self, data: Any) -> OrderedDict:
+        return OrderedDict(data)
 
 
 class DatetimeDecomposer(Decomposer):

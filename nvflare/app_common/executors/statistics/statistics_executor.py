@@ -17,7 +17,7 @@ from typing import Dict, List, Optional
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
-from nvflare.apis.fl_constant import ReservedKey, ReturnCode
+from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
@@ -146,7 +146,7 @@ class StatisticsExecutor(Executor):
             self.log_exception(fl_ctx, f"statistics generator initialize exception: {e}")
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
-        client_name = fl_ctx.get_prop(ReservedKey.CLIENT_NAME)
+        client_name = fl_ctx.get_identity_name()
         self.log_info(fl_ctx, f"Executing task '{task_name}' for client: '{client_name}'")
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
@@ -163,7 +163,8 @@ class StatisticsExecutor(Executor):
             return make_reply(ReturnCode.EXECUTION_RESULT_ERROR)
 
     def _client_exec(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
-        client_name = fl_ctx.get_prop(ReservedKey.CLIENT_NAME)
+        # client_name = fl_ctx.get_prop(ReservedKey.CLIENT_NAME)
+        client_name = fl_ctx.get_identity_name()
         self.log_info(fl_ctx, f"Executing task '{task_name}' for client: '{client_name}'")
         result = Shareable()
         metrics_result = {}

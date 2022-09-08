@@ -100,7 +100,7 @@ class FLAdminAPIRunner:
         upload_dir = admin_config.get("upload_dir")
         download_dir = admin_config.get("download_dir")
         if not os.path.isdir(download_dir):
-            os.makedirs(download_dir)
+            os.makedirs(download_dir, exist_ok=True)
 
         assert os.path.isdir(admin_dir), f"admin directory does not exist at {admin_dir}"
         if not self.poc:

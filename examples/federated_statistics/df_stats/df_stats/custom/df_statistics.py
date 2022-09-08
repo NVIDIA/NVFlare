@@ -40,7 +40,7 @@ class DFStatistics(Statistics):
         }
 
     def load_data(self, fl_ctx: FLContext) -> Dict[str, pd.DataFrame]:
-        client_name = fl_ctx.get_prop(ReservedKey.CLIENT_NAME)
+        client_name = fl_ctx.get_identity_name()
         self.log_info(fl_ctx, f"load data for client {client_name}")
         try:
             skip_rows = self.skip_rows[client_name]
