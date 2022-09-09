@@ -20,8 +20,9 @@ import traceback
 
 from nvflare.fuel.hci.conn import Connection, receive_til_end
 from nvflare.fuel.hci.proto import validate_proto
-from nvflare.fuel.hci.security import get_certificate_common_name
+from nvflare.fuel.hci.security import IdentityKey, get_identity_info
 
+from .constants import ConnProps
 from .reg import ServerCommandRegister
 
 logger = logging.getLogger(__name__)
@@ -37,13 +38,18 @@ class _MsgHandler(socketserver.BaseRequestHandler):
     def handle(self):
         try:
             conn = Connection(self.request, self.server)
+            conn.set_prop(ConnProps.CA_CERT, self.server.ca_cert)
+
+            if self.server.extra_conn_props:
+                conn.set_props(self.server.extra_conn_props)
+
+            if self.server.cmd_reg.conn_props:
+                conn.set_props(self.server.cmd_reg.conn_props)
 
             if self.server.use_ssl:
-                cn = get_certificate_common_name(self.request.getpeercert())
-                conn.set_prop("_client_cn", cn)
-                valid = self.server.validate_client_cn(cn)
-                ssl_version = self.request.version()
-                logger.debug(f"TLS version for admin connection: {ssl_version}")
+                identity = get_identity_info(self.request.getpeercert())
+                conn.set_prop(ConnProps.CLIENT_IDENTITY, identity)
+                valid = self.server.validate_client_cn(identity[IdentityKey.NAME])
             else:
                 valid = True
 
@@ -99,6 +105,7 @@ class AdminServer(socketserver.ThreadingTCPServer):
         server_cert=None,
         server_key=None,
         accepted_client_cns=None,
+        extra_conn_props=None,
     ):
         """Base class of FedAdminServer to create a server that can receive commands.
 
@@ -110,8 +117,14 @@ class AdminServer(socketserver.ThreadingTCPServer):
             server_cert: server's cert, signed by the CA
             server_key: server's private key file
             accepted_client_cns: list of accepted Common Names from client, if specified
+            extra_conn_props: a dict of extra conn props, if specified
         """
-        socketserver.TCPServer.__init__(self, ("0.0.0.0", port), _MsgHandler, False)
+        if extra_conn_props is not None:
+            assert isinstance(extra_conn_props, dict), "extra_conn_props must be dict but got {}".format(
+                extra_conn_props
+            )
+
+        socketserver.TCPServer.__init__(self, (host, port), _MsgHandler, False)
 
         self.use_ssl = False
         if ca_cert and server_cert:
@@ -136,9 +149,11 @@ class AdminServer(socketserver.ThreadingTCPServer):
         self.server_activate()
 
         self._thread = None
+        self.ca_cert = ca_cert
         self.host = host
         self.port = port
         self.accepted_client_cns = accepted_client_cns
+        self.extra_conn_props = extra_conn_props
         self.cmd_reg = cmd_reg
         cmd_reg.finalize()
 

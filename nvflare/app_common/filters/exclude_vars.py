@@ -15,19 +15,19 @@
 import re
 from typing import List, Union
 
-from nvflare.apis.dxo import from_shareable
-from nvflare.apis.filter import Filter
-from nvflare.apis.fl_constant import ReturnCode
+from nvflare.apis.dxo import DataKind
+from nvflare.apis.dxo_filter import DXO, DXOFilter
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 
 
-class ExcludeVars(Filter):
-    def __init__(self, exclude_vars: Union[List[str], str, None] = None):
+class ExcludeVars(DXOFilter):
+    def __init__(self, exclude_vars: Union[List[str], str, None] = None, data_kinds: List[str] = None):
         """Exclude/Remove variables from Shareable.
 
         Args:
             exclude_vars (Union[List[str], str, None] , optional): variables/layer names to be excluded.
+            data_kinds: kinds of DXO object to filter
 
         Notes:
             Based on different types of exclude_vars, this filter has different behavior:
@@ -35,7 +35,10 @@ class ExcludeVars(Filter):
                 if a string, it will be converted into a regular expression, only matched variables will be excluded.
                 if not provided or other formats the Shareable remains unchanged.
         """
-        super().__init__()
+        if not data_kinds:
+            data_kinds = [DataKind.WEIGHT_DIFF, DataKind.WEIGHTS]
+
+        super().__init__(supported_data_kinds=[DataKind.WEIGHTS, DataKind.WEIGHT_DIFF], data_kinds_to_filter=data_kinds)
         self.exclude_vars = exclude_vars
         self.skip = False
         if self.exclude_vars is not None:
@@ -68,36 +71,21 @@ class ExcludeVars(Filter):
             self.logger.debug("Not excluding anything")
             self.skip = True
 
-    def process(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
+    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:
         """Called by upper layer to remove variables in weights/weight_diff dictionary.
 
         When the return code of shareable is not ReturnCode.OK, this
         function will not perform any process and returns the shareable back.
 
         Args:
-            shareable (Shareable): shareable must conform to DXO format.
+            dxo (DXO): DXO to be filtered.
+            shareable: that the dxo belongs to
             fl_ctx (FLContext): only used for logging.
 
-        Returns:
-            Shareable: a shareable with excluded weights
+        Returns: filtered dxo
         """
         if self.skip:
-            return shareable
-
-        rc = shareable.get_return_code()
-        if rc != ReturnCode.OK:
-            # don't process if RC not OK
-            return shareable
-
-        try:
-            dxo = from_shareable(shareable)
-        except:
-            self.log_exception(fl_ctx, "shareable data is not a valid DXO")
-            return shareable
-
-        if dxo.data is None:
-            self.log_debug(fl_ctx, "no data to filter")
-            return shareable
+            return None
 
         weights = dxo.data
         # remove variables
@@ -119,4 +107,4 @@ class ExcludeVars(Filter):
         self.log_debug(fl_ctx, f"Excluded {n_excluded} of {n_vars} variables. {len(weights.keys())} remaining.")
 
         dxo.data = weights
-        return dxo.update_shareable(shareable)
+        return dxo

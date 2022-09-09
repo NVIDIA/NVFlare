@@ -20,18 +20,18 @@ import sys
 import time
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import WorkspaceConstants
+from nvflare.apis.fl_constant import SiteType, WorkspaceConstants
+from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
-from nvflare.fuel.sec.audit import AuditService
-from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import AppFolderConstants, SSLConstants
-from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger
+from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger, create_privacy_manager
 from nvflare.private.fed.client.admin import FedAdminAgent
 from nvflare.private.fed.client.admin_msg_sender import AdminMessageSender
 from nvflare.private.fed.client.client_engine import ClientEngine
 from nvflare.private.fed.client.fed_client import FederatedClient
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler, secure_content_check
+from nvflare.private.fed.utils.fed_utils import add_logfile_handler, security_init
+from nvflare.private.privacy_manager import PrivacyService
 
 
 def main():
@@ -41,9 +41,7 @@ def main():
         raise RuntimeError("Python versions 3.6 and below are not supported. Please use Python 3.8 or 3.7.")
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
-    parser.add_argument(
-        "--fed_client", "-s", type=str, help="an aggregation server specification json file", required=True
-    )
+    parser.add_argument("--fed_client", "-s", type=str, help="client config json file", required=True)
     parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
     parser.add_argument("--local_rank", type=int, default=0)
 
@@ -60,9 +58,11 @@ def main():
     args.train_config = os.path.join("config", AppFolderConstants.CONFIG_TRAIN)
     args.log_config = None
 
+    workspace = Workspace(root_dir=args.workspace)
+
     for name in [WorkspaceConstants.RESTART_FILE, WorkspaceConstants.SHUTDOWN_FILE]:
         try:
-            f = os.path.join(args.workspace, name)
+            f = workspace.get_file_path_in_root(name)
             if os.path.exists(f):
                 os.remove(f)
         except BaseException:
@@ -73,23 +73,27 @@ def main():
 
     try:
         os.chdir(args.workspace)
-        AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
-
-        startup = os.path.join(args.workspace, "startup")
         conf = FLClientStarterConfiger(
-            app_root=startup,
-            client_config_file_name=args.fed_client,
-            log_config_file_name=WorkspaceConstants.LOGGING_CONFIG,
+            workspace=workspace,
             kv_list=args.set,
         )
         conf.configure()
 
-        log_file = os.path.join(args.workspace, "log.txt")
+        log_file = workspace.get_log_file_path()
         add_logfile_handler(log_file)
 
         deployer = conf.base_deployer
+        security_init(
+            secure_train=deployer.secure_train,
+            site_org=conf.site_org,
+            workspace=workspace,
+            app_validator=conf.app_validator,
+            site_type=SiteType.CLIENT,
+        )
 
-        security_check(secure_train=deployer.secure_train, content_folder=startup, fed_client_config=args.fed_client)
+        # initialize Privacy Service
+        privacy_manager = create_privacy_manager(workspace, names_only=True)
+        PrivacyService.initialize(privacy_manager)
 
         federated_client = deployer.create_fed_client(args)
 
@@ -131,30 +135,6 @@ def main():
         pass
 
     sys.exit(0)
-
-
-def security_check(secure_train: bool, content_folder: str, fed_client_config: str):
-    """To check the security content if running in security mode.
-
-    Args:
-       secure_train (bool): if run in secure mode or not.
-       content_folder (str): the folder to check.
-       fed_client_config (str): fed_client.json
-    """
-    # initialize the SecurityContentService.
-    # must do this before initializing other services since it may be needed by them!
-    SecurityContentService.initialize(content_folder=content_folder)
-
-    if secure_train:
-        insecure_list = secure_content_check(fed_client_config, site_type="client")
-        if len(insecure_list):
-            print("The following files are not secure content.")
-            for item in insecure_list:
-                print(item)
-            sys.exit(1)
-    # initialize the AuditService, which is used by command processing.
-    # The Audit Service can be used in other places as well.
-    AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
 
 
 def create_admin_agent(

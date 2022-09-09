@@ -54,6 +54,7 @@ from nvflare.fuel.utils import fobs
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
+from nvflare.private.fed.utils.fed_utils import security_close
 from nvflare.private.scheduler_constants import ShareableHeader
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
@@ -194,15 +195,13 @@ class ServerEngine(ServerEngineInternalSpec):
         if run_number in self.run_processes.keys():
             return f"Server run_{run_number} already started."
         else:
-            app_root = os.path.join(self._get_run_folder(run_number), self._get_server_app_folder())
+            workspace = Workspace(root_dir=self.args.workspace, site_name="server")
+            app_root = workspace.get_app_dir(run_number)
             if not os.path.exists(app_root):
                 return "Server app does not exist. Please deploy the server app before starting."
 
             self.engine_info.status = MachineStatus.STARTING
-
-            app_custom_folder = ""
-            if self.server.enable_byoc:
-                app_custom_folder = os.path.join(app_root, "custom")
+            app_custom_folder = workspace.get_app_custom_dir(run_number)
 
             open_ports = get_open_ports(2)
             self._start_runner_process(
@@ -276,6 +275,7 @@ class ServerEngine(ServerEngineInternalSpec):
         command_options = ""
         for t in args.set:
             command_options += " " + t
+
         command = (
             sys.executable
             + " -m nvflare.private.fed.app.server.runner_process -m "
@@ -784,4 +784,5 @@ def server_shutdown(server, touch_file):
         time.sleep(3.0)
     finally:
         server.status = ServerStatus.SHUTDOWN
+        security_close()
         sys.exit(2)

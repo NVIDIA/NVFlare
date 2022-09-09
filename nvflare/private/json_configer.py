@@ -14,11 +14,12 @@
 
 import json
 import os
+from typing import List, Union
 
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.utils.class_utils import ModuleScanner, get_class
 from nvflare.fuel.utils.component_builder import ComponentBuilder
-from nvflare.fuel.utils.dict_utils import extract_first_level_primitive
+from nvflare.fuel.utils.dict_utils import augment, extract_first_level_primitive
 from nvflare.fuel.utils.json_scanner import JsonObjectProcessor, JsonScanner, Node
 from nvflare.fuel.utils.wfconf import _EnvUpdater
 
@@ -33,43 +34,55 @@ class ConfigContext(object):
 class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
     def __init__(
         self,
-        config_file_name: str,
-        base_pkgs: [str],
-        module_names: [str],
+        config_file_name: Union[str, List[str]],
+        base_pkgs: List[str],
+        module_names: List[str],
         exclude_libs=True,
         num_passes=1,
     ):
         """To init the JsonConfigurator.
 
         Args:
-            config_file_name: config filename
+            config_file_name: config filename or list of JSON config file names
             base_pkgs: base packages need to be scanned
             module_names: module names need to be scanned
             exclude_libs: True/False to exclude the libs folder
             num_passes: number of passes to parsing the config
+            extra_config_files: additional JSON config files to be merged
         """
         JsonObjectProcessor.__init__(self)
 
         if not isinstance(num_passes, int):
-            raise TypeError("num_passes must be int but got {}".format(type(num_passes)))
+            raise TypeError(f"num_passes must be int but got {num_passes}")
         if not num_passes > 0:
-            raise ValueError("num_passes must > 0 but got {}".format(num_passes))
-        if not isinstance(config_file_name, str):
-            raise TypeError("config_file_name must be str but got {}".format(type(config_file_name)))
-        if not os.path.isfile(config_file_name):
-            raise FileNotFoundError("config_file_name {} is not a valid file".format(config_file_name))
-        if not os.path.exists(config_file_name):
-            raise FileNotFoundError("config_file_name {} does not exist".format(config_file_name))
+            raise ValueError(f"num_passes must > 0 but got {num_passes}")
 
-        self.config_file_name = config_file_name
+        if isinstance(config_file_name, str):
+            config_files = [config_file_name]
+        elif isinstance(config_file_name, list):
+            config_files = config_file_name
+        else:
+            raise TypeError(f"config_file_name must be str or list of strs but got {type(config_file_name)}")
+
+        for f in config_files:
+            if not os.path.exists(f):
+                raise FileNotFoundError(f"config_file_name {f} does not exist")
+            if not os.path.isfile(f):
+                raise FileNotFoundError(f"config_file_name {f} is not a valid file")
+
+        self.config_file_name = config_files
         self.num_passes = num_passes
         self.module_scanner = ModuleScanner(base_pkgs, module_names, exclude_libs)
         self.config_ctx = None
 
-        with open(config_file_name) as file:
-            self.config_data = json.load(file)
+        config_data = {}
+        for f in config_files:
+            with open(f) as file:
+                data = json.load(file)
+                augment(to_dict=config_data, from_dict=data, from_override_to=False)
 
-        self.json_scanner = JsonScanner(self.config_data, config_file_name)
+        self.config_data = config_data
+        self.json_scanner = JsonScanner(config_data, config_files)
 
     def get_module_scanner(self):
         return self.module_scanner

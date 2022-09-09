@@ -1,0 +1,46 @@
+{
+  "format_version": "1.0",
+  "permissions": {
+    "project_admin": {
+      "submit_job": "any",
+      "clone_job": "any",
+      "manage_job": "any",
+      "download_job": "any",
+      "view": "any",
+      "operate": "any",
+      "byoc": "any",
+      "shell_commands": "any"
+    },
+    "org_admin": {
+      "submit_job": "none",
+      "manage_job": "o:submitter",
+      "download_job": "o:submitter",
+      "view": "any",
+      "operate": "o:site",
+      "shell_commands": "o:site"
+    },
+    "lead": {
+      "submit_job": "any",
+      "byoc": "o:site",
+      "manage_job": "o:submitter",
+      "list_jobs": "o:submitter",
+      "view": "any",
+      "operate": "o:site",
+      "ls": "o:site",
+      "grep": "o:site"
+    },
+    "member": {
+      "submit_job": [
+        "o:site",
+        "o:nih",
+        "n:holger"
+      ],
+      "byoc": "none",
+      "manage_job": "none",
+      "list_job": "n:submitter",
+      "download_job": "n:submitter",
+      "view": "any",
+      "operate": "none"
+    }
+  }
+}

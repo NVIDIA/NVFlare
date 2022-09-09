@@ -19,7 +19,6 @@ from typing import Dict, Tuple
 class AppValidationKey(object):
 
     BYOC = "byoc"
-    CUSTOM_DATA_LIST = "custom_datalist"
 
 
 class AppValidator(ABC):
@@ -31,11 +30,11 @@ class AppValidator(ABC):
             app_folder: path to the app folder to be validated
 
         Returns:
-            A tuple of (error_msg, authorization_context)
+            A tuple of (error_msg, app_validation_props)
 
             error_msg contains error message if failed to pass; otherwise an empty string.
-            authorization_context is the context needed by authorization.
+            app_validation_props is a dict of properties of the app.
 
-            For example: the result could be ("", {"byoc": True, "custom_datalist": True})
+            For example: the result could be ("", {"byoc": True})
         """
         pass

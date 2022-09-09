@@ -73,6 +73,7 @@ class ReservedKey(object):
     TASK_RESULT = "__task_result__"
     TASK_ID = "__task_id__"
     EVENT_ID = "__event_id__"
+    AUDIT_EVENT_ID = "__audit_event_id__"
     IS_RESEND = "__is_resend__"
     RUNNER = "__runner__"
     WORKFLOW = "__workflow__"
@@ -92,8 +93,10 @@ class ReservedKey(object):
     SECURE_MODE = "__secure_mode__"
     SP_END_POINT = "__sp_end_point__"
     JOB_INFO = "__job_info__"
+    JOB_META = "__job_meta__"
     CURRENT_JOB_ID = "__current_job_id__"
     JOB_RUN_NUMBER = "__job_run_number__"
+    JOB_DEPLOY_DETAIL = "__job_deploy_detail__"
 
 
 class FLContextKey(object):
@@ -126,8 +129,14 @@ class FLContextKey(object):
     SECURE_MODE = ReservedKey.SECURE_MODE
     SP_END_POINT = ReservedKey.SP_END_POINT
     JOB_INFO = ReservedKey.JOB_INFO
+    JOB_META = ReservedKey.JOB_META
     CURRENT_JOB_ID = ReservedKey.CURRENT_JOB_ID
     JOB_RUN_NUMBER = ReservedKey.JOB_RUN_NUMBER
+    JOB_DEPLOY_DETAIL = ReservedKey.JOB_DEPLOY_DETAIL
+    JOB_SCOPE_NAME = "__job_scope_name__"
+    EFFECTIVE_JOB_SCOPE_NAME = "__effective_job_scope_name__"
+    SCOPE_PROPERTIES = "__scope_props__"
+    SCOPE_OBJECT = "__scope_object__"
 
 
 class ReservedTopic(object):
@@ -159,6 +168,15 @@ class AdminCommandNames(object):
     SHOW_ERRORS = "show_errors"
     RESET_ERRORS = "reset_errors"
     AUX_COMMAND = "aux_command"
+    SYS_INFO = "sys_info"
+    SHOW_SCOPES = "show_scopes"
+    CALL = "call"
+    SHELL_PWD = "pwd"
+    SHELL_LS = "ls"
+    SHELL_CAT = "cat"
+    SHELL_HEAD = "head"
+    SHELL_TAIL = "tail"
+    SHELL_GREP = "grep"
 
 
 class ServerCommandNames(object):
@@ -208,7 +226,13 @@ class EventScope(object):
 
 class NonSerializableKeys(object):
 
-    KEYS = [ReservedKey.ENGINE, ReservedKey.MANAGER, ReservedKey.RUNNER]
+    KEYS = [
+        ReservedKey.ENGINE,
+        ReservedKey.MANAGER,
+        ReservedKey.RUNNER,
+        FLContextKey.SCOPE_PROPERTIES,
+        FLContextKey.SCOPE_OBJECT,
+    ]
 
 
 class LogMessageTag(object):
@@ -257,8 +281,14 @@ class SystemComponents(object):
 class WorkspaceConstants:
     """hard coded file names inside the workspace folder."""
 
+    STARTUP_FOLDER_NAME = "startup"
+    SITE_FOLDER_NAME = "local"
+    CUSTOM_FOLDER_NAME = "custom"
+
     LOGGING_CONFIG = "log.config"
+    DEFAULT_LOGGING_CONFIG = LOGGING_CONFIG + ".default"
     AUDIT_LOG = "audit.log"
+    LOG_FILE_NAME = "log.txt"
 
     # these two files is used by shell scripts to determine restart / shutdown
     RESTART_FILE = "restart.fl"
@@ -266,3 +296,24 @@ class WorkspaceConstants:
 
     WORKSPACE_PREFIX = ""
     APP_PREFIX = "app_"
+
+    SERVER_STARTUP_CONFIG = "fed_server.json"
+    CLIENT_STARTUP_CONFIG = "fed_client.json"
+    SERVER_JOB_CONFIG = "config_fed_server.json"
+    CLIENT_JOB_CONFIG = "config_fed_client.json"
+    JOB_META_FILE = "job_meta.json"
+
+    AUTHORIZATION_CONFIG = "authorization.json"
+    DEFAULT_AUTHORIZATION_CONFIG = AUTHORIZATION_CONFIG + ".default"
+    RESOURCES_CONFIG = "resources.json"
+    DEFAULT_RESOURCES_CONFIG = RESOURCES_CONFIG + ".default"
+    PRIVACY_CONFIG = "privacy.json"
+    SAMPLE_PRIVACY_CONFIG = PRIVACY_CONFIG + ".sample"
+
+    ADMIN_STARTUP_CONFIG = "fed_admin.json"
+
+
+class SiteType:
+
+    SERVER = "server"
+    CLIENT = "client"

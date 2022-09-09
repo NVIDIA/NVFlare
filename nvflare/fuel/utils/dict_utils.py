@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import collections
+import json
 
 
 def update(d, u):
@@ -48,3 +49,80 @@ def extract_first_level_primitive(d):
         if type(v) in (int, float, bool, str):
             result[k] = v
     return result
+
+
+def save_to_json(data, path, sort_keys=False, indent=None):
+    with open(path, "w") as f:
+        json.dump(data, f, sort_keys=sort_keys, indent=indent)
+
+
+def augment(to_dict: dict, from_dict: dict, from_override_to=False) -> str:
+    """Augment the to_dict with the content from the from_dict.
+    - Items in from_dict but not in to_dict are added to the to_dict
+    - Items in both from_dict and to_dict must be ether dicts or list of dicts,
+    and augment will be done on these items recursively
+    - Non-dict/list items in both from_dict and to_dict are considered conflicts.
+
+    Args:
+        to_dict: the dict to be augmented
+        from_dict: content to augment the to_dict
+        from_override_to: content in from_dict overrides content in to_dict when conflict happens
+
+    Returns: error message if any; empty str if success.
+
+    The content of the to_dict is updated
+    """
+    if not isinstance(to_dict, dict):
+        return f"to_dict must be dict but got {type(to_dict)}"
+
+    if not isinstance(from_dict, dict):
+        return f"from_dict must be dict but got {type(from_dict)}"
+
+    # print("AUGMENTING ===============")
+    # print(json.dumps(to_dict, indent=4, sort_keys=True))
+    # print("with =====")
+    # print(json.dumps(from_dict, indent=4, sort_keys=True))
+
+    for k, fv in from_dict.items():
+        if k not in to_dict:
+            to_dict[k] = fv
+            continue
+
+        tv = to_dict[k]
+        if isinstance(fv, dict):
+            if not isinstance(tv, dict):
+                return f"type conflict in element '{k}': dict in from_dict but {type(tv)} in to_dict"
+            err = augment(tv, fv)
+            if err:
+                return err
+            continue
+
+        if isinstance(fv, list):
+            if not isinstance(tv, list):
+                return f"type conflict in element '{k}': list in from_dict but {type(tv)} in to_dict"
+
+            if len(fv) != len(tv):
+                return f"list length conflict in element '{k}': {len(fv)} in from_dict but {len(tv)} in to_dict"
+
+            for i in range(len(fv)):
+                # we only support list of dicts!
+                fvi = fv[i]
+                tvi = tv[i]
+                if not isinstance(fvi, dict):
+                    return f"invalid list item {i} in element '{k}' in from_dict: must be dict but got {type(fvi)}"
+
+                if not isinstance(tvi, dict):
+                    return f"invalid list item {i} in element '{k}' in to_dict: must be dict but got {type(tvi)}"
+
+                err = augment(tv[i], fv[i])
+                if err:
+                    return err
+            continue
+
+        if type(fv) != type(tv):
+            return f"type conflict in element '{k}': {type(fv)} in from_dict but {type(tv)} in to_dict"
+
+        if from_override_to:
+            to_dict[k] = fv
+
+    return ""

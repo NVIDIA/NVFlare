@@ -21,6 +21,7 @@ from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.workspace import Workspace
 from nvflare.private.event import fire_event
+from nvflare.private.fed.utils.fed_utils import create_job_processing_context_properties
 from nvflare.widgets.fed_event import ClientFedEventRunner
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
@@ -79,8 +80,16 @@ class ClientRunManager(ClientEngineExecutorSpec):
         self.add_handler(self.aux_runner)
         self.conf = conf
 
+        if not components:
+            self.components = {}
+
+        if not handlers:
+            self.handlers = []
+
+        # get job meta!
+        job_ctx_props = self.create_job_processing_context_properties(workspace, job_id)
         self.fl_ctx_mgr = FLContextManager(
-            engine=self, identity_name=client_name, job_id=job_id, public_stickers={}, private_stickers={}
+            engine=self, identity_name=client_name, job_id=job_id, public_stickers={}, private_stickers=job_ctx_props
         )
 
         self.run_info = ClientRunInfo(job_id=job_id)
@@ -164,3 +173,6 @@ class ClientRunManager(ClientEngineExecutorSpec):
         runner = fl_ctx.get_prop(key=FLContextKey.RUNNER, default=None)
         if isinstance(runner, ClientRunner):
             runner.abort()
+
+    def create_job_processing_context_properties(self, workspace, job_id):
+        return create_job_processing_context_properties(workspace, job_id)

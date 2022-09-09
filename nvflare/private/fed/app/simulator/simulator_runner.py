@@ -29,6 +29,7 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import MachineStatus, WorkspaceConstants
 from nvflare.apis.job_def import ALL_SITES, JobMetaKey
 from nvflare.apis.utils.common_utils import get_open_ports
+from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.multi_process_executor_constants import CommunicationMetaData
 from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.hci.zip_utils import convert_legacy_zip, split_path, unzip_all_from_bytes, zip_directory_to_bytes
@@ -311,10 +312,15 @@ class SimulatorRunner(FLComponent):
         app_custom_folder = os.path.join(app_server_root, "custom")
         sys.path.append(app_custom_folder)
 
+        startup = os.path.join(self.args.workspace, WorkspaceConstants.STARTUP_FOLDER_NAME)
+        os.makedirs(startup, exist_ok=True)
+        local = os.path.join(self.args.workspace, WorkspaceConstants.SITE_FOLDER_NAME)
+        os.makedirs(local, exist_ok=True)
+        workspace = Workspace(root_dir=self.args.workspace, site_name="server")
         server_app_runner = SimulatorServerAppRunner()
         snapshot = None
         server_app_runner.start_server_app(
-            self.services, self.args, app_server_root, self.args.job_id, snapshot, self.logger
+            workspace, self.services, self.args, app_server_root, self.args.job_id, snapshot, self.logger
         )
 
 

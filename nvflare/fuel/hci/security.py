@@ -18,6 +18,13 @@ import os
 import uuid
 
 
+class IdentityKey(object):
+
+    NAME = "common_name"
+    ORG = "organization"
+    ROLE = "role"
+
+
 def hash_password(password):
     """Hash a password for storing.
 
@@ -107,3 +114,28 @@ def get_certificate_common_name(cert: dict):
         for key, value in sub:
             if key == "commonName":
                 return value
+
+
+def get_certificate_identity(cert: dict) -> dict:
+    """Gets the identity info of the provided certificate.
+
+    Args:
+        cert: certificate
+
+    Returns: identity info in a dict with following keys: name, org, role
+
+    """
+    if cert is None:
+        return None
+
+    result = {}
+
+    for sub in cert.get("subject", ()):
+        for key, value in sub:
+            if key == "commonName":
+                result[IdentityKey.NAME] = value
+            elif key == "org":
+                result[IdentityKey.ORG] = value
+            elif key == "role":
+                result[IdentityKey.ROLE] = value
+    return result
