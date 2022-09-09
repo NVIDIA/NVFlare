@@ -172,10 +172,9 @@ class Store(object):
         return add_ok({"client_list": [_dict_or_empty(client) for client in all_clients]})
 
     @classmethod
-    def get_creator_by_client_id(cls, id):
+    def get_creator_id_by_client_id(cls, id):
         creator_id = Client.query.get(id).creator_id
-        creator = User.query.get(creator_id).email
-        return creator
+        return creator_id
 
     @classmethod
     def get_client(cls, id):
