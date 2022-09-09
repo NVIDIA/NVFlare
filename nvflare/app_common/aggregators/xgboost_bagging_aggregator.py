@@ -41,6 +41,8 @@ class XGBoostBaggingAggregator(Aggregator):
         super().__init__()
         self.logger.debug(f"expected data kind: {DataKind.XGB_MODEL}")
         self.history = []
+        self.local_models = []
+        self.global_model = None
         self.expected_data_kind = DataKind.XGB_MODEL
 
     def accept(self, shareable: Shareable, fl_ctx: FLContext) -> bool:
@@ -97,10 +99,11 @@ class XGBoostBaggingAggregator(Aggregator):
             self.log_error(fl_ctx, "no data to aggregate")
             return False
         else:
-            app_root = fl_ctx.get_prop(FLContextKey.APP_ROOT)
-            save_path = os.path.join(app_root, "temp_" + contributor_name + ".json")
-            with open(save_path, "w") as f:
-                json.dump(data, f)
+            #app_root = fl_ctx.get_prop(FLContextKey.APP_ROOT)
+            #save_path = os.path.join(app_root, "temp_" + contributor_name + ".json")
+            #with open(save_path, "w") as f:
+            #    json.dump(data, f)
+            self.local_models.append(data)
             self.history.append(
                 {
                     "contributor_name": contributor_name,
@@ -133,22 +136,29 @@ class XGBoostBaggingAggregator(Aggregator):
             contributor_name = record["contributor_name"]
             client_model_path.append(os.path.join(app_root, "temp_" + contributor_name + ".json"))
 
-        if not os.path.exists(global_model_path):
-            # First round, copy from tree 1 to get all xgboost model items
-            shutil.copy(client_model_path[0], global_model_path)
-            # Remove the first tree
-            with open(global_model_path) as f:
-                json_bagging = json.load(f)
-            json_bagging["learner"]["gradient_booster"]["model"]["trees"] = []
-            with open(global_model_path, "w") as f:
-                json.dump(json_bagging, f, separators=(",", ":"))
+        starting_local_index = 0
+        if not self.global_model:
+            self.global_model = self.local_models[0]
+            starting_local_index = 1
+            
+        # if not os.path.exists(global_model_path):
+        #     # First round, copy from tree 1 to get all xgboost model items
+        #     shutil.copy(client_model_path[0], global_model_path)
+        #     # Remove the first tree
+        #     with open(global_model_path) as f:
+        #         json_bagging = json.load(f)
+        #     json_bagging["learner"]["gradient_booster"]["model"]["trees"] = []
+        #     with open(global_model_path, "w") as f:
+        #         json.dump(json_bagging, f, separators=(",", ":"))
 
-        with open(global_model_path) as f:
-            json_bagging = json.load(f)
+        # with open(global_model_path) as f:
+        #     json_bagging = json.load(f)
             # Append this round's trees to global model tree list
-        for site in range(site_num):
-            with open(client_model_path[site]) as f:
-                json_single = json.load(f)
+        json_bagging = self.global_model
+        for site in range(starting_local_index, site_num):
+            # with open(client_model_path[site]) as f:
+            #     json_single = json.load(f)
+            json_single = self.local_models[site]
             # Always 1 tree, so [0]
             append_info = json_single["learner"]["gradient_booster"]["model"]["trees"][0]
             append_info["id"] = current_round * site_num + site
@@ -162,13 +172,17 @@ class XGBoostBaggingAggregator(Aggregator):
         json_bagging["learner"]["gradient_booster"]["model"]["gbtree_model_param"]["num_parallel_tree"] = "1"
 
         # Save the global bagging model
-        with open(global_model_path, "w") as f:
-            json.dump(json_bagging, f, separators=(",", ":"))
+        # with open(global_model_path, "w") as f:
+        #     json.dump(json_bagging, f, separators=(",", ":"))
 
+        
         self.history = []
+        self.local_models = []
         self.log_debug(fl_ctx, "End aggregation")
 
-        with open(global_model_path, "rb") as json_file:
-            model_learnable = json.load(json_file)
-        dxo = DXO(data_kind=self.expected_data_kind, data=model_learnable)
+        # with open(global_model_path, "rb") as json_file:
+        #     model_learnable = json.load(json_file)
+        #model_learnable = json.dumps(json_bagging)
+                
+        dxo = DXO(data_kind=self.expected_data_kind, data=json_bagging)
         return dxo.to_shareable()
