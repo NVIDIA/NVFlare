@@ -47,6 +47,13 @@ def add_ok(obj):
     return obj
 
 
+def inc_dl(model, id):
+    instance = model.query.get(id)
+    instance.download_count = instance.download_count + 1
+    db.session.add(instance)
+    db.session.commit()
+
+
 class Store(object):
     @classmethod
     def ready(cls):
@@ -165,10 +172,9 @@ class Store(object):
         return add_ok({"client_list": [_dict_or_empty(client) for client in all_clients]})
 
     @classmethod
-    def get_creator_by_client_id(cls, id):
+    def get_creator_id_by_client_id(cls, id):
         creator_id = Client.query.get(id).creator_id
-        creator = User.query.get(creator_id).email
-        return creator
+        return creator_id
 
     @classmethod
     def get_client(cls, id):
@@ -222,16 +228,17 @@ class Store(object):
     @classmethod
     def get_client_blob(cls, key, id):
         fileobj, filename = gen_client(key, id)
+        inc_dl(Client, id)
         return fileobj, filename
 
     @classmethod
     def create_user(cls, req):
-        name = req.get("name")
+        name = req.get("name", "")
         email = req.get("email")
         password = req.get("password", "")
         password_hash = generate_password_hash(password)
-        organization = req.get("organization")
-        role_name = req.get("role")
+        organization = req.get("organization", "")
+        role_name = req.get("role", "")
         description = req.get("description", "")
         approval_state = req.get("approval_state", 0)
         org = get_or_create(db.session, Organization, name=organization)
@@ -315,6 +322,10 @@ class Store(object):
         if organization is not None and user.organization.name == "":
             org = get_or_create(db.session, Organization, name=organization)
             user.organization_id = org.id
+        password = req.pop("password", None)
+        if password is not None:
+            password_hash = generate_password_hash(password)
+            user.password_hash = password_hash
         for k, v in req.items():
             setattr(user, k, v)
         db.session.add(user)
@@ -335,4 +346,5 @@ class Store(object):
     @classmethod
     def get_user_blob(cls, key, id):
         fileobj, filename = gen_user(key, id)
+        inc_dl(User, id)
         return fileobj, filename

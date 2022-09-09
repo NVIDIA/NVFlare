@@ -45,7 +45,8 @@ def get_one_client(id):
 @app.route("/api/v1/clients/<id>", methods=["PATCH", "DELETE"])
 @jwt_required()
 def update_client(id):
-    c, p = check_role(id, get_jwt(), get_jwt_identity())
+    creator_id = Store.get_creator_id_by_client_id(id)
+    c, p = check_role(creator_id, get_jwt(), get_jwt_identity())
     if not c and not p:
         return jsonify({"status": "unauthorized"}), 403
 
@@ -67,7 +68,8 @@ def update_client(id):
 def client_blob(id):
     if not Store._is_approved_by_client_id(id):
         return jsonify({"status": "not approved yet"}), 200
-    c, p = check_role(id, get_jwt(), get_jwt_identity())
+    creator_id = Store.get_creator_id_by_client_id(id)
+    c, p = check_role(creator_id, get_jwt(), get_jwt_identity())
     if p or c:
         pin = request.json.get("pin")
         fileobj, filename = Store.get_client_blob(pin, id)

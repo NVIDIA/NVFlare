@@ -14,7 +14,7 @@
 
 
 from flask import current_app as app
-from flask import jsonify, make_response, request
+from flask import jsonify, make_response, redirect, request
 from flask_jwt_extended import create_access_token, get_jwt, jwt_required
 
 from . import jwt
@@ -24,6 +24,11 @@ from .store import Store
 @jwt.expired_token_loader
 def my_expired_token_callback(jwt_header, jwt_payload):
     return jsonify({"status": "unauthenticated"}), 401
+
+
+@app.route("/")
+def index_html():
+    return redirect("/index.html", code=302)
 
 
 @app.route("/api/v1/login", methods=["POST"])
