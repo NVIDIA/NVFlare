@@ -322,6 +322,10 @@ class Store(object):
         if organization is not None and user.organization.name == "":
             org = get_or_create(db.session, Organization, name=organization)
             user.organization_id = org.id
+        password = req.pop("password", None)
+        if password is not None:
+            password_hash = generate_password_hash(password)
+            user.password_hash = password_hash
         for k, v in req.items():
             setattr(user, k, v)
         db.session.add(user)
