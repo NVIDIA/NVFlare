@@ -56,6 +56,7 @@ def def_simulator_parser(sub_cmd):
 
 def handle_simulator_cmd(simulator_args):
     status = run_simulator(simulator_args)
+    # make sure the script terminate after run
     os._exit(status)
 
 
