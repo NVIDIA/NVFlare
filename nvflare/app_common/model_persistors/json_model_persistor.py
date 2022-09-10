@@ -72,5 +72,6 @@ class JSONModelPersistor(ModelPersistor):
         self.logger.info("Saving received model")
         if model_learnable:
             with open(self.save_path, "w") as f:
-                json.dump(model_learnable, f)
+                pass
+               # json.dump(model_learnable, f)
         self.logger.info("Saved received model")

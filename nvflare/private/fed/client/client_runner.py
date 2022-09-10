@@ -58,7 +58,7 @@ class ClientRunner(FLComponent):
         config: ClientRunnerConfig,
         job_id,
         engine: ClientEngineExecutorSpec,
-        task_fetch_interval: int = 0.1,  # fetch task every 0.1 secs
+        task_fetch_interval = 0.1,  # fetch task every 0.1 secs
     ):
         """To init the ClientRunner.
 

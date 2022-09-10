@@ -144,7 +144,7 @@ class XGBoostTreeFedLearner(Learner):
         return param
 
     def local_boost_bagging(self, param, fl_ctx: FLContext):
-        self.bst.load_model(self.global_model)
+        self.bst.load_model(bytearray(self.global_model))
         self.bst.load_config(self.config)
         eval_results = self.bst.eval_set(evals=[(self.dmat_train, 'train'), (self.dmat_valid, 'valid')],iteration=self.bst.num_boosted_rounds()-1)
         self.log_info(fl_ctx,
@@ -197,7 +197,7 @@ class XGBoostTreeFedLearner(Learner):
         # retrieve current global model download from server's shareable
         dxo = from_shareable(shareable)
         model_global = dxo.data
-
+        
         # xgboost parameters
         param = self.get_training_parameters_single()
 
@@ -220,26 +220,20 @@ class XGBoostTreeFedLearner(Learner):
                 fl_ctx,
                 f"Client {self.client_id} training from global model received",
             )
-            # save the global model to local file
-        #    with open(self.global_model_path, "w") as f:
-        #        json.dump(model_global, f)
-
-            self.global_model = bytearray(json.dumps(model_global),'utf-8')
+ 
+            self.global_model = model_global['model']
             
             # train local model starting with global model
             if self.training_mode == "bagging":
                 bst = self.local_boost_bagging(param, fl_ctx)
             elif self.training_mode == "cyclic":
                 bst = self.local_boost_cyclic(param, fl_ctx)
-        #bst.save_model(self.local_model_path)
+ 
         self.local_model = bst.save_raw('json')
 
         # report updated model in shareable
-        #with open(self.local_model_path) as json_file:
-        #    model_new = json.load(json_file)
-
-        model_new = json.loads(self.local_model)
-        dxo = DXO(data_kind=DataKind.XGB_MODEL, data=model_new)
+ 
+        dxo = DXO(data_kind=DataKind.XGB_MODEL, data={'model_update': self.local_model})
         self.log_info(fl_ctx, "Local epochs finished. Returning shareable")
         new_shareable = dxo.to_shareable()
 
