@@ -206,8 +206,8 @@ class MultiProcessExecutor(Executor):
                     index += 1
                 if received_all:
                     break
-        except:
-            self.log_exception(fl_ctx, "error initializing multi_process executor")
+        except BaseException as e:
+            self.log_exception(fl_ctx, f"error initializing multi_process executor: {e}")
 
     def _relay_fire_event(self, listen_port, fl_ctx: FLContext):
         address = ("localhost", int(listen_port))

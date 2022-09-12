@@ -18,12 +18,17 @@ from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.app_common.executors.multi_process_executor import MultiProcessExecutor
 
 
-class PTMultiProcessExecutor(MultiProcessExecutor):
+class MyPTMultiProcessExecutor(MultiProcessExecutor):
     def get_multi_process_command(self) -> str:
+        # return (
+        #     f"{sys.executable} -m torch.distributed.run --nproc_per_node="
+        #     + str(self.num_of_processes)
+        #     + " --nnodes=1 --node_rank=0"
+        #     + ' --master_addr="localhost" --master_port='
+        #     + str(get_open_ports(1)[0])
+        # )
+        self.logger.info(f"@@@@@@@@@@@@@@@@@@@@ TORCHRUN with nproc_per_node={self.num_of_processes} @@@@@@@@@@@@@@@@@@@@@@@@")
         return (
-            f"{sys.executable} -m torch.distributed.run --nproc_per_node="
-            + str(self.num_of_processes)
-            + " --nnodes=1 --node_rank=0"
-            + ' --master_addr="localhost" --master_port='
-            + str(get_open_ports(1)[0])
+            f"torchrun --standalone --nnodes=1 --nproc_per_node={self.num_of_processes}"
         )
+
