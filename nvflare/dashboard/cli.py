@@ -20,10 +20,16 @@ import docker
 from nvflare.lighter.utils import generate_password
 
 
-def start(port, folder, dashboard_image):
+def start(port, folder, dashboard_image, env_vars, passphrase):
     if not folder:
         folder = os.getcwd()
     environment = dict()
+    if env_vars:
+        for e in env_vars:
+            splitted = e.split("=")
+            environment[splitted[0]] = splitted[1]
+    if passphrase:
+        environment["NVFL_DASHBOARD_PP"] = passphrase
     if not os.path.exists(os.path.join(folder, "db.sqlite")):
         answer = input(
             "Please provide project admin email address.  This person will be the super user of the dashboard and this project.\n"
@@ -79,6 +85,10 @@ def dashboard():
     parser.add_argument(
         "-i", "--dashboard_image", default="nvflare/nvflare", help="container image for running dashboard"
     )
+    parser.add_argument(
+        "--passphrase", help="Passphrase to encrypt/decrypt root CA private key.  !!! Do not share it with others. !!!"
+    )
+    parser.add_argument("-e", "--env", action="append", help="additonal environment variables: var1=value1")
     args = parser.parse_args()
     port = args.port
     folder = args.folder
@@ -86,7 +96,7 @@ def dashboard():
     if args.stop:
         stop()
     elif args.start:
-        start(port, folder, dashboard_image)
+        start(port, folder, dashboard_image, args.env, args.passphrase)
 
 
 if __name__ == "__main__":
