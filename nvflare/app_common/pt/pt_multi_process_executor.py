@@ -18,7 +18,7 @@ from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.app_common.executors.multi_process_executor import MultiProcessExecutor
 
 
-class MyPTMultiProcessExecutor(MultiProcessExecutor):
+class PTMultiProcessExecutor(MultiProcessExecutor):
     def get_multi_process_command(self) -> str:
         # return (
         #     f"{sys.executable} -m torch.distributed.run --nproc_per_node="
