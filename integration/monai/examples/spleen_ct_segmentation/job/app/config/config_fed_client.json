@@ -8,30 +8,10 @@
       ],
       "executor": {
         "id": "executor",
-        "name": "MyPTMultiProcessExecutor",
+        "path": "monai_nvflare.client_algo_executor.ClientAlgoExecutor",
         "args": {
-          "executor_id": "client_algo_executor",
-          "num_of_processes": 2,
-          "components": [
-            {
-              "id": "client_algo_executor",
-              "path": "monai_nvflare.client_algo_executor.ClientAlgoExecutor",
-              "args": {
-                "client_algo_id": "client_algo",
-                "key_metric": "val_mean_dice"
-              }
-            },
-            {
-              "id": "client_algo",
-              "path": "monai.fl.client.monai_algo.MonaiAlgo",
-              "args": {
-                "bundle_root": "config/spleen_ct_segmentation",
-                "config_train_filename": ["configs/train.json","configs/multi_gpu_train.json"],
-                "local_epochs": 1,
-                "multi_gpu": true
-              }
-            }
-          ]
+          "client_algo_id": "client_algo",
+          "key_metric": "val_mean_dice"
         }
       }
     }
@@ -41,6 +21,15 @@
   ],
   "task_data_filters": [
   ],
+
   "components": [
+    {
+      "id": "client_algo",
+      "path": "monai.fl.client.monai_algo.MonaiAlgo",
+      "args": {
+        "bundle_root": "config/spleen_ct_segmentation",
+        "local_epochs": 10
+      }
+    }
   ]
 }
