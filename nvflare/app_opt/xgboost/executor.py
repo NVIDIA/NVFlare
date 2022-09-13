@@ -17,11 +17,11 @@ import os
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
-from nvflare.app_opt.xgboost.learner_base import XGBFedLearnerBase, XGBoostParams
+from nvflare.app_opt.xgboost.executor_base import XGBExecutorBase, XGBoostParams
 from nvflare.utils.import_utils import optional_import
 
 
-class XGBFedLearner(XGBFedLearnerBase):
+class XGBExecutor(XGBExecutorBase):
     def xgb_train(self, params: XGBoostParams, fl_ctx: FLContext) -> Shareable:
         xgb, flag = optional_import(module="xgboost")
         if not flag:

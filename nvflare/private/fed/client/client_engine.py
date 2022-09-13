@@ -27,10 +27,12 @@ from nvflare.apis.fl_constant import MachineStatus, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.common_utils import get_open_ports
+from nvflare.apis.workspace import Workspace
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import ERROR_MSG_PREFIX, ClientStatusKey, EngineConstant
 from nvflare.private.event import fire_event
-from nvflare.private.fed.utils.fed_utils import deploy_app
+from nvflare.private.fed.utils.app_deployer import AppDeployer
+from nvflare.private.fed.utils.fed_utils import security_close
 
 from .client_engine_internal_spec import ClientEngineInternalSpec
 from .client_executor import ProcessExecutor
@@ -139,15 +141,13 @@ class ClientEngine(ClientEngineInternalSpec):
         if not os.path.exists(app_root):
             return f"{ERROR_MSG_PREFIX}: Client app does not exist. Please deploy it before starting client."
 
-        if self.client.enable_byoc:
-            app_custom_folder = os.path.join(app_root, "custom")
+        app_custom_folder = os.path.join(app_root, "custom")
+        if os.path.isdir(app_custom_folder):
             try:
                 sys.path.index(app_custom_folder)
             except ValueError:
                 _remove_custom_path()
                 sys.path.append(app_custom_folder)
-        else:
-            app_custom_folder = ""
 
         self.logger.info("Starting client app. rank: {}".format(self.rank))
 
@@ -233,13 +233,17 @@ class ClientEngine(ClientEngineInternalSpec):
         self.executor.shutdown()
         return "Restart the client..."
 
-    def deploy_app(self, app_name: str, job_id: str, client_name: str, app_data) -> str:
-        workspace = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(job_id))
+    def deploy_app(self, app_name: str, job_id: str, job_meta: dict, client_name: str, app_data) -> str:
 
-        if deploy_app(app_name, client_name, workspace, app_data):
-            return f"Deployed app {app_name} to {client_name}"
-        else:
-            return f"{ERROR_MSG_PREFIX}: Failed to deploy_app"
+        workspace = Workspace(root_dir=self.args.workspace, site_name=client_name)
+        app_deployer = AppDeployer(
+            workspace=workspace, job_id=job_id, job_meta=job_meta, app_name=app_name, app_data=app_data
+        )
+        err = app_deployer.deploy()
+        if err:
+            return f"{ERROR_MSG_PREFIX}: {err}"
+
+        return ""
 
     def delete_run(self, job_id: str) -> str:
         job_id_folder = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(job_id))
@@ -286,6 +290,7 @@ def _shutdown_client(federated_client, admin_agent, touch_file):
             federated_client.process.terminate()
 
         admin_agent.shutdown()
+        security_close()
     except BaseException as e:
         traceback.print_exc()
         print("Failed to shutdown client: " + str(e))

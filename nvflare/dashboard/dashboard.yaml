@@ -220,7 +220,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Client'
+              $ref: '#/components/schemas/BaseClient'
       responses:
         "201":
           description: Resource created
@@ -232,7 +232,7 @@ paths:
                   status:
                     type: "string"
                   client:
-                    $ref: '#/components/schemas/Client'
+                    $ref: '#/components/schemas/RspClient'
     get:
       security:
       - bearerAuth: []
@@ -279,7 +279,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/Client"
+              $ref: "#/components/schemas/BaseClient"
       responses:
         "200":
           description: API accepted
@@ -291,7 +291,7 @@ paths:
                   status:
                     type: "string"
                   client:
-                    $ref: '#/components/schemas/Client'
+                    $ref: '#/components/schemas/RspClient'
         "403":
           description: Forbidden
           content:
@@ -324,7 +324,7 @@ paths:
                   status:
                     type: "string"
                   client:
-                    $ref: '#/components/schemas/Client'
+                    $ref: '#/components/schemas/RspClient'
     delete:
       security:
       - bearerAuth: []
@@ -520,6 +520,29 @@ paths:
                 properties:
                   status:
                     type: "string"
+    delete:
+      security:
+      - bearerAuth: []
+      summary: "Delete user by user id"
+      operationId: "delete_user_by_id"
+      parameters:
+        - name: "id"
+          in: "path"
+          description: "The id that needs to be deleted."
+          required: true
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: API accepted
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  status:
+                    type: "string"
+
   /users/{id}/blob:
     post:
       security:
@@ -626,17 +649,15 @@ components:
         - type: object
           properties:
             id:
-              type: string
+              type: "integer"
+              format: "int64"
 
-    Client:
+    BaseClient:
       type: "object"
       required:
       - name
       - organization
       properties:
-        id:
-          type: "integer"
-          format: "int64"
         name:
           type: "string"
           example: "site-1"
@@ -656,10 +677,18 @@ components:
           type: "integer"
           format: "int64"
 
+    RspClient:
+      allOf:
+        - $ref: '#/components/schemas/BaseClient'
+        - type: object
+          properties:
+            id:
+              type: "integer"
+              format: "int64"
     ListOfClients:
       type: array
       items:
-        $ref: '#/components/schemas/Client'
+        $ref: '#/components/schemas/RspClient'
     ListOfUsers:
       type: array
       items:

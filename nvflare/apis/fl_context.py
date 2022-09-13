@@ -130,8 +130,8 @@ class FLContext(object):
     def get_job_id(self):
         return self.get_prop(key=ReservedKey.RUN_NUM, default=None)
 
-    def get_identity_name(self):
-        return self.get_prop(key=ReservedKey.IDENTITY_NAME, default="")
+    def get_identity_name(self, default=""):
+        return self.get_prop(key=ReservedKey.IDENTITY_NAME, default=default)
 
     def get_run_abort_signal(self):
         return self.get_prop(key=ReservedKey.RUN_ABORT_SIGNAL, default=None)

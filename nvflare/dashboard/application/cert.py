@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import datetime
+import os
 from dataclasses import dataclass
 
 from cryptography import x509
@@ -20,6 +21,10 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
+
+dashboard_pp = os.environ.get("NVFL_DASHBOARD_PP")
+if dashboard_pp is not None:
+    dashboard_pp = dashboard_pp.encode("utf-8")
 
 
 @dataclass
@@ -40,12 +45,19 @@ class CertPair:
     ser_cert: str = None
 
 
-def serialize_pri_key(pri_key):
-    return pri_key.private_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PrivateFormat.TraditionalOpenSSL,
-        encryption_algorithm=serialization.NoEncryption(),
-    )
+def serialize_pri_key(pri_key, passphrase=None):
+    if passphrase is None or not isinstance(passphrase, bytes):
+        return pri_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+    else:
+        return pri_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.BestAvailableEncryption(password=passphrase),
+        )
 
 
 def serialize_cert(cert):
@@ -100,8 +112,8 @@ def generate_cert(subject, issuer, signing_pri_key, subject_pub_key, valid_days=
     return builder.sign(signing_pri_key, hashes.SHA256(), default_backend())
 
 
-def _pack(entity, pri_key, cert):
-    ser_pri_key = serialize_pri_key(pri_key)
+def _pack(entity, pri_key, cert, passphrase=None):
+    ser_pri_key = serialize_pri_key(pri_key, passphrase)
     ser_cert = serialize_cert(cert)
     cert_pair = CertPair(entity, ser_pri_key, ser_cert)
     return cert_pair
@@ -110,16 +122,16 @@ def _pack(entity, pri_key, cert):
 def make_root_cert(subject: Entity):
     pri_key, pub_key = generate_keys()
     cert = generate_cert(subject=subject, issuer=subject, signing_pri_key=pri_key, subject_pub_key=pub_key, ca=True)
-    return _pack(subject, pri_key, cert)
+    return _pack(subject, pri_key, cert, passphrase=dashboard_pp)
 
 
 def make_cert(subject: Entity, issuer_cert_pair: CertPair):
     pri_key, pub_key = generate_keys()
-    issuer_pri_key = deserialize_key(issuer_cert_pair.ser_pri_key)
+    issuer_pri_key = deserialize_ca_key(issuer_cert_pair.ser_pri_key)
     cert = generate_cert(subject, issuer_cert_pair.owner, issuer_pri_key, pub_key, valid_days=360, ca=False)
-    return _pack(subject, pri_key, cert)
+    return _pack(subject, pri_key, cert, passphrase=None)
 
 
-def deserialize_key(ser_pri_key):
-    pri_key = serialization.load_pem_private_key(ser_pri_key, password=None, backend=default_backend())
+def deserialize_ca_key(ser_pri_key):
+    pri_key = serialization.load_pem_private_key(ser_pri_key, password=dashboard_pp, backend=default_backend())
     return pri_key

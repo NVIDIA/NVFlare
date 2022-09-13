@@ -91,7 +91,7 @@ setup(
         "console_scripts": [
             "provision=nvflare.lighter.provision:main",
             "poc=nvflare.lighter.poc:main",
-            "nvflare=nvflare.lighter.nvflare:main",
+            "nvflare=nvflare.cli:main",
             "authz_preview=nvflare.fuel.hci.tools.authz_preview:main",
         ],
     },

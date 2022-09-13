@@ -13,16 +13,16 @@
 # limitations under the License.
 
 import time
+from typing import Union
 
 import numpy as np
 import tenseal as ts
 from tenseal.tensors.ckksvector import CKKSVector
 
 import nvflare.app_common.homomorphic_encryption.he_constant as he
-from nvflare.apis.dxo import MetaKey, from_shareable
+from nvflare.apis.dxo import DXO, DataKind, MetaKey
+from nvflare.apis.dxo_filter import DXOFilter
 from nvflare.apis.event_type import EventType
-from nvflare.apis.filter import Filter
-from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.homomorphic_encryption.homomorphic_encrypt import (
@@ -31,15 +31,20 @@ from nvflare.app_common.homomorphic_encryption.homomorphic_encrypt import (
 )
 
 
-class HEModelDecryptor(Filter):
-    def __init__(self, tenseal_context_file="client_context.tenseal"):
+class HEModelDecryptor(DXOFilter):
+    def __init__(self, tenseal_context_file="client_context.tenseal", data_kinds: [str] = None):
         """Filter to decrypt Shareable object using homomorphic encryption (HE) with TenSEAL https://github.com/OpenMined/TenSEAL.
 
         Args:
             tenseal_context_file: tenseal context files containing decryption keys and parameters
+            data_kinds: kinds of DXOs to filter
 
         """
-        super().__init__()
+        if not data_kinds:
+            data_kinds = [DataKind.WEIGHT_DIFF, DataKind.WEIGHTS]
+
+        super().__init__(supported_data_kinds=[DataKind.WEIGHTS, DataKind.WEIGHT_DIFF], data_kinds_to_filter=data_kinds)
+
         self.logger.info("Using HE model decryptor.")
         self.tenseal_context = None
         self.tenseal_context_file = tenseal_context_file
@@ -104,41 +109,25 @@ class HEModelDecryptor(Filter):
         self.log_info(fl_ctx, f"to_ckks_vector time for {n_total} values: {end_time - start_time} seconds.")
         return result
 
-    def process(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
+    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:
         """Filter process apply to the Shareable object.
 
         Args:
             shareable: shareable
             fl_ctx: FLContext
 
-        Returns:
-            a Shareable object with decrypted model weights
-
+        Returns: DXO object with decrypted weights
         """
-        rc = shareable.get_return_code()
-        if rc != ReturnCode.OK:
-            # don't process if RC not OK
-            return shareable
-
-        try:
-            return self._process(shareable, fl_ctx)
-        except BaseException as e:
-            self.log_exception(fl_ctx, "error performing HE decryption")
-            raise ValueError(f"HEModelDecryptor Exception {e}")
-
-    def _process(self, shareable: Shareable, fl_ctx: FLContext):
         self.log_info(fl_ctx, "Running decryption...")
-        dxo = from_shareable(shareable)
-
         encrypted_layers = dxo.get_meta_prop(key=MetaKey.PROCESSED_KEYS, default=None)
         if not encrypted_layers:
             self.log_warning(fl_ctx, "dxo does not contain PROCESSED_KEYS (do nothing)")
-            return shareable
+            return None
 
         encrypted_algo = dxo.get_meta_prop(key=MetaKey.PROCESSED_ALGORITHM, default=None)
         if encrypted_algo != he.HE_ALGORITHM_CKKS:
             self.log_error(fl_ctx, "shareable is not HE CKKS encrypted")
-            return shareable
+            return None
 
         n_encrypted, n_total = count_encrypted_layers(encrypted_layers)
         self.log_info(fl_ctx, f"{n_encrypted} of {n_total} layers encrypted")
@@ -152,4 +141,4 @@ class HEModelDecryptor(Filter):
         dxo.remove_meta_props([MetaKey.PROCESSED_ALGORITHM, MetaKey.PROCESSED_KEYS])
         dxo.update_shareable(shareable)
 
-        return shareable
+        return dxo

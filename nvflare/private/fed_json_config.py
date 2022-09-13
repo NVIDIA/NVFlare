@@ -14,14 +14,15 @@
 
 import re
 
-from nvflare.apis.filter import Filter
+from nvflare.apis.filter import Filter, FilterChainType, FilterContextKey, FilterSource
 from nvflare.fuel.utils.json_scanner import Node
 from nvflare.private.json_configer import ConfigContext, ConfigError, JsonConfigurator
 
 
 class FilterChain(object):
-    def __init__(self):
+    def __init__(self, chain_type):
         """To init the FilterChain."""
+        self.chain_type = chain_type
         self.tasks = []
         self.filters = []
 
@@ -87,7 +88,7 @@ class FedJsonConfigurator(JsonConfigurator):
 
         # result filters
         if re.search(r"^task_result_filters\.#[0-9]+$", path):
-            self.current_filter_chain = FilterChain()
+            self.current_filter_chain = FilterChain(FilterChainType.TASK_RESULT_CHAIN)
             node.props["data"] = self.current_filter_chain
             node.exit_cb = self._process_result_filter_chain
             return
@@ -103,7 +104,7 @@ class FedJsonConfigurator(JsonConfigurator):
 
         # data filters
         if re.search(r"^task_data_filters\.#[0-9]+$", path):
-            self.current_filter_chain = FilterChain()
+            self.current_filter_chain = FilterChain(FilterChainType.TASK_DATA_CHAIN)
             node.props["data"] = self.current_filter_chain
             node.exit_cb = self._process_data_filter_chain
             return
@@ -140,6 +141,8 @@ class FedJsonConfigurator(JsonConfigurator):
         for f in chain.filters:
             if not isinstance(f, Filter):
                 raise ConfigError('"filters" must contain Filter object but got {}'.format(type(f)))
+            f.set_prop(FilterContextKey.CHAIN_TYPE, chain.chain_type)
+            f.set_prop(FilterContextKey.SOURCE, FilterSource.JOB)
 
     def _process_result_filter_chain(self, node: Node):
         filter_chain = node.props["data"]

@@ -92,7 +92,9 @@ class LearnerExecutor(Executor):
         shareable.set_header(AppConstants.VALIDATE_TYPE, ValidateType.BEFORE_TRAIN_VALIDATE)
         validate_result: Shareable = self.learner.validate(shareable, fl_ctx, abort_signal)
 
+        self.log_info(fl_ctx, "Start learner training")
         train_result = self.learner.train(shareable, fl_ctx, abort_signal)
+        self.log_info(fl_ctx, "End learner training")
         if not (train_result and isinstance(train_result, Shareable)):
             return make_reply(ReturnCode.EMPTY_RESULT)
 

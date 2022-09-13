@@ -20,8 +20,8 @@ import sys
 import time
 from typing import Dict, List, Optional
 
+from nvflare.cli_exception import CLIException
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
-from nvflare.lighter.cli_exception import CLIException
 from nvflare.lighter.poc import generate_poc
 from nvflare.lighter.service_constants import FlareServiceConstants as SC
 
@@ -120,7 +120,7 @@ def prepare_poc(number_of_clients: int, poc_workspace: str):
     prepare_examples(poc_workspace)
 
 
-def sort_package_cmds(package_cmds: list) -> list:
+def sort_package_cmds(cmd_type, package_cmds: list) -> list:
     def sort_first(val):
         return val[0]
 
@@ -137,6 +137,8 @@ def sort_package_cmds(package_cmds: list) -> list:
                 order_packages.append((random.randint(2, len(package_cmds)), package_name, cmd_path))
 
     order_packages.sort(key=sort_first)
+    if cmd_type == SC.CMD_STOP:
+        order_packages.reverse()
     return [(package_name, cmd_path) for n, package_name, cmd_path in order_packages]
 
 
@@ -229,7 +231,7 @@ def _build_commands(cmd_type: str, poc_workspace: str, excluded: list, white_lis
                         cmd = get_package_command(cmd_type, poc_workspace, package_dir_name)
                         if cmd:
                             package_commands.append((package_dir_name, cmd))
-    return sort_package_cmds(package_commands)
+    return sort_package_cmds(cmd_type, package_commands)
 
 
 def prepare_env(gpu_ids: Optional[List[int]] = None):

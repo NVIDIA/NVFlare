@@ -12,17 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Union
+
 import numpy as np
 
-from nvflare.apis.dxo import MetaKey, from_shareable
-from nvflare.apis.filter import Filter
-from nvflare.apis.fl_constant import ReturnCode
+from nvflare.apis.dxo import DXO, DataKind, MetaKey
+from nvflare.apis.dxo_filter import DXOFilter
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 
 
-class SVTPrivacy(Filter):
-    def __init__(self, fraction=0.1, epsilon=0.1, noise_var=0.1, gamma=1e-5, tau=1e-6):
+class SVTPrivacy(DXOFilter):
+    def __init__(self, fraction=0.1, epsilon=0.1, noise_var=0.1, gamma=1e-5, tau=1e-6, data_kinds: [str] = None):
         """Implementation of the standard Sparse Vector Technique (SVT) differential privacy algorithm.
 
         lambda_rho = gamma * 2.0 / epsilon
@@ -35,7 +36,10 @@ class SVTPrivacy(Filter):
             gamma (float, optional): Defaults to 1e-5.
             tau (float, optional): Defaults to 1e-6.
         """
-        super().__init__()
+        if not data_kinds:
+            data_kinds = [DataKind.WEIGHT_DIFF, DataKind.WEIGHTS]
+
+        super().__init__(supported_data_kinds=[DataKind.WEIGHTS, DataKind.WEIGHT_DIFF], data_kinds_to_filter=data_kinds)
 
         self.frac = fraction  # fraction of the model to upload
         self.eps_1 = epsilon
@@ -44,33 +48,17 @@ class SVTPrivacy(Filter):
         self.gamma = gamma
         self.tau = tau
 
-    def process(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
+    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:
         """Compute the differentially private SVT.
 
         Args:
-            shareable: information from client
+            dxo: information from client
+            shareable: that the dxo belongs to
             fl_ctx: context provided by workflow
 
-        Returns:
-            Shareable: updated shareable
+        Returns: filtered result.
         """
         self.log_debug(fl_ctx, "inside filter")
-
-        rc = shareable.get_return_code()
-        if rc != ReturnCode.OK:
-            # don't process if RC not OK
-            return shareable
-
-        try:
-            dxo = from_shareable(shareable)
-        except:
-            self.log_exception(fl_ctx, "shareable data is not a valid DXO")
-            return shareable
-
-        if dxo.data is None:
-            self.log_debug(fl_ctx, "no data to filter")
-            return shareable
-
         model_diff = dxo.data
         total_steps = dxo.get_meta_prop(MetaKey.NUM_STEPS_CURRENT_ROUND, 1)
 
@@ -133,4 +121,4 @@ class SVTPrivacy(Filter):
 
         # We update the shareable weights only.  Headers are unchanged.
         dxo.data = dp_w
-        return dxo.update_shareable(shareable)
+        return dxo

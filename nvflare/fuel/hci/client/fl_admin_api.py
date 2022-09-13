@@ -26,6 +26,8 @@ from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.hci.client.fl_admin_api_constants import FLDetailKey
 from nvflare.fuel.hci.client.fl_admin_api_spec import APISyntaxError, FLAdminAPIResponse, FLAdminAPISpec, TargetType
 
+from .overseer_service_finder import ServiceFinderByOverseer
+
 
 def wrap_with_return_exception_responses(func):
     """Decorator on all FLAdminAPI calls to handle any raised exceptions and return the fitting error status."""
@@ -93,7 +95,6 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         client_key: str = "",
         upload_dir: str = "",
         download_dir: str = "",
-        server_cn=None,
         cmd_modules: Optional[List] = None,
         overseer_agent: OverseerAgent = None,
         user_name: str = None,
@@ -111,23 +112,26 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
             client_key: path to admin client Key file, by default provisioned as client.key
             upload_dir: File transfer upload directory. Folders uploaded to the server to be deployed must be here. Folder must already exist and be accessible.
             download_dir: File transfer download directory. Can be same as upload_dir. Folder must already exist and be accessible.
-            server_cn: server cn (only used for validating server cn)
             cmd_modules: command modules to load and register. Note that FileTransferModule is initialized here with upload_dir and download_dir if cmd_modules is None.
             overseer_agent: initialized OverseerAgent to obtain the primary service provider to set the host and port of the active server
             user_name: Username to authenticate with FL server
             poc: Whether to enable poc mode for using the proof of concept example without secure communication.
             debug: Whether to print debug messages. False by default.
         """
-        super().__init__(
+        if overseer_agent:
+            service_finder = ServiceFinderByOverseer(overseer_agent)
+        else:
+            service_finder = None
+
+        AdminAPI.__init__(
+            self,
             ca_cert=ca_cert,
             client_cert=client_cert,
             client_key=client_key,
             upload_dir=upload_dir,
             download_dir=download_dir,
-            server_cn=server_cn,
             cmd_modules=cmd_modules,
-            overseer_agent=overseer_agent,
-            auto_login=True,
+            service_finder=service_finder,
             user_name=user_name,
             poc=poc,
             debug=debug,
@@ -936,9 +940,9 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
             time.sleep(interval)
 
     def login(self, username: str):
-        result = super().login(username=username)
+        result = AdminAPI.login(self, username=username)
         return FLAdminAPIResponse(status=result["status"], details=result["details"])
 
     def login_with_poc(self, username: str, poc_key: str):
-        result = super().login_with_poc(username=username, poc_key=poc_key)
+        result = AdminAPI.login_with_poc(self, username=username, poc_key=poc_key)
         return FLAdminAPIResponse(status=result["status"], details=result["details"])

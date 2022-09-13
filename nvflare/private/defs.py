@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from nvflare.apis.fl_constant import WorkspaceConstants
+from nvflare.fuel.hci.server.constants import ConnProps
+
 
 class SpecialTaskName(object):
 
@@ -58,15 +61,25 @@ class TrainingTopic(object):
     ALLOCATE_RESOURCE = "scheduler.allocate_resource"
     CANCEL_RESOURCE = "scheduler.cancel_resource"
     START_JOB = "train.start_job"
+    GET_SCOPES = "train.get_scopes"
 
 
 class RequestHeader(object):
 
     JOB_ID = "job_id"
+    JOB_META = "job_meta"
     APP_NAME = "app_name"
     CONTROL_COMMAND = "control_command"
     CALL_NAME = "call_name"
     COMPONENT_TARGET = "component_target"
+    ADMIN_COMMAND = "admin_command"
+    USER_NAME = ConnProps.USER_NAME
+    USER_ORG = ConnProps.USER_ORG
+    USER_ROLE = ConnProps.USER_ROLE
+    SUBMITTER_NAME = ConnProps.SUBMITTER_NAME
+    SUBMITTER_ORG = ConnProps.SUBMITTER_ORG
+    SUBMITTER_ROLE = ConnProps.SUBMITTER_ROLE
+    REQUIRE_AUTHZ = "require_authz"
 
 
 class SysCommandTopic(object):
@@ -97,14 +110,20 @@ class ClientStatusKey(object):
     RUNNING_JOBS = "running_jobs"
 
 
+class ScopeInfoKey(object):
+
+    SCOPE_NAMES = "scope_names"
+    DEFAULT_SCOPE = "default_scope"
+
+
 # TODO:: Remove some of these constants
 class AppFolderConstants:
     """hard coded file names inside the app folder."""
 
     CONFIG_TRAIN = "config_train.json"
     CONFIG_ENV = "environment.json"
-    CONFIG_FED_SERVER = "config_fed_server.json"
-    CONFIG_FED_CLIENT = "config_fed_client.json"
+    CONFIG_FED_SERVER = WorkspaceConstants.SERVER_JOB_CONFIG
+    CONFIG_FED_CLIENT = WorkspaceConstants.CLIENT_JOB_CONFIG
 
 
 class SSLConstants:

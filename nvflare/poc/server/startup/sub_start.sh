@@ -5,8 +5,6 @@ sp=$2
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 echo "WORKSPACE set to $DIR/.."
 mkdir -p $DIR/../transfer 
-export PYTHONPATH=/local/custom:$PYTHONPATH
-echo "PYTHONPATH is $PYTHONPATH"
 
 SECONDS=0
 lst=-400
@@ -25,6 +23,7 @@ start_fl() {
   lst=$SECONDS
 ((python3 -u -m nvflare.private.fed.app.server.server_train -m $DIR/.. -s fed_server.json --set secure_train=false config_folder=config host=${host} sp=${sp} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl )
   pid=`cat $DIR/../pid.fl`
+  echo "new pid ${pid}"
 }
 
 stop_fl() {
@@ -33,7 +32,7 @@ stop_fl() {
     return
   fi
   pid=`cat $DIR/../pid.fl`
-  sleep 10
+  sleep 5
   kill -0 ${pid} 2> /dev/null 1>&2
   if [[ $? -ne 0 ]]; then
     echo "Process already terminated"
@@ -48,7 +47,7 @@ if [[ -f "$DIR/../daemon_pid.fl" ]]; then
   kill -0 ${dpid} 2> /dev/null 1>&2
   if [[ $? -eq 0 ]]; then
     echo "There seems to be one instance, pid=$dpid, running."
-    echo "If you are sure it's not the case, please kill process $dpid."
+    echo "If you are sure it's not the case, please kill process $dpid and then remove daemon_pid.fl in $DIR/.."
     exit
   fi
   rm -f $DIR/../daemon_pid.fl
@@ -60,6 +59,7 @@ while true
 do
   sleep 5
   if [[ ! -f "$DIR/../pid.fl" ]]; then
+    echo "start fl because of no pid.fl"
     start_fl
     continue
   fi
@@ -70,6 +70,7 @@ do
       echo "Gracefully shutdown."
       break
     fi
+    echo "start fl because process of ${pid} does not exist"
     start_fl
     continue
   fi

@@ -147,16 +147,11 @@ The resulting poc folder will contain the following structure, with start.sh scr
   poc/
     admin/
         startup/
-            fed_admin_HA.json
             fed_admin.json
             fl_admin.sh
-    overseer/
-        startup/
-            start.sh
     Readme.rst
     server/
         startup/
-            fed_server_HA.json
             fed_server.json
             log.config
             start.sh
@@ -164,7 +159,6 @@ The resulting poc folder will contain the following structure, with start.sh scr
             sub_start.sh
     site-1/
         startup/
-            fed_client_HA.json
             fed_client.json
             log.config
             start.sh
@@ -172,7 +166,6 @@ The resulting poc folder will contain the following structure, with start.sh scr
             sub_start.sh
     site-2/
         startup/
-            fed_client_HA.json
             fed_client.json
             log.config
             start.sh
@@ -180,7 +173,7 @@ The resulting poc folder will contain the following structure, with start.sh scr
             sub_start.sh
 
 
-Before we use these scripts to connect the overseer, server, and clients, we will clone the NVFlare Repository
+Before we use these scripts to connect the server and clients, we will clone the NVFlare Repository
 that contains the set of example applications.
 
 .. _cloning_and_examples:

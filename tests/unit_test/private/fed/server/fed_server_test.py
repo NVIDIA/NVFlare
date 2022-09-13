@@ -30,7 +30,6 @@ class TestFederatedServer:
                 heart_beat_timeout=600,
                 args=MagicMock(),
                 secure_train=False,
-                enable_byoc=True,
                 snapshot_persistor=MagicMock(),
                 overseer_agent=MagicMock(),
             )
