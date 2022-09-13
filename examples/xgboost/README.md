@@ -101,6 +101,8 @@ Here, we generated in total 10 different configs: five for each of the 5/20-clie
 - bagging training with non-uniform data split and uniform shrinkage 
 - bagging training with non-uniform data split and scaled shrinkage
 
+By default, cpu based training is used.  For gpu based training, edit `job_conf_gen.sh` to change `TREE_METHOD="hist"` to `TREE_METHOD="gpu_hist"`.
+
 > **_NOTE:_** Cyclic training always use uniform shrinkage. The generated job config files will be stored in the folder `./job_configs`
 
 ### Option 1: start the FL system and submit jobs

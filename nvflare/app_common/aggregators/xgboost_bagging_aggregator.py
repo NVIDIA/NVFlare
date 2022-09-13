@@ -100,7 +100,7 @@ class XGBoostBaggingAggregator(Aggregator):
             self.log_error(fl_ctx, "no data to aggregate")
             return False
         else:
-            model_update = json.loads(data['model_update'])
+            model_update = json.loads(data['model'])
             if not self.global_model:
                 self.global_model = model_update
                 # assume one tree per update

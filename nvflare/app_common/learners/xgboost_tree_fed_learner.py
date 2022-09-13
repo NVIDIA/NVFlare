@@ -42,6 +42,7 @@ class XGBoostTreeFedLearner(Learner):
         max_depth: int = 8,
         eval_metric: str = "auc",
         nthread: int = 16,
+        tree_method: str = "hist",
         train_task_name: str = AppConstants.TASK_TRAIN,
     ):
         super().__init__()
@@ -55,6 +56,7 @@ class XGBoostTreeFedLearner(Learner):
         self.max_depth = max_depth
         self.eval_metric = eval_metric
         self.nthread = nthread
+        self.tree_method = tree_method
         self.train_task_name = train_task_name
         # Currently we support boosting 1 tree per round
         # could further extend
@@ -99,6 +101,7 @@ class XGBoostTreeFedLearner(Learner):
         self.set_lr()
         # load data, this is task-specific
         self.load_data(fl_ctx)
+        self.bst = None
 
     def set_lr(self):
         if self.training_mode == "bagging":
@@ -132,20 +135,10 @@ class XGBoostTreeFedLearner(Learner):
         param["max_depth"] = self.max_depth
         param["eval_metric"] = self.eval_metric
         param["nthread"] = self.nthread
-        return param
-
-    def get_training_parameters_bagging(self):
-        param = {}
-        param["objective"] = self.objective
-        param["eta"] = self.lr
-        param["max_depth"] = self.max_depth
-        param["eval_metric"] = self.eval_metric
-        param["nthread"] = self.nthread
+        param["tree_method"]= self.tree_method
         return param
 
     def local_boost_bagging(self, param, fl_ctx: FLContext):
-        self.bst.load_model(bytearray(self.global_model))
-        self.bst.load_config(self.config)
         eval_results = self.bst.eval_set(evals=[(self.dmat_train, 'train'), (self.dmat_valid, 'valid')],iteration=self.bst.num_boosted_rounds()-1)
         self.log_info(fl_ctx,
                       eval_results)
@@ -153,36 +146,30 @@ class XGBoostTreeFedLearner(Learner):
         for i in range(self.trees_per_round):
             self.bst.update(self.dmat_train, self.bst.num_boosted_rounds())
 
-        # extract newly added self.trees_per_round using slicing api
+        # extract newly added self.trees_per_round using xgboost slicing api
         bst = self.bst[self.bst.num_boosted_rounds()-self.trees_per_round:self.bst.num_boosted_rounds()]
 
         self.log_info(
             fl_ctx,
             f"Global AUC {auc}",
         )
-        self.writer.add_scalar("AUC", auc, self.bst.num_boosted_rounds() - self.bst.num_boosted_rounds())
+        # note: writing auc before current training step, for passed in global model
+        self.writer.add_scalar("AUC", auc, int((self.bst.num_boosted_rounds() - self.trees_per_round - 1)/self.num_tree_bagging))
         return bst
 
     def local_boost_cyclic(self, param, fl_ctx: FLContext):
         # Cyclic mode
         # starting from global model
         # return the whole boosting tree series
-        bst = xgb.train(
-            param,
-            self.dmat_train,
-            num_boost_round=self.trees_per_round,
-            xgb_model=self.global_model_path,
-            evals=[(self.dmat_valid, "validate"), (self.dmat_train, "train")],
-        )
-        # Validate model after training for Cyclic mode
-        y_pred = bst.predict(self.dmat_valid)
-        auc = roc_auc_score(self.valid_y, y_pred)
+        self.bst.update(self.dmat_train, self.bst.num_boosted_rounds())
+        eval_results = self.bst.eval_set(evals=[(self.dmat_train, 'train'), (self.dmat_valid, 'valid')],iteration=self.bst.num_boosted_rounds()-1)
+        auc = float(eval_results.split("\t")[2].split(":")[1])
         self.log_info(
             fl_ctx,
             f"Client {self.client_id} AUC after training: {auc}",
         )
-        self.writer.add_scalar("AUC", auc, bst.num_boosted_rounds() - 1)
-        return bst
+        self.writer.add_scalar("AUC", auc, self.bst.num_boosted_rounds()-1)
+        return self.bst
 
     def train(
         self,
@@ -216,13 +203,19 @@ class XGBoostTreeFedLearner(Learner):
             self.config = bst.save_config()
             self.bst = bst
         else:
-            self.log_info(
-                fl_ctx,
-                f"Client {self.client_id} training from global model received",
-            )
- 
             self.global_model = model_global['model']
-            
+            if self.bst:
+                self.bst.load_model(bytearray(self.global_model))
+                self.bst.load_config(self.config)
+            else:
+                # no booster state found, so initialize
+                self.bst = xgb.Booster(params = param, model_file = bytearray(self.global_model))
+    
+            self.log_info(
+                    fl_ctx,
+                    f"Client {self.client_id} training from global model received",
+            )
+           
             # train local model starting with global model
             if self.training_mode == "bagging":
                 bst = self.local_boost_bagging(param, fl_ctx)
@@ -233,7 +226,7 @@ class XGBoostTreeFedLearner(Learner):
 
         # report updated model in shareable
  
-        dxo = DXO(data_kind=DataKind.XGB_MODEL, data={'model_update': self.local_model})
+        dxo = DXO(data_kind=DataKind.XGB_MODEL, data={'model': self.local_model})
         self.log_info(fl_ctx, "Local epochs finished. Returning shareable")
         new_shareable = dxo.to_shareable()
 
