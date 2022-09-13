@@ -20,6 +20,7 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model import ModelLearnable, make_model_learnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
+from nvflare.app_common.app_constant import AppConstants
 
 
 class JSONModelPersistor(ModelPersistor):
@@ -69,9 +70,9 @@ class JSONModelPersistor(ModelPersistor):
             model: Model object
             fl_ctx: FLContext
         """
-        self.logger.info("Saving received model")
         if model_learnable:
-            with open(self.save_path, "w") as f:
-                pass
-               # json.dump(model_learnable, f)
-        self.logger.info("Saved received model")
+            if fl_ctx.get_prop(AppConstants.CURRENT_ROUND) == fl_ctx.get_prop(AppConstants.NUM_ROUNDS) - 1:
+                self.logger.info("Saving received model")
+                with open(self.save_path, "w") as f:
+                    json.dump(model_learnable, f)
+                self.logger.info("Saved received model")

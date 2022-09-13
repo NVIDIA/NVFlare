@@ -27,6 +27,7 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.learner_spec import Learner
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.aggregators.xgboost_bagging_aggregator import update_model
 
 
 class XGBoostTreeFedLearner(Learner):
@@ -102,6 +103,7 @@ class XGBoostTreeFedLearner(Learner):
         # load data, this is task-specific
         self.load_data(fl_ctx)
         self.bst = None
+        self.global_model_as_dict = None
 
     def set_lr(self):
         if self.training_mode == "bagging":
@@ -172,48 +174,75 @@ class XGBoostTreeFedLearner(Learner):
         return self.bst
 
     def train(
-        self,
-        shareable: Shareable,
-        fl_ctx: FLContext,
-        abort_signal: Signal,
-    ) -> Shareable:
+            self,
+            shareable: Shareable,
+            fl_ctx: FLContext,
+            abort_signal: Signal,
+        ) -> Shareable:
 
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
 
         # retrieve current global model download from server's shareable
         dxo = from_shareable(shareable)
-        model_global = dxo.data
+        model_update = dxo.data
         
         # xgboost parameters
         param = self.get_training_parameters_single()
 
-        if not model_global:
+        if not self.bst:
             # First round
             self.log_info(
                 fl_ctx,
                 f"Client {self.client_id} initial training from scratch",
             )
-            bst = xgb.train(
-                param,
-                self.dmat_train,
-                num_boost_round=self.trees_per_round,
-                evals=[(self.dmat_valid, "validate"), (self.dmat_train, "train")],
-            )
+            if not model_update:
+                bst = xgb.train(
+                    param,
+                    self.dmat_train,
+                    num_boost_round=self.trees_per_round,
+                    evals=[(self.dmat_valid, "validate"), (self.dmat_train, "train")],
+                )
+            else:
+                loadable_model = bytearray(model_update['model'])
+                bst = xgb.train(
+                    param,
+                    self.dmat_train,
+                    num_boost_round=self.trees_per_round,
+                    xgb_model=loadable_model,
+                    evals=[(self.dmat_valid, "validate"), (self.dmat_train, "train")],
+                )
             self.config = bst.save_config()
             self.bst = bst
         else:
-            self.global_model = model_global['model']
+            self.log_info(
+                    fl_ctx,
+                    f"Client {self.client_id} model updates received from server",
+            )
+            if self.training_mode == "bagging":
+                model_update = model_update['updates']
+                for update in model_update:
+                    self.global_model_as_dict = update_model(self.global_model_as_dict, update)
+
+                loadable_model = bytearray(json.dumps(self.global_model_as_dict), 'utf-8')
+            else:
+                loadable_model = bytearray(model_update['model'])
+
+            self.log_info(
+                    fl_ctx,
+                    f"Client {self.client_id} converted global model to json ",
+            )
+            
             if self.bst:
-                self.bst.load_model(bytearray(self.global_model))
+                self.bst.load_model(loadable_model)
                 self.bst.load_config(self.config)
             else:
                 # no booster state found, so initialize
-                self.bst = xgb.Booster(params = param, model_file = bytearray(self.global_model))
+                self.bst = xgb.Booster(params = param, model_file = loadable_model)
     
             self.log_info(
                     fl_ctx,
-                    f"Client {self.client_id} training from global model received",
+                    f"Client {self.client_id} loaded global model into booster ",
             )
            
             # train local model starting with global model

@@ -39,7 +39,7 @@ class XGBoostTreeFedHiggsLearner(XGBoostTreeFedLearner):
         max_depth: int = 8,
         eval_metric: str = "auc",
         nthread: int = 16,
-        tree_method: str = "gpu_hist",
+        tree_method: str = "hist",
         train_task_name: str = AppConstants.TASK_TRAIN,
     ):
         super().__init__(

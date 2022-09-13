@@ -24,6 +24,25 @@ from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.app_constant import AppConstants
 
 
+def update_model(prev_model, update_bytes):
+    model_update = json.loads(update_bytes)
+    if not prev_model:
+        model_update["learner"]["gradient_booster"]["model"]["gbtree_model_param"]["num_parallel_tree"] = "1"
+        return model_update
+    else:
+        # Always 1 tree, so [0]
+        best_iteration = int(prev_model['learner']['attributes']['best_iteration'])
+        best_ntree_limit = int(prev_model['learner']['attributes']['best_ntree_limit'])
+        num_trees = int(prev_model['learner']['gradient_booster']['model']['gbtree_model_param']['num_trees'])
+        prev_model['learner']['attributes']['best_iteration']=str(best_iteration + 1)
+        prev_model['learner']['attributes']['best_ntree_limit'] = str(best_ntree_limit + 1)
+        prev_model['learner']['gradient_booster']['model']['gbtree_model_param']['num_trees'] = str(num_trees + 1)
+        append_info = model_update['learner']['gradient_booster']['model']['trees'][0]
+        append_info['id'] = num_trees
+        prev_model['learner']['gradient_booster']['model']['trees'].append(append_info)
+        prev_model['learner']['gradient_booster']['model']['tree_info'].append(0)
+        return prev_model
+                
 class XGBoostBaggingAggregator(Aggregator):
     def __init__(
         self,
@@ -46,6 +65,7 @@ class XGBoostBaggingAggregator(Aggregator):
         self.expected_data_kind = DataKind.XGB_MODEL
         self.num_trees = 0
         
+    
     def accept(self, shareable: Shareable, fl_ctx: FLContext) -> bool:
         """Store shareable and update aggregator's internal state
 
@@ -100,19 +120,8 @@ class XGBoostBaggingAggregator(Aggregator):
             self.log_error(fl_ctx, "no data to aggregate")
             return False
         else:
-            model_update = json.loads(data['model'])
-            if not self.global_model:
-                self.global_model = model_update
-                # assume one tree per update
-                self.num_trees = 1
-            else:
-                json_bagging = self.global_model
-                 # Always 1 tree, so [0]
-                append_info = model_update["learner"]["gradient_booster"]["model"]["trees"][0]
-                append_info["id"] = self.num_trees
-                json_bagging["learner"]["gradient_booster"]["model"]["trees"].append(append_info)
-                json_bagging["learner"]["gradient_booster"]["model"]["tree_info"].append(0)
-                self.num_trees += 1
+            self.local_models.append(data['model'])
+            self.global_model = update_model(self.global_model, data['model'])
 
             self.history.append(
                 {
@@ -137,18 +146,13 @@ class XGBoostBaggingAggregator(Aggregator):
         site_num = len(self.history)
 
         self.log_info(fl_ctx, f"aggregating {site_num} update(s) at round {current_round}")
-
-        json_bagging = self.global_model
-        json_bagging["learner"]["attributes"]["best_iteration"] = str(self.num_trees - 1)
-        json_bagging["learner"]["attributes"]["best_ntree_limit"] = str(self.num_trees)
-        json_bagging["learner"]["gradient_booster"]["model"]["gbtree_model_param"]["num_trees"] = str(self.num_trees)
-        
-        json_bagging["learner"]["gradient_booster"]["model"]["gbtree_model_param"]["num_parallel_tree"] = "1"
- 
-        as_bytearray = bytearray(json.dumps(json_bagging),'utf-8')
         
         self.history = []
         self.log_debug(fl_ctx, "End aggregation")
-
-        dxo = DXO(data_kind=self.expected_data_kind, data={'model': as_bytearray})
+        local_updates = self.local_models
+        self.local_models = []
+        if(fl_ctx.get_prop(AppConstants.CURRENT_ROUND) < fl_ctx.get_prop(AppConstants.NUM_ROUNDS) - 1):
+            dxo = DXO(data_kind=self.expected_data_kind, data={'updates': local_updates})
+        else:
+            dxo = DXO(data_kind=self.expected_data_kind, data=self.global_model)
         return dxo.to_shareable()
