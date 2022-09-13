@@ -341,7 +341,7 @@ class Controller(Responder, ControllerSpec, ABC):
         with self._task_lock:
             # task_id is the uuid associated with the client_task
             client_task = self._client_task_map.get(task_id, None)
-            self.logger.debug("Get submission={} from client task={} id={}".format(result, client_task, task_id))
+            self.logger.debug("Get submission from client task={} id={}".format(client_task, task_id))
 
         if client_task is None:
             # cannot find a standing task for the submission

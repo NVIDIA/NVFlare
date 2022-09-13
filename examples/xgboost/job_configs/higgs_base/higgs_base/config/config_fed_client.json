@@ -33,6 +33,7 @@
         "objective": "binary:logistic",
         "max_depth": 8,
         "eval_metric": "auc",
+        "tree_method": "hist",
         "nthread": 16
       }
     }

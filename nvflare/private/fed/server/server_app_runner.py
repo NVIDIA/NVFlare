@@ -19,9 +19,26 @@ from nvflare.apis.workspace import Workspace
 from nvflare.private.fed.app.fl_conf import create_privacy_manager
 from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
-from nvflare.private.fed.server.server_runner import ServerRunnerConfig
 from nvflare.private.fed.server.server_status import ServerStatus
 from nvflare.private.privacy_manager import PrivacyService
+
+
+def _set_up_run_config(workspace: Workspace, server, conf):
+    runner_config = conf.runner_config
+
+    # configure privacy control!
+    privacy_manager = create_privacy_manager(workspace, names_only=False)
+    if privacy_manager.is_policy_defined():
+        if privacy_manager.components:
+            for cid, comp in privacy_manager.components.items():
+                runner_config.add_component(cid, comp)
+
+    # initialize Privacy Service
+    PrivacyService.initialize(privacy_manager)
+
+    server.heart_beat_timeout = conf.heartbeat_timeout
+    server.runner_config = conf.runner_config
+    server.handlers = conf.handlers
 
 
 class ServerAppRunner:
@@ -35,7 +52,7 @@ class ServerAppRunner:
             )
             conf.configure()
 
-            self.set_up_run_config(workspace, server, conf)
+            _set_up_run_config(workspace, server, conf)
 
             if not isinstance(server.engine, ServerEngine):
                 raise TypeError(f"server.engine must be ServerEngine. Got type:{type(server.engine).__name__}")
@@ -53,21 +70,3 @@ class ServerAppRunner:
     def sync_up_parents_process(self, args, server):
         server.engine.create_parent_connection(int(args.conn))
         server.engine.sync_clients_from_main_process()
-
-    def set_up_run_config(self, workspace: Workspace, server, conf):
-        runner_config = conf.runner_config
-        assert isinstance(runner_config, ServerRunnerConfig)
-
-        # configure privacy control!
-        privacy_manager = create_privacy_manager(workspace, names_only=False)
-        if privacy_manager.is_policy_defined():
-            if privacy_manager.components:
-                for cid, comp in privacy_manager.components.items():
-                    runner_config.add_component(cid, comp)
-
-        # initialize Privacy Service
-        PrivacyService.initialize(privacy_manager)
-
-        server.heart_beat_timeout = conf.heartbeat_timeout
-        server.runner_config = conf.runner_config
-        server.handlers = conf.handlers

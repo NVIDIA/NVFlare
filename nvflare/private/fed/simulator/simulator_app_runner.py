@@ -26,7 +26,7 @@ class SimulatorClientAppRunner(ClientAppRunner):
     def start_command_agent(self, args, client_runner, federated_client, fl_ctx):
         pass
 
-    def create_run_manageer(self, args, conf, federated_client, workspace):
+    def create_run_manager(self, args, conf, federated_client, workspace):
         return SimulatorClientRunManager(
             client_name=args.client_name,
             job_id=args.job_id,

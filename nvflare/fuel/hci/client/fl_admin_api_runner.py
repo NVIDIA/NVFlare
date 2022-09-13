@@ -15,6 +15,7 @@
 import os
 import time
 
+from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.client.fl_admin_api import FLAdminAPI
 from nvflare.fuel.hci.client.fl_admin_api_spec import TargetType
@@ -65,16 +66,18 @@ class FLAdminAPIRunner:
 
         try:
             os.chdir(admin_dir)
-            workspace = os.path.join(admin_dir, "startup")
-            conf = FLAdminClientStarterConfigurator(app_root=workspace, admin_config_file_name="fed_admin.json")
+            workspace = Workspace(root_dir=admin_dir)
+            conf = FLAdminClientStarterConfigurator(workspace)
             conf.configure()
         except ConfigError as ex:
             print("ConfigError:", str(ex))
+            return
 
         try:
             admin_config = conf.config_data["admin"]
         except KeyError:
             print("Missing admin section in fed_admin configuration.")
+            return
 
         ca_cert = admin_config.get("ca_cert", "")
         client_cert = admin_config.get("client_cert", "")
