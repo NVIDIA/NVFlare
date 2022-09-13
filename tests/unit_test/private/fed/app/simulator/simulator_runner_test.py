@@ -54,8 +54,7 @@ class TestSimulatorRunner:
     def test_client_names_setup(self, mock_server, mock_admin, mock_register, mock_heartbeat, mock_agent):
         workspace = tempfile.mkdtemp()
         job_folder = os.path.join(os.path.dirname(__file__), "../../../../data/jobs/valid_job")
-        runner = SimulatorRunner(job_folder=job_folder,
-                                 workspace=workspace, clients="site-1", threads=1)
+        runner = SimulatorRunner(job_folder=job_folder, workspace=workspace, clients="site-1", threads=1)
         assert runner.setup()
 
         expected_clients = ["site-1"]
@@ -72,8 +71,7 @@ class TestSimulatorRunner:
     def test_no_app_for_client(self, mock_server, mock_admin, mock_register, mock_heartbeat, mock_agent):
         workspace = tempfile.mkdtemp()
         job_folder = os.path.join(os.path.dirname(__file__), "../../../../data/jobs/valid_job")
-        runner = SimulatorRunner(job_folder=job_folder,
-                                 workspace=workspace, n_clients=3, threads=1)
+        runner = SimulatorRunner(job_folder=job_folder, workspace=workspace, n_clients=3, threads=1)
         assert not runner.setup()
 
     @pytest.mark.parametrize(
