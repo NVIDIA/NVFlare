@@ -16,7 +16,7 @@ import argparse
 import os
 import sys
 
-from nvflare.lighter.cli_exception import CLIException
+from nvflare.cli_exception import CLIException
 from nvflare.lighter.poc_commands import def_poc_parser, handle_poc_cmd
 from nvflare.lighter.provision import define_provision_parser, handle_provision
 from nvflare.private.fed.app.simulator.simulator import define_simulator_parser, run_simulator
@@ -56,6 +56,12 @@ def def_simulator_parser(sub_cmd):
     return {cmd: simulator_parser}
 
 
+def handle_simulator_cmd(simulator_args):
+    status = run_simulator(simulator_args)
+    # make sure the script terminate after run
+    os._exit(status)
+
+
 def parse_args(prog_name: str):
     _parser = argparse.ArgumentParser(description=prog_name)
     sub_cmd = _parser.add_subparsers(description="sub command parser", dest="sub_command")
@@ -72,7 +78,7 @@ handlers = {
     CMD_POC: handle_poc_cmd,
     CMD_PROVISION: handle_provision,
     CMD_PREFLIGHT_CHECK: check_packages,
-    CMD_SIMULATOR: run_simulator,
+    CMD_SIMULATOR: handle_simulator_cmd,
 }
 
 
