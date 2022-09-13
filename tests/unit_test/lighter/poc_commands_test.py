@@ -14,7 +14,7 @@
 
 import pytest
 
-from nvflare.lighter.cli_exception import CLIException
+from nvflare.cli_exception import CLIException
 from nvflare.lighter.poc_commands import client_gpu_assignments, get_gpu_ids, get_package_command
 from nvflare.lighter.service_constants import FlareServiceConstants as SC
 

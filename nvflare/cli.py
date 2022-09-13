@@ -16,28 +16,23 @@ import argparse
 import os
 import sys
 
-from nvflare.lighter.cli_exception import CLIException
-from nvflare.lighter.poc_commands import def_poc_parser, handle_poc_cmd, is_poc
+from nvflare.cli_exception import CLIException
+from nvflare.lighter.poc_commands import def_poc_parser, handle_poc_cmd
 from nvflare.lighter.provision import define_provision_parser, handle_provision
+from nvflare.private.fed.app.simulator.simulator import define_simulator_parser, run_simulator
 from nvflare.tool.preflight_check import check_packages, define_preflight_check_parser
 
 CMD_POC = "poc"
 CMD_PROVISION = "provision"
 CMD_PREFLIGHT_CHECK = "preflight_check"
+CMD_SIMULATOR = "simulator"
 
 
-def is_provision(cmd_args) -> bool:
-    return (
-        hasattr(cmd_args, "add_user")
-        or hasattr(cmd_args, "add_client")
-        or hasattr(cmd_args, "project_file")
-        or hasattr(cmd_args, "ui_tool")
-    )
-
-
-def is_preflight_checker(cmd_args) -> bool:
-    print(cmd_args)
-    return hasattr(cmd_args, "package_root") or hasattr(cmd_args, "packages]")
+def check_python_version():
+    if sys.version_info >= (3, 9):
+        raise RuntimeError("Python versions 3.9 and above are not yet supported. Please use Python 3.8 or 3.7.")
+    if sys.version_info < (3, 7):
+        raise RuntimeError("Python versions 3.6 and below are not supported. Please use Python 3.8 or 3.7.")
 
 
 def def_provision_parser(sub_cmd):
@@ -54,32 +49,36 @@ def def_preflight_check_parser(sub_cmd):
     return {cmd: checker_parser}
 
 
+def def_simulator_parser(sub_cmd):
+    cmd = CMD_SIMULATOR
+    simulator_parser = sub_cmd.add_parser(cmd)
+    define_simulator_parser(simulator_parser)
+    return {cmd: simulator_parser}
+
+
+def handle_simulator_cmd(simulator_args):
+    status = run_simulator(simulator_args)
+    # make sure the script terminate after run
+    os._exit(status)
+
+
 def parse_args(prog_name: str):
     _parser = argparse.ArgumentParser(description=prog_name)
-    sub_cmd = _parser.add_subparsers(description="sub command parser")
+    sub_cmd = _parser.add_subparsers(description="sub command parser", dest="sub_command")
     sub_cmd_parsers = {}
     sub_cmd_parsers.update(def_poc_parser(sub_cmd))
     sub_cmd_parsers.update(def_preflight_check_parser(sub_cmd))
     sub_cmd_parsers.update(def_provision_parser(sub_cmd))
+    sub_cmd_parsers.update(def_simulator_parser(sub_cmd))
 
     return _parser, _parser.parse_args(), sub_cmd_parsers
-
-
-def get_sub_cmd(prog_args):
-    if is_poc(prog_args):
-        return CMD_POC
-    elif is_provision(prog_args):
-        return CMD_PROVISION
-    elif is_preflight_checker(prog_args):
-        return CMD_PREFLIGHT_CHECK
-    else:
-        return None
 
 
 handlers = {
     CMD_POC: handle_poc_cmd,
     CMD_PROVISION: handle_provision,
     CMD_PREFLIGHT_CHECK: check_packages,
+    CMD_SIMULATOR: handle_simulator_cmd,
 }
 
 
@@ -89,7 +88,7 @@ def run(prog_name):
     prog_parser, prog_args, sub_cmd_parsers = parse_args(prog_name)
     sub_cmd = None
     try:
-        sub_cmd = get_sub_cmd(prog_args)
+        sub_cmd = prog_args.sub_command
         if sub_cmd:
             handlers[sub_cmd](prog_args)
         else:
@@ -99,7 +98,7 @@ def run(prog_name):
         print(e)
         sys.exit(1)
     except Exception as e:
-        print("unable to handle command, please check syntax")
+        print(f"unable to handle command: {sub_cmd} due to : {e}, please check syntax ")
         print_help(prog_parser, sub_cmd, sub_cmd_parsers)
 
 
@@ -115,6 +114,7 @@ def print_help(prog_parser, sub_cmd, sub_cmd_parsers):
 
 
 def main():
+    check_python_version()
     run("nvflare")
 
 
