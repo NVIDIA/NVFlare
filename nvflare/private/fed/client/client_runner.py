@@ -37,7 +37,7 @@ class ClientRunnerConfig(object):
         task_result_filters: dict,  # task_name => list of filters
         handlers=None,  # list of event handlers
         components=None,  # dict of extra python objects: id => object
-        default_task_fetch_interval=None
+        default_task_fetch_interval=None,
     ):
         """To init ClientRunnerConfig.
 

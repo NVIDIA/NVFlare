@@ -120,5 +120,5 @@ class ClientJsonConfigurator(FedJsonConfigurator):
             task_result_filters=self.result_filter_table,
             components=self.components,
             handlers=self.handlers,
-            default_task_fetch_interval=self._default_task_fetch_interval
+            default_task_fetch_interval=self._default_task_fetch_interval,
         )
