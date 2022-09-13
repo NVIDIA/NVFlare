@@ -173,11 +173,11 @@ class XGBoostTreeFedLearner(Learner):
         return self.bst
 
     def train(
-            self,
-            shareable: Shareable,
-            fl_ctx: FLContext,
-            abort_signal: Signal,
-        ) -> Shareable:
+        self,
+        shareable: Shareable,
+        fl_ctx: FLContext,
+        abort_signal: Signal,
+    ) -> Shareable:
 
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
@@ -215,8 +215,8 @@ class XGBoostTreeFedLearner(Learner):
             self.bst = bst
         else:
             self.log_info(
-                    fl_ctx,
-                    f"Client {self.client_id} model updates received from server",
+                fl_ctx,
+                f"Client {self.client_id} model updates received from server",
             )
             if self.training_mode == "bagging":
                 model_update = model_update['updates']
@@ -228,8 +228,8 @@ class XGBoostTreeFedLearner(Learner):
                 loadable_model = bytearray(model_update['model'])
 
             self.log_info(
-                    fl_ctx,
-                    f"Client {self.client_id} converted global model to json ",
+                fl_ctx,
+                f"Client {self.client_id} converted global model to json ",
             )
             
             if self.bst:
@@ -240,8 +240,8 @@ class XGBoostTreeFedLearner(Learner):
                 self.bst = xgb.Booster(params = param, model_file = loadable_model)
     
             self.log_info(
-                    fl_ctx,
-                    f"Client {self.client_id} loaded global model into booster ",
+                fl_ctx,
+                f"Client {self.client_id} loaded global model into booster ",
             )
            
             # train local model starting with global model

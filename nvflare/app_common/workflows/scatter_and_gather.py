@@ -253,15 +253,9 @@ class ScatterAndGather(Controller):
 
                 self._current_round += 1
 
-<<<<<<< HEAD
-                # Call the self._engine to persist the snapshot of all the FLComponents
-                # this will be made HA mode flag dependent
-                #self._engine.persist_components(fl_ctx, completed=False)
-=======
                 if self._snapshot_every_n_rounds != 0 and self._current_round % self._snapshot_every_n_rounds == 0:
                     # Call the self._engine to persist the snapshot of all the FLComponents
                     self._engine.persist_components(fl_ctx, completed=False)
->>>>>>> dev
 
             self._phase = AppConstants.PHASE_FINISHED
             self.log_info(fl_ctx, "Finished ScatterAndGather Training.")
