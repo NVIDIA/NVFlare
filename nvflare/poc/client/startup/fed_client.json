@@ -17,41 +17,11 @@
       }
     }
   ],
-  "client": {
-    "retry_timeout": 30,
-    "ssl_private_key": "client.key",
-    "ssl_cert": "client.crt",
-    "ssl_root_cert": "rootCA.pem",
-    "compression": "Gzip"
-  },
   "overseer_agent": {
     "path": "nvflare.ha.dummy_overseer_agent.DummyOverseerAgent",
     "args": {
       "sp_end_point": "localhost:8002:8003",
       "heartbeat_interval": 6
     }
-  },
-  "components": [
-    {
-      "id": "resource_manager",
-      "path": "nvflare.app_common.resource_managers.list_resource_manager.ListResourceManager",
-      "args": {
-        "resources": {
-          "gpu": [
-            0,
-            1,
-            2,
-            3
-          ]
-        }
-      }
-    },
-    {
-      "id": "resource_consumer",
-      "path": "nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer",
-      "args": {
-        "gpu_resource_key": "gpu"
-      }
-    }
-  ]
+  }
 }
