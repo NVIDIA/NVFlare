@@ -116,7 +116,6 @@ def main():
         servers = [{t["name"]: t["service"]} for t in deployer.server_config]
         admin_agent = create_admin_agent(
             deployer.client_config,
-            deployer.client_name,
             deployer.req_processors,
             deployer.secure_train,
             sorted(servers)[0],
@@ -139,7 +138,6 @@ def main():
 
 def create_admin_agent(
     client_args,
-    client_id,
     req_processors,
     secure_train,
     server_args,
@@ -152,7 +150,6 @@ def create_admin_agent(
 
     Args:
         client_args: start client command args
-        client_id: client name
         req_processors: request processors
         secure_train: True/False
         server_args: FL server args
@@ -164,11 +161,14 @@ def create_admin_agent(
     Returns:
         A FedAdminAgent.
     """
+    root_cert = client_args[SSLConstants.ROOT_CERT] if secure_train else None
+    ssl_cert = client_args[SSLConstants.CERT] if secure_train else None
+    private_key = client_args[SSLConstants.PRIVATE_KEY] if secure_train else None
     sender = AdminMessageSender(
         client_name=federated_client.token,
-        root_cert=client_args[SSLConstants.ROOT_CERT],
-        ssl_cert=client_args[SSLConstants.CERT],
-        private_key=client_args[SSLConstants.PRIVATE_KEY],
+        root_cert=root_cert,
+        ssl_cert=ssl_cert,
+        private_key=private_key,
         server_args=server_args,
         secure=secure_train,
         is_multi_gpu=is_multi_gpu,

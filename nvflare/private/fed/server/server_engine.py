@@ -620,6 +620,7 @@ class ServerEngine(ServerEngineInternalSpec):
         return command_conn
 
     def persist_components(self, fl_ctx: FLContext, completed: bool):
+        self.logger.info("Start saving snapshot on server.")
 
         # Call the State Persistor to persist all the component states
         # 1. call every component to generate the component states data
