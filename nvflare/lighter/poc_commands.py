@@ -329,15 +329,6 @@ def def_poc_parser(sub_cmd):
     return {cmd: poc_parser}
 
 
-def is_poc(cmd_args) -> bool:
-    return (
-        hasattr(cmd_args, "start_poc")
-        or hasattr(cmd_args, "prepare_poc")
-        or hasattr(cmd_args, "stop_poc")
-        or hasattr(cmd_args, "clean_poc")
-    )
-
-
 def get_local_host_gpu_ids():
     try:
         return get_host_gpu_ids()

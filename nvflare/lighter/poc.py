@@ -32,11 +32,16 @@ def clone_client(num_clients: int, dest_poc_folder):
     shutil.rmtree(src_folder)
 
 
-def unpack_poc() -> bool:
+def unpack_poc(dest_poc_folder) -> bool:
     file_dir_path = pathlib.Path(__file__).parent.absolute()
     poc_zip_path = file_dir_path.parent / "poc.zip"
     try:
-        shutil.unpack_archive(poc_zip_path)
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            shutil.unpack_archive(poc_zip_path, extract_dir=tmp_dir)
+            copy_from_src(os.path.join(tmp_dir, "poc"), dest_poc_folder)
+
         return True
     except shutil.ReadError:
         return False
@@ -52,7 +57,7 @@ def copy_from_src(src_poc_folder, dest_poc_folder):
 
 def clone_poc_folder(src_poc_folder, dest_poc_folder):
     shutil.rmtree(dest_poc_folder, ignore_errors=True)
-    success = unpack_poc()
+    success = unpack_poc(dest_poc_folder)
     if not success:
         copy_from_src(src_poc_folder, dest_poc_folder)
 
