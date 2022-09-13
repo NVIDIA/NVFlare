@@ -37,6 +37,7 @@ class ClientRunnerConfig(object):
         task_result_filters: dict,  # task_name => list of filters
         handlers=None,  # list of event handlers
         components=None,  # dict of extra python objects: id => object
+        default_task_fetch_interval=None
     ):
         """To init ClientRunnerConfig.
 
@@ -46,12 +47,15 @@ class ClientRunnerConfig(object):
             task_result_filters: task_name => list of result filters
             handlers: list of event handlers
             components: dict of extra python objects: id => object
+            default_task_fetch_interval: default task fetch interval before getting the correct value from server.
+                if not set, will be set to 0.1.
         """
         self.task_table = task_table
         self.task_data_filters = task_data_filters
         self.task_result_filters = task_result_filters
         self.handlers = handlers
         self.components = components
+        self.default_task_fetch_interval = 0.1 if default_task_fetch_interval is None else default_task_fetch_interval
 
         if not components:
             self.components = {}
@@ -89,6 +93,7 @@ class ClientRunner(FLComponent):
         self.task_table = config.task_table
         self.task_data_filters = config.task_data_filters
         self.task_result_filters = config.task_result_filters
+        self.default_task_fetch_interval = config.default_task_fetch_interval
 
         self.job_id = job_id
         self.engine = engine
@@ -359,7 +364,7 @@ class ClientRunner(FLComponent):
         Returns:
             A tuple of (task_fetch_interval, task_processed).
         """
-        default_task_fetch_interval = 0.1
+        default_task_fetch_interval = self.default_task_fetch_interval
         self.log_debug(fl_ctx, "fetching task from server ...")
         task = self.engine.get_task_assignment(fl_ctx)
 
