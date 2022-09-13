@@ -374,7 +374,7 @@ class ClientRunner(FLComponent):
             task_data = task.data
             task_fetch_interval = default_task_fetch_interval
             if task_data and isinstance(task_data, Shareable):
-                task_fetch_interval = task_data.get(TaskConstant.WAIT_TIME, task_fetch_interval)
+                task_fetch_interval = task_data.get_header(TaskConstant.WAIT_TIME, task_fetch_interval)
             self.log_debug(fl_ctx, "server asked to try again - will try in {} secs".format(task_fetch_interval))
             return task_fetch_interval, False
 
@@ -383,7 +383,7 @@ class ClientRunner(FLComponent):
         task_data = task.data
         if not isinstance(task_data, Shareable):
             raise TypeError("task_data must be Shareable, but got {}".format(type(task_data)))
-        task_fetch_interval = task_data[TaskConstant.WAIT_TIME]
+        task_fetch_interval = task_data.get_header(TaskConstant.WAIT_TIME, default_task_fetch_interval)
 
         # create a new task abort signal
         task_reply = self._process_task(task, fl_ctx)

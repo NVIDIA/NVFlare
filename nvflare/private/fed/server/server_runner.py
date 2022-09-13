@@ -195,7 +195,7 @@ class ServerRunner(FLComponent):
 
     def _task_try_again(self) -> (str, str, Shareable):
         task_data = Shareable()
-        task_data[TaskConstant.WAIT_TIME] = self.config.task_request_interval
+        task_data.set_header(TaskConstant.WAIT_TIME, self.config.task_request_interval)
         return SpecialTaskName.TRY_AGAIN, "", task_data
 
     def process_task_request(self, client: Client, fl_ctx: FLContext) -> (str, str, Shareable):
@@ -311,7 +311,7 @@ class ServerRunner(FLComponent):
 
             audit_event_id = add_job_audit_event(fl_ctx=fl_ctx, msg=f'sent task to client "{client.name}"')
             task_data.set_header(ReservedHeaderKey.AUDIT_EVENT_ID, audit_event_id)
-            task_data[TaskConstant.WAIT_TIME] = self.config.task_request_interval
+            task_data.set_header(TaskConstant.WAIT_TIME, self.config.task_request_interval)
             return task_name, task_id, task_data
         except BaseException as e:
             self.log_exception(fl_ctx, f"Error processing client task request: {e}; asked client to try again later")
