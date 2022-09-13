@@ -39,8 +39,8 @@ def unpack_poc(dest_poc_folder) -> bool:
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            shutil.unpack_archive(poc_zip_path, extract_dir=tmp_dir.name)
-            copy_from_src(os.path.join(tmp_dir.name, "poc"), dest_poc_folder)
+            shutil.unpack_archive(poc_zip_path, extract_dir=tmp_dir)
+            copy_from_src(os.path.join(tmp_dir, "poc"), dest_poc_folder)
 
         return True
     except shutil.ReadError:
