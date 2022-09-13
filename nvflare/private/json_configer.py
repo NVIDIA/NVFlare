@@ -48,7 +48,6 @@ class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
             module_names: module names need to be scanned
             exclude_libs: True/False to exclude the libs folder
             num_passes: number of passes to parsing the config
-            extra_config_files: additional JSON config files to be merged
         """
         JsonObjectProcessor.__init__(self)
 

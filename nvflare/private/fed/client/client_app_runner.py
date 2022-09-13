@@ -21,7 +21,7 @@ from nvflare.private.defs import EngineConstant
 from nvflare.private.fed.app.fl_conf import create_privacy_manager
 from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
 from nvflare.private.fed.client.client_run_manager import ClientRunManager
-from nvflare.private.fed.client.client_runner import ClientRunner, ClientRunnerConfig
+from nvflare.private.fed.client.client_runner import ClientRunner
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.client.command_agent import CommandAgent
 from nvflare.private.privacy_manager import PrivacyService
@@ -48,7 +48,6 @@ class ClientAppRunner:
             sys.path.append(app_custom_folder)
 
         runner_config = conf.runner_config
-        assert isinstance(runner_config, ClientRunnerConfig)
 
         # configure privacy control!
         privacy_manager = create_privacy_manager(workspace, names_only=False)
@@ -60,7 +59,7 @@ class ClientAppRunner:
         # initialize Privacy Service
         PrivacyService.initialize(privacy_manager)
 
-        run_manager = self.create_run_manageer(args, conf, federated_client, workspace)
+        run_manager = self.create_run_manager(args, conf, federated_client, workspace)
         federated_client.run_manager = run_manager
         with run_manager.new_context() as fl_ctx:
             fl_ctx.set_prop(FLContextKey.CLIENT_NAME, args.client_name, private=False)
@@ -78,7 +77,7 @@ class ClientAppRunner:
             self.start_command_agent(args, client_runner, federated_client, fl_ctx)
         return client_runner
 
-    def create_run_manageer(self, args, conf, federated_client, workspace):
+    def create_run_manager(self, args, conf, federated_client, workspace):
         return ClientRunManager(
             client_name=args.client_name,
             job_id=args.job_id,

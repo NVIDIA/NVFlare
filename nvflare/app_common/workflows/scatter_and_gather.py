@@ -11,7 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import traceback
+from typing import Any
 
 from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import ReturnCode
@@ -27,6 +29,14 @@ from nvflare.app_common.app_event_type import AppEventType
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
 
+def _check_non_neg_int(data: Any, name: str):
+    if not isinstance(data, int):
+        raise ValueError(f"{name} must be int but got {type(data)}")
+
+    if data < 0:
+        raise ValueError(f"{name} must be greater than or equal to 0.")
+
+
 class ScatterAndGather(Controller):
     def __init__(
         self,
@@ -40,6 +50,9 @@ class ScatterAndGather(Controller):
         train_task_name=AppConstants.TASK_TRAIN,
         train_timeout: int = 0,
         ignore_result_error: bool = False,
+        task_check_period: float = 0.5,
+        persist_every_n_rounds: int = 1,
+        snapshot_every_n_rounds: int = 1,
     ):
         """The controller for ScatterAndGather Workflow.
 
@@ -62,26 +75,31 @@ class ScatterAndGather(Controller):
             train_timeout (int, optional): Time to wait for clients to do local training.
             ignore_result_error (bool, optional): whether this controller can proceed if client result has errors.
                 Defaults to False.
+            task_check_period (float, optional): interval for checking status of tasks. Defaults to 0.5.
+            persist_every_n_rounds (int, optional): persist the global model every n rounds. Defaults to 1.
+                If n is 0 then no persist.
+            snapshot_every_n_rounds (int, optional): persist the server state every n rounds. Defaults to 1.
+                If n is 0 then no persist.
 
         Raises:
             TypeError: when any of input arguments does not have correct type
             ValueError: when any of input arguments is out of range
         """
-        Controller.__init__(self)
+        Controller.__init__(self, task_check_period=task_check_period)
 
         # Check arguments
         if not isinstance(min_clients, int):
             raise TypeError("min_clients must be int but got {}".format(type(min_clients)))
-        if not isinstance(num_rounds, int):
-            raise TypeError("num_rounds must be int but got {}".format(type(num_rounds)))
-        if not isinstance(start_round, int):
-            raise TypeError("start_round must be int but got {}".format(type(start_round)))
-        if not isinstance(wait_time_after_min_received, int):
-            raise TypeError(
-                "wait_time_after_min_received must be int but got {}".format(type(wait_time_after_min_received))
-            )
-        if not isinstance(train_timeout, int):
-            raise TypeError("train_timeout must be int but got {}".format(type(train_timeout)))
+        elif min_clients <= 0:
+            raise ValueError("min_clients must be greater than 0.")
+
+        _check_non_neg_int(num_rounds, "num_rounds")
+        _check_non_neg_int(start_round, "start_round")
+        _check_non_neg_int(wait_time_after_min_received, "wait_time_after_min_received")
+        _check_non_neg_int(train_timeout, "train_timeout")
+        _check_non_neg_int(persist_every_n_rounds, "persist_every_n_rounds")
+        _check_non_neg_int(snapshot_every_n_rounds, "snapshot_every_n_rounds")
+
         if not isinstance(aggregator_id, str):
             raise TypeError("aggregator_id must be a string but got {}".format(type(aggregator_id)))
         if not isinstance(persistor_id, str):
@@ -90,14 +108,11 @@ class ScatterAndGather(Controller):
             raise TypeError("shareable_generator_id must be a string but got {}".format(type(shareable_generator_id)))
         if not isinstance(train_task_name, str):
             raise TypeError("train_task_name must be a string but got {}".format(type(train_task_name)))
-        if min_clients <= 0:
-            raise ValueError("min_clients must be greater than 0.")
-        if num_rounds < 0:
-            raise ValueError("num_rounds must be greater than or equal to 0.")
-        if start_round < 0:
-            raise ValueError("start_round must be greater than or equal to 0.")
-        if wait_time_after_min_received < 0:
-            raise ValueError("wait_time_after_min_received must be greater than or equal to 0.")
+
+        if not isinstance(task_check_period, (int, float)):
+            raise TypeError(f"task_check_period must be an int or float but got {type(task_check_period)}")
+        elif task_check_period <= 0:
+            raise ValueError("task_check_period must be greater than 0.")
 
         self.aggregator_id = aggregator_id
         self.persistor_id = persistor_id
@@ -110,9 +125,11 @@ class ScatterAndGather(Controller):
         # config data
         self._min_clients = min_clients
         self._num_rounds = num_rounds
-        self._wait_time_after_min_received = wait_time_after_min_received  # 5 minutes
+        self._wait_time_after_min_received = wait_time_after_min_received
         self._start_round = start_round
         self._train_timeout = train_timeout
+        self._persist_every_n_rounds = persist_every_n_rounds
+        self._snapshot_every_n_rounds = snapshot_every_n_rounds
         self.ignore_result_error = ignore_result_error
 
         # workflow phases: init, train, validate
@@ -167,7 +184,6 @@ class ScatterAndGather(Controller):
             fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self._num_rounds, private=True, sticky=False)
             self.fire_event(AppEventType.TRAINING_STARTED, fl_ctx)
 
-            # for self._current_round in range(self._start_round, self._start_round + self._num_rounds):
             if self._current_round is None:
                 self._current_round = self._start_round
             while self._current_round < self._start_round + self._num_rounds:
@@ -206,10 +222,12 @@ class ScatterAndGather(Controller):
                 if self._check_abort_signal(fl_ctx, abort_signal):
                     return
 
+                self.log_info(fl_ctx, "Start aggregation.")
                 self.fire_event(AppEventType.BEFORE_AGGREGATION, fl_ctx)
                 aggr_result = self.aggregator.aggregate(fl_ctx)
                 fl_ctx.set_prop(AppConstants.AGGREGATION_RESULT, aggr_result, private=True, sticky=False)
                 self.fire_event(AppEventType.AFTER_AGGREGATION, fl_ctx)
+                self.log_info(fl_ctx, "End aggregation.")
 
                 if self._check_abort_signal(fl_ctx, abort_signal):
                     return
@@ -223,17 +241,21 @@ class ScatterAndGather(Controller):
                 if self._check_abort_signal(fl_ctx, abort_signal):
                     return
 
-                self.fire_event(AppEventType.BEFORE_LEARNABLE_PERSIST, fl_ctx)
-                self.persistor.save(self._global_weights, fl_ctx)
-                self.fire_event(AppEventType.AFTER_LEARNABLE_PERSIST, fl_ctx)
+                if self._persist_every_n_rounds != 0 and (self._current_round + 1) % self._persist_every_n_rounds == 0:
+                    self.log_info(fl_ctx, "Start persist model on server.")
+                    self.fire_event(AppEventType.BEFORE_LEARNABLE_PERSIST, fl_ctx)
+                    self.persistor.save(self._global_weights, fl_ctx)
+                    self.fire_event(AppEventType.AFTER_LEARNABLE_PERSIST, fl_ctx)
+                    self.log_info(fl_ctx, "End persist model on server.")
 
                 self.fire_event(AppEventType.ROUND_DONE, fl_ctx)
                 self.log_info(fl_ctx, f"Round {self._current_round} finished.")
 
                 self._current_round += 1
 
-                # Call the self._engine to persist the snapshot of all the FLComponents
-                self._engine.persist_components(fl_ctx, completed=False)
+                if self._snapshot_every_n_rounds != 0 and self._current_round % self._snapshot_every_n_rounds == 0:
+                    # Call the self._engine to persist the snapshot of all the FLComponents
+                    self._engine.persist_components(fl_ctx, completed=False)
 
             self._phase = AppConstants.PHASE_FINISHED
             self.log_info(fl_ctx, "Finished ScatterAndGather Training.")

@@ -42,6 +42,7 @@ class XGBoostTreeFedLearner(Learner):
         max_depth: int = 8,
         eval_metric: str = "auc",
         nthread: int = 16,
+        tree_method: str = "hist",
         train_task_name: str = AppConstants.TASK_TRAIN,
     ):
         super().__init__()
@@ -55,6 +56,7 @@ class XGBoostTreeFedLearner(Learner):
         self.max_depth = max_depth
         self.eval_metric = eval_metric
         self.nthread = nthread
+        self.tree_method = tree_method
         self.train_task_name = train_task_name
         # Currently we support boosting 1 tree per round
         # could further extend
@@ -132,6 +134,7 @@ class XGBoostTreeFedLearner(Learner):
         param["max_depth"] = self.max_depth
         param["eval_metric"] = self.eval_metric
         param["nthread"] = self.nthread
+        param["tree_method"] = self.tree_method
         return param
 
     def get_training_parameters_bagging(self):

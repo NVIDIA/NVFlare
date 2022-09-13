@@ -64,7 +64,7 @@ class ClientRunManager(ClientEngineExecutorSpec):
         Args:
             client_name: client name
             job_id: job id
-            workspace: workspacee
+            workspace: workspace
             client: FL client object
             components: available FL components
             handlers: available handlers
@@ -103,7 +103,6 @@ class ClientRunManager(ClientEngineExecutorSpec):
         task = None
         if pull_success:
             shareable = self.client.extract_shareable(remote_tasks, fl_ctx)
-            # task_id = fl_ctx.get_peer_context().get_cookie(FLContextKey.TASK_ID)
             task_id = shareable.get_header(key=FLContextKey.TASK_ID)
             task = TaskAssignment(name=task_name, task_id=task_id, data=shareable)
         return task

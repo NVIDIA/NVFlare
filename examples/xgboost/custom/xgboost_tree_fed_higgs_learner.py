@@ -39,6 +39,7 @@ class XGBoostTreeFedHiggsLearner(XGBoostTreeFedLearner):
         max_depth: int = 8,
         eval_metric: str = "auc",
         nthread: int = 16,
+        tree_method: str = "hist",
         train_task_name: str = AppConstants.TASK_TRAIN,
     ):
         super().__init__(
@@ -52,6 +53,7 @@ class XGBoostTreeFedHiggsLearner(XGBoostTreeFedLearner):
             max_depth=max_depth,
             eval_metric=eval_metric,
             nthread=nthread,
+            tree_method=tree_method,
             train_task_name=train_task_name,
         )
         self.data_split_filename = data_split_filename
