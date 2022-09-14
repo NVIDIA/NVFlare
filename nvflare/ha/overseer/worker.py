@@ -18,9 +18,14 @@ from gunicorn.workers.sync import SyncWorker
 class ClientAuthWorker(SyncWorker):
     def handle_request(self, listener, req, client, addr):
         subject = client.getpeercert().get("subject")
-        role = next(value for ((key, value),) in subject if key == "unstructuredName")
-        headers = dict(req.headers)
-        headers["X-ROLE"] = role
-        req.headers = list(headers.items())
+        role = None
+        for ((key, value),) in subject:
+            if key == "unstructuredName":
+                role = value
+                break
+        if role is not None:
+            headers = dict(req.headers)
+            headers["X-ROLE"] = role
+            req.headers = list(headers.items())
 
         super(ClientAuthWorker, self).handle_request(listener, req, client, addr)
