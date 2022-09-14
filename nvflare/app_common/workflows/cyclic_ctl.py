@@ -34,6 +34,7 @@ class CyclicController(Controller):
         shareable_generator_id="shareable_generator",
         task_name="train",
         task_check_period: float = 0.5,
+        persist_every_n_rounds: int = 1,
         snapshot_every_n_rounds: int = 1,
     ):
         """A sample implementation to demonstrate how to use relay method for Cyclic Federated Learning.
@@ -47,6 +48,8 @@ class CyclicController(Controller):
             shareable_generator_id (str, optional): id of shareable generator. Defaults to "shareable_generator".
             task_name (str, optional): the task name that clients know how to handle. Defaults to "train".
             task_check_period (float, optional): interval for checking status of tasks. Defaults to 0.5.
+            persist_every_n_rounds (int, optional): persist the global model every n rounds. Defaults to 1.
+                If n is 0 then no persist.
             snapshot_every_n_rounds (int, optional): persist the server state every n rounds. Defaults to 1.
                 If n is 0 then no persist.
 
@@ -65,6 +68,7 @@ class CyclicController(Controller):
             raise TypeError("shareable_generator_id must be a string but got {}".format(type(shareable_generator_id)))
         if not isinstance(task_name, str):
             raise TypeError("task_name must be a string but got {}".format(type(task_name)))
+
         self._num_rounds = num_rounds
         self._start_round = 0
         self._end_round = self._start_round + self._num_rounds
@@ -76,6 +80,7 @@ class CyclicController(Controller):
         self.task_name = task_name
         self.persistor = None
         self.shareable_generator = None
+        self._persist_every_n_rounds = persist_every_n_rounds
         self._snapshot_every_n_rounds = snapshot_every_n_rounds
 
     def start_controller(self, fl_ctx: FLContext):
@@ -144,7 +149,14 @@ class CyclicController(Controller):
                     dynamic_targets=False,
                     abort_signal=abort_signal,
                 )
-                self.persistor.save(self._last_learnable, fl_ctx)
+
+                if self._persist_every_n_rounds != 0 and (self._current_round + 1) % self._persist_every_n_rounds == 0:
+                    self.log_info(fl_ctx, "Start persist model on server.")
+                    self.fire_event(AppEventType.BEFORE_LEARNABLE_PERSIST, fl_ctx)
+                    self.persistor.save(self._last_learnable, fl_ctx)
+                    self.fire_event(AppEventType.AFTER_LEARNABLE_PERSIST, fl_ctx)
+                    self.log_info(fl_ctx, "End persist model on server.")
+
                 self.log_debug(fl_ctx, "Ending current round={}.".format(self._current_round))
                 if self._snapshot_every_n_rounds != 0 and self._current_round % self._snapshot_every_n_rounds == 0:
                     # Call the self._engine to persist the snapshot of all the FLComponents
