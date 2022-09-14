@@ -13,9 +13,6 @@
 # limitations under the License.
 from typing import List
 
-import pytest
-
-from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.statistics_spec import MetricConfig
 from nvflare.app_common.app_constant import StatisticsConstants as SC
 from nvflare.app_common.workflows.statistics_controller import StatisticsController
@@ -39,8 +36,8 @@ class TestStatisticsController:
 
     def test_target_metrics(self):
 
-        target_metrics: List[MetricConfig] = self.stats_controller._get_target_metrics(
-            SC.ordered_metrics[SC.STATS_1st_METRICS]
+        target_metrics: List[MetricConfig] = StatisticsController._get_target_metrics(
+            self.stats_controller.metric_configs, SC.ordered_metrics[SC.STATS_1st_METRICS]
         )
 
         for mc in target_metrics:
@@ -50,8 +47,8 @@ class TestStatisticsController:
             else:
                 assert mc.config == {"*": {"bins": 10}, "Age": {"bins": 5, "range": [0, 120]}}
 
-        target_metrics: List[MetricConfig] = self.stats_controller._get_target_metrics(
-            SC.ordered_metrics[SC.STATS_2nd_METRICS]
+        target_metrics: List[MetricConfig] = StatisticsController._get_target_metrics(
+            self.stats_controller.metric_configs, SC.ordered_metrics[SC.STATS_2nd_METRICS]
         )
 
         for mc in target_metrics:
@@ -115,5 +112,14 @@ class TestStatisticsController:
             "mean": {"site-2": {}},
             "sum": {"site-3": {}},
             "stddev": {"site-4": {}},
+        }
+        assert self.stats_controller._validate_min_clients(5, client_metrics) == False
+
+        # waiting for 1 more client
+        client_metrics = {
+            "count": {"site-1": {"train": {}}},
+            "mean": {"site-2": {"train": {}}},
+            "sum": {"site-3": {"train": {}}},
+            "stddev": {"site-4": {"train": {}}},
         }
         assert self.stats_controller._validate_min_clients(5, client_metrics) == False

@@ -244,27 +244,39 @@ class StatisticsController(Controller):
         client_task.result = None
 
     def _validate_min_clients(self, min_clients: int, client_metrics: dict) -> bool:
-        self.logger.info("check if min_client result received")
+        self.logger.info("check if min_client result received for all features")
 
         resulting_clients = {}
         for metric in client_metrics:
-            resulting_clients.update({metric: len(client_metrics[metric])})
+            clients = client_metrics[metric].keys()
+            if len(clients) < min_clients:
+                return False
+            for client in clients:
+                ds_feature_metrics = client_metrics[metric][client]
+                for ds_name in ds_feature_metrics:
+                    if ds_name not in resulting_clients:
+                        resulting_clients[ds_name] = set()
 
-        for metric in resulting_clients:
-            if resulting_clients[metric] < min_clients:
+                    if ds_feature_metrics[ds_name]:
+                        resulting_clients[ds_name].update([client])
+
+        for ds in resulting_clients:
+            if len(resulting_clients[ds]) < min_clients:
                 return False
         return True
 
     def post_fn(self, task_name: str, fl_ctx: FLContext):
 
-        if not self._validate_min_clients(self.min_clients, self.client_metrics):
+        ok_to_proceed = self._validate_min_clients(self.min_clients, self.client_metrics)
+        if not ok_to_proceed:
             self.system_panic(f"not all required {self.min_clients} received, abort the job.", fl_ctx)
+        else:
+            self.log_info(fl_ctx, "combine all clients' metrics")
+            ds_stats = self._combine_all_metrics()
 
-        self.log_info(fl_ctx, "save statistics result to persistence store")
-        ds_stats = self._combine_all_metrics()
-
-        writer: StatisticsWriter = fl_ctx.get_engine().get_component(self.writer_id)
-        writer.save(ds_stats, overwrite_existing=True, fl_ctx=fl_ctx)
+            self.log_info(fl_ctx, "save statistics result to persistence store")
+            writer: StatisticsWriter = fl_ctx.get_engine().get_component(self.writer_id)
+            writer.save(ds_stats, overwrite_existing=True, fl_ctx=fl_ctx)
 
     def _combine_all_metrics(self):
         result = {}
@@ -313,11 +325,8 @@ class StatisticsController(Controller):
 
         return result
 
-    def _get_target_metrics(self, ordered_metrics) -> List[MetricConfig]:
-        return StatisticsController._get_target_metrics2(self.metric_configs, ordered_metrics)
-
     @staticmethod
-    def _get_target_metrics2(metric_configs: dict, ordered_metrics: list) -> List[MetricConfig]:
+    def _get_target_metrics(metric_configs: dict, ordered_metrics: list) -> List[MetricConfig]:
         # make sure the execution order of the metrics calculation
         targets = []
         if metric_configs:
@@ -346,7 +355,9 @@ class StatisticsController(Controller):
 
     def _prepare_inputs(self, metric_task: str, fl_ctx: FLContext) -> Shareable:
         inputs = Shareable()
-        target_metrics: List[MetricConfig] = self._get_target_metrics(StC.ordered_metrics[metric_task])
+        target_metrics: List[MetricConfig] = StatisticsController._get_target_metrics(
+            self.metric_configs, StC.ordered_metrics[metric_task]
+        )
 
         for tm in target_metrics:
             if tm.name == StC.STATS_HISTOGRAM:
@@ -388,7 +399,6 @@ class StatisticsController(Controller):
             abort_signal:  abort signal
 
         Returns: False, when job is aborted else True
-
         """
 
         # record of each metric, number of clients processed

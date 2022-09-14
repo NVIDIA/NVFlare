@@ -23,7 +23,6 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.statistics_spec import Feature, Histogram, HistogramType, MetricConfig, Statistics
 from nvflare.app_common.app_constant import StatisticsConstants as StC
-from nvflare.app_common.executors.statistics.statistics_executor_exception import StatisticExecutorException
 from nvflare.app_common.statistics.numeric_stats import filter_numeric_features
 from nvflare.app_common.statistics.statisitcs_objects_decomposer import fobs_registration
 from nvflare.fuel.utils import fobs
@@ -163,14 +162,13 @@ class StatisticsExecutor(Executor):
             return make_reply(ReturnCode.EXECUTION_RESULT_ERROR)
 
     def _client_exec(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
-        # client_name = fl_ctx.get_prop(ReservedKey.CLIENT_NAME)
         client_name = fl_ctx.get_identity_name()
         self.log_info(fl_ctx, f"Executing task '{task_name}' for client: '{client_name}'")
         result = Shareable()
         metrics_result = {}
         if task_name == StC.FED_STATS_TASK:
             ds_features = self.get_numeric_features()
-            self.validate(client_name, ds_features, shareable, fl_ctx)
+            validation_results = self.validate(client_name, ds_features, shareable, fl_ctx)
             metric_task = shareable.get(StC.METRIC_TASK_KEY)
             target_metrics: List[MetricConfig] = fobs.loads(shareable.get(StC.STATS_TARGET_METRICS))
             for tm in target_metrics:
@@ -180,9 +178,10 @@ class StatisticsExecutor(Executor):
                     metrics_result[tm.name][ds_name] = {}
                     features: List[Feature] = ds_features[ds_name]
                     for feature in features:
-                        metrics_result[tm.name][ds_name][feature.feature_name] = fn(
-                            ds_name, feature.feature_name, tm, shareable, fl_ctx
-                        )
+                        if validation_results[ds_name][feature.feature_name]:
+                            metrics_result[tm.name][ds_name][feature.feature_name] = fn(
+                                ds_name, feature.feature_name, tm, shareable, fl_ctx
+                            )
 
             result[StC.METRIC_TASK_KEY] = metric_task
             if metric_task == StC.STATS_1st_METRICS:
@@ -199,18 +198,24 @@ class StatisticsExecutor(Executor):
 
     def validate(
         self, client_name: str, ds_features: Dict[str, List[Feature]], shareable: Shareable, fl_ctx: FLContext
-    ):
+    ) -> Dict[str, Dict[str, bool]]:
         count_config = MetricConfig(StC.STATS_COUNT, {})
+        result = {}
         for ds_name in ds_features:
+            result[ds_name] = {}
             features = ds_features[ds_name]
             for feature in features:
                 feature_name = feature.feature_name
                 count = self.get_count(ds_name, feature.feature_name, count_config, shareable, fl_ctx)
+                result[ds_name][feature_name] = True
                 if count < self.min_count:
-                    raise StatisticExecutorException(
-                        f" dataset {ds_name} feature '{feature_name}' item count is "
+                    result[ds_name][feature_name] = False
+                    self.logger.info(
+                        f"dataset {ds_name} feature '{feature_name}' item count is "
                         f"less than required minimum count {self.min_count} for client {client_name} "
                     )
+
+        return result
 
     def get_count(
         self, dataset_name: str, feature_name: str, metric_config: MetricConfig, inputs: Shareable, fl_ctx: FLContext

@@ -100,7 +100,7 @@ class TestMetricConfigDecomposer:
         from nvflare.app_common.workflows.statistics_controller import StatisticsController
 
         ordered_metrics = StatisticsConstants.ordered_metrics[StatisticsConstants.STATS_1st_METRICS]
-        target_configs: List[MetricConfig] = StatisticsController._get_target_metrics2(config_dict, ordered_metrics)
+        target_configs: List[MetricConfig] = StatisticsController._get_target_metrics(config_dict, ordered_metrics)
         o = fobs.dumps(target_configs)
         target_configs1 = fobs.loads(o)
         assert target_configs == target_configs1
