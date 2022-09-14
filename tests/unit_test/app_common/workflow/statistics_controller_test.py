@@ -11,11 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from typing import List
+
 import pytest
 
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.statistics_spec import MetricConfig
 from nvflare.app_common.app_constant import StatisticsConstants as SC
+from nvflare.app_common.workflows.statistics_controller import StatisticsController
 from nvflare.fuel.utils import fobs
 
 from .mock_statistics_controller import MockStatisticsController
@@ -33,16 +36,6 @@ class TestStatisticsController:
             "histogram": {"*": {"bins": 10}, "Age": {"bins": 5, "range": [0, 120]}},
         }
         cls.stats_controller = MockStatisticsController(metric_configs=metric_configs, writer_id="")
-
-    @classmethod
-    def teardown_class(cls):
-        print("starting class: {} execution".format(cls.__name__))
-
-    def setup_method(self, method):
-        print("starting execution of tc: {}".format(method.__name__))
-
-    def teardown_method(self, method):
-        pass
 
     def test_target_metrics(self):
 
@@ -80,7 +73,7 @@ class TestStatisticsController:
         import time
 
         t0 = time.time()
-        self.stats_controller._wait_for_all_results(0.5, 3, client_metrics, 0.1)
+        StatisticsController._wait_for_all_results(self.stats_controller.logger, 0.5, 3, client_metrics, 0.1)
         t = time.time()
         second_spent = t - t0
         # for 4 metrics, each have 0.5 second timeout
@@ -89,7 +82,12 @@ class TestStatisticsController:
     def test_prepare_input(self):
         xs = self.stats_controller._prepare_inputs(SC.STATS_1st_METRICS, None)
         assert xs[SC.METRIC_TASK_KEY] == SC.STATS_1st_METRICS
-        assert fobs.loads(xs[SC.STATS_TARGET_METRICS]).sort() == SC.ordered_metrics[SC.STATS_1st_METRICS].sort()
+        rhs = SC.ordered_metrics[SC.STATS_1st_METRICS]
+        rhs.sort()
+        target_metrics: List[MetricConfig] = fobs.loads(xs[SC.STATS_TARGET_METRICS])
+        lhs = [mc.name for mc in target_metrics]
+        lhs.sort()
+        assert lhs == rhs
 
         # simulate aggregation and populate the global results
         self.stats_controller.global_metrics[SC.STATS_COUNT] = {"train": {"Age": 100}, "test": {"Age": 10}}
@@ -102,7 +100,12 @@ class TestStatisticsController:
 
         xs = self.stats_controller._prepare_inputs(SC.STATS_2nd_METRICS, None)
         assert xs[SC.METRIC_TASK_KEY] == SC.STATS_2nd_METRICS
-        assert fobs.loads(xs[SC.STATS_TARGET_METRICS]).sort() == SC.ordered_metrics[SC.STATS_2nd_METRICS].sort()
+        rhs = SC.ordered_metrics[SC.STATS_2nd_METRICS]
+        rhs.sort()
+        target_metrics: List[MetricConfig] = fobs.loads(xs[SC.STATS_TARGET_METRICS])
+        lhs = [mc.name for mc in target_metrics]
+        lhs.sort()
+        assert lhs == rhs
 
     def test_validate_min_clients(self):
 

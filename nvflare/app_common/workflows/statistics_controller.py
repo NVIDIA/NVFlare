@@ -152,8 +152,8 @@ class StatisticsController(Controller):
         self.metrics_task_flow(abort_signal, fl_ctx, StC.STATS_1st_METRICS)
         self.metrics_task_flow(abort_signal, fl_ctx, StC.STATS_2nd_METRICS)
 
-        if not self._wait_for_all_results(
-            self.result_wait_timeout, self.min_clients, self.client_metrics, abort_signal
+        if not StatisticsController._wait_for_all_results(
+            self.logger, self.result_wait_timeout, self.min_clients, self.client_metrics, 1.0, abort_signal
         ):
             return False
 
@@ -367,8 +367,9 @@ class StatisticsController(Controller):
 
         return inputs
 
+    @staticmethod
     def _wait_for_all_results(
-        self,
+        logger,
         result_wait_timeout: float,
         requested_client_size: int,
         client_metrics: dict,
@@ -386,7 +387,7 @@ class StatisticsController(Controller):
             client_metrics: client specific metrics received so far
             abort_signal:  abort signal
 
-        Returns:
+        Returns: False, when job is aborted else True
 
         """
 
@@ -407,7 +408,7 @@ class StatisticsController(Controller):
                         return False
 
                     msg = f"not all client received the metric {m}, need to wait for {sleep_time} seconds."
-                    self.logger.info(msg)
+                    logger.info(msg)
                     time.sleep(sleep_time)
                     t += sleep_time
                     # check and update number of client processed for metric again
