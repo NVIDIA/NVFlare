@@ -13,14 +13,10 @@
 # limitations under the License.
 from typing import List
 
-import pytest
-
-from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.statistics_spec import MetricConfig
 from nvflare.app_common.app_constant import StatisticsConstants as SC
 from nvflare.app_common.workflows.statistics_controller import StatisticsController
 from nvflare.fuel.utils import fobs
-
 from .mock_statistics_controller import MockStatisticsController
 
 

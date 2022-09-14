@@ -154,6 +154,7 @@ class StatisticsController(Controller):
 
         if not StatisticsController._wait_for_all_results(
             self.logger, self.result_wait_timeout, self.min_clients, self.client_metrics, 1.0, abort_signal
+
         ):
             return False
 
@@ -369,12 +370,12 @@ class StatisticsController(Controller):
 
     @staticmethod
     def _wait_for_all_results(
-        logger,
-        result_wait_timeout: float,
-        requested_client_size: int,
-        client_metrics: dict,
-        sleep_time: float = 1,
-        abort_signal=None,
+            logger,
+            result_wait_timeout: float,
+            requested_client_size: int,
+            client_metrics: dict,
+            sleep_time: float = 1,
+            abort_signal=None,
     ) -> bool:
         """
             for each metric, we check if the number of requested clients (min_clients or all clients)
@@ -388,7 +389,6 @@ class StatisticsController(Controller):
             abort_signal:  abort signal
 
         Returns: False, when job is aborted else True
-
         """
 
         # record of each metric, number of clients processed
