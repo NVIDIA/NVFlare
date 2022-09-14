@@ -33,6 +33,8 @@ class CyclicController(Controller):
         persistor_id="persistor",
         shareable_generator_id="shareable_generator",
         task_name="train",
+        task_check_period: float = 0.5,
+        snapshot_every_n_rounds: int = 1,
     ):
         """A sample implementation to demonstrate how to use relay method for Cyclic Federated Learning.
 
@@ -44,11 +46,15 @@ class CyclicController(Controller):
                 Defaults to "persistor".
             shareable_generator_id (str, optional): id of shareable generator. Defaults to "shareable_generator".
             task_name (str, optional): the task name that clients know how to handle. Defaults to "train".
+            task_check_period (float, optional): interval for checking status of tasks. Defaults to 0.5.
+            snapshot_every_n_rounds (int, optional): persist the server state every n rounds. Defaults to 1.
+                If n is 0 then no persist.
 
         Raises:
             TypeError: when any of input arguments does not have correct type
         """
-        super().__init__()
+        super().__init__(task_check_period=task_check_period)
+
         if not isinstance(num_rounds, int):
             raise TypeError("num_rounds must be int but got {}".format(type(num_rounds)))
         if not isinstance(task_assignment_timeout, int):
@@ -70,6 +76,7 @@ class CyclicController(Controller):
         self.task_name = task_name
         self.persistor = None
         self.shareable_generator = None
+        self._snapshot_every_n_rounds = snapshot_every_n_rounds
 
     def start_controller(self, fl_ctx: FLContext):
         self.log_debug(fl_ctx, "starting controller")
@@ -139,7 +146,9 @@ class CyclicController(Controller):
                 )
                 self.persistor.save(self._last_learnable, fl_ctx)
                 self.log_debug(fl_ctx, "Ending current round={}.".format(self._current_round))
-                self._engine.persist_components(fl_ctx, completed=False)
+                if self._snapshot_every_n_rounds != 0 and self._current_round % self._snapshot_every_n_rounds == 0:
+                    # Call the self._engine to persist the snapshot of all the FLComponents
+                    self._engine.persist_components(fl_ctx, completed=False)
 
             self.log_debug(fl_ctx, "Cyclic ended.")
         except BaseException as e:

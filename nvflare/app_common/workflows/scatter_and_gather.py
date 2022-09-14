@@ -85,7 +85,7 @@ class ScatterAndGather(Controller):
             TypeError: when any of input arguments does not have correct type
             ValueError: when any of input arguments is out of range
         """
-        Controller.__init__(self, task_check_period=task_check_period)
+        super().__init__(task_check_period=task_check_period)
 
         # Check arguments
         if not isinstance(min_clients, int):
