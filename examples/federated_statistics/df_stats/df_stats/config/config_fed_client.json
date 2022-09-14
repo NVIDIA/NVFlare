@@ -12,7 +12,8 @@
           "generator_id": "df_stats_generator",
           "min_count": 10,
           "min_random": 0.1,
-          "max_random": 0.3
+          "max_random": 0.3,
+          "max_bins_percent": 0.1
         }
       }
     }

@@ -11,14 +11,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import pytest
+
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.statistics_spec import MetricConfig
 from nvflare.app_common.app_constant import StatisticsConstants as SC
+from nvflare.fuel.utils import fobs
 
-from .mock_global_statistics import MockGlobalStatistics
+from .mock_statistics_controller import MockStatisticsController
 
 
-class TestGlobalStatistics:
+class TestStatisticsController:
     @classmethod
     def setup_class(cls):
         print("starting class: {} execution".format(cls.__name__))
@@ -29,7 +32,7 @@ class TestGlobalStatistics:
             "stddev": {},
             "histogram": {"*": {"bins": 10}, "Age": {"bins": 5, "range": [0, 120]}},
         }
-        cls.stats_controller = MockGlobalStatistics(metric_configs=metric_configs, writer_id="")
+        cls.stats_controller = MockStatisticsController(metric_configs=metric_configs, writer_id="")
 
     @classmethod
     def teardown_class(cls):
@@ -65,10 +68,28 @@ class TestGlobalStatistics:
             else:
                 assert mc.config == {"*": {"bins": 10}, "Age": {"bins": 5, "range": [0, 120]}}
 
+    def test_wait_for_all_results(self):
+
+        # waiting for 1 more client
+        client_metrics = {
+            "count": {"site-1": {}},
+            "mean": {"site-2": {}},
+            "sum": {"site-3": {}},
+            "stddev": {"site-4": {}},
+        }
+        import time
+
+        t0 = time.time()
+        self.stats_controller._wait_for_all_results(0.5, 3, client_metrics, 0.1)
+        t = time.time()
+        second_spent = t - t0
+        # for 4 metrics, each have 0.5 second timeout
+        assert second_spent > 0.5 * 4
+
     def test_prepare_input(self):
         xs = self.stats_controller._prepare_inputs(SC.STATS_1st_METRICS, None)
         assert xs[SC.METRIC_TASK_KEY] == SC.STATS_1st_METRICS
-        assert xs[SC.STATS_TARGET_METRICS].sort() == SC.ordered_metrics[SC.STATS_1st_METRICS].sort()
+        assert fobs.loads(xs[SC.STATS_TARGET_METRICS]).sort() == SC.ordered_metrics[SC.STATS_1st_METRICS].sort()
 
         # simulate aggregation and populate the global results
         self.stats_controller.global_metrics[SC.STATS_COUNT] = {"train": {"Age": 100}, "test": {"Age": 10}}
@@ -81,4 +102,15 @@ class TestGlobalStatistics:
 
         xs = self.stats_controller._prepare_inputs(SC.STATS_2nd_METRICS, None)
         assert xs[SC.METRIC_TASK_KEY] == SC.STATS_2nd_METRICS
-        assert xs[SC.STATS_TARGET_METRICS].sort() == SC.ordered_metrics[SC.STATS_2nd_METRICS].sort()
+        assert fobs.loads(xs[SC.STATS_TARGET_METRICS]).sort() == SC.ordered_metrics[SC.STATS_2nd_METRICS].sort()
+
+    def test_validate_min_clients(self):
+
+        # waiting for 1 more client
+        client_metrics = {
+            "count": {"site-1": {}},
+            "mean": {"site-2": {}},
+            "sum": {"site-3": {}},
+            "stddev": {"site-4": {}},
+        }
+        assert self.stats_controller._validate_min_clients(5, client_metrics) == False

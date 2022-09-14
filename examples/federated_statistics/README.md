@@ -20,6 +20,8 @@ A client will only need to implement the "Statistics" class from statistics_spec
 * 
 * Output directory
   * The result will be saved to job workspace, which can be downloaded via download_job command 
+  * The result is in json format, which can be loaded in pandas data frame. 
+  * We provided some visualization utilities, one can visualize via jupyter notebook
 
 # How it works
 

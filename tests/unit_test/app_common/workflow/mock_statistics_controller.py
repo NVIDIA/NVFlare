@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 from typing import Dict, List
 
 from nvflare.apis.client import Client
@@ -21,9 +22,9 @@ from nvflare.apis.signal import Signal
 from nvflare.app_common.workflows.statistics_controller import StatisticsController
 
 
-class MockGlobalStatistics(StatisticsController):
+class MockStatisticsController(StatisticsController):
     def __init__(self, metric_configs: Dict[str, dict], writer_id: str):
-        super(MockGlobalStatistics, self).__init__(metric_configs, writer_id)
+        super(MockStatisticsController, self).__init__(metric_configs, writer_id)
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         pass
@@ -39,7 +40,7 @@ class MockGlobalStatistics(StatisticsController):
     ):
         pass
 
-    def metrics_task_flow(self, abort_signal: Signal, fl_ctx: FLContext, clients: List[Client], metric_task: str):
+    def metrics_task_flow(self, abort_signal: Signal, fl_ctx: FLContext, metric_task: str):
         pass
 
     def results_cb(self, client_task: ClientTask, fl_ctx: FLContext):

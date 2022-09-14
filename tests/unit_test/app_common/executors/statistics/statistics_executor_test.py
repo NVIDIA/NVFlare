@@ -22,14 +22,17 @@ from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.statistics_spec import Feature, HistogramType, MetricConfig
 from nvflare.app_common.executors.statistics.statistics_executor import StatisticsExecutor
 from nvflare.app_common.executors.statistics.statistics_executor_exception import StatisticExecutorException
-
-from .mock_df_stats_generator import MockDFStatistics
+from tests.unit_test.app_common.executors.statistics.mock_df_stats_executor import MockDFStatistics
 
 
 class MockStatsExecutor(StatisticsExecutor):
-    def __init__(self, min_count, min_random, max_random):
+    def __init__(self, min_count, min_random, max_random, max_bins_percent):
         super(MockStatsExecutor, self).__init__(
-            generator_id="", min_count=min_count, min_random=min_random, max_random=max_random
+            generator_id="",
+            min_count=min_count,
+            min_random=min_random,
+            max_random=max_random,
+            max_bins_percent=max_bins_percent,
         )
 
     def initialize(self, fl_ctx: FLContext):
@@ -41,7 +44,7 @@ class TestStatisticsExecutor:
     @classmethod
     def setup_class(cls):
         print("starting class: {} execution".format(cls.__name__))
-        cls.stats_executor = MockStatsExecutor(min_count=1, min_random=0.1, max_random=0.3)
+        cls.stats_executor = MockStatsExecutor(min_count=1, min_random=0.1, max_random=0.3, max_bins_percent=0.7)
         cls.stats_executor.initialize(None)
 
     @classmethod
@@ -61,7 +64,7 @@ class TestStatisticsExecutor:
         assert len(features["test"]) == 1
 
     def test_validate(self):
-        stats_executor = MockStatsExecutor(min_count=7, min_random=0.1, max_random=0.3)
+        stats_executor = MockStatsExecutor(min_count=7, min_random=0.1, max_random=0.3, max_bins_percent=0.5)
         stats_executor.initialize(None)
 
         with pytest.raises(StatisticExecutorException) as exc_info:
@@ -126,11 +129,12 @@ class TestStatisticsExecutor:
         with pytest.raises(ValueError) as e:
             histogram = self.stats_executor.get_histogram("train", "Age", metric_config, inputs, None)
         assert (
-            str(e.value) == "number of bins: 10 needs to smaller than item "
-            "count: 6 for feature 'Age' in dataset 'train'"
+            # local count * max_bins_percent = 6* 0.7 = 4.2 -> round to 4.
+            str(e.value) == "number of bins: 10 needs to be smaller than item "
+            "count: 4 for feature 'Age' in dataset 'train'"
         )
 
-        hist_config = {"*": {"bins": 5}}
+        hist_config = {"*": {"bins": 3}}
         inputs = Shareable()
         inputs["min"] = {"train": {"Age": 0}}
         inputs["max"] = {"train": {"Age": 50}}
@@ -138,7 +142,7 @@ class TestStatisticsExecutor:
         metric_config = MetricConfig("histogram", hist_config)
         histogram = self.stats_executor.get_histogram("train", "Age", metric_config, inputs, None)
         assert histogram.hist_type == HistogramType.STANDARD
-        assert len(histogram.bins) == 5
+        assert len(histogram.bins) == 3
 
     def test_get_max_value(self):
         est_max_value = self.stats_executor._get_max_value(100)
