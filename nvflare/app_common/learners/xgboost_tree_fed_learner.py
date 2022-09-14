@@ -259,3 +259,9 @@ class XGBoostTreeFedLearner(Learner):
 
         self.writer.flush()
         return new_shareable
+
+    def finalize(self, fl_ctx: FLContext):
+        del(self.bst)
+        del(self.dmat_train)
+        del(self.dmat_valid)
+        self.log_info(fl_ctx, "Freed training resources")
