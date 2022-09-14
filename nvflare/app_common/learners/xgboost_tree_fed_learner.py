@@ -165,6 +165,8 @@ class XGBoostTreeFedLearner(Learner):
         # return the whole boosting tree series
         self.bst.update(self.dmat_train, self.bst.num_boosted_rounds())
         eval_results = self.bst.eval_set(evals=[(self.dmat_train, 'train'), (self.dmat_valid, 'valid')],iteration=self.bst.num_boosted_rounds()-1)
+        self.log_info(fl_ctx,
+                      eval_results)
         auc = float(eval_results.split("\t")[2].split(":")[1])
         self.log_info(
             fl_ctx,
