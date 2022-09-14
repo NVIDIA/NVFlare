@@ -62,6 +62,13 @@ def clone_poc_folder(src_poc_folder, dest_poc_folder):
         copy_from_src(src_poc_folder, dest_poc_folder)
 
     for root, dirs, files in os.walk(dest_poc_folder):
+        for dir in dirs:
+            if dir == "admin":
+                try:
+                    os.mkdir(os.path.join(root, dir, "local"))
+                except BaseException:
+                    pass
+                break
         for file in files:
             if file.endswith(".sh"):
                 os.chmod(os.path.join(root, file), 0o755)
