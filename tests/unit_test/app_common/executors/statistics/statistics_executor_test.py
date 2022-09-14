@@ -47,16 +47,6 @@ class TestStatisticsExecutor:
         cls.stats_executor = MockStatsExecutor(min_count=1, min_random=0.1, max_random=0.3, max_bins_percent=0.7)
         cls.stats_executor.initialize(None)
 
-    @classmethod
-    def teardown_class(cls):
-        print("starting class: {} execution".format(cls.__name__))
-
-    def setup_method(self, method):
-        print("starting execution of tc: {}".format(method.__name__))
-
-    def teardown_method(self, method):
-        print("teardown")
-
     def test_get_numeric_features(self):
         features: Dict[str, List[Feature]] = self.stats_executor.get_numeric_features()
         assert len(features["train"]) == 1
@@ -64,13 +54,13 @@ class TestStatisticsExecutor:
         assert len(features["test"]) == 1
 
     def test_validate(self):
+        # data has 6 rows.
         stats_executor = MockStatsExecutor(min_count=7, min_random=0.1, max_random=0.3, max_bins_percent=0.5)
         stats_executor.initialize(None)
-
-        with pytest.raises(StatisticExecutorException) as exc_info:
-            stats_executor.validate("site-1", stats_executor.get_numeric_features(), {}, None)
-            msg = "nvflare.app_common.validation_exception.ValidationException:  dataset train featureAge item count is less than required minimum count 7 for client site-1"
-            assert exc_info == msg
+        results = stats_executor.validate("site-1", stats_executor.get_numeric_features(), {}, None)
+        for ds in results:
+            for feature in results[ds]:
+                assert results[ds][feature] == False
 
     def test_method_implementation(self):
         with pytest.raises(NotImplementedError):

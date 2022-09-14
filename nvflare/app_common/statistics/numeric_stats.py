@@ -43,10 +43,10 @@ def get_global_stats(global_metrics: dict, client_metrics: dict, metric_task: st
     ordered_metrics = [metric for metric in ordered_target_metrics if metric in client_metrics]
 
     for metric in ordered_metrics:
-        stats = client_metrics[metric]
         if metric not in global_metrics:
             global_metrics[metric] = {}
 
+        stats = client_metrics[metric]
         if metric == StC.STATS_COUNT or metric == StC.STATS_SUM:
             for client_name in stats:
                 global_metrics[metric] = accumulate_metrics(stats[client_name], global_metrics[metric])
