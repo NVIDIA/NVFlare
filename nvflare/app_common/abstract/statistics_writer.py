@@ -20,7 +20,7 @@ from nvflare.apis.fl_context import FLContext
 
 class StatisticsWriter(FLComponent, ABC):
     @abstractmethod
-    def save(self, data: bytes, overwrite_existing: bool, fl_ctx: FLContext):
+    def save(self, data: dict, overwrite_existing: bool, fl_ctx: FLContext):
         """
             save data
         :param data: the data to be saved
