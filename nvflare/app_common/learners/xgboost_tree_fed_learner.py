@@ -43,6 +43,7 @@ class XGBoostTreeFedLearner(Learner):
         max_depth: int = 8,
         eval_metric: str = "auc",
         nthread: int = 16,
+        tree_method: str = "hist",
         train_task_name: str = AppConstants.TASK_TRAIN,
     ):
         super().__init__()
@@ -232,12 +233,8 @@ class XGBoostTreeFedLearner(Learner):
                 f"Client {self.client_id} converted global model to json ",
             )
             
-            if self.bst:
-                self.bst.load_model(loadable_model)
-                self.bst.load_config(self.config)
-            else:
-                # no booster state found, so initialize
-                self.bst = xgb.Booster(params = param, model_file = loadable_model)
+            self.bst.load_model(loadable_model)
+            self.bst.load_config(self.config)
     
             self.log_info(
                 fl_ctx,
