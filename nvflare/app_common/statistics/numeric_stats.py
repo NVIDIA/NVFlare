@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 from math import sqrt
 from typing import Dict, List, TypeVar
 
@@ -39,8 +40,6 @@ def get_global_feature_data_types(
 def get_global_stats(global_metrics: dict, client_metrics: dict, metric_task: str) -> dict:
     # we need to calculate the metrics in specified order
     ordered_target_metrics = StC.ordered_metrics[metric_task]
-    print("ordered target metrics =", ordered_target_metrics)
-
     ordered_metrics = [metric for metric in ordered_target_metrics if metric in client_metrics]
 
     for metric in ordered_metrics:
@@ -79,9 +78,7 @@ def get_global_stats(global_metrics: dict, client_metrics: dict, metric_task: st
     return global_metrics
 
 
-def accumulate_metrics(
-    metrics: Dict[str, Dict[str, int]], global_metrics: Dict[str, Dict[str, int]]
-) -> Dict[str, Dict[str, int]]:
+def accumulate_metrics(metrics: dict, global_metrics: dict) -> dict:
     for ds_name in metrics:
         if ds_name not in global_metrics:
             global_metrics[ds_name] = {}
@@ -96,9 +93,7 @@ def accumulate_metrics(
     return global_metrics
 
 
-def get_min_or_max_values(
-    metrics: Dict[str, Dict[str, int]], global_metrics: Dict[str, Dict[str, int]], fn2
-) -> Dict[str, Dict[str, int]]:
+def get_min_or_max_values(metrics: dict, global_metrics: dict, fn2) -> dict:
     """
         use 2 argument function to calculate fn2(global, client), example, min, max
         note: the global min/max values are min/max of all clients and all datasets
@@ -156,7 +151,7 @@ def accumulate_hists(
 
         for feature in feature_hists:
             hist: Histogram = feature_hists[feature]
-            if feature not in global_hists:
+            if feature not in global_hists[ds_name]:
                 g_bins = []
                 for bucket in hist.bins:
                     g_bins.append(Bin(bucket.low_value, bucket.high_value, bucket.sample_count))
@@ -183,7 +178,7 @@ def accumulate_hists(
     return global_hists
 
 
-def get_means(sums: Dict[str, Dict[str, float]], counts: Dict[str, Dict[str, int]]) -> Dict[str, Dict[str, float]]:
+def get_means(sums: dict, counts: dict) -> dict:
     means = {}
     for ds_name in sums:
         means[ds_name] = {}
