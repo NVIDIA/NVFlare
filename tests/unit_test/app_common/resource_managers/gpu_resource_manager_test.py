@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
-import os
 import time
 from unittest.mock import patch
 
@@ -24,8 +22,8 @@ from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.app_common.resource_managers.gpu_resource_manager import GPUResourceManager
 
 TEST_SITE_JSON = "_test_site.json"
-NUM_GPU_KEY = "num_gpu"
-GPU_MEM_KEY = "gpu_mem"
+NUM_GPU_KEY = "num_of_gpus"
+GPU_MEM_KEY = "mem_per_gpu_in_GiB"
 
 
 class MockEngine:
@@ -43,13 +41,6 @@ class MockEngine:
 
     def fire_event(self, event_type: str, fl_ctx: FLContext):
         pass
-
-
-def _gen_site_json(gpus, gpu_mem):
-    data = {NUM_GPU_KEY: gpus, GPU_MEM_KEY: gpu_mem}
-    with open(TEST_SITE_JSON, "w") as f:
-        f.write(json.dumps(data, indent=2))
-    return TEST_SITE_JSON
 
 
 def _gen_requirement(gpus, gpu_mem):
@@ -89,9 +80,7 @@ class TestGPUResourceManager:
         expected_reserved_resources,
     ):
         engine = MockEngine()
-        site_json = _gen_site_json(gpus, gpu_mem)
-        gpu_resource_manager = GPUResourceManager(site_config=site_json)
-        os.remove(site_json)
+        gpu_resource_manager = GPUResourceManager(num_of_gpus=gpus, mem_per_gpu_in_GiB=gpu_mem)
         with engine.new_context() as fl_ctx:
             check_result, token = gpu_resource_manager.check_resources(
                 resource_requirement=resource_requirement, fl_ctx=fl_ctx
@@ -105,9 +94,7 @@ class TestGPUResourceManager:
         self, mock_get_host_gpu_ids, gpus, gpu_mem, resource_requirement, expected_reserved_resources
     ):
         engine = MockEngine()
-        site_json = _gen_site_json(gpus, gpu_mem)
-        gpu_resource_manager = GPUResourceManager(site_config=site_json)
-        os.remove(site_json)
+        gpu_resource_manager = GPUResourceManager(num_of_gpus=gpus, mem_per_gpu_in_GiB=gpu_mem)
         with engine.new_context() as fl_ctx:
             _, token = gpu_resource_manager.check_resources(resource_requirement=resource_requirement, fl_ctx=fl_ctx)
         assert expected_reserved_resources == gpu_resource_manager.reserved_resources[token][0]
@@ -120,9 +107,7 @@ class TestGPUResourceManager:
         self, mock_get_host_gpu_ids, gpus, gpu_mem, resource_requirement, expected_reserved_resources
     ):
         engine = MockEngine()
-        site_json = _gen_site_json(gpus, gpu_mem)
-        gpu_resource_manager = GPUResourceManager(site_config=site_json)
-        os.remove(site_json)
+        gpu_resource_manager = GPUResourceManager(num_of_gpus=gpus, mem_per_gpu_in_GiB=gpu_mem)
         with engine.new_context() as fl_ctx:
             _, token = gpu_resource_manager.check_resources(resource_requirement=resource_requirement, fl_ctx=fl_ctx)
         assert expected_reserved_resources == gpu_resource_manager.reserved_resources[token][0]
@@ -137,9 +122,7 @@ class TestGPUResourceManager:
         self, mock_get_host_gpu_ids, gpus, gpu_mem, resource_requirement, expected_reserved_resources
     ):
         engine = MockEngine()
-        site_json = _gen_site_json(gpus, gpu_mem)
-        gpu_resource_manager = GPUResourceManager(site_config=site_json)
-        os.remove(site_json)
+        gpu_resource_manager = GPUResourceManager(num_of_gpus=gpus, mem_per_gpu_in_GiB=gpu_mem)
         with engine.new_context() as fl_ctx:
             check_result, token = gpu_resource_manager.check_resources(
                 resource_requirement=resource_requirement, fl_ctx=fl_ctx
@@ -155,9 +138,7 @@ class TestGPUResourceManager:
 
     def test_check_four_allocate_four(self, mock_get_host_gpu_ids):
         engine = MockEngine()
-        site_json = _gen_site_json(4, 16)
-        gpu_resource_manager = GPUResourceManager(site_config=site_json)
-        os.remove(site_json)
+        gpu_resource_manager = GPUResourceManager(num_of_gpus=4, mem_per_gpu_in_GiB=16)
 
         with engine.new_context() as fl_ctx:
             check1, token1 = gpu_resource_manager.check_resources(
@@ -199,9 +180,7 @@ class TestGPUResourceManager:
 
     def test_check_one_cancel_one_check_four_then_allocate_four(self):
         engine = MockEngine()
-        site_json = _gen_site_json(4, 16)
-        gpu_resource_manager = GPUResourceManager(site_config=site_json)
-        os.remove(site_json)
+        gpu_resource_manager = GPUResourceManager(num_of_gpus=4, mem_per_gpu_in_GiB=16)
         resource_requirement1 = _gen_requirement(1, 8)
         resource_requirement2 = _gen_requirement(4, 8)
 
@@ -227,9 +206,7 @@ class TestGPUResourceManager:
     def test_check_and_timeout(self):
         timeout = 5
         engine = MockEngine()
-        site_json = _gen_site_json(4, 16)
-        gpu_resource_manager = GPUResourceManager(site_config=site_json, expiration_period=timeout)
-        os.remove(site_json)
+        gpu_resource_manager = GPUResourceManager(num_of_gpus=4, mem_per_gpu_in_GiB=16, expiration_period=timeout)
         resource_requirement = _gen_requirement(1, 8)
 
         with engine.new_context() as fl_ctx:

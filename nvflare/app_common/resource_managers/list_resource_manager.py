@@ -47,7 +47,7 @@ class ListResourceManager(BaseResourceManager):
             if not isinstance(resources[k], list):
                 raise TypeError(f"item in resources should be of type list, but got {type(resources[k])}.")
             resource_queue[k] = deque(resources[k])
-        super().__init__(resources=resources, expiration_period=expiration_period)
+        super().__init__(resources=resource_queue, expiration_period=expiration_period)
 
     def _deallocate(self, resources: dict):
         for k, v in resources.items():

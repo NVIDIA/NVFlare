@@ -18,24 +18,22 @@ from typing import List
 
 def use_nvidia_smi(query: str, report_format: str = "csv"):
     try:
-        process = subprocess.Popen(
+        result = subprocess.run(
             ["nvidia-smi", f"--query-gpu={query}", f"--format={report_format}"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             text=True,
         )
-        result, error = process.communicate()
-        rc = process.returncode
+        rc = result.returncode
         if rc > 0:
-            raise Exception(f"Failed to call nvidia-smi with query {query}", result)
+            raise Exception(f"Failed to call nvidia-smi with query {query}", result.stderr)
         else:
-            return result.splitlines()
+            return result.stdout.splitlines()
     except FileNotFoundError as e:
         print(f"Failed to call nvidia-smi: {e}")
     return None
 
 
-def _parse_gpu_mem(result: str, unit: str = "MiB") -> List:
+def _parse_gpu_mem(result: str = None, unit: str = "MiB") -> List:
     gpu_memory = []
     if not result:
         print("Failed to get gpu memory, assume no gpu device.")
