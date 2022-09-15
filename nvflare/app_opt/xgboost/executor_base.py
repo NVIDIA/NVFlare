@@ -83,9 +83,10 @@ class XGBExecutorBase(Executor, ABC):
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
             engine = fl_ctx.get_engine()
-            sp = engine.client.overseer_agent.get_primary_sp()
-            if sp and sp.primary is True:
-                self._server_address = sp.name
+            if engine.client.overseer_agent:
+                sp = engine.client.overseer_agent.get_primary_sp()
+                if sp and sp.primary is True:
+                    self._server_address = sp.name
             self.log_info(fl_ctx, f"server address is {self._server_address}")
 
     def _get_certificates(self, fl_ctx: FLContext):
