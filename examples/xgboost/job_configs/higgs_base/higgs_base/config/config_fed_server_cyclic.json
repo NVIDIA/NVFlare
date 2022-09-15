@@ -2,7 +2,8 @@
   "format_version": 2,
 
   "server": {
-    "heart_beat_timeout": 600
+    "heart_beat_timeout": 600,
+    "task_request_interval": 0.05
   },
 
   "task_data_filters": [],

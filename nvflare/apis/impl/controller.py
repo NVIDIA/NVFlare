@@ -66,7 +66,7 @@ def _check_inputs(task: Task, fl_ctx: FLContext, targets: Union[List[Client], Li
 
 
 class Controller(Responder, ControllerSpec, ABC):
-    def __init__(self, task_check_period=0.5):
+    def __init__(self, task_check_period=0.01):
         """Manage life cycles of tasks and their destinations.
 
         Args:

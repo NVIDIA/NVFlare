@@ -18,7 +18,7 @@ import os
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.abstract.model import ModelLearnable, make_model_learnable
+from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.app_constant import AppConstants
 
@@ -48,14 +48,17 @@ class JSONModelPersistor(ModelPersistor):
             Model object
         """
 
+        var_dict = None
+        model_learnable = make_model_learnable(var_dict, dict())
+
         if os.path.exists(self.save_path):
             self.logger.info("Loading server model")
             with open(self.save_path, "rb") as json_file:
-                model_learnable = json.load(json_file)
+                model = json.load(json_file)
+            model_learnable[ModelLearnableKey.WEIGHTS] = model
         else:
             self.logger.info("Initializing server model as None")
-            var_dict = None
-            model_learnable = make_model_learnable(var_dict, dict())
+            
         return model_learnable
 
     def handle_event(self, event: str, fl_ctx: FLContext):
@@ -72,7 +75,18 @@ class JSONModelPersistor(ModelPersistor):
         """
         if model_learnable:
             if fl_ctx.get_prop(AppConstants.CURRENT_ROUND) == fl_ctx.get_prop(AppConstants.NUM_ROUNDS) - 1:
-                self.logger.info("Saving received model")
+                self.logger.info(f"Saving received model to {os.path.abspath(self.save_path)}")
+                # save 'weights' which is actual model, loadable by xgboost library
+                model = model_learnable[ModelLearnableKey.WEIGHTS]
                 with open(self.save_path, "w") as f:
-                    json.dump(model_learnable, f)
-                self.logger.info("Saved received model")
+                    if isinstance(model, dict):
+                        json.dump(model, f)
+                    elif isinstance(model, bytes) or isinstance(model, bytearray) or isinstance(model, str):
+                        # should already be json, but double check by loading and dumping at some extra cost
+                        json.dump(json.loads(model), f)
+                    else:
+                        self.logger.error('unknown model format')
+                        self.system_panic(reason="No global base model!", fl_ctx=fl_ctx)
+
+
+               

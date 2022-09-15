@@ -27,7 +27,7 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.learner_spec import Learner
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.aggregators.xgboost_bagging_aggregator import update_model
+from nvflare.app_common.shareablegenerators.xgb_model_shareable_generator import update_model
 
 
 class XGBoostTreeFedLearner(Learner):
@@ -183,6 +183,7 @@ class XGBoostTreeFedLearner(Learner):
     ) -> Shareable:
 
         if abort_signal.triggered:
+            self.finalize(fl_ctx)
             return make_reply(ReturnCode.TASK_ABORTED)
 
         # retrieve current global model download from server's shareable
@@ -206,7 +207,7 @@ class XGBoostTreeFedLearner(Learner):
                     evals=[(self.dmat_valid, "validate"), (self.dmat_train, "train")],
                 )
             else:
-                loadable_model = bytearray(model_update['model'])
+                loadable_model = bytearray(model_update['model_data'])
                 bst = xgb.train(
                     param,
                     self.dmat_train,
@@ -222,13 +223,13 @@ class XGBoostTreeFedLearner(Learner):
                 f"Client {self.client_id} model updates received from server",
             )
             if self.training_mode == "bagging":
-                model_update = model_update['updates']
-                for update in model_update:
-                    self.global_model_as_dict = update_model(self.global_model_as_dict, update)
+                model_updates = model_update['model_data']
+                for update in model_updates:
+                    self.global_model_as_dict = update_model(self.global_model_as_dict, json.loads(update))
 
                 loadable_model = bytearray(json.dumps(self.global_model_as_dict), 'utf-8')
             else:
-                loadable_model = bytearray(model_update['model'])
+                loadable_model = bytearray(model_update['model_data'])
 
             self.log_info(
                 fl_ctx,
@@ -253,7 +254,7 @@ class XGBoostTreeFedLearner(Learner):
 
         # report updated model in shareable
  
-        dxo = DXO(data_kind=DataKind.XGB_MODEL, data={'model': self.local_model})
+        dxo = DXO(data_kind=DataKind.XGB_MODEL, data={'model_data': self.local_model})
         self.log_info(fl_ctx, "Local epochs finished. Returning shareable")
         new_shareable = dxo.to_shareable()
 
@@ -261,6 +262,7 @@ class XGBoostTreeFedLearner(Learner):
         return new_shareable
 
     def finalize(self, fl_ctx: FLContext):
+        # freeing resources in finalize avoids seg fault during shutdown of gpu mode
         del(self.bst)
         del(self.dmat_train)
         del(self.dmat_valid)

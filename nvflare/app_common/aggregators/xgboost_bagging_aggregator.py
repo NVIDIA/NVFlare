@@ -22,26 +22,6 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.app_constant import AppConstants
-
-
-def update_model(prev_model, update_bytes):
-    model_update = json.loads(update_bytes)
-    if not prev_model:
-        model_update["learner"]["gradient_booster"]["model"]["gbtree_model_param"]["num_parallel_tree"] = "1"
-        return model_update
-    else:
-        # Always 1 tree, so [0]
-        best_iteration = int(prev_model['learner']['attributes']['best_iteration'])
-        best_ntree_limit = int(prev_model['learner']['attributes']['best_ntree_limit'])
-        num_trees = int(prev_model['learner']['gradient_booster']['model']['gbtree_model_param']['num_trees'])
-        prev_model['learner']['attributes']['best_iteration']=str(best_iteration + 1)
-        prev_model['learner']['attributes']['best_ntree_limit'] = str(best_ntree_limit + 1)
-        prev_model['learner']['gradient_booster']['model']['gbtree_model_param']['num_trees'] = str(num_trees + 1)
-        append_info = model_update['learner']['gradient_booster']['model']['trees'][0]
-        append_info['id'] = num_trees
-        prev_model['learner']['gradient_booster']['model']['trees'].append(append_info)
-        prev_model['learner']['gradient_booster']['model']['tree_info'].append(0)
-        return prev_model
                 
 class XGBoostBaggingAggregator(Aggregator):
     def __init__(
@@ -61,6 +41,7 @@ class XGBoostBaggingAggregator(Aggregator):
         self.logger.debug(f"expected data kind: {DataKind.XGB_MODEL}")
         self.history = []
         self.local_models = []
+        self.local_models_as_dict = []
         self.global_model = None
         self.expected_data_kind = DataKind.XGB_MODEL
         self.num_trees = 0
@@ -120,8 +101,9 @@ class XGBoostBaggingAggregator(Aggregator):
             self.log_error(fl_ctx, "no data to aggregate")
             return False
         else:
-            self.local_models.append(data['model'])
-            self.global_model = update_model(self.global_model, data['model'])
+            self.local_models.append(data['model_data'])
+            self.local_models_as_dict.append(json.loads(data['model_data']))
+            #self.global_model = update_model(self.global_model, data['model_data'])
 
             self.history.append(
                 {
@@ -150,9 +132,8 @@ class XGBoostBaggingAggregator(Aggregator):
         self.history = []
         self.log_debug(fl_ctx, "End aggregation")
         local_updates = self.local_models
+        local_updates_as_dict = self.local_models_as_dict
         self.local_models = []
-        if(fl_ctx.get_prop(AppConstants.CURRENT_ROUND) < fl_ctx.get_prop(AppConstants.NUM_ROUNDS) - 1):
-            dxo = DXO(data_kind=self.expected_data_kind, data={'updates': local_updates})
-        else:
-            dxo = DXO(data_kind=self.expected_data_kind, data=self.global_model)
+        self.local_models_as_dict = []
+        dxo = DXO(data_kind=self.expected_data_kind, data={'model_data': local_updates, 'model_data_dict': local_updates_as_dict})
         return dxo.to_shareable()

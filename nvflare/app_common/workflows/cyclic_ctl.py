@@ -140,7 +140,7 @@ class CyclicController(Controller):
                 )
                 self.persistor.save(self._last_learnable, fl_ctx)
                 self.log_debug(fl_ctx, "Ending current round={}.".format(self._current_round))
-                self._engine.persist_components(fl_ctx, completed=False)
+                #self._engine.persist_components(fl_ctx, completed=False)
 
             self.log_debug(fl_ctx, "Cyclic ended.")
         except BaseException as e:
