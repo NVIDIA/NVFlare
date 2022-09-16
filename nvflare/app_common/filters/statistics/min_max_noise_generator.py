@@ -13,27 +13,51 @@
 # limitations under the License.
 
 import random
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
-from nvflare.apis.dxo import DXO, DataKind
-from nvflare.apis.dxo_filter import DXOFilter
+from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable
+from nvflare.app_common.abstract.statistics_spec import MetricConfig
 from nvflare.app_common.app_constant import StatisticsConstants as StC
-from nvflare.fuel.utils import fobs
+from nvflare.app_common.filters.statistics.metrics_privacy_filter import MetricsPrivacyFilter
+from nvflare.app_common.statistics.metrics_config_utils import get_feature_bin_range
 
 
-class AddNoiseToMinMax(DXOFilter):
+class AddNoiseToMinMax(FLComponent, MetricsPrivacyFilter):
+    def __init__(self, min_noise_level: float, max_noise_level: float):
+        """
+        min_noise_level: minimum noise -- used to protect min/max values before sending to server
+        max_noise_level: maximum noise -- used to protect min/max values before sending to server
+                       min/max random is used to generate random noise between (min_random and max_random).
+                       for example, the random noise is to be within (0.1 and 0.3),i.e. 10% to 30% level. These noise
+                       will make local min values smaller than the true local min values, and max values larger than
+                       the true local max values. As result, the estimate global max and min values (i.e. with noise)
+                       are still bound the true global min/max values, in such that
 
-    def __init__(self,
-                 min_noise_level: float,
-                 max_noise_level: float):
+                          est. global min value <
+                                    true global min value <
+                                              client's min value <
+                                                      client's max value <
+                                                              true global max <
+                                                                       est. global max value
+        """
         super().__init__()
         self.noise_level = (min_noise_level, max_noise_level)
         self.noise_generators = {
             StC.STATS_MIN: AddNoiseToMinMax._get_min_value,
-            StC.STATS_MAX: AddNoiseToMinMax._get_max_value
+            StC.STATS_MAX: AddNoiseToMinMax._get_max_value,
         }
+        self.validate_inputs()
+
+    def validate_inputs(self):
+        for i in range(0, 2):
+            if self.noise_level[i] < 0 or self.noise_level[i] > 1.0:
+                raise ValueError(f"noise_level {self.noise_level}  is not within (0, 1)")
+        if self.noise_level[0] > self.noise_level[1]:
+            raise ValueError(
+                f"minimum noise level {self.noise_level[0]} should be less "
+                f"than maximum noise level {self.noise_level[1]}"
+            )
 
     @staticmethod
     def _get_min_value(local_min_value: float, noise_level: Tuple):
@@ -70,13 +94,12 @@ class AddNoiseToMinMax(DXOFilter):
                 metrics[metric][ds_name][feature_name] = noise_value
         return metrics
 
-    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Optional[DXO]:
-        if dxo.data_kind == DataKind.STATISTICS:
-            client_result = dxo.data
-            metric_task = client_result[StC.METRIC_TASK_KEY]
-            metrics = fobs.loads(client_result[metric_task])
-            for metric in metrics:
-                if metric in self.noise_generators:
-                    metrics = self.generate_noise(metrics, metric)
-            client_result[metric_task] = fobs.dumps(metrics)
-            return DXO(data_kind=DataKind.STATISTICS, data=client_result)
+    def apply(self, metrics: dict, client_name: str) -> Tuple[dict, bool]:
+        metrics_modified = False
+        for metric in metrics:
+            if metric in self.noise_generators:
+                self.logger.info(f"AddNoiseToMinMax on {metric} for client {client_name}")
+                metrics = self.generate_noise(metrics, metric)
+                metrics_modified = True
+
+        return metrics, metrics_modified

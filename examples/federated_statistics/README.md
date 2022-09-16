@@ -30,10 +30,15 @@ A client will only need to implement the "Statistics" class from statistics_spec
 sequenceDiagram
     participant FileStore
     participant Server
+    participant PrivacyFilter
     participant Client
     participant Stats_Generator
     Server->>Client: task: Fed_Stats: metrics_task_1: count, sum, mean,std_dev, min, max 
-    Client-->>Server: local metrics
+    Client-->>PrivacyFilter: local metric
+     loop over metrics_privacy_filters
+        PrivacyFilter->>PrivacyFilter: min_count_check, min_max_noise_generator
+    end
+    PrivacyFilter-->>Server: filtered local metric
     loop over clients
         Server->>Server: aggregatation
     end
@@ -41,7 +46,11 @@ sequenceDiagram
     loop over dataset and features
        Client->>Stats_Generator: local stats calculation
     end
-    Client-->>Server: metrics: var
+    Client-->>PrivacyFilter: local metrics: var, Histogram, count
+    loop over metrics_privacy_filters
+        PrivacyFilter->>PrivacyFilter: histogram_max_bins_check, min_count_check
+    end
+    PrivacyFilter-->>Server: filtered local metric    
     loop over clients
         Server->>Server: aggregate var, std_dev, histogram
     end
