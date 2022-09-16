@@ -186,7 +186,7 @@ class JobRunner(FLComponent):
                             deploy_detail.append(f"failed to deploy to required client {c}")
 
         if abort_job:
-            raise RuntimeError("deploy failure")
+            raise RuntimeError("deploy failure", deploy_detail)
 
         self.fire_event(EventType.JOB_DEPLOYED, fl_ctx)
         return run_number
