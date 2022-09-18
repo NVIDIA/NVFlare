@@ -13,14 +13,11 @@
 # limitations under the License.
 
 import random
-from typing import List, Optional, Tuple
+from typing import Tuple
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.abstract.statistics_spec import MetricConfig
 from nvflare.app_common.app_constant import StatisticsConstants as StC
 from nvflare.app_common.filters.statistics.metrics_privacy_filter import MetricsPrivacyFilter
-from nvflare.app_common.statistics.metrics_config_utils import get_feature_bin_range
 
 
 class AddNoiseToMinMax(FLComponent, MetricsPrivacyFilter):

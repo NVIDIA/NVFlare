@@ -12,11 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict, List, Tuple
+from typing import Dict, Tuple
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.abstract.statistics_spec import Histogram, MetricConfig
+from nvflare.app_common.abstract.statistics_spec import Histogram
 from nvflare.app_common.app_constant import StatisticsConstants as StC
 from nvflare.app_common.filters.statistics.metrics_privacy_filter import MetricsPrivacyFilter
 

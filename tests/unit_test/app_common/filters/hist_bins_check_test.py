@@ -12,20 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List, Optional, Union
-
 import pytest
 
-from nvflare.apis.dxo import DXO, DataKind
-from nvflare.apis.dxo_filter import DXOFilter
-from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable
-from nvflare.app_common.abstract.statistics_spec import Bin, Histogram, HistogramType, MetricConfig
-from nvflare.app_common.app_constant import StatisticsConstants as StC
+from nvflare.app_common.abstract.statistics_spec import Bin, Histogram, HistogramType
 from nvflare.app_common.filters.statistics.histogram_bins_check import HistogramBinsCheck
-from nvflare.app_common.filters.statistics.metrics_privacy_filter import MetricsPrivacyFilter
-from nvflare.app_common.filters.statistics.min_count_check import MinCountCheck
-from nvflare.fuel.utils import fobs
 
 hist_bins = [Bin(i, i + 1, 100) for i in range(0, 10)]
 age_hist = Histogram(hist_type=HistogramType.STANDARD, bins=hist_bins, hist_name=None)

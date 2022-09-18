@@ -1,8 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Dict, List, Tuple
 
-from nvflare.app_common.abstract.statistics_spec import MetricConfig
-
 
 class MetricsPrivacyFilter(ABC):
     @abstractmethod

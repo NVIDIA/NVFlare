@@ -18,7 +18,6 @@ from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.dxo_filter import DXOFilter
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-from nvflare.app_common.abstract.statistics_spec import MetricConfig
 from nvflare.app_common.app_constant import StatisticsConstants as StC
 from nvflare.app_common.filters.statistics.metrics_privacy_filter import MetricsPrivacyFilter
 from nvflare.fuel.utils import fobs
