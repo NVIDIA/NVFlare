@@ -76,6 +76,7 @@ class XGBFedController(Controller):
         self._server_cert_path = server_cert_path
         self._server_key_path = server_key_path
         self._ca_cert_path = ca_cert_path
+        return True
 
     def start_controller(self, fl_ctx: FLContext):
         self.log_info(fl_ctx, f"Initializing {self.__class__.__name__} workflow.")

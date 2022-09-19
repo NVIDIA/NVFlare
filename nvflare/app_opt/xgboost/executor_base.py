@@ -15,6 +15,7 @@
 import os
 from abc import ABC, abstractmethod
 
+from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
@@ -24,15 +25,6 @@ from nvflare.apis.workspace import Workspace
 from nvflare.app_common.app_constant import AppConstants
 
 from .constants import XGB_TRAIN_TASK, XGBShareableHeader
-
-
-def _get_server_address(fl_ctx: FLContext):
-    try:
-        sp_end_point = fl_ctx.get_prop(FLContextKey.SP_END_POINT, "localhost:8002:8003")
-        server_address = sp_end_point.split(":")[0]
-    except BaseException:
-        return None
-    return server_address
 
 
 class XGBoostParams:
@@ -81,11 +73,21 @@ class XGBExecutorBase(Executor, ABC):
         self._ca_cert_path = None
         self._client_key_path = None
         self._client_cert_path = None
+        self._server_address = "localhost"
 
     @abstractmethod
     def xgb_train(self, params: XGBoostParams, fl_ctx: FLContext) -> Shareable:
         """Main XGBoost training method"""
         pass
+
+    def handle_event(self, event_type: str, fl_ctx: FLContext):
+        if event_type == EventType.START_RUN:
+            engine = fl_ctx.get_engine()
+            if engine.client.overseer_agent:
+                sp = engine.client.overseer_agent.get_primary_sp()
+                if sp and sp.primary is True:
+                    self._server_address = sp.name
+            self.log_info(fl_ctx, f"server address is {self._server_address}")
 
     def _get_certificates(self, fl_ctx: FLContext):
         workspace: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
@@ -105,6 +107,7 @@ class XGBExecutorBase(Executor, ABC):
         self._ca_cert_path = ca_cert_path
         self._client_key_path = client_key_path
         self._client_cert_path = client_cert_path
+        return True
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         self.log_info(fl_ctx, f"Client trainer got task: {task_name}")
@@ -146,11 +149,6 @@ class XGBExecutorBase(Executor, ABC):
             self.log_error(fl_ctx, f"Train failed in client {client_name}: missing xgboost FL server port in header.")
             return make_reply(ReturnCode.ERROR)
 
-        server_address = _get_server_address(fl_ctx)
-        if server_address is None:
-            self.log_error(fl_ctx, f"Train failed in client {client_name}: Can't get NVFlare server address")
-            return make_reply(ReturnCode.ERROR)
-
         secure_comm = shareable.get_header(XGBShareableHeader.XGB_FL_SERVER_SECURE)
         if secure_comm is None:
             self.log_error(fl_ctx, f"Train failed in client {client_name}: missing xgboost secure_comm in header.")
@@ -164,7 +162,7 @@ class XGBExecutorBase(Executor, ABC):
         )
 
         rabit_env = [
-            f"federated_server_address={server_address}:{xgb_fl_server_port}",
+            f"federated_server_address={self._server_address}:{xgb_fl_server_port}",
             f"federated_world_size={self.world_size}",
             f"federated_rank={self.rank}",
         ]
