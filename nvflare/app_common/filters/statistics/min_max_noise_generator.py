@@ -17,10 +17,10 @@ from typing import Tuple
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.app_common.app_constant import StatisticsConstants as StC
-from nvflare.app_common.filters.statistics.metrics_privacy_filter import MetricsPrivacyFilter
+from nvflare.app_common.filters.statistics.metrics_privacy_cleanser import MetricsPrivacyCleanser
 
 
-class AddNoiseToMinMax(FLComponent, MetricsPrivacyFilter):
+class AddNoiseToMinMax(FLComponent, MetricsPrivacyCleanser):
     def __init__(self, min_noise_level: float, max_noise_level: float):
         """
         min_noise_level: minimum noise -- used to protect min/max values before sending to server

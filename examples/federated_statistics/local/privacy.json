@@ -7,9 +7,9 @@
           "name": "StatisticsPrivacyFilter",
           "args": {
             "result_filter_ids": [
-              "min_count_check",
+              "min_count_checker",
               "min_max_noise_generator",
-              "hist_bins_check"
+              "hist_bins_checker"
             ]
           }
         }
@@ -34,14 +34,14 @@
     },
     {
       "id": "hist_bins_check",
-      "path": "nvflare.app_common.filters.statistics.histogram_bins_check.HistogramBinsCheck",
+      "path": "nvflare.app_common.filters.statistics.histogram_bins_checker.HistogramBinsChecker",
       "args": {
         "max_bins_percent": 10
       }
     },
     {
       "id": "min_count_check",
-      "path": "nvflare.app_common.filters.statistics.min_count_check.MinCountCheck",
+      "path": "nvflare.app_common.filters.statistics.min_count_checker.MinCountChecker",
       "args": {
         "min_count": 10
       }

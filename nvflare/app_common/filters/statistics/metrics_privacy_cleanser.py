@@ -2,12 +2,12 @@ from abc import ABC, abstractmethod
 from typing import Dict, List, Tuple
 
 
-class MetricsPrivacyFilter(ABC):
+class MetricsPrivacyCleanser(ABC):
     @abstractmethod
     def apply(self, metrics: dict, client_name: str) -> Tuple[dict, bool]:
         pass
 
-    def cleanse_metrics(
+    def cleanse(
         self, metrics: dict, metric_keys: List[str], validation_result: Dict[str, Dict[str, bool]]
     ) -> (dict, bool):
         """

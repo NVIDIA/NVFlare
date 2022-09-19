@@ -17,10 +17,10 @@ from typing import Dict, Tuple
 from nvflare.apis.fl_component import FLComponent
 from nvflare.app_common.abstract.statistics_spec import Histogram
 from nvflare.app_common.app_constant import StatisticsConstants as StC
-from nvflare.app_common.filters.statistics.metrics_privacy_filter import MetricsPrivacyFilter
+from nvflare.app_common.filters.statistics.metrics_privacy_cleanser import MetricsPrivacyCleanser
 
 
-class HistogramBinsCheck(FLComponent, MetricsPrivacyFilter):
+class HistogramBinsChecker(FLComponent, MetricsPrivacyCleanser):
     def __init__(self, max_bins_percent):
         """
         max_bins_percent:   max number of bins allowed in terms of percent of local data size.
@@ -65,6 +65,6 @@ class HistogramBinsCheck(FLComponent, MetricsPrivacyFilter):
         if StC.STATS_HISTOGRAM in metrics:
             validation_result = self.hist_bins_validate(client_name, metrics)
             metric_keys = [StC.STATS_HISTOGRAM]
-            return super().cleanse_metrics(metrics, metric_keys, validation_result)
+            return super().cleanse(metrics, metric_keys, validation_result)
         else:
             return metrics, False

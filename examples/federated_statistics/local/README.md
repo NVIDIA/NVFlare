@@ -35,13 +35,13 @@ from client to server.
 StatisticsPrivacyFilter can be considered as an interceptor before the results delivered to server. 
 Currently, we use three MetricsPrivacyFilters to guard the data privacy
 
-## MinCountCheck:
+## MinCountChecker:
 check against the number of count returned from client for each dataset and each feature.
 
 if the min_count is not satisfied, there is potential risk of reveal client's real data. Then remove that feature's metrics 
 from the result for this client. 
 
-## HistogramBinsCheck: 
+## HistogramBinsChecker: 
 For histogram calculations, number of bins can't be too large compare to count. if the bins = count, then 
 we also reveal the real data. This check to make sure that the number of bins be less than X percent of the count. 
 X = max_bins_percent in percentage, for 10 is for 10%

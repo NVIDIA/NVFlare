@@ -15,7 +15,7 @@
 import pytest
 
 from nvflare.app_common.abstract.statistics_spec import Bin, Histogram, HistogramType
-from nvflare.app_common.filters.statistics.histogram_bins_check import HistogramBinsCheck
+from nvflare.app_common.filters.statistics.histogram_bins_checker import HistogramBinsChecker
 
 hist_bins = [Bin(i, i + 1, 100) for i in range(0, 10)]
 age_hist = Histogram(hist_type=HistogramType.STANDARD, bins=hist_bins, hist_name=None)
@@ -56,12 +56,12 @@ HIST_BINS_APPLY_TEST_CASES = [
 class TestHistBinsChecker:
     @pytest.mark.parametrize("metrics, max_bins_percent, expected_result", HIST_BINS_VALIDATION_TEST_CASES)
     def test_hist_bins_validate(self, metrics, max_bins_percent, expected_result):
-        checker = HistogramBinsCheck(max_bins_percent=max_bins_percent)
+        checker = HistogramBinsChecker(max_bins_percent=max_bins_percent)
         results = checker.hist_bins_validate("site-1", metrics=metrics)
         assert results == expected_result
 
     @pytest.mark.parametrize("metrics, max_bins_percent, expected_result", HIST_BINS_APPLY_TEST_CASES)
     def test_hist_bins_apply(self, metrics, max_bins_percent, expected_result):
-        checker = HistogramBinsCheck(max_bins_percent=max_bins_percent)
+        checker = HistogramBinsChecker(max_bins_percent=max_bins_percent)
         results = checker.apply(metrics=metrics, client_name="site-1")
         assert results == expected_result

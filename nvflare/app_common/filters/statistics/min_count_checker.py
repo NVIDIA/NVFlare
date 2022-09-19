@@ -16,10 +16,10 @@ from typing import Dict, Tuple
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.app_common.app_constant import StatisticsConstants as StC
-from nvflare.app_common.filters.statistics.metrics_privacy_filter import MetricsPrivacyFilter
+from nvflare.app_common.filters.statistics.metrics_privacy_cleanser import MetricsPrivacyCleanser
 
 
-class MinCountCheck(FLComponent, MetricsPrivacyFilter):
+class MinCountChecker(FLComponent, MetricsPrivacyCleanser):
     def __init__(self, min_count: float):
         """
         min_count:  minimum of data records (or tabular data rows) that required in order to perform statistics
@@ -55,4 +55,4 @@ class MinCountCheck(FLComponent, MetricsPrivacyFilter):
         self.logger.info(f"apply MinCountCheck for client {client_name}")
         validation_result = self.min_count_validate(client_name, metrics)
         metric_keys = list(metrics.keys())
-        return super().cleanse_metrics(metrics, metric_keys, validation_result)
+        return super().cleanse(metrics, metric_keys, validation_result)
