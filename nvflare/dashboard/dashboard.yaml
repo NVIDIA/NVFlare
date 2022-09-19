@@ -603,6 +603,8 @@ components:
           example: "International project to detect COVID on medical images with Federated Learning"
         description:
           type: string
+        app_location:
+          type: string
         overseer:
           type: "string"
         server1:
