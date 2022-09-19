@@ -74,8 +74,14 @@ def stop():
     print("nvflare-dashboard exited")
 
 
-def dashboard():
+def main():
     parser = argparse.ArgumentParser()
+    define_dashboard_parser(parser)
+    args = parser.parse_args()
+    handle_dashboard(args)
+
+
+def define_dashboard_parser(parser):
     parser.add_argument("--start", action="store_true", help="start dashboard")
     parser.add_argument("--stop", action="store_true", help="stop dashboard")
     parser.add_argument("-p", "--port", type=str, default="443", help="port to listen")
@@ -89,7 +95,9 @@ def dashboard():
         "--passphrase", help="Passphrase to encrypt/decrypt root CA private key.  !!! Do not share it with others. !!!"
     )
     parser.add_argument("-e", "--env", action="append", help="additonal environment variables: var1=value1")
-    args = parser.parse_args()
+
+
+def handle_dashboard(args):
     port = args.port
     folder = args.folder
     dashboard_image = args.dashboard_image
@@ -100,4 +108,4 @@ def dashboard():
 
 
 if __name__ == "__main__":
-    dashboard()
+    main()
