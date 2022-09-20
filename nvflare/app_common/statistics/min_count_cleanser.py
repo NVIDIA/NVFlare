@@ -16,10 +16,10 @@ from typing import Dict, Tuple
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.app_common.app_constant import StatisticsConstants as StC
-from nvflare.app_common.filters.statistics.metrics_privacy_cleanser import MetricsPrivacyCleanser
+from nvflare.app_common.statistics.metrics_privacy_cleanser import MetricsPrivacyCleanser
 
 
-class MinCountChecker(FLComponent, MetricsPrivacyCleanser):
+class MinCountCleanser(FLComponent, MetricsPrivacyCleanser):
     def __init__(self, min_count: float):
         """
         min_count:  minimum of data records (or tabular data rows) that required in order to perform statistics

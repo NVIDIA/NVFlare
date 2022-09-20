@@ -95,7 +95,7 @@ class StatisticsExecutor(Executor):
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         if not self.init_status_ok:
-            self.logger(self.init_failure)
+            self.logger.info(self.init_failure)
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
         client_name = fl_ctx.get_identity_name()

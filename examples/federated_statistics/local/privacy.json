@@ -6,10 +6,10 @@
         {
           "name": "StatisticsPrivacyFilter",
           "args": {
-            "result_filter_ids": [
-              "min_count_checker",
+            "result_cleanser_ids": [
+              "min_count_cleanser",
               "min_max_noise_generator",
-              "hist_bins_checker"
+              "hist_bins_cleanser"
             ]
           }
         }
@@ -26,22 +26,22 @@
   "components": [
     {
       "id": "min_max_noise_generator",
-      "path": "nvflare.app_common.filters.statistics.min_max_noise_generator.AddNoiseToMinMax",
+      "path": "nvflare.app_common.statistics.min_max_noise_generator.AddNoiseToMinMax",
       "args": {
         "min_noise_level": 0.1,
         "max_noise_level": 0.3
       }
     },
     {
-      "id": "hist_bins_check",
-      "path": "nvflare.app_common.filters.statistics.histogram_bins_checker.HistogramBinsChecker",
+      "id": "hist_bins_cleanser",
+      "path": "nvflare.app_common.statistics.histogram_bins_cleanser.HistogramBinsCleanser",
       "args": {
         "max_bins_percent": 10
       }
     },
     {
-      "id": "min_count_check",
-      "path": "nvflare.app_common.filters.statistics.min_count_checker.MinCountChecker",
+      "id": "min_count_cleanser",
+      "path": "nvflare.app_common.statistics.min_count_cleanser.MinCountCleanser",
       "args": {
         "min_count": 10
       }

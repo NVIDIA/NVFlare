@@ -14,7 +14,7 @@
 
 import pytest
 
-from nvflare.app_common.filters.statistics.min_count_checker import MinCountChecker
+from nvflare.app_common.statistics.min_count_cleanser import MinCountCleanser
 
 MIN_COUNT_VALIDATION_TEST_CASES = [
     ({"count": {"train": {"age": 6}}}, 7, {"train": {"age": False}}),
@@ -32,12 +32,12 @@ MIN_COUNT_APPLY_TEST_CASES = [
 class TestMinCountChecker:
     @pytest.mark.parametrize("metrics, min_count, expected_result", MIN_COUNT_VALIDATION_TEST_CASES)
     def test_min_count_validate(self, metrics, min_count, expected_result):
-        checker = MinCountChecker(min_count=min_count)
+        checker = MinCountCleanser(min_count=min_count)
         results = checker.min_count_validate("site-1", metrics=metrics)
         assert results == expected_result
 
     @pytest.mark.parametrize("metrics, min_count, expected_result", MIN_COUNT_APPLY_TEST_CASES)
     def test_min_count_apply(self, metrics, min_count, expected_result):
-        checker = MinCountChecker(min_count=min_count)
+        checker = MinCountCleanser(min_count=min_count)
         results = checker.apply(metrics=metrics, client_name="site-1")
         assert results == expected_result

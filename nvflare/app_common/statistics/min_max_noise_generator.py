@@ -17,7 +17,7 @@ from typing import Tuple
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.app_common.app_constant import StatisticsConstants as StC
-from nvflare.app_common.filters.statistics.metrics_privacy_cleanser import MetricsPrivacyCleanser
+from nvflare.app_common.statistics.metrics_privacy_cleanser import MetricsPrivacyCleanser
 
 
 class AddNoiseToMinMax(FLComponent, MetricsPrivacyCleanser):

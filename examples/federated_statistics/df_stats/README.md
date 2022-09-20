@@ -126,17 +126,37 @@ done with prepare data
 ```
 
 
-## 3. Set Privacy Policy ( as org admin)
+## 3. Set Privacy Policy  
 
-copy the local directory privacy.json content to clients' local privacy.json ( merge not overwrite).
-in this example, since we only has one app, we can simply copy the private.json from local directory to 
+There are different ways to set privacy filter depending the use cases
+
+### 3.1 Set Privacy Policy researcher
+one can specify the "task_result_filters" config_fed_client.json to specify
+the privacy control.  This is useful when you develop these filters
+
+### 3.2 setup site privacy policy as org admin
+
+Once the company decides to instrument certain privacy policy independent of individual 
+job, one can copy the local directory privacy.json content to clients' local privacy.json ( merge not overwrite).
+in this example, since we only has one app, we can simply copy the private.json from local directory to
 <poc-workspace>/site-1/local/privacy.json
 <poc-workspace>/site-2/local/privacy.json
 
+we need to remove the same filters from the job definition in config_fed_client.json 
+by simply set the   "task_result_filters" to empty list. 
+```
+"task_result_filters": []
+```
+### 3.3 job filter vis filters in private.json filters
+
+privacy filters are defined within a privacy scope.
+If a job's privacy scope is defined or has default scope, then the scope’s filters (if any) are applied 
+before the job-specified filters (if any). This rule is enforced during task execution time.
+
+With such rules, if we have both task result filters and privacy scoped filters, we need to understand
+that the privacy filters will be applied first, then job filters. 
 
 ## 4. Using FL Simulator
-
-* **Note Simulator doesn't support Privacy Policy yet**
 
 With FL simulator 
 
