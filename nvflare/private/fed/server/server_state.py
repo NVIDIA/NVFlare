@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import logging
-from abc import abstractmethod, ABC
+from abc import ABC, abstractmethod
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.overseer_spec import SP
