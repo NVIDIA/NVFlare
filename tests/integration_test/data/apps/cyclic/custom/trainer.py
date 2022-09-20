@@ -14,6 +14,7 @@
 
 import numpy as np
 import tensorflow as tf
+from tf2_net import Net
 
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.event_type import EventType
@@ -23,8 +24,6 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 
-from .net import Net
-
 
 class SimpleTrainer(Executor):
     def __init__(self, epochs_per_round):
@@ -33,6 +32,7 @@ class SimpleTrainer(Executor):
         self.train_images, self.train_labels = None, None
         self.test_images, self.test_labels = None, None
         self.model = None
+        self.var_list = None
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
@@ -95,10 +95,10 @@ class SimpleTrainer(Executor):
 
         # retrieve model weights download from server's shareable
         if abort_signal.triggered:
-            return make_reply(ReturnCode.OK)
+            return make_reply(ReturnCode.TASK_ABORTED)
 
         if task_name != "train":
-            return shareable
+            return make_reply(ReturnCode.TASK_UNKNOWN)
 
         dxo = from_shareable(shareable)
         model_weights = dxo.data
@@ -107,7 +107,7 @@ class SimpleTrainer(Executor):
         prev_weights = {
             self.model.get_layer(index=key).name: value for key, value in enumerate(self.model.get_weights())
         }
-        print("dxo")
+
         ordered_model_weights = {key: model_weights.get(key) for key in prev_weights}
         for key in self.var_list:
             value = ordered_model_weights.get(key)
@@ -131,5 +131,5 @@ class SimpleTrainer(Executor):
         dxo = DXO(data_kind=DataKind.WEIGHTS, data=weights)
 
         self.log_info(fl_ctx, "Local epochs finished. Returning shareable")
-
-        return dxo.update_shareable(shareable)
+        new_shareable = dxo.to_shareable()
+        return new_shareable

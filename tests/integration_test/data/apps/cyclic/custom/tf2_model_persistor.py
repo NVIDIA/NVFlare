@@ -16,6 +16,7 @@ import json
 import os
 
 import tensorflow as tf
+from tf2_net import Net
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
@@ -24,8 +25,6 @@ from nvflare.app_common.abstract.model import ModelLearnable, make_model_learnab
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.fuel.utils import fobs
-
-from .net import Net
 
 
 class TF2ModelPersistor(ModelPersistor):
