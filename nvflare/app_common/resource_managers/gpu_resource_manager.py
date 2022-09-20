@@ -76,6 +76,9 @@ class GPUResourceManager(BaseResourceManager):
             self.resources[k].memory += v
 
     def _check_required_resource_available(self, resource_requirement: dict) -> bool:
+        if not resource_requirement:
+            return True
+
         if self.num_gpu_key not in resource_requirement:
             raise ValueError(f"resource_requirement is missing num_gpu_key {self.num_gpu_key}.")
 
@@ -94,6 +97,9 @@ class GPUResourceManager(BaseResourceManager):
         return check_result
 
     def _reserve_resource(self, resource_requirement: dict) -> dict:
+        if not resource_requirement:
+            return {}
+
         if self.num_gpu_key not in resource_requirement:
             raise ValueError(f"resource_requirement is missing num_gpu_key {self.num_gpu_key}.")
 

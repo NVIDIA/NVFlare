@@ -21,7 +21,6 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.app_common.resource_managers.gpu_resource_manager import GPUResourceManager
 
-TEST_SITE_JSON = "_test_site.json"
 NUM_GPU_KEY = "num_of_gpus"
 GPU_MEM_KEY = "mem_per_gpu_in_GiB"
 

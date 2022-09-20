@@ -84,8 +84,8 @@ local_client_resources: |
             "id": "resource_manager",
             "path": "nvflare.app_common.resource_managers.gpu_resource_manager.GPUResourceManager",
             "args": {
-              "num_of_gpus": 4,
-              "mem_per_gpu_in_GiB": 16
+              "num_of_gpus": 1,
+              "mem_per_gpu_in_GiB": 2
             }
           },
           {
