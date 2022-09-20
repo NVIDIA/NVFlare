@@ -32,8 +32,8 @@ StatisticsPrivacyFilter
 The StatisticsPrivacyFilter is consists of three `MetricsPrivacyCleanser`s focused on the metrics sent
 from client to server. 
 
-MetricsPrivacyCleanser can be considered as an interceptor before the results delivered to server. 
-Currently, we use three MetricsPrivacyFilters to guard the data privacy
+`MetricsPrivacyCleanser` can be considered as an interceptor before the results delivered to server. 
+Currently, we use three `MetricsPrivacyCleanser`s to guard the data privacy
 
 ## MinCountCleanser:
 check against the number of count returned from client for each dataset and each feature.
