@@ -7,24 +7,16 @@
     "components": [
       {
         "id": "resource_manager",
-        "path": "nvflare.app_common.resource_managers.list_resource_manager.ListResourceManager",
+        "path": "nvflare.app_common.resource_managers.gpu_resource_manager.GPUResourceManager",
         "args": {
-          "resources": {
-            "gpu": [
-              0,
-              1,
-              2,
-              3
-            ]
-          }
+          "num_of_gpus": 1,
+          "mem_per_gpu_in_GiB": 4
         }
       },
       {
         "id": "resource_consumer",
         "path": "nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer",
-        "args": {
-          "gpu_resource_key": "gpu"
-        }
+        "args": {}
       }
     ]
 }
