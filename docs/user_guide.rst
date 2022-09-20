@@ -24,3 +24,4 @@ to see the capabilities of the system and how it can be operated.
    user_guide/workspace
    user_guide/authorization
    user_guide/federated_learning
+   user_guide/dashboard_api
