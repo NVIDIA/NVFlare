@@ -16,7 +16,6 @@ import time
 import uuid
 from abc import ABC, abstractmethod
 from threading import Event, Lock, Thread
-from typing import Optional
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
@@ -24,7 +23,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
 
 
-class BaseResourceManager(ResourceManagerSpec, FLComponent, ABC):
+class AutoCleanResourceManager(ResourceManagerSpec, FLComponent, ABC):
     def __init__(self, resources: dict, expiration_period: int = 30, check_period: float = 1.0):
         """This is the base resource manager implementation.
 
@@ -117,13 +116,13 @@ class BaseResourceManager(ResourceManagerSpec, FLComponent, ABC):
                     self._deallocate(resources=reserved_resources)
                 self.logger.debug(f"current resources: {self.resources}, reserved_resources {self.reserved_resources}.")
 
-    def check_resources(self, resource_requirement: dict, fl_ctx: FLContext) -> (bool, Optional[str]):
+    def check_resources(self, resource_requirement: dict, fl_ctx: FLContext):
         if not isinstance(resource_requirement, dict):
             raise TypeError(f"resource_requirement should be of type dict, but got {type(resource_requirement)}.")
 
         with self._lock:
             check_result = self._check_required_resource_available(resource_requirement)
-            token = None
+            token = ""
 
             # reserve resource only when check is True
             if check_result:

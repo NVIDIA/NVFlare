@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Tuple
 
 from .fl_context import FLContext
 
@@ -26,7 +26,7 @@ class ResourceConsumerSpec(ABC):
 
 class ResourceManagerSpec(ABC):
     @abstractmethod
-    def check_resources(self, resource_requirement: dict, fl_ctx: FLContext) -> (bool, Optional[str]):
+    def check_resources(self, resource_requirement: dict, fl_ctx: FLContext) -> Tuple[bool, str]:
         """Checks whether the specified resource requirement can be satisfied.
 
         Args:
@@ -37,7 +37,7 @@ class ResourceManagerSpec(ABC):
             A tuple of (check_result, token).
 
             check_result is a bool indicates whether there is enough resources;
-            token (optional) is for resource reservation / cancellation for this check request.
+            token is for resource reservation / cancellation for this check request.
         """
         pass
 
@@ -84,6 +84,6 @@ class ResourceManagerSpec(ABC):
         pass
 
     @abstractmethod
-    def report_resources(self, fl_ctx):
+    def report_resources(self, fl_ctx) -> dict:
         """Reports resources."""
         pass
