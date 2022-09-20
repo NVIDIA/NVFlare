@@ -12,12 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.apis.dxo import DataKind, from_shareable
+from nvflare.apis.dxo import DataKind, from_shareable, DXO
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, model_learnable_to_dxo
 from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
+import json
 
 
 def update_model(prev_model, model_update):
@@ -53,11 +54,26 @@ class XGBModelShareableGenerator(ShareableGenerator):
         Returns:
             Shareable: a shareable containing a DXO object.
         """
-        #TBD: broken for recovery from previous training
+       
         if not self.shareable:
-            dxo = model_learnable_to_dxo(model_learnable)
+            # initialization or recovering from previous training - 
+            model = model_learnable[ModelLearnableKey.WEIGHTS]
+            if model:
+                # recovering from previous run - distinguish between cyclic and bagging modes as 
+                # global model format is different
+                if isinstance(model, dict):
+                    # bagging mode
+                    serialized_model = bytearray(json.dumps(model), 'utf-8')
+                else:
+                    # cyclid mode, model should be serialized already
+                    serialized_model = model
+                dxo = DXO(data_kind=DataKind.XGB_MODEL, data={'model_data': serialized_model})
+            else:
+                # intial run, starting from empty model
+                dxo = model_learnable_to_dxo(model_learnable)
             return dxo.to_shareable()
         else:
+            # return shareable saved from previous call to shareable_to_learnable
             return self.shareable
 
     def shareable_to_learnable(self, shareable: Shareable, fl_ctx: FLContext) -> ModelLearnable:

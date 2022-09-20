@@ -24,9 +24,10 @@ from nvflare.app_common.app_constant import AppConstants
 
 
 class JSONModelPersistor(ModelPersistor):
-    def __init__(self, save_name="xgboost_model.json"):
+    def __init__(self, save_name="xgboost_model.json", load_as_dict=True):
         super().__init__()
         self.save_name = save_name
+        self.load_as_dict = load_as_dict
 
     def _initialize(self, fl_ctx: FLContext):
         # get save path from FLContext
@@ -53,8 +54,11 @@ class JSONModelPersistor(ModelPersistor):
 
         if os.path.exists(self.save_path):
             self.logger.info("Loading server model")
-            with open(self.save_path, "rb") as json_file:
+            with open(self.save_path, "r") as json_file:
                 model = json.load(json_file)
+                if not self.load_as_dict:
+                    model = bytearray(json.dumps(model),'utf-8')
+
             model_learnable[ModelLearnableKey.WEIGHTS] = model
         else:
             self.logger.info("Initializing server model as None")

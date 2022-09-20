@@ -14,7 +14,8 @@
       "id": "persistor",
       "path": "nvflare.app_common.model_persistors.json_model_persistor.JSONModelPersistor",
       "args": {
-        "save_name": "xgboost_model.json"
+        "save_name": "xgboost_model.json",
+        "load_as_dict": false
       }
     },
     {
