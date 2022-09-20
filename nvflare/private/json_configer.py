@@ -77,8 +77,12 @@ class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
         config_data = {}
         for f in config_files:
             with open(f) as file:
-                data = json.load(file)
-                augment(to_dict=config_data, from_dict=data, from_override_to=False)
+                try:
+                    data = json.load(file)
+                    augment(to_dict=config_data, from_dict=data, from_override_to=False)
+                except BaseException as ex:
+                    print("Error processing config file {}: {}".format(file, ex))
+                    raise ex
 
         self.config_data = config_data
         self.json_scanner = JsonScanner(config_data, config_files)

@@ -129,8 +129,8 @@ class StatisticsController(Controller):
             ReturnCode.EXECUTION_EXCEPTION: True,
             ReturnCode.TASK_UNKNOWN: True,
             ReturnCode.EXECUTION_RESULT_ERROR: False,
-            ReturnCode.TASK_DATA_FILTER_ERROR: False,
-            ReturnCode.TASK_RESULT_FILTER_ERROR: False,
+            ReturnCode.TASK_DATA_FILTER_ERROR: True,
+            ReturnCode.TASK_RESULT_FILTER_ERROR: True,
         }
 
     def start_controller(self, fl_ctx: FLContext):
@@ -273,7 +273,6 @@ class StatisticsController(Controller):
         else:
             self.log_info(fl_ctx, "combine all clients' metrics")
             ds_stats = self._combine_all_metrics()
-
             self.log_info(fl_ctx, "save statistics result to persistence store")
             writer: StatisticsWriter = fl_ctx.get_engine().get_component(self.writer_id)
             writer.save(ds_stats, overwrite_existing=True, fl_ctx=fl_ctx)
@@ -295,11 +294,12 @@ class StatisticsController(Controller):
 
                         if metric == StC.STATS_HISTOGRAM:
                             hist: Histogram = self.client_metrics[metric][client][ds][feature_name]
-                            result[feature_name][metric][client_dataset] = hist.bins
+                            buckets = StatisticsController._apply_histogram_precision(hist.bins, self.precision)
+                            result[feature_name][metric][client_dataset] = buckets
                         else:
-                            result[feature_name][metric][client_dataset] = self.client_metrics[metric][client][ds][
-                                feature_name
-                            ]
+                            result[feature_name][metric][client_dataset] = round(
+                                self.client_metrics[metric][client][ds][feature_name], self.precision
+                            )
 
         precision = self.precision
         for metric in filtered_global_metrics:
@@ -308,22 +308,27 @@ class StatisticsController(Controller):
                 for feature_name in self.global_metrics[metric][ds]:
                     if metric == StC.STATS_HISTOGRAM:
                         hist: Histogram = self.global_metrics[metric][ds][feature_name]
-                        buckets = []
-                        for bucket in hist.bins:
-                            buckets.append(
-                                Bin(
-                                    round(bucket.low_value, precision),
-                                    round(bucket.high_value, precision),
-                                    bucket.sample_count,
-                                )
-                            )
-                        result[feature_name][metric][global_dataset] = hist.bins
+                        buckets = StatisticsController._apply_histogram_precision(hist.bins, self.precision)
+                        result[feature_name][metric][global_dataset] = buckets
                     else:
                         result[feature_name][metric].update(
                             {global_dataset: round(self.global_metrics[metric][ds][feature_name], precision)}
                         )
 
         return result
+
+    @staticmethod
+    def _apply_histogram_precision(bins: List[Bin], precision) -> List[Bin]:
+        buckets = []
+        for bucket in bins:
+            buckets.append(
+                Bin(
+                    round(bucket.low_value, precision),
+                    round(bucket.high_value, precision),
+                    bucket.sample_count,
+                )
+            )
+        return buckets
 
     @staticmethod
     def _get_target_metrics(metric_configs: dict, ordered_metrics: list) -> List[MetricConfig]:

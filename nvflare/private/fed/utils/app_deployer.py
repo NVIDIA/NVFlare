@@ -39,11 +39,11 @@ class AppDeployer(object):
         Returns: error message if any
 
         """
-        job_scope = self.job_meta.get(JobMetaKey.SCOPE, "")
+        privacy_scope = self.job_meta.get(JobMetaKey.SCOPE, "")
 
         # check whether this scope is allowed
-        if not PrivacyService.is_scope_allowed(job_scope):
-            return f"job scope '{job_scope}' is not allowed"
+        if not PrivacyService.is_scope_allowed(privacy_scope):
+            return f"privacy scope '{privacy_scope}' is not allowed"
 
         try:
             run_dir = self.workspace.get_run_dir(self.job_id)
@@ -82,4 +82,5 @@ class AppDeployer(object):
                 return "not authorized"
 
         except BaseException as ex:
-            return f"exception {ex} when deploying app {self.app_name}"
+            raise Exception(f"exception {ex} when deploying app {self.app_name}")
+            # return f"exception {ex} when deploying app {self.app_name}"

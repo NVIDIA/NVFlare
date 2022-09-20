@@ -436,12 +436,14 @@ class PrivacyConfiger(JsonConfigurator):
 
             if re.search(r"^scopes.#[0-9]+\.task_data_filters\.#[0-9]+$", path):
                 f = self.build_component(element)
-                self.current_scope.add_task_data_filter(f)
+                if f:
+                    self.current_scope.add_task_data_filter(f)
                 return
 
             if re.search(r"^scopes.#[0-9]+\.task_result_filters\.#[0-9]+$", path):
                 f = self.build_component(element)
-                self.current_scope.add_task_result_filter(f)
+                if f:
+                    self.current_scope.add_task_result_filter(f)
                 return
 
             if re.search(r"^components\.#[0-9]+$", path):
