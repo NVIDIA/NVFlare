@@ -20,9 +20,9 @@ from .default_app_validator import DefaultAppValidator
 
 
 class FLAppValidator(AppValidator):
-    def __init__(self, custom_validators: Optional[List[AppValidator]] = None):
+    def __init__(self, site_type: str, custom_validators: Optional[List[AppValidator]] = None):
         super().__init__()
-        self.validators = [DefaultAppValidator()]
+        self.validators = [DefaultAppValidator(site_type=site_type)]
         if custom_validators:
             if not isinstance(custom_validators, list):
                 raise TypeError("custom_validators must be list, but got {}".format(type(custom_validators)))

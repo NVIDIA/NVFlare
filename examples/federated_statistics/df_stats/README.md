@@ -22,9 +22,6 @@ We are using a built-in NVFLARE executor,
         "path": "nvflare.app_common.executors.statistics_executor.StatisticsExecutor",
         "args": {
           "generator_id": "df_stats_generator",
-          "min_count" : 10,
-          "min_random": 0.1,
-          "max_random": 0.3
   },
 
 ```
@@ -128,7 +125,38 @@ done with prepare data
 
 ```
 
-## 3. Using FL Simulator
+
+## 3. Set Privacy Policy  
+
+There are different ways to set privacy filter depending the use cases
+
+### 3.1 Set Privacy Policy researcher
+one can specify the "task_result_filters" config_fed_client.json to specify
+the privacy control.  This is useful when you develop these filters
+
+### 3.2 setup site privacy policy as org admin
+
+Once the company decides to instrument certain privacy policy independent of individual 
+job, one can copy the local directory privacy.json content to clients' local privacy.json ( merge not overwrite).
+in this example, since we only has one app, we can simply copy the private.json from local directory to
+<poc-workspace>/site-1/local/privacy.json
+<poc-workspace>/site-2/local/privacy.json
+
+we need to remove the same filters from the job definition in config_fed_client.json 
+by simply set the   "task_result_filters" to empty list. 
+```
+"task_result_filters": []
+```
+### 3.3 job filter vis filters in private.json filters
+
+privacy filters are defined within a privacy scope.
+If a job's privacy scope is defined or has default scope, then the scope’s filters (if any) are applied 
+before the job-specified filters (if any). This rule is enforced during task execution time.
+
+With such rules, if we have both task result filters and privacy scoped filters, we need to understand
+that the privacy filters will be applied first, then job filters. 
+
+## 4. Using FL Simulator
 
 With FL simulator 
 
@@ -155,7 +183,7 @@ optional arguments:
 we can just run the example as CLI command 
 
 ```
-nvflare simulator $NVFLARE_HOME/examples/federated_statistics/df_stats/df_stats -w /tmp/nvflare -n 2 -t 2
+nvflare simulator $NVFLARE_HOME/examples/federated_statistics/df_stats/df_stats_job -w /tmp/nvflare -n 2 -t 2
 ```
 
 The results are stored in workspace "/tmp/nvflare"
@@ -164,7 +192,7 @@ The results are stored in workspace "/tmp/nvflare"
 ```
 
 
-## 4. Run Example using POC command
+## 5. Run Example using POC command
 
 ```
 nvflare poc -h
@@ -187,7 +215,7 @@ optional arguments:
 
 ```
 
-### 4.1 Prepare POC Workspace
+### 5.1 Prepare POC Workspace
 
 ```
    nvflare poc --prepare 
@@ -201,7 +229,7 @@ export NVFLARE_POC_WORKSPACE=<new poc workspace location>
 ```
 then repeat above
 
-### 4.2 Start nvflare in POC mode
+### 5.2 Start nvflare in POC mode
 
 ```
 nvflare poc --start
@@ -217,16 +245,16 @@ Then open a separate terminal to start the NVFLARE console
 nvflare poc --start -p admin
 ```
 
-### 4.3 Submit job
+### 5.3 Submit job
 
 Inside the console, submit the job:
 ```
-submit_job federated_statistics/df_stats/df_stats
+submit_job federated_statistics/df_stats/df_stats_job
 ```
 
 For a complete list of available flare console commands, see [here](https://nvflare.readthedocs.io/en/main/user_guide/operation.html).
 
-### 4.4 List the submitted job
+### 5.4 List the submitted job
 
 You should see the server and clients in your first terminal executing the job now.
 You can list the running job by using `list_jobs` in the admin console.
@@ -237,11 +265,11 @@ Your output should be similar to the following.
 -------------------------------------------------------------------------------------------------==--------------------------------
 | JOB ID                               | NAME     | STATUS                       | SUBMIT TIME                                    |
 -----------------------------------------------------------------------------------------------------------------------------------
-| 10a92352-5459-47d2-8886-b85abf70ddd1 | df_stats | FINISHED:COMPLETED           | 2022-08-05T22:50:40.968771-07:00 | 0:00:29.4493|
+| 10a92352-5459-47d2-8886-b85abf70ddd1 | df_stats_job | FINISHED:COMPLETED           | 2022-08-05T22:50:40.968771-07:00 | 0:00:29.4493|
 -----------------------------------------------------------------------------------------------------------------------------------
 ```
  
-### 4.4 Get the result
+### 5.5 Get the result
 
 If successful, the computed statis can be downloaded using this admin command:
 ```
@@ -250,7 +278,7 @@ download_job [JOB_ID]
 After download, it will be available in the stated download directory under `[JOB_ID]/workspace/statistics` as  `adult_stats.json`
 
 
-## 5. RESULT FORMAT
+## 6. RESULT FORMAT
 
 The output of the json is like the followings
 ``` 
@@ -303,7 +331,7 @@ The output of the json is like the followings
      },
 ```
 
-## 6. Visualization
+## 7. Visualization
    with json format, the data can be easily visualized via pandas dataframe and plots. 
    A visualization utility tools are showed in show_stats.py in visualization directory
    You can run jupyter notebook visualization.ipynb
