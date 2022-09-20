@@ -18,6 +18,7 @@ import os
 import re
 
 from nvflare.apis.fl_component import FLComponent
+from nvflare.apis.fl_constant import SiteType
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.json_scanner import Node
@@ -163,7 +164,7 @@ class FLServerStarterConfiger(JsonConfigurator):
             secure_train = self.cmd_vars["secure_train"]
 
         custom_validators = [self.app_validator] if self.app_validator else []
-        self.app_validator = FLAppValidator(custom_validators=custom_validators)
+        self.app_validator = FLAppValidator(site_type=SiteType.SERVER, custom_validators=custom_validators)
 
         build_ctx = {
             "secure_train": secure_train,
@@ -309,7 +310,7 @@ class FLClientStarterConfiger(JsonConfigurator):
         }
 
         custom_validators = [self.app_validator] if self.app_validator else []
-        self.app_validator = FLAppValidator(custom_validators=custom_validators)
+        self.app_validator = FLAppValidator(site_type=SiteType.CLIENT, custom_validators=custom_validators)
         self.site_org = build_ctx["site_org"]
         self.base_deployer = BaseClientDeployer()
         self.base_deployer.build(build_ctx)

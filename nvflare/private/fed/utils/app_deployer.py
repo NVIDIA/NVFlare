@@ -65,7 +65,6 @@ class AppDeployer(object):
             with open(job_meta_file, "w") as f:
                 json.dump(self.job_meta, f, indent=4)
 
-            assert isinstance(self.job_meta, dict)
             submitter_name = self.job_meta.get(JobMetaKey.SUBMITTER_NAME, "")
             submitter_org = self.job_meta.get(JobMetaKey.SUBMITTER_ORG, "")
             submitter_role = self.job_meta.get(JobMetaKey.SUBMITTER_ROLE, "")
