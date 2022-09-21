@@ -85,7 +85,7 @@ class ScatterAndGather(Controller):
             TypeError: when any of input arguments does not have correct type
             ValueError: when any of input arguments is out of range
         """
-        Controller.__init__(self, task_check_period=task_check_period)
+        super().__init__(task_check_period=task_check_period)
 
         # Check arguments
         if not isinstance(min_clients, int):
@@ -251,11 +251,14 @@ class ScatterAndGather(Controller):
                 self.fire_event(AppEventType.ROUND_DONE, fl_ctx)
                 self.log_info(fl_ctx, f"Round {self._current_round} finished.")
 
-                self._current_round += 1
-
-                if self._snapshot_every_n_rounds != 0 and self._current_round % self._snapshot_every_n_rounds == 0:
+                if (
+                    self._snapshot_every_n_rounds != 0
+                    and (self._current_round + 1) % self._snapshot_every_n_rounds == 0
+                ):
                     # Call the self._engine to persist the snapshot of all the FLComponents
                     self._engine.persist_components(fl_ctx, completed=False)
+
+                self._current_round += 1
 
             self._phase = AppConstants.PHASE_FINISHED
             self.log_info(fl_ctx, "Finished ScatterAndGather Training.")

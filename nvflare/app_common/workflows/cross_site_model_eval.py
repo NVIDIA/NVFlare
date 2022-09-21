@@ -66,7 +66,7 @@ class CrossSiteModelEval(Controller):
                 to all clients connected at start of controller.
             wait_for_clients_timeout (int, optional): Timeout for clients to appear. Defaults to 300 secs
         """
-        super(CrossSiteModelEval, self).__init__(task_check_period=task_check_period)
+        super().__init__(task_check_period=task_check_period)
 
         if not isinstance(task_check_period, float):
             raise TypeError("task_check_period must be float but got {}".format(type(task_check_period)))
