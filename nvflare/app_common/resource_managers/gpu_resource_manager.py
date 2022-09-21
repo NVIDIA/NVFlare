@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.app_common.resource_managers.resouce_manager import BaseResourceManager
+from nvflare.app_common.resource_managers.auto_clean_resource_manager import AutoCleanResourceManager
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids, get_host_gpu_memory_total
 
 
@@ -32,7 +32,7 @@ class GPUResource:
         return {"gpu_id": self.id, "memory": self.memory}
 
 
-class GPUResourceManager(BaseResourceManager):
+class GPUResourceManager(AutoCleanResourceManager):
     def __init__(
         self,
         num_of_gpus: int,

@@ -74,47 +74,38 @@ gunicorn_conf_py: |
 
 local_client_resources: |
   {
-      "format_version": 2,
-      "client": {
-        "retry_timeout": 30,
-        "compression": "Gzip"
-      },
-      "components": [
-          {
-            "id": "resource_manager",
-            "path": "nvflare.app_common.resource_managers.gpu_resource_manager.GPUResourceManager",
-            "args": {
-              "num_of_gpus": 1,
-              "mem_per_gpu_in_GiB": 2
-            }
-          },
-          {
-            "id": "resource_consumer",
-            "path": "nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer",
-            "args": {
-            }
-          }
-      ]
+    "format_version": 2,
+    "client": {
+      "retry_timeout": 30,
+      "compression": "Gzip"
+    },
+    "components": [
+      {
+        "id": "resource_manager",
+        "path": "nvflare.app_common.resource_managers.base_resource_manager.BaseResourceManager",
+        "args": {}
+      }
+    ]
   }
 
 fed_client: |
   {
     "format_version": 2,
     "servers": [
-        {
-            "name": "spleen_segmentation",
-            "service": {
-                "options": [
-                    ["grpc.max_send_message_length",    2147483647],
-                    ["grpc.max_receive_message_length", 2147483647]
-                ]
-            }
+      {
+        "name": "spleen_segmentation",
+        "service": {
+          "options": [
+            ["grpc.max_send_message_length",    2147483647],
+            ["grpc.max_receive_message_length", 2147483647]
+          ]
         }
+      }
     ],
     "client": {
-        "ssl_private_key": "client.key",
-        "ssl_cert": "client.crt",
-        "ssl_root_cert": "rootCA.pem"
+      "ssl_private_key": "client.key",
+      "ssl_cert": "client.crt",
+      "ssl_root_cert": "rootCA.pem"
     }
   }
 

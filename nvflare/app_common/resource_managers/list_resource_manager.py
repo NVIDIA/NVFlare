@@ -16,10 +16,10 @@
 from collections import deque
 from typing import Dict, List
 
-from nvflare.app_common.resource_managers.resouce_manager import BaseResourceManager
+from nvflare.app_common.resource_managers.auto_clean_resource_manager import AutoCleanResourceManager
 
 
-class ListResourceManager(BaseResourceManager):
+class ListResourceManager(AutoCleanResourceManager):
     """Manage a list of resource units.
 
     For example:

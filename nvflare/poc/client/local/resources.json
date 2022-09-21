@@ -5,5 +5,10 @@
       "compression": "Gzip"
     },
     "components": [
+      {
+        "id": "resource_manager",
+        "path": "nvflare.app_common.resource_managers.base_resource_manager.BaseResourceManager",
+        "args": {}
+      }
     ]
 }
