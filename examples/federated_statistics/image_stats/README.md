@@ -138,7 +138,9 @@ copy the histogram.json to the demo directory, one can use the jupyter notebook 
 ```python
     jupyter notebook  visualization.ipynb
 ```  
- 
+![compare all sites' histograms](figs/image_histogram_1.png)
+![compare all sites' histograms](figs/image_histogram_2.png)
+
 ## 6. Privacy Policy
 
 There are different ways to set privacy filter depending the use cases
