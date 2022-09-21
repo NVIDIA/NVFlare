@@ -15,7 +15,7 @@
           "count": {},
           "histogram": {
             "*": {
-              "bins": 255, "range": [0,255]
+              "bins": 255, "range": [0,256]
             }
           }
         },
