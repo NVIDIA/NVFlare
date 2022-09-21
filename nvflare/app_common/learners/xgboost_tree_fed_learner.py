@@ -127,6 +127,7 @@ class XGBoostTreeFedLearner(Learner):
         self.dmat_train: xgb.DMatrix
         self.dmat_valid: xgb.DMatrix
         self.valid_y: array for validation metric computation
+        self.lr_scale: scale factor needed for site-wise learning rate adjustment
         """
         raise NotImplementedError
 
