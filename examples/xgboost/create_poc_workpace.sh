@@ -11,13 +11,13 @@ cur_dir=${PWD}
 workspace="xgboost_workspace_${n_clients}"
 
 # create POC startup kits
-mkdir workspaces
+mkdir "workspaces"
 cd "workspaces" || exit
 python3 -m nvflare.lighter.poc -n "${n_clients}" || exit
 # There should be $n_clients site-N folders.
 
 # move the folder
-mv "poc" ${workspace}
+mv "poc" "${workspace}"
 echo "Created POC workspace at ./workspaces/${workspace}"
 
 cd "${cur_dir}" || exit

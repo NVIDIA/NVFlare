@@ -13,11 +13,12 @@
 # limitations under the License.
 
 import logging
-import pickle
 
 from nvflare.apis.fl_constant import FLContextKey, NonSerializableKeys
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
+from nvflare.fuel.sec.audit import AuditService
+from nvflare.fuel.utils import fobs
 
 
 def get_serializable_data(fl_ctx: FLContext):
@@ -26,7 +27,7 @@ def get_serializable_data(fl_ctx: FLContext):
     for k, v in fl_ctx.props.items():
         if k not in NonSerializableKeys.KEYS:
             try:
-                pickle.dumps(v)
+                fobs.dumps(v)
                 new_fl_ctx.props[k] = v
             except:
                 logger.warning(generate_log_message(fl_ctx, f"Object is not serializable (discarded): {k} - {v}"))
@@ -34,6 +35,7 @@ def get_serializable_data(fl_ctx: FLContext):
 
 
 def generate_log_message(fl_ctx: FLContext, msg: str):
+    _identity_ = "identity"
     _my_run = "run"
     _peer_run = "peer_run"
     _peer_name = "peer"
@@ -43,6 +45,7 @@ def generate_log_message(fl_ctx: FLContext, msg: str):
     _wf = "wf"
 
     all_kvs = {}
+    all_kvs[_identity_] = fl_ctx.get_identity_name()
     my_run = fl_ctx.get_job_id()
     if not my_run:
         my_run = "?"
@@ -80,10 +83,21 @@ def generate_log_message(fl_ctx: FLContext, msg: str):
         rc = reply.get_return_code("OK")
         all_kvs[_rc] = rc
 
-    item_order = [_my_run, _wf, _peer_name, _peer_run, _rc, _task_name, _task_id]
+    item_order = [_identity_, _my_run, _wf, _peer_name, _peer_run, _rc, _task_name, _task_id]
     ctx_items = []
     for item in item_order:
         if item in all_kvs:
             ctx_items.append(item + "=" + str(all_kvs[item]))
 
     return "[" + ", ".join(ctx_items) + "]: " + msg
+
+
+def add_job_audit_event(fl_ctx: FLContext, ref: str = "", msg: str = "") -> str:
+    return AuditService.add_job_event(
+        job_id=fl_ctx.get_job_id(),
+        scope_name=fl_ctx.get_prop(FLContextKey.EFFECTIVE_JOB_SCOPE_NAME, "?"),
+        task_name=fl_ctx.get_prop(FLContextKey.TASK_NAME, "?"),
+        task_id=fl_ctx.get_prop(FLContextKey.TASK_ID, "?"),
+        ref=ref,
+        msg=msg,
+    )

@@ -93,11 +93,7 @@ class ServerCommandRegister(CommandRegister):
                 if not ok:
                     return
 
-        if handler is not None:
-            handler(conn, args)
-        else:
-            conn.append_error('Unknown command "{}"'.format(command))
-            return
+        handler(conn, args)
 
         # invoke post filters
         if len(self.filters) > 0:

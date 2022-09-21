@@ -13,10 +13,10 @@
 # limitations under the License.
 
 import copy
-import pickle
-from typing import List
+from typing import List, Union
 
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
+from nvflare.fuel.utils import fobs
 
 
 class DataKind(object):
@@ -26,7 +26,8 @@ class DataKind(object):
     METRICS = "METRICS"
     MODEL = "MODEL"
     ANALYTIC = "ANALYTIC"
-    COLLECTION = "COLLECTION"  # Dict of DXO objects
+    COLLECTION = "COLLECTION"  # Dict or List of DXO objects
+    STATISTICS = "STATISTICS"
 
 
 class MetaKey(object):
@@ -36,6 +37,7 @@ class MetaKey(object):
     PROCESSED_ALGORITHM = "PROCESSED_ALGORITHM"
     PROCESSED_KEYS = "PROCESSED_KEYS"
     INITIAL_METRICS = "initial_metrics"
+    FILTER_HISTORY = "filter_history"
 
 
 _KEY_KIND = "kind"
@@ -94,7 +96,6 @@ class DXO(object):
 
     def update_shareable(self, s: Shareable) -> Shareable:
         s.set_header(key=ReservedHeaderKey.CONTENT_TYPE, value="DXO")
-
         s[_KEY_DXO] = self._encode()
         return s
 
@@ -115,7 +116,7 @@ class DXO(object):
             object serialized in bytes.
 
         """
-        return pickle.dumps(self)
+        return fobs.dumps(self)
 
     def validate(self) -> str:
         if self.data is None:
@@ -128,6 +129,21 @@ class DXO(object):
             return "invalid props: expect dict but got {}".format(type(self.meta))
 
         return ""
+
+    def add_filter_history(self, filter_name: Union[str, List[str]]):
+        if not filter_name:
+            return
+        hist = self.get_meta_prop(MetaKey.FILTER_HISTORY)
+        if not hist:
+            hist = []
+            self.set_meta_prop(MetaKey.FILTER_HISTORY, hist)
+        if isinstance(filter_name, str):
+            hist.append(filter_name)
+        elif isinstance(filter_name, list):
+            hist.extend(filter_name)
+
+    def get_filter_history(self):
+        return self.get_meta_prop(MetaKey.FILTER_HISTORY)
 
 
 def from_shareable(s: Shareable) -> DXO:
@@ -167,10 +183,10 @@ def from_bytes(data: bytes) -> DXO:
         data: a bytes object
 
     Returns:
-        an object loaded by pickle from data
+        an object loaded by FOBS from data
 
     """
-    x = pickle.loads(data)
+    x = fobs.loads(data)
     if isinstance(x, DXO):
         return x
     else:

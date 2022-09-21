@@ -107,7 +107,7 @@ def _zip_directory(root_dir: str, folder_name: str, output_file):
     """
     dir_name = normpath_for_zip(os.path.join(root_dir, folder_name))
     if not os.path.exists(dir_name):
-        raise FileNotFoundError(f'output directory "{dir_name}" does not exist')
+        raise FileNotFoundError(f'source directory "{dir_name}" does not exist')
 
     if not os.path.isdir(dir_name):
         raise NotADirectoryError(f'"{dir_name}" is not a valid directory')

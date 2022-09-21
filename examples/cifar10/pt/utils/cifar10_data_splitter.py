@@ -44,9 +44,9 @@ import os
 import numpy as np
 import torchvision.datasets as datasets
 
+from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.event_type import EventType
 
 CIFAR10_ROOT = "/tmp/cifar10"   # will be used for all CIFAR-10 experiments
 

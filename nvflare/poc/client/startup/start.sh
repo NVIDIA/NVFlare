@@ -2,7 +2,6 @@
 site_name=site-NNN
 sp_end_point=localhost:8002:8003
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-echo "WORKSPACE set to $DIR/.."
 mkdir -p $DIR/../transfer
 if [ $# -eq 0 ] ; then
 	echo "No sp_end_point is provided.  Default sp_end_point (localhost:8002:8003) is used"

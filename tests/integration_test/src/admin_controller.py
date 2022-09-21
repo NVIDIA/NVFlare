@@ -259,6 +259,8 @@ class AdminController:
                             return False
                         else:
                             job_run_statuses = self._get_job_run_statuses()
+                            print(f"response is {response}")
+                            print(f"job_run_statuses is {job_run_statuses}")
                             for row in response["details"]["client_statuses"]:
                                 if row[3] != "stopped":
                                     continue
@@ -442,8 +444,8 @@ class AdminController:
     def finalize(self):
         if self.job_id:
             self.admin_api.abort_job(self.job_id)
-        self.admin_api.overseer_agent.end()
         self.admin_api.shutdown(target_type=TargetType.ALL)
+        self.admin_api.close()
         time.sleep(10)
 
     def _handle_start(self, args, site_launcher):
@@ -480,7 +482,6 @@ def _handle_kill(args, admin_api, site_launcher):
         else:
             # kill active server
             server_id = site_launcher.get_active_server_id(admin_api.port)
-        admin_api.logout()
         site_launcher.stop_server(server_id)
     elif args[0] == "overseer":
         site_launcher.stop_overseer()

@@ -14,9 +14,7 @@
 
 import copy
 import logging
-import multiprocessing
 import os
-import pickle
 import re
 import shlex
 import shutil
@@ -52,16 +50,17 @@ from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci.zip_utils import zip_directory_to_bytes
+from nvflare.fuel.utils import fobs
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
+from nvflare.private.fed.utils.fed_utils import security_close
 from nvflare.private.scheduler_constants import ShareableHeader
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
 
 from .admin import ClientReply
 from .client_manager import ClientManager
-from .collective_comm_waiter import CollectiveCommWaiter
 from .job_runner import JobRunner
 from .run_manager import RunManager
 from .server_engine_internal_spec import EngineInfo, RunInfo, ServerEngineInternalSpec
@@ -73,7 +72,7 @@ class ClientConnection:
         self.client = client
 
     def send(self, data):
-        data = pickle.dumps(data)
+        data = fobs.dumps(data)
         self.client.send(data)
 
     def recv(self):
@@ -120,7 +119,7 @@ class ServerEngine(ServerEngineInternalSpec):
         self.parent_conn_lock = Lock()
         self.job_runner = None
         self.job_def_manager = None
-        self.snapshot_lock = multiprocessing.Lock()
+        # self.snapshot_lock = multiprocessing.Lock()
 
     def _get_server_app_folder(self):
         return WorkspaceConstants.APP_PREFIX + "server"
@@ -196,17 +195,15 @@ class ServerEngine(ServerEngineInternalSpec):
         if run_number in self.run_processes.keys():
             return f"Server run_{run_number} already started."
         else:
-            app_root = os.path.join(self._get_run_folder(run_number), self._get_server_app_folder())
+            workspace = Workspace(root_dir=self.args.workspace, site_name="server")
+            app_root = workspace.get_app_dir(run_number)
             if not os.path.exists(app_root):
                 return "Server app does not exist. Please deploy the server app before starting."
 
             self.engine_info.status = MachineStatus.STARTING
+            app_custom_folder = workspace.get_app_custom_dir(run_number)
 
-            app_custom_folder = ""
-            if self.server.enable_byoc:
-                app_custom_folder = os.path.join(app_root, "custom")
-
-            open_ports = get_open_ports(3)
+            open_ports = get_open_ports(2)
             self._start_runner_process(
                 self.args, app_root, run_number, app_custom_folder, open_ports, job_id, job_clients, snapshot
             )
@@ -278,6 +275,7 @@ class ServerEngine(ServerEngineInternalSpec):
         command_options = ""
         for t in args.set:
             command_options += " " + t
+
         command = (
             sys.executable
             + " -m nvflare.private.fed.app.server.runner_process -m "
@@ -290,8 +288,6 @@ class ServerEngine(ServerEngineInternalSpec):
             + str(listen_port)
             + " -c "
             + str(open_ports[0])
-            + " --collective_command_port "
-            + str(open_ports[2])
             + " --set"
             + command_options
             + " print_conf=True restore_snapshot="
@@ -308,8 +304,6 @@ class ServerEngine(ServerEngineInternalSpec):
 
         with self.lock:
             self.run_processes[run_number] = {
-                RunProcessKey.COLLECTIVE_LISTEN_PORT: open_ports[2],
-                RunProcessKey.COLLECTIVE_CONNECTION: None,
                 RunProcessKey.LISTEN_PORT: listen_port,
                 RunProcessKey.CONNECTION: None,
                 RunProcessKey.CHILD_PROCESS: process,
@@ -575,7 +569,7 @@ class ServerEngine(ServerEngineInternalSpec):
         # Send the aux messages through admin_server
         request.set_peer_props(fl_ctx.get_all_public_props())
 
-        message = Message(topic=ReservedTopic.AUX_COMMAND, body=pickle.dumps(request))
+        message = Message(topic=ReservedTopic.AUX_COMMAND, body=fobs.dumps(request))
         message.set_header(RequestHeader.JOB_ID, str(fl_ctx.get_prop(FLContextKey.CURRENT_RUN)))
         requests = {}
         for n in targets:
@@ -587,7 +581,7 @@ class ServerEngine(ServerEngineInternalSpec):
             client_name = self.get_client_name_from_token(r.client_token)
             if r.reply:
                 try:
-                    results[client_name] = pickle.loads(r.reply.body)
+                    results[client_name] = fobs.loads(r.reply.body)
                 except BaseException:
                     results[client_name] = make_reply(ReturnCode.COMMUNICATION_ERROR)
                     self.logger.error(
@@ -610,23 +604,6 @@ class ServerEngine(ServerEngineInternalSpec):
                     result = command_conn.recv()
         return result
 
-    def get_collective_command_conn(self, job_id):
-        # this function need to be called with self.lock
-        command_conn = self.run_processes.get(job_id, {}).get(RunProcessKey.COLLECTIVE_CONNECTION)
-
-        if not command_conn:
-            try:
-                port = self.run_processes.get(job_id, {}).get(RunProcessKey.COLLECTIVE_LISTEN_PORT)
-                command_waiter = CollectiveCommWaiter()
-                address = ("localhost", port)
-                command_conn = CommandClient(address, authkey="client process secret password".encode())
-                command_conn = ClientConnection(command_conn)
-                self.run_processes[job_id][RunProcessKey.COLLECTIVE_CONNECTION] = command_conn
-                self.run_processes[job_id][RunProcessKey.COLLECTIVE_CONNECTION_WAITER] = command_waiter
-            except Exception:
-                pass
-        return command_conn
-
     def get_command_conn(self, job_id):
         # this function need to be called with self.lock
         port = self.run_processes.get(job_id, {}).get(RunProcessKey.LISTEN_PORT)
@@ -643,6 +620,7 @@ class ServerEngine(ServerEngineInternalSpec):
         return command_conn
 
     def persist_components(self, fl_ctx: FLContext, completed: bool):
+        self.logger.info("Start saving snapshot on server.")
 
         # Call the State Persistor to persist all the component states
         # 1. call every component to generate the component states data
@@ -694,7 +672,8 @@ class ServerEngine(ServerEngineInternalSpec):
 
     def restore_components(self, snapshot: RunSnapshot, fl_ctx: FLContext):
         for component_id, component in self.run_manager.components.items():
-            component.restore(snapshot.get_component_snapshot(component_id=component_id), fl_ctx)
+            if isinstance(component, FLComponent):
+                component.restore(snapshot.get_component_snapshot(component_id=component_id), fl_ctx)
 
         fl_ctx.props.update(snapshot.get_component_snapshot(component_id=SnapshotKey.FL_CONTEXT))
 
@@ -736,7 +715,7 @@ class ServerEngine(ServerEngineInternalSpec):
             # assume server resource is unlimited
             if site_name == "server":
                 continue
-            request = Message(topic=TrainingTopic.CHECK_RESOURCE, body=pickle.dumps(resource_requirements))
+            request = Message(topic=TrainingTopic.CHECK_RESOURCE, body=fobs.dumps(resource_requirements))
             client = self.get_client_from_name(site_name)
             if client:
                 requests.update({client.token: request})
@@ -747,7 +726,7 @@ class ServerEngine(ServerEngineInternalSpec):
         for r in replies:
             site_name = self.get_client_name_from_token(r.client_token)
             if r.reply:
-                resp = pickle.loads(r.reply.body)
+                resp = fobs.loads(r.reply.body)
                 result[site_name] = (
                     resp.get_header(ShareableHeader.CHECK_RESOURCE_RESULT, False),
                     resp.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, ""),
@@ -764,7 +743,7 @@ class ServerEngine(ServerEngineInternalSpec):
             check_result, token = result
             if check_result and token:
                 resource_requirements = resource_reqs[site_name]
-                request = Message(topic=TrainingTopic.CANCEL_RESOURCE, body=pickle.dumps(resource_requirements))
+                request = Message(topic=TrainingTopic.CANCEL_RESOURCE, body=fobs.dumps(resource_requirements))
                 request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
                 client = self.get_client_from_name(site_name)
                 if client:
@@ -777,7 +756,7 @@ class ServerEngine(ServerEngineInternalSpec):
         for site, dispatch_info in client_sites.items():
             resource_requirement = dispatch_info.resource_requirements
             token = dispatch_info.token
-            request = Message(topic=TrainingTopic.START_JOB, body=pickle.dumps(resource_requirement))
+            request = Message(topic=TrainingTopic.START_JOB, body=fobs.dumps(resource_requirement))
             request.set_header(RequestHeader.JOB_ID, job_id)
             request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
             client = self.get_client_from_name(site)
@@ -806,4 +785,5 @@ def server_shutdown(server, touch_file):
         time.sleep(3.0)
     finally:
         server.status = ServerStatus.SHUTDOWN
+        security_close()
         sys.exit(2)

@@ -8,12 +8,8 @@ n_clients=$1
 workspace="${PWD}/workspaces/xgboost_workspace_${n_clients}"
 site_pre="site-"
 
-# run on localhost and default admin
+# run on localhost
 servername="localhost"
-admin_username="admin"
-
-# get client IDs, a string, e.g. "All" or "I2CVB MSD NCI_ISBI_3T NCI_ISBI_Dx"
-client_ids=$1
 
 if test -z "${n_clients}"
 then

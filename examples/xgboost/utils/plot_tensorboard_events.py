@@ -20,10 +20,10 @@ import seaborn as sns
 import tensorflow as tf
 
 # poc workspace
-client_results_root = "../workspaces/xgboost_workspace_"
+client_results_root = "./workspaces/xgboost_workspace_"
 client_num_list = [5, 20]
 client_pre = "site-"
-centralized_path = "../workspaces/centralized/events.*"
+centralized_path = "./workspaces/centralized_1_1/events.*"
 
 # bagging and cyclic need different handle
 experiments_bagging = {
@@ -116,7 +116,7 @@ def main():
         data = {"Config": [], "Round": [], "AUC": []}
         # add centralized result
         eventfile = glob.glob(centralized_path, recursive=True)
-        assert len(eventfile) == 1, "No unique event file found!"
+        assert len(eventfile) == 1, "No unique event file found!" + eventfile
         eventfile = eventfile[0]
         print("adding", eventfile)
         add_eventdata(data, "higgs_centralized", eventfile, tag="AUC")

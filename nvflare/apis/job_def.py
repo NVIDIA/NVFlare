@@ -45,6 +45,9 @@ class JobMetaKey(str, Enum):
     JOB_ID = "job_id"
     JOB_NAME = "name"
     JOB_FOLDER_NAME = "job_folder_name"
+    SUBMITTER_NAME = "submitter_name"
+    SUBMITTER_ORG = "submitter_org"
+    SUBMITTER_ROLE = "submitter_role"
     STATUS = "status"
     DEPLOY_MAP = "deploy_map"
     RESOURCE_SPEC = "resource_spec"
@@ -57,6 +60,8 @@ class JobMetaKey(str, Enum):
     SUBMIT_TIME_ISO = "submit_time_iso"
     START_TIME = "start_time"
     DURATION = "duration"
+    JOB_DEPLOY_DETAIL = "job_deploy_detail"
+    SCOPE = "scope"
 
     def __repr__(self):
         return self.value

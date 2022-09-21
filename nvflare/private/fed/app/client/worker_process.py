@@ -25,15 +25,13 @@ import psutil
 
 from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants
 from nvflare.apis.workspace import Workspace
+from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import EngineConstant
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger
-from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
-from nvflare.private.fed.client.client_run_manager import ClientRunManager
-from nvflare.private.fed.client.client_runner import ClientRunner
+from nvflare.private.fed.client.client_app_runner import ClientAppRunner
 from nvflare.private.fed.client.client_status import ClientStatus
-from nvflare.private.fed.client.command_agent import CommandAgent
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler
 
 
@@ -78,46 +76,38 @@ def main():
     config_folder = kv_list.get("config_folder", "")
     secure_train = kv_list.get("secure_train", True)
     if config_folder == "":
-        args.client_config = "config_fed_client.json"
+        args.client_config = WorkspaceConstants.CLIENT_JOB_CONFIG
     else:
-        args.client_config = os.path.join(config_folder, "config_fed_client.json")
+        args.client_config = os.path.join(config_folder, WorkspaceConstants.CLIENT_JOB_CONFIG)
     args.config_folder = config_folder
     args.env = os.path.join("config", "environment.json")
+    workspace = Workspace(args.workspace, args.client_name, config_folder)
 
     try:
-        remove_restart_file(args)
+        remove_restart_file(workspace)
     except BaseException:
         print("Could not remove the restart.fl / shutdown.fl file.  Please check your system before starting FL.")
         sys.exit(-1)
 
-    restart_file = os.path.join(args.workspace, "restart.fl")
+    restart_file = workspace.get_file_path_in_root("restart.fl")
     if os.path.exists(restart_file):
         os.remove(restart_file)
 
-    print("starting the client .....")
+    # Initialize audit service since the job execution will need it!
+    audit_file_name = workspace.get_audit_file_path()
+    AuditService.initialize(audit_file_name)
 
-    startup = os.path.join(args.workspace, "startup")
-    SecurityContentService.initialize(content_folder=startup)
+    # print("starting the client .....")
+
+    SecurityContentService.initialize(content_folder=workspace.get_startup_kit_dir())
 
     thread = None
     stop_event = threading.Event()
     deployer = None
-    command_agent = None
+    client_app_runner = None
     federated_client = None
 
-    startup = args.startup
-    app_root = os.path.join(
-        args.workspace,
-        WorkspaceConstants.WORKSPACE_PREFIX + str(args.job_id),
-        WorkspaceConstants.APP_PREFIX + args.client_name,
-    )
-
-    logging_setup(app_root, args, config_folder, startup)
-
-    log_file = os.path.join(args.workspace, args.job_id, "log.txt")
-    add_logfile_handler(log_file)
-    logger = logging.getLogger("worker_process")
-    logger.info("Worker_process started.")
+    app_root = workspace.get_app_dir(str(args.job_id))
 
     try:
         # start parent process checking thread
@@ -125,13 +115,15 @@ def main():
         thread.start()
 
         conf = FLClientStarterConfiger(
-            app_root=startup,
-            client_config_file_name=args.fed_client,
-            log_config_file_name=args.log_config,
+            workspace=workspace,
             kv_list=args.set,
-            logging_config=False,
         )
         conf.configure()
+
+        log_file = workspace.get_app_log_file_path(args.job_id)
+        add_logfile_handler(log_file)
+        logger = logging.getLogger("worker_process")
+        logger.info("Worker_process started.")
 
         deployer = conf.base_deployer
         federated_client = deployer.create_fed_client(args, args.sp_target)
@@ -144,80 +136,36 @@ def main():
         federated_client.fl_ctx.set_prop(EngineConstant.FL_TOKEN, args.token, private=False)
         federated_client.fl_ctx.set_prop(FLContextKey.WORKSPACE_ROOT, args.workspace, private=True)
 
-        client_config_file_name = os.path.join(app_root, args.client_config)
-        conf = ClientJsonConfigurator(
-            config_file_name=client_config_file_name,
-        )
-        conf.configure()
-
-        workspace = Workspace(args.workspace, args.client_name, config_folder)
-        run_manager = ClientRunManager(
-            client_name=args.client_name,
-            job_id=args.job_id,
-            workspace=workspace,
-            client=federated_client,
-            components=conf.runner_config.components,
-            handlers=conf.runner_config.handlers,
-            conf=conf,
-        )
-        federated_client.run_manager = run_manager
-
-        with run_manager.new_context() as fl_ctx:
-            fl_ctx.set_prop(FLContextKey.CLIENT_NAME, args.client_name, private=False)
-            fl_ctx.set_prop(EngineConstant.FL_TOKEN, args.token, private=False)
-            fl_ctx.set_prop(FLContextKey.WORKSPACE_ROOT, args.workspace, private=True)
-            fl_ctx.set_prop(FLContextKey.ARGS, args, sticky=True)
-            fl_ctx.set_prop(FLContextKey.APP_ROOT, app_root, private=True, sticky=True)
-            fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True)
-            fl_ctx.set_prop(FLContextKey.SECURE_MODE, secure_train, private=True, sticky=True)
-
-            client_runner = ClientRunner(config=conf.runner_config, job_id=args.job_id, engine=run_manager)
-            run_manager.add_handler(client_runner)
-            fl_ctx.set_prop(FLContextKey.RUNNER, client_runner, private=True)
-
-            # Start the command agent
-            command_agent = CommandAgent(federated_client, int(args.listen_port), client_runner)
-            command_agent.start(fl_ctx)
-
-        federated_client.status = ClientStatus.STARTED
-        client_runner.run(app_root, args)
+        client_app_runner = ClientAppRunner()
+        client_app_runner.start_run(app_root, args, config_folder, federated_client, secure_train)
 
     except BaseException as e:
         logger.error(f"FL client execution exception: {e}", exc_info=True)
         raise e
     finally:
         stop_event.set()
-        if command_agent:
-            command_agent.shutdown()
+        if client_app_runner:
+            client_app_runner.close()
         if deployer:
             deployer.close()
         if federated_client:
             federated_client.close()
         if thread and thread.is_alive():
             thread.join()
+        AuditService.close()
 
 
-def logging_setup(app_root, args, config_folder, startup):
-    app_log_config = os.path.join(app_root, config_folder, "log.config")
-    if os.path.exists(app_log_config):
-        args.log_config = app_log_config
-    else:
-        args.log_config = os.path.join(startup, "log.config")
-    log_config_file_path = os.path.join(app_root, args.log_config)
-    logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
-
-
-def remove_restart_file(args):
+def remove_restart_file(workspace: Workspace):
     """To remove the restart.fl file.
 
     Args:
-        args: command args
+        workspace: workspace object
 
     """
-    restart_file = os.path.join(args.workspace, "restart.fl")
+    restart_file = workspace.get_file_path_in_root("restart.fl")
     if os.path.exists(restart_file):
         os.remove(restart_file)
-    restart_file = os.path.join(args.workspace, "shutdown.fl")
+    restart_file = workspace.get_file_path_in_root("shutdown.fl")
     if os.path.exists(restart_file):
         os.remove(restart_file)
 

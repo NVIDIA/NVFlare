@@ -13,7 +13,6 @@ workspace="${PWD}/workspaces/xgboost_workspace_${n_clients}"
 config=
 
 # default server and admin
-servername="server"
 admin_username="admin"
 
 # get particular config

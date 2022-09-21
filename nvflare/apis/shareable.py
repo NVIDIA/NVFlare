@@ -12,8 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pickle
-
+from ..fuel.utils import fobs
 from .fl_constant import ReservedKey, ReturnCode
 
 
@@ -28,6 +27,7 @@ class ReservedHeaderKey(object):
     TASK_NAME = ReservedKey.TASK_NAME
     TASK_ID = ReservedKey.TASK_ID
     WORKFLOW = ReservedKey.WORKFLOW
+    AUDIT_EVENT_ID = ReservedKey.AUDIT_EVENT_ID
     CONTENT_TYPE = "__content_type__"
 
 
@@ -113,7 +113,7 @@ class Shareable(dict):
             object serialized in bytes.
 
         """
-        return pickle.dumps(self)
+        return fobs.dumps(self)
 
     @classmethod
     def from_bytes(cls, data: bytes):
@@ -123,14 +123,17 @@ class Shareable(dict):
             data: a bytes object
 
         Returns:
-            an object loaded by pickle from data
+            an object loaded by FOBS from data
 
         """
-        return pickle.loads(data)
+        return fobs.loads(data)
 
 
 # some convenience functions
-def make_reply(rc) -> Shareable:
+def make_reply(rc, headers=None) -> Shareable:
     reply = Shareable()
     reply.set_return_code(rc)
+    if headers and isinstance(headers, dict):
+        for k, v in headers.items():
+            reply.set_header(k, v)
     return reply

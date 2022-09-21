@@ -73,6 +73,8 @@ class WorkspaceBuilder(Builder):
         self._make_dir(dirs)
         dirs = [self.get_transfer_dir(p, ctx) for p in project.participants]
         self._make_dir(dirs)
+        dirs = [self.get_local_dir(p, ctx) for p in project.participants]
+        self._make_dir(dirs)
 
     def finalize(self, ctx: dict):
         if ctx["last_prod_stage"] >= 99:
@@ -110,7 +112,11 @@ class DistributionBuilder(Builder):
             ctx (dict): the provision context
         """
         wip_dir = self.get_wip_dir(ctx)
-        dirs = [name for name in os.listdir(wip_dir) if os.path.isdir(os.path.join(wip_dir, name))]
+        dirs = [
+            name
+            for name in os.listdir(wip_dir)
+            if os.path.isdir(os.path.join(wip_dir, name)) and "nvflare_" not in name
+        ]
         for dir in dirs:
             dest_zip_file = os.path.join(wip_dir, f"{dir}")
             if self.zip_password:

@@ -11,13 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import json
-import pickle
 from typing import List
 
 from nvflare.apis.fl_constant import ReturnCode, SystemComponents
 from nvflare.apis.resource_manager_spec import ResourceConsumerSpec, ResourceManagerSpec
 from nvflare.apis.shareable import Shareable
+from nvflare.fuel.utils import fobs
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import ERROR_MSG_PREFIX, RequestHeader, SysCommandTopic, TrainingTopic
 from nvflare.private.fed.client.admin import RequestProcessor
@@ -42,7 +43,7 @@ class CheckResourceProcessor(RequestProcessor):
         with engine.new_context() as fl_ctx:
             result = Shareable()
             try:
-                resource_spec = pickle.loads(req.body)
+                resource_spec = fobs.loads(req.body)
                 check_result, token = resource_manager.check_resources(
                     resource_requirement=resource_spec, fl_ctx=fl_ctx
                 )
@@ -51,7 +52,7 @@ class CheckResourceProcessor(RequestProcessor):
             except Exception:
                 result.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
 
-        return Message(topic="reply_" + req.topic, body=pickle.dumps(result))
+        return Message(topic="reply_" + req.topic, body=fobs.dumps(result))
 
 
 class StartJobProcessor(RequestProcessor):
@@ -76,7 +77,7 @@ class StartJobProcessor(RequestProcessor):
 
         allocated_resources = None
         try:
-            resource_spec = pickle.loads(req.body)
+            resource_spec = fobs.loads(req.body)
             job_id = req.get_header(RequestHeader.JOB_ID)
             token = req.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN)
         except Exception as e:
@@ -92,7 +93,6 @@ class StartJobProcessor(RequestProcessor):
                 job_id,
                 allocated_resource=allocated_resources,
                 token=token,
-                resource_consumer=resource_consumer,
                 resource_manager=resource_manager,
             )
         except Exception as e:
@@ -124,13 +124,13 @@ class CancelResourceProcessor(RequestProcessor):
             result = Shareable()
             try:
                 # resource_spec = req.get_header(ShareableHeader.RESOURCE_SPEC)
-                resource_spec = pickle.loads(req.body)
+                resource_spec = fobs.loads(req.body)
                 token = req.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN)
                 resource_manager.cancel_resources(resource_requirement=resource_spec, token=token, fl_ctx=fl_ctx)
             except Exception:
                 result.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
 
-        return Message(topic="reply_" + req.topic, body=pickle.dumps(result))
+        return Message(topic="reply_" + req.topic, body=fobs.dumps(result))
 
 
 class ReportResourcesProcessor(RequestProcessor):

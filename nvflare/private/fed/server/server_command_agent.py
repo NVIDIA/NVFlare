@@ -13,10 +13,10 @@
 # limitations under the License.
 
 import logging
-import pickle
 import threading
 
 from nvflare.apis.fl_constant import ServerCommandKey
+from nvflare.fuel.utils import fobs
 
 from ..utils.fed_utils import listen_command
 from .server_commands import ServerCommands
@@ -46,7 +46,7 @@ class ServerCommandAgent(object):
             try:
                 if conn.poll(1.0):
                     msg = conn.recv()
-                    msg = pickle.loads(msg)
+                    msg = fobs.loads(msg)
                     command_name = msg.get(ServerCommandKey.COMMAND)
                     data = msg.get(ServerCommandKey.DATA)
                     command = ServerCommands.get_command(command_name)

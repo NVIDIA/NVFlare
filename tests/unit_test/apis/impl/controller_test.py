@@ -27,7 +27,7 @@ from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.apis.signal import Signal
-from tests.unit_test.utils import skip_if_quick
+from tests.unit_test.utils.test_utils import skip_if_quick
 
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)

@@ -6,7 +6,7 @@
         "train"
       ],
       "executor": {
-        "path": "tests.integration_test.tf2.trainer.SimpleTrainer",
+        "path": "trainer.SimpleTrainer",
         "args": {
           "epochs_per_round": 2
         }

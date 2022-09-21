@@ -15,16 +15,19 @@
 import os
 
 from nvflare.apis.resource_manager_spec import ResourceConsumerSpec
+from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids, get_host_gpu_memory_free
 
 
 class GPUResourceConsumer(ResourceConsumerSpec):
-    def __init__(self, gpu_resource_key="gpu"):
-        super().__init__()
-        self.gpu_resource_key = gpu_resource_key
+    def __init__(self):
         os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 
     def consume(self, resources: dict):
-        gpu_numbers = []
-        if self.gpu_resource_key in resources:
-            gpu_numbers = [str(x) for x in resources[self.gpu_resource_key]]
-        os.environ["CUDA_VISIBLE_DEVICES"] = ",".join(gpu_numbers)
+        host_gpus = get_host_gpu_ids()
+        host_gpu_memory_free = get_host_gpu_memory_free(unit="MiB")
+        for gpu_id, gpu_mem in resources.items():
+            if gpu_id not in host_gpus:
+                raise RuntimeError(f"GPU ID {gpu_id} does not exist")
+            if gpu_mem * 1024 > host_gpu_memory_free[gpu_id]:
+                raise RuntimeError("GPU free mem is not enough")
+        os.environ["CUDA_VISIBLE_DEVICES"] = ",".join([str(i) for i in resources.keys()])

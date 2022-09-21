@@ -20,7 +20,9 @@ import traceback
 
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.sec.audit import Auditor, AuditService
+from nvflare.fuel.sec.authz import AuthorizationService, AuthzContext, Person
 from nvflare.private.admin_defs import Message, error_reply, ok_reply
+from nvflare.private.defs import RequestHeader
 
 
 class Sender(object):
@@ -180,21 +182,53 @@ class FedAdminAgent(object):
 
                 # create audit record
                 if self.auditor:
-                    user_name = req.get_header(ConnProps.USER_NAME, "")
+                    user_name = req.get_header(RequestHeader.USER_NAME, "")
                     ref_event_id = req.get_header(ConnProps.EVENT_ID, "")
                     self.auditor.add_event(user=user_name, action=topic, ref=ref_event_id)
 
                 processor = self.processors.get(topic)
                 if processor:
                     try:
-                        reply = processor.process(req, self.app_ctx)
-                        if reply is None:
-                            # simply ack
-                            reply = ok_reply()
-                        else:
-                            assert isinstance(
-                                reply, Message
-                            ), "processor for topic {} failed to produce valid reply".format(topic)
+                        assert isinstance(processor, RequestProcessor)
+                        reply = None
+
+                        # see whether pre-authorization is needed
+                        authz_flag = req.get_header(RequestHeader.REQUIRE_AUTHZ)
+                        require_authz = authz_flag == "true"
+                        if require_authz:
+                            # authorize this command!
+                            cmd = req.get_header(RequestHeader.ADMIN_COMMAND, None)
+                            if cmd:
+                                user = Person(
+                                    name=req.get_header(RequestHeader.USER_NAME, ""),
+                                    org=req.get_header(RequestHeader.USER_ORG, ""),
+                                    role=req.get_header(RequestHeader.USER_ROLE, ""),
+                                )
+                                submitter = Person(
+                                    name=req.get_header(RequestHeader.SUBMITTER_NAME, ""),
+                                    org=req.get_header(RequestHeader.SUBMITTER_ORG, ""),
+                                    role=req.get_header(RequestHeader.SUBMITTER_ROLE, ""),
+                                )
+
+                                authz_ctx = AuthzContext(user=user, submitter=submitter, right=cmd)
+
+                                authorized, err = AuthorizationService.authorize(authz_ctx)
+                                if err:
+                                    reply = error_reply(err)
+                                elif not authorized:
+                                    reply = error_reply("not_authorized")
+                            else:
+                                reply = error_reply("requires authz but missing admin command")
+
+                        if not reply:
+                            reply = processor.process(req, self.app_ctx)
+                            if reply is None:
+                                # simply ack
+                                reply = ok_reply()
+                            else:
+                                assert isinstance(
+                                    reply, Message
+                                ), "processor for topic {} failed to produce valid reply".format(topic)
                     except BaseException as e:
                         traceback.print_exc()
                         reply = error_reply("exception_occurred: {}".format(e))
