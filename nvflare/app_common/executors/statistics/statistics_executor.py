@@ -61,6 +61,7 @@ class StatisticsExecutor(Executor):
     def metric_functions(self) -> dict:
         return {
             StC.STATS_COUNT: self.get_count,
+            StC.STATS_FAILURE_COUNT: self.get_failure_count,
             StC.STATS_SUM: self.get_sum,
             StC.STATS_MEAN: self.get_mean,
             StC.STATS_STDDEV: self.get_stddev,
@@ -123,6 +124,9 @@ class StatisticsExecutor(Executor):
             ds_features = self.get_numeric_features()
             metric_task = shareable.get(StC.METRIC_TASK_KEY)
             target_metrics: List[MetricConfig] = fobs.loads(shareable.get(StC.STATS_TARGET_METRICS))
+            if StC.STATS_FAILURE_COUNT not in target_metrics:
+                target_metrics.append(MetricConfig(StC.STATS_FAILURE_COUNT, {}))
+
             for tm in target_metrics:
                 fn = self.metric_functions()[tm.name]
                 metrics_result[tm.name] = {}
@@ -165,6 +169,13 @@ class StatisticsExecutor(Executor):
     ) -> int:
 
         result = self.stats_generator.count(dataset_name, feature_name)
+        return result
+
+    def get_failure_count(
+        self, dataset_name: str, feature_name: str, metric_config: MetricConfig, inputs: Shareable, fl_ctx: FLContext
+    ) -> int:
+
+        result = self.stats_generator.failure_count(dataset_name, feature_name)
         return result
 
     def get_sum(

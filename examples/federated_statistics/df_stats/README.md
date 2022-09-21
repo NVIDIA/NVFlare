@@ -130,7 +130,7 @@ done with prepare data
 
 There are different ways to set privacy filter depending the use cases
 
-### 3.1 Set Privacy Policy researcher
+### 3.1 Set Privacy Policy as researcher
 one can specify the "task_result_filters" config_fed_client.json to specify
 the privacy control.  This is useful when you develop these filters
 
@@ -156,7 +156,7 @@ before the job-specified filters (if any). This rule is enforced during task exe
 With such rules, if we have both task result filters and privacy scoped filters, we need to understand
 that the privacy filters will be applied first, then job filters. 
 
-## 4. Using FL Simulator
+## 4. Run job in FL Simulator
 
 With FL simulator 
 
@@ -180,7 +180,7 @@ optional arguments:
   -gpu GPU, --gpu GPU   list of GPU Device Ids, comma separated
 
 ```
-we can just run the example as CLI command 
+we can just run the example with CLI command 
 
 ```
 nvflare simulator $NVFLARE_HOME/examples/federated_statistics/df_stats/df_stats_job -w /tmp/nvflare -n 2 -t 2

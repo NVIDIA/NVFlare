@@ -1,0 +1,36 @@
+{
+  "format_version": 2,
+  "server": {
+    "heart_beat_timeout": 600
+  },
+  "task_data_filters": [],
+  "task_result_filters": [],
+  "workflows": [
+    {
+      "id": "fed_stats_controller",
+      "path": "nvflare.app_common.workflows.statistics_controller.StatisticsController",
+      "args": {
+        "min_clients": 4,
+        "metric_configs": {
+          "count": {},
+          "histogram": {
+            "*": {
+              "bins": 255, "range": [0,255]
+            }
+          }
+        },
+        "writer_id": "stats_writer"
+      }
+    }
+  ],
+  "components": [
+    {
+      "id": "stats_writer",
+      "path": "nvflare.app_common.statistics.json_stats_file_persistor.JsonStatsFileWriter",
+      "args": {
+        "output_path": "statistics/image_histograms.json",
+        "json_encoder_path": "nvflare.app_common.utils.json_utils.ObjectEncoder"
+      }
+    }
+  ]
+}

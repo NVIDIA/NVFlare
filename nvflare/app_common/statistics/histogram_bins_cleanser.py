@@ -44,19 +44,22 @@ class HistogramBinsCleanser(FLComponent, MetricsPrivacyCleanser):
             for ds_name in hist_metrics:
                 result[ds_name] = {}
                 feature_item_counts = metrics[StC.STATS_COUNT][ds_name]
+                feature_item_failure_counts = metrics[StC.STATS_FAILURE_COUNT][ds_name]
                 feature_metrics = hist_metrics[ds_name]
                 for feature in feature_metrics:
                     hist: Histogram = feature_metrics[feature]
                     num_of_bins: int = len(hist.bins)
                     item_count = feature_item_counts[feature]
+                    item_failure_count = feature_item_failure_counts[feature]
+                    effective_count = item_count - item_failure_count
                     result[ds_name][feature] = True
-                    if num_of_bins >= item_count * self.max_bins_percent / 100:
+                    if num_of_bins >= effective_count * self.max_bins_percent / 100:
                         result[ds_name][feature] = False
-                        limit_count = round(item_count * self.max_bins_percent)
+                        limit_count = round(effective_count * self.max_bins_percent)
                         self.logger.info(
-                            f"number of bins: '{num_of_bins}' needs to be smaller than: {limit_count}], which"
-                            f" is '{self.max_bins_percent}' percent of item_count '{item_count}' for feature '{feature}'"
-                            f" in dataset '{ds_name}' for client {client_name}"
+                            f"number of bins: '{num_of_bins}' needs to be smaller than: {effective_count}], which"
+                            f" is '{self.max_bins_percent}' percent of ( total count - failure count) '{effective_count}'"
+                            f" for feature '{feature}' in dataset '{ds_name}' for client {client_name}"
                         )
         return result
 
