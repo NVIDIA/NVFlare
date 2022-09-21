@@ -63,9 +63,9 @@ class CyclicController(Controller):
             snapshot_every_n_rounds (int, optional): persist the server state every n rounds. Defaults to 1.
                 If n is 0 then no persist.
             order (str, optional): the order of relay.
-                If FIXED means everytime it is the same order (ordered by client names).
-                If RANDOM means everytime it gets shuffled.
-                If RANDOM_WITHOUT_SAME_IN_A_ROW means everytime it gets shuffled but a client will never be
+                If FIXED means the same order for every round.
+                If RANDOM means random order for every round.
+                If RANDOM_WITHOUT_SAME_IN_A_ROW means every round the order gets shuffled but a client will never be
                     run twice in a row (in different round).
 
         Raises:
