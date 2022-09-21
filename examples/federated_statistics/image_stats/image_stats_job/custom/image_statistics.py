@@ -24,7 +24,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.statistics_spec import Statistics, Histogram, Feature, DataType, Bin, HistogramType
 
 
-class ImageHistogram(Statistics):
+class ImageStatistics(Statistics):
 
     def __init__(
             self,
@@ -83,7 +83,6 @@ class ImageHistogram(Statistics):
               feature_name: str) -> int:
         image_paths = self.data_list[dataset_name]
         return len(image_paths)
-
 
     def failure_count(self,
               dataset_name: str,

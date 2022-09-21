@@ -15,7 +15,7 @@
 import pytest
 
 from nvflare.app_common.app_constant import StatisticsConstants as StC
-from nvflare.app_common.statistics.min_max_noise_generator import AddNoiseToMinMax
+from nvflare.app_common.statistics.min_max_cleanser import AddNoiseToMinMax
 
 MAX_TEST_CASES = [
     (100, (0.1, 0.3), (100 * 1.1, 100 * 1.3)),

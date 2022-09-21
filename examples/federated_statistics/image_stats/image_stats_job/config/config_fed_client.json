@@ -34,7 +34,7 @@
   "components": [
     {
       "id": "local_hist_generator",
-      "path": "image_histogram.ImageHistogram",
+      "path": "image_statistics.ImageStatistics",
       "args": {
         "data_root": "/tmp/nvflare/data"
       }

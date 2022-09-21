@@ -19,44 +19,49 @@ from nvflare.app_common.statistics.min_count_cleanser import MinCountCleanser
 MIN_COUNT_VALIDATION_TEST_CASES = [
     # metrics with age count = 6, failure count = 0 , min_count = 7, count < min_count (6 - 0 < 7), valid = False
     ({"count": {"train": {"age": 6}}, "failure_count": {"train": {"age": 0}}}, 7, {"train": {"age": False}}),
-
     # metrics with age count=12, failure count=3, min_count=7, effective count > min_count (12 - 3 < 7), valid = True
     ({"count": {"train": {"age": 12}}, "failure_count": {"train": {"age": 3}}}, 7, {"train": {"age": True}}),
-
     # metrics with age count=9, failure count=3, min_count=7, effective count > min_count (9 - 3 < 7), valid = False
     ({"count": {"train": {"age": 9}}, "failure_count": {"train": {"age": 3}}}, 7, {"train": {"age": False}}),
-
     # metrics with age count = 8, failure count = 0 , min_count = 7, count > min_count (8 - 0 > 7), valid = True
     ({"count": {"train": {"age": 8}}, "failure_count": {"train": {"age": 0}}}, 7, {"train": {"age": True}}),
-
     # metrics with age count = 8, edu count = 5,  failure count = 0 , min_count = 7,
     # age count > min_count (8 - 0 > 7), valid = True
     # edu count < min_count (5 - 0 < 7), valid = False
-    ({"count": {"train": {"age": 8, "edu": 5}},
-      "failure_count": {"train": {"age": 0, "edu": 0}}}, 7, {"train": {"age": True, "edu": False}}),
+    (
+        {"count": {"train": {"age": 8, "edu": 5}}, "failure_count": {"train": {"age": 0, "edu": 0}}},
+        7,
+        {"train": {"age": True, "edu": False}},
+    ),
 ]
 
 MIN_COUNT_APPLY_TEST_CASES = [
     # metrics with age count = 6, failure count = 0 , min_count = 7, count < min_count (6 - 0 < 7), valid = False
     # all features are removed from result. Modified Flag = True
-    ({"count": {"train": {"age": 6}},
-      "failure_count": {"train": {"age": 0}}
-      }, 7, ({"count": {"train": {}},
-              "failure_count": {"train": {}}
-              }, True)),
-
+    (
+        {"count": {"train": {"age": 6}}, "failure_count": {"train": {"age": 0}}},
+        7,
+        ({"count": {"train": {}}, "failure_count": {"train": {}}}, True),
+    ),
     # metrics with age count = 8, failure count = 1 , min_count = 7, (8 - 0 < 7), valid = True
     # all feature metrics remain. Modified Flag = False
-    ({"count": {"train": {"age": 8}},
-      "failure_count": {"train": {"age": 1}}
-      }, 7, ({"count": {"train": {"age": 8}},
-              "failure_count": {"train": {"age": 1}}
-              }, False)),
-    ({"count": {"train": {"age": 8, "edu": 5}},
-      "failure_count": {"train": {"age": 0, "edu": 0}}
-      }, 7, ({"count": {"train": {"age": 8}},
-              "failure_count": {"train": {"age": 0}}
-              }, True)),
+    (
+        {"count": {"train": {"age": 8}}, "failure_count": {"train": {"age": 1}}},
+        7,
+        ({"count": {"train": {"age": 8}}, "failure_count": {"train": {"age": 1}}}, False),
+    ),
+    (
+        {
+            "count": {"train": {"age": 8, "edu": 5}},
+            "sum": {"train": {"age": 120, "edu": 360}},
+            "failure_count": {"train": {"age": 0, "edu": 0}},
+        },
+        7,
+        (
+            {"count": {"train": {"age": 8}}, "sum": {"train": {"age": 120}}, "failure_count": {"train": {"age": 0}}},
+            True,
+        ),
+    ),
 ]
 
 
