@@ -8,7 +8,7 @@ usage()
     echo
     echo "Syntax: ./run_integration_tests.sh -m [-c]"
     echo "options:"
-    echo "m     Which framework/backend to test (options: numpy, tensorflow, pytorch)."
+    echo "m     Which backend/test to run (options: numpy, tensorflow, pytorch, overseer)."
     echo "c     Clean up integration test results."
     echo
     exit 1
@@ -33,10 +33,18 @@ while getopts ":m:c" option; do
     esac
 done
 
+run_overseer()
+{
+    echo "Running overseer integration tests."
+    cmd="$prefix $cmd overseer_test.py"
+    echo "$cmd"
+    eval "$cmd"
+}
+
 run_numpy()
 {
     echo "Running integration tests using numpy related jobs."
-    cmd="$prefix $cmd system_test.py overseer_test.py"
+    cmd="$prefix $cmd system_test.py"
     echo "$cmd"
     eval "$cmd"
 }
@@ -66,4 +74,6 @@ elif [[ $m == "tensorflow" ]]; then
     run_tensorflow
 elif [[ $m == "pytorch" ]]; then
     run_pytorch
+elif [[ $m == "overseer" ]]; then
+    run_overseer
 fi
