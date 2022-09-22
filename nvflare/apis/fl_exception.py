@@ -26,15 +26,3 @@ class FLCommunicationError(Exception):
         # Copy all the gRPC exception properties into FLCommunicationError instance.
         self.__dict__.update(exception.__dict__)
         self.message = message
-
-
-class WorkflowError(Exception):
-    """FL Workflow error to indicate not to continue workflow execution."""
-
-    def __init__(self, *args: object) -> None:
-        """Init the WorkflowError.
-
-        Args:
-            *args: variable number of arguments for Exception; usually is error message string
-        """
-        super().__init__(*args)

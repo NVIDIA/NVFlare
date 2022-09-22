@@ -29,6 +29,7 @@ from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger
 from nvflare.private.fed.server.server_app_runner import ServerAppRunner
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize
+from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 
 def main():
@@ -120,9 +121,11 @@ def main():
                 deployer.close()
             AuditService.close()
 
-    except ConfigError as ex:
-        logger.exception(f"ConfigError: {ex}", exc_info=True)
-        raise ex
+    except ConfigError as e:
+        logger = logging.getLogger("runner_process")
+        logger.exception(f"ConfigError: {secure_format_exception(e)}")
+        secure_log_traceback(logger)
+        raise e
 
 
 if __name__ == "__main__":

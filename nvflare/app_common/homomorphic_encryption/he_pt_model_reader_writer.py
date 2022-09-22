@@ -17,6 +17,7 @@ import numpy as np
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.pt.pt_fed_utils import feed_vars
 from nvflare.app_common.pt.pt_model_reader_writer import PTModelReaderWriter
+from nvflare.security.logging import secure_format_exception
 
 
 class HEPTModelReaderWriter(PTModelReaderWriter):
@@ -56,7 +57,7 @@ class HEPTModelReaderWriter(PTModelReaderWriter):
                         )
                         model_params[var_name] = np.reshape(model_params[var_name], local_var_dict[var_name].shape)
                     except Exception as e:
-                        raise RuntimeError(f"{self._name} reshaping Exception: {str(e)}")
+                        raise RuntimeError(f"{self._name} reshaping Exception: {secure_format_exception(e)}")
 
             assign_ops, updated_local_model = feed_vars(net, model_params)
             self.logger.debug(f"assign_ops: {len(assign_ops)}")
@@ -64,4 +65,4 @@ class HEPTModelReaderWriter(PTModelReaderWriter):
             net.load_state_dict(updated_local_model)
             return assign_ops
         except BaseException as e:
-            raise RuntimeError(f"{self._name} apply_model Exception: {str(e)}")
+            raise RuntimeError(f"{self._name} apply_model Exception: {secure_format_exception(e)}")

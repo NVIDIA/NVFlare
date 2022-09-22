@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import logging
-import traceback
 
 from nvflare.apis.utils.fl_context_utils import generate_log_message
 
@@ -23,6 +22,7 @@ from .fl_constant import EventScope, FedEventHeader, FLContextKey, LogMessageTag
 from .fl_context import FLContext
 from .persistable import StatePersistable
 from .shareable import Shareable
+from nvflare.security.logging import secure_format_traceback
 
 
 class FLComponent(StatePersistable):
@@ -214,10 +214,10 @@ class FLComponent(StatePersistable):
         """
         log_msg = generate_log_message(fl_ctx, msg)
         self.logger.error(log_msg)
-        traceback.print_exc()
+        ex_text = secure_format_traceback()
+        self.logger.error(ex_text)
 
         if fire_event:
-            ex_text = traceback.format_exc()
             ex_msg = "{}\n{}".format(log_msg, ex_text)
             self._fire_log_event(
                 event_type=EventType.EXCEPTION_LOG_AVAILABLE,

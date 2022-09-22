@@ -25,9 +25,10 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.apis.workspace import Workspace
-from nvflare.utils.import_utils import optional_import
+from nvflare.fuel.utils.import_utils import optional_import
 
 from .constants import XGB_TRAIN_TASK, XGBShareableHeader
+from nvflare.security.logging import secure_format_traceback, secure_format_exception
 
 
 class XGBFedController(Controller):
@@ -157,7 +158,7 @@ class XGBFedController(Controller):
             self.log_info(fl_ctx, "Finish training phase.")
 
         except BaseException as e:
-            err = traceback.format_exc()
-            error_msg = f"Exception in control_flow: {e}: {err}"
+            err = secure_format_traceback()
+            error_msg = f"Exception in control_flow: {secure_format_exception(e)}: {err}"
             self.log_exception(fl_ctx, error_msg)
-            self.system_panic(str(e), fl_ctx)
+            self.system_panic(secure_format_exception(e), fl_ctx)

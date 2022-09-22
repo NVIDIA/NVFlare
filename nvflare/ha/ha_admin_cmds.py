@@ -18,6 +18,7 @@ import logging
 from nvflare.apis.overseer_spec import OverseerAgent
 from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
+from nvflare.security.logging import secure_format_exception
 
 
 def list_sp(args, api):
@@ -62,7 +63,7 @@ def shutdown_system(args, api):
     except Exception as e:
         return {
             "status": APIStatus.ERROR_RUNTIME,
-            "details": f"Error getting server status to make sure all jobs are stopped before shutting down system: {e}",
+            "details": f"Error getting server status to make sure all jobs are stopped before shutting down system: {secure_format_exception(e)}",
         }
     print("Shutting down the system...")
     resp = api.overseer_agent.set_state("shutdown")
@@ -157,7 +158,7 @@ class HACommandModule(CommandModule):
             return {
                 "status": APIStatus.ERROR_RUNTIME,
                 "details": "Error getting server status to make sure all jobs are stopped before shutting down system: {}".format(
-                    e
+                    secure_format_exception(e)
                 ),
             }
         print("Shutting down the system...")

@@ -20,6 +20,7 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
+from nvflare.security.logging import secure_format_exception
 
 from .constants import NPConstants
 
@@ -54,7 +55,7 @@ class NPModelPersistor(ModelPersistor):
         except Exception as e:
             self.log_info(
                 fl_ctx,
-                f"Unable to load model from {model_path}: {e}. Using default data instead.",
+                f"Unable to load model from {model_path}: {secure_format_exception(e)}. Using default data instead.",
                 fire_event=False,
             )
             data = self.default_data.copy()

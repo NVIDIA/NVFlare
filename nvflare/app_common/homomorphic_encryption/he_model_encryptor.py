@@ -14,16 +14,16 @@
 
 import re
 import time
-from typing import Union
 
 import numpy as np
 import tenseal as ts
 from tenseal.tensors.ckksvector import CKKSVector
 
 import nvflare.app_common.homomorphic_encryption.he_constant as he
-from nvflare.apis.dxo import DXO, DataKind, MetaKey
-from nvflare.apis.dxo_filter import DXOFilter
+from nvflare.apis.dxo import DXO, MetaKey, from_shareable
 from nvflare.apis.event_type import EventType
+from nvflare.apis.filter import Filter
+from nvflare.apis.fl_constant import ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.homomorphic_encryption.homomorphic_encrypt import (
@@ -32,14 +32,13 @@ from nvflare.app_common.homomorphic_encryption.homomorphic_encrypt import (
 )
 
 
-class HEModelEncryptor(DXOFilter):
+class HEModelEncryptor(Filter):
     def __init__(
         self,
         tenseal_context_file="client_context.tenseal",
         encrypt_layers=None,
         aggregation_weights=None,
         weigh_by_local_iter=True,
-        data_kinds=None,
     ):
         """Filter to encrypt Shareable object using homomorphic encryption (HE) with TenSEAL https://github.com/OpenMined/TenSEAL.
 
@@ -51,14 +50,9 @@ class HEModelEncryptor(DXOFilter):
             aggregation_weights: dictionary of client aggregation `{"client1": 1.0, "client2": 2.0, "client3": 3.0}`;
                                  defaults to a weight of 1.0 if not specified.
             weigh_by_local_iter: If true, multiply client weights on first before encryption (default: `True` which is recommended for HE)
-            data_kinds: data kinds to apply this filter
 
         """
-        if not data_kinds:
-            data_kinds = [DataKind.WEIGHT_DIFF, DataKind.WEIGHTS]
-
-        super().__init__(supported_data_kinds=[DataKind.WEIGHTS, DataKind.WEIGHT_DIFF], data_kinds_to_filter=data_kinds)
-
+        super().__init__()
         self.logger.info("Using HE model encryptor.")
         self.tenseal_context = None
         self.tenseal_context_file = tenseal_context_file
@@ -160,22 +154,26 @@ class HEModelEncryptor(DXOFilter):
         # encryption_dict: keys are layer names.  values are True for serialized ckks_vectors, False elsewhere.
         return params, encryption_dict
 
-    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:
+    def process(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
         """Filter process apply to the Shareable object.
 
         Args:
-            dxo: data to be processed
-            shareable: that the dxo belongs to
+            shareable: shareable
             fl_ctx: FLContext
 
-        Returns: DXO object with encrypted weights
+        Returns:
+            a Shareable object with encrypted model weights
 
         """
-        peer_ctx = fl_ctx.get_peer_context()
-        assert isinstance(peer_ctx, FLContext)
-        self.client_name = peer_ctx.get_identity_name(default="?")
+        rc = shareable.get_return_code()
+        if rc != ReturnCode.OK:
+            # don't process if RC not OK
+            return shareable
+
+        dxo = from_shareable(shareable)
 
         if self.aggregation_weights:
+            self.client_name = shareable.get_peer_prop(ReservedKey.IDENTITY_NAME, default="?")
             self.aggregation_weight = self.aggregation_weights.get(self.client_name, 1.0)
             self.log_info(fl_ctx, f"weighting {self.client_name} by aggregation weight {self.aggregation_weight}")
 
@@ -184,8 +182,13 @@ class HEModelEncryptor(DXOFilter):
             if self.n_iter is None:
                 raise ValueError("DXO data does not have local iterations for weighting!")
             self.log_info(fl_ctx, f"weighting by local iter before encryption with {self.n_iter}")
+        try:
+            new_dxo = self._process(dxo, fl_ctx)
+            new_dxo.update_shareable(shareable)
+        except BaseException:
+            self.log_exception(fl_ctx, "Exception occurred")
 
-        return self._process(dxo, fl_ctx)
+        return shareable
 
     def _process(self, dxo: DXO, fl_ctx: FLContext) -> DXO:
         self.log_info(fl_ctx, "Running HE encryption...")

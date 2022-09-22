@@ -30,6 +30,7 @@ from nvflare.private.fed.server.admin import FedAdminServer
 from nvflare.private.fed.server.fed_server import FederatedServer
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize, security_init
 from nvflare.private.privacy_manager import PrivacyService
+from nvflare.security.logging import secure_format_exception
 
 
 def main():
@@ -129,9 +130,9 @@ def main():
 
         logger.info("Server started")
 
-    except ConfigError as ex:
-        print("ConfigError:", str(ex))
-        raise ex
+    except ConfigError as e:
+        logger.exception(f"ConfigError: {secure_format_exception(e)}")
+        raise e
 
 
 def create_admin_server(fl_server: FederatedServer, server_conf=None, args=None, secure_train=False):

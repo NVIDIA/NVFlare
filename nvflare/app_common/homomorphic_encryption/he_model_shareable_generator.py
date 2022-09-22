@@ -26,6 +26,7 @@ from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.homomorphic_encryption.homomorphic_encrypt import load_tenseal_context_from_workspace
 from nvflare.app_common.shareablegenerators.full_model_shareable_generator import FullModelShareableGenerator
+from nvflare.security.logging import secure_format_exception
 
 
 class HEModelShareableGenerator(FullModelShareableGenerator):
@@ -63,7 +64,7 @@ class HEModelShareableGenerator(FullModelShareableGenerator):
                     )  # now the global model weights are encrypted
                     n_vars_total = global_var.size()
                 except BaseException as e:
-                    raise ValueError("add_to_global_weights Exception", str(e))
+                    raise ValueError(f"add_to_global_weights Exception: {secure_format_exception(e)}")
         else:
             global_var = base_weights[v_name].ravel()
             n_vars_total = np.size(global_var)
@@ -149,4 +150,4 @@ class HEModelShareableGenerator(FullModelShareableGenerator):
             return self._shareable_to_learnable(shareable, fl_ctx)
         except BaseException as e:
             self.log_exception(fl_ctx, "error converting shareable to model")
-            raise ValueError(f"{self._name} Exception {e}")
+            raise ValueError(f"{self._name} Exception {secure_format_exception(e)}")

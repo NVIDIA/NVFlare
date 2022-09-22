@@ -17,6 +17,7 @@ import logging
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model_processor import ModelProcessor
 from nvflare.app_common.pt.pt_fed_utils import feed_vars
+from nvflare.security.logging import secure_format_exception
 
 
 class PTModelReaderWriter(ModelProcessor):
@@ -37,7 +38,7 @@ class PTModelReaderWriter(ModelProcessor):
             try:
                 local_model_dict[var_name] = local_state_dict[var_name].cpu().numpy()
             except Exception as e:
-                raise ValueError("Did not work:", str(e))
+                raise ValueError(f"Did not work: {secure_format_exception(e)}")
         self.logger.debug(f"local_model_dict {len(local_model_dict)}")
 
         return local_model_dict
@@ -67,4 +68,4 @@ class PTModelReaderWriter(ModelProcessor):
             net.load_state_dict(updated_local_model)
             return assign_ops
         except Exception as e:
-            raise RuntimeError("load_state_dict Exception:", str(e))
+            raise RuntimeError(f"load_state_dict Exception: {secure_format_exception(e)}")
