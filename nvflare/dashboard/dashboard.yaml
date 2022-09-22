@@ -595,6 +595,8 @@ components:
       properties:
         frozen:
           type: boolean
+        public:
+          type: boolean
         short_name:
           type: "string"
           example: "EXAM"

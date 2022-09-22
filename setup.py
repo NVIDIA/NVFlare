@@ -85,10 +85,10 @@ setup(
         "psutil==5.9.1",
         "PyYAML==6.0",
         "six>=1.15.0",
-        "tenseal==0.3.0",
         "msgpack==1.0.3",
         "docker>=6.0",
     ],
+    extras_require={"HE": ["tenseal==0.3.0"]},
     entry_points={
         "console_scripts": [
             "provision=nvflare.lighter.provision:main",
