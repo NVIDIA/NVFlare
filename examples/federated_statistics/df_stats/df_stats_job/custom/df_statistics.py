@@ -63,7 +63,7 @@ class DFStatistics(Statistics):
         if self.data is None:
             raise ValueError("data is not loaded. make sure the data is loaded")
 
-    def features(self) -> Dict[str, List[Feature]]:
+    def features(self) -> Dict[str, List[Feature]] -> Dict[str, List[Feature]]:
         results: Dict[str, List[Feature]] = {}
         for ds_name in self.data:
             df = self.data[ds_name]
