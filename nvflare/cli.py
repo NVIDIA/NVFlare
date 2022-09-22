@@ -18,11 +18,11 @@ import sys
 
 from nvflare.cli_exception import CLIException
 from nvflare.dashboard.cli import define_dashboard_parser, handle_dashboard
+from nvflare.fuel.hci.tools.authz_preview import define_authz_preview_parser, run_command
 from nvflare.lighter.poc_commands import def_poc_parser, handle_poc_cmd
 from nvflare.lighter.provision import define_provision_parser, handle_provision
 from nvflare.private.fed.app.simulator.simulator import define_simulator_parser, run_simulator
 from nvflare.tool.preflight_check import check_packages, define_preflight_check_parser
-from nvflare.fuel.hci.tools.authz_preview import define_authz_preview_parser, run_command
 
 CMD_POC = "poc"
 CMD_PROVISION = "provision"
