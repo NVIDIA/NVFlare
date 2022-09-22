@@ -103,7 +103,6 @@ class XGBoostBaggingAggregator(Aggregator):
         else:
             self.local_models.append(data['model_data'])
             self.local_models_as_dict.append(json.loads(data['model_data']))
-            #self.global_model = update_model(self.global_model, data['model_data'])
 
             self.history.append(
                 {
