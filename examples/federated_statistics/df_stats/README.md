@@ -12,35 +12,14 @@ pip install -r ./requirements.txt
 
 ## 1. Compute the local and global statistics for each numerical feature
 
-### 1.1 Specify client side configuration
+Since Flare has already developed the operators (server side controller and client side executor) for the federated 
+statistics computing, we will only need to provide the followings
+* config_fed_server.json ( server side controller configuration)
+* config_client_server.json ( client side executor configuration)
+* local statistics calculator
 
-We are using a built-in NVFLARE executor,  
-
-```
- "executor": {
-        "id": "Executor",
-        "path": "nvflare.app_common.executors.statistics_executor.StatisticsExecutor",
-        "args": {
-          "generator_id": "df_stats_generator",
-  },
-
-```
-Here we specify a min_count = 10. It means each site should have at least 10 records. 
-This is required to protect data privacy. (Todo: this will be moved to data_privacy.json policy files) 
-if the number of record less than min_count, the job will fail.
-
-To generate histogram, user need to provide the range of the histogram for each feature; or 
-rely on the NVFlare to estimate the histogram range based on features local min, max values. 
-
-To avoid real user's private data from min/max values, the data privacy policy will be applied 
-to add some noise to min and max values before they are returned to FL Server
-
-In current example, we calculate tabular dataset statistics via Pandas DataFrame with DFStatistics
-
-### 1.2 Specify server side configuration
+### 1.1 server side configuration
  
-Here we use the built-in Controller, called GlobalStatistics. Here we selected all the available metrics.  
-
 ```
 "workflows": [
     {
@@ -61,10 +40,12 @@ Here we use the built-in Controller, called GlobalStatistics. Here we selected a
     }
   ],
 ```
-In above configuration "*" indicate default feature.  Here we specify feature "Age" needs 5 bins and histogram range is within 0.120
-for all other features, the bin is 10, range is not specified, i.e. the ranges will be dynamically estimated.
+In above configuration, `StatisticsController` is controller. We ask the controller to calculate the following statistic
+metrics: "count", "mean", "sum", "stddev", "histogram" and "Age". Each metric may have its own configuration.
+For example, Histogram metric, we specify feature "Age" needs 5 bins and histogram range is within [0, 120), while for 
+all other features ("*" indicate default feature), the bin is 10, range is not specified, i.e. the ranges will be dynamically estimated.
 
-the writer_id identify the output writer component, defined as 
+The StatisticController also takes writer_id = "stats_writer", the writer_id identify the output writer component, defined as
 
 ```
  "components": [
@@ -77,17 +58,204 @@ the writer_id identify the output writer component, defined as
       }
     }
 ```
-This configuration shows a JSON file output writer, output path indicates the file path in the job result store. 
- 
-### 1.3 Write a local statistics generator 
+This configuration shows a JSON file output writer, the result will be saved to the <job workspace>/"statistics/adults_stats.json",
+in FLARE job store. 
 
-   The statistics generator implements `Statistics` spec. 
+### 1.2 client side configuration
+
+```
+{
+  "format_version": 2,
+  "executors": [
+    {
+      "tasks": [
+        "fed_stats"
+      ],
+      "executor": {
+        "id": "Executor",
+        "path": "nvflare.app_common.executors.statistics.statistics_executor.StatisticsExecutor",
+        "args": {
+          "generator_id": "df_stats_generator"
+        }
+      }
+    }
+  ],
+  "task_result_filters": [
+    {
+      "tasks": ["fed_stats"],
+      "filters":[
+        {
+          "name": "StatisticsPrivacyFilter",
+          "args": {
+            "result_cleanser_ids": [
+              "min_count_cleanser",
+              "min_max_noise_cleanser",
+              "hist_bins_cleanser"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "task_data_filters": [],
+  "components": [
+    {
+      "id": "df_stats_generator",
+      "path": "df_statistics.DFStatistics",
+      "args": {
+        "data_path": "data.csv"
+      }
+    },
+    {
+      "id": "min_max_cleanser",
+      "path": "nvflare.app_common.statistics.min_max_cleanser.AddNoiseToMinMax",
+      "args": {
+        "min_noise_level": 0.1,
+        "max_noise_level": 0.3
+      }
+    },
+    {
+      "id": "hist_bins_cleanser",
+      "path": "nvflare.app_common.statistics.histogram_bins_cleanser.HistogramBinsCleanser",
+      "args": {
+        "max_bins_percent": 10
+      }
+    },
+    {
+      "id": "min_count_cleanser",
+      "path": "nvflare.app_common.statistics.min_count_cleanser.MinCountCleanser",
+      "args": {
+        "min_count": 10
+      }
+    }
+  ]
+}
+
+```
+First, we specify the built-in client side executor: `StatisticsExecutor`, which takes a local stats generator Id
+
+```
+ "executor": {
+        "id": "Executor",
+        "path": "nvflare.app_common.executors.statistics_executor.StatisticsExecutor",
+        "args": {
+          "generator_id": "df_stats_generator",
+  },
 
 ```
 
+The local statistics generator is defined as FLComponent: `DFStatistics` which implement the `Statistics` spec.
+
+```
+  "components": [
+    {
+      "id": "df_stats_generator",
+      "path": "df_statistics.DFStatistics",
+      "args": {
+        "data_path": "data.csv"
+      }
+    },
+   ...
+  ]
+```
+
+Next, we specify the `task_result_filters`. The task_result_filters are the post-process filter that takes the results 
+of executor and then apply the filter before sending to server. 
+
+In this example, task_result_filters is defined as task privacy filter : `StatisticsPrivacyFilter` 
+```
+  "task_result_filters": [
+    {
+      "tasks": ["fed_stats"],
+      "filters":[
+        {
+          "name": "StatisticsPrivacyFilter",
+          "args": {
+            "result_cleanser_ids": [
+              "min_count_cleanser",
+              "min_max_noise_cleanser",
+              "hist_bins_cleanser"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+``` 
+`StatisticsPrivacyFilter` is using three separate the `MetricPrivacyCleanser`, you can find more details in
+[local privacy policy](../local/README.md) and in later discussion on privacy. 
+
+The privacy cleansers specify policy can be find in 
+```
+  "components": [
+    {
+      "id": "df_stats_generator",
+      "path": "df_statistics.DFStatistics",
+      "args": {
+        "data_path": "data.csv"
+      }
+    },
+    {
+      "id": "min_max_cleanser",
+      "path": "nvflare.app_common.statistics.min_max_cleanser.AddNoiseToMinMax",
+      "args": {
+        "min_noise_level": 0.1,
+        "max_noise_level": 0.3
+      }
+    },
+    {
+      "id": "hist_bins_cleanser",
+      "path": "nvflare.app_common.statistics.histogram_bins_cleanser.HistogramBinsCleanser",
+      "args": {
+        "max_bins_percent": 10
+      }
+    },
+    {
+      "id": "min_count_cleanser",
+      "path": "nvflare.app_common.statistics.min_count_cleanser.MinCountCleanser",
+      "args": {
+        "min_count": 10
+      }
+    }
+  ]
+
+```
+Or in [local private policy](../local/privacy.json)
+
+### 1.3 Local statistics generator 
+
+The statistics generator `DFStatistics` implements `Statistics` spec.
+In current example, the input data in the format of Pandas DataFrame. Although we used csv file, but this can be any 
+tabular data format that be expressed in pandas dataframe. 
+
+```
 class DFStatistics(Statistics):
     # rest of code 
+```
+to calculate the local metrics, we will need to implements few methods
+```
+    def features(self) -> Dict[str, List[Feature]] -> Dict[str, List[Feature]]:
 
+    def count(self, dataset_name: str, feature_name: str) -> int:
+ 
+    def sum(self, dataset_name: str, feature_name: str) -> float:
+ 
+    def mean(self, dataset_name: str, feature_name: str) -> float:
+ 
+    def stddev(self, dataset_name: str, feature_name: str) -> float:
+ 
+    def variance_with_mean(self, dataset_name: str, feature_name: str, global_mean: float, global_count: float) -> float:
+ 
+    def histogram(self, dataset_name: str, feature_name: str, num_of_bins: int, global_min_value: float, global_max_value: float) -> Histogram:
+
+```
+since some of features do not provide histogram bin range, we will need to calculate based on local min/max to estimate
+the global min/max, and then use the global bin/max as the range for all clients' histogram bin range. 
+
+so we need to provide local min/max calculation methods
+```
+   def max_value(self, dataset_name: str, feature_name: str) -> float:
+   def min_value(self, dataset_name: str, feature_name: str) -> float:
 ```
 
 ## 2. Prepare data
@@ -125,12 +293,12 @@ done with prepare data
 
 ```
 
-
 ## 3. Set Privacy Policy  
 
 There are different ways to set privacy filter depending the use cases
 
 ### 3.1 Set Privacy Policy as researcher
+
 one can specify the "task_result_filters" config_fed_client.json to specify
 the privacy control.  This is useful when you develop these filters
 
@@ -139,11 +307,12 @@ the privacy control.  This is useful when you develop these filters
 Once the company decides to instrument certain privacy policy independent of individual 
 job, one can copy the local directory privacy.json content to clients' local privacy.json ( merge not overwrite).
 in this example, since we only has one app, we can simply copy the private.json from local directory to
+
 <poc-workspace>/site-1/local/privacy.json
 <poc-workspace>/site-2/local/privacy.json
 
 we need to remove the same filters from the job definition in config_fed_client.json 
-by simply set the   "task_result_filters" to empty list. 
+by simply set the "task_result_filters" to empty list to avoid **double filtering** 
 ```
 "task_result_filters": []
 ```
@@ -191,94 +360,7 @@ The results are stored in workspace "/tmp/nvflare"
 /tmp/nvflare/simulate_job/statistics/adults_stats.json
 ```
 
-
-## 5. Run Example using POC command
-
-```
-nvflare poc -h
-usage: nvflare poc [-h] [-n [NUMBER_OF_CLIENTS]] [-p [PACKAGE]] [-ex [EXCLUDE]] [-gpu [GPU [GPU ...]]] [--prepare] [--start] [--stop] [--clean]
-
-optional arguments:
-  -h, --help            show this help message and exit
-  -n [NUMBER_OF_CLIENTS], --number_of_clients [NUMBER_OF_CLIENTS]
-                        number of sites or clients, default to 2
-  -p [PACKAGE], --package [PACKAGE]
-                        package directory, default to all = all packages, only used for start/stop-poc commands when specified
-  -ex [EXCLUDE], --exclude [EXCLUDE]
-                        exclude package directory during --start or --stop, default to , i.e. nothing to exclude
-  -gpu [GPU [GPU ...]], --gpu [GPU [GPU ...]]
-                        gpu device ids will be used as CUDA_VISIBLE_DEVICES. used for poc start command
-  --prepare             prepare poc workspace
-  --start               start poc
-  --stop                stop poc
-  --clean               cleanup poc workspace
-
-```
-
-### 5.1 Prepare POC Workspace
-
-```
-   nvflare poc --prepare 
-```
-This will create a poc at /tmp/nvflare/poc with n = 2 clients.
-
-If your poc_workspace is in a different location, use the following command
-
-```
-export NVFLARE_POC_WORKSPACE=<new poc workspace location>
-```
-then repeat above
-
-### 5.2 Start nvflare in POC mode
-
-```
-nvflare poc --start
-```
-once you have done with above command, you are already login to the NVFLARE console (aka Admin Console)
-if you prefer to have NVFLARE Console in separate terminal, you can do 
-
-```
-nvflare poc --start ex admin
-```
-Then open a separate terminal to start the NVFLARE console 
-```
-nvflare poc --start -p admin
-```
-
-### 5.3 Submit job
-
-Inside the console, submit the job:
-```
-submit_job federated_statistics/df_stats/df_stats_job
-```
-
-For a complete list of available flare console commands, see [here](https://nvflare.readthedocs.io/en/main/user_guide/operation.html).
-
-### 5.4 List the submitted job
-
-You should see the server and clients in your first terminal executing the job now.
-You can list the running job by using `list_jobs` in the admin console.
-Your output should be similar to the following.
-
-```
-> list_jobs 
--------------------------------------------------------------------------------------------------==--------------------------------
-| JOB ID                               | NAME     | STATUS                       | SUBMIT TIME                                    |
------------------------------------------------------------------------------------------------------------------------------------
-| 10a92352-5459-47d2-8886-b85abf70ddd1 | df_stats_job | FINISHED:COMPLETED           | 2022-08-05T22:50:40.968771-07:00 | 0:00:29.4493|
------------------------------------------------------------------------------------------------------------------------------------
-```
- 
-### 5.5 Get the result
-
-If successful, the computed statis can be downloaded using this admin command:
-```
-download_job [JOB_ID]
-```
-After download, it will be available in the stated download directory under `[JOB_ID]/workspace/statistics` as  `adult_stats.json`
-
-
-## 6. RESULT FORMAT
+## 5. Result Format
 
 The output of the json is like the followings
 ``` 
@@ -331,15 +413,88 @@ The output of the json is like the followings
      },
 ```
 
-## 7. Visualization
+## 6. Visualization
    with json format, the data can be easily visualized via pandas dataframe and plots. 
    A visualization utility tools are showed in show_stats.py in visualization directory
    You can run jupyter notebook visualization.ipynb
 
-```python
+   assuming NVFLARE_HOME env variable point tp the github project location (NVFlare) which contains current example. 
+
+```bash
+    /tmp/nvflare/simulate_job/statistics/adults_stats.json $NVFLARE_HOME/examples/federated_statistics/df_stats/demo/.
+    
+    cd $NVFLARE_HOME/examples/federated_statistics/df_stats/demo
+    
     jupyter notebook  visualization.ipynb
 ```
-   you can some snapshots of the visualizations in ![stats](demo/df_stats.png) and ![histogram plot](demo/hist_plot.png)
+you should be able to get the visualization similar to the followings
+
+![stats](demo/df_stats.png) and ![histogram plot](demo/hist_plot.png)
 
 
-   
+## 7. Run Example using POC command
+
+Alternative way to run job is using POC mode
+
+### 7.1 Prepare POC Workspace
+
+```
+   nvflare poc --prepare 
+```
+This will create a poc at /tmp/nvflare/poc with n = 2 clients.
+
+If your poc_workspace is in a different location, use the following command
+
+```
+export NVFLARE_POC_WORKSPACE=<new poc workspace location>
+```
+then repeat above
+
+### 7.2 Start nvflare in POC mode
+
+```
+nvflare poc --start
+```
+once you have done with above command, you are already login to the NVFLARE console (aka Admin Console)
+if you prefer to have NVFLARE Console in separate terminal, you can do
+
+```
+nvflare poc --start ex admin
+```
+Then open a separate terminal to start the NVFLARE console
+```
+nvflare poc --start -p admin
+```
+
+### 7.3 Submit job
+
+Inside the console, submit the job:
+```
+submit_job federated_statistics/df_stats/df_stats_job
+```
+
+### 7.4 List the submitted job
+
+You should see the server and clients in your first terminal executing the job now.
+You can list the running job by using `list_jobs` in the admin console.
+Your output should be similar to the following.
+
+```
+> list_jobs 
+-------------------------------------------------------------------------------------------------==--------------------------------
+| JOB ID                               | NAME     | STATUS                       | SUBMIT TIME                                    |
+-----------------------------------------------------------------------------------------------------------------------------------
+| 10a92352-5459-47d2-8886-b85abf70ddd1 | df_stats_job | FINISHED:COMPLETED           | 2022-08-05T22:50:40.968771-07:00 | 0:00:29.4493|
+-----------------------------------------------------------------------------------------------------------------------------------
+```
+
+### 7.5 Get the result
+
+If successful, the computed statis can be downloaded using this admin command:
+```
+download_job [JOB_ID]
+```
+After download, it will be available in the stated download directory under `[JOB_ID]/workspace/statistics` as  `adult_stats.json`
+
+then go to section [6. Visualization]
+
