@@ -421,7 +421,7 @@ The output of the json is like the followings
    assuming NVFLARE_HOME env variable point tp the github project location (NVFlare) which contains current example. 
 
 ```bash
-    /tmp/nvflare/simulate_job/statistics/adults_stats.json $NVFLARE_HOME/examples/federated_statistics/df_stats/demo/.
+    cp /tmp/nvflare/simulate_job/statistics/adults_stats.json $NVFLARE_HOME/examples/federated_statistics/df_stats/demo/.
     
     cd $NVFLARE_HOME/examples/federated_statistics/df_stats/demo
     
