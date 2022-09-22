@@ -107,7 +107,8 @@ class XGBoostTreeFedHiggsLearner(XGBoostTreeFedLearner):
         X_higgs_valid = higgs.iloc[:, 1:]
         y_higgs_valid = higgs.iloc[:, 0]
 
-        # construct xgboost DMatrix
+        # construct xgboost DMatrix and set the potential lr_scale factor
         self.dmat_train = xgb.DMatrix(X_higgs_train, label=y_higgs_train)
         self.dmat_valid = xgb.DMatrix(X_higgs_valid, label=y_higgs_valid)
         self.valid_y = y_higgs_valid
+        self.lr_scale = site_index["lr_scale"]

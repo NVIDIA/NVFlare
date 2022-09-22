@@ -99,9 +99,9 @@ class XGBoostTreeFedLearner(Learner):
             )
             return make_reply(ReturnCode.TASK_ABORTED)
 
-        self.set_lr()
-        # load data, this is task-specific
+        # load data and lr_scale, this is task/site-specific
         self.load_data(fl_ctx)
+        self.set_lr()
         self.bst = None
         self.global_model_as_dict = None
 
@@ -113,7 +113,7 @@ class XGBoostTreeFedLearner(Learner):
                 self.lr = self.base_lr / self.num_tree_bagging
             elif self.lr_mode == "scaled":
                 # scaled lr, global learning_rate scaled by data size percentage
-                self.lr = self.base_lr * site_index["lr_scale"]
+                self.lr = self.base_lr * self.lr_scale
         elif self.training_mode == "cyclic":
             # Cyclic mode, directly use the base learning_rate
             self.lr = self.base_lr
@@ -127,6 +127,7 @@ class XGBoostTreeFedLearner(Learner):
         self.dmat_train: xgb.DMatrix
         self.dmat_valid: xgb.DMatrix
         self.valid_y: array for validation metric computation
+        self.lr_scale: scale factor needed for site-wise learning rate adjustment
         """
         raise NotImplementedError
 
