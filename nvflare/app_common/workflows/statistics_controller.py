@@ -129,8 +129,8 @@ class StatisticsController(Controller):
             ReturnCode.EXECUTION_EXCEPTION: True,
             ReturnCode.TASK_UNKNOWN: True,
             ReturnCode.EXECUTION_RESULT_ERROR: False,
-            ReturnCode.TASK_DATA_FILTER_ERROR: False,
-            ReturnCode.TASK_RESULT_FILTER_ERROR: False,
+            ReturnCode.TASK_DATA_FILTER_ERROR: True,
+            ReturnCode.TASK_RESULT_FILTER_ERROR: True,
         }
 
     def start_controller(self, fl_ctx: FLContext):
@@ -244,27 +244,38 @@ class StatisticsController(Controller):
         client_task.result = None
 
     def _validate_min_clients(self, min_clients: int, client_metrics: dict) -> bool:
-        self.logger.info("check if min_client result received")
+        self.logger.info("check if min_client result received for all features")
 
         resulting_clients = {}
         for metric in client_metrics:
-            resulting_clients.update({metric: len(client_metrics[metric])})
+            clients = client_metrics[metric].keys()
+            if len(clients) < min_clients:
+                return False
+            for client in clients:
+                ds_feature_metrics = client_metrics[metric][client]
+                for ds_name in ds_feature_metrics:
+                    if ds_name not in resulting_clients:
+                        resulting_clients[ds_name] = set()
 
-        for metric in resulting_clients:
-            if resulting_clients[metric] < min_clients:
+                    if ds_feature_metrics[ds_name]:
+                        resulting_clients[ds_name].update([client])
+
+        for ds in resulting_clients:
+            if len(resulting_clients[ds]) < min_clients:
                 return False
         return True
 
     def post_fn(self, task_name: str, fl_ctx: FLContext):
 
-        if not self._validate_min_clients(self.min_clients, self.client_metrics):
+        ok_to_proceed = self._validate_min_clients(self.min_clients, self.client_metrics)
+        if not ok_to_proceed:
             self.system_panic(f"not all required {self.min_clients} received, abort the job.", fl_ctx)
-
-        self.log_info(fl_ctx, "save statistics result to persistence store")
-        ds_stats = self._combine_all_metrics()
-
-        writer: StatisticsWriter = fl_ctx.get_engine().get_component(self.writer_id)
-        writer.save(ds_stats, overwrite_existing=True, fl_ctx=fl_ctx)
+        else:
+            self.log_info(fl_ctx, "combine all clients' metrics")
+            ds_stats = self._combine_all_metrics()
+            self.log_info(fl_ctx, "save statistics result to persistence store")
+            writer: StatisticsWriter = fl_ctx.get_engine().get_component(self.writer_id)
+            writer.save(ds_stats, overwrite_existing=True, fl_ctx=fl_ctx)
 
     def _combine_all_metrics(self):
         result = {}
@@ -283,11 +294,12 @@ class StatisticsController(Controller):
 
                         if metric == StC.STATS_HISTOGRAM:
                             hist: Histogram = self.client_metrics[metric][client][ds][feature_name]
-                            result[feature_name][metric][client_dataset] = hist.bins
+                            buckets = StatisticsController._apply_histogram_precision(hist.bins, self.precision)
+                            result[feature_name][metric][client_dataset] = buckets
                         else:
-                            result[feature_name][metric][client_dataset] = self.client_metrics[metric][client][ds][
-                                feature_name
-                            ]
+                            result[feature_name][metric][client_dataset] = round(
+                                self.client_metrics[metric][client][ds][feature_name], self.precision
+                            )
 
         precision = self.precision
         for metric in filtered_global_metrics:
@@ -296,16 +308,8 @@ class StatisticsController(Controller):
                 for feature_name in self.global_metrics[metric][ds]:
                     if metric == StC.STATS_HISTOGRAM:
                         hist: Histogram = self.global_metrics[metric][ds][feature_name]
-                        buckets = []
-                        for bucket in hist.bins:
-                            buckets.append(
-                                Bin(
-                                    round(bucket.low_value, precision),
-                                    round(bucket.high_value, precision),
-                                    bucket.sample_count,
-                                )
-                            )
-                        result[feature_name][metric][global_dataset] = hist.bins
+                        buckets = StatisticsController._apply_histogram_precision(hist.bins, self.precision)
+                        result[feature_name][metric][global_dataset] = buckets
                     else:
                         result[feature_name][metric].update(
                             {global_dataset: round(self.global_metrics[metric][ds][feature_name], precision)}
@@ -313,11 +317,21 @@ class StatisticsController(Controller):
 
         return result
 
-    def _get_target_metrics(self, ordered_metrics) -> List[MetricConfig]:
-        return StatisticsController._get_target_metrics2(self.metric_configs, ordered_metrics)
+    @staticmethod
+    def _apply_histogram_precision(bins: List[Bin], precision) -> List[Bin]:
+        buckets = []
+        for bucket in bins:
+            buckets.append(
+                Bin(
+                    round(bucket.low_value, precision),
+                    round(bucket.high_value, precision),
+                    bucket.sample_count,
+                )
+            )
+        return buckets
 
     @staticmethod
-    def _get_target_metrics2(metric_configs: dict, ordered_metrics: list) -> List[MetricConfig]:
+    def _get_target_metrics(metric_configs: dict, ordered_metrics: list) -> List[MetricConfig]:
         # make sure the execution order of the metrics calculation
         targets = []
         if metric_configs:
@@ -346,7 +360,9 @@ class StatisticsController(Controller):
 
     def _prepare_inputs(self, metric_task: str, fl_ctx: FLContext) -> Shareable:
         inputs = Shareable()
-        target_metrics: List[MetricConfig] = self._get_target_metrics(StC.ordered_metrics[metric_task])
+        target_metrics: List[MetricConfig] = StatisticsController._get_target_metrics(
+            self.metric_configs, StC.ordered_metrics[metric_task]
+        )
 
         for tm in target_metrics:
             if tm.name == StC.STATS_HISTOGRAM:
@@ -388,7 +404,6 @@ class StatisticsController(Controller):
             abort_signal:  abort signal
 
         Returns: False, when job is aborted else True
-
         """
 
         # record of each metric, number of clients processed
@@ -407,7 +422,10 @@ class StatisticsController(Controller):
                     if abort_signal and abort_signal.triggered:
                         return False
 
-                    msg = f"not all client received the metric {m}, need to wait for {sleep_time} seconds."
+                    msg = (
+                        f"not all client received the metric '{m}', need to wait for {sleep_time} seconds."
+                        f"currently available clients are '{client_metrics[m].keys()}'."
+                    )
                     logger.info(msg)
                     time.sleep(sleep_time)
                     t += sleep_time

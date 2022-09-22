@@ -327,6 +327,11 @@ def gen_user(key, id):
         _write(os.path.join(dest_dir, "rootCA.pem"), project.root_cert, "b", exe=False)
         signatures = utils.sign_all(dest_dir, deserialize_ca_key(project.root_key))
         json.dump(signatures, open(os.path.join(dest_dir, "signature.json"), "wt"))
+
+        # local folder creation
+        dest_dir = os.path.join(user_dir, "local")
+        os.mkdir(dest_dir)
+
         # workspace folder file
         _write(
             os.path.join(user_dir, "readme.txt"),

@@ -35,5 +35,10 @@ To get started with these examples, please follow the [Quickstart](https://nvfla
    * Illustrates the use of differential privacy for training brain tumor segmentation models using federated learning.
 * [Federated Learning for Prostate Segmentation from Multi-source Data](./prostate/README.md)
   * Example of training a multi-institutional prostate segmentation model using [FedAvg](https://arxiv.org/abs/1602.05629), [FedProx](https://arxiv.org/abs/1812.06127), and [Ditto](https://arxiv.org/abs/2012.04221).
-* [Federated Analysis](./federated_analysis/README.md)
-  * Example of gathering local data summary statistics to compute the global dataset statistics.
+
+
+## 4. Federated Statistics
+* [Federated Statistics for Medical Imaging](federated_statistics/image_stats/README.md)
+  * Example of gathering local image histogram to compute the global dataset histograms.
+* [Federated Statistics for DataFrame](federated_statistics/df_stats/README.md)
+  * Example of gathering local statistics summary from Pandas DataFrame to compute the global dataset statistics.

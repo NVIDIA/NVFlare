@@ -160,6 +160,7 @@ class AlgorithmConstants(object):
 
 class StatisticsConstants(AppConstants):
     STATS_COUNT = "count"
+    STATS_FAILURE_COUNT = "failure_count"
     STATS_MEAN = "mean"
     STATS_SUM = "sum"
     STATS_VAR = "var"
@@ -183,6 +184,6 @@ class StatisticsConstants(AppConstants):
     GLOBAL = "Global"
 
     ordered_metrics = {
-        STATS_1st_METRICS: [STATS_COUNT, STATS_SUM, STATS_MEAN, STATS_MIN, STATS_MAX],
+        STATS_1st_METRICS: [STATS_COUNT, STATS_FAILURE_COUNT, STATS_SUM, STATS_MEAN, STATS_MIN, STATS_MAX],
         STATS_2nd_METRICS: [STATS_HISTOGRAM, STATS_VAR, STATS_STDDEV],
     }

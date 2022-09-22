@@ -1,6 +1,15 @@
 {
   "name": "hello-xgboost",
-  "resource_spec": {},
+  "resource_spec": {
+    "site-1": {
+      "num_of_gpus": 1,
+      "mem_per_gpu_in_GiB": 1
+    },
+    "site-2": {
+      "num_of_gpus": 1,
+      "mem_per_gpu_in_GiB": 1
+    }
+  },
   "deploy_map": {
     "app_server": [
       "server"

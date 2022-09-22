@@ -8,4 +8,4 @@ COPY setup.cfg /opt/NVFlare/setup.cfg
 WORKDIR /opt/NVFlare
 RUN pip install -U pip
 RUN pip install -e .
-RUN pip install Flask-sqlalchemy Flask-JWT-extended Flask-CORS
+

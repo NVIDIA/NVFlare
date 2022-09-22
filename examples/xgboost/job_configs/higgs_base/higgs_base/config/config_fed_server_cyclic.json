@@ -33,7 +33,9 @@
         "task_assignment_timeout": 60,
         "persistor_id": "persistor",
         "shareable_generator_id": "shareable_generator",
-        "task_name": "train"
+        "task_name": "train",
+        "task_check_period": 0.01,
+        "snapshot_every_n_rounds": 0
       }
     }
   ]

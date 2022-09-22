@@ -441,6 +441,7 @@ class AdminAPI(AdminAPISpec):
             self.new_ssid = ssid
 
     def _try_auto_login(self):
+        resp = {}
         for i in range(5):
             self.fire_session_event(SessionEventType.TRYING_LOGIN, "Trying to login, please wait ...")
 
@@ -555,13 +556,18 @@ class AdminAPI(AdminAPISpec):
         if close_session_monitor:
             self._close_session_monitor()
 
-    def get_command_list_from_server(self):
-        # get command list from server
+    def _get_command_list_from_server(self) -> bool:
         self.server_cmd_received = False
         self.server_execute(InternalCommands.GET_CMD_LIST, _CmdListReplyProcessor())
         self.server_cmd_reg.finalize(self.register_command)
         if not self.server_cmd_received:
-            return {_KEY_STATUS: APIStatus.ERROR_RUNTIME, _KEY_DETAILS: "Communication Error - please try later"}
+            return False
+        return True
+
+    def _login(self) -> dict:
+        result = self._get_command_list_from_server()
+        if not result:
+            return {_KEY_STATUS: APIStatus.ERROR_RUNTIME, _KEY_DETAILS: "Can't fetch command list from server."}
 
         # prepare client modules
         # we may have additional dynamically created cmd modules based on server commands
@@ -577,7 +583,6 @@ class AdminAPI(AdminAPISpec):
         if extra_module_specs:
             self._load_client_cmds_from_module_specs(extra_module_specs)
         self.client_cmd_reg.finalize(self.register_command)
-
         self.server_sess_active = True
         return {_KEY_STATUS: APIStatus.SUCCESS, _KEY_DETAILS: "Login success"}
 
@@ -601,8 +606,7 @@ class AdminAPI(AdminAPISpec):
         elif self.login_result == "REJECT":
             return {_KEY_STATUS: APIStatus.ERROR_CERT, _KEY_DETAILS: "Incorrect user name or certificate"}
 
-        # get command list from server
-        return self.get_command_list_from_server()
+        return self._login()
 
     def login_with_poc(self, username: str, poc_key: str):
         """Login using key for proof of concept example.
@@ -621,8 +625,7 @@ class AdminAPI(AdminAPISpec):
         elif self.login_result == "REJECT":
             return {_KEY_STATUS: APIStatus.ERROR_AUTHENTICATION, _KEY_DETAILS: "Incorrect user name or password"}
 
-        # get command list from server
-        return self.get_command_list_from_server()
+        return self._login()
 
     def _send_to_sock(self, sock, ctx: CommandContext):
         command = ctx.get_command()

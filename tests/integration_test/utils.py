@@ -15,26 +15,13 @@
 import json
 import os
 import shutil
-from typing import List
 
 import yaml
 
-from nvflare.apis.job_def import JobMetaKey
 from nvflare.fuel.hci.client.fl_admin_api import FLAdminAPI
 
-FED_SERVER_CONFIG = "fed_server.json"
+RESOURCE_CONFIG = "resources.json"
 FILE_STORAGE = "nvflare.app_common.storages.filesystem_storage.FilesystemStorage"
-
-
-def generate_meta(job_name: str, clients: List[str]):
-    resource_spec = {c: {"gpu": 1} for c in clients}
-    deploy_map = {job_name: ["@all"]}
-    meta = {
-        "name": job_name,
-        JobMetaKey.RESOURCE_SPEC: resource_spec,
-        JobMetaKey.DEPLOY_MAP: deploy_map,
-    }
-    return meta
 
 
 def read_yaml(yaml_file_path):
@@ -53,44 +40,44 @@ def cleanup_path(path: str):
         shutil.rmtree(path)
 
 
-def _read_server_json(poc_path: str) -> dict:
-    fed_server_json_path = os.path.join(poc_path, "server", "startup", FED_SERVER_CONFIG)
-    if not os.path.exists(os.path.join(poc_path, "server", "startup", FED_SERVER_CONFIG)):
-        raise RuntimeError(f"Missing {FED_SERVER_CONFIG} at: {fed_server_json_path}")
-    with open(fed_server_json_path, "r") as f:
-        fed_server_json = json.load(f)
-    return fed_server_json
+def _read_resource_json(poc_path: str, site_type: str) -> dict:
+    resource_json_path = os.path.join(poc_path, site_type, "local", RESOURCE_CONFIG)
+    if not os.path.exists(resource_json_path):
+        raise RuntimeError(f"Missing {RESOURCE_CONFIG} at: {resource_json_path}")
+    with open(resource_json_path, "r") as f:
+        resource_json = json.load(f)
+    return resource_json
 
 
 def get_snapshot_path_from_poc(path: str) -> str:
-    fed_server_json = _read_server_json(path)
-    if "snapshot_persistor" not in fed_server_json:
-        raise RuntimeError(f"Missing snapshot_persistor in {FED_SERVER_CONFIG}")
-    if "args" not in fed_server_json["snapshot_persistor"]:
+    resource_json = _read_resource_json(poc_path=path, site_type="server")
+    if "snapshot_persistor" not in resource_json:
+        raise RuntimeError(f"Missing snapshot_persistor in {RESOURCE_CONFIG}")
+    if "args" not in resource_json["snapshot_persistor"]:
         raise RuntimeError("Missing args in snapshot_persistor")
-    if "storage" not in fed_server_json["snapshot_persistor"]["args"]:
+    if "storage" not in resource_json["snapshot_persistor"]["args"]:
         raise RuntimeError("Missing storage in snapshot_persistor's args")
-    if "args" not in fed_server_json["snapshot_persistor"]["args"]["storage"]:
+    if "args" not in resource_json["snapshot_persistor"]["args"]["storage"]:
         raise RuntimeError("Missing args in snapshot_persistor's storage")
-    if "path" not in fed_server_json["snapshot_persistor"]["args"]["storage"]:
+    if "path" not in resource_json["snapshot_persistor"]["args"]["storage"]:
         raise RuntimeError("Missing path in snapshot_persistor's storage")
-    if fed_server_json["snapshot_persistor"]["args"]["storage"]["path"] != FILE_STORAGE:
+    if resource_json["snapshot_persistor"]["args"]["storage"]["path"] != FILE_STORAGE:
         raise RuntimeError(f"Only support {FILE_STORAGE} storage in snapshot_persistor's args")
-    if "root_dir" not in fed_server_json["snapshot_persistor"]["args"]["storage"]["args"]:
+    if "root_dir" not in resource_json["snapshot_persistor"]["args"]["storage"]["args"]:
         raise RuntimeError("Missing root_dir in snapshot_persistor's storage's args")
-    return fed_server_json["snapshot_persistor"]["args"]["storage"]["args"]["root_dir"]
+    return resource_json["snapshot_persistor"]["args"]["storage"]["args"]["root_dir"]
 
 
 def get_job_store_path_from_poc(path: str) -> str:
-    fed_server_json = _read_server_json(path)
-    if "components" not in fed_server_json:
-        raise RuntimeError(f"Missing components in {FED_SERVER_CONFIG}")
+    resource_json = _read_resource_json(poc_path=path, site_type="server")
+    if "components" not in resource_json:
+        raise RuntimeError(f"Missing components in {RESOURCE_CONFIG}")
     job_manager_config = None
-    for c in fed_server_json["components"]:
+    for c in resource_json["components"]:
         if "id" in c and c["id"] == "job_manager":
             job_manager_config = c
     if not job_manager_config:
-        raise RuntimeError(f"Missing job_manager in {FED_SERVER_CONFIG}")
+        raise RuntimeError(f"Missing job_manager in {RESOURCE_CONFIG}")
     if "args" not in job_manager_config:
         raise RuntimeError("Missing args in job_manager.")
     if "uri_root" not in job_manager_config["args"]:

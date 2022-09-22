@@ -8,7 +8,7 @@
   "components": [
     {
       "id": "persistor",
-      "path": "tests.integration_test.tf2.model_persistor.TF2ModelPersistor",
+      "path": "tf2_model_persistor.TF2ModelPersistor",
       "args": {
         "save_name": "tf2weights.fobs"
       }

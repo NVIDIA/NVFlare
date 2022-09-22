@@ -595,6 +595,8 @@ components:
       properties:
         frozen:
           type: boolean
+        public:
+          type: boolean
         short_name:
           type: "string"
           example: "EXAM"
@@ -602,6 +604,8 @@ components:
           type: "string"
           example: "International project to detect COVID on medical images with Federated Learning"
         description:
+          type: string
+        app_location:
           type: string
         overseer:
           type: "string"
