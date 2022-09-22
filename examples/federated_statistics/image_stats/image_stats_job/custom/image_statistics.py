@@ -31,13 +31,13 @@ class ImageStatistics(Statistics):
             data_root: str = "/tmp/nvflare/data",
             data_list_key: str = "data"
     ):
-        """local image histogram generator for federated analysis.
+        """local image statistics generator .
 
         Args:
             data_root: directory with local image data.
             data_list_key: data list key to use.
         Returns:
-            a Shareable with the computed local histograms`
+            a Shareable with the computed local statistics`
         """
         super().__init__()
         self.data_list_key = data_list_key

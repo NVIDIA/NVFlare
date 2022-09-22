@@ -222,6 +222,53 @@ on site-level by the company, there is no need to set privacy filter at job leve
   ],
 ```
 
+
+### 2.3 Local statistics generator
+
+```python
+
+class ImageStatistics(Statistics):
+
+    def __init__(
+            self,
+            data_root: str = "/tmp/nvflare/data",
+            data_list_key: str = "data"
+    ):
+```
+The local statistics generator implements `Statistics` spec. 
+
+Besides loading data methods, the class mainly implements few functions
+
+```
+
+    def features(self) -> Dict[str, List[Feature]]:
+        return {"train": [Feature("density", DataType.FLOAT)]}
+
+    def count(self,
+              dataset_name: str,
+              feature_name: str) -> int:
+        image_paths = self.data_list[dataset_name]
+        return len(image_paths)
+
+    def histogram(self, dataset_name: str, feature_name: str, num_of_bins: int, global_min_value: float,
+                  global_max_value: float) -> Histogram:
+       ...
+```
+additional optional failure_count methods is used if you would like to make sure the data privacy is against effective
+count - failure_count 
+
+```
+    def failure_count(self,
+              dataset_name: str,
+              feature_name: str) -> int:
+        return self.failure_images
+```
+
+If you would like to see failure_count as one metrics in reporting, you will need to add "failure_count" to the metric_config 
+arguments for the statistics controller. 
+
+
+
 ## 3. Run the Fed Statistics Job in Simulator 
 
 ## 3.1. Simulator CLI
