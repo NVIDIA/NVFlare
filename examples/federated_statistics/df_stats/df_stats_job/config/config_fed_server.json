@@ -1,10 +1,5 @@
 {
   "format_version": 2,
-  "server": {
-    "heart_beat_timeout": 600
-  },
-  "task_data_filters": [],
-  "task_result_filters": [],
   "workflows": [
     {
       "id": "fed_stats_controller",
