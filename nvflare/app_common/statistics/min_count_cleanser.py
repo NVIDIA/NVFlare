@@ -34,22 +34,25 @@ class MinCountCleanser(FLComponent, MetricsPrivacyCleanser):
             raise ValueError(f"min_count must be positive, but {self.min_count} is provided. ")
 
     def min_count_validate(self, client_name: str, metrics: Dict) -> Dict[str, Dict[str, bool]]:
-        result = {}
+        feature_metrics_valid = {}
         if StC.STATS_COUNT in metrics:
             count_metrics = metrics[StC.STATS_COUNT]
             for ds_name in count_metrics:
-                result[ds_name] = {}
+                feature_metrics_valid[ds_name] = {}
                 feature_counts = metrics[StC.STATS_COUNT][ds_name]
+                feature_failure_counts = metrics[StC.STATS_FAILURE_COUNT][ds_name]
                 for feature in feature_counts:
                     count = feature_counts[feature]
-                    result[ds_name][feature] = True
-                    if count < self.min_count:
-                        result[ds_name][feature] = False
+                    failure_count = feature_failure_counts[feature]
+                    effective_count = count - failure_count
+                    feature_metrics_valid[ds_name][feature] = True
+                    if effective_count < self.min_count:
+                        feature_metrics_valid[ds_name][feature] = False
                         self.logger.info(
                             f"dataset {ds_name} feature '{feature}' item count is "
                             f"less than required minimum count {self.min_count} for client {client_name} "
                         )
-        return result
+        return feature_metrics_valid
 
     def apply(self, metrics: dict, client_name) -> Tuple[dict, bool]:
         self.logger.info(f"apply MinCountCheck for client {client_name}")

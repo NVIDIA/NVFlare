@@ -92,9 +92,13 @@ class JsonScanner(object):
             node.processor.process_element(node)
         except BaseException as ex:
             if self.location:
-                raise ConfigError("Error processing {} in JSON element {}: {}".format(self.location, node.path(), ex))
+                raise ConfigError(
+                    "Error processing {} in JSON location {}, element {}: path: {}".format(
+                        self.location, node.element, node.path(), ex
+                    )
+                )
             else:
-                raise ConfigError("Error in JSON element {}: {}".format(node.path(), ex))
+                raise ConfigError("Error in JSON element: {}, path :{} : {}".format(node.element, node.path(), ex))
 
         element = node.element
 
@@ -113,7 +117,7 @@ class JsonScanner(object):
             except BaseException as ex:
                 if self.location:
                     raise ConfigError(
-                        "Error post-processing {} in JSON element {}: {}".format(self.location, node.path(), ex)
+                        "Error post-processing {} in JSON element {}: {} ".format(self.location, node.path(), ex)
                     )
                 else:
                     raise ConfigError("Error post-processing JSON element {}: {}".format(node.path(), ex))

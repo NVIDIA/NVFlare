@@ -422,7 +422,10 @@ class StatisticsController(Controller):
                     if abort_signal and abort_signal.triggered:
                         return False
 
-                    msg = f"not all client received the metric {m}, need to wait for {sleep_time} seconds."
+                    msg = (
+                        f"not all client received the metric '{m}', need to wait for {sleep_time} seconds."
+                        f"currently available clients are '{client_metrics[m].keys()}'."
+                    )
                     logger.info(msg)
                     time.sleep(sleep_time)
                     t += sleep_time

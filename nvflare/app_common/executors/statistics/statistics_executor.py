@@ -51,7 +51,7 @@ class StatisticsExecutor(Executor):
 
         super().__init__()
         self.init_status_ok = True
-        self.init_failure = None
+        self.init_failure = {"abort_job": None, "fail_client": None}
         self.generator_id = generator_id
         self.stats_generator: Optional[Statistics] = None
         self.precision = precision
@@ -61,6 +61,7 @@ class StatisticsExecutor(Executor):
     def metric_functions(self) -> dict:
         return {
             StC.STATS_COUNT: self.get_count,
+            StC.STATS_FAILURE_COUNT: self.get_failure_count,
             StC.STATS_SUM: self.get_sum,
             StC.STATS_MEAN: self.get_mean,
             StC.STATS_STDDEV: self.get_stddev,
@@ -81,22 +82,24 @@ class StatisticsExecutor(Executor):
             self.client_name = fl_ctx.get_identity_name()
             engine = fl_ctx.get_engine()
             self.stats_generator = engine.get_component(self.generator_id)
-            if not isinstance(self.stats_generator, Statistics):
-                raise TypeError(
-                    f"{type(self.stats_generator).__name} must implement `Statistics` type."
-                    f" Got: {type(self.stats_generator)}"
-                )
-
+            self._check_generator_type()
             self.stats_generator.initialize(engine.get_all_components(), fl_ctx)
-        except Exception as e:
-            self.log_exception(fl_ctx, f"statistics generator initialize exception: {e}")
+        except TypeError as te:
+            self.log_exception(
+                fl_ctx,
+                f"local statistics generator must implement `Statistics`,"
+                f"but {type(self.stats_generator).__name__} is provided. {te}",
+            )
             self.init_status_ok = False
-            self.init_failure = e
+            self.init_failure = {"abort_job", te}
+        except Exception as e:
+            self.init_status_ok = False
+            self.init_failure = {"fail_client", e}
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
-        if not self.init_status_ok:
-            self.logger.info(self.init_failure)
-            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+        init_rc = self._check_init_status(fl_ctx)
+        if init_rc:
+            return make_reply(init_rc)
 
         client_name = fl_ctx.get_identity_name()
         self.log_info(fl_ctx, f"Executing task '{task_name}' for client: '{client_name}'")
@@ -123,6 +126,9 @@ class StatisticsExecutor(Executor):
             ds_features = self.get_numeric_features()
             metric_task = shareable.get(StC.METRIC_TASK_KEY)
             target_metrics: List[MetricConfig] = fobs.loads(shareable.get(StC.STATS_TARGET_METRICS))
+            if StC.STATS_FAILURE_COUNT not in target_metrics:
+                target_metrics.append(MetricConfig(StC.STATS_FAILURE_COUNT, {}))
+
             for tm in target_metrics:
                 fn = self.metric_functions()[tm.name]
                 metrics_result[tm.name] = {}
@@ -146,6 +152,25 @@ class StatisticsExecutor(Executor):
 
         return result
 
+    def _check_generator_type(self):
+        if not isinstance(self.stats_generator, Statistics):
+            raise TypeError(
+                f"{type(self.stats_generator).__name} must implement `Statistics` type."
+                f" Got: {type(self.stats_generator)}"
+            )
+
+    def _check_init_status(self, fl_ctx: FLContext):
+        if not self.init_status_ok:
+            for fail_key in self.init_failure:
+                reason = self.init_failure[fail_key]
+                if fail_key == "abort_job":
+                    return ReturnCode.EXECUTION_EXCEPTION
+                else:
+                    self.system_panic(reason, fl_ctx)
+                    # probably never reach here, but just for type consistency
+                    return ReturnCode.EXECUTION_RESULT_ERROR
+        return None
+
     @staticmethod
     def _populate_result_metrics(metrics_result, ds_features, tm: MetricConfig, shareable, fl_ctx, fn):
         for ds_name in ds_features:
@@ -165,6 +190,13 @@ class StatisticsExecutor(Executor):
     ) -> int:
 
         result = self.stats_generator.count(dataset_name, feature_name)
+        return result
+
+    def get_failure_count(
+        self, dataset_name: str, feature_name: str, metric_config: MetricConfig, inputs: Shareable, fl_ctx: FLContext
+    ) -> int:
+
+        result = self.stats_generator.failure_count(dataset_name, feature_name)
         return result
 
     def get_sum(

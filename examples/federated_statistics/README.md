@@ -36,7 +36,7 @@ sequenceDiagram
     Server->>Client: task: Fed_Stats: metrics_task_1: count, sum, mean,std_dev, min, max 
     Client-->>PrivacyFilter: local metric
      loop over metrics_privacy_filters
-        PrivacyFilter->>PrivacyFilter: min_count_check, min_max_noise_generator
+        PrivacyFilter->>PrivacyFilter: min_count_cleanser, min_max_cleanser, histogram_bins_cleanser
     end
     PrivacyFilter-->>Server: filtered local metric
     loop over clients

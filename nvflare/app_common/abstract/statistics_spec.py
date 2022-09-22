@@ -275,6 +275,19 @@ class Statistics(FLComponent, ABC):
 
         raise NotImplementedError
 
+    def failure_count(self, dataset_name: str, feature_name: str) -> int:
+
+        """
+           return failed count for given dataset and feature
+           to perform data privacy min_count check, failure_count is always required
+        Args:
+            dataset_name:
+            feature_name:
+
+        Returns: number of failure records, default to 0
+        """
+        return 0
+
     def finalize(self):
         """
         Called to finalize the Statistic calculator (close/release resources gracefully).

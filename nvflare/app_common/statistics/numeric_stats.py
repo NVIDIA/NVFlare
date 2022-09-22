@@ -47,7 +47,7 @@ def get_global_stats(global_metrics: dict, client_metrics: dict, metric_task: st
             global_metrics[metric] = {}
 
         stats = client_metrics[metric]
-        if metric == StC.STATS_COUNT or metric == StC.STATS_SUM:
+        if metric == StC.STATS_COUNT or metric == StC.STATS_FAILURE_COUNT or metric == StC.STATS_SUM:
             for client_name in stats:
                 global_metrics[metric] = accumulate_metrics(stats[client_name], global_metrics[metric])
         elif metric == StC.STATS_MEAN:
