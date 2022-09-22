@@ -254,10 +254,7 @@ class ScatterAndGather(Controller):
 
                 # need to persist snapshot after round increased because the global weights should be set to
                 # the last finished round's result
-                if (
-                    self._snapshot_every_n_rounds != 0
-                    and self._current_round % self._snapshot_every_n_rounds == 0
-                ):
+                if self._snapshot_every_n_rounds != 0 and self._current_round % self._snapshot_every_n_rounds == 0:
                     self._engine.persist_components(fl_ctx, completed=False)
 
             self._phase = AppConstants.PHASE_FINISHED
