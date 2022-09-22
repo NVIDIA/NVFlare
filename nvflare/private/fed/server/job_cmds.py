@@ -59,7 +59,7 @@ CLONED_META_KEYS = {
     JobMetaKey.RESULT_LOCATION.value,
     JobMetaKey.APPROVALS.value,
     JobMetaKey.MIN_CLIENTS.value,
-    JobMetaKey.MANDATORY_CLIENTS.value
+    JobMetaKey.MANDATORY_CLIENTS.value,
 }
 
 
