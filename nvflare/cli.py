@@ -18,6 +18,7 @@ import sys
 
 from nvflare.cli_exception import CLIException
 from nvflare.dashboard.cli import define_dashboard_parser, handle_dashboard
+from nvflare.fuel.hci.tools.authz_preview import define_authz_preview_parser, run_command
 from nvflare.lighter.poc_commands import def_poc_parser, handle_poc_cmd
 from nvflare.lighter.provision import define_provision_parser, handle_provision
 from nvflare.private.fed.app.simulator.simulator import define_simulator_parser, run_simulator
@@ -28,6 +29,7 @@ CMD_PROVISION = "provision"
 CMD_PREFLIGHT_CHECK = "preflight_check"
 CMD_SIMULATOR = "simulator"
 CMD_DASHBOARD = "dashboard"
+CMD_AUTHZ_PREVIEW = "authz_preview"
 
 
 def check_python_version():
@@ -71,6 +73,17 @@ def handle_simulator_cmd(simulator_args):
     os._exit(status)
 
 
+def def_authz_preview_parser(sub_cmd):
+    cmd = CMD_AUTHZ_PREVIEW
+    authz_preview_parser = sub_cmd.add_parser(cmd)
+    define_authz_preview_parser(authz_preview_parser)
+    return {cmd: authz_preview_parser}
+
+
+def handle_authz_preview(args):
+    run_command(args)
+
+
 def parse_args(prog_name: str):
     _parser = argparse.ArgumentParser(description=prog_name)
     sub_cmd = _parser.add_subparsers(description="sub command parser", dest="sub_command")
@@ -80,6 +93,7 @@ def parse_args(prog_name: str):
     sub_cmd_parsers.update(def_provision_parser(sub_cmd))
     sub_cmd_parsers.update(def_simulator_parser(sub_cmd))
     sub_cmd_parsers.update(def_dashboard_parser(sub_cmd))
+    sub_cmd_parsers.update(def_authz_preview_parser(sub_cmd))
 
     return _parser, _parser.parse_args(), sub_cmd_parsers
 
@@ -90,6 +104,7 @@ handlers = {
     CMD_PREFLIGHT_CHECK: check_packages,
     CMD_SIMULATOR: handle_simulator_cmd,
     CMD_DASHBOARD: handle_dashboard,
+    CMD_AUTHZ_PREVIEW: handle_authz_preview,
 }
 
 
