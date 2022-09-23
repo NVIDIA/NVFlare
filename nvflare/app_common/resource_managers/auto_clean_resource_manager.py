@@ -25,7 +25,7 @@ from nvflare.apis.resource_manager_spec import ResourceManagerSpec
 
 class AutoCleanResourceManager(ResourceManagerSpec, FLComponent, ABC):
     def __init__(self, resources: dict, expiration_period: int = 30, check_period: float = 1.0):
-        """This is the base resource manager implementation.
+        """AutoCleanResourceManager implementation.
 
         It will automatically clean up reserved resources.
 
