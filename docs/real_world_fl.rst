@@ -1,6 +1,6 @@
-##########
-User Guide
-##########
+#############################
+Real-World Federated Learning
+#############################
 
 This user guide shows how to use NVIDIA FLARE to deploy and operate an FL system on multiple sites with a
 Provision-Start-Operating procedure. A reference application will be used here to show provisioning and basic operation
@@ -17,6 +17,10 @@ to see the capabilities of the system and how it can be operated.
 .. toctree::
    :maxdepth: 1
 
-   user_guide/docker_compose
-   user_guide/helm_chart
-   user_guide/dashboard_api
+   user_guide/overview
+   user_guide/operation
+   user_guide/application
+   user_guide/job
+   user_guide/workspace
+   user_guide/authorization
+
