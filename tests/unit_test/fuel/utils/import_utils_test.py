@@ -14,19 +14,19 @@
 
 import pytest
 
-from nvflare.utils.import_utils import LazyImportError, optional_import
+from nvflare.fuel.utils.import_utils import LazyImportError, optional_import
 
 
 class TestOptionalImport:
     def test_lazy_import(self):
         np, flag = optional_import("numpy")
-        assert flag == True
+        assert flag is True
 
         np, flag = optional_import(module="numpy", op=">=", version="1.0.0")
-        assert flag == True
+        assert flag is True
 
         np, flag = optional_import("numpy", ">=", "100.0.0")
-        assert flag == False
+        assert flag is False
         with pytest.raises(LazyImportError):
             print(np.will_faill)
 
