@@ -91,10 +91,10 @@ class StatisticsExecutor(Executor):
                 f"but {type(self.stats_generator).__name__} is provided. {te}",
             )
             self.init_status_ok = False
-            self.init_failure = {"abort_job", te}
+            self.init_failure = {"abort_job": te}
         except Exception as e:
             self.init_status_ok = False
-            self.init_failure = {"fail_client", e}
+            self.init_failure = {"fail_client": e}
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         init_rc = self._check_init_status(fl_ctx)
