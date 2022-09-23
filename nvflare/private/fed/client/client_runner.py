@@ -90,7 +90,7 @@ class ClientRunner(FLComponent):
             job_id: job id
             engine: ClientEngine object
         """
-        
+
         FLComponent.__init__(self)
         self.task_table = config.task_table
         self.task_data_filters = config.task_data_filters

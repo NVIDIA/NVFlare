@@ -20,13 +20,15 @@ def parse_args(prog_name: str):
 
 
 def get_data_url() -> dict:
-    client_data = {"site-1": "https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.data",
-                   "site-2": "https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.test"}
+    client_data = {
+        "site-1": "https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.data",
+        "site-2": "https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.test",
+    }
     return client_data
 
 
 def prepare_data():
-    print(f"prepare data for data directory")
+    print("prepare data for data directory")
     client_data_urls = get_data_url()
     for client in client_data_urls:
         client_data_dir = os.path.join(data_root_dir, client)

@@ -37,7 +37,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-import argparse
 import json
 import os
 
@@ -48,7 +47,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 
-CIFAR10_ROOT = "/tmp/cifar10"   # will be used for all CIFAR-10 experiments
+CIFAR10_ROOT = "/tmp/cifar10"  # will be used for all CIFAR-10 experiments
 
 
 def _get_site_class_summary(train_label, site_idx):
@@ -62,19 +61,14 @@ def _get_site_class_summary(train_label, site_idx):
 
 
 class Cifar10DataSplitter(FLComponent):
-    def __init__(self,
-                 split_dir: str = None,
-                 num_sites: int = 8,
-                 alpha: float = 0.5,
-                 seed: int = 0
-                 ):
+    def __init__(self, split_dir: str = None, num_sites: int = 8, alpha: float = 0.5, seed: int = 0):
         super().__init__()
         self.split_dir = split_dir
         self.num_sites = num_sites
         self.alpha = alpha
         self.seed = seed
 
-        if alpha < 0.:
+        if alpha < 0.0:
             raise ValueError(f"Alpha should be larger 0.0 but was {alpha}!")
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
@@ -84,7 +78,10 @@ class Cifar10DataSplitter(FLComponent):
     def split(self, fl_ctx: FLContext):
         np.random.seed(self.seed)
 
-        self.log_info(fl_ctx, f"Partition CIFAR-10 dataset into {self.num_sites} sites with Dirichlet sampling under alpha {self.alpha}")
+        self.log_info(
+            fl_ctx,
+            f"Partition CIFAR-10 dataset into {self.num_sites} sites with Dirichlet sampling under alpha {self.alpha}",
+        )
         site_idx, class_sum = self._partition_data()
 
         # write to files
@@ -129,7 +126,9 @@ class Cifar10DataSplitter(FLComponent):
                 np.random.shuffle(idx_k)
                 proportions = np.random.dirichlet(np.repeat(self.alpha, self.num_sites))
                 # Balance
-                proportions = np.array([p * (len(idx_j) < N / self.num_sites) for p, idx_j in zip(proportions, idx_batch)])
+                proportions = np.array(
+                    [p * (len(idx_j) < N / self.num_sites) for p, idx_j in zip(proportions, idx_batch)]
+                )
                 proportions = proportions / proportions.sum()
                 proportions = (np.cumsum(proportions) * len(idx_k)).astype(int)[:-1]
                 idx_batch = [idx_j + idx.tolist() for idx_j, idx in zip(idx_batch, np.split(idx_k, proportions))]

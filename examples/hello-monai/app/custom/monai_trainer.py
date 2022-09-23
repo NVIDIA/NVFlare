@@ -101,15 +101,9 @@ class MONAITrainer(Executor):
             if var_name in model_keys:
                 weights = model_weights[var_name]
                 try:
-                    local_var_dict[var_name] = torch.as_tensor(
-                        np.reshape(weights, local_var_dict[var_name].shape)
-                    )
+                    local_var_dict[var_name] = torch.as_tensor(np.reshape(weights, local_var_dict[var_name].shape))
                 except Exception as e:
-                    raise ValueError(
-                        "Convert weight from {} failed with error: {}".format(
-                            var_name, str(e)
-                        )
-                    )
+                    raise ValueError("Convert weight from {} failed with error: {}".format(var_name, str(e)))
 
         net.load_state_dict(local_var_dict)
 
@@ -125,11 +119,7 @@ class MONAITrainer(Executor):
             try:
                 local_model_dict[var_name] = local_state_dict[var_name].cpu().numpy()
             except Exception as e:
-                raise ValueError(
-                    "Convert weight from {} failed with error: {}".format(
-                        var_name, str(e)
-                    )
-                )
+                raise ValueError("Convert weight from {} failed with error: {}".format(var_name, str(e)))
 
         return local_model_dict
 
@@ -212,9 +202,7 @@ class MONAITrainer(Executor):
             dxo = from_shareable(shareable)
             # check if dxo is valid.
             if not isinstance(dxo, DXO):
-                self.log_exception(
-                    fl_ctx, f"dxo excepted type DXO. Got {type(dxo)} instead."
-                )
+                self.log_exception(fl_ctx, f"dxo excepted type DXO. Got {type(dxo)} instead.")
                 shareable.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
                 return shareable
 
@@ -233,9 +221,7 @@ class MONAITrainer(Executor):
             self.achieved_meta = dxo.meta
 
             # set engine state max epochs.
-            self.train_engine.state.max_epochs = (
-                self.train_engine.state.epoch + self.aggregation_epochs
-            )
+            self.train_engine.state.max_epochs = self.train_engine.state.epoch + self.aggregation_epochs
             # get current iteration when a round starts
             iter_of_start_time = self.train_engine.state.iteration
 
