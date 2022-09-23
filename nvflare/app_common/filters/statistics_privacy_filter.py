@@ -32,12 +32,14 @@ class StatisticsPrivacyFilter(DXOFilter):
         filters = []
         for cleanser_id in result_checker_ids:
             c = fl_ctx.get_engine().get_component(cleanser_id)
-            if not isinstance(c, MetricsPrivacyCleanser):
-                msg = "component identified by {} type {} is not type of MetricsPrivacyFilter".format(
-                    cleanser_id, type(c)
-                )
-                raise ValueError(msg)
-            filters.append(c)
+            # disabled component return None
+            if c:
+                if not isinstance(c, MetricsPrivacyCleanser):
+                    msg = "component identified by {} type {} is not type of MetricsPrivacyFilter".format(
+                        cleanser_id, type(c)
+                    )
+                    raise ValueError(msg)
+                filters.append(c)
         return filters
 
     def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:
