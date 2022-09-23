@@ -20,7 +20,7 @@ while getopts ":m:c" option; do
     case "${option}" in
         m) # framework/backend
             m=${OPTARG}
-            [[ $m == "numpy" || $m == "tensorflow" || $m == "pytorch" ]] || usage
+            [[ $m == "numpy" || $m == "tensorflow" || $m == "pytorch" || $m == "overseer" ]] || usage
             prefix="NVFLARE_TEST_FRAMEWORK=$m"
             ;;
         c) # Clean up
