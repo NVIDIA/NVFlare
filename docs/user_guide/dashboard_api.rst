@@ -75,8 +75,6 @@ Running ``nvflare dashboard -h`` shows all available options.
     -p PORT, --port PORT  port to listen
     -f FOLDER, --folder FOLDER
                             folder containing necessary info (default: current working directory)
-    -i DASHBOARD_IMAGE, --dashboard_image DASHBOARD_IMAGE
-                            container image for running dashboard
     --passphrase PASSPHRASE
                             Passphrase to encrypt/decrypt root CA private key. !!! Do not share it with others. !!!
     -e ENV, --env ENV     additonal environment variables: var1=value1
