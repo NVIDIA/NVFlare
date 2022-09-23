@@ -50,6 +50,17 @@ from .cmd_utils import CommandUtil
 
 META_FILE = "meta.json"
 MAX_DOWNLOAD_JOB_SIZE = 50 * 1024 * 1024 * 1204
+CLONED_META_KEYS = {
+    JobMetaKey.JOB_NAME.value,
+    JobMetaKey.JOB_FOLDER_NAME.value,
+    JobMetaKey.DEPLOY_MAP.value,
+    JobMetaKey.RESOURCE_SPEC.value,
+    JobMetaKey.CONTENT_LOCATION.value,
+    JobMetaKey.RESULT_LOCATION.value,
+    JobMetaKey.APPROVALS.value,
+    JobMetaKey.MIN_CLIENTS.value,
+    JobMetaKey.MANDATORY_CLIENTS.value,
+}
 
 
 class JobCommandModule(CommandModule, CommandUtil):
@@ -344,12 +355,15 @@ class JobCommandModule(CommandModule, CommandUtil):
             with engine.new_context() as fl_ctx:
                 data_bytes = job_def_manager.get_content(job_id, fl_ctx)
 
-                # set the submitter info for the new job
-                job.meta[JobMetaKey.SUBMITTER_NAME] = conn.get_prop(ConnProps.USER_NAME)
-                job.meta[JobMetaKey.SUBMITTER_ORG] = conn.get_prop(ConnProps.USER_ORG)
-                job.meta[JobMetaKey.SUBMITTER_ROLE] = conn.get_prop(ConnProps.USER_ROLE)
+                job_meta = {str(k): job.meta[k] for k in job.meta.keys() & CLONED_META_KEYS}
 
-                meta = job_def_manager.create(job.meta, data_bytes, fl_ctx)
+                # set the submitter info for the new job
+                job_meta[JobMetaKey.SUBMITTER_NAME.value] = conn.get_prop(ConnProps.USER_NAME)
+                job_meta[JobMetaKey.SUBMITTER_ORG.value] = conn.get_prop(ConnProps.USER_ORG)
+                job_meta[JobMetaKey.SUBMITTER_ROLE.value] = conn.get_prop(ConnProps.USER_ROLE)
+                job_meta[JobMetaKey.CLONED_FROM.value] = job_id
+
+                meta = job_def_manager.create(job_meta, data_bytes, fl_ctx)
                 conn.append_string("Cloned job {} as: {}".format(job_id, meta.get(JobMetaKey.JOB_ID)))
         except Exception as e:
             conn.append_error("Exception occurred trying to clone job: " + str(e))

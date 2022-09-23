@@ -290,9 +290,14 @@ The results are stored in workspace "/tmp/nvflare"
 
 ## 3.2 Visualization
 
-```python
+
+```bash
+    cp /tmp/nvflare/simulate_job/statistics/image_histogram.json $NVFLARE_HOME/examples/federated_statistics/image_stats/demo/.
+    
+    cd $NVFLARE_HOME/examples/federated_statistics/image_stats/demo
+    
     jupyter notebook  visualization.ipynb
-```  
+```
 ![compare all sites' histograms](figs/image_histogram_1.png)
 ![compare all sites' histograms](figs/image_histogram_2.png)
 

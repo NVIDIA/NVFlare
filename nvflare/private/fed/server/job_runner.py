@@ -16,7 +16,7 @@ import json
 import shutil
 import threading
 import time
-from typing import List
+from typing import List, Tuple
 
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
@@ -78,7 +78,7 @@ class JobRunner(FLComponent):
         message.set_header(RequestHeader.JOB_META, json.dumps(job.meta))
         return message
 
-    def _deploy_job(self, job: Job, sites: dict, fl_ctx: FLContext) -> str:
+    def _deploy_job(self, job: Job, sites: dict, fl_ctx: FLContext) -> Tuple[str, list]:
         """Deploy the application to the list of participants
 
         Args:
@@ -86,7 +86,7 @@ class JobRunner(FLComponent):
             sites: participating sites
             fl_ctx: FLContext
 
-        Returns:  job id
+        Returns:  job id, failed_clients
 
         """
         fl_ctx.remove_prop(FLContextKey.JOB_RUN_NUMBER)
@@ -151,6 +151,7 @@ class JobRunner(FLComponent):
                 )
 
         abort_job = False
+        failed_clients = []
         if client_deploy_requests:
             engine = fl_ctx.get_engine()
             admin_server = engine.server.admin_server
@@ -159,7 +160,6 @@ class JobRunner(FLComponent):
             )
 
             # check replies and see whether required clients are okay
-            failed_clients = []
             for client_token, reply in client_token_to_reply.items():
                 client_name = client_token_to_name[client_token]
                 if reply:
@@ -189,7 +189,7 @@ class JobRunner(FLComponent):
             raise RuntimeError("deploy failure", deploy_detail)
 
         self.fire_event(EventType.JOB_DEPLOYED, fl_ctx)
-        return run_number
+        return run_number, failed_clients
 
     def _start_run(self, job_id: str, job: Job, client_sites: dict, fl_ctx: FLContext):
         """Start the application
@@ -329,7 +329,7 @@ class JobRunner(FLComponent):
                             try:
                                 self.log_info(fl_ctx, f"Got the job:{ready_job.job_id} from the scheduler to run")
                                 fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, ready_job.job_id)
-                                job_id = self._deploy_job(ready_job, sites, fl_ctx)
+                                job_id, failed_clients = self._deploy_job(ready_job, sites, fl_ctx)
                                 job_manager.set_status(ready_job.job_id, RunStatus.DISPATCHED, fl_ctx)
 
                                 deploy_detail = fl_ctx.get_prop(FLContextKey.JOB_DEPLOY_DETAIL)
@@ -338,10 +338,17 @@ class JobRunner(FLComponent):
                                         ready_job.job_id, {JobMetaKey.JOB_DEPLOY_DETAIL.value: deploy_detail}, fl_ctx
                                     )
 
+                                if failed_clients:
+                                    deployable_clients = {
+                                        k: v for k, v in client_sites.items() if k not in failed_clients
+                                    }
+                                else:
+                                    deployable_clients = client_sites
+
                                 self._start_run(
                                     job_id=job_id,
                                     job=ready_job,
-                                    client_sites=client_sites,
+                                    client_sites=deployable_clients,
                                     fl_ctx=fl_ctx,
                                 )
                                 self.running_jobs[job_id] = ready_job
@@ -391,7 +398,7 @@ class JobRunner(FLComponent):
                 del self.running_jobs[job_id]
                 self.fire_event(EventType.JOB_ABORTED, fl_ctx)
             else:
-                raise RuntimeError(f"Job run: {job_id} does not exist.")
+                raise RuntimeError(f"Job {job_id} is not running.")
 
     def stop_all_runs(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()

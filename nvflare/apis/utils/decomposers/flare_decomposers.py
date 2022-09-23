@@ -111,7 +111,7 @@ class WorkspaceDecomposer(Decomposer):
         return Workspace
 
     def decompose(self, target: Workspace) -> Any:
-        return [target.root_dir, target.name, target.config_folder]
+        return [target.root_dir, target.site_name, target.config_folder]
 
     def recompose(self, data: Any) -> Workspace:
         return Workspace(data[0], data[1], data[2])

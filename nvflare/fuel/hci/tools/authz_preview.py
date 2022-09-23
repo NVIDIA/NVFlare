@@ -15,6 +15,7 @@
 import argparse
 import cmd
 import json
+import sys
 
 from nvflare.fuel.hci.cmd_arg_utils import split_to_args
 from nvflare.fuel.hci.table import Table
@@ -133,22 +134,32 @@ class Commander(cmd.Cmd):
         self.stdout.write(content)
 
 
-def main():
-    """Tool to help preview and see the details of an authorization policy with command line commands."""
-    parser = argparse.ArgumentParser()
+def define_authz_preview_parser(parser):
     parser.add_argument("--policy", "-p", type=str, help="authz policy file", required=True)
 
-    args = parser.parse_args()
 
-    with open(args.policy) as file:
+def load_policy(policy_file_path):
+    with open(policy_file_path) as file:
         config = json.load(file)
         policy, err = parse_policy_config(config, COMMAND_CATEGORIES)
         if err:
             print("Policy config error: {}".format(err))
-            return
+            sys.exit(1)
+    return policy
 
+
+def run_command(args):
+    policy = load_policy(args.policy)
     commander = Commander(policy)
     commander.cmdloop(intro="Type help or ? to list commands.")
+
+
+def main():
+    """Tool to help preview and see the details of an authorization policy with command line commands."""
+    parser = argparse.ArgumentParser()
+    define_authz_preview_parser(parser)
+    args = parser.parse_args()
+    run_command(args)
 
 
 if __name__ == "__main__":

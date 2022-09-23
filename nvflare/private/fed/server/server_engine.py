@@ -51,7 +51,7 @@ from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci.zip_utils import zip_directory_to_bytes
 from nvflare.fuel.utils import fobs
-from nvflare.private.admin_defs import Message
+from nvflare.private.admin_defs import Message, MsgHeader
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.private.fed.utils.fed_utils import security_close
@@ -581,12 +581,18 @@ class ServerEngine(ServerEngineInternalSpec):
             client_name = self.get_client_name_from_token(r.client_token)
             if r.reply:
                 try:
-                    results[client_name] = fobs.loads(r.reply.body)
-                except BaseException:
+                    error_code = r.reply.get_header(MsgHeader.RETURN_CODE, ReturnCode.OK)
+                    if error_code != ReturnCode.OK:
+                        self.logger.error(f"Aux message send error: {error_code} from client: {client_name}")
+                        shareable = make_reply(ReturnCode.ERROR)
+                    else:
+                        shareable = fobs.loads(r.reply.body)
+                    results[client_name] = shareable
+                except BaseException as e:
                     results[client_name] = make_reply(ReturnCode.COMMUNICATION_ERROR)
                     self.logger.error(
                         f"Received unexpected reply from client: {client_name}, "
-                        f"message body:{r.reply.body} processing topic:{topic}"
+                        f"message body:{r.reply.body} processing topic:{topic} Error:{e}"
                     )
             else:
                 results[client_name] = None
@@ -726,11 +732,16 @@ class ServerEngine(ServerEngineInternalSpec):
         for r in replies:
             site_name = self.get_client_name_from_token(r.client_token)
             if r.reply:
-                resp = fobs.loads(r.reply.body)
-                result[site_name] = (
-                    resp.get_header(ShareableHeader.CHECK_RESOURCE_RESULT, False),
-                    resp.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, ""),
-                )
+                error_code = r.reply.get_header(MsgHeader.RETURN_CODE, ReturnCode.OK)
+                if error_code != ReturnCode.OK:
+                    self.logger.error(f"Client reply error: {r.reply.body}")
+                    result[site_name] = (False, "")
+                else:
+                    resp = fobs.loads(r.reply.body)
+                    result[site_name] = (
+                        resp.get_header(ShareableHeader.CHECK_RESOURCE_RESULT, False),
+                        resp.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, ""),
+                    )
             else:
                 result[site_name] = (False, "")
         return result
