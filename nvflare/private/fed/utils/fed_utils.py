@@ -37,6 +37,7 @@ from nvflare.private.fed.protos.federated_pb2 import ModelData
 from nvflare.private.fed.utils.numproto import bytes_to_proto
 from nvflare.private.privacy_manager import PrivacyManager, PrivacyService
 from nvflare.security.security import EmptyAuthorizer, FLAuthorizer
+
 from .app_authz import AppAuthzService
 
 
@@ -234,4 +235,3 @@ def get_scope_info():
 def fobs_initialize():
     flare_decomposers.register()
     common_decomposers.register()
-

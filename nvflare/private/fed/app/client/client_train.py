@@ -30,7 +30,7 @@ from nvflare.private.fed.client.admin import FedAdminAgent
 from nvflare.private.fed.client.admin_msg_sender import AdminMessageSender
 from nvflare.private.fed.client.client_engine import ClientEngine
 from nvflare.private.fed.client.fed_client import FederatedClient
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler, security_init, fobs_initialize
+from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize, security_init
 from nvflare.private.privacy_manager import PrivacyService
 
 
