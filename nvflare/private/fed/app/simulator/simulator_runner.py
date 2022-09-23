@@ -41,7 +41,7 @@ from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorServerAppRunner
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler
+from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize
 from nvflare.security.security import EmptyAuthorizer
 
 
@@ -106,6 +106,7 @@ class SimulatorRunner(FLComponent):
         if not os.path.exists(self.args.workspace):
             os.makedirs(self.args.workspace)
         os.chdir(self.args.workspace)
+        fobs_initialize()
         AuthorizationService.initialize(EmptyAuthorizer())
         AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
 

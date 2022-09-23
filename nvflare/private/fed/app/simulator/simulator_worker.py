@@ -34,7 +34,7 @@ from nvflare.private.fed.client.fed_client import FederatedClient
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorClientAppRunner
 from nvflare.private.fed.simulator.simulator_client_engine import SimulatorClientEngine
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler
+from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize
 from nvflare.security.security import EmptyAuthorizer
 
 
@@ -111,8 +111,6 @@ class ClientTaskWorker(FLComponent):
             client_config = data[SimulatorConstants.CLIENT_CONFIG]
             deploy_args = data[SimulatorConstants.DEPLOY_ARGS]
 
-            client.initialize_fobs()
-
             app_root = os.path.join(args.workspace, SimulatorConstants.JOB_NAME, "app_" + client.client_name)
             app_custom_folder = os.path.join(app_root, "custom")
             sys.path.append(app_custom_folder)
@@ -162,6 +160,7 @@ def main():
 
     workspace = os.path.join(args.workspace, SimulatorConstants.JOB_NAME, "app_" + args.client)
     os.chdir(workspace)
+    fobs_initialize()
     AuthorizationService.initialize(EmptyAuthorizer())
     AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
 

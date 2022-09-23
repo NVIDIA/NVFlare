@@ -25,4 +25,5 @@ to see the capabilities of the system and how it can be operated.
    user_guide/authorization
    user_guide/federated_learning
    user_guide/docker_compose
+   user_guide/helm_chart
    user_guide/dashboard_api

@@ -34,7 +34,7 @@ from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.private.fed.app.fl_conf import create_privacy_manager
 from nvflare.private.fed.client.client_run_manager import ClientRunManager
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler, configure_logging
+from nvflare.private.fed.utils.fed_utils import add_logfile_handler, configure_logging, fobs_initialize
 from nvflare.private.privacy_manager import PrivacyService
 
 
@@ -121,6 +121,8 @@ def main():
     if os.path.isdir(app_custom_folder):
         sys.path.append(app_custom_folder)
     configure_logging(workspace)
+
+    fobs_initialize()
 
     SecurityContentService.initialize(content_folder=workspace.get_startup_kit_dir())
 

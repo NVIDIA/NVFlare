@@ -28,7 +28,7 @@ from nvflare.private.defs import AppFolderConstants, SSLConstants
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger, create_privacy_manager
 from nvflare.private.fed.server.admin import FedAdminServer
 from nvflare.private.fed.server.fed_server import FederatedServer
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler, security_init
+from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize, security_init
 from nvflare.private.privacy_manager import PrivacyService
 
 
@@ -72,6 +72,8 @@ def main():
 
     try:
         os.chdir(args.workspace)
+
+        fobs_initialize()
 
         conf = FLServerStarterConfiger(
             workspace=workspace,
