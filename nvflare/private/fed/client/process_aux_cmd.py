@@ -12,10 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.apis.fl_constant import ReservedTopic, ReturnCode
-from nvflare.apis.shareable import make_reply
+from nvflare.apis.fl_constant import ReservedTopic
 from nvflare.fuel.utils import fobs
-from nvflare.private.admin_defs import Message
+from nvflare.private.admin_defs import Message, error_reply
 from nvflare.private.defs import RequestHeader
 from nvflare.private.fed.client.admin import RequestProcessor
 
@@ -32,7 +31,7 @@ class AuxRequestProcessor(RequestProcessor):
         job_id = req.get_header(RequestHeader.JOB_ID)
         result = engine.send_aux_command(shareable, job_id)
         if not result:
-            result = make_reply(ReturnCode.EXECUTION_EXCEPTION)
+            return error_reply("Failed to send aux command")
 
         result = fobs.dumps(result)
         message = Message(topic="reply_" + req.topic, body=result)

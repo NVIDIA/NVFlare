@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import enum
+import logging
 from typing import List
 
 from nvflare.fuel.hci.conn import Connection
@@ -20,6 +21,8 @@ from nvflare.fuel.sec.authz import AuthorizationService, AuthzContext, Person
 
 from .constants import ConnProps
 from .reg import CommandFilter
+
+log = logging.getLogger(__name__)
 
 
 class PreAuthzReturnCode(enum.Enum):
@@ -75,7 +78,7 @@ class AuthzFilter(CommandFilter):
 
         ctx = AuthzContext(user=user, submitter=submitter, right=cmd_entry.name)
 
-        print("User: {} Submitter: {}  Right: {}".format(user, submitter, cmd_entry.name))
+        log.debug("User: {} Submitter: {}  Right: {}".format(user, submitter, cmd_entry.name))
         authorized, err = AuthorizationService.authorize(ctx)
         if err:
             conn.append_error("Authorization Error: {}".format(err))

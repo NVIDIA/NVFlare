@@ -29,8 +29,8 @@ def get_serializable_data(fl_ctx: FLContext):
             try:
                 fobs.dumps(v)
                 new_fl_ctx.props[k] = v
-            except:
-                logger.warning(generate_log_message(fl_ctx, f"Object is not serializable (discarded): {k} - {v}"))
+            except BaseException as e:
+                logger.warning(generate_log_message(fl_ctx, f"Object is not serializable (discarded): {k} - {v}: {e}"))
     return new_fl_ctx
 
 
