@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import os
-import traceback
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
 from nvflare.fuel.hci.base64_utils import (
@@ -28,6 +27,7 @@ from nvflare.fuel.hci.cmd_arg_utils import join_args
 from nvflare.fuel.hci.reg import CommandEntry, CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.table import Table
 from nvflare.fuel.hci.zip_utils import split_path, unzip_all_from_bytes, zip_directory_to_bytes
+from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .api_spec import CommandContext, ReplyProcessor
 from .api_status import APIStatus
@@ -99,9 +99,14 @@ class _DownloadProcessor(ReplyProcessor):
                 num_bytes = self.str_to_file_func(encoded_str, full_path)
                 self.table.add_row([file_name, str(num_bytes)])
                 self.data_received = True
-        except Exception as ex:
-            traceback.print_exc()
-            ctx.set_command_result({"status": APIStatus.ERROR_RUNTIME, "details": f"exception processing file: {ex}"})
+        except Exception as e:
+            secure_log_traceback()
+            ctx.set_command_result(
+                {
+                    "status": APIStatus.ERROR_RUNTIME,
+                    "details": f"exception processing file: {secure_format_exception(e)}",
+                }
+            )
 
 
 class _DownloadFolderProcessor(ReplyProcessor):
@@ -141,12 +146,12 @@ class _DownloadFolderProcessor(ReplyProcessor):
                         "details": "Download to dir {}".format(self.download_dir),
                     }
                 )
-        except Exception as ex:
-            traceback.print_exc()
+        except Exception as e:
+            secure_log_traceback()
             ctx.set_command_result(
                 {
                     "status": APIStatus.ERROR_RUNTIME,
-                    "details": "exception processing reply: {}".format(ex),
+                    "details": f"exception processing reply: {secure_format_exception(e)}",
                 }
             )
 

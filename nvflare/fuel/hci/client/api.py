@@ -18,7 +18,6 @@ import socket
 import ssl
 import threading
 import time
-import traceback
 from datetime import datetime
 from typing import List, Optional
 
@@ -28,6 +27,7 @@ from nvflare.fuel.hci.proto import ConfirmMethod, InternalCommands, make_error
 from nvflare.fuel.hci.reg import CommandEntry, CommandModule, CommandRegister
 from nvflare.fuel.hci.table import Table
 from nvflare.fuel.utils.fsm import FSM, State
+from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .api_spec import AdminAPISpec, CommandContext, CommandCtxKey, CommandInfo, ReplyProcessor, ServiceFinder
 from .api_status import APIStatus
@@ -685,12 +685,16 @@ class AdminAPI(AdminAPISpec):
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
                     sock.connect((sp_host, sp_port))
                     self._send_to_sock(sock, cmd_ctx)
-        except Exception as ex:
+        except Exception as e:
             if self.debug:
-                traceback.print_exc()
+                secure_log_traceback()
 
             process_json_func(
-                make_error("Failed to communicate with Admin Server {} on {}: {}".format(sp_host, sp_port, ex))
+                make_error(
+                    "Failed to communicate with Admin Server {} on {}: {}".format(
+                        sp_host, sp_port, secure_format_exception(e)
+                    )
+                )
             )
 
     def _get_command_detail(self, command):

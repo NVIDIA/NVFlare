@@ -471,7 +471,9 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
                     fl_ctx.props.update(child_fl_ctx)
         except BaseException as e:
-            self.logger.info(f"Could not connect to server runner process: {secure_format_exception(e)} - asked client to end the run")
+            self.logger.info(
+                f"Could not connect to server runner process: {secure_format_exception(e)} - asked client to end the run"
+            )
         return shareable, task_id, task_name
 
     def SubmitUpdate(self, request, context):

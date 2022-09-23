@@ -60,7 +60,9 @@ class ServerCommandAgent(object):
                 self.logger.info("listener communication terminated.")
                 break
             except Exception as e:
-                self.logger.error(f"IPC Communication error on the port: {self.listen_port}: {secure_format_exception(e)}.")
+                self.logger.error(
+                    f"IPC Communication error on the port: {self.listen_port}: {secure_format_exception(e)}."
+                )
 
     def shutdown(self):
         self.asked_to_stop = True

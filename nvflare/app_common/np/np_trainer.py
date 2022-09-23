@@ -25,9 +25,9 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.model import ModelLearnable
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.security.logging import secure_format_exception
 
 from .constants import NPConstants
-from nvflare.security.logging import secure_format_exception
 
 
 class NPTrainer(Executor):
@@ -67,7 +67,9 @@ class NPTrainer(Executor):
         try:
             incoming_dxo = from_shareable(shareable)
         except BaseException as e:
-            self.system_panic(f"Unable to convert shareable to model definition. Exception {secure_format_exception(e)}", fl_ctx)
+            self.system_panic(
+                f"Unable to convert shareable to model definition. Exception {secure_format_exception(e)}", fl_ctx
+            )
             return make_reply(ReturnCode.BAD_TASK_DATA)
 
         # Information about workflow is retrieved from the shareable header.

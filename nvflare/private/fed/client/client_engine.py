@@ -18,7 +18,6 @@ import re
 import shutil
 import sys
 import time
-import traceback
 from concurrent.futures import ThreadPoolExecutor
 
 from nvflare.apis.event_type import EventType
@@ -33,7 +32,7 @@ from nvflare.private.defs import ERROR_MSG_PREFIX, ClientStatusKey, EngineConsta
 from nvflare.private.event import fire_event
 from nvflare.private.fed.utils.app_deployer import AppDeployer
 from nvflare.private.fed.utils.fed_utils import security_close
-from nvflare.security.logging import secure_log_traceback, secure_format_exception
+from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .client_engine_internal_spec import ClientEngineInternalSpec
 from .client_executor import ProcessExecutor

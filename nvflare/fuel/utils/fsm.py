@@ -1,3 +1,6 @@
+from nvflare.security.logging import secure_format_exception
+
+
 class State(object):
     def __init__(self, name: str):
         assert isinstance(name, str), "name must be str but got {}".format(type(name))
@@ -51,8 +54,8 @@ class FSM(object):
     def execute(self, **kwargs) -> State:
         try:
             self.current_state = self._try_execute(**kwargs)
-        except BaseException as ex:
-            self.error = f"exception occurred in state execution: {ex}"
+        except BaseException as e:
+            self.error = f"exception occurred in state execution: {secure_format_exception(e)}"
             self.current_state = None
         return self.current_state
 

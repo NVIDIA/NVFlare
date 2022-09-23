@@ -268,7 +268,9 @@ class ClientRunner(FLComponent):
                 )
 
         except RuntimeError as e:
-            self.log_exception(fl_ctx, f"Critical RuntimeError happened with Exception {secure_format_exception(e)}: Aborting the RUN!")
+            self.log_exception(
+                fl_ctx, f"Critical RuntimeError happened with Exception {secure_format_exception(e)}: Aborting the RUN!"
+            )
             self.asked_to_stop = True
             return self._reply_and_audit(
                 reply=make_reply(ReturnCode.EXECUTION_RESULT_ERROR),

@@ -97,7 +97,9 @@ class S3Storage(StorageSpec):
                 )
             except MinioException as e:
                 raise StorageException(
-                    "cannot create object: checking if uri has any objects failed: {}".format(secure_format_exception(e))
+                    "cannot create object: checking if uri has any objects failed: {}".format(
+                        secure_format_exception(e)
+                    )
                 )
             if dir_is_nonempty:
                 raise StorageException("cannot create object {} at nonempty directory".format(uri))

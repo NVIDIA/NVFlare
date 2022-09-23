@@ -368,7 +368,8 @@ class CrossSiteModelEval(Controller):
                 save_path = self._save_validation_content(client_name, self._cross_val_models_dir, dxo, fl_ctx)
             except ValueError as e:
                 self.log_error(
-                    fl_ctx, f"Unable to save shareable contents of {client_name}'s model. Exception: {secure_format_exception(e)}"
+                    fl_ctx,
+                    f"Unable to save shareable contents of {client_name}'s model. Exception: {secure_format_exception(e)}",
                 )
                 self.log_warning(fl_ctx, f"Ignoring client {client_name}'s model.")
                 return

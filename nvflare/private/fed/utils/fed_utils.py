@@ -85,7 +85,9 @@ def listen_command(listen_port, engine, execute_func, logger):
         execute_func(conn, engine)
 
     except Exception as e:
-        logger.exception(f"Could not create the listener for this process on port: {listen_port}: {secure_format_exception(e)}.")
+        logger.exception(
+            f"Could not create the listener for this process on port: {listen_port}: {secure_format_exception(e)}."
+        )
         secure_log_traceback(logger)
     finally:
         if conn:

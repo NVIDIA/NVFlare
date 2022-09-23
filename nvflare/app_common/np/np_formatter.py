@@ -18,6 +18,7 @@ from nvflare.app_common.abstract.formatter import Formatter
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.security.logging import secure_format_exception
 
+
 class NPFormatter(Formatter):
     def __init__(self) -> None:
         super().__init__()

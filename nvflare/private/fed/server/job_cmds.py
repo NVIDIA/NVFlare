@@ -18,7 +18,6 @@ import json
 import logging
 import os
 import shutil
-import traceback
 from typing import Dict, List
 
 import nvflare.fuel.hci.file_transfer_defs as ftd

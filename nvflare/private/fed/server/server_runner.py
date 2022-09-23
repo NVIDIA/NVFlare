@@ -129,7 +129,9 @@ class ServerRunner(FLComponent):
                     try:
                         wf.responder.finalize_run(fl_ctx)
                     except BaseException as e:
-                        self.log_exception(fl_ctx, "Error finalizing workflow {}: {}".format(wf.id, secure_format_exception(e)))
+                        self.log_exception(
+                            fl_ctx, "Error finalizing workflow {}: {}".format(wf.id, secure_format_exception(e))
+                        )
 
                     self.log_debug(fl_ctx, "firing event EventType.END_WORKFLOW")
                     self.fire_event(EventType.END_WORKFLOW, fl_ctx)
@@ -310,7 +312,10 @@ class ServerRunner(FLComponent):
             task_data.set_header(TaskConstant.WAIT_TIME, self.config.task_request_interval)
             return task_name, task_id, task_data
         except BaseException as e:
-            self.log_exception(fl_ctx, f"Error processing client task request: {secure_format_exception(e)}; asked client to try again later")
+            self.log_exception(
+                fl_ctx,
+                f"Error processing client task request: {secure_format_exception(e)}; asked client to try again later",
+            )
             return self._task_try_again()
 
     def process_submission(self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext):
@@ -399,7 +404,10 @@ class ServerRunner(FLComponent):
                             result = f.process(result, fl_ctx)
                         except BaseException as e:
                             self.log_exception(
-                                fl_ctx, "Error processing in task result filter {}: {}".format(type(f), secure_format_exception(e))
+                                fl_ctx,
+                                "Error processing in task result filter {}: {}".format(
+                                    type(f), secure_format_exception(e)
+                                ),
                             )
 
                             result = make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR)
@@ -419,7 +427,10 @@ class ServerRunner(FLComponent):
                 self.log_debug(fl_ctx, "firing event EventType.AFTER_PROCESS_SUBMISSION")
                 self.fire_event(EventType.AFTER_PROCESS_SUBMISSION, fl_ctx)
             except BaseException as e:
-                self.log_exception(fl_ctx, "Error processing client result by {}: {}".format(self.current_wf.id, secure_format_exception(e)))
+                self.log_exception(
+                    fl_ctx,
+                    "Error processing client result by {}: {}".format(self.current_wf.id, secure_format_exception(e)),
+                )
 
     def abort(self, fl_ctx: FLContext):
         self.status = "done"

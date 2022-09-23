@@ -26,6 +26,7 @@ from nvflare.apis.responder import Responder
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
+from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
 from .any_relay_manager import AnyRelayTaskManager
@@ -33,7 +34,6 @@ from .bcast_manager import BcastForeverTaskManager, BcastTaskManager
 from .send_manager import SendTaskManager
 from .seq_relay_manager import SequentialRelayTaskManager
 from .task_manager import TaskCheckStatus, TaskManager
-from nvflare.security.logging import secure_format_exception
 
 _TASK_KEY_ENGINE = "___engine"
 _TASK_KEY_MANAGER = "___mgr"
@@ -355,7 +355,9 @@ class Controller(Responder, ControllerSpec, ABC):
                     # this task cannot proceed anymore
                     self.log_exception(
                         fl_ctx,
-                        "processing error in result_received_cb on task {}({}): {}".format(task_name, task_id, secure_format_exception(e)),
+                        "processing error in result_received_cb on task {}({}): {}".format(
+                            task_name, task_id, secure_format_exception(e)
+                        ),
                     )
                     task.completion_status = TaskCompletionStatus.ERROR
                     task.exception = e
@@ -826,7 +828,9 @@ class Controller(Responder, ControllerSpec, ABC):
                         except BaseException as e:
                             self.log_exception(
                                 fl_ctx,
-                                "processing error in task_done_cb error on task {}: {}".format(exit_task.name, secure_format_exception(e)),
+                                "processing error in task_done_cb error on task {}: {}".format(
+                                    exit_task.name, secure_format_exception(e)
+                                ),
                             )
                             exit_task.completion_status = TaskCompletionStatus.ERROR
                             exit_task.exception = e

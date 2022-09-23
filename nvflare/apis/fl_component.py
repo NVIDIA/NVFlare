@@ -15,6 +15,7 @@
 import logging
 
 from nvflare.apis.utils.fl_context_utils import generate_log_message
+from nvflare.security.logging import secure_format_traceback
 
 from .analytix import AnalyticsData, AnalyticsDataType
 from .event_type import EventType
@@ -22,7 +23,6 @@ from .fl_constant import EventScope, FedEventHeader, FLContextKey, LogMessageTag
 from .fl_context import FLContext
 from .persistable import StatePersistable
 from .shareable import Shareable
-from nvflare.security.logging import secure_format_traceback
 
 
 class FLComponent(StatePersistable):

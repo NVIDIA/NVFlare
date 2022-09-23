@@ -268,7 +268,9 @@ class JobRunner(FLComponent):
             replies = _send_to_clients(admin_server, client_sites, engine, message)
             check_client_replies(replies=replies, client_sites=client_sites, command="send delete_run command")
         except RuntimeError as e:
-            self.log_error(fl_ctx, f"Failed to execute delete run ({job_id}) on the clients: {secure_format_exception(e)}")
+            self.log_error(
+                fl_ctx, f"Failed to execute delete run ({job_id}) on the clients: {secure_format_exception(e)}"
+            )
 
         err = engine.delete_job_id(job_id)
         if err:
@@ -368,7 +370,9 @@ class JobRunner(FLComponent):
                                     )
 
                                 self.fire_event(EventType.JOB_ABORTED, fl_ctx)
-                                self.log_error(fl_ctx, f"Failed to run the Job ({ready_job.job_id}): {secure_format_exception(e)}")
+                                self.log_error(
+                                    fl_ctx, f"Failed to run the Job ({ready_job.job_id}): {secure_format_exception(e)}"
+                                )
 
                 time.sleep(1.0)
         else:
@@ -384,7 +388,9 @@ class JobRunner(FLComponent):
             with self.lock:
                 self.running_jobs[job_id] = job
         except Exception as e:
-            self.log_error(fl_ctx, f"Failed to restore the job: {job_id} to the running job table: {secure_format_exception(e)}.")
+            self.log_error(
+                fl_ctx, f"Failed to restore the job: {job_id} to the running job table: {secure_format_exception(e)}."
+            )
 
     def stop_run(self, job_id: str, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()

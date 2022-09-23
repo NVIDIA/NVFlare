@@ -11,10 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import os
 import shutil
 import tempfile
-import traceback
 from typing import List
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
@@ -30,6 +30,7 @@ from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes
 from nvflare.private.fed.server.cmd_utils import CommandUtil
+from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 
 class FileTransferModule(CommandModule, CommandUtil):
@@ -176,9 +177,9 @@ class FileTransferModule(CommandModule, CommandUtil):
                 conn.append_error("logic error: unzip failed to create folder {}".format(tmp_folder_path))
                 return False, None
             return True, None
-        except BaseException:
-            traceback.print_exc()
-            conn.append_error("exception occurred")
+        except BaseException as e:
+            secure_log_traceback()
+            conn.append_error(f"exception occurred: {secure_format_exception(e)}")
             return False, None
         finally:
             shutil.rmtree(tmp_dir)

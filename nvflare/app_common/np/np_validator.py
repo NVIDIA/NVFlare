@@ -75,7 +75,9 @@ class NPValidator(Executor):
                 try:
                     model_dxo = from_shareable(shareable)
                 except Exception as e:
-                    self.log_error(fl_ctx, f"Unable to extract model dxo from shareable. Exception: {secure_format_exception(e)}")
+                    self.log_error(
+                        fl_ctx, f"Unable to extract model dxo from shareable. Exception: {secure_format_exception(e)}"
+                    )
                     return make_reply(ReturnCode.BAD_TASK_DATA)
 
                 # Get model from shareable. data_kind must be WEIGHTS.
