@@ -28,7 +28,7 @@ from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger
 from nvflare.private.fed.server.server_app_runner import ServerAppRunner
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler
+from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize
 
 
 def main():
@@ -68,6 +68,8 @@ def main():
     command_agent = None
     try:
         os.chdir(args.workspace)
+        fobs_initialize()
+
         SecurityContentService.initialize(content_folder=workspace.get_startup_kit_dir())
 
         # Initialize audit service since the job execution will need it!
