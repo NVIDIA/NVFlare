@@ -13,16 +13,15 @@
 # limitations under the License.
 
 import json
-import os
-import shutil
 
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReturnCode
+from nvflare.apis.fl_constant import ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.app_constant import AppConstants
-                
+
+
 class XGBoostBaggingAggregator(Aggregator):
     def __init__(
         self,
@@ -45,8 +44,7 @@ class XGBoostBaggingAggregator(Aggregator):
         self.global_model = None
         self.expected_data_kind = DataKind.XGB_MODEL
         self.num_trees = 0
-        
-    
+
     def accept(self, shareable: Shareable, fl_ctx: FLContext) -> bool:
         """Store shareable and update aggregator's internal state
 
@@ -101,8 +99,8 @@ class XGBoostBaggingAggregator(Aggregator):
             self.log_error(fl_ctx, "no data to aggregate")
             return False
         else:
-            self.local_models.append(data['model_data'])
-            self.local_models_as_dict.append(json.loads(data['model_data']))
+            self.local_models.append(data["model_data"])
+            self.local_models_as_dict.append(json.loads(data["model_data"]))
 
             self.history.append(
                 {
@@ -127,12 +125,15 @@ class XGBoostBaggingAggregator(Aggregator):
         site_num = len(self.history)
 
         self.log_info(fl_ctx, f"aggregating {site_num} update(s) at round {current_round}")
-        
+
         self.history = []
         self.log_debug(fl_ctx, "End aggregation")
         local_updates = self.local_models
         local_updates_as_dict = self.local_models_as_dict
         self.local_models = []
         self.local_models_as_dict = []
-        dxo = DXO(data_kind=self.expected_data_kind, data={'model_data': local_updates, 'model_data_dict': local_updates_as_dict})
+        dxo = DXO(
+            data_kind=self.expected_data_kind,
+            data={"model_data": local_updates, "model_data_dict": local_updates_as_dict},
+        )
         return dxo.to_shareable()

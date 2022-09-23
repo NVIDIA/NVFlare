@@ -12,13 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.apis.dxo import DataKind, from_shareable, DXO
+import json
+
+from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, model_learnable_to_dxo
 from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
-import json
 
 
 def update_model(prev_model, model_update):
@@ -27,17 +28,18 @@ def update_model(prev_model, model_update):
         return model_update
     else:
         # Always 1 tree, so [0]
-        best_iteration = int(prev_model['learner']['attributes']['best_iteration'])
-        best_ntree_limit = int(prev_model['learner']['attributes']['best_ntree_limit'])
-        num_trees = int(prev_model['learner']['gradient_booster']['model']['gbtree_model_param']['num_trees'])
-        prev_model['learner']['attributes']['best_iteration']=str(best_iteration + 1)
-        prev_model['learner']['attributes']['best_ntree_limit'] = str(best_ntree_limit + 1)
-        prev_model['learner']['gradient_booster']['model']['gbtree_model_param']['num_trees'] = str(num_trees + 1)
-        append_info = model_update['learner']['gradient_booster']['model']['trees'][0]
-        append_info['id'] = num_trees
-        prev_model['learner']['gradient_booster']['model']['trees'].append(append_info)
-        prev_model['learner']['gradient_booster']['model']['tree_info'].append(0)
+        best_iteration = int(prev_model["learner"]["attributes"]["best_iteration"])
+        best_ntree_limit = int(prev_model["learner"]["attributes"]["best_ntree_limit"])
+        num_trees = int(prev_model["learner"]["gradient_booster"]["model"]["gbtree_model_param"]["num_trees"])
+        prev_model["learner"]["attributes"]["best_iteration"] = str(best_iteration + 1)
+        prev_model["learner"]["attributes"]["best_ntree_limit"] = str(best_ntree_limit + 1)
+        prev_model["learner"]["gradient_booster"]["model"]["gbtree_model_param"]["num_trees"] = str(num_trees + 1)
+        append_info = model_update["learner"]["gradient_booster"]["model"]["trees"][0]
+        append_info["id"] = num_trees
+        prev_model["learner"]["gradient_booster"]["model"]["trees"].append(append_info)
+        prev_model["learner"]["gradient_booster"]["model"]["tree_info"].append(0)
         return prev_model
+
 
 class XGBModelShareableGenerator(ShareableGenerator):
     def __init__(self):
@@ -54,20 +56,20 @@ class XGBModelShareableGenerator(ShareableGenerator):
         Returns:
             Shareable: a shareable containing a DXO object.
         """
-       
+
         if not self.shareable:
-            # initialization or recovering from previous training - 
+            # initialization or recovering from previous training -
             model = model_learnable[ModelLearnableKey.WEIGHTS]
             if model:
-                # recovering from previous run - distinguish between cyclic and bagging modes as 
+                # recovering from previous run - distinguish between cyclic and bagging modes as
                 # global model format is different
                 if isinstance(model, dict):
                     # bagging mode
-                    serialized_model = bytearray(json.dumps(model), 'utf-8')
+                    serialized_model = bytearray(json.dumps(model), "utf-8")
                 else:
                     # cyclid mode, model should be serialized already
                     serialized_model = model
-                dxo = DXO(data_kind=DataKind.XGB_MODEL, data={'model_data': serialized_model})
+                dxo = DXO(data_kind=DataKind.XGB_MODEL, data={"model_data": serialized_model})
             else:
                 # intial run, starting from empty model
                 dxo = model_learnable_to_dxo(model_learnable)
@@ -99,7 +101,6 @@ class XGBModelShareableGenerator(ShareableGenerator):
         if not base_model:
             self.system_panic(reason="No global base model!", fl_ctx=fl_ctx)
             return base_model
-        
 
         dxo = from_shareable(shareable)
 
@@ -108,17 +109,17 @@ class XGBModelShareableGenerator(ShareableGenerator):
             if not model_update:
                 self.log_info(fl_ctx, "No model update found. Model will not be updated.")
             else:
-                model_data_dict = model_update.get('model_data_dict')
+                model_data_dict = model_update.get("model_data_dict")
                 if model_data_dict:
                     # model update is from aggregator in bagging mode, update global model
                     model = base_model[ModelLearnableKey.WEIGHTS]
                     for update in model_data_dict:
                         model = update_model(model, update)
                     # remove model update dict from shareable that will be sesnt
-                    dxo.data = {'model_data': model_update['model_data']}
+                    dxo.data = {"model_data": model_update["model_data"]}
                 else:
                     # model update is serialized full model currently in cyclic mode
-                    model = model_update.get('model_data')
+                    model = model_update.get("model_data")
                 base_model[ModelLearnableKey.WEIGHTS] = model
             self.shareable = dxo.to_shareable()
         else:

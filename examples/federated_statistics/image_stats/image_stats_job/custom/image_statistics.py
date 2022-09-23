@@ -21,16 +21,11 @@ from monai.data import ITKReader, load_decathlon_datalist
 from monai.transforms import LoadImage
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.abstract.statistics_spec import Statistics, Histogram, Feature, DataType, Bin, HistogramType
+from nvflare.app_common.abstract.statistics_spec import Bin, DataType, Feature, Histogram, HistogramType, Statistics
 
 
 class ImageStatistics(Statistics):
-
-    def __init__(
-            self,
-            data_root: str = "/tmp/nvflare/data",
-            data_list_key: str = "data"
-    ):
+    def __init__(self, data_root: str = "/tmp/nvflare/data", data_list_key: str = "data"):
         """local image statistics generator .
 
         Args:
@@ -47,7 +42,6 @@ class ImageStatistics(Statistics):
 
         self.loader = None
         self.failure_images = 0
-
 
     def initialize(self, parts: dict, fl_ctx: FLContext):
         self.client_name = fl_ctx.get_identity_name()
@@ -78,20 +72,17 @@ class ImageStatistics(Statistics):
     def features(self) -> Dict[str, List[Feature]]:
         return {"train": [Feature("density", DataType.FLOAT)]}
 
-    def count(self,
-              dataset_name: str,
-              feature_name: str) -> int:
+    def count(self, dataset_name: str, feature_name: str) -> int:
         image_paths = self.data_list[dataset_name]
         return len(image_paths)
 
-    def failure_count(self,
-              dataset_name: str,
-              feature_name: str) -> int:
+    def failure_count(self, dataset_name: str, feature_name: str) -> int:
 
         return self.failure_images
 
-    def histogram(self, dataset_name: str, feature_name: str, num_of_bins: int, global_min_value: float,
-                  global_max_value: float) -> Histogram:
+    def histogram(
+        self, dataset_name: str, feature_name: str, num_of_bins: int, global_min_value: float, global_max_value: float
+    ) -> Histogram:
         histogram_bins: List[Bin] = []
         histogram = np.zeros((num_of_bins,), dtype=np.int64)
 
@@ -99,15 +90,18 @@ class ImageStatistics(Statistics):
             file = entry.get("image")
             try:
                 img, meta = self.loader(file)
-                curr_histogram, bin_edges = np.histogram(img, bins=num_of_bins, range=(global_min_value, global_max_value))
+                curr_histogram, bin_edges = np.histogram(
+                    img, bins=num_of_bins, range=(global_min_value, global_max_value)
+                )
                 histogram += curr_histogram
 
                 if i % 100 == 0:
                     self.logger.info(f"{self.client_name}, adding {i + 1} of {len(self.data_list)}: {file}")
             except BaseException as e:
                 self.failure_images += 1
-                self.logger.critical(f"Failed to load file {file} with exception: {e.__str__()}. "
-                                     f"Skipping this image...")
+                self.logger.critical(
+                    f"Failed to load file {file} with exception: {e.__str__()}. " f"Skipping this image..."
+                )
         for j in range(num_of_bins):
             low_value = bin_edges[j]
             high_value = bin_edges[j + 1]
@@ -115,6 +109,3 @@ class ImageStatistics(Statistics):
             histogram_bins.append(Bin(low_value=low_value, high_value=high_value, sample_count=bin_sample_count))
 
         return Histogram(HistogramType.STANDARD, histogram_bins)
-
-
-

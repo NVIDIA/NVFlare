@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import os
-from typing import Optional, Sequence, Union
 
 from monai.apps.utils import download_and_extract
 from monai.bundle.config_parser import ConfigParser

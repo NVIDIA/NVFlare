@@ -57,12 +57,12 @@ class JSONModelPersistor(ModelPersistor):
             with open(self.save_path, "r") as json_file:
                 model = json.load(json_file)
                 if not self.load_as_dict:
-                    model = bytearray(json.dumps(model),'utf-8')
+                    model = bytearray(json.dumps(model), "utf-8")
 
             model_learnable[ModelLearnableKey.WEIGHTS] = model
         else:
             self.logger.info("Initializing server model as None")
-            
+
         return model_learnable
 
     def handle_event(self, event: str, fl_ctx: FLContext):
@@ -89,9 +89,5 @@ class JSONModelPersistor(ModelPersistor):
                         # should already be json, but double check by loading and dumping at some extra cost
                         json.dump(json.loads(model), f)
                     else:
-                        self.logger.error('unknown model format')
+                        self.logger.error("unknown model format")
                         self.system_panic(reason="No global base model!", fl_ctx=fl_ctx)
-
-
-
-               
