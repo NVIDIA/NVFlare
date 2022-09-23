@@ -43,9 +43,7 @@ from nvflare.apis.fl_constant import (
 )
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, ReturnCode, Shareable, make_reply
-from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.apis.workspace import Workspace
-from nvflare.app_common.decomposers import common_decomposers
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.argument_utils import parse_vars
@@ -55,7 +53,6 @@ from nvflare.private.fed.utils.fed_utils import shareable_to_modeldata
 from nvflare.private.fed.utils.messageproto import message_to_proto, proto_to_message
 from nvflare.private.fed.utils.numproto import proto_to_bytes
 from nvflare.widgets.fed_event import ServerFedEventRunner
-
 from .client_manager import ClientManager
 from .run_manager import RunManager
 from .server_engine import ServerEngine
@@ -289,9 +286,6 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         self.overseer_agent = overseer_agent
         self.server_state: ServerState = ColdState()
         self.snapshot_persistor = snapshot_persistor
-
-        flare_decomposers.register()
-        common_decomposers.register()
 
     def _create_server_engine(self, args, snapshot_persistor):
         return ServerEngine(

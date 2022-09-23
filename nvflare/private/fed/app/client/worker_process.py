@@ -32,7 +32,7 @@ from nvflare.private.defs import EngineConstant
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger
 from nvflare.private.fed.client.client_app_runner import ClientAppRunner
 from nvflare.private.fed.client.client_status import ClientStatus
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler
+from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize
 
 
 def check_parent_alive(parent_pid, stop_event: threading.Event):
@@ -93,6 +93,7 @@ def main():
     if os.path.exists(restart_file):
         os.remove(restart_file)
 
+    fobs_initialize()
     # Initialize audit service since the job execution will need it!
     audit_file_name = workspace.get_audit_file_path()
     AuditService.initialize(audit_file_name)

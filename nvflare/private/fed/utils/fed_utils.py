@@ -25,7 +25,9 @@ from nvflare.apis.app_validation import AppValidator
 from nvflare.apis.fl_constant import FLContextKey, SiteType, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.apis.workspace import Workspace
+from nvflare.app_common.decomposers import common_decomposers
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.authz import AuthorizationService
 from nvflare.fuel.sec.security_content_service import LoadResult, SecurityContentService
@@ -35,7 +37,6 @@ from nvflare.private.fed.protos.federated_pb2 import ModelData
 from nvflare.private.fed.utils.numproto import bytes_to_proto
 from nvflare.private.privacy_manager import PrivacyManager, PrivacyService
 from nvflare.security.security import EmptyAuthorizer, FLAuthorizer
-
 from .app_authz import AppAuthzService
 
 
@@ -228,3 +229,9 @@ def get_scope_info():
         return scope_names, default_scope_name
     except:
         return [], "processing_error"
+
+
+def fobs_initialize():
+    flare_decomposers.register()
+    common_decomposers.register()
+
