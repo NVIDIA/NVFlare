@@ -7,7 +7,15 @@
     "components": [
       {
         "id": "resource_manager",
-        "path": "nvflare.app_common.resource_managers.base_resource_manager.BaseResourceManager",
+        "path": "nvflare.app_common.resource_managers.gpu_resource_manager.GPUResourceManager",
+        "args": {
+          "num_of_gpus": 0,
+          "mem_per_gpu_in_GiB": 0
+        }
+      },
+      {
+        "id": "resource_consumer",
+        "path": "nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer",
         "args": {}
       }
     ]
