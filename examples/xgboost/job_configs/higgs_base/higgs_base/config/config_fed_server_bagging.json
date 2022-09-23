@@ -43,7 +43,7 @@
         "train_task_name": "train",
         "train_timeout": 0,
         "task_check_period": 0.01,
-        "persist_every_n_rounds": 1,
+        "persist_every_n_rounds": 0,
         "snapshot_every_n_rounds": 0
       }
     }

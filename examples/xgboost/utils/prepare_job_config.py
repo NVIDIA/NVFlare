@@ -29,6 +29,7 @@ def job_config_args_parser():
     parser.add_argument("--split_method", type=str, default="uniform", help="How to split the dataset")
     parser.add_argument("--lr_mode", type=str, default="uniform", help="Whether to use uniform or scaled shrinkage")
     parser.add_argument("--nthread", type=int, default=16, help="nthread for xgboost")
+    parser.add_argument("--tree_method", type=str, default="hist", help="tree_method for xgboost - use hist or gpu_hist for best perf")
     return parser
 
 
@@ -91,6 +92,7 @@ def main():
     client_config["components"][0]["args"]["data_split_filename"] = data_split_name
     client_config["components"][0]["args"]["lr_mode"] = args.lr_mode
     client_config["components"][0]["args"]["nthread"] = args.nthread
+    client_config["components"][0]["args"]["tree_method"] = args.tree_method
     client_config["components"][0]["args"]["training_mode"] = args.training_mode
 
     if args.training_mode == "bagging":

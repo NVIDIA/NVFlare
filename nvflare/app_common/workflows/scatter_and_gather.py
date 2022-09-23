@@ -171,7 +171,7 @@ class ScatterAndGather(Controller):
         fl_ctx.set_prop(AppConstants.START_ROUND, self._start_round, private=True, sticky=True)
         fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self._num_rounds, private=True, sticky=False)
         self._global_weights = self.persistor.load(fl_ctx)
-        fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._global_weights, private=True, sticky=True)
+        fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._global_weights, private=True, sticky=False)
         self.fire_event(AppEventType.INITIAL_MODEL_LOADED, fl_ctx)
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext) -> None:
@@ -192,7 +192,7 @@ class ScatterAndGather(Controller):
                     return
 
                 self.log_info(fl_ctx, f"Round {self._current_round} started.")
-                fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._global_weights, private=True, sticky=True)
+                fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._global_weights, private=True, sticky=False)
                 fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=False)
                 self.fire_event(AppEventType.ROUND_STARTED, fl_ctx)
 
@@ -234,14 +234,14 @@ class ScatterAndGather(Controller):
 
                 self.fire_event(AppEventType.BEFORE_SHAREABLE_TO_LEARNABLE, fl_ctx)
                 self._global_weights = self.shareable_gen.shareable_to_learnable(aggr_result, fl_ctx)
-                fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._global_weights, private=True, sticky=True)
+                fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._global_weights, private=True, sticky=False)
                 fl_ctx.sync_sticky()
                 self.fire_event(AppEventType.AFTER_SHAREABLE_TO_LEARNABLE, fl_ctx)
 
                 if self._check_abort_signal(fl_ctx, abort_signal):
                     return
 
-                if self._persist_every_n_rounds != 0 and (self._current_round + 1) % self._persist_every_n_rounds == 0:
+                if (self._persist_every_n_rounds != 0 and (self._current_round + 1) % self._persist_every_n_rounds == 0) or self._current_round == self._start_round + self._num_rounds - 1:
                     self.log_info(fl_ctx, "Start persist model on server.")
                     self.fire_event(AppEventType.BEFORE_LEARNABLE_PERSIST, fl_ctx)
                     self.persistor.save(self._global_weights, fl_ctx)

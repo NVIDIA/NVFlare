@@ -27,6 +27,7 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.learner_spec import Learner
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_common.shareablegenerators.xgb_model_shareable_generator import update_model
 
 
 class XGBoostTreeFedLearner(Learner):
@@ -98,9 +99,11 @@ class XGBoostTreeFedLearner(Learner):
             )
             return make_reply(ReturnCode.TASK_ABORTED)
 
-        self.set_lr()
-        # load data, this is task-specific
+        # load data and lr_scale, this is task/site-specific
         self.load_data(fl_ctx)
+        self.set_lr()
+        self.bst = None
+        self.global_model_as_dict = None
 
     def set_lr(self):
         if self.training_mode == "bagging":
@@ -110,7 +113,7 @@ class XGBoostTreeFedLearner(Learner):
                 self.lr = self.base_lr / self.num_tree_bagging
             elif self.lr_mode == "scaled":
                 # scaled lr, global learning_rate scaled by data size percentage
-                self.lr = self.base_lr * site_index["lr_scale"]
+                self.lr = self.base_lr * self.lr_scale
         elif self.training_mode == "cyclic":
             # Cyclic mode, directly use the base learning_rate
             self.lr = self.base_lr
@@ -124,6 +127,7 @@ class XGBoostTreeFedLearner(Learner):
         self.dmat_train: xgb.DMatrix
         self.dmat_valid: xgb.DMatrix
         self.valid_y: array for validation metric computation
+        self.lr_scale: scale factor needed for site-wise learning rate adjustment
         """
         raise NotImplementedError
 
@@ -134,71 +138,43 @@ class XGBoostTreeFedLearner(Learner):
         param["max_depth"] = self.max_depth
         param["eval_metric"] = self.eval_metric
         param["nthread"] = self.nthread
-        param["tree_method"] = self.tree_method
-        return param
-
-    def get_training_parameters_bagging(self):
-        param = {}
-        param["objective"] = self.objective
-        param["eta"] = self.lr
-        param["max_depth"] = self.max_depth
-        param["eval_metric"] = self.eval_metric
-        param["nthread"] = self.nthread
-        param["num_parallel_tree"] = self.num_tree_bagging
+        param["tree_method"]= self.tree_method
         return param
 
     def local_boost_bagging(self, param, fl_ctx: FLContext):
-        # global model with num_parallel_tree
-        param_global = self.get_training_parameters_bagging()
-        # validate global model for bagging mode
-        bst_global = xgb.Booster(param_global, model_file=self.global_model_path)
-        y_pred = bst_global.predict(self.dmat_valid)
-        auc = roc_auc_score(self.valid_y, y_pred)
+        eval_results = self.bst.eval_set(evals=[(self.dmat_train, 'train'), (self.dmat_valid, 'valid')],iteration=self.bst.num_boosted_rounds()-1)
+        self.log_info(fl_ctx,
+                      eval_results)
+        auc = float(eval_results.split("\t")[2].split(":")[1])
+        for i in range(self.trees_per_round):
+            self.bst.update(self.dmat_train, self.bst.num_boosted_rounds())
+
+        # extract newly added self.trees_per_round using xgboost slicing api
+        bst = self.bst[self.bst.num_boosted_rounds()-self.trees_per_round:self.bst.num_boosted_rounds()]
+
         self.log_info(
             fl_ctx,
             f"Global AUC {auc}",
         )
-        self.writer.add_scalar("AUC", auc, bst_global.num_boosted_rounds() - 1)
-        # Bagging mode, use set_base_margin
-        # return only 1 tree
-        # Compute margin on site's data
-        ptrain = bst_global.predict(self.dmat_train, output_margin=True)
-        pvalid = bst_global.predict(self.dmat_valid, output_margin=True)
-        # Set margin
-        self.dmat_train.set_base_margin(ptrain)
-        self.dmat_valid.set_base_margin(pvalid)
-        # Boost a tree under tree param setting
-        bst = xgb.train(
-            param,
-            self.dmat_train,
-            num_boost_round=self.trees_per_round,
-            evals=[(self.dmat_valid, "validate"), (self.dmat_train, "train")],
-        )
-        # Reset the base margin for next round
-        self.dmat_train.set_base_margin([])
-        self.dmat_valid.set_base_margin([])
+        # note: writing auc before current training step, for passed in global model
+        self.writer.add_scalar("AUC", auc, int((self.bst.num_boosted_rounds() - self.trees_per_round - 1)/self.num_tree_bagging))
         return bst
 
     def local_boost_cyclic(self, param, fl_ctx: FLContext):
         # Cyclic mode
         # starting from global model
         # return the whole boosting tree series
-        bst = xgb.train(
-            param,
-            self.dmat_train,
-            num_boost_round=self.trees_per_round,
-            xgb_model=self.global_model_path,
-            evals=[(self.dmat_valid, "validate"), (self.dmat_train, "train")],
-        )
-        # Validate model after training for Cyclic mode
-        y_pred = bst.predict(self.dmat_valid)
-        auc = roc_auc_score(self.valid_y, y_pred)
+        self.bst.update(self.dmat_train, self.bst.num_boosted_rounds())
+        eval_results = self.bst.eval_set(evals=[(self.dmat_train, 'train'), (self.dmat_valid, 'valid')],iteration=self.bst.num_boosted_rounds()-1)
+        self.log_info(fl_ctx,
+                      eval_results)
+        auc = float(eval_results.split("\t")[2].split(":")[1])
         self.log_info(
             fl_ctx,
             f"Client {self.client_id} AUC after training: {auc}",
         )
-        self.writer.add_scalar("AUC", auc, bst.num_boosted_rounds() - 1)
-        return bst
+        self.writer.add_scalar("AUC", auc, self.bst.num_boosted_rounds()-1)
+        return self.bst
 
     def train(
         self,
@@ -208,50 +184,87 @@ class XGBoostTreeFedLearner(Learner):
     ) -> Shareable:
 
         if abort_signal.triggered:
+            self.finalize(fl_ctx)
             return make_reply(ReturnCode.TASK_ABORTED)
 
         # retrieve current global model download from server's shareable
         dxo = from_shareable(shareable)
-        model_global = dxo.data
-
+        model_update = dxo.data
+        
         # xgboost parameters
         param = self.get_training_parameters_single()
 
-        if not model_global:
+        if not self.bst:
             # First round
             self.log_info(
                 fl_ctx,
                 f"Client {self.client_id} initial training from scratch",
             )
-            bst = xgb.train(
-                param,
-                self.dmat_train,
-                num_boost_round=self.trees_per_round,
-                evals=[(self.dmat_valid, "validate"), (self.dmat_train, "train")],
-            )
+            if not model_update:
+                bst = xgb.train(
+                    param,
+                    self.dmat_train,
+                    num_boost_round=self.trees_per_round,
+                    evals=[(self.dmat_valid, "validate"), (self.dmat_train, "train")],
+                )
+            else:
+                loadable_model = bytearray(model_update['model_data'])
+                bst = xgb.train(
+                    param,
+                    self.dmat_train,
+                    num_boost_round=self.trees_per_round,
+                    xgb_model=loadable_model,
+                    evals=[(self.dmat_valid, "validate"), (self.dmat_train, "train")],
+                )
+            self.config = bst.save_config()
+            self.bst = bst
         else:
             self.log_info(
                 fl_ctx,
-                f"Client {self.client_id} training from global model received",
+                f"Client {self.client_id} model updates received from server",
             )
-            # save the global model to local file
-            with open(self.global_model_path, "w") as f:
-                json.dump(model_global, f)
+            if self.training_mode == "bagging":
+                model_updates = model_update['model_data']
+                for update in model_updates:
+                    self.global_model_as_dict = update_model(self.global_model_as_dict, json.loads(update))
 
+                loadable_model = bytearray(json.dumps(self.global_model_as_dict), 'utf-8')
+            else:
+                loadable_model = bytearray(model_update['model_data'])
+
+            self.log_info(
+                fl_ctx,
+                f"Client {self.client_id} converted global model to json ",
+            )
+            
+            self.bst.load_model(loadable_model)
+            self.bst.load_config(self.config)
+    
+            self.log_info(
+                fl_ctx,
+                f"Client {self.client_id} loaded global model into booster ",
+            )
+           
             # train local model starting with global model
             if self.training_mode == "bagging":
                 bst = self.local_boost_bagging(param, fl_ctx)
             elif self.training_mode == "cyclic":
                 bst = self.local_boost_cyclic(param, fl_ctx)
-        bst.save_model(self.local_model_path)
+ 
+        self.local_model = bst.save_raw('json')
 
         # report updated model in shareable
-        with open(self.local_model_path) as json_file:
-            model_new = json.load(json_file)
-
-        dxo = DXO(data_kind=DataKind.XGB_MODEL, data=model_new)
+ 
+        dxo = DXO(data_kind=DataKind.XGB_MODEL, data={'model_data': self.local_model})
         self.log_info(fl_ctx, "Local epochs finished. Returning shareable")
         new_shareable = dxo.to_shareable()
 
         self.writer.flush()
         return new_shareable
+
+    def finalize(self, fl_ctx: FLContext):
+        # freeing resources in finalize avoids seg fault during shutdown of gpu mode
+        del(self.bst)
+        del(self.dmat_train)
+        del(self.dmat_valid)
+        self.log_info(fl_ctx, "Freed training resources")
