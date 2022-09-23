@@ -17,6 +17,7 @@ import uuid
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import EventScope, FLContextKey
 from nvflare.apis.fl_context import FLContext
+from nvflare.security.logging import secure_format_exception
 
 # do not use underscore as key name; otherwise it cannot be removed from ctx
 _KEY_EVENT_DEPTH = "###event_depth"
@@ -59,6 +60,8 @@ def fire_event(event: str, handlers: list, ctx: FLContext):
                 ctx.set_prop(key=FLContextKey.EVENT_SCOPE, value=event_scope, private=True, sticky=False)
                 h.handle_event(event, ctx)
             except Exception as e:
-                h.log_exception(ctx, 'Exception when handling event "{}": {}'.format(event, e), fire_event=False)
+                h.log_exception(
+                    ctx, f'Exception when handling event "{event}": {secure_format_exception(e)}', fire_event=False
+                )
 
     ctx.set_prop(key=_KEY_EVENT_DEPTH, value=depth, private=True, sticky=False)

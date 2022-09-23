@@ -15,6 +15,7 @@
 import copy
 
 from nvflare.fuel.common.excepts import ConfigError
+from nvflare.security.logging import secure_format_exception
 
 
 class Node(object):
@@ -90,15 +91,19 @@ class JsonScanner(object):
     def _do_scan(self, node: Node):
         try:
             node.processor.process_element(node)
-        except BaseException as ex:
+        except BaseException as e:
             if self.location:
                 raise ConfigError(
-                    "Error processing {} in JSON location {}, element {}: path: {}".format(
-                        self.location, node.element, node.path(), ex
+                    "Error processing {} in JSON element {}: path: {}, exception: {}".format(
+                        self.location, node.element, node.path(), secure_format_exception(e)
                     )
                 )
             else:
-                raise ConfigError("Error in JSON element: {}, path :{} : {}".format(node.element, node.path(), ex))
+                raise ConfigError(
+                    "Error in JSON element: {}, path: {}, exception: {}".format(
+                        node.element, node.path(), secure_format_exception(e)
+                    )
+                )
 
         element = node.element
 
@@ -114,16 +119,23 @@ class JsonScanner(object):
         if node.exit_cb is not None:
             try:
                 node.exit_cb(node)
-            except BaseException as ex:
+            except BaseException as e:
                 if self.location:
                     raise ConfigError(
-                        "Error post-processing {} in JSON element {}: {} ".format(self.location, node.path(), ex)
+                        "Error post-processing {} in JSON element: {}, exception: {}".format(
+                            self.location, node.path(), secure_format_exception(e)
+                        )
                     )
                 else:
-                    raise ConfigError("Error post-processing JSON element {}: {}".format(node.path(), ex))
+                    raise ConfigError(
+                        "Error post-processing JSON element: {}, exception: {}".format(
+                            node.path(), secure_format_exception(e)
+                        )
+                    )
 
     def scan(self, processor: JsonObjectProcessor):
-        assert isinstance(processor, JsonObjectProcessor), "processor must be JsonObjectProcessor"
+        if not isinstance(processor, JsonObjectProcessor):
+            raise ValueError(f"processor must be JsonObjectProcessor, but got type {type(processor)}")
         node = Node(self.data)
         node.processor = processor
         self._do_scan(node)

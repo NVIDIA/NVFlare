@@ -26,6 +26,7 @@ from nvflare.app_common.abstract.model import (
     validate_model_learnable,
 )
 from nvflare.app_common.app_constant import ModelFormat
+from nvflare.security.logging import secure_format_exception
 
 
 def feed_vars(model: nn.Module, model_params):
@@ -55,8 +56,8 @@ def feed_vars(model: nn.Module, model_params):
                     nd
                 )  # update local state dict TODO: enable setting of datatype
         except Exception as e:
-            print("pt_feed_vars Exception:", str(e))
-            raise RuntimeError(str(e))
+            _logger.error(f"pt_feed_vars Exception: {secure_format_exception(e)}")
+            raise RuntimeError(secure_format_exception(e))
 
     _logger.debug("Updated local variables to be assigned.")
 

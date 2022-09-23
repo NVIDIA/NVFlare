@@ -20,6 +20,7 @@ from typing import Optional, Set, Tuple
 from zipfile import ZipFile
 
 from nvflare.apis.job_def import ALL_SITES, JobMetaKey
+from nvflare.security.logging import secure_format_exception
 
 SERVER_CONFIG = "config_fed_server.json"
 CLIENT_CONFIG = "config_fed_client.json"
@@ -55,7 +56,7 @@ class JobMetaValidator:
                 self._validate_mandatory_clients(job_name, meta, clients)
 
         except ValueError as e:
-            return False, str(e), meta
+            return False, secure_format_exception(e), meta
 
         return True, "", meta
 
@@ -129,9 +130,9 @@ class JobMetaValidator:
                 v = int(v)
                 return v
             except ValueError as e:
-                raise ValueError(f"invalid data type for {v},can't not convert to Int", e)
+                raise ValueError(f"invalid data type for {v},can't not convert to Int", secure_format_exception(e))
             except TypeError as e:
-                raise ValueError(f"invalid data type for {v},can't not convert to Int", e)
+                raise ValueError(f"invalid data type for {v},can't not convert to Int", secure_format_exception(e))
 
     def _validate_min_clients(self, job_name: str, meta: dict, clients: set) -> None:
         logger.debug(f"validate min_clients for job {job_name}")

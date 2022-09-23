@@ -20,6 +20,7 @@ from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.client.fl_admin_api import FLAdminAPI
 from nvflare.fuel.hci.client.fl_admin_api_spec import TargetType
 from nvflare.private.fed.app.fl_conf import FLAdminClientStarterConfigurator
+from nvflare.security.logging import secure_format_exception
 
 
 def api_command_wrapper(api_command_result):
@@ -69,8 +70,8 @@ class FLAdminAPIRunner:
             workspace = Workspace(root_dir=admin_dir)
             conf = FLAdminClientStarterConfigurator(workspace)
             conf.configure()
-        except ConfigError as ex:
-            print("ConfigError:", str(ex))
+        except ConfigError as e:
+            print(f"ConfigError: {secure_format_exception(e)}")
             return
 
         try:
@@ -166,4 +167,4 @@ class FLAdminAPIRunner:
             print("api.check_status(TargetType.CLIENT)")
             api_command_wrapper(self.api.check_status(TargetType.CLIENT))
         except RuntimeError as e:
-            print(f"There was an exception: {e}")
+            print(f"There was an exception: {secure_format_exception(e)}")

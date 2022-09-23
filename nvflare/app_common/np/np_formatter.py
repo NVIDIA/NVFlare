@@ -16,6 +16,7 @@ from nvflare.apis.dxo import DataKind, from_bytes
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.formatter import Formatter
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.security.logging import secure_format_exception
 
 
 class NPFormatter(Formatter):
@@ -57,6 +58,6 @@ class NPFormatter(Formatter):
                             metrics = metric_dxo.data
                             res[data_client][model_name] = metrics
         except Exception as e:
-            self.log_error(fl_ctx, f"Exception: {e.__str__()}")
+            self.log_error(fl_ctx, f"Exception: {secure_format_exception(e)}")
 
         return f"{res}"

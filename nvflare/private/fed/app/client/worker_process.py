@@ -33,6 +33,7 @@ from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger
 from nvflare.private.fed.client.client_app_runner import ClientAppRunner
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize
+from nvflare.security.logging import secure_format_exception
 
 
 def check_parent_alive(parent_pid, stop_event: threading.Event):
@@ -141,7 +142,8 @@ def main():
         client_app_runner.start_run(app_root, args, config_folder, federated_client, secure_train)
 
     except BaseException as e:
-        logger.error(f"FL client execution exception: {e}", exc_info=True)
+        logger = logging.getLogger("worker_process")
+        logger.error(f"FL client execution exception: {secure_format_exception(e)}")
         raise e
     finally:
         stop_event.set()

@@ -23,6 +23,7 @@ from minio.error import MinioException
 
 from nvflare.apis.storage import StorageException, StorageSpec
 from nvflare.apis.utils.format_check import validate_class_methods_args
+from nvflare.security.logging import secure_format_exception
 
 URI_ROOT = os.path.abspath(os.sep)
 _USER_META_KEY = "user_metadata"
@@ -52,7 +53,7 @@ class S3Storage(StorageSpec):
             if not self.s3_client.bucket_exists(bucket_name):
                 self.s3_client.make_bucket(bucket_name)
         except MinioException as e:
-            raise StorageException("Error creating minio s3 client: {}".format(str(e)))
+            raise StorageException("Error creating minio s3 client: {}".format(secure_format_exception(e)))
         self.bucket_name = bucket_name
 
     def _object_exists(self, uri: str):
@@ -96,7 +97,9 @@ class S3Storage(StorageSpec):
                 )
             except MinioException as e:
                 raise StorageException(
-                    "cannot create object: checking if uri has any objects failed: {}".format(str(e))
+                    "cannot create object: checking if uri has any objects failed: {}".format(
+                        secure_format_exception(e)
+                    )
                 )
             if dir_is_nonempty:
                 raise StorageException("cannot create object {} at nonempty directory".format(uri))
@@ -111,7 +114,7 @@ class S3Storage(StorageSpec):
                 part_size=_AWS_PART_SIZE,
             )
         except MinioException as e:
-            raise StorageException("error putting object into bucket: {}".format(str(e)))
+            raise StorageException("error putting object into bucket: {}".format(secure_format_exception(e)))
 
     def update_meta(self, uri: str, meta: dict, replace: bool):
         """Updates the meta info of the specified object.
@@ -145,7 +148,7 @@ class S3Storage(StorageSpec):
                 metadata_directive=REPLACE,
             )
         except MinioException as e:
-            raise StorageException("error copying object: {}".format(str(e)))
+            raise StorageException("error copying object: {}".format(secure_format_exception(e)))
 
     def update_data(self, uri: str, data: bytes):
         """Updates the data info of the specified object.
@@ -174,7 +177,7 @@ class S3Storage(StorageSpec):
                 part_size=_AWS_PART_SIZE,
             )
         except MinioException as e:
-            raise StorageException("error putting object into bucket: {}".format(str(e)))
+            raise StorageException("error putting object into bucket: {}".format(secure_format_exception(e)))
 
     def list_objects(self, path: str) -> List[str]:
         """List all objects in the specified path.
@@ -198,7 +201,7 @@ class S3Storage(StorageSpec):
                 if obj._metadata
             ]
         except MinioException as e:
-            raise StorageException(f"error listing objects at {path}: {str(e)}.")
+            raise StorageException(f"error listing objects at {path}: {secure_format_exception(e)}.")
 
     def get_meta(self, uri: str) -> dict:
         """Gets user defined meta info of the specified object.
@@ -224,7 +227,7 @@ class S3Storage(StorageSpec):
                 self.s3_client.stat_object(self.bucket_name, uri)._metadata["x-amz-meta-{}".format(_USER_META_KEY)]
             )
         except MinioException as e:
-            raise StorageException(f"error accessing object ({uri}): {str(e)}.")
+            raise StorageException(f"error accessing object ({uri}): {secure_format_exception(e)}.")
 
     def get_data(self, uri: str) -> bytes:
         """Gets data of the specified object.
@@ -248,7 +251,7 @@ class S3Storage(StorageSpec):
         try:
             return self.s3_client.get_object(self.bucket_name, uri).data
         except MinioException as e:
-            raise StorageException(f"error accessing object ({uri}): {str(e)}.")
+            raise StorageException(f"error accessing object ({uri}): {secure_format_exception(e)}.")
 
     def get_detail(self, uri: str) -> Tuple[dict, bytes]:
         """Gets both data and meta of the specified object.
@@ -288,4 +291,4 @@ class S3Storage(StorageSpec):
         try:
             self.s3_client.remove_object(self.bucket_name, uri)
         except MinioException as e:
-            raise StorageException(f"error removing object ({uri}): {str(e)}.")
+            raise StorageException(f"error removing object ({uri}): {secure_format_exception(e)}.")

@@ -52,6 +52,7 @@ from nvflare.private.fed.server.server_runner import ServerRunner
 from nvflare.private.fed.utils.fed_utils import shareable_to_modeldata
 from nvflare.private.fed.utils.messageproto import message_to_proto, proto_to_message
 from nvflare.private.fed.utils.numproto import proto_to_bytes
+from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.fed_event import ServerFedEventRunner
 
 from .client_manager import ClientManager
@@ -470,7 +471,9 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
                     fl_ctx.props.update(child_fl_ctx)
         except BaseException as e:
-            self.logger.info(f"Could not connect to server runner process: {e} - asked client to end the run")
+            self.logger.info(
+                f"Could not connect to server runner process: {secure_format_exception(e)} - asked client to end the run"
+            )
         return shareable, task_id, task_name
 
     def SubmitUpdate(self, request, context):

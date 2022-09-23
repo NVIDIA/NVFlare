@@ -56,6 +56,7 @@ from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.private.fed.utils.fed_utils import security_close
 from nvflare.private.scheduler_constants import ShareableHeader
+from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
 
@@ -193,7 +194,7 @@ class ServerEngine(ServerEngineInternalSpec):
 
     def start_app_on_server(self, run_number: str, job_id: str = None, job_clients=None, snapshot=None) -> str:
         if run_number in self.run_processes.keys():
-            return f"Server run_{run_number} already started."
+            return f"Server run: {run_number} already started."
         else:
             workspace = Workspace(root_dir=self.args.workspace, site_name="server")
             app_root = workspace.get_app_dir(run_number)
@@ -241,7 +242,7 @@ class ServerEngine(ServerEngineInternalSpec):
                         )
                         conn.send(replies)
             except BaseException as e:
-                self.logger.warning(f"Failed to process the child process command: {e}", exc_info=True)
+                self.logger.warning(f"Failed to process the child process command: {secure_format_exception(e)}")
 
     def wait_for_complete(self, job_id):
         while True:
@@ -365,7 +366,7 @@ class ServerEngine(ServerEngineInternalSpec):
 
     def check_app_start_readiness(self, job_id: str) -> str:
         if job_id not in self.run_processes.keys():
-            return f"Server app run_{job_id} has not started."
+            return f"Server app run: {job_id} has not started."
         return ""
 
     def shutdown_server(self) -> str:
@@ -446,7 +447,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 command_data={},
             )
         except BaseException:
-            self.logger.error(f"Failed to get_app_run_info from run_{job_id}")
+            self.logger.error(f"Failed to get_app_run_info from run: {job_id}")
 
         return run_info
 
@@ -539,7 +540,7 @@ class ServerEngine(ServerEngineInternalSpec):
             else:
                 return {}
         except Exception as e:
-            self.logger.error(f"Failed to send the aux_message: {topic} with exception: {e}.")
+            self.logger.error(f"Failed to send the aux_message: {topic} with exception: {secure_format_exception(e)}.")
 
     def sync_clients_from_main_process(self):
         with self.parent_conn_lock:
@@ -674,7 +675,7 @@ class ServerEngine(ServerEngineInternalSpec):
             else:
                 self.logger.info(f"The snapshot: {self.server.snapshot_location} has been removed.")
         except BaseException as e:
-            self.logger.error(f"Failed to persist the components. {str(e)}")
+            self.logger.error(f"Failed to persist the components. {secure_format_exception(e)}")
 
     def restore_components(self, snapshot: RunSnapshot, fl_ctx: FLContext):
         for component_id, component in self.run_manager.components.items():
@@ -708,7 +709,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 command_data={},
             )
         except BaseException:
-            self.logger.error(f"Failed to get_stats from run_{job_id}")
+            self.logger.error(f"Failed to get_stats from run: {job_id}")
 
         return stats
 

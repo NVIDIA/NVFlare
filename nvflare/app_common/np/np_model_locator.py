@@ -21,6 +21,7 @@ from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model_locator import ModelLocator
+from nvflare.security.logging import secure_format_exception
 
 from .constants import NPConstants
 
@@ -68,12 +69,15 @@ class NPModelLocator(ModelLocator):
                     np_data = np.load(model_load_path, allow_pickle=False)
                     self.log_info(fl_ctx, f"Loaded {model_name} model from {model_load_path}.")
                 except Exception as e:
-                    self.log_error(fl_ctx, f"Unable to load NP Model: {e}.")
+                    self.log_error(fl_ctx, f"Unable to load NP Model: {secure_format_exception(e)}.")
 
                 if np_data is not None:
                     weights = {NPConstants.NUMPY_KEY: np_data}
                     dxo = DXO(data_kind=DataKind.WEIGHTS, data=weights, meta={})
             except Exception as e:
-                self.log_exception(fl_ctx, f"Exception in retrieving {NPModelLocator.SERVER_MODEL_NAME} model: {e}.")
+                self.log_exception(
+                    fl_ctx,
+                    f"Exception in retrieving {NPModelLocator.SERVER_MODEL_NAME} model: {secure_format_exception(e)}.",
+                )
 
         return dxo

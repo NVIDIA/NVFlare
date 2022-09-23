@@ -23,6 +23,7 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.security.logging import secure_format_exception
 
 from .constants import XGB_TRAIN_TASK, XGBShareableHeader
 
@@ -120,7 +121,7 @@ class XGBExecutorBase(Executor, ABC):
                 return make_reply(ReturnCode.TASK_UNKNOWN)
         except Exception as e:
             # Task execution error, return EXECUTION_EXCEPTION Shareable
-            self.log_exception(fl_ctx, f"learner execute exception: {e}")
+            self.log_exception(fl_ctx, f"learner execute exception: {secure_format_exception(e)}")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
     def train(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
@@ -185,7 +186,7 @@ class XGBExecutorBase(Executor, ABC):
         try:
             result = self.xgb_train(params, fl_ctx)
         except BaseException as e:
-            self.log_error(fl_ctx, f"Exception happens when running xgb train: {e}")
+            self.log_error(fl_ctx, f"Exception happens when running xgb train: {secure_format_exception(e)}")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
         if not (result and isinstance(result, Shareable)):

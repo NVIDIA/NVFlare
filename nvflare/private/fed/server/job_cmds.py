@@ -18,7 +18,6 @@ import json
 import logging
 import os
 import shutil
-import traceback
 from typing import Dict, List
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
@@ -45,6 +44,7 @@ from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
+from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .cmd_utils import CommandUtil
 
@@ -298,7 +298,7 @@ class JobCommandModule(CommandModule, CommandUtil):
             else:
                 conn.append_string("No jobs.")
         except Exception as e:
-            conn.append_error(str(e))
+            conn.append_error(secure_format_exception(e))
             return
 
         conn.append_success("")
@@ -322,7 +322,7 @@ class JobCommandModule(CommandModule, CommandUtil):
                 job_def_manager.delete(job_id, fl_ctx)
                 conn.append_string("Job {} deleted.".format(job_id))
         except BaseException as e:
-            conn.append_error("exception occurred: " + str(e))
+            conn.append_error(f"exception occurred: {secure_format_exception(e)}")
             return
         conn.append_success("")
 
@@ -337,7 +337,7 @@ class JobCommandModule(CommandModule, CommandUtil):
             conn.append_string("Abort signal has been sent to the server app.")
             conn.append_success("")
         except Exception as e:
-            conn.append_error("Exception occurred trying to abort job: " + str(e))
+            conn.append_error(f"Exception occurred trying to abort job: {secure_format_exception(e)}")
             return
 
     def clone_job(self, conn: Connection, args: List[str]):
@@ -366,7 +366,7 @@ class JobCommandModule(CommandModule, CommandUtil):
                 meta = job_def_manager.create(job_meta, data_bytes, fl_ctx)
                 conn.append_string("Cloned job {} as: {}".format(job_id, meta.get(JobMetaKey.JOB_ID)))
         except Exception as e:
-            conn.append_error("Exception occurred trying to clone job: " + str(e))
+            conn.append_error(f"Exception occurred trying to clone job: {secure_format_exception(e)}")
             return
         conn.append_success("")
 
@@ -419,8 +419,8 @@ class JobCommandModule(CommandModule, CommandUtil):
                         return_string += "%-46s %s %12d\n" % (zinfo.filename, date, zinfo.file_size)
                 conn.append_string(return_string)
         except Exception as e:
-            traceback.print_exc()
-            conn.append_error("Exception occurred trying to get job from store: " + str(e))
+            secure_log_traceback()
+            conn.append_error(f"Exception occurred trying to get job from store: {secure_format_exception(e)}")
             return
         conn.append_success("")
 
@@ -491,7 +491,7 @@ class JobCommandModule(CommandModule, CommandUtil):
                 meta = job_def_manager.create(meta, data_bytes, fl_ctx)
                 conn.append_string("Submitted job: {}".format(meta.get(JobMetaKey.JOB_ID)))
         except Exception as e:
-            conn.append_error("Exception occurred trying to submit job: " + str(e))
+            conn.append_error(f"Exception occurred trying to submit job: {secure_format_exception(e)}")
             return
 
         conn.append_success("")
@@ -534,7 +534,7 @@ class JobCommandModule(CommandModule, CommandUtil):
 
                 self._unzip_data(download_dir, job_data, job_id)
         except Exception as e:
-            conn.append_error("Exception occurred trying to get job from store: " + str(e))
+            conn.append_error(f"Exception occurred trying to get job from store: {secure_format_exception(e)}")
             return
         try:
             data = zip_directory_to_bytes(download_dir, job_id)
@@ -543,5 +543,5 @@ class JobCommandModule(CommandModule, CommandUtil):
         except FileNotFoundError:
             conn.append_error("No record found for job '{}'".format(job_id))
         except BaseException:
-            traceback.print_exc()
+            secure_log_traceback()
             conn.append_error("Exception occurred during attempt to zip data to send for job: {}".format(job_id))

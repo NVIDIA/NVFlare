@@ -32,6 +32,7 @@ from nvflare.private.fed.client.client_engine import ClientEngine
 from nvflare.private.fed.client.fed_client import FederatedClient
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize, security_init
 from nvflare.private.privacy_manager import PrivacyService
+from nvflare.security.logging import secure_format_exception
 
 
 def main():
@@ -130,8 +131,8 @@ def main():
 
         deployer.close()
 
-    except ConfigError as ex:
-        print("ConfigError:", str(ex))
+    except ConfigError as e:
+        print(f"ConfigError: {secure_format_exception(e)}")
     finally:
         pass
 

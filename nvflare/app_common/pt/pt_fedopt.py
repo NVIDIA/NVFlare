@@ -24,6 +24,7 @@ from nvflare.app_common.abstract.learnable import Learnable
 from nvflare.app_common.abstract.model import make_model_learnable
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.shareablegenerators.full_model_shareable_generator import FullModelShareableGenerator
+from nvflare.security.logging import secure_format_exception
 
 
 class PTFedOptModelShareableGenerator(FullModelShareableGenerator):
@@ -127,7 +128,7 @@ class PTFedOptModelShareableGenerator(FullModelShareableGenerator):
                 self.optimizer_name = self._get_component_name(self.optimizer_args)
             except BaseException as e:
                 self.system_panic(
-                    f"Exception while parsing `optimizer_args`: " f"{self.optimizer_args} with Exception {e}",
+                    f"Exception while parsing `optimizer_args`({self.optimizer_args}): {secure_format_exception(e)}",
                     fl_ctx,
                 )
                 return
@@ -143,7 +144,7 @@ class PTFedOptModelShareableGenerator(FullModelShareableGenerator):
                     self.lr_scheduler = engine.build_component(self.lr_scheduler_args)
                 except BaseException as e:
                     self.system_panic(
-                        f"Exception while parsing `lr_scheduler_args`: " f"{self.lr_scheduler_args} with Exception {e}",
+                        f"Exception while parsing `lr_scheduler_args`({self.lr_scheduler_args}): {secure_format_exception(e)}",
                         fl_ctx,
                     )
                     return

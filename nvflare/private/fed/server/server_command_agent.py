@@ -17,6 +17,7 @@ import threading
 
 from nvflare.apis.fl_constant import ServerCommandKey
 from nvflare.fuel.utils import fobs
+from nvflare.security.logging import secure_format_exception
 
 from ..utils.fed_utils import listen_command
 from .server_commands import ServerCommands
@@ -59,7 +60,9 @@ class ServerCommandAgent(object):
                 self.logger.info("listener communication terminated.")
                 break
             except Exception as e:
-                self.logger.error(f"IPC Communication error on the port: {self.listen_port}: {e}.", exc_info=False)
+                self.logger.error(
+                    f"IPC Communication error on the port: {self.listen_port}: {secure_format_exception(e)}."
+                )
 
     def shutdown(self):
         self.asked_to_stop = True

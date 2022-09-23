@@ -26,6 +26,7 @@ from nvflare.private.defs import ClientStatusKey, ScopeInfoKey, TrainingTopic
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
 from nvflare.private.fed.utils.fed_utils import get_scope_info
+from nvflare.security.logging import secure_format_exception
 
 from .cmd_utils import CommandUtil
 from .server_engine import ServerEngine
@@ -280,8 +281,8 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                                 table.add_row([client_name, app_name, job_id, status])
                         else:
                             table.add_row([client_name, app_name, job_id, "No Jobs"])
-                except BaseException as ex:
-                    self.logger.error(f"Bad reply from client: {ex}")
+                except BaseException as e:
+                    self.logger.error(f"Bad reply from client: {secure_format_exception(e)}")
             else:
                 table.add_row([client_name, app_name, job_id, "No Reply"])
 
@@ -310,9 +311,9 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                         self._add_scope_info(table, client_name, scope_names, default_scope)
                     else:
                         conn.append_error(f"bad response from client {client_name}: expect dict but got {type(body)}")
-                except BaseException as ex:
-                    self.logger.error(f"Bad reply from client: {ex}")
-                    conn.append_error(f"bad response from client {client_name}: {ex}")
+                except BaseException as e:
+                    self.logger.error(f"Bad reply from client: {secure_format_exception(e)}")
+                    conn.append_error(f"bad response from client {client_name}: {secure_format_exception(e)}")
             else:
                 self._add_scope_info(table, client_name, [], "no reply")
 

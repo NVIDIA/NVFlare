@@ -19,13 +19,13 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReservedTopic, ReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.fl_exception import WorkflowError
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import add_job_audit_event
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.private.privacy_manager import Scope
+from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
 
@@ -111,13 +111,9 @@ class ServerRunner(FLComponent):
 
                 with self.engine.new_context() as fl_ctx:
                     wf.responder.control_flow(self.abort_signal, fl_ctx)
-            except WorkflowError as e:
-                with self.engine.new_context() as fl_ctx:
-                    self.log_exception(fl_ctx, f"Fatal error occurred in workflow {wf.id}: {e}. Aborting the RUN")
-                self.abort_signal.trigger(True)
             except BaseException as e:
                 with self.engine.new_context() as fl_ctx:
-                    self.log_exception(fl_ctx, "Exception in workflow {}: {}".format(wf.id, e))
+                    self.log_exception(fl_ctx, "Exception in workflow {}: {}".format(wf.id, secure_format_exception(e)))
             finally:
                 with self.engine.new_context() as fl_ctx:
                     # do not execute finalize_run() until the wf_lock is acquired
@@ -133,7 +129,9 @@ class ServerRunner(FLComponent):
                     try:
                         wf.responder.finalize_run(fl_ctx)
                     except BaseException as e:
-                        self.log_exception(fl_ctx, "Error finalizing workflow {}: {}".format(wf.id, e))
+                        self.log_exception(
+                            fl_ctx, "Error finalizing workflow {}: {}".format(wf.id, secure_format_exception(e))
+                        )
 
                     self.log_debug(fl_ctx, "firing event EventType.END_WORKFLOW")
                     self.fire_event(EventType.END_WORKFLOW, fl_ctx)
@@ -154,9 +152,9 @@ class ServerRunner(FLComponent):
         self.status = "started"
         try:
             self._execute_run()
-        except BaseException as ex:
+        except BaseException as e:
             with self.engine.new_context() as fl_ctx:
-                self.log_exception(fl_ctx, f"Error executing RUN: {ex}")
+                self.log_exception(fl_ctx, f"Error executing RUN: {secure_format_exception(e)}")
         finally:
             # use wf_lock to ensure state of current_wf!
             self.status = "done"
@@ -293,11 +291,11 @@ class ServerRunner(FLComponent):
                 for f in filter_list:
                     try:
                         task_data = f.process(task_data, fl_ctx)
-                    except BaseException as ex:
+                    except BaseException as e:
                         self.log_exception(
                             fl_ctx,
                             "processing error in task data filter {}: {}; "
-                            "asked client to try again later".format(type(f), ex),
+                            "asked client to try again later".format(type(f), secure_format_exception(e)),
                         )
 
                         with self.wf_lock:
@@ -314,7 +312,10 @@ class ServerRunner(FLComponent):
             task_data.set_header(TaskConstant.WAIT_TIME, self.config.task_request_interval)
             return task_name, task_id, task_data
         except BaseException as e:
-            self.log_exception(fl_ctx, f"Error processing client task request: {e}; asked client to try again later")
+            self.log_exception(
+                fl_ctx,
+                f"Error processing client task request: {secure_format_exception(e)}; asked client to try again later",
+            )
             return self._task_try_again()
 
     def process_submission(self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext):
@@ -403,7 +404,10 @@ class ServerRunner(FLComponent):
                             result = f.process(result, fl_ctx)
                         except BaseException as e:
                             self.log_exception(
-                                fl_ctx, "Error processing in task result filter {}: {}".format(type(f), e)
+                                fl_ctx,
+                                "Error processing in task result filter {}: {}".format(
+                                    type(f), secure_format_exception(e)
+                                ),
                             )
 
                             result = make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR)
@@ -423,7 +427,10 @@ class ServerRunner(FLComponent):
                 self.log_debug(fl_ctx, "firing event EventType.AFTER_PROCESS_SUBMISSION")
                 self.fire_event(EventType.AFTER_PROCESS_SUBMISSION, fl_ctx)
             except BaseException as e:
-                self.log_exception(fl_ctx, "Error processing client result by {}: {}".format(self.current_wf.id, e))
+                self.log_exception(
+                    fl_ctx,
+                    "Error processing client result by {}: {}".format(self.current_wf.id, secure_format_exception(e)),
+                )
 
     def abort(self, fl_ctx: FLContext):
         self.status = "done"

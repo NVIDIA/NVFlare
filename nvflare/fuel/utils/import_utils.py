@@ -37,6 +37,8 @@ Part of code is Adapted from from https://github.com/Project-MONAI/MONAI/blob/de
 from importlib import import_module
 from typing import Any, Tuple
 
+from nvflare.security.logging import secure_format_exception
+
 OPTIONAL_IMPORT_MSG_FMT = "{}"
 OPS = ["==", ">=", ">", "<", "<="]
 
@@ -131,12 +133,12 @@ def optional_import(
     """
     tb = None
     exception_str = ""
-    module_version = ""
+
     if name:
         actual_cmd = f"from {module} import {name}"
     else:
         actual_cmd = f"import {module}"
-    the_module = None
+
     pkg = None
     try:
         if op not in OPS:
@@ -152,7 +154,7 @@ def optional_import(
             the_module = getattr(the_module, name)
     except Exception as import_exception:  # any exceptions during import
         tb = import_exception.__traceback__
-        exception_str = f"{import_exception}"
+        exception_str = secure_format_exception(import_exception)
     else:  # found the module
         if check_version(pkg, version, op):
             return the_module, True

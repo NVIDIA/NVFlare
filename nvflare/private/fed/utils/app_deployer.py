@@ -20,6 +20,7 @@ from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes
 from nvflare.private.privacy_manager import PrivacyService
+from nvflare.security.logging import secure_format_exception
 
 from .app_authz import AppAuthzService
 
@@ -33,11 +34,10 @@ class AppDeployer(object):
         self.job_meta = job_meta
 
     def deploy(self) -> str:
-        """
-        Try to deploy the app.
+        """Deploys the app.
 
-        Returns: error message if any
-
+        Returns:
+            error message if any
         """
         privacy_scope = self.job_meta.get(JobMetaKey.SCOPE, "")
 
@@ -81,6 +81,5 @@ class AppDeployer(object):
             if not authorized:
                 return "not authorized"
 
-        except BaseException as ex:
-            raise Exception(f"exception {ex} when deploying app {self.app_name}")
-            # return f"exception {ex} when deploying app {self.app_name}"
+        except BaseException as e:
+            raise Exception(f"exception {secure_format_exception(e)} when deploying app {self.app_name}")

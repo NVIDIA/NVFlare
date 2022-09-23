@@ -29,6 +29,7 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import EngineConstant
+from nvflare.security.logging import secure_format_exception
 
 from .client_status import ClientStatus
 from .communicator import Communicator
@@ -190,7 +191,7 @@ class FederatedClientBase:
 
             return task
         except FLCommunicationError as e:
-            self.logger.info(e.message)
+            self.logger.info(secure_format_exception(e))
 
     def push_execute_result(self, project_name, shareable: Shareable, fl_ctx: FLContext):
         """Submit execution results of a task to server.
@@ -219,7 +220,7 @@ class FederatedClientBase:
 
             return message
         except FLCommunicationError as e:
-            self.logger.info(e.message)
+            self.logger.info(secure_format_exception(e))
 
     def send_aux_message(self, project_name, topic: str, shareable: Shareable, timeout: float, fl_ctx: FLContext):
         """Send auxiliary message to the server.
@@ -242,7 +243,7 @@ class FederatedClientBase:
 
             return message
         except FLCommunicationError as e:
-            self.logger.info(e.message)
+            self.logger.info(secure_format_exception(e))
 
     def send_heartbeat(self, project_name):
         try:
@@ -252,7 +253,7 @@ class FederatedClientBase:
                 self.communicator.send_heartbeat(
                     self.servers, project_name, self.token, self.ssid, self.client_name, self.engine
                 )
-        except FLCommunicationError as e:
+        except FLCommunicationError:
             self.communicator.heartbeat_done = True
 
     def heartbeat(self):
