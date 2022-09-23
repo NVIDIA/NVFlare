@@ -360,9 +360,9 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
     @wrap_with_return_exception_responses
     def clone_job(self, job_id: str) -> FLAdminAPIResponse:
         if not job_id:
-            raise APISyntaxError("job_folder is required but not specified.")
+            raise APISyntaxError("job_id is required but not specified.")
         if not isinstance(job_id, str):
-            raise APISyntaxError("job_folder must be str but got {}.".format(type(job_id)))
+            raise APISyntaxError("job_id must be str but got {}.".format(type(job_id)))
         success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(
             AdminCommandNames.CLONE_JOB + " " + job_id
         )
