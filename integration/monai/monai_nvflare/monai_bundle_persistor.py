@@ -16,7 +16,7 @@ import os
 
 from monai.bundle import ConfigParser
 from monai.bundle.config_item import ConfigItem
-from monai.fl.client.monai_algo import check_bundle_config
+from monai.fl.client.monai_client import check_bundle_config
 from monai.fl.utils.constants import RequiredBundleKeys
 
 from nvflare.apis.event_type import EventType

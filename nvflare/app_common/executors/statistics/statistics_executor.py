@@ -138,7 +138,7 @@ class StatisticsExecutor(Executor):
             for tm in target_statistics:
                 fn = self.statistic_functions()[tm.name]
                 statistics_result[tm.name] = {}
-                StatisticsExecutor._populate_result_statistics(
+                self._populate_result_statistics(
                     statistics_result, ds_features, tm, shareable, fl_ctx, fn
                 )
 
@@ -147,7 +147,7 @@ class StatisticsExecutor(Executor):
                 tm = StatisticConfig(StC.STATS_COUNT, {})
                 fn = self.get_count
                 statistics_result[tm.name] = {}
-                StatisticsExecutor._populate_result_statistics(
+                self._populate_result_statistics(
                     statistics_result, ds_features, tm, shareable, fl_ctx, fn
                 )
 
@@ -181,15 +181,18 @@ class StatisticsExecutor(Executor):
                     return ReturnCode.EXECUTION_RESULT_ERROR
         return None
 
-    @staticmethod
-    def _populate_result_statistics(statistics_result, ds_features, tm: StatisticConfig, shareable, fl_ctx, fn):
+    def _populate_result_statistics(self, statistics_result, ds_features, tm: StatisticConfig, shareable, fl_ctx, fn):
         for ds_name in ds_features:
             statistics_result[tm.name][ds_name] = {}
             features: List[Feature] = ds_features[ds_name]
             for feature in features:
-                statistics_result[tm.name][ds_name][feature.feature_name] = fn(
-                    ds_name, feature.feature_name, tm, shareable, fl_ctx
-                )
+                try:
+                    statistics_result[tm.name][ds_name][feature.feature_name] = fn(
+                        ds_name, feature.feature_name, tm, shareable, fl_ctx
+                    )
+                except BaseException as e:
+                    self.log_exception(fl_ctx, f"Failed to populate result  statistics of dataset {ds_name}"
+                                               f" and feature {feature.feature_name} with exception: {e}")
 
     def get_numeric_features(self) -> Dict[str, List[Feature]]:
         ds_features: Dict[str, List[Feature]] = self.stats_generator.features()

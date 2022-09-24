@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from monai.fl.client.client_algo import ClientAlgo
+from monai.fl.client import ClientAlgo
 from monai.fl.utils.constants import ExtraItems, FlStatistics, ModelType, WeightType
 from monai.fl.utils.exchange_object import ExchangeObject
 
