@@ -20,7 +20,7 @@ import sys
 import time
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import SiteType, WorkspaceConstants
+from nvflare.apis.fl_constant import JobConstants, SiteType, WorkspaceConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.utils.argument_utils import parse_vars
@@ -51,9 +51,9 @@ def main():
 
     config_folder = kv_list.get("config_folder", "")
     if config_folder == "":
-        args.client_config = AppFolderConstants.CONFIG_FED_CLIENT
+        args.client_config = JobConstants.CLIENT_JOB_CONFIG
     else:
-        args.client_config = os.path.join(config_folder, AppFolderConstants.CONFIG_FED_CLIENT)
+        args.client_config = os.path.join(config_folder, JobConstants.CLIENT_JOB_CONFIG)
     # TODO:: remove env and train config since they are not core
     args.env = os.path.join("config", AppFolderConstants.CONFIG_ENV)
     args.train_config = os.path.join("config", AppFolderConstants.CONFIG_TRAIN)

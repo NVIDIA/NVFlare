@@ -25,8 +25,8 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import MachineStatus, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.shareable import Shareable
-from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.apis.workspace import Workspace
+from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import ERROR_MSG_PREFIX, ClientStatusKey, EngineConstant
 from nvflare.private.event import fire_event
