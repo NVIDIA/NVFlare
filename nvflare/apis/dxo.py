@@ -13,27 +13,25 @@
 # limitations under the License.
 
 import copy
+from enum import Enum
 from typing import List, Union
 
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.fuel.utils import fobs
 
 
-class DataKind(object):
+class DataKind(str, Enum):
     WEIGHTS = "WEIGHTS"
     WEIGHT_DIFF = "WEIGHT_DIFF"
     XGB_MODEL = "XGB_MODEL"
     METRICS = "METRICS"
-    MODEL = "MODEL"
     ANALYTIC = "ANALYTIC"
     COLLECTION = "COLLECTION"  # Dict or List of DXO objects
     STATISTICS = "STATISTICS"
 
 
 class MetaKey(object):
-
     NUM_STEPS_CURRENT_ROUND = "NUM_STEPS_CURRENT_ROUND"
-    MODEL_OWNER = "MODEL_OWNER"
     PROCESSED_ALGORITHM = "PROCESSED_ALGORITHM"
     PROCESSED_KEYS = "PROCESSED_KEYS"
     INITIAL_METRICS = "initial_metrics"
