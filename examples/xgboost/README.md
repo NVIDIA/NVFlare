@@ -74,18 +74,6 @@ python3 -m pip install tensorboard
 python3 -m pip install tensorflow
 python3 -m pip install seaborn
 ```
-### Set up FL workspace
-Follow the [Quickstart](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions to set up your POC ("proof of concept") workspace.
-
-Here, we run the following script
-```
-bash create_poc_workspace.sh 5
-```
-and 
-```
-bash create_poc_workspace.sh 20
-```
-for our two experimental settings: 5-client and 20-client.
 
 ### Prepare job configs under various training schemes
 We then prepare the job configs for NVFlare jobs corresponding to various settings by running
@@ -105,44 +93,11 @@ By default, cpu based training is used.  For gpu based training, edit `job_conf_
 
 > **_NOTE:_** Cyclic training always use uniform shrinkage. The generated job config files will be stored in the folder `./job_configs`
 
-### Option 1: start the FL system and submit jobs
-Next, we will start the FL system and submit jobs to start FL training automatically.
-
-Start the FL system with either 5 clients or 20 clients
+### Run local experiments with simulator
+Next, we will use the NVFlare simulator to run FL training automatically.
 ```
-bash start_fl_poc.sh 5
+bash run_experiment_simulator.sh
 ```
-or
-```
-bash start_fl_poc.sh 20
-```
-This script will start the FL server and clients automatically to run FL experiments on localhost. 
-
-Then FL training will be run with an automatic script utilizing the FLAdminAPI functionality.    
-The [submit_job.sh](./submit_job.sh) script follows the pattern:
-```
-bash ./submit_job.sh [client_num] [training_option] [split] [lr_scheme]
-```
-The arguments control which config to use.  
-
-### Option 2: run all jobs together
-To run all experiments under 5-client or 20-client settings in one command, simply run
-```
-bash run_experiment_5.sh
-```
-or
-```
-bash run_experiment_20.sh
-```
-
-### Shut down the server/clients
-
-To shut down the clients and server, run the following Admin commands:
-```
-shutdown client
-shutdown server
-```
-> **_NOTE:_** For more information about the Admin client, see [here](https://nvflare.readthedocs.io/en/main/user_guide/operation.html).
 
 ## Results on 5- and 20-client under various training settings
 For comparison, we train baseline models in a centralized manner with same round of training
@@ -171,7 +126,7 @@ As illustrated, we can have the following observations:
 - cyclic training performs ok under uniform split (the purple curve), however under non-uniform split, it will have significant performance drop (the brown curve)
 - bagging training performs better than cyclic under both uniform and non-uniform data splits (orange v.s. purple, red/green v.s. brown)
 - with uniform shrinkage, bagging will have significant performance drop under non-uniform split (green v.s. orange)
-- data-size dependent shrinkage will be able to recover the performance drop above (red v.s. green), and achieve almost the same performance as uniform data split (red v.s. orange) 
+- data-size dependent shrinkage will be able to recover the performance drop above (red v.s. green), and achieve comparable/better performance as uniform data split (red v.s. orange) 
 - bagging under uniform data split (orange), and bagging with data-size dependent shrinkage under non-uniform data split(red), can achieve comparable/better performance as compared with centralized training baseline (blue)
 
 For model size, centralized training and cyclic training will have a model consisting of `num_round` trees, while the bagging models consist of `num_round * num_client` trees, since each round, bagging training boosts a forest consisting of individually trained trees from each client.
