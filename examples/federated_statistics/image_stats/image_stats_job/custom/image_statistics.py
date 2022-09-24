@@ -70,7 +70,7 @@ class ImageStatistics(Statistics):
         return True
 
     def features(self) -> Dict[str, List[Feature]]:
-        return {"train": [Feature("density", DataType.FLOAT)]}
+        return {"train": [Feature("intensity", DataType.FLOAT)]}
 
     def count(self, dataset_name: str, feature_name: str) -> int:
         image_paths = self.data_list[dataset_name]
