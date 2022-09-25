@@ -13,7 +13,7 @@ General Usage
 
 .. code-block::
 
-  python -m nvflare.tool.preflight_check --package_root PACKAGE_ROOT --packages [PACKAGE_NAME1 PACKAGE_NAME2]
+  nvflare preflight_check --package_root PACKAGE_ROOT --packages [PACKAGE_NAME1 PACKAGE_NAME2]
 
 This preflight check script should be run on each site's machine. The ``package_root`` is the folder that contains
 these packages.
@@ -32,7 +32,7 @@ on the overseer site, a user should run:
 
 .. code-block::
 
-  python -m nvflare.tool.preflight_check --package_root /home/user1 --packages overseer.example.com
+  nvflare preflight_check --package_root /home/user1 --packages overseer.example.com
 
 If things passed, users will see things like:
 
@@ -59,7 +59,7 @@ on the server site, a user should run:
 
 .. code-block::
 
-  python -m nvflare.tool.preflight_check --package_root /home/user1 --packages example1.com
+  nvflare preflight_check --package_root /home/user1 --packages example1.com
 
 The problems that may be reported:
 
@@ -82,7 +82,7 @@ So on the client site, a user will run:
 
 .. code-block::
 
-  python -m nvflare.tool.preflight_check --package_root /home/user1 --packages site-1
+  nvflare preflight_check --package_root /home/user1 --packages site-1
 
 The problems that may be reported:
 
@@ -105,7 +105,7 @@ a user should run:
 
 .. code-block::
 
-  python -m nvflare.tool.preflight_check --package_root /home/user1 --packages admin@nvidia.com
+  nvflare preflight_check --package_root /home/user1 --packages admin@nvidia.com
 
 The problems that may be reported:
 

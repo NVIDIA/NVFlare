@@ -140,7 +140,7 @@ Start ALL packages
 
   nvflare poc --start
 
-will start ALL clients (site-1, site-2) and server as well as Flare Console (aka Admin Client) located in the default workspace=/tmp/nvflare/poc
+will start ALL clients (site-1, site-2) and server as well as FLARE Console (aka Admin Client) located in the default workspace=/tmp/nvflare/poc
 
 
 .. code-block::
@@ -242,13 +242,16 @@ will start ALL clients (site-1, site-2) and server as well as Flare Console (aka
     start_poc at /tmp/nvflare/poc, white_list=[]
     workspace /tmp/nvflare/poc is not ready, please use poc --prepare to prepare poc workspace
 
+.. note::
+
+    If you prefer to have the FLARE Console on a different terminal, you can use ``nvflare poc --start -ex admin``.
 
 Start only the selected package
 --------------------------------
 
 You can just start just selected package,
 
-Example, nvflare console, where the session could timeout if there is no activity. We need just start the console, not all other packages
+Example, FLARE Console, where the session could timeout if there is no activity. We need just start the FLARE Console, not all other packages
 
 assuming we are always using default workspace, the command will be 
 
@@ -270,7 +273,7 @@ Start Server
     2022-08-03 15:33:43,286 - FedAdminServer - INFO - Starting Admin Server localhost on Port 8003
     2022-08-03 15:33:43,286 - root - INFO - Server started
 
-Start nvflare console (aka Admin Console, Admin Client)
+Start FLARE Console (previously called the Admin Client)
 ---------------------------------------------------------
 
 .. code-block::
@@ -311,7 +314,7 @@ If the user provides the GPU device Ids and in certain order, such as:
 
 .. code-block::
 
-    nvflare poc -gpu 1 0 0 2 --star
+    nvflare poc -gpu 1 0 0 2 --start
 
 The system will try to match the clients with given GPU devices order, in such case, site-1 with GPU_id = 0, site-2 with GPU_id = 0, site-3 with GPU_id = 0 and Site-4 with GPU_id = 2
 
@@ -350,7 +353,7 @@ nvflare poc --stop
 
 will stop ALL clients and server packages. 
 
-This will not stop Flare Console. you will need to exit yourself. 
+This will not stop FLARE Console. you will need to exit yourself. 
 
 .. code-block::
 

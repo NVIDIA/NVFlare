@@ -18,7 +18,7 @@ To accomplish these goals, a set of key new tools and features were developed, i
  - FLARE Dashboard
  - Site-policy management
  - Federated XGboost
- - Fed Statistics <https://github.com/NVIDIA/NVFlare/tree/main/examples/federated_statistics>
+ - Federated Statistics <https://github.com/NVIDIA/NVFlare/tree/main/examples/federated_statistics>
  - MONAI Integration <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-monai>
 
 The sections below provide an overview of these features.  For more detailed documentation and usage information, refer to the :ref:`User Guide <user_guide>` and :ref:`Programming Guide <programming_guide>`.

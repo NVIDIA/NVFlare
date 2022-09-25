@@ -18,6 +18,7 @@ which are explained in more detail in their own sections linked below.
 .. toctree::
    :maxdepth: 1
 
+   user_guide/nvflare_cli
    user_guide/fl_simulator
    user_guide/poc_command
    user_guide/dashboard_ui

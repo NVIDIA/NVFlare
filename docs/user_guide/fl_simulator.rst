@@ -18,7 +18,7 @@ Command Usage
 
 .. code-block::
 
-    usage: simulator.py [-h] -w WORKSPACE [-n N_CLIENTS] [-c CLIENTS] [-t THREADS] [-gpu GPU] job_folder
+    usage: nvflare simulator [-h] -w WORKSPACE [-n N_CLIENTS] [-c CLIENTS] [-t THREADS] [-gpu GPU] job_folder
 
     positional arguments:
     job_folder
