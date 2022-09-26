@@ -1,7 +1,7 @@
-.. _nvflare_dashboard:
+.. _nvflare_dashboard_ui:
 
 ######################################################
-NVFLARE Dashboard
+NVFLARE Dashboard UI
 ######################################################
 
 The NVFlare Dashboard is a new optional addition to NVIDIA FLARE in version 2.2 that allows for the project administrator

@@ -18,8 +18,8 @@ To accomplish these goals, a set of key new tools and features were developed, i
  - FLARE Dashboard
  - Site-policy management
  - Federated XGboost
- - Fed Statistics
- - MONAI Integration
+ - Federated Statistics <https://github.com/NVIDIA/NVFlare/tree/main/examples/federated_statistics>
+ - MONAI Integration <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-monai>
 
 The sections below provide an overview of these features.  For more detailed documentation and usage information, refer to the :ref:`User Guide <user_guide>` and :ref:`Programming Guide <programming_guide>`.
 
@@ -101,7 +101,7 @@ Training workflows
 ------------------
     - :ref:`Scatter and Gather (SAG) <scatter_and_gather_workflow>` is a reference implementation of the default
       workflow in previous versions of NVIDIA FLARE.  SAG implements a hub and spoke model in which the central server
-      Controller broadcasts Tasks to be Executed on the client Workers.  After the client Executors return their Task’s
+      Controller broadcasts Tasks to be Executed on the client Workers.  After the client Executors return their Task's
       Shareable result (e.g., client model weights from DL training), the server Controller aggregates the results, for
       example with a federated weighted average.
     - :ref:`Cyclic <cyclic>` is a reference implementation of a cyclic workflow, in which the central server issues a
@@ -120,7 +120,7 @@ Evaluation workflows
       model performance vs. client dataset.
 
     - :ref:`Global model evaluation <cross_site_model_evaluation>` is a subset of cross-site model validation in which
-      the server’s global model is distributed to each client for evaluation on the client’s local dataset.
+      the server's global model is distributed to each client for evaluation on the client's local dataset.
 
 Privacy preservation algorithms
 -------------------------------
@@ -149,7 +149,7 @@ Learning algorithms
       clients return their local weights as a Shareables that are aggregated (averaged).  This new set of global average
       weights is redistributed to clients and the process repeats for the specified number of rounds.
     - `FedProx <https://arxiv.org/abs/1812.06127>`_ (example configuration can be found in cifar10_fedprox of `CIFAR-10 example <https://github.com/NVIDIA/NVFlare/tree/main/examples/cifar10>`_) -
-      implements a :class:`Loss function <nvflare.app_common.pt.pt_fedproxloss.PTFedProxLoss>` to penalize a client’s
+      implements a :class:`Loss function <nvflare.app_common.pt.pt_fedproxloss.PTFedProxLoss>` to penalize a client's
       local weights based on deviation from the global model.
     - `FedOpt <https://arxiv.org/abs/2003.00295>`_ (example configuration can be found in cifar10_fedopt of `CIFAR-10 example <https://github.com/NVIDIA/NVFlare/tree/main/examples/cifar10>`_) -
       implements a :class:`ShareableGenerator <nvflare.app_common.pt.pt_fedopt.PTFedOptModelShareableGenerator>` that
