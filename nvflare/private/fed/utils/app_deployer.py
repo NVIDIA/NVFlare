@@ -18,7 +18,7 @@ import shutil
 
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.workspace import Workspace
-from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes
+from nvflare.fuel.utils.zip_utils import unzip_all_from_bytes
 from nvflare.private.privacy_manager import PrivacyService
 from nvflare.security.logging import secure_format_exception
 

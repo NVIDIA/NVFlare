@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import copy
+from abc import ABC, abstractmethod
 
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.security.logging import secure_format_exception
@@ -64,9 +65,10 @@ def _child_node(node: Node, key, pos, element) -> Node:
     return child
 
 
-class JsonObjectProcessor(object):
+class JsonObjectProcessor(ABC):
     """JsonObjectProcessor is used to process JSON elements by the scan_json() function."""
 
+    @abstractmethod
     def process_element(self, node: Node):
         """This method is called by the scan() function for each JSON element scanned.
 
@@ -84,7 +86,8 @@ class JsonScanner(object):
             json_data: dictionary containing json data to scan
             location: location to provide in error messages
         """
-        assert isinstance(json_data, dict), "json_data must be dict"
+        if not isinstance(json_data, dict):
+            raise ValueError("json_data must be dict")
         self.location = location
         self.data = json_data
 

@@ -26,14 +26,15 @@ from concurrent.futures import ThreadPoolExecutor
 from multiprocessing.connection import Client
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import MachineStatus, WorkspaceConstants
+from nvflare.apis.fl_constant import JobConstants, MachineStatus, WorkspaceConstants
 from nvflare.apis.job_def import ALL_SITES, JobMetaKey
-from nvflare.apis.utils.common_utils import get_open_ports
+from nvflare.apis.utils.job_utils import convert_legacy_zipped_app_to_job
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.multi_process_executor_constants import CommunicationMetaData
 from nvflare.fuel.hci.server.authz import AuthorizationService
-from nvflare.fuel.hci.zip_utils import convert_legacy_zip, split_path, unzip_all_from_bytes, zip_directory_to_bytes
 from nvflare.fuel.sec.audit import AuditService
+from nvflare.fuel.utils.network_utils import get_open_ports
+from nvflare.fuel.utils.zip_utils import split_path, unzip_all_from_bytes, zip_directory_to_bytes
 from nvflare.lighter.poc_commands import get_host_gpu_ids
 from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.deployer.simulator_deployer import SimulatorDeployer
@@ -178,7 +179,7 @@ class SimulatorRunner(FLComponent):
         # Validate the simulate job
         job_name = split_path(self.args.job_folder)[1]
         data = zip_directory_to_bytes("", self.args.job_folder)
-        data_bytes = convert_legacy_zip(data)
+        data_bytes = convert_legacy_zipped_app_to_job(data)
         job_validator = JobMetaValidator()
         valid, error, meta = job_validator.validate(job_name, data_bytes)
         if not valid:
@@ -309,7 +310,7 @@ class SimulatorRunner(FLComponent):
 
     def start_server_app(self):
         app_server_root = os.path.join(self.simulator_root, "app_server")
-        self.args.server_config = os.path.join("config", AppFolderConstants.CONFIG_FED_SERVER)
+        self.args.server_config = os.path.join("config", JobConstants.SERVER_JOB_CONFIG)
         app_custom_folder = os.path.join(app_server_root, "custom")
         sys.path.append(app_custom_folder)
 

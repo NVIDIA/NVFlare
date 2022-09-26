@@ -13,15 +13,15 @@
 # limitations under the License.
 
 import socket
-import sys
 
 
-def get_open_ports(number):
-    """Get the number of open ports from the system.
+def get_open_ports(number) -> list:
+    """Gets the number of open ports from the system.
 
     Args:
         number: number of ports
-    Returns: list of open_ports
+    Returns:
+        A list of open_ports
     """
     ports = []
     for i in range(number):
@@ -37,24 +37,3 @@ def get_open_ports(number):
             "Could not get enough open ports from the system. Needed {} but got {}.".format(number, len(ports))
         )
     return ports
-
-
-def get_size(obj, seen=None):
-    """Recursively finds size of objects"""
-    size = sys.getsizeof(obj)
-    if seen is None:
-        seen = set()
-    obj_id = id(obj)
-    if obj_id in seen:
-        return 0
-    # Important mark as seen *before* entering recursion to gracefully handle
-    # self-referential objects
-    seen.add(obj_id)
-    if isinstance(obj, dict):
-        size += sum([get_size(v, seen) for v in obj.values()])
-        size += sum([get_size(k, seen) for k in obj.keys()])
-    elif hasattr(obj, "__dict__"):
-        size += get_size(obj.__dict__, seen)
-    elif hasattr(obj, "__iter__") and not isinstance(obj, (str, bytes, bytearray)):
-        size += sum([get_size(i, seen) for i in obj])
-    return size

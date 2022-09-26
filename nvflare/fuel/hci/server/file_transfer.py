@@ -28,7 +28,7 @@ from nvflare.fuel.hci.base64_utils import (
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.constants import ConnProps
-from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes
+from nvflare.fuel.utils.zip_utils import unzip_all_from_bytes
 from nvflare.private.fed.server.cmd_utils import CommandUtil
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 

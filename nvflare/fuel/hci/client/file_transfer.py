@@ -26,7 +26,7 @@ from nvflare.fuel.hci.base64_utils import (
 from nvflare.fuel.hci.cmd_arg_utils import join_args
 from nvflare.fuel.hci.reg import CommandEntry, CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.table import Table
-from nvflare.fuel.hci.zip_utils import split_path, unzip_all_from_bytes, zip_directory_to_bytes
+from nvflare.fuel.utils.zip_utils import split_path, unzip_all_from_bytes, zip_directory_to_bytes
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .api_spec import CommandContext, ReplyProcessor

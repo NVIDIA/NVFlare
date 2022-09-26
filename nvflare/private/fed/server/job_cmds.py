@@ -24,7 +24,7 @@ import nvflare.fuel.hci.file_transfer_defs as ftd
 from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.apis.job_def import Job, JobDataKey, JobMetaKey, TopDir
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
-from nvflare.apis.utils.common_utils import get_size
+from nvflare.apis.utils.job_utils import convert_legacy_zipped_app_to_job
 from nvflare.fuel.hci.base64_utils import b64str_to_bytes, bytes_to_b64str
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import ConfirmMethod
@@ -32,13 +32,9 @@ from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.hci.table import Table
-from nvflare.fuel.hci.zip_utils import (
-    convert_legacy_zip,
-    ls_zip_from_bytes,
-    unzip_all_from_bytes,
-    zip_directory_to_bytes,
-)
 from nvflare.fuel.utils.argument_utils import SafeArgumentParser
+from nvflare.fuel.utils.obj_utils import get_size
+from nvflare.fuel.utils.zip_utils import ls_zip_from_bytes, unzip_all_from_bytes, zip_directory_to_bytes
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
@@ -48,7 +44,6 @@ from nvflare.security.logging import secure_format_exception, secure_log_traceba
 
 from .cmd_utils import CommandUtil
 
-META_FILE = "meta.json"
 MAX_DOWNLOAD_JOB_SIZE = 50 * 1024 * 1024 * 1204
 CLONED_META_KEYS = {
     JobMetaKey.JOB_NAME.value,
@@ -466,7 +461,7 @@ class JobCommandModule(CommandModule, CommandUtil):
     def submit_job(self, conn: Connection, args: List[str]):
         folder_name = args[1]
         zip_b64str = args[2]
-        data_bytes = convert_legacy_zip(b64str_to_bytes(zip_b64str))
+        data_bytes = convert_legacy_zipped_app_to_job(b64str_to_bytes(zip_b64str))
         engine = conn.app_ctx
 
         try:
