@@ -33,6 +33,7 @@ from nvflare.fuel.common.multi_process_executor_constants import CommunicateData
 from nvflare.fuel.utils.class_utils import ModuleScanner
 from nvflare.fuel.utils.component_builder import ComponentBuilder
 from nvflare.fuel.utils.network_utils import get_open_ports
+from nvflare.private.fed.simulator.simulator_app_runner import SimulatorClientRunManager
 
 
 class WorkerComponentBuilder(ComponentBuilder):
@@ -145,14 +146,29 @@ class MultiProcessExecutor(Executor):
 
         try:
             self.open_ports = get_open_ports(self.num_of_processes * 3)
+            client_name = fl_ctx.get_identity_name()
+            job_id = fl_ctx.get_job_id()
 
+            engine = fl_ctx.get_engine()
+            if isinstance(engine, SimulatorClientRunManager):
+                simulator_engine = True
+            else:
+                simulator_engine = False
             command = (
                 self.get_multi_process_command()
                 + " -m nvflare.private.fed.app.client.sub_worker_process"
                 + " -m "
                 + fl_ctx.get_prop(FLContextKey.ARGS).workspace
+                + " -c "
+                + client_name
+                + " -n "
+                + job_id
                 + " --ports "
                 + "-".join([str(i) for i in self.open_ports])
+                + " --simulator_engine "
+                + str(simulator_engine)
+                + " --parent_pid "
+                + str(os.getpid())
             )
             self.logger.info(f"multi_process_executor command: {command}")
             # use os.setsid to create new process group ID
