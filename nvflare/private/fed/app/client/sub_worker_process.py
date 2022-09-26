@@ -31,8 +31,10 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.multi_process_executor_constants import CommunicateData, CommunicationMetaData
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import SecurityContentService
+from nvflare.private.fed.app.client.worker_process import check_parent_alive
 from nvflare.private.fed.app.fl_conf import create_privacy_manager
 from nvflare.private.fed.client.client_run_manager import ClientRunManager
+from nvflare.private.fed.simulator.simulator_app_runner import SimulatorClientRunManager
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, configure_logging, fobs_initialize
 from nvflare.private.privacy_manager import PrivacyService
 from nvflare.security.logging import secure_log_traceback
@@ -111,6 +113,8 @@ def main():
     # parser.add_argument("--local_rank", type=int, default=0)
     parser.add_argument("--job_id", "-n", type=str, help="job_id", required=True)
     parser.add_argument("--client_name", "-c", type=str, help="client name", required=True)
+    parser.add_argument("--simulator_engine", "-s", type=str, help="simulator engine", required=True)
+    parser.add_argument("--parent_pid", type=int, help="parent process pid", required=True)
 
     args = parser.parse_args()
     listen_ports = list(map(int, args.ports.split("-")))
@@ -145,6 +149,12 @@ def main():
 
     listen_port = listen_ports[local_rank * 3 + 2]
 
+    # start parent process checking thread
+    parent_pid = args.parent_pid
+    stop_event = threading.Event()
+    thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
+    thread.start()
+
     event_conn = None
     while not event_conn:
         try:
@@ -161,15 +171,26 @@ def main():
     # workspace = data[CommunicationMetaData.FL_CTX].get_prop(FLContextKey.WORKSPACE_OBJECT)
     job_id = args.job_id
 
-    run_manager = ClientRunManager(
-        client_name=args.client_name,
-        job_id=job_id,
-        workspace=workspace,
-        client=None,
-        components=data[CommunicationMetaData.COMPONENTS],
-        handlers=data[CommunicationMetaData.HANDLERS],
-        conf=None,
-    )
+    if args.simulator_engine.lower() == "true":
+        run_manager = SimulatorClientRunManager(
+            client_name=args.client_name,
+            job_id=job_id,
+            workspace=workspace,
+            client=None,
+            components=data[CommunicationMetaData.COMPONENTS],
+            handlers=data[CommunicationMetaData.HANDLERS],
+            conf=None,
+        )
+    else:
+        run_manager = ClientRunManager(
+            client_name=args.client_name,
+            job_id=job_id,
+            workspace=workspace,
+            client=None,
+            components=data[CommunicationMetaData.COMPONENTS],
+            handlers=data[CommunicationMetaData.HANDLERS],
+            conf=None,
+        )
 
     log_file = workspace.get_app_log_file_path(job_id)
     add_logfile_handler(log_file)
