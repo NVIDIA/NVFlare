@@ -35,6 +35,13 @@ from .client_status import ClientStatus
 from .communicator import Communicator
 
 
+def _check_progress(remote_tasks):
+    if remote_tasks[0] is not None:
+        return True, remote_tasks[0].task_name
+    else:
+        return False, None
+
+
 class FederatedClientBase:
     """The client-side base implementation of federated learning.
 
@@ -272,12 +279,8 @@ class FederatedClientBase:
         try:
             pool = ThreadPool(len(self.servers))
             self.remote_tasks = pool.map(partial(self.fetch_execute_task, fl_ctx=fl_ctx), tuple(self.servers))
-            pull_success, task_name = self.check_progress(self.remote_tasks)
-            # # Update app_ctx's current round info
-            # if self.app_context and self.remote_models[0] is not None:
-            #     self.app_context.global_round = self.remote_models[0].meta.current_round
+            pull_success, task_name = _check_progress(self.remote_tasks)
             # TODO: if some of the servers failed
-            # return self.model_manager.assign_current_model(self.remote_models)
             return pull_success, task_name, self.remote_tasks
         finally:
             if pool:
@@ -360,10 +363,3 @@ class FederatedClientBase:
             self.overseer_agent.end()
 
         return 0
-
-    def check_progress(self, remote_tasks):
-        if remote_tasks[0] is not None:
-            self.server_meta = remote_tasks[0].meta
-            return True, remote_tasks[0].task_name
-        else:
-            return False, None
