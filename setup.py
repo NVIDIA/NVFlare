@@ -81,7 +81,7 @@ setup(
         "grpcio==1.46.3",
         "gunicorn==20.1.0",
         "numpy",
-        "protobuf==3.20.1",
+        "protobuf==3.20.2",
         "psutil==5.9.1",
         "PyYAML==6.0",
         "six>=1.15.0",
