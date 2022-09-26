@@ -13,25 +13,20 @@ Install additional requirements:
 pip3 install tensorflow
 ```
 
-### 2. Set up your FL workspace
+### 2. Run the experiment
 
-Follow the [Quickstart](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions to set up your POC ("proof of concept") workspace.
-
-### 3. Run the experiment
-
-Log into the Admin client by entering `admin` for both the username and password.
-Then, use these Admin commands to run the experiment:
+Use nvflare simulator to run the hello-examples:
 
 ```
-submit_job hello-tf2
+nvflare simulator -w /tmp/nvflare/ -n 2 -t 2 hello-tf2
 ```
 
-### 4. Shut down the server/clients
+### 3. Access the logs and results
 
-To shut down the clients and server, run the following Admin commands:
-```
-shutdown client
-shutdown server
-```
+You can find the running logs and results inside the simulator's workspace/simulate_job
 
-> **_NOTE:_** For more information about the Admin client, see [here](https://nvflare.readthedocs.io/en/main/user_guide/operation.html).
+```bash
+$ ls /tmp/nvflare/simulate_job/
+app_server  app_site-1  app_site-2  log.txt
+
+```
