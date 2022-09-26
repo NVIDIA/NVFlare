@@ -97,17 +97,12 @@ class JobMetaValidator:
         return site_list
 
     def _validate_app(self, job_name: str, meta: dict, zip_file: ZipFile) -> None:
-        print("job_name = ", job_name)
-        print("meta = ", meta)
+
         deploy_map = meta.get(JobMetaKey.DEPLOY_MAP.value)
 
         for app, deployments in deploy_map.items():
-            print("job_name = ", job_name)
-            print("app = ", app)
 
             zip_folder = job_name + "/" + app + "/config/"
-            print("zip_folder = ", zip_folder)
-
             if not self._entry_exists(zip_file, zip_folder):
                 logger.debug(f"zip folder {zip_folder} missing. Files in the zip:")
                 for x in zip_file.namelist():
