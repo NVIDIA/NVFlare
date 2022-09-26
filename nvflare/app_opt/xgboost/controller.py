@@ -22,9 +22,9 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
-from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.import_utils import optional_import
+from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
 from .constants import XGB_TRAIN_TASK, XGBShareableHeader

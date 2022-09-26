@@ -79,8 +79,9 @@ class TestStatisticsController:
     def test_prepare_input(self):
         xs = self.stats_controller._prepare_inputs(SC.STATS_1st_METRICS, None)
         assert xs[SC.METRIC_TASK_KEY] == SC.STATS_1st_METRICS
-        seq = StatisticsController._get_target_metrics(self.stats_controller.metric_configs,
-                                                       SC.ordered_metrics[SC.STATS_1st_METRICS])
+        seq = StatisticsController._get_target_metrics(
+            self.stats_controller.metric_configs, SC.ordered_metrics[SC.STATS_1st_METRICS]
+        )
         rhs = [mc.name for mc in seq]
         rhs.sort()
         target_metrics: List[MetricConfig] = fobs.loads(xs[SC.STATS_TARGET_METRICS])

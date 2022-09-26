@@ -19,7 +19,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from requests import Response
 
-from nvflare.apis.utils.common_utils import get_open_ports
+from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.tool.package_checker.utils import check_overseer_running, check_response, try_bind_address, try_write_dir
 
 
