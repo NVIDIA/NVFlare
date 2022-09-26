@@ -32,7 +32,8 @@ sequenceDiagram
     participant Server
     participant PrivacyFilter
     participant Client
-    participant Stats_Generator
+    participant Statistics
+    Server->>Client: pre_run: optional handshake (if enabled), passing targeted metric configs
     Server->>Client: task: Fed_Stats: metrics_task_1: count, sum, mean,std_dev, min, max 
     Client-->>PrivacyFilter: local metric
      loop over metrics_privacy_filters

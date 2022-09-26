@@ -154,40 +154,6 @@ Since FLARE has already built-in operators, all we need to supply the followings
 * local statistics generator
 
 ### 5.1 Server configuration
-```
-{
-  "format_version": 2,
-  "workflows": [
-    {
-      "id": "fed_stats_controller",
-      "path": "nvflare.app_common.workflows.statistics_controller.StatisticsController",
-      "args": {
-        "min_clients": 4,
-        "metric_configs": {
-          "count": {},
-          "histogram": {
-            "*": {
-              "bins": 255, "range": [0,256]
-            }
-          }
-        },
-        "writer_id": "stats_writer"
-      }
-    }
-  ],
-  "components": [
-    {
-      "id": "stats_writer",
-      "path": "nvflare.app_common.statistics.json_stats_file_persistor.JsonStatsFileWriter",
-      "args": {
-        "output_path": "statistics/image_statistics.json",
-        "json_encoder_path": "nvflare.app_common.utils.json_utils.ObjectEncoder"
-      }
-    }
-  ]
-}
-```
-
 Here we ask the statistics_controller (server side operator) to compute & display the following metrics: count and histogram
 ````
      "metric_configs": {
@@ -216,66 +182,7 @@ The writer component
 provided by FLARE is going to output the result as JSON format to the <workspace>/statistics/image_statistics.json
 
 ### 5.2 Client configuration
-```
-{
-  "format_version": 2,
-  "executors": [
-    {
-      "tasks": [
-        "fed_stats"
-      ],
-      "executor": {
-        "id": "Executor",
-        "path": "nvflare.app_common.executors.statistics.statistics_executor.StatisticsExecutor",
-        "args": {
-          "generator_id": "local_hist_generator"
-        }
-      }
-    }
-  ],
-  "task_result_filters": [
-    {
-      "tasks": ["fed_stats"],
-      "filters":[
-        {
-          "name": "StatisticsPrivacyFilter",
-          "args": {
-            "result_cleanser_ids": [
-              "min_count_cleanser",
-              "hist_bins_cleanser"
-            ]
-          }
-        }
-      ]
-    }
-  ],
-  "task_data_filters": [],
-  "components": [
-    {
-      "id": "local_hist_generator",
-      "path": "image_statistics.ImageStatistics",
-      "args": {
-        "data_root": "/tmp/nvflare/data"
-      }
-    },
-    {
-      "id": "hist_bins_cleanser",
-      "path": "nvflare.app_common.statistics.histogram_bins_cleanser.HistogramBinsCleanser",
-      "args": {
-        "max_bins_percent": 10
-      }
-    },
-    {
-      "id": "min_count_cleanser",
-      "path": "nvflare.app_common.statistics.min_count_cleanser.MinCountCleanser",
-      "args": {
-        "min_count": 10
-      }
-    }
-  ]
-}
 
-```
 On client side, we first specify the client's side operator (StatisticExecutor) and specify the pre-defined task to be "fed_stats"
 and generator_id = "local_hist_generator". Where local_hist_generator will be local statistics generator defined by custom code.
 
