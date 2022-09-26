@@ -40,13 +40,6 @@
       }
     },
     {
-      "id": "hist_bins_cleanser",
-      "path": "nvflare.app_common.statistics.histogram_bins_cleanser.HistogramBinsCleanser",
-      "args": {
-        "max_bins_percent": 10
-      }
-    },
-    {
       "id": "min_count_cleanser",
       "path": "nvflare.app_common.statistics.min_count_cleanser.MinCountCleanser",
       "args": {
