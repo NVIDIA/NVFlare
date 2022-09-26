@@ -19,7 +19,7 @@ import logging
 import os
 import sys
 
-from nvflare.apis.fl_constant import SiteType, WorkspaceConstants
+from nvflare.apis.fl_constant import JobConstants, SiteType, WorkspaceConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.security import hash_password
@@ -50,9 +50,9 @@ def main():
 
     config_folder = kv_list.get("config_folder", "")
     if config_folder == "":
-        args.server_config = AppFolderConstants.CONFIG_FED_SERVER
+        args.server_config = JobConstants.SERVER_JOB_CONFIG
     else:
-        args.server_config = os.path.join(config_folder, AppFolderConstants.CONFIG_FED_SERVER)
+        args.server_config = os.path.join(config_folder, JobConstants.SERVER_JOB_CONFIG)
 
     # TODO:: remove env and train config since they are not core
     args.env = os.path.join("config", AppFolderConstants.CONFIG_ENV)

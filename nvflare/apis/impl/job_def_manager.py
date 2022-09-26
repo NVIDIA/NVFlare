@@ -27,8 +27,8 @@ from nvflare.apis.job_def import Job, JobDataKey, JobMetaKey, job_from_meta
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.storage import StorageException, StorageSpec
-from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes, zip_directory_to_bytes
 from nvflare.fuel.utils import fobs
+from nvflare.fuel.utils.zip_utils import unzip_all_from_bytes, zip_directory_to_bytes
 
 
 class _JobFilter(ABC):

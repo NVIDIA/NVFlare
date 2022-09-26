@@ -44,9 +44,9 @@ from nvflare.apis.fl_constant import (
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, ReturnCode, Shareable, make_reply
 from nvflare.apis.workspace import Workspace
-from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.argument_utils import parse_vars
+from nvflare.fuel.utils.zip_utils import unzip_all_from_bytes
 from nvflare.private.defs import SpecialTaskName
 from nvflare.private.fed.server.server_runner import ServerRunner
 from nvflare.private.fed.utils.fed_utils import shareable_to_modeldata

@@ -25,7 +25,7 @@ from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, RunProcess
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import ALL_SITES, Job, JobMetaKey, RunStatus
 from nvflare.apis.workspace import Workspace
-from nvflare.fuel.hci.zip_utils import zip_directory_to_bytes
+from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import check_client_replies

@@ -23,7 +23,7 @@ import time
 
 import psutil
 
-from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants
+from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import SecurityContentService
@@ -77,9 +77,9 @@ def main():
     config_folder = kv_list.get("config_folder", "")
     secure_train = kv_list.get("secure_train", True)
     if config_folder == "":
-        args.client_config = WorkspaceConstants.CLIENT_JOB_CONFIG
+        args.client_config = JobConstants.CLIENT_JOB_CONFIG
     else:
-        args.client_config = os.path.join(config_folder, WorkspaceConstants.CLIENT_JOB_CONFIG)
+        args.client_config = os.path.join(config_folder, JobConstants.CLIENT_JOB_CONFIG)
     args.config_folder = config_folder
     args.env = os.path.join("config", "environment.json")
     workspace = Workspace(args.workspace, args.client_name, config_folder)
