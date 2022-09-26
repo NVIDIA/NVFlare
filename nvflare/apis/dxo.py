@@ -13,14 +13,13 @@
 # limitations under the License.
 
 import copy
-from enum import Enum
 from typing import List, Union
 
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.fuel.utils import fobs
 
 
-class DataKind(str, Enum):
+class DataKind(object):
     WEIGHTS = "WEIGHTS"
     WEIGHT_DIFF = "WEIGHT_DIFF"
     XGB_MODEL = "XGB_MODEL"
