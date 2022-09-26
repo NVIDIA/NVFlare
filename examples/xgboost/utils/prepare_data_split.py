@@ -59,12 +59,7 @@ def main():
     parser = data_split_args_parser()
     args = parser.parse_args()
 
-    json_data = {}
-    json_data["data_path"] = args.data_path
-    json_data["data_index"] = {}
-    json_data["data_index"]["valid"] = {}
-    json_data["data_index"]["valid"]["start"] = 0
-    json_data["data_index"]["valid"]["end"] = args.size_valid
+    json_data = {"data_path": args.data_path, "data_index": {"valid": {"start": 0, "end": args.size_valid}}}
 
     site_size = split_num_proportion((args.size_total - args.size_valid), args.site_num, args.split_method)
 

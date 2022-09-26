@@ -1,6 +1,5 @@
 {
   "format_version": 2,
-  "data_root": "/dataset/",
   "components": [],
   "executors": [
     {
@@ -9,10 +8,9 @@
       ],
       "executor": {
         "id": "Executor",
-        "path": "nvflare.app_opt.xgboost.executor.XGBExecutor",
+        "path": "higgs_executor.FedXGBHistogramHiggsExecutor",
         "args": {
-          "train_data": "{data_root}higgs.train.csv.2?format=csv&label_column=0",
-          "test_data": "{data_root}higgs.test.csv.2?format=csv&label_column=0",
+          "data_split_filename": "data_split.json",
           "num_rounds": 100,
           "early_stopping_round": 2,
           "xgboost_params": {

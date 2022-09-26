@@ -32,7 +32,7 @@ from .constants import XGB_TRAIN_TASK, XGBShareableHeader
 
 class XGBFedController(Controller):
     def __init__(self, train_timeout: int = 300, port: int = None):
-        """XGBoost federated training controller
+        """Federated XGBoost training controller for histogram-base collaboration.
 
         Args:
             train_timeout (int, optional): Time to wait for clients to do local training in seconds.
