@@ -18,7 +18,7 @@ pip3 install torch torchvision tensorboard
 Use nvflare simulator to run the hello-examples:
 
 ```
-nvflare simulator -w /tmp/nvflare/ -n 2 -t 2 hello-numpy-sag
+nvflare simulator -w /tmp/nvflare/ -n 2 -t 2 hello-pt-tb
 ```
 
 ### 3. Access the logs and results
