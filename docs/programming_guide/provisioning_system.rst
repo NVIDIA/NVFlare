@@ -397,12 +397,20 @@ Edit the project.yml configuration file to meet your project requirements:
 Default project.yml file
 ========================
 
-The following is an example of the default project.yml file.
+The following is an example of the default project.yml file of HA mode.
 
-.. literalinclude:: ../../nvflare/lighter/project.yml
+.. literalinclude:: ../../nvflare/lighter/ha_project.yml
   :language: yaml
 
 .. attention:: Please make sure that the Overseer and FL servers ports are accessible by all participating sites.
+
+
+The following is an example of the default project.yml file of non-HA mode.
+
+.. literalinclude:: ../../nvflare/lighter/dummy_project.yml
+  :language: yaml
+
+.. attention:: Please make sure that the FL server ports are accessible by all participating sites.
 
 .. _provision_command:
 
