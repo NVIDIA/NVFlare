@@ -16,6 +16,13 @@ import os
 import uuid
 from datetime import datetime
 
+EXCLUDED_ACTIONS = {
+    "scheduler.check_resource",
+    "_check_session",
+    "_commands",
+    "__aux_command__",
+}
+
 
 class Auditor(object):
     def __init__(self, audit_file_name: str):
@@ -32,6 +39,10 @@ class Auditor(object):
         self.audit_file = open(audit_file_name, "a")
 
     def add_event(self, user: str, action: str, ref: str = "", msg: str = "") -> str:
+
+        if action in EXCLUDED_ACTIONS:
+            return ""
+
         event_id = uuid.uuid4()
         parts = [
             f"[E:{event_id}]",
