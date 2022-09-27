@@ -152,8 +152,7 @@ on site-level by the company, there is no need to set privacy filter at job leve
           "name": "StatisticsPrivacyFilter",
           "args": {
             "result_cleanser_ids": [
-              "min_count_cleanser",
-              "hist_bins_cleanser"
+              "min_count_cleanser"
             ]
           }
         }

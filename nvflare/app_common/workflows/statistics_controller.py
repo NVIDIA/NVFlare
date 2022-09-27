@@ -163,7 +163,7 @@ class StatisticsController(Controller):
         if not StatisticsController._wait_for_all_results(
             self.logger, self.result_wait_timeout, self.min_clients, self.client_metrics, 1.0, abort_signal
         ):
-            self.log_info(fl_ctx, f"{client_name} task {self.task_name} timeout on wait for all results.")
+            self.log_info(fl_ctx, f"task {self.task_name} timeout on wait for all results.")
             return False
 
         self.log_info(fl_ctx, "start post processing")
