@@ -33,9 +33,10 @@ class SignatureBuilder(Builder):
     def build(self, project: Project, ctx: dict):
         root_pri_key = ctx.get("root_pri_key")
 
-        overseer = project.get_participants_by_type("overseer", first_only=True)
-        dest_dir = self.get_kit_dir(overseer, ctx)
-        self._do_sign(root_pri_key, dest_dir)
+        overseer = project.get_participants_by_type("overseer")
+        if overseer:
+            dest_dir = self.get_kit_dir(overseer, ctx)
+            self._do_sign(root_pri_key, dest_dir)
 
         servers = project.get_participants_by_type("server", first_only=False)
         for server in servers:
