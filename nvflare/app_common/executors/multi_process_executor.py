@@ -145,14 +145,25 @@ class MultiProcessExecutor(Executor):
 
         try:
             self.open_ports = get_open_ports(self.num_of_processes * 3)
+            client_name = fl_ctx.get_identity_name()
+            job_id = fl_ctx.get_job_id()
 
+            simulate_mode = fl_ctx.get_prop(FLContextKey.SIMULATE_MODE, False)
             command = (
                 self.get_multi_process_command()
                 + " -m nvflare.private.fed.app.client.sub_worker_process"
                 + " -m "
                 + fl_ctx.get_prop(FLContextKey.ARGS).workspace
+                + " -c "
+                + client_name
+                + " -n "
+                + job_id
                 + " --ports "
                 + "-".join([str(i) for i in self.open_ports])
+                + " --simulator_engine "
+                + str(simulate_mode)
+                + " --parent_pid "
+                + str(os.getpid())
             )
             self.logger.info(f"multi_process_executor command: {command}")
             # use os.setsid to create new process group ID

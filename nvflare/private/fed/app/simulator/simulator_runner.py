@@ -95,6 +95,9 @@ class SimulatorRunner(FLComponent):
         if not os.path.isfile(log_config_file_path):
             log_config_file_path = os.path.join(os.path.dirname(__file__), "resource/log.config")
         logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
+        local_dir = os.path.join(self.args.workspace, "local")
+        os.makedirs(local_dir, exist_ok=True)
+        shutil.copyfile(log_config_file_path, os.path.join(local_dir, "log.config"))
 
         # self.logger = logging.getLogger()
         self.args.log_config = None
