@@ -33,7 +33,6 @@ from nvflare.fuel.common.multi_process_executor_constants import CommunicateData
 from nvflare.fuel.utils.class_utils import ModuleScanner
 from nvflare.fuel.utils.component_builder import ComponentBuilder
 from nvflare.fuel.utils.network_utils import get_open_ports
-from nvflare.private.fed.simulator.simulator_app_runner import SimulatorClientRunManager
 
 
 class WorkerComponentBuilder(ComponentBuilder):
@@ -149,11 +148,7 @@ class MultiProcessExecutor(Executor):
             client_name = fl_ctx.get_identity_name()
             job_id = fl_ctx.get_job_id()
 
-            engine = fl_ctx.get_engine()
-            if isinstance(engine, SimulatorClientRunManager):
-                simulator_engine = True
-            else:
-                simulator_engine = False
+            simulate_mode = fl_ctx.get_prop(FLContextKey.SIMULATE_MODE, False)
             command = (
                 self.get_multi_process_command()
                 + " -m nvflare.private.fed.app.client.sub_worker_process"
@@ -166,7 +161,7 @@ class MultiProcessExecutor(Executor):
                 + " --ports "
                 + "-".join([str(i) for i in self.open_ports])
                 + " --simulator_engine "
-                + str(simulator_engine)
+                + str(simulate_mode)
                 + " --parent_pid "
                 + str(os.getpid())
             )
