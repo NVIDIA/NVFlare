@@ -16,11 +16,11 @@ import logging
 import socketserver
 import ssl
 import threading
-import traceback
 
 from nvflare.fuel.hci.conn import Connection, receive_til_end
 from nvflare.fuel.hci.proto import validate_proto
 from nvflare.fuel.hci.security import IdentityKey, get_identity_info
+from nvflare.security.logging import secure_log_traceback
 
 from .constants import ConnProps
 from .reg import ServerCommandRegister
@@ -79,7 +79,7 @@ class _MsgHandler(socketserver.BaseRequestHandler):
             if not conn.ended:
                 conn.close()
         except BaseException:
-            traceback.print_exc()
+            secure_log_traceback()
 
 
 def initialize_hci():

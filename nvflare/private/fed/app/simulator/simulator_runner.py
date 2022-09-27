@@ -26,14 +26,15 @@ from concurrent.futures import ThreadPoolExecutor
 from multiprocessing.connection import Client
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import MachineStatus, WorkspaceConstants
+from nvflare.apis.fl_constant import JobConstants, MachineStatus, WorkspaceConstants
 from nvflare.apis.job_def import ALL_SITES, JobMetaKey
-from nvflare.apis.utils.common_utils import get_open_ports
+from nvflare.apis.utils.job_utils import convert_legacy_zipped_app_to_job
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.multi_process_executor_constants import CommunicationMetaData
 from nvflare.fuel.hci.server.authz import AuthorizationService
-from nvflare.fuel.hci.zip_utils import convert_legacy_zip, split_path, unzip_all_from_bytes, zip_directory_to_bytes
 from nvflare.fuel.sec.audit import AuditService
+from nvflare.fuel.utils.network_utils import get_open_ports
+from nvflare.fuel.utils.zip_utils import split_path, unzip_all_from_bytes, zip_directory_to_bytes
 from nvflare.lighter.poc_commands import get_host_gpu_ids
 from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.deployer.simulator_deployer import SimulatorDeployer
@@ -42,6 +43,7 @@ from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorServerAppRunner
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize
+from nvflare.security.logging import secure_format_exception
 from nvflare.security.security import EmptyAuthorizer
 
 
@@ -167,18 +169,17 @@ class SimulatorRunner(FLComponent):
             self.logger.info("Deploy the Apps.")
             self._deploy_apps(job_name, data_bytes, meta)
 
-            # self.create_clients(data_bytes, job_name, meta)
             return True
 
-        except BaseException as error:
-            self.logger.error(f"Simulator setup error. {error}")
+        except BaseException as e:
+            self.logger.error(f"Simulator setup error: {secure_format_exception(e)}")
             return False
 
     def validate_job_data(self):
         # Validate the simulate job
         job_name = split_path(self.args.job_folder)[1]
         data = zip_directory_to_bytes("", self.args.job_folder)
-        data_bytes = convert_legacy_zip(data)
+        data_bytes = convert_legacy_zipped_app_to_job(data)
         job_validator = JobMetaValidator()
         valid, error, meta = job_validator.validate(job_name, data_bytes)
         if not valid:
@@ -294,8 +295,8 @@ class SimulatorRunner(FLComponent):
                 executor.shutdown()
                 server_thread.join()
                 run_status = 0
-            except BaseException as error:
-                self.logger.error(f"Simulator run error {error}")
+            except BaseException as e:
+                self.logger.error(f"Simulator run error: {secure_format_exception(e)}")
                 run_status = 2
             finally:
                 self.deployer.close()
@@ -309,7 +310,7 @@ class SimulatorRunner(FLComponent):
 
     def start_server_app(self):
         app_server_root = os.path.join(self.simulator_root, "app_server")
-        self.args.server_config = os.path.join("config", AppFolderConstants.CONFIG_FED_SERVER)
+        self.args.server_config = os.path.join("config", JobConstants.SERVER_JOB_CONFIG)
         app_custom_folder = os.path.join(app_server_root, "custom")
         sys.path.append(app_custom_folder)
 
@@ -347,8 +348,8 @@ class SimulatorClientRunner(FLComponent):
 
             # wait for the server and client running thread to finish.
             executor.shutdown()
-        except BaseException as error:
-            self.logger.error(f"SimulatorClientRunner run error. {error}")
+        except BaseException as e:
+            self.logger.error(f"SimulatorClientRunner run error: {secure_format_exception(e)}")
         finally:
             for client in self.federated_clients:
                 # client.engine.shutdown()
@@ -373,8 +374,8 @@ class SimulatorClientRunner(FLComponent):
                 stop_run, client_to_run = self.do_one_task(client, num_of_threads, gpu, lock)
 
                 client.simulate_running = False
-        except BaseException as error:
-            self.logger.error(f"run_client_thread error. {error}")
+        except BaseException as e:
+            self.logger.error(f"run_client_thread error: {secure_format_exception(e)}")
 
     def do_one_task(self, client, num_of_threads, gpu, lock):
         open_port = get_open_ports(1)[0]
@@ -424,7 +425,7 @@ class SimulatorClientRunner(FLComponent):
             try:
                 address = ("localhost", open_port)
                 conn = Client(address, authkey=CommunicationMetaData.CHILD_PASSWORD.encode())
-            except BaseException as e:
+            except BaseException:
                 time.sleep(1.0)
                 pass
         return conn

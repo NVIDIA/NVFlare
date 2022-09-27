@@ -24,6 +24,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.security.logging import secure_format_exception
 
 from .constants import NPConstants
 
@@ -74,7 +75,9 @@ class NPValidator(Executor):
                 try:
                     model_dxo = from_shareable(shareable)
                 except Exception as e:
-                    self.log_error(fl_ctx, f"Unable to extract model dxo from shareable. Exception: {e.__str__()}")
+                    self.log_error(
+                        fl_ctx, f"Unable to extract model dxo from shareable. Exception: {secure_format_exception(e)}"
+                    )
                     return make_reply(ReturnCode.BAD_TASK_DATA)
 
                 # Get model from shareable. data_kind must be WEIGHTS.
@@ -122,7 +125,7 @@ class NPValidator(Executor):
                 metric_dxo = DXO(data_kind=DataKind.METRICS, data=val_results)
                 return metric_dxo.to_shareable()
             except Exception as e:
-                self.log_exception(fl_ctx, f"Exception in NPValidator execute: {e}.")
+                self.log_exception(fl_ctx, f"Exception in NPValidator execute: {secure_format_exception(e)}.")
                 return make_reply(ReturnCode.EXECUTION_EXCEPTION)
         else:
             return make_reply(ReturnCode.TASK_UNKNOWN)

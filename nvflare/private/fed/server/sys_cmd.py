@@ -21,6 +21,7 @@ from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.private.defs import SysCommandTopic
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.cmd_utils import CommandUtil
+from nvflare.security.logging import secure_format_exception
 
 
 def _parse_replies(conn, replies):
@@ -34,7 +35,7 @@ def _parse_replies(conn, replies):
             try:
                 resources = json.loads(r.reply.body)
             except BaseException as e:
-                resources = f"Bad replies: {e}"
+                resources = f"Bad replies: {secure_format_exception(e)}"
         else:
             resources = "No replies"
         site_resources[client_name] = resources

@@ -21,6 +21,7 @@ from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.private.fed.server.server_status import ServerStatus
 from nvflare.private.privacy_manager import PrivacyService
+from nvflare.security.logging import secure_format_exception
 
 
 def _set_up_run_config(workspace: Workspace, server, conf):
@@ -60,7 +61,7 @@ class ServerAppRunner:
 
             server.start_run(job_id, app_root, conf, args, snapshot)
         except BaseException as e:
-            logger.exception(f"FL server execution exception: {e}", exc_info=True)
+            logger.exception(f"FL server execution exception: {secure_format_exception(e)}")
             raise e
         finally:
             server.status = ServerStatus.STOPPED

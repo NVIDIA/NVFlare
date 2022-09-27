@@ -24,6 +24,7 @@ from nvflare.private.defs import ERROR_MSG_PREFIX, RequestHeader, SysCommandTopi
 from nvflare.private.fed.client.admin import RequestProcessor
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
 from nvflare.private.scheduler_constants import ShareableHeader
+from nvflare.security.logging import secure_format_exception
 
 
 def _get_resource_manager(engine: ClientEngineInternalSpec):
@@ -88,7 +89,7 @@ class StartJobProcessor(RequestProcessor):
             job_id = req.get_header(RequestHeader.JOB_ID)
             token = req.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN)
         except Exception as e:
-            msg = f"{ERROR_MSG_PREFIX}: Start job execution exception, missing required information: {e}."
+            msg = f"{ERROR_MSG_PREFIX}: Start job execution exception, missing required information: {secure_format_exception(e)}."
             return Message(topic=f"reply_{req.topic}", body=msg)
 
         try:
@@ -106,7 +107,7 @@ class StartJobProcessor(RequestProcessor):
                 resource_manager=resource_manager,
             )
         except Exception as e:
-            result = f"{ERROR_MSG_PREFIX}: Start job execution exception: {e}."
+            result = f"{ERROR_MSG_PREFIX}: Start job execution exception: {secure_format_exception(e)}."
             if allocated_resources:
                 with engine.new_context() as fl_ctx:
                     resource_manager.free_resources(resources=allocated_resources, token=token, fl_ctx=fl_ctx)

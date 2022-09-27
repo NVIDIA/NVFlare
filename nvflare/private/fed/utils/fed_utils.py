@@ -36,6 +36,7 @@ from nvflare.private.defs import SSLConstants
 from nvflare.private.fed.protos.federated_pb2 import ModelData
 from nvflare.private.fed.utils.numproto import bytes_to_proto
 from nvflare.private.privacy_manager import PrivacyManager, PrivacyService
+from nvflare.security.logging import secure_format_exception, secure_log_traceback
 from nvflare.security.security import EmptyAuthorizer, FLAuthorizer
 
 from .app_authz import AppAuthzService
@@ -84,7 +85,10 @@ def listen_command(listen_port, engine, execute_func, logger):
         execute_func(conn, engine)
 
     except Exception as e:
-        logger.exception(f"Could not create the listener for this process on port: {listen_port}: {e}.", exc_info=True)
+        logger.exception(
+            f"Could not create the listener for this process on port: {listen_port}: {secure_format_exception(e)}."
+        )
+        secure_log_traceback(logger)
     finally:
         if conn:
             conn.close()

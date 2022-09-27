@@ -18,7 +18,6 @@ import json
 import os
 import signal
 import time
-import traceback
 from datetime import datetime
 from typing import List, Optional
 
@@ -27,6 +26,7 @@ from nvflare.fuel.hci.proto import CredentialType
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandRegister, CommandSpec
 from nvflare.fuel.hci.security import hash_password, verify_password
 from nvflare.fuel.hci.table import Table
+from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .api import AdminAPI, CommandInfo, SessionEventType
 from .api_spec import ServiceFinder
@@ -249,10 +249,10 @@ class AdminClient(cmd.Cmd):
             return self._do_default(line)
         except KeyboardInterrupt:
             self.write_stdout("\n")
-        except BaseException as ex:
+        except BaseException as e:
             if self.debug:
-                traceback.print_exc()
-            self.write_stdout("exception occurred: {}".format(ex))
+                secure_log_traceback()
+            self.write_stdout(f"exception occurred: {secure_format_exception(e)}")
         self._close_output_file()
 
     def _do_default(self, line):
@@ -288,8 +288,8 @@ class AdminClient(cmd.Cmd):
             line = join_args(args)
             try:
                 out_file = open(out_file_name, "w")
-            except BaseException as ex:
-                self.write_error("cannot open file {}: {}".format(out_file_name, ex))
+            except BaseException as e:
+                self.write_error(f"cannot open file {out_file_name}: {secure_format_exception(e)}")
                 return
 
             self._set_output_file(out_file, no_stdout)
@@ -405,9 +405,9 @@ class AdminClient(cmd.Cmd):
                     return False
 
             self.cmdloop(intro='Type ? to list commands; type "? cmdName" to show usage of a command.')
-        except RuntimeError as ex:
+        except RuntimeError as e:
             if self.debug:
-                print(f"DEBUG: Exception {ex}")
+                print(f"DEBUG: Exception {secure_format_exception(e)}")
         finally:
             self.stopped = True
             self.api.close()

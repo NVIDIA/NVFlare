@@ -163,7 +163,7 @@ class CommandUtil(object):
 
     @staticmethod
     def get_job_name(meta: dict) -> str:
-        """Get job name from meta.json"""
+        """Gets job name from job meta."""
 
         name = meta.get(JobMetaKey.JOB_NAME)
         if not name:

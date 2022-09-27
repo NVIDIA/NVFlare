@@ -12,17 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict, Optional, List
+from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
 from pandas.core.series import Series
 
-from nvflare.apis.fl_constant import ReservedKey, FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.abstract.statistics_spec import Statistics, BinRange, Histogram, HistogramType, Feature
-from nvflare.app_common.statistics.numpy_utils import get_std_histogram_buckets
-from nvflare.app_common.statistics.numpy_utils import dtype_to_data_type
+from nvflare.app_common.abstract.statistics_spec import BinRange, Feature, Histogram, HistogramType, Statistics
+from nvflare.app_common.statistics.numpy_utils import dtype_to_data_type, get_std_histogram_buckets
 
 
 class DFStatistics(Statistics):
@@ -31,9 +29,23 @@ class DFStatistics(Statistics):
         self.data_root_dir = "/tmp/nvflare/data"
         self.data_path = data_path
         self.data: Optional[Dict[str, pd.DataFrame]] = None
-        self.data_features = ["Age", "Workclass", "fnlwgt", "Education", "Education-Num", "Marital Status",
-                              "Occupation", "Relationship", "Race", "Sex", "Capital Gain", "Capital Loss",
-                              "Hours per week", "Country", "Target"]
+        self.data_features = [
+            "Age",
+            "Workclass",
+            "fnlwgt",
+            "Education",
+            "Education-Num",
+            "Marital Status",
+            "Occupation",
+            "Relationship",
+            "Race",
+            "Sex",
+            "Capital Gain",
+            "Capital Loss",
+            "Hours per week",
+            "Country",
+            "Target",
+        ]
         self.skip_rows = {
             "site-1": [],
             "site-2": [0],
@@ -74,48 +86,35 @@ class DFStatistics(Statistics):
 
         return results
 
-    def count(self,
-              dataset_name: str,
-              feature_name: str) -> int:
+    def count(self, dataset_name: str, feature_name: str) -> int:
         df: pd.DataFrame = self.data[dataset_name]
         return df[feature_name].count()
 
-    def sum(self,
-            dataset_name: str,
-            feature_name: str) -> float:
+    def sum(self, dataset_name: str, feature_name: str) -> float:
         df: pd.DataFrame = self.data[dataset_name]
         return df[feature_name].sum().item()
 
-    def mean(self,
-             dataset_name: str,
-             feature_name: str) -> float:
+    def mean(self, dataset_name: str, feature_name: str) -> float:
 
         count: int = self.count(dataset_name, feature_name)
         sum_value: float = self.sum(dataset_name, feature_name)
         return sum_value / count
 
-    def stddev(self,
-               dataset_name: str,
-               feature_name: str) -> float:
+    def stddev(self, dataset_name: str, feature_name: str) -> float:
         df = self.data[dataset_name]
         return df[feature_name].std().item()
 
-    def variance_with_mean(self,
-                           dataset_name: str,
-                           feature_name: str,
-                           global_mean: float,
-                           global_count: float) -> float:
+    def variance_with_mean(
+        self, dataset_name: str, feature_name: str, global_mean: float, global_count: float
+    ) -> float:
         df = self.data[dataset_name]
         tmp = (df[feature_name] - global_mean) * (df[feature_name] - global_mean)
         variance = tmp.sum() / (global_count - 1)
         return variance.item()
 
-    def histogram(self,
-                  dataset_name: str,
-                  feature_name: str,
-                  num_of_bins: int,
-                  global_min_value: float,
-                  global_max_value: float) -> Histogram:
+    def histogram(
+        self, dataset_name: str, feature_name: str, num_of_bins: int, global_min_value: float, global_max_value: float
+    ) -> Histogram:
 
         num_of_bins: int = num_of_bins
 
@@ -126,18 +125,14 @@ class DFStatistics(Statistics):
         buckets = get_std_histogram_buckets(flattened, num_of_bins, BinRange(global_min_value, global_max_value))
         return Histogram(HistogramType.STANDARD, buckets)
 
-    def max_value(self,
-                  dataset_name: str,
-                  feature_name: str) -> float:
-        """ this is needed for histogram calculation, not used for reporting """
+    def max_value(self, dataset_name: str, feature_name: str) -> float:
+        """this is needed for histogram calculation, not used for reporting"""
 
         df = self.data[dataset_name]
         return df[feature_name].max()
 
-    def min_value(self,
-                  dataset_name: str,
-                  feature_name: str) -> float:
-        """ this is needed for histogram calculation, not used for reporting """
+    def min_value(self, dataset_name: str, feature_name: str) -> float:
+        """this is needed for histogram calculation, not used for reporting"""
 
         df = self.data[dataset_name]
         return df[feature_name].min()

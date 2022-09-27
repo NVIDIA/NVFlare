@@ -25,6 +25,7 @@ from multiprocessing.connection import Client
 from nvflare.apis.fl_constant import AdminCommandNames, ReturnCode, RunProcessKey
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
 from nvflare.apis.shareable import Shareable, make_reply
+from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .client_status import ClientStatus, get_status_message
 
@@ -252,7 +253,8 @@ class ProcessExecutor(ClientExecutor):
                     process_status = ClientStatus.NOT_STARTED
                     return get_status_message(process_status)
         except Exception as e:
-            self.logger.error(f"check_status execution exception: {e}.", exc_info=True)
+            self.logger.error(f"check_status execution exception: {secure_format_exception(e)}.")
+            secure_log_traceback()
             return "execution exception. Please try again."
 
     def get_run_info(self, job_id):
@@ -276,7 +278,8 @@ class ProcessExecutor(ClientExecutor):
                 else:
                     return {}
         except Exception as e:
-            self.logger.error(f"get_run_info execution exception: {e}.", exc_info=True)
+            self.logger.error(f"get_run_info execution exception: {secure_format_exception(e)}.")
+            secure_log_traceback()
             return {"error": "no info collector. Please try again."}
 
     def get_errors(self, job_id):
@@ -300,7 +303,8 @@ class ProcessExecutor(ClientExecutor):
                 else:
                     return None
         except Exception as e:
-            self.logger.error(f"get_errors execution exception: {e}.", exc_info=True)
+            self.logger.error(f"get_errors execution exception: {secure_format_exception(e)}.")
+            secure_log_traceback()
             return None
 
     def reset_errors(self, job_id):
@@ -317,7 +321,8 @@ class ProcessExecutor(ClientExecutor):
                     data = {"command": AdminCommandNames.RESET_ERRORS, "data": {}}
                     conn_client.send(data)
         except Exception as e:
-            self.logger.error(f"reset_errors execution exception: {e}.", exc_info=True)
+            self.logger.error(f"reset_errors execution exception: {secure_format_exception(e)}.")
+            secure_log_traceback()
 
     def process_aux_command(self, shareable: Shareable, job_id):
         """Processes the aux command.
@@ -366,8 +371,9 @@ class ProcessExecutor(ClientExecutor):
                     except Exception as e:
                         if retry == 0:
                             self.logger.error(
-                                f"abort_worker_process execution exception: {e} for run: {job_id}.", exc_info=True
+                                f"abort_worker_process execution exception: {secure_format_exception(e)} for run: {job_id}."
                             )
+                            secure_log_traceback()
                         retry -= 1
                         time.sleep(5.0)
                     finally:

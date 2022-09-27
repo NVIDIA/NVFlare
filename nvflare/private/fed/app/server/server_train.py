@@ -19,7 +19,7 @@ import logging
 import os
 import sys
 
-from nvflare.apis.fl_constant import SiteType, WorkspaceConstants
+from nvflare.apis.fl_constant import JobConstants, SiteType, WorkspaceConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.security import hash_password
@@ -30,6 +30,7 @@ from nvflare.private.fed.server.admin import FedAdminServer
 from nvflare.private.fed.server.fed_server import FederatedServer
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize, security_init
 from nvflare.private.privacy_manager import PrivacyService
+from nvflare.security.logging import secure_format_exception
 
 
 def main():
@@ -49,9 +50,9 @@ def main():
 
     config_folder = kv_list.get("config_folder", "")
     if config_folder == "":
-        args.server_config = AppFolderConstants.CONFIG_FED_SERVER
+        args.server_config = JobConstants.SERVER_JOB_CONFIG
     else:
-        args.server_config = os.path.join(config_folder, AppFolderConstants.CONFIG_FED_SERVER)
+        args.server_config = os.path.join(config_folder, JobConstants.SERVER_JOB_CONFIG)
 
     # TODO:: remove env and train config since they are not core
     args.env = os.path.join("config", AppFolderConstants.CONFIG_ENV)
@@ -129,9 +130,9 @@ def main():
 
         logger.info("Server started")
 
-    except ConfigError as ex:
-        print("ConfigError:", str(ex))
-        raise ex
+    except ConfigError as e:
+        logger.exception(f"ConfigError: {secure_format_exception(e)}")
+        raise e
 
 
 def create_admin_server(fl_server: FederatedServer, server_conf=None, args=None, secure_train=False):

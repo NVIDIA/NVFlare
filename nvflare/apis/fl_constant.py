@@ -299,8 +299,6 @@ class WorkspaceConstants:
 
     SERVER_STARTUP_CONFIG = "fed_server.json"
     CLIENT_STARTUP_CONFIG = "fed_client.json"
-    SERVER_JOB_CONFIG = "config_fed_server.json"
-    CLIENT_JOB_CONFIG = "config_fed_client.json"
     JOB_META_FILE = "job_meta.json"
 
     AUTHORIZATION_CONFIG = "authorization.json"
@@ -313,7 +311,12 @@ class WorkspaceConstants:
     ADMIN_STARTUP_CONFIG = "fed_admin.json"
 
 
-class SiteType:
+class JobConstants:
+    SERVER_JOB_CONFIG = "config_fed_server.json"
+    CLIENT_JOB_CONFIG = "config_fed_client.json"
+    META_FILE = "meta.json"
 
+
+class SiteType:
     SERVER = "server"
     CLIENT = "client"

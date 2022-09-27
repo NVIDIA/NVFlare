@@ -126,7 +126,7 @@ class DistributionBuilder(Builder):
                 try:
                     subprocess.run(run_args)
                     print(f"Password {pw} on {dir}.zip")
-                except FileNotFoundError as e:
+                except FileNotFoundError:
                     raise RuntimeError("Unable to zip folders with password.  Maybe the zip utility is not installed.")
                 finally:
                     os.chdir(os.path.join(dest_zip_file, ".."))

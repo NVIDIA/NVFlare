@@ -14,8 +14,8 @@
 
 import sys
 
-from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.app_common.executors.multi_process_executor import MultiProcessExecutor
+from nvflare.fuel.utils.network_utils import get_open_ports
 
 
 class PTMultiProcessExecutor(MultiProcessExecutor):

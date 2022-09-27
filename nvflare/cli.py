@@ -124,7 +124,7 @@ def run(prog_name):
         print(e)
         sys.exit(1)
     except Exception as e:
-        print(f"unable to handle command: {sub_cmd} due to : {e}, please check syntax ")
+        print(f"unable to handle command: {sub_cmd} due to: {e}, please check syntax ")
         print_help(prog_parser, sub_cmd, sub_cmd_parsers)
 
 

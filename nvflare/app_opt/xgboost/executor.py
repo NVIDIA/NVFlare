@@ -18,7 +18,7 @@ from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.app_opt.xgboost.executor_base import XGBExecutorBase, XGBoostParams
-from nvflare.utils.import_utils import optional_import
+from nvflare.fuel.utils.import_utils import optional_import
 
 
 class XGBExecutor(XGBExecutorBase):

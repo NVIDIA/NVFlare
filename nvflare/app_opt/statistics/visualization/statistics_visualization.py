@@ -11,7 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.utils.import_utils import optional_import
+
+from nvflare.fuel.utils.import_utils import optional_import
 
 
 class Visualization:
@@ -19,7 +20,6 @@ class Visualization:
         display, import_flag = optional_import(module="IPython.display", name="display")
         if not import_flag:
             print(display.failure)
-
         pd, import_flag = optional_import(module="pandas")
         if not import_flag:
             print(pd.failure)

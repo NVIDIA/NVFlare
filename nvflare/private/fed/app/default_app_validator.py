@@ -16,14 +16,14 @@ import os
 from typing import Dict, Tuple
 
 from nvflare.apis.app_validation import AppValidationKey, AppValidator
-from nvflare.apis.fl_constant import SiteType, WorkspaceConstants
+from nvflare.apis.fl_constant import JobConstants, SiteType, WorkspaceConstants
 
 
 def _check_config(app_root: str, config_folder: str, site_type: str):
     if site_type == SiteType.SERVER:
-        config_to_check = WorkspaceConstants.SERVER_JOB_CONFIG
+        config_to_check = JobConstants.SERVER_JOB_CONFIG
     elif site_type == SiteType.CLIENT:
-        config_to_check = WorkspaceConstants.CLIENT_JOB_CONFIG
+        config_to_check = JobConstants.CLIENT_JOB_CONFIG
     else:
         config_to_check = None
 

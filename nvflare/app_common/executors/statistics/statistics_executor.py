@@ -122,7 +122,13 @@ class StatisticsExecutor(Executor):
         self.log_info(fl_ctx, f"Executing task '{task_name}' for client: '{client_name}'")
         result = Shareable()
         metrics_result = {}
-        if task_name == StC.FED_STATS_TASK:
+        if task_name == StC.FED_STATS_PRE_RUN:
+            # initial handshake
+            target_metrics: List[MetricConfig] = fobs.loads(shareable.get(StC.STATS_TARGET_METRICS))
+            self.pre_run(target_metrics)
+            return make_reply(ReturnCode.OK)
+
+        elif task_name == StC.FED_STATS_TASK:
             ds_features = self.get_numeric_features()
             metric_task = shareable.get(StC.METRIC_TASK_KEY)
             target_metrics: List[MetricConfig] = fobs.loads(shareable.get(StC.STATS_TARGET_METRICS))
@@ -184,6 +190,24 @@ class StatisticsExecutor(Executor):
     def get_numeric_features(self) -> Dict[str, List[Feature]]:
         ds_features: Dict[str, List[Feature]] = self.stats_generator.features()
         return filter_numeric_features(ds_features)
+
+    def pre_run(self, target_metrics: List[MetricConfig]):
+        feature_num_of_bins = None
+        feature_bin_ranges = None
+        target_metric_keys = []
+        for mc in target_metrics:
+            target_metric_keys.append(mc.name)
+            if mc.name == StC.STATS_HISTOGRAM:
+                hist_config = mc.config
+                feature_num_of_bins = {}
+                feature_bin_ranges = {}
+                for feature_name in hist_config:
+                    num_of_bins: int = self.get_number_of_bins(feature_name, hist_config)
+                    feature_num_of_bins[feature_name] = num_of_bins
+                    bin_range = get_feature_bin_range(feature_name, hist_config)
+                    feature_bin_ranges[feature_name] = bin_range
+
+        self.stats_generator.pre_run(target_metric_keys, feature_num_of_bins, feature_bin_ranges)
 
     def get_count(
         self, dataset_name: str, feature_name: str, metric_config: MetricConfig, inputs: Shareable, fl_ctx: FLContext

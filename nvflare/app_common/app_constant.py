@@ -176,6 +176,7 @@ class StatisticsConstants(AppConstants):
     STATS_BIN_RANGE = "range"
     STATS_TARGET_METRICS = "metrics"
 
+    FED_STATS_PRE_RUN = "fed_stats_pre_run"
     FED_STATS_TASK = "fed_stats"
     METRIC_TASK_KEY = "fed_stats_metric"
     STATS_1st_METRICS = "fed_stats_1st_metric"

@@ -17,6 +17,8 @@ import inspect
 import pkgutil
 from typing import List
 
+from nvflare.security.logging import secure_format_exception
+
 
 def get_class(class_path):
     module_name, class_name = class_path.rsplit(".", 1)
@@ -50,7 +52,7 @@ def instantiate_class(class_path, init_params):
         else:
             instance = c()
     except TypeError as e:
-        raise ValueError("Class {} has parameters error.".format(class_path), str(e))
+        raise ValueError(f"Class {class_path} has parameters error: {secure_format_exception(e)}.")
 
     return instance
 
@@ -95,7 +97,7 @@ class ModuleScanner:
                                 for name, obj in inspect.getmembers(module):
                                     if inspect.isclass(obj) and obj.__module__ == modname:
                                         self._class_table[name] = modname
-                            except ModuleNotFoundError as ex:
+                            except ModuleNotFoundError:
                                 pass
 
     def get_module_name(self, class_name):

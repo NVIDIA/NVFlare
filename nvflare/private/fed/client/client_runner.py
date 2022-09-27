@@ -25,6 +25,7 @@ from nvflare.apis.utils.fl_context_utils import add_job_audit_event
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.private.fed.client.client_engine_executor_spec import ClientEngineExecutorSpec, TaskAssignment
 from nvflare.private.privacy_manager import Scope
+from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
 
@@ -88,6 +89,7 @@ class ClientRunner(FLComponent):
             job_id: job id
             engine: ClientEngine object
         """
+
         FLComponent.__init__(self)
         self.task_table = config.task_table
         self.task_data_filters = config.task_data_filters
@@ -266,7 +268,9 @@ class ClientRunner(FLComponent):
                 )
 
         except RuntimeError as e:
-            self.log_exception(fl_ctx, f"Critical RuntimeError happened with Exception {e}: Aborting the RUN!")
+            self.log_exception(
+                fl_ctx, f"Critical RuntimeError happened with Exception {secure_format_exception(e)}: Aborting the RUN!"
+            )
             self.asked_to_stop = True
             return self._reply_and_audit(
                 reply=make_reply(ReturnCode.EXECUTION_RESULT_ERROR),
@@ -422,7 +426,7 @@ class ClientRunner(FLComponent):
             self._try_run()
         except BaseException as e:
             with self.engine.new_context() as fl_ctx:
-                self.log_exception(fl_ctx, "processing error in RUN execution: {}".format(e))
+                self.log_exception(fl_ctx, f"processing error in RUN execution: {secure_format_exception(e)}")
         finally:
             # in case any task is still running, abort it
             self._abort_current_task()
