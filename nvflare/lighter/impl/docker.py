@@ -70,15 +70,16 @@ class DockerBuilder(Builder):
         self.services = self.compose.get("services")
         self.compose_file_path = os.path.join(self.get_wip_dir(ctx), "compose.yaml")
         overseer = project.get_participants_by_type("overseer")
-        self._build_overseer(overseer, ctx)
+        if overseer:
+            self._build_overseer(overseer, ctx)
         servers = project.get_participants_by_type("server", first_only=False)
         for server in servers:
             self._build_server(server, ctx)
         for client in project.get_participants_by_type("client", first_only=False):
             self._build_client(client, ctx)
-        self.services.pop("__overseer__")
-        self.services.pop("__flserver__")
-        self.services.pop("__flclient__")
+        self.services.pop("__overseer__", None)
+        self.services.pop("__flserver__", None)
+        self.services.pop("__flclient__", None)
         self.compose["services"] = self.services
         with open(self.compose_file_path, "wt") as f:
             yaml.dump(self.compose, f)
