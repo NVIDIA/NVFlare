@@ -423,14 +423,13 @@ Running ``provision -h`` shows all available options.
 .. code-block:: shell
 
   (nvflare_venv) ~/workspace/repos/flare$ provision -h
-  usage: provision [-h] [-p PROJECT_FILE] [-w WORKSPACE] [-c CUSTOM_FOLDER] [-u]
+  usage: provision [-h] [-p PROJECT_FILE] [-w WORKSPACE] [-c CUSTOM_FOLDER]
 
   optional arguments:
     -h, --help                                               show this help message and exit
     -p PROJECT_FILE, --project_file PROJECT_FILE                 file to describe FL project
     -w WORKSPACE, --workspace WORKSPACE                          directory used by provision
     -c CUSTOM_FOLDER, --custom_folder CUSTOM_FOLDER    additional folder to load python code
-    -u, --ui_tool                      Run provisioning UI tool to generate project.yml file
 
 Running ``provision`` without any options and without a project.yml file in the current working directory will prompt
 to copy a default project.yml to the current working directory.
