@@ -15,7 +15,6 @@
 import threading
 import time
 
-from nvflare.apis.client_engine_spec import TaskAssignment
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReservedTopic, ReturnCode
@@ -24,7 +23,7 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import add_job_audit_event
 from nvflare.private.defs import SpecialTaskName, TaskConstant
-from nvflare.private.fed.client.client_engine_executor_spec import ClientEngineExecutorSpec
+from nvflare.private.fed.client.client_engine_executor_spec import ClientEngineExecutorSpec, TaskAssignment
 from nvflare.private.privacy_manager import Scope
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
