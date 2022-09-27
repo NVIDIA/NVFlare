@@ -14,8 +14,7 @@ Sample user.yaml for ``--add_user``:
 
     name: new_user@nvidia.com
     org: nvidia
-    roles:
-    - super
+    role: project_admin
  
 Sample client.yaml for ``--add_client``:
 
@@ -23,21 +22,17 @@ Sample client.yaml for ``--add_client``:
 
     name: new-site
     org: nvidia
-    enable_byoc: true
     components:
-    resource_manager:    # This id is reserved by system.  Do not change it.
-    path: nvflare.app_common.resource_managers.list_resource_manager.ListResourceManager
-    args:
-        resources:
-        gpu: [0, 1, 2, 3]
-    resource_consumer:    # This id is reserved by system.  Do not change it.
-    path: nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer
-    args:
-        gpu_resource_key: gpu
+      resource_manager:    # This id is reserved by system.  Do not change it.
+        path: nvflare.app_common.resource_managers.gpu_resource_manager.GPUResourceManager
+        args:
+          num_of_gpus: 0
+          mem_per_gpu_in_GiB: 0
+      resource_consumer:    # This id is reserved by system.  Do not change it.
+        path: nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer
+        args:
  
 
 After running ``provision`` with ``--add_user`` or ``--add_client``, the new user or client will be included in the prod_NN folder.
 
 To permanently include users or clients, please update the project.yml.
-
-This feature is still a work in progress as information to servers and the overseer are not working in the federated way yet.

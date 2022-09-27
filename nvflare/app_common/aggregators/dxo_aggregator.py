@@ -86,20 +86,18 @@ class DXOAggregator(FLComponent):
             return False
 
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
-        self.log_debug(fl_ctx, f"current_round: {current_round}")
-
-        data = dxo.data
-        if data is None:
-            self.log_error(fl_ctx, "no data to aggregate")
-            return False
-
-        n_iter = dxo.get_meta_prop(MetaKey.NUM_STEPS_CURRENT_ROUND)
         if contribution_round != current_round:
             self.log_warning(
                 fl_ctx,
                 f"discarding DXO from {contributor_name} at round: "
                 f"{contribution_round}. Current round is: {current_round}",
             )
+            return False
+        self.log_debug(fl_ctx, f"current_round: {current_round}")
+
+        data = dxo.data
+        if data is None:
+            self.log_error(fl_ctx, "no data to aggregate")
             return False
 
         for item in self.aggregation_helper.get_history():
@@ -112,6 +110,7 @@ class DXOAggregator(FLComponent):
                 )
                 return False
 
+        n_iter = dxo.get_meta_prop(MetaKey.NUM_STEPS_CURRENT_ROUND)
         if n_iter is None:
             if self.warning_count.get(contributor_name, 0) <= self.warning_limit:
                 self.log_warning(
