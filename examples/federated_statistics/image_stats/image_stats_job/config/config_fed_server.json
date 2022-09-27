@@ -14,7 +14,8 @@
             }
           }
         },
-        "writer_id": "stats_writer"
+        "writer_id": "stats_writer",
+        "enable_pre_run_task": true
       }
     }
   ],

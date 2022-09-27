@@ -37,6 +37,7 @@ class StatisticsController(Controller):
         result_wait_timeout: int = 10,
         precision=4,
         min_clients: Optional[int] = None,
+        enable_pre_run_task: bool = True,
     ):
         """
         Args:
@@ -118,6 +119,9 @@ class StatisticsController(Controller):
         self.precision = precision
         self.min_clients = min_clients
         self.result_cb_status = {}
+        self.client_handshake_ok = {}
+
+        self.enable_pre_run_task = enable_pre_run_task
 
         self.result_callback_fns: Dict[str, Callable] = {
             StC.STATS_1st_METRICS: self.results_cb,
@@ -145,9 +149,13 @@ class StatisticsController(Controller):
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
 
-        self.log_info(fl_ctx, f" {self.task_name} control flow started.")
+        self.log_info(fl_ctx, f"{self.task_name} control flow started.")
+
         if abort_signal.triggered:
             return False
+
+        if self.enable_pre_run_task:
+            self.pre_run_task_flow(abort_signal, fl_ctx)
 
         self.metrics_task_flow(abort_signal, fl_ctx, StC.STATS_1st_METRICS)
         self.metrics_task_flow(abort_signal, fl_ctx, StC.STATS_2nd_METRICS)
@@ -155,6 +163,7 @@ class StatisticsController(Controller):
         if not StatisticsController._wait_for_all_results(
             self.logger, self.result_wait_timeout, self.min_clients, self.client_metrics, 1.0, abort_signal
         ):
+            self.log_info(fl_ctx, f"task {self.task_name} timeout on wait for all results.")
             return False
 
         self.log_info(fl_ctx, "start post processing")
@@ -169,6 +178,49 @@ class StatisticsController(Controller):
         self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
     ):
         pass
+
+    def _get_all_metric_configs(self) -> List[MetricConfig]:
+
+        all_metrics = {
+            StC.STATS_COUNT: MetricConfig(StC.STATS_COUNT, {}),
+            StC.STATS_FAILURE_COUNT: MetricConfig(StC.STATS_FAILURE_COUNT, {}),
+            StC.STATS_SUM: MetricConfig(StC.STATS_SUM, {}),
+            StC.STATS_MEAN: MetricConfig(StC.STATS_MEAN, {}),
+            StC.STATS_VAR: MetricConfig(StC.STATS_VAR, {}),
+            StC.STATS_STDDEV: MetricConfig(StC.STATS_STDDEV, {}),
+        }
+
+        if StC.STATS_HISTOGRAM in self.metric_configs:
+            hist_config = self.metric_configs[StC.STATS_HISTOGRAM]
+            all_metrics[StC.STATS_MIN] = MetricConfig(StC.STATS_MIN, hist_config)
+            all_metrics[StC.STATS_MAX] = MetricConfig(StC.STATS_MAX, hist_config)
+            all_metrics[StC.STATS_HISTOGRAM] = MetricConfig(StC.STATS_HISTOGRAM, hist_config)
+
+        return [all_metrics[k] for k in all_metrics if k in self.metric_configs]
+
+    def pre_run_task_flow(self, abort_signal: Signal, fl_ctx: FLContext):
+        client_name = fl_ctx.get_identity_name()
+
+        self.log_info(fl_ctx, f"start pre_run task for client {client_name}")
+        inputs = Shareable()
+        target_metrics: List[MetricConfig] = self._get_all_metric_configs()
+        inputs[StC.STATS_TARGET_METRICS] = fobs.dumps(target_metrics)
+        results_cb_fn = self.results_pre_run_cb
+
+        if abort_signal.triggered:
+            return False
+
+        task = Task(name=StC.FED_STATS_PRE_RUN, data=inputs, result_received_cb=results_cb_fn)
+
+        self.broadcast_and_wait(
+            task=task,
+            targets=None,
+            min_responses=self.min_clients,
+            fl_ctx=fl_ctx,
+            wait_time_after_min_received=0,
+            abort_signal=abort_signal,
+        )
+        self.log_info(fl_ctx, f" client {client_name} pre_run task flow end.")
 
     def metrics_task_flow(self, abort_signal: Signal, fl_ctx: FLContext, metric_task: str):
 
@@ -197,6 +249,38 @@ class StatisticsController(Controller):
 
         self.log_info(fl_ctx, f"task {self.task_name} metrics_flow for {metric_task} flow end.")
 
+    def handle_client_errors(self, rc: str, client_task: ClientTask, fl_ctx: FLContext):
+        client_name = client_task.client.name
+        task_name = client_task.task.name
+        abort = self.abort_job_in_error[rc]
+        if abort:
+            self.system_panic(
+                f"Failed in client-site statistics_executor for {client_name} during task {task_name}."
+                f"statistics controller is exiting.",
+                fl_ctx=fl_ctx,
+            )
+            self.log_info(fl_ctx, f"Execution failed for {client_name}")
+        else:
+            self.log_info(fl_ctx, f"Execution result is not received for {client_name}")
+
+    def results_pre_run_cb(self, client_task: ClientTask, fl_ctx: FLContext):
+        client_name = client_task.client.name
+        task_name = client_task.task.name
+        self.log_info(fl_ctx, f"Processing {task_name} pre_run from client {client_name}")
+        result = client_task.result
+
+        rc = result.get_return_code()
+        if rc == ReturnCode.OK:
+            self.log_info(fl_ctx, f"Received handshake from client:{client_name} for task {task_name}")
+            self.client_handshake_ok = {client_name: True}
+        else:
+            if rc in self.abort_job_in_error.keys():
+                self.handle_client_errors(rc, client_task, fl_ctx)
+            self.client_handshake_ok = {client_name: False}
+
+        # Cleanup task result
+        client_task.result = None
+
     def results_cb(self, client_task: ClientTask, fl_ctx: FLContext):
         client_name = client_task.client.name
         task_name = client_task.task.name
@@ -224,16 +308,7 @@ class StatisticsController(Controller):
                 self.client_features.update({client_name: fobs.loads(ds_features)})
 
         elif rc in self.abort_job_in_error.keys():
-            abort = self.abort_job_in_error[rc]
-            if abort:
-                self.system_panic(
-                    f"Failed in client-site statistics_executor for {client_name} during task {task_name}."
-                    f"statistics controller is exiting.",
-                    fl_ctx=fl_ctx,
-                )
-                self.log_info(fl_ctx, f"Execution failed for {client_name}")
-            else:
-                self.log_info(fl_ctx, f"Execution result is not received for {client_name}")
+            self.handle_client_errors(rc, client_task, fl_ctx)
 
             self.result_cb_status[client_name] = {client_task.task.props[StC.METRIC_TASK_KEY]: False}
         else:

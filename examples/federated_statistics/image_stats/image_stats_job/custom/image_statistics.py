@@ -69,6 +69,12 @@ class ImageStatistics(Statistics):
         self.log_info(fl_ctx, f"Client {client_name} has {len(self.data_list)} images")
         return True
 
+    def pre_run(self,
+                metrics: List[str],
+                num_of_bins: Optional[Dict[str, Optional[int]]],
+                bin_ranges: Optional[Dict[str, Optional[List[float]]]]):
+        pass
+
     def features(self) -> Dict[str, List[Feature]]:
         return {"train": [Feature("intensity", DataType.FLOAT)]}
 
@@ -81,7 +87,8 @@ class ImageStatistics(Statistics):
         return self.failure_images
 
     def histogram(
-        self, dataset_name: str, feature_name: str, num_of_bins: int, global_min_value: float, global_max_value: float
+            self, dataset_name: str, feature_name: str, num_of_bins: int, global_min_value: float,
+            global_max_value: float
     ) -> Histogram:
         histogram_bins: List[Bin] = []
         histogram = np.zeros((num_of_bins,), dtype=np.int64)

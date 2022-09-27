@@ -3,7 +3,7 @@
   "executors": [
     {
       "tasks": [
-        "fed_stats"
+        "fed_stats_pre_run", "fed_stats"
       ],
       "executor": {
         "id": "Executor",
@@ -22,8 +22,7 @@
           "name": "StatisticsPrivacyFilter",
           "args": {
             "result_cleanser_ids": [
-              "min_count_cleanser",
-              "hist_bins_cleanser"
+              "min_count_cleanser"
             ]
           }
         }
