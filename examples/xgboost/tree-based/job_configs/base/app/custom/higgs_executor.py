@@ -18,14 +18,24 @@ import os
 import pandas as pd
 import xgboost as xgb
 
-from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import make_reply
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.learners.xgboost_tree_fed_learner import XGBoostTreeFedLearner
+from nvflare.app_opt.xgboost.tree_based.executor import FedXGBTreeExecutor
 
 
-class XGBoostTreeFedHiggsLearner(XGBoostTreeFedLearner):
+def _read_HIGGS_with_pandas(data_path, start: int, end: int):
+    data_size = end - start
+    data = pd.read_csv(data_path, header=None, skiprows=start, nrows=data_size)
+    data_num = data.shape[0]
+
+    # split to feature and label
+    x = data.iloc[:, 1:].copy()
+    y = data.iloc[:, 0].copy()
+
+    return x, y, data_num
+
+
+class FedXGBTreeHiggsExecutor(FedXGBTreeExecutor):
     def __init__(
         self,
         data_split_filename,
@@ -59,56 +69,42 @@ class XGBoostTreeFedHiggsLearner(XGBoostTreeFedLearner):
         self.data_split_filename = data_split_filename
 
     def load_data(self, fl_ctx: FLContext):
-        # load data split file for HIGGS
+        """Loads data."""
         engine = fl_ctx.get_engine()
         ws = engine.get_workspace()
         app_config_dir = ws.get_app_config_dir(fl_ctx.get_job_id())
 
         data_split_file_path = os.path.join(app_config_dir, self.data_split_filename)
         with open(data_split_file_path) as file:
-            self.data_split = json.load(file)
+            data_split = json.load(file)
 
-        data_path = self.data_split["data_path"]
-        data_index = self.data_split["data_index"]
+        data_path = data_split["data_path"]
+        data_index = data_split["data_index"]
+
         # check if site_id and "valid" in the mapping dict
         if self.client_id not in data_index.keys():
-            self.log_error(
-                fl_ctx,
+            raise ValueError(
                 f"Dict of data_index does not contain Client {self.client_id} split",
             )
-            return make_reply(ReturnCode.TASK_ABORTED)
+
         if "valid" not in data_index.keys():
-            self.log_error(
-                fl_ctx,
+            raise ValueError(
                 "Dict of data_index does not contain Validation split",
             )
-            return make_reply(ReturnCode.TASK_ABORTED)
+
         site_index = data_index[self.client_id]
         valid_index = data_index["valid"]
-        # training
-        start = site_index["start"]
-        end = site_index["end"]
-        data_size = end - start
-        higgs = pd.read_csv(data_path, header=None, skiprows=start, nrows=data_size)
-        total_train_data_num = higgs.shape[0]
-        # split to feature and label
-        X_higgs_train = higgs.iloc[:, 1:]
-        y_higgs_train = higgs.iloc[:, 0]
-        # validation
-        start = valid_index["start"]
-        end = valid_index["end"]
-        higgs = pd.read_csv(data_path, header=None, skiprows=start, nrows=end - start)
-        total_valid_data_num = higgs.shape[0]
-        self.log_info(
-            fl_ctx,
-            f"Total training/validation data count: {total_train_data_num}/{total_valid_data_num}",
-        )
-        # split to feature and label
-        X_higgs_valid = higgs.iloc[:, 1:]
-        y_higgs_valid = higgs.iloc[:, 0]
 
-        # construct xgboost DMatrix and set the potential lr_scale factor
-        self.dmat_train = xgb.DMatrix(X_higgs_train, label=y_higgs_train)
-        self.dmat_valid = xgb.DMatrix(X_higgs_valid, label=y_higgs_valid)
-        self.valid_y = y_higgs_valid
-        self.lr_scale = site_index["lr_scale"]
+        # training
+        X_train, y_train, total_train_data_num = _read_HIGGS_with_pandas(
+            data_path=data_path, start=site_index["start"], end=site_index["end"]
+        )
+        dmat_train = xgb.DMatrix(X_train, label=y_train)
+
+        # validation
+        X_valid, y_valid, total_valid_data_num = _read_HIGGS_with_pandas(
+            data_path=data_path, start=valid_index["start"], end=valid_index["end"]
+        )
+        dmat_valid = xgb.DMatrix(X_valid, label=y_valid)
+
+        return dmat_train, dmat_valid, y_valid, site_index["lr_scale"]

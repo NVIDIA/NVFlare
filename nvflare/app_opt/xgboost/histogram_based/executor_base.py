@@ -23,7 +23,8 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.security.logging import secure_format_exception
+from nvflare.fuel.utils.import_utils import optional_import
+from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .constants import XGB_TRAIN_TASK, XGBShareableHeader
 
@@ -31,42 +32,31 @@ from .constants import XGB_TRAIN_TASK, XGBShareableHeader
 class XGBoostParams:
     """Container for all XGBoost parameters"""
 
-    def __init__(self, train_data: str, test_data: str, num_rounds=10, early_stopping_rounds=2):
-        self.train_data = train_data
-        self.test_data = test_data
+    def __init__(self, xgb_params: dict, num_rounds=10, early_stopping_rounds=2, verbose_eval=False):
         self.num_rounds = num_rounds
         self.early_stopping_rounds = early_stopping_rounds
-        self.verbose_eval = False
-        self.xgb_params: dict = {}
-        self.rabit_env: list = []
+        self.verbose_eval = verbose_eval
+        self.xgb_params: dict = xgb_params if xgb_params else {}
 
 
-class XGBExecutorBase(Executor, ABC):
-    def __init__(
-        self,
-        train_data,
-        test_data,
-        num_rounds,
-        early_stopping_round,
-        xgboost_params,
-    ):
-        """Federated XGBoost Executor.
+class FedXGBHistogramExecutorBase(Executor, ABC):
+    def __init__(self, num_rounds, early_stopping_round, xgboost_params, verbose_eval=False):
+        """Federated XGBoost Executor for histogram-base collaboration.
+
         This class sets up the training environment for Federated XGBoost. This is an abstract class and xgb_train
         method must be implemented by a subclass.
 
         Args:
-            train_data: Data file name for training
-            test_data: Data file name for testing
             num_rounds: number of boosting rounds
             early_stopping_round: early stopping round
             xgboost_params: parameters to passed in xgb
+            verbose_eval: verbose_eval in xgb
         """
         super().__init__()
 
-        self.train_data = train_data
-        self.test_data = test_data
         self.num_rounds = num_rounds
         self.early_stopping_round = early_stopping_round
+        self.verbose_eval = verbose_eval
         self.xgb_params = xgboost_params
 
         self.rank = None
@@ -75,10 +65,15 @@ class XGBExecutorBase(Executor, ABC):
         self._client_key_path = None
         self._client_cert_path = None
         self._server_address = "localhost"
+        self._data_loaded = False
 
     @abstractmethod
     def xgb_train(self, params: XGBoostParams, fl_ctx: FLContext) -> Shareable:
         """Main XGBoost training method"""
+        pass
+
+    @abstractmethod
+    def load_data(self, fl_ctx: FLContext):
         pass
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
@@ -129,6 +124,15 @@ class XGBExecutorBase(Executor, ABC):
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
 
+        xgb, flag = optional_import(module="xgboost")
+        if not flag:
+            self.log_error(fl_ctx, "Can't import xgboost")
+            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+
+        if not self._data_loaded:
+            self.load_data(fl_ctx)
+            self._data_loaded = True
+
         # Print round information
         current_round = shareable.get_header(AppConstants.CURRENT_ROUND)
         total_rounds = shareable.get_header(AppConstants.NUM_ROUNDS)
@@ -158,8 +162,12 @@ class XGBExecutorBase(Executor, ABC):
         self.rank = rank_map[client_name]
         self.world_size = world_size
 
+        self.log_info(fl_ctx, f"Using xgb params: {self.xgb_params}")
         params = XGBoostParams(
-            self.train_data, self.test_data, self.num_rounds, early_stopping_rounds=self.early_stopping_round
+            xgb_params=self.xgb_params,
+            num_rounds=self.num_rounds,
+            early_stopping_rounds=self.early_stopping_round,
+            verbose_eval=self.verbose_eval,
         )
 
         rabit_env = [
@@ -178,14 +186,13 @@ class XGBExecutorBase(Executor, ABC):
                     f"federated_client_cert={self._client_cert_path}",
                 ]
             )
-        params.rabit_env = rabit_env
-
-        self.log_info(fl_ctx, f"Using xgb params: {self.xgb_params}")
-        params.xgb_params = self.xgb_params
 
         try:
-            result = self.xgb_train(params, fl_ctx)
+            with xgb.rabit.RabitContext([e.encode() for e in rabit_env]):
+                result = self.xgb_train(params, fl_ctx)
+                xgb.rabit.tracker_print("Finished training\n")
         except BaseException as e:
+            secure_log_traceback()
             self.log_error(fl_ctx, f"Exception happens when running xgb train: {secure_format_exception(e)}")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 

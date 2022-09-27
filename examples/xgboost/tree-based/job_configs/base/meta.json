@@ -1,8 +1,8 @@
 {
-  "name": "higgs_base",
+  "name": "xgboost_tree_bagging",
   "resource_spec": {},
   "deploy_map": {
-    "higgs_base": [
+    "app": [
       "@ALL"
     ]
   }

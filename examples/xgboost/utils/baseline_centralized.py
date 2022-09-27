@@ -30,6 +30,7 @@ def xgboost_args_parser():
     parser.add_argument("--subsample", type=float, default=1, help="subsample for random forest setting")
     parser.add_argument("--num_rounds", type=int, default=100, help="number of boosting rounds")
     parser.add_argument("--workspace_root", type=str, default="workspaces", help="workspaces root")
+    parser.add_argument("--tree_method", type=str, default="hist", help="tree_method")
     parser.add_argument("--train_in_one_session", action="store_true", help="whether to train in one session")
     return parser
 
@@ -87,6 +88,7 @@ def get_training_parameters(args):
         "nthread": 16,
         "num_parallel_tree": args.num_parallel_tree,
         "subsample": args.subsample,
+        "tree_method": args.tree_method,
     }
     return param
 

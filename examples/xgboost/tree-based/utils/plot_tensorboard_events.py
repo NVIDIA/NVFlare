@@ -30,7 +30,7 @@ experiments_bagging = {
     5: {
         "5_bagging_uniform_split_uniform_lr": {"tag": "AUC"},
         "5_bagging_exponential_split_uniform_lr": {"tag": "AUC"},
-        "5_bagging_exponential_split_scaled_lr": {"tag": "AUC"}
+        "5_bagging_exponential_split_scaled_lr": {"tag": "AUC"},
     },
     20: {
         "20_bagging_uniform_split_uniform_lr": {"tag": "AUC"},
@@ -109,9 +109,7 @@ def main():
         # pick first client for bagging experiments
         site = 1
         for config, exp in experiments_bagging[client_num].items():
-            record_path = os.path.join(
-                client_results_root + config, "simulate_job", client_pre + str(site), "events.*"
-            )
+            record_path = os.path.join(client_results_root + config, "simulate_job", client_pre + str(site), "events.*")
             eventfile = glob.glob(record_path, recursive=True)
             assert len(eventfile) == 1, "No unique event file found!"
             eventfile = eventfile[0]
