@@ -19,7 +19,6 @@ import os
 import pathlib
 import shutil
 import sys
-import webbrowser
 
 from nvflare.fuel.utils.class_utils import instantiate_class
 from nvflare.lighter.spec import Participant, Project, Provisioner
@@ -50,12 +49,6 @@ def define_provision_parser(parser):
     parser.add_argument("-p", "--project_file", type=str, default="project.yml", help="file to describe FL project")
     parser.add_argument("-w", "--workspace", type=str, default="workspace", help="directory used by provision")
     parser.add_argument("-c", "--custom_folder", type=str, default=".", help="additional folder to load python codes")
-    parser.add_argument(
-        "-u",
-        "--ui_tool",
-        action="store_true",
-        help="Run provisioning UI tool to generate project.yml file",
-    )
     parser.add_argument("--add_user", type=str, default="", help="yaml file for added user")
     parser.add_argument("--add_client", type=str, default="", help="yaml file for added client")
 
@@ -90,18 +83,6 @@ def handle_provision(args):
             print(f"{current_project_yml} was created.  Please edit it to fit your FL configuration.")
         else:
             print(f"{answer} was selected.  No project.yml was created.")
-        exit(0)
-
-    if args.ui_tool:
-        ui_helper_path = os.path.join(file_path, "provision_helper.html")
-        ui_helper_url = f"file://{ui_helper_path}"
-        webbrowser.open_new_tab(ui_helper_url)
-        print(
-            "\n******\n"
-            "Now launching provisioning UI tool.\n"
-            "After generating project.yml in the browser and saving it to your local folder,\n"
-            "please re-run provision with -p option, pointing to the generated project.yml, to generate all packages.\n******\n"
-        )
         exit(0)
 
     workspace = args.workspace
