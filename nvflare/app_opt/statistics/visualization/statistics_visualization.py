@@ -20,7 +20,6 @@ class Visualization:
         display, import_flag = optional_import(module="IPython.display", name="display")
         if not import_flag:
             print(display.failure)
-
         pd, import_flag = optional_import(module="pandas")
         if not import_flag:
             print(pd.failure)
