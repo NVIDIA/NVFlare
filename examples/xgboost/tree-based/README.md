@@ -14,17 +14,8 @@ In addition to basic uniform shrinkage setting where all clients have the same l
 
 ## Run automated experiments
 To run this example with NVFlare, follow the below steps.
-### Environment Preparation
-Follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions.
 
-Install additional requirements for this xgboost example:
-```
-python3 -m pip install pandas
-python3 -m pip install xgboost
-python3 -m pip install sklearn
-python3 -m pip install torch
-python3 -m pip install tensorboard
-```
+### Environment Preparation
 (optional) if you would like to plot the TensorBoard event files as shown below, please also install
 ```
 python3 -m pip install tensorflow

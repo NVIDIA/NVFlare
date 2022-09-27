@@ -3,7 +3,7 @@ DATASET_PATH="$HOME/dataset/HIGGS.csv"
 
 if [ ! -f "${DATASET_PATH}" ]
 then
-    echo "Please check if you saved higgs dataset in ${DATASET_PATH}"
+    echo "Please check if you saved HIGGS dataset in ${DATASET_PATH}"
 fi
 
 OUTPUT_PATH="data_splits"
@@ -12,7 +12,7 @@ then
     mkdir ${OUTPUT_PATH}
 fi
 
-for site_num in 5 20;
+for site_num in 2 5 20;
 do
     for split_mode in uniform exponential square;
     do

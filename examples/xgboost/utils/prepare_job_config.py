@@ -119,7 +119,7 @@ def main():
     data_split_name = _get_data_split_name(args)
 
     ref_job_map = {"bagging": "tree-based", "cyclic": "tree-based", "histogram": "histogram-based"}
-    src_job_path = pathlib.Path(os.path.join(args.job_configs_root, ref_job_map[args.training_mode]))
+    src_job_path = pathlib.Path(ref_job_map[args.training_mode]) / args.job_configs_root / "base"
     meta_config = read_json(src_job_path / JobConstants.META_FILE)
     client_config = read_json(src_job_path / "app" / "config" / JobConstants.CLIENT_JOB_CONFIG)
     server_config = read_json(src_job_path / "app" / "config" / JobConstants.SERVER_JOB_CONFIG)
@@ -130,7 +130,7 @@ def main():
     _update_server_config(server_config, args)
 
     # create a new job
-    dst_job_path = pathlib.Path(os.path.join(args.job_configs_root, job_name))
+    dst_job_path = pathlib.Path(ref_job_map[args.training_mode]) / args.job_configs_root / job_name
     app_config_path = dst_job_path / "app" / "config"
 
     # make target config folders

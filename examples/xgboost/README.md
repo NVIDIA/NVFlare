@@ -35,7 +35,7 @@ The main differences are that the data is partitioned across the workers accordi
 
 Histograms from different clients, in particular, are aggregated in the server and then communicated back to the clients.
 
-See [histogram-based](job_configs/histogram-based) for more information on the histogram-based collaboration example.
+See [histogram-based/README](histogram-based/README.md) for more information on the histogram-based collaboration.
 
 #### Tree-based Collaboration
 Under tree-based collaboration, individual trees are independently trained on each client's local data without aggregating the global sample gradient histogram information.
@@ -66,14 +66,18 @@ Data splits used in the following experiment can be generated with
 ```
 bash data_split_gen.sh
 ```
-To be specific, this script calls the python script `./utils/prepare_data_split.py`. The arguments are:
+To be specific, this script calls the python script `./utils/prepare_data_split.py`.
+The arguments are:
+
 - site_num: total number of sites
 - site_name: site name prefix
 - size_total: total number of instances, for HIGGS dataset it is 11 million
 - size_valid: validation size, for the experiments here, it is 1 million, indicating the first 1 million instances will be used as standalone validation set. 
 - split_method: how to split the dataset, can be uniform, linear, square, and exponential
 - out_path: output path for the data split json file 
-This will generate data splits for two client sizes: 5 and 20, and 3 split conditions: uniform, square, and exponential. Users can further customize it for more experiments.
+
+This will generate data splits for two client sizes: 5 and 20, and 3 split conditions: uniform, square, and exponential.
+- Users can further customize it for more experiments.
 > **_NOTE:_** The generated train config files will be stored in the folder `./data_splits`, and will be used by job_configs by specifying the path within `config_fed_client.json` 
 
 
@@ -82,15 +86,32 @@ We then prepare the job configs for NVFlare jobs corresponding to various settin
 ```
 bash job_config_gen.sh
 ```
-To be specific, this script calls the python script `./utils/prepare_job_config.py`. It modifies settings from a base config `./job_configs/higgs_base`, and copies the correct data split file generated in the data preparation step.
+To be specific, this script calls the python script `./utils/prepare_job_config.py`.
+It modifies settings from base configs `./job_configs/tree-based` or `./job_configs/histogram-based`,
+and copies the correct data split file generated in the data preparation step.
 
-Here, we generated in total 10 different configs: five for each of the 5/20-client settings:
-- cyclic training with uniform data split 
-- cyclic training with non-uniform data split 
-- bagging training with uniform data split and uniform shrinkage 
-- bagging training with non-uniform data split and uniform shrinkage 
-- bagging training with non-uniform data split and scaled shrinkage
+Here, we generated in total 12 different configs: six for each of the 5/20-client settings:
+- tree-based cyclic training with uniform data split 
+- tree-based cyclic training with non-uniform data split 
+- tree-based bagging training with uniform data split and uniform shrinkage 
+- tree-based bagging training with non-uniform data split and uniform shrinkage 
+- tree-based bagging training with non-uniform data split and scaled shrinkage
+- histogram-based training with uniform data split
 
-By default, cpu based training is used.  For gpu based training, edit `job_conf_gen.sh` to change `TREE_METHOD="hist"` to `TREE_METHOD="gpu_hist"`.
+By default, cpu based training is used.
+
+For gpu based training, edit `job_conf_gen.sh` to change `TREE_METHOD="hist"` to `TREE_METHOD="gpu_hist"`.
 
 > **_NOTE:_** Cyclic training always use uniform shrinkage. The generated job config files will be stored in the folder `./job_configs`
+
+### Installation
+Follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions.
+
+Install additional requirements for this xgboost example:
+```
+python3 -m pip install pandas
+python3 -m pip install xgboost
+python3 -m pip install sklearn
+python3 -m pip install torch
+python3 -m pip install tensorboard
+```

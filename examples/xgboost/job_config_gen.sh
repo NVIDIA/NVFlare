@@ -12,11 +12,12 @@ prepare_job_config 5 bagging exponential uniform $TREE_METHOD
 prepare_job_config 5 bagging uniform uniform $TREE_METHOD
 prepare_job_config 5 cyclic exponential uniform $TREE_METHOD
 prepare_job_config 5 cyclic uniform uniform $TREE_METHOD
-prepare_job_config 5 histogram uniform uniform $TREE_METHOD
 
 prepare_job_config 20 bagging square scaled $TREE_METHOD
 prepare_job_config 20 bagging square uniform $TREE_METHOD
 prepare_job_config 20 bagging uniform uniform $TREE_METHOD
 prepare_job_config 20 cyclic square uniform $TREE_METHOD
 prepare_job_config 20 cyclic uniform uniform $TREE_METHOD
-prepare_job_config 20 histogram uniform uniform $TREE_METHOD
+
+prepare_job_config 2 histogram uniform uniform $TREE_METHOD
+prepare_job_config 5 histogram uniform uniform $TREE_METHOD
