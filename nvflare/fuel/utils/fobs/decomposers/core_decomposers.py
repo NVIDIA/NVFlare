@@ -51,7 +51,7 @@ class OrderedDictDecomposer(Decomposer):
     def decompose(self, target: OrderedDict) -> Any:
         return list(target.items())
 
-    def recompose(self, data: Any) -> set:
+    def recompose(self, data: Any) -> OrderedDict:
         return OrderedDict(data)
 
 
