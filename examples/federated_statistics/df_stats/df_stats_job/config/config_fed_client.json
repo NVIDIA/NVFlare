@@ -3,7 +3,7 @@
   "executors": [
     {
       "tasks": [
-        "fed_stats"
+        "fed_stats_pre_run" ,"fed_stats"
       ],
       "executor": {
         "id": "Executor",

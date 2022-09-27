@@ -88,14 +88,41 @@ class MetricConfig(NamedTuple):
 class Statistics(FLComponent, ABC):
     def initialize(self, parts: dict, fl_ctx: FLContext):
         """
+        This is called when client is start Run. At this point
+        the server hasn't not communicate to the Statistics calculator yet.
         Args:
             parts: parts: components to be used by the Statistics
             fl_ctx: fl_ctx: FLContext of the running environment
-
         Returns:
 
         """
 
+        pass
+
+    def pre_run(
+        self,
+        metrics: List[str],
+        num_of_bins: Optional[Dict[str, Optional[int]]],
+        bin_ranges: Optional[Dict[str, Optional[List[float]]]],
+    ):
+        """
+            This method is the initial hand-shake, where controller pass all the requested metrics configuration
+            to client.
+            This method invocation is optional and Configured via controller argument. If it is configured,
+            this method will be called before all other metric calculation methods
+        Args:
+            metrics: list of metrics to be calculated, count, sum, etc.
+            num_of_bins: if histogram metric is required, num_of_bins will be specified for each feature.
+                         "*" implies default feature.
+                         None value implies the feature's number of bins is not specified.
+            bin_ranges: if histogram metric is required, bin_ranges for the feature may be provided.
+                        if bin_ranges is None. no bin_range is provided for any feature.
+                        if bins_range is not None, but bins_ranges['feature_A'] is None, means that for specific feature
+                        'feature_A', the bin_range is not provided by user.
+
+        Returns: None
+
+        """
         pass
 
     @abstractmethod
@@ -276,7 +303,6 @@ class Statistics(FLComponent, ABC):
         raise NotImplementedError
 
     def failure_count(self, dataset_name: str, feature_name: str) -> int:
-
         """
            return failed count for given dataset and feature
            to perform data privacy min_count check, failure_count is always required

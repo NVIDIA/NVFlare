@@ -13,11 +13,6 @@
             ]
           }
         }
-      ],
-      "default_scope": "public",
-      "task_data_filters": [
-        {
-        }
       ]
     }
   ],
