@@ -52,7 +52,7 @@ sequenceDiagram
     end
     Client-->>PrivacyFilter: local statistics: var, Histogram, count
     loop over statistics_privacy_filters
-        PrivacyFilter->>PrivacyFilter: histogram_max_bins_check, min_count_check
+        PrivacyFilter->>PrivacyFilter: histogram_max_bins_check, min_max_cleanser, min_count_check
     end
     PrivacyFilter-->>Server: filtered local statistic    
     loop over clients
