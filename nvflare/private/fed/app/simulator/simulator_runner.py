@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
+import logging.config
 import os
 import shlex
 import shutil
@@ -91,19 +91,18 @@ class SimulatorRunner(FLComponent):
             for i in range(self.args.n_clients):
                 self.client_names.append("site-" + str(i + 1))
 
-        log_config_file_path = os.path.join(self.args.workspace, "startup", "log.config")
+        log_config_file_path = os.path.join(self.args.workspace, "startup", WorkspaceConstants.LOGGING_CONFIG)
         if not os.path.isfile(log_config_file_path):
-            log_config_file_path = os.path.join(os.path.dirname(__file__), "resource/log.config")
+            log_config_file_path = os.path.join(os.path.dirname(__file__), WorkspaceConstants.LOGGING_CONFIG)
         logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
         local_dir = os.path.join(self.args.workspace, "local")
         os.makedirs(local_dir, exist_ok=True)
-        shutil.copyfile(log_config_file_path, os.path.join(local_dir, "log.config"))
+        shutil.copyfile(log_config_file_path, os.path.join(local_dir, WorkspaceConstants.LOGGING_CONFIG))
 
-        # self.logger = logging.getLogger()
         self.args.log_config = None
         self.args.config_folder = "config"
         self.args.job_id = SimulatorConstants.JOB_NAME
-        self.args.client_config = os.path.join(self.args.config_folder, "config_fed_client.json")
+        self.args.client_config = os.path.join(self.args.config_folder, JobConstants.CLIENT_JOB_CONFIG)
         self.args.env = os.path.join("config", AppFolderConstants.CONFIG_ENV)
         cwd = os.getcwd()
         self.args.job_folder = os.path.join(cwd, self.args.job_folder)
@@ -120,7 +119,7 @@ class SimulatorRunner(FLComponent):
             shutil.rmtree(self.simulator_root)
 
         os.makedirs(self.simulator_root)
-        log_file = os.path.join(self.simulator_root, "log.txt")
+        log_file = os.path.join(self.simulator_root, WorkspaceConstants.LOG_FILE_NAME)
         add_logfile_handler(log_file)
 
         try:
