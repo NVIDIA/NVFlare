@@ -36,7 +36,7 @@ sequenceDiagram
     Server->>Client: pre_run: optional handshake (if enabled), passing targeted statistic configs
     Server->>Client: task: Fed_Stats: statistics_task_1: count, sum, mean,std_dev, min, max 
     loop over dataset and features
-       Client->>Stats_Generator: local stats calculation
+       Client->>Statistics: local stats calculation
     end
     Client-->>PrivacyFilter: local statistic
      loop over statistics_privacy_filters
@@ -48,7 +48,7 @@ sequenceDiagram
     end
     Server->>Client:  task: Fed_Stats: statistics_task_2: var with input global_mean, global_count, histogram with estimated global min/max
     loop over dataset and features
-       Client->>Stats_Generator: local stats calculation
+       Client->>Statistics: local stats calculation
     end
     Client-->>PrivacyFilter: local statistics: var, Histogram, count
     loop over statistics_privacy_filters
