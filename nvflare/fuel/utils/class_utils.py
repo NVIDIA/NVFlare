@@ -97,7 +97,8 @@ class ModuleScanner:
                                 for name, obj in inspect.getmembers(module):
                                     if inspect.isclass(obj) and obj.__module__ == modname:
                                         self._class_table[name] = modname
-                            except ModuleNotFoundError:
+                            # TODO: quick fix for scanning module
+                            except (ModuleNotFoundError, RuntimeError):
                                 pass
 
     def get_module_name(self, class_name):
