@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import argparse
-import logging
+import logging.config
 import os
 import sys
 import threading
@@ -152,11 +152,11 @@ def main():
     parser.add_argument("--parent_pid", type=int, help="parent process pid", required=True)
     args = parser.parse_args()
 
-    log_config_file_path = os.path.join(args.workspace, "startup", "log.config")
+    log_config_file_path = os.path.join(args.workspace, "startup", WorkspaceConstants.LOGGING_CONFIG)
     if not os.path.isfile(log_config_file_path):
-        log_config_file_path = os.path.join(os.path.dirname(__file__), "resource/log.config")
+        log_config_file_path = os.path.join(os.path.dirname(__file__), WorkspaceConstants.LOGGING_CONFIG)
     logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
-    log_file = os.path.join(args.workspace, SimulatorConstants.JOB_NAME, "log.txt")
+    log_file = os.path.join(args.workspace, SimulatorConstants.JOB_NAME, WorkspaceConstants.LOG_FILE_NAME)
     add_logfile_handler(log_file)
 
     workspace = os.path.join(args.workspace, SimulatorConstants.JOB_NAME, "app_" + args.client)

@@ -60,7 +60,7 @@ setup(
         ],
         exclude=["tests", "tests.*"],
     ),
-    package_data={"": ["*.yml", "*.html", "poc.zip"]},
+    package_data={"": ["*.yml", "*.html", "poc.zip", "*.config"]},
     zip_safe=True,
     license_files=("LICENSE",),
     classifiers=[
