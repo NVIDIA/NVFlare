@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, List, Tuple
 
 
-class MetricsPrivacyCleanser(ABC):
+class StatisticsPrivacyCleanser(ABC):
     @abstractmethod
     def apply(self, metrics: dict, client_name: str) -> Tuple[dict, bool]:
         pass

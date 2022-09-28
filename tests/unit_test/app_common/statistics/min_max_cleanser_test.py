@@ -59,22 +59,22 @@ class TestAddNoiseToMinMax:
         assert value_with_noise > compare_result[0]
         assert value_with_noise <= compare_result[1]
 
-    @pytest.mark.parametrize("metrics, noise_level, compare_result", NOISE_TEST_CASES)
-    def test_min_value_noise_generator(self, metrics, noise_level, compare_result):
+    @pytest.mark.parametrize("statistics, noise_level, compare_result", NOISE_TEST_CASES)
+    def test_min_value_noise_generator(self, statistics, noise_level, compare_result):
         gen = AddNoiseToMinMax(noise_level[0], noise_level[1])
-        metric = StC.STATS_MIN
-        metrics_with_noise = gen.generate_noise(metrics, metric)
-        min_metrics = metrics_with_noise[metric]
-        for ds in min_metrics:
-            for feature in min_metrics[ds]:
-                assert min_metrics[ds][feature] <= compare_result[metric][ds][feature]
+        statistic = StC.STATS_MIN
+        statistics_with_noise = gen.generate_noise(statistics, statistic)
+        min_statistics = statistics_with_noise[statistic]
+        for ds in min_statistics:
+            for feature in min_statistics[ds]:
+                assert min_statistics[ds][feature] <= compare_result[statistic][ds][feature]
 
-    @pytest.mark.parametrize("metrics, noise_level, compare_result", NOISE_TEST_CASES)
-    def test_max_value_noise_generator(self, metrics, noise_level, compare_result):
+    @pytest.mark.parametrize("statistics, noise_level, compare_result", NOISE_TEST_CASES)
+    def test_max_value_noise_generator(self, statistics, noise_level, compare_result):
         gen = AddNoiseToMinMax(noise_level[0], noise_level[1])
-        metric = StC.STATS_MAX
-        metrics_with_noise = gen.generate_noise(metrics, metric)
-        max_metrics = metrics_with_noise[metric]
-        for ds in max_metrics:
-            for feature in max_metrics[ds]:
-                assert max_metrics[ds][feature] > compare_result[metric][ds][feature]
+        statistic = StC.STATS_MAX
+        statistics_with_noise = gen.generate_noise(statistics, statistic)
+        max_statistics = statistics_with_noise[statistic]
+        for ds in max_statistics:
+            for feature in max_statistics[ds]:
+                assert max_statistics[ds][feature] > compare_result[statistic][ds][feature]

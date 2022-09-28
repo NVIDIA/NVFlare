@@ -17,10 +17,10 @@ from typing import Tuple
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.app_common.app_constant import StatisticsConstants as StC
-from nvflare.app_common.statistics.metrics_privacy_cleanser import MetricsPrivacyCleanser
+from nvflare.app_common.statistics.statistics_privacy_cleanser import StatisticsPrivacyCleanser
 
 
-class AddNoiseToMinMax(FLComponent, MetricsPrivacyCleanser):
+class AddNoiseToMinMax(FLComponent, StatisticsPrivacyCleanser):
     def __init__(self, min_noise_level: float, max_noise_level: float):
         """
         min_noise_level: minimum noise -- used to protect min/max values before sending to server
@@ -82,21 +82,21 @@ class AddNoiseToMinMax(FLComponent, MetricsPrivacyCleanser):
 
         return max_value
 
-    def generate_noise(self, metrics: dict, metric) -> dict:
-        noise_gen = self.noise_generators[metric]
-        for ds_name in metrics[metric]:
-            for feature_name in metrics[metric][ds_name]:
-                local_value = metrics[metric][ds_name][feature_name]
+    def generate_noise(self, statistics: dict, statistic) -> dict:
+        noise_gen = self.noise_generators[statistic]
+        for ds_name in statistics[statistic]:
+            for feature_name in statistics[statistic][ds_name]:
+                local_value = statistics[statistic][ds_name][feature_name]
                 noise_value = noise_gen(local_value, self.noise_level)
-                metrics[metric][ds_name][feature_name] = noise_value
-        return metrics
+                statistics[statistic][ds_name][feature_name] = noise_value
+        return statistics
 
-    def apply(self, metrics: dict, client_name: str) -> Tuple[dict, bool]:
-        metrics_modified = False
-        for metric in metrics:
-            if metric in self.noise_generators:
-                self.logger.info(f"AddNoiseToMinMax on {metric} for client {client_name}")
-                metrics = self.generate_noise(metrics, metric)
-                metrics_modified = True
+    def apply(self, statistics: dict, client_name: str) -> Tuple[dict, bool]:
+        statistics_modified = False
+        for statistic in statistics:
+            if statistic in self.noise_generators:
+                self.logger.info(f"AddNoiseToMinMax on {statistic} for client {client_name}")
+                statistics = self.generate_noise(statistics, statistic)
+                statistics_modified = True
 
-        return metrics, metrics_modified
+        return statistics, statistics_modified

@@ -21,7 +21,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import ClientTask, Controller, Task
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
-from nvflare.app_common.abstract.statistics_spec import Bin, Histogram, MetricConfig
+from nvflare.app_common.abstract.statistics_spec import Bin, Histogram, StatisticConfig
 from nvflare.app_common.abstract.statistics_writer import StatisticsWriter
 from nvflare.app_common.app_constant import StatisticsConstants as StC
 from nvflare.app_common.statistics.numeric_stats import get_global_stats
@@ -32,7 +32,7 @@ from nvflare.fuel.utils import fobs
 class StatisticsController(Controller):
     def __init__(
         self,
-        metric_configs: Dict[str, dict],
+        statistic_configs: Dict[str, dict],
         writer_id: str,
         result_wait_timeout: int = 10,
         precision=4,
@@ -41,11 +41,11 @@ class StatisticsController(Controller):
     ):
         """
         Args:
-            metric_configs: defines the input statistic metrics to be computed and each metric's configuration.
-                            The key is one of metric names sum, count, mean, stddev, histogram
+            statistic_configs: defines the input statistic to be computed and each statistic's configuration.
+                            The key is one of statistic names sum, count, mean, stddev, histogram
                             the value is the arguments needed.
-                            all other metrics except histogram require no argument.
-                             "metric_configs": {
+                            all other statistics except histogram require no argument.
+                             "statistic_configs": {
                                   "count": {},
                                   "mean": {},
                                   "sum": {},
@@ -87,13 +87,13 @@ class StatisticsController(Controller):
                                     but will fail if there other features in the dataset
 
                                 In the following configuration
-                                 "metric_configs": {
+                                 "statistic_configs": {
                                       "count": {},
                                       "mean": {},
                                       "stddev": {}
                                 }
-                                only count, mean and stddev metrics are specified, then the statistics_controller
-                                will only set tasks to calculate these three metrics
+                                only count, mean and stddev statistics are specified, then the statistics_controller
+                                will only set tasks to calculate these three statistics
 
 
             writer_id:    ID for StatisticsWriter. The StatisticWriter will save the result to output specified by the
@@ -109,11 +109,11 @@ class StatisticsController(Controller):
 
         """
         super().__init__()
-        self.metric_configs: Dict[str, dict] = metric_configs
+        self.statistic_configs: Dict[str, dict] = statistic_configs
         self.writer_id = writer_id
         self.task_name = StC.FED_STATS_TASK
-        self.client_metrics = {}
-        self.global_metrics = {}
+        self.client_statistics = {}
+        self.global_statistics = {}
         self.client_features = {}
         self.result_wait_timeout = result_wait_timeout
         self.precision = precision
@@ -124,8 +124,8 @@ class StatisticsController(Controller):
         self.enable_pre_run_task = enable_pre_run_task
 
         self.result_callback_fns: Dict[str, Callable] = {
-            StC.STATS_1st_METRICS: self.results_cb,
-            StC.STATS_2nd_METRICS: self.results_cb,
+            StC.STATS_1st_STATISTICS: self.results_cb,
+            StC.STATS_2nd_STATISTICS: self.results_cb,
         }
         fobs_registration()
         self.fl_ctx = None
@@ -138,9 +138,9 @@ class StatisticsController(Controller):
         }
 
     def start_controller(self, fl_ctx: FLContext):
-        if self.metric_configs is None or len(self.metric_configs) == 0:
+        if self.statistic_configs is None or len(self.statistic_configs) == 0:
             self.system_panic(
-                "At least one metric_config must be configured for task StatisticsController", fl_ctx=fl_ctx
+                "At least one statistic_config must be configured for task StatisticsController", fl_ctx=fl_ctx
             )
         self.fl_ctx = fl_ctx
         clients = fl_ctx.get_engine().get_clients()
@@ -157,11 +157,11 @@ class StatisticsController(Controller):
         if self.enable_pre_run_task:
             self.pre_run_task_flow(abort_signal, fl_ctx)
 
-        self.metrics_task_flow(abort_signal, fl_ctx, StC.STATS_1st_METRICS)
-        self.metrics_task_flow(abort_signal, fl_ctx, StC.STATS_2nd_METRICS)
+        self.statistics_task_flow(abort_signal, fl_ctx, StC.STATS_1st_STATISTICS)
+        self.statistics_task_flow(abort_signal, fl_ctx, StC.STATS_2nd_STATISTICS)
 
         if not StatisticsController._wait_for_all_results(
-            self.logger, self.result_wait_timeout, self.min_clients, self.client_metrics, 1.0, abort_signal
+            self.logger, self.result_wait_timeout, self.min_clients, self.client_statistics, 1.0, abort_signal
         ):
             self.log_info(fl_ctx, f"task {self.task_name} timeout on wait for all results.")
             return False
@@ -179,32 +179,32 @@ class StatisticsController(Controller):
     ):
         pass
 
-    def _get_all_metric_configs(self) -> List[MetricConfig]:
+    def _get_all_statistic_configs(self) -> List[StatisticConfig]:
 
-        all_metrics = {
-            StC.STATS_COUNT: MetricConfig(StC.STATS_COUNT, {}),
-            StC.STATS_FAILURE_COUNT: MetricConfig(StC.STATS_FAILURE_COUNT, {}),
-            StC.STATS_SUM: MetricConfig(StC.STATS_SUM, {}),
-            StC.STATS_MEAN: MetricConfig(StC.STATS_MEAN, {}),
-            StC.STATS_VAR: MetricConfig(StC.STATS_VAR, {}),
-            StC.STATS_STDDEV: MetricConfig(StC.STATS_STDDEV, {}),
+        all_statistics = {
+            StC.STATS_COUNT: StatisticConfig(StC.STATS_COUNT, {}),
+            StC.STATS_FAILURE_COUNT: StatisticConfig(StC.STATS_FAILURE_COUNT, {}),
+            StC.STATS_SUM: StatisticConfig(StC.STATS_SUM, {}),
+            StC.STATS_MEAN: StatisticConfig(StC.STATS_MEAN, {}),
+            StC.STATS_VAR: StatisticConfig(StC.STATS_VAR, {}),
+            StC.STATS_STDDEV: StatisticConfig(StC.STATS_STDDEV, {}),
         }
 
-        if StC.STATS_HISTOGRAM in self.metric_configs:
-            hist_config = self.metric_configs[StC.STATS_HISTOGRAM]
-            all_metrics[StC.STATS_MIN] = MetricConfig(StC.STATS_MIN, hist_config)
-            all_metrics[StC.STATS_MAX] = MetricConfig(StC.STATS_MAX, hist_config)
-            all_metrics[StC.STATS_HISTOGRAM] = MetricConfig(StC.STATS_HISTOGRAM, hist_config)
+        if StC.STATS_HISTOGRAM in self.statistic_configs:
+            hist_config = self.statistic_configs[StC.STATS_HISTOGRAM]
+            all_statistics[StC.STATS_MIN] = StatisticConfig(StC.STATS_MIN, hist_config)
+            all_statistics[StC.STATS_MAX] = StatisticConfig(StC.STATS_MAX, hist_config)
+            all_statistics[StC.STATS_HISTOGRAM] = StatisticConfig(StC.STATS_HISTOGRAM, hist_config)
 
-        return [all_metrics[k] for k in all_metrics if k in self.metric_configs]
+        return [all_statistics[k] for k in all_statistics if k in self.statistic_configs]
 
     def pre_run_task_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         client_name = fl_ctx.get_identity_name()
 
         self.log_info(fl_ctx, f"start pre_run task for client {client_name}")
         inputs = Shareable()
-        target_metrics: List[MetricConfig] = self._get_all_metric_configs()
-        inputs[StC.STATS_TARGET_METRICS] = fobs.dumps(target_metrics)
+        target_statistics: List[StatisticConfig] = self._get_all_statistic_configs()
+        inputs[StC.STATS_TARGET_STATISTICS] = fobs.dumps(target_statistics)
         results_cb_fn = self.results_pre_run_cb
 
         if abort_signal.triggered:
@@ -222,18 +222,18 @@ class StatisticsController(Controller):
         )
         self.log_info(fl_ctx, f" client {client_name} pre_run task flow end.")
 
-    def metrics_task_flow(self, abort_signal: Signal, fl_ctx: FLContext, metric_task: str):
+    def statistics_task_flow(self, abort_signal: Signal, fl_ctx: FLContext, statistic_task: str):
 
-        self.log_info(fl_ctx, f"start prepare inputs for task {metric_task}")
-        inputs = self._prepare_inputs(metric_task, fl_ctx)
-        results_cb_fn = self._get_result_cb(metric_task)
+        self.log_info(fl_ctx, f"start prepare inputs for task {statistic_task}")
+        inputs = self._prepare_inputs(statistic_task, fl_ctx)
+        results_cb_fn = self._get_result_cb(statistic_task)
 
-        self.log_info(fl_ctx, f"task: {self.task_name} metrics_flow for {metric_task} started.")
+        self.log_info(fl_ctx, f"task: {self.task_name} statistics_flow for {statistic_task} started.")
 
         if abort_signal.triggered:
             return False
 
-        task_props = {StC.METRIC_TASK_KEY: metric_task}
+        task_props = {StC.STATISTICS_TASK_KEY: statistic_task}
         task = Task(name=self.task_name, data=inputs, result_received_cb=results_cb_fn, props=task_props)
 
         self.broadcast_and_wait(
@@ -245,9 +245,9 @@ class StatisticsController(Controller):
             abort_signal=abort_signal,
         )
 
-        self.global_metrics = get_global_stats(self.global_metrics, self.client_metrics, metric_task)
+        self.global_statistics = get_global_stats(self.global_statistics, self.client_statistics, statistic_task)
 
-        self.log_info(fl_ctx, f"task {self.task_name} metrics_flow for {metric_task} flow end.")
+        self.log_info(fl_ctx, f"task {self.task_name} statistics_flow for {statistic_task} flow end.")
 
     def handle_client_errors(self, rc: str, client_task: ClientTask, fl_ctx: FLContext):
         client_name = client_task.client.name
@@ -293,15 +293,15 @@ class StatisticsController(Controller):
             dxo = from_shareable(result)
             client_result = dxo.data
 
-            metric_task = client_result[StC.METRIC_TASK_KEY]
-            self.log_info(fl_ctx, f"handle client {client_name} results for metrics task: {metric_task}")
-            metrics = fobs.loads(client_result[metric_task])
+            statistics_task = client_result[StC.STATISTICS_TASK_KEY]
+            self.log_info(fl_ctx, f"handle client {client_name} results for statistics task: {statistics_task}")
+            statistics = fobs.loads(client_result[statistics_task])
 
-            for metric in metrics:
-                if metric not in self.client_metrics:
-                    self.client_metrics[metric] = {client_name: metrics[metric]}
+            for statistic in statistics:
+                if statistic not in self.client_statistics:
+                    self.client_statistics[statistic] = {client_name: statistics[statistic]}
                 else:
-                    self.client_metrics[metric].update({client_name: metrics[metric]})
+                    self.client_statistics[statistic].update({client_name: statistics[statistic]})
 
             ds_features = client_result.get(StC.STATS_FEATURES, None)
             if ds_features:
@@ -310,29 +310,29 @@ class StatisticsController(Controller):
         elif rc in self.abort_job_in_error.keys():
             self.handle_client_errors(rc, client_task, fl_ctx)
 
-            self.result_cb_status[client_name] = {client_task.task.props[StC.METRIC_TASK_KEY]: False}
+            self.result_cb_status[client_name] = {client_task.task.props[StC.STATISTICS_TASK_KEY]: False}
         else:
-            self.result_cb_status[client_name] = {client_task.task.props[StC.METRIC_TASK_KEY]: True}
+            self.result_cb_status[client_name] = {client_task.task.props[StC.STATISTICS_TASK_KEY]: True}
 
-        self.result_cb_status[client_name] = {client_task.task.props[StC.METRIC_TASK_KEY]: True}
+        self.result_cb_status[client_name] = {client_task.task.props[StC.STATISTICS_TASK_KEY]: True}
         # Cleanup task result
         client_task.result = None
 
-    def _validate_min_clients(self, min_clients: int, client_metrics: dict) -> bool:
+    def _validate_min_clients(self, min_clients: int, client_statistics: dict) -> bool:
         self.logger.info("check if min_client result received for all features")
 
         resulting_clients = {}
-        for metric in client_metrics:
-            clients = client_metrics[metric].keys()
+        for statistic in client_statistics:
+            clients = client_statistics[statistic].keys()
             if len(clients) < min_clients:
                 return False
             for client in clients:
-                ds_feature_metrics = client_metrics[metric][client]
-                for ds_name in ds_feature_metrics:
+                ds_feature_statistics = client_statistics[statistic][client]
+                for ds_name in ds_feature_statistics:
                     if ds_name not in resulting_clients:
                         resulting_clients[ds_name] = set()
 
-                    if ds_feature_metrics[ds_name]:
+                    if ds_feature_statistics[ds_name]:
                         resulting_clients[ds_name].update([client])
 
         for ds in resulting_clients:
@@ -342,52 +342,56 @@ class StatisticsController(Controller):
 
     def post_fn(self, task_name: str, fl_ctx: FLContext):
 
-        ok_to_proceed = self._validate_min_clients(self.min_clients, self.client_metrics)
+        ok_to_proceed = self._validate_min_clients(self.min_clients, self.client_statistics)
         if not ok_to_proceed:
             self.system_panic(f"not all required {self.min_clients} received, abort the job.", fl_ctx)
         else:
-            self.log_info(fl_ctx, "combine all clients' metrics")
-            ds_stats = self._combine_all_metrics()
+            self.log_info(fl_ctx, "combine all clients' statistics")
+            ds_stats = self._combine_all_statistics()
             self.log_info(fl_ctx, "save statistics result to persistence store")
             writer: StatisticsWriter = fl_ctx.get_engine().get_component(self.writer_id)
             writer.save(ds_stats, overwrite_existing=True, fl_ctx=fl_ctx)
 
-    def _combine_all_metrics(self):
+    def _combine_all_statistics(self):
         result = {}
-        filtered_client_metrics = [metric for metric in self.client_metrics if metric in self.metric_configs]
-        filtered_global_metrics = [metric for metric in self.global_metrics if metric in self.metric_configs]
+        filtered_client_statistics = [
+            statistic for statistic in self.client_statistics if statistic in self.statistic_configs
+        ]
+        filtered_global_statistics = [
+            statistic for statistic in self.global_statistics if statistic in self.statistic_configs
+        ]
 
-        for metric in filtered_client_metrics:
-            for client in self.client_metrics[metric]:
-                for ds in self.client_metrics[metric][client]:
+        for statistic in filtered_client_statistics:
+            for client in self.client_statistics[statistic]:
+                for ds in self.client_statistics[statistic][client]:
                     client_dataset = f"{client}-{ds}"
-                    for feature_name in self.client_metrics[metric][client][ds]:
+                    for feature_name in self.client_statistics[statistic][client][ds]:
                         if feature_name not in result:
                             result[feature_name] = {}
-                        if metric not in result[feature_name]:
-                            result[feature_name][metric] = {}
+                        if statistic not in result[feature_name]:
+                            result[feature_name][statistic] = {}
 
-                        if metric == StC.STATS_HISTOGRAM:
-                            hist: Histogram = self.client_metrics[metric][client][ds][feature_name]
+                        if statistic == StC.STATS_HISTOGRAM:
+                            hist: Histogram = self.client_statistics[statistic][client][ds][feature_name]
                             buckets = StatisticsController._apply_histogram_precision(hist.bins, self.precision)
-                            result[feature_name][metric][client_dataset] = buckets
+                            result[feature_name][statistic][client_dataset] = buckets
                         else:
-                            result[feature_name][metric][client_dataset] = round(
-                                self.client_metrics[metric][client][ds][feature_name], self.precision
+                            result[feature_name][statistic][client_dataset] = round(
+                                self.client_statistics[statistic][client][ds][feature_name], self.precision
                             )
 
         precision = self.precision
-        for metric in filtered_global_metrics:
-            for ds in self.global_metrics[metric]:
+        for statistic in filtered_global_statistics:
+            for ds in self.global_statistics[statistic]:
                 global_dataset = f"{StC.GLOBAL}-{ds}"
-                for feature_name in self.global_metrics[metric][ds]:
-                    if metric == StC.STATS_HISTOGRAM:
-                        hist: Histogram = self.global_metrics[metric][ds][feature_name]
+                for feature_name in self.global_statistics[statistic][ds]:
+                    if statistic == StC.STATS_HISTOGRAM:
+                        hist: Histogram = self.global_statistics[statistic][ds][feature_name]
                         buckets = StatisticsController._apply_histogram_precision(hist.bins, self.precision)
-                        result[feature_name][metric][global_dataset] = buckets
+                        result[feature_name][statistic][global_dataset] = buckets
                     else:
-                        result[feature_name][metric].update(
-                            {global_dataset: round(self.global_metrics[metric][ds][feature_name], precision)}
+                        result[feature_name][statistic].update(
+                            {global_dataset: round(self.global_statistics[statistic][ds][feature_name], precision)}
                         )
 
         return result
@@ -406,55 +410,55 @@ class StatisticsController(Controller):
         return buckets
 
     @staticmethod
-    def _get_target_metrics(metric_configs: dict, ordered_metrics: list) -> List[MetricConfig]:
-        # make sure the execution order of the metrics calculation
+    def _get_target_statistics(statistic_configs: dict, ordered_statistics: list) -> List[StatisticConfig]:
+        # make sure the execution order of the statistics calculation
         targets = []
-        if metric_configs:
-            for metric in metric_configs:
-                # if target metric has histogram, we are not in 2nd Metric task
-                # we only need to estimate the global min/max if we have histogram metric,
+        if statistic_configs:
+            for statistic in statistic_configs:
+                # if target statistic has histogram, we are not in 2nd statistic task
+                # we only need to estimate the global min/max if we have histogram statistic,
                 # If the user provided the global min/max for a specified feature, then we do nothing
                 # if the user did not provide the global min/max for the feature, then we need to ask
                 # client to provide the local estimated min/max for that feature.
                 # then we used the local estimate min/max to estimate global min/max.
-                # to do that, we calculate the local min/max in 1st metric task.
+                # to do that, we calculate the local min/max in 1st statistic task.
                 # in all cases, we will still send the STATS_MIN/MAX tasks, but client executor may or may not
                 # delegate to stats generator to calculate the local min/max depends on if the global bin ranges
                 # are specified. to do this, we send over the histogram configuration when calculate the local min/max
-                if metric == StC.STATS_HISTOGRAM and metric not in ordered_metrics:
-                    targets.append(MetricConfig(StC.STATS_MIN, metric_configs[StC.STATS_HISTOGRAM]))
-                    targets.append(MetricConfig(StC.STATS_MAX, metric_configs[StC.STATS_HISTOGRAM]))
+                if statistic == StC.STATS_HISTOGRAM and statistic not in ordered_statistics:
+                    targets.append(StatisticConfig(StC.STATS_MIN, statistic_configs[StC.STATS_HISTOGRAM]))
+                    targets.append(StatisticConfig(StC.STATS_MAX, statistic_configs[StC.STATS_HISTOGRAM]))
 
-                if metric == StC.STATS_STDDEV and metric in ordered_metrics:
-                    targets.append(MetricConfig(StC.STATS_VAR, {}))
+                if statistic == StC.STATS_STDDEV and statistic in ordered_statistics:
+                    targets.append(StatisticConfig(StC.STATS_VAR, {}))
 
-                for rm in ordered_metrics:
-                    if rm == metric:
-                        targets.append(MetricConfig(metric, metric_configs[metric]))
+                for rm in ordered_statistics:
+                    if rm == statistic:
+                        targets.append(StatisticConfig(statistic, statistic_configs[statistic]))
         return targets
 
-    def _prepare_inputs(self, metric_task: str, fl_ctx: FLContext) -> Shareable:
+    def _prepare_inputs(self, statistic_task: str, fl_ctx: FLContext) -> Shareable:
         inputs = Shareable()
-        target_metrics: List[MetricConfig] = StatisticsController._get_target_metrics(
-            self.metric_configs, StC.ordered_metrics[metric_task]
+        target_statistics: List[StatisticConfig] = StatisticsController._get_target_statistics(
+            self.statistic_configs, StC.ordered_statistics[statistic_task]
         )
 
-        for tm in target_metrics:
+        for tm in target_statistics:
             if tm.name == StC.STATS_HISTOGRAM:
-                if StC.STATS_MIN in self.global_metrics:
-                    inputs[StC.STATS_MIN] = self.global_metrics[StC.STATS_MIN]
-                if StC.STATS_MAX in self.global_metrics:
-                    inputs[StC.STATS_MAX] = self.global_metrics[StC.STATS_MAX]
+                if StC.STATS_MIN in self.global_statistics:
+                    inputs[StC.STATS_MIN] = self.global_statistics[StC.STATS_MIN]
+                if StC.STATS_MAX in self.global_statistics:
+                    inputs[StC.STATS_MAX] = self.global_statistics[StC.STATS_MAX]
 
             if tm.name == StC.STATS_VAR:
-                if StC.STATS_COUNT in self.global_metrics:
-                    inputs[StC.STATS_GLOBAL_COUNT] = self.global_metrics[StC.STATS_COUNT]
-                if StC.STATS_MEAN in self.global_metrics:
-                    inputs[StC.STATS_GLOBAL_MEAN] = self.global_metrics[StC.STATS_MEAN]
+                if StC.STATS_COUNT in self.global_statistics:
+                    inputs[StC.STATS_GLOBAL_COUNT] = self.global_statistics[StC.STATS_COUNT]
+                if StC.STATS_MEAN in self.global_statistics:
+                    inputs[StC.STATS_GLOBAL_MEAN] = self.global_statistics[StC.STATS_MEAN]
 
-        inputs[StC.METRIC_TASK_KEY] = metric_task
+        inputs[StC.STATISTICS_TASK_KEY] = statistic_task
 
-        inputs[StC.STATS_TARGET_METRICS] = fobs.dumps(target_metrics)
+        inputs[StC.STATS_TARGET_STATISTICS] = fobs.dumps(target_statistics)
 
         return inputs
 
@@ -463,51 +467,51 @@ class StatisticsController(Controller):
         logger,
         result_wait_timeout: float,
         requested_client_size: int,
-        client_metrics: dict,
+        client_statistics: dict,
         sleep_time: float = 1,
         abort_signal=None,
     ) -> bool:
         """
-            for each metric, we check if the number of requested clients (min_clients or all clients)
+            for each statistic, we check if the number of requested clients (min_clients or all clients)
             is available, if not, we wait until result_wait_timeout.
-            result_wait_timeout is reset for next metric. result_wait_timeout is per metrics, not overall
+            result_wait_timeout is reset for next statistic. result_wait_timeout is per statistic, not overall
             timeout for all results.
         Args:
-            result_wait_timeout: timeout we have to wait for each metric. reset for each metric
+            result_wait_timeout: timeout we have to wait for each statistic. reset for each statistic
             requested_client_size: requested client size, usually min_clients or all clients
-            client_metrics: client specific metrics received so far
+            client_statistics: client specific statistics received so far
             abort_signal:  abort signal
 
         Returns: False, when job is aborted else True
         """
 
-        # record of each metric, number of clients processed
-        metric_client_received = {}
+        # record of each statistic, number of clients processed
+        statistics_client_received = {}
 
-        # current metrics obtained so far (across all clients)
-        metric_names = client_metrics.keys()
-        for m in metric_names:
-            metric_client_received[m] = len(client_metrics[m].keys())
+        # current statistics obtained so far (across all clients)
+        statistic_names = client_statistics.keys()
+        for m in statistic_names:
+            statistics_client_received[m] = len(client_statistics[m].keys())
 
         timeout = result_wait_timeout
-        for m in metric_client_received:
-            if requested_client_size > metric_client_received[m]:
+        for m in statistics_client_received:
+            if requested_client_size > statistics_client_received[m]:
                 t = 0
-                while t < timeout and requested_client_size > metric_client_received[m]:
+                while t < timeout and requested_client_size > statistics_client_received[m]:
                     if abort_signal and abort_signal.triggered:
                         return False
 
                     msg = (
-                        f"not all client received the metric '{m}', need to wait for {sleep_time} seconds."
-                        f"currently available clients are '{client_metrics[m].keys()}'."
+                        f"not all client received the statistic '{m}', need to wait for {sleep_time} seconds."
+                        f"currently available clients are '{client_statistics[m].keys()}'."
                     )
                     logger.info(msg)
                     time.sleep(sleep_time)
                     t += sleep_time
-                    # check and update number of client processed for metric again
-                    metric_client_received[m] = len(client_metrics[m].keys())
+                    # check and update number of client processed for statistics again
+                    statistics_client_received[m] = len(client_statistics[m].keys())
 
         return True
 
-    def _get_result_cb(self, metric_task: str):
-        return self.result_callback_fns[metric_task]
+    def _get_result_cb(self, statistics_task: str):
+        return self.result_callback_fns[statistics_task]

@@ -77,7 +77,7 @@ class Feature(NamedTuple):
     data_type: DataType
 
 
-class MetricConfig(NamedTuple):
+class StatisticConfig(NamedTuple):
     # metric name
     name: str
 

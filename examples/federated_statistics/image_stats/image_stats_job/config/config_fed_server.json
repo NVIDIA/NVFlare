@@ -6,7 +6,7 @@
       "path": "nvflare.app_common.workflows.statistics_controller.StatisticsController",
       "args": {
         "min_clients": 4,
-        "metric_configs": {
+        "statistic_configs": {
           "count": {},
           "histogram": {
             "*": {

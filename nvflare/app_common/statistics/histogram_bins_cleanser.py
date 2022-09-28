@@ -17,10 +17,10 @@ from typing import Dict, Tuple
 from nvflare.apis.fl_component import FLComponent
 from nvflare.app_common.abstract.statistics_spec import Histogram
 from nvflare.app_common.app_constant import StatisticsConstants as StC
-from nvflare.app_common.statistics.metrics_privacy_cleanser import MetricsPrivacyCleanser
+from nvflare.app_common.statistics.statistics_privacy_cleanser import StatisticsPrivacyCleanser
 
 
-class HistogramBinsCleanser(FLComponent, MetricsPrivacyCleanser):
+class HistogramBinsCleanser(FLComponent, StatisticsPrivacyCleanser):
     def __init__(self, max_bins_percent):
         """
         max_bins_percent:   max number of bins allowed in terms of percent of local data size.
@@ -37,17 +37,17 @@ class HistogramBinsCleanser(FLComponent, MetricsPrivacyCleanser):
         if self.max_bins_percent < 0 or self.max_bins_percent > 100:
             raise ValueError(f"max_bins_percent {self.max_bins_percent} is not within (0, 100) ")
 
-    def hist_bins_validate(self, client_name: str, metrics: Dict) -> Dict[str, Dict[str, bool]]:
+    def hist_bins_validate(self, client_name: str, statistics: Dict) -> Dict[str, Dict[str, bool]]:
         result = {}
-        if StC.STATS_HISTOGRAM in metrics:
-            hist_metrics = metrics[StC.STATS_HISTOGRAM]
-            for ds_name in hist_metrics:
+        if StC.STATS_HISTOGRAM in statistics:
+            hist_statistics = statistics[StC.STATS_HISTOGRAM]
+            for ds_name in hist_statistics:
                 result[ds_name] = {}
-                feature_item_counts = metrics[StC.STATS_COUNT][ds_name]
-                feature_item_failure_counts = metrics[StC.STATS_FAILURE_COUNT][ds_name]
-                feature_metrics = hist_metrics[ds_name]
-                for feature in feature_metrics:
-                    hist: Histogram = feature_metrics[feature]
+                feature_item_counts = statistics[StC.STATS_COUNT][ds_name]
+                feature_item_failure_counts = statistics[StC.STATS_FAILURE_COUNT][ds_name]
+                feature_statistics = hist_statistics[ds_name]
+                for feature in feature_statistics:
+                    hist: Histogram = feature_statistics[feature]
                     num_of_bins: int = len(hist.bins)
                     item_count = feature_item_counts[feature]
                     item_failure_count = feature_item_failure_counts[feature]
@@ -63,11 +63,11 @@ class HistogramBinsCleanser(FLComponent, MetricsPrivacyCleanser):
                         )
         return result
 
-    def apply(self, metrics: dict, client_name: str) -> Tuple[dict, bool]:
+    def apply(self, statistics: dict, client_name: str) -> Tuple[dict, bool]:
         self.logger.info(f"HistogramBinCheck for client {client_name}")
-        if StC.STATS_HISTOGRAM in metrics:
-            validation_result = self.hist_bins_validate(client_name, metrics)
-            metric_keys = [StC.STATS_HISTOGRAM]
-            return super().cleanse(metrics, metric_keys, validation_result)
+        if StC.STATS_HISTOGRAM in statistics:
+            validation_result = self.hist_bins_validate(client_name, statistics)
+            statistics_keys = [StC.STATS_HISTOGRAM]
+            return super().cleanse(statistics, statistics_keys, validation_result)
         else:
-            return metrics, False
+            return statistics, False
