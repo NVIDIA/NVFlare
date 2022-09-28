@@ -279,7 +279,7 @@ In current example, the input data in the format of Pandas DataFrame. Although w
 tabular data format that be expressed in pandas dataframe.
 
 ```
-class DFStatistics(Statistics):`
+class DFStatistics(Statistics):
     # rest of code 
 ```
 to calculate the local statistics, we will need to implements few methods

@@ -203,7 +203,7 @@ count - failure_count
         return self.failure_images
 ```
 
-If you would like to see failure_count as one statistic in reporting, you will need to add "failure_count" to the statistics_config
+If you would like to see failure_count as one statistic in reporting, you will need to add "failure_count" to the statistic_config
 arguments for the statistics controller.
 
 
