@@ -14,7 +14,7 @@
 
 import glob
 import os
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import numpy as np
 from monai.data import ITKReader, load_decathlon_datalist
@@ -70,7 +70,7 @@ class ImageStatistics(Statistics):
         return True
 
     def pre_run(self,
-                metrics: List[str],
+                statistics: List[str],
                 num_of_bins: Optional[Dict[str, Optional[int]]],
                 bin_ranges: Optional[Dict[str, Optional[List[float]]]]):
         pass

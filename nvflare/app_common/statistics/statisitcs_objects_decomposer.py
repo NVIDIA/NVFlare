@@ -20,21 +20,21 @@ from nvflare.app_common.abstract.statistics_spec import (
     Feature,
     Histogram,
     HistogramType,
-    MetricConfig,
+    StatisticConfig,
 )
 from nvflare.fuel.utils import fobs
 
 
-class MetricConfigDecomposer(fobs.Decomposer):
+class StatisticConfigDecomposer(fobs.Decomposer):
     @staticmethod
     def supported_type() -> Type[Any]:
-        return MetricConfig
+        return StatisticConfig
 
-    def decompose(self, metric_config: MetricConfig) -> Any:
-        return [metric_config.name, metric_config.config]
+    def decompose(self, statistic_config: StatisticConfig) -> Any:
+        return [statistic_config.name, statistic_config.config]
 
-    def recompose(self, data: list) -> MetricConfig:
-        return MetricConfig(data[0], data[1])
+    def recompose(self, data: list) -> StatisticConfig:
+        return StatisticConfig(data[0], data[1])
 
 
 class DataTypeDecomposer(fobs.Decomposer):
@@ -110,7 +110,7 @@ class HistogramDecomposer(fobs.Decomposer):
 
 
 def fobs_registration():
-    fobs.register(MetricConfigDecomposer)
+    fobs.register(StatisticConfigDecomposer)
     fobs.register(DataTypeDecomposer)
     fobs.register(FeatureDecomposer)
     fobs.register(HistogramTypeDecomposer)

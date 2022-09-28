@@ -19,7 +19,7 @@ import pytest
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-from nvflare.app_common.abstract.statistics_spec import Feature, HistogramType, MetricConfig
+from nvflare.app_common.abstract.statistics_spec import Feature, HistogramType, StatisticConfig
 from nvflare.app_common.executors.statistics.statistics_executor import StatisticsExecutor
 from tests.unit_test.app_common.executors.statistics.mock_df_stats_executor import MockDFStatistics
 
@@ -50,7 +50,7 @@ class TestStatisticsExecutor:
 
     def test_method_implementation(self):
         with pytest.raises(NotImplementedError):
-            r = self.stats_executor.get_sum("train", "Age", MetricConfig("sum", {}), None, None)
+            r = self.stats_executor.get_sum("train", "Age", StatisticConfig("sum", {}), None, None)
 
     def test_histogram_num_of_bins(self):
         hist_config = {"Age": {"bins": 5}}
@@ -100,13 +100,13 @@ class TestStatisticsExecutor:
         inputs = Shareable()
         inputs["min"] = {"train": {"Age": 0}}
         inputs["max"] = {"train": {"Age": 50}}
-        inputs["metric_config"] = hist_config
+        inputs["statistic_config"] = hist_config
         hist_config = {"*": {"bins": 3}}
         inputs = Shareable()
         inputs["min"] = {"train": {"Age": 0}}
         inputs["max"] = {"train": {"Age": 50}}
-        inputs["metric_config"] = hist_config
-        metric_config = MetricConfig("histogram", hist_config)
-        histogram = self.stats_executor.get_histogram("train", "Age", metric_config, inputs, None)
+        inputs["statistic_config"] = hist_config
+        statistic_config = StatisticConfig("histogram", hist_config)
+        histogram = self.stats_executor.get_histogram("train", "Age", statistic_config, inputs, None)
         assert histogram.hist_type == HistogramType.STANDARD
         assert len(histogram.bins) == 3

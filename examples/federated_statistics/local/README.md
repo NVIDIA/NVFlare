@@ -29,16 +29,16 @@ Statistics privacy filters are task result filters.
 ```
 StatisticsPrivacyFilter
 ```
-The StatisticsPrivacyFilter is consists of three `MetricsPrivacyCleanser`s focused on the metrics sent
+The StatisticsPrivacyFilter is consists of three `StatisticsPrivacyCleanser`s focused on the statistics sent
 from client to server. 
 
-`MetricsPrivacyCleanser` can be considered as an interceptor before the results delivered to server. 
-Currently, we use three `MetricsPrivacyCleanser`s to guard the data privacy
+`StatisticsPrivacyCleanser` can be considered as an interceptor before the results delivered to server. 
+Currently, we use three `StatisticsPrivacyCleanser`s to guard the data privacy
 
 ## MinCountCleanser:
 check against the number of count returned from client for each dataset and each feature.
 
-if the min_count is not satisfied, there is potential risk of reveal client's real data. Then remove that feature's metrics 
+if the min_count is not satisfied, there is potential risk of reveal client's real data. Then remove that feature's statistics 
 from the result for this client. 
 
 ## HistogramBinsCleanser: 
@@ -46,7 +46,7 @@ For histogram calculations, number of bins can't be too large compare to count. 
 we also reveal the real data. This check to make sure that the number of bins be less than X percent of the count. 
 X = max_bins_percent in percentage, for 10 is for 10%
 if the number of bins for the histogram is not satisfy this specified condition, the resulting histogram will be removed 
-from metrics before sending to server. 
+from statistics before sending to server. 
 
 ## AddNoiseToMinMax
 For histogram calculations, if the feature's histogram bin's range is not specified, we will need to use local data's min 

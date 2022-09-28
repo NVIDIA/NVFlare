@@ -145,7 +145,7 @@ statistics computing, we will only need to provide the followings
       "id": "fed_stats_controller",
       "path": "nvflare.app_common.workflows.statistics_controller.StatisticsController",
       "args": {
-        "metric_configs": {
+        "statistics_configs": {
           "count": {},
           "mean": {},
           "sum": {},
@@ -160,8 +160,8 @@ statistics computing, we will only need to provide the followings
   ],
 ```
 In above configuration, `StatisticsController` is controller. We ask the controller to calculate the following statistic
-metrics: "count", "mean", "sum", "stddev", "histogram" and "Age". Each metric may have its own configuration.
-For example, Histogram metric, we specify feature "Age" needs 5 bins and histogram range is within [0, 120), while for
+statistics: "count", "mean", "sum", "stddev", "histogram" and "Age". Each statistic may have its own configuration.
+For example, Histogram statistic, we specify feature "Age" needs 5 bins and histogram range is within [0, 120), while for
 all other features ("*" indicate default feature), the bin is 10, range is not specified, i.e. the ranges will be dynamically estimated.
 
 The StatisticController also takes writer_id = "stats_writer", the writer_id identify the output writer component, defined as
@@ -232,7 +232,7 @@ In this example, task_result_filters is defined as task privacy filter : `Statis
     }
   ],
 ``` 
-`StatisticsPrivacyFilter` is using three separate the `MetricPrivacyCleanser`, you can find more details in
+`StatisticsPrivacyFilter` is using three separate the `StatisticsPrivacyCleanser`, you can find more details in
 [local privacy policy](../local/README.md) and in later discussion on privacy.
 
 The privacy cleansers specify policy can be find in
@@ -282,7 +282,7 @@ tabular data format that be expressed in pandas dataframe.
 class DFStatistics(Statistics):
     # rest of code 
 ```
-to calculate the local metrics, we will need to implements few methods
+to calculate the local statistics, we will need to implements few methods
 ```
     def features(self) -> Dict[str, List[Feature]] -> Dict[str, List[Feature]]:
 

@@ -81,9 +81,9 @@ Since FLARE has already built-in operators, all we need to supply the followings
 * local statistics generator
 
 ### 3.1 Server configuration
-Here we ask the statistics_controller (server side operator) to compute & display the following metrics: count and histogram
+Here we ask the statistics_controller (server side operator) to compute & display the following statistics: count and histogram
 ````
-     "metric_configs": {
+     "statistic_configs": {
           "count": {},
           "histogram": {
             "*": {
@@ -203,7 +203,7 @@ count - failure_count
         return self.failure_images
 ```
 
-If you would like to see failure_count as one metrics in reporting, you will need to add "failure_count" to the metric_config
+If you would like to see failure_count as one statistic in reporting, you will need to add "failure_count" to the statistic_config
 arguments for the statistics controller.
 
 

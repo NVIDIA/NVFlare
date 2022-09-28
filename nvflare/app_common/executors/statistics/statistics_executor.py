@@ -20,11 +20,11 @@ from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
-from nvflare.app_common.abstract.statistics_spec import Feature, Histogram, HistogramType, MetricConfig, Statistics
+from nvflare.app_common.abstract.statistics_spec import Feature, Histogram, HistogramType, StatisticConfig, Statistics
 from nvflare.app_common.app_constant import StatisticsConstants as StC
-from nvflare.app_common.statistics.metrics_config_utils import get_feature_bin_range
 from nvflare.app_common.statistics.numeric_stats import filter_numeric_features
 from nvflare.app_common.statistics.statisitcs_objects_decomposer import fobs_registration
+from nvflare.app_common.statistics.statistics_config_utils import get_feature_bin_range
 from nvflare.fuel.utils import fobs
 
 """
@@ -58,7 +58,7 @@ class StatisticsExecutor(Executor):
         self.client_name = None
         fobs_registration()
 
-    def metric_functions(self) -> dict:
+    def statistic_functions(self) -> dict:
         return {
             StC.STATS_COUNT: self.get_count,
             StC.STATS_FAILURE_COUNT: self.get_failure_count,
@@ -121,38 +121,42 @@ class StatisticsExecutor(Executor):
         client_name = fl_ctx.get_identity_name()
         self.log_info(fl_ctx, f"Executing task '{task_name}' for client: '{client_name}'")
         result = Shareable()
-        metrics_result = {}
+        statistics_result = {}
         if task_name == StC.FED_STATS_PRE_RUN:
             # initial handshake
-            target_metrics: List[MetricConfig] = fobs.loads(shareable.get(StC.STATS_TARGET_METRICS))
-            self.pre_run(target_metrics)
+            target_statistics: List[StatisticConfig] = fobs.loads(shareable.get(StC.STATS_TARGET_STATISTICS))
+            self.pre_run(target_statistics)
             return make_reply(ReturnCode.OK)
 
         elif task_name == StC.FED_STATS_TASK:
             ds_features = self.get_numeric_features()
-            metric_task = shareable.get(StC.METRIC_TASK_KEY)
-            target_metrics: List[MetricConfig] = fobs.loads(shareable.get(StC.STATS_TARGET_METRICS))
-            if StC.STATS_FAILURE_COUNT not in target_metrics:
-                target_metrics.append(MetricConfig(StC.STATS_FAILURE_COUNT, {}))
+            statistics_task = shareable.get(StC.STATISTICS_TASK_KEY)
+            target_statistics: List[StatisticConfig] = fobs.loads(shareable.get(StC.STATS_TARGET_STATISTICS))
+            if StC.STATS_FAILURE_COUNT not in target_statistics:
+                target_statistics.append(StatisticConfig(StC.STATS_FAILURE_COUNT, {}))
 
-            for tm in target_metrics:
-                fn = self.metric_functions()[tm.name]
-                metrics_result[tm.name] = {}
-                StatisticsExecutor._populate_result_metrics(metrics_result, ds_features, tm, shareable, fl_ctx, fn)
+            for tm in target_statistics:
+                fn = self.statistic_functions()[tm.name]
+                statistics_result[tm.name] = {}
+                StatisticsExecutor._populate_result_statistics(
+                    statistics_result, ds_features, tm, shareable, fl_ctx, fn
+                )
 
             # always add count for data privacy needs
-            if StC.STATS_COUNT not in metrics_result:
-                tm = MetricConfig(StC.STATS_COUNT, {})
+            if StC.STATS_COUNT not in statistics_result:
+                tm = StatisticConfig(StC.STATS_COUNT, {})
                 fn = self.get_count
-                metrics_result[tm.name] = {}
-                StatisticsExecutor._populate_result_metrics(metrics_result, ds_features, tm, shareable, fl_ctx, fn)
+                statistics_result[tm.name] = {}
+                StatisticsExecutor._populate_result_statistics(
+                    statistics_result, ds_features, tm, shareable, fl_ctx, fn
+                )
 
-            result[StC.METRIC_TASK_KEY] = metric_task
-            if metric_task == StC.STATS_1st_METRICS:
+            result[StC.STATISTICS_TASK_KEY] = statistics_task
+            if statistics_task == StC.STATS_1st_STATISTICS:
                 result[StC.STATS_FEATURES] = fobs.dumps(ds_features)
-            result[metric_task] = fobs.dumps(metrics_result)
+            result[statistics_task] = fobs.dumps(statistics_result)
 
-            target_metrics: List[MetricConfig]
+            target_statistics: List[StatisticConfig]
         else:
             return make_reply(ReturnCode.TASK_UNKNOWN)
 
@@ -178,12 +182,12 @@ class StatisticsExecutor(Executor):
         return None
 
     @staticmethod
-    def _populate_result_metrics(metrics_result, ds_features, tm: MetricConfig, shareable, fl_ctx, fn):
+    def _populate_result_statistics(statistics_result, ds_features, tm: StatisticConfig, shareable, fl_ctx, fn):
         for ds_name in ds_features:
-            metrics_result[tm.name][ds_name] = {}
+            statistics_result[tm.name][ds_name] = {}
             features: List[Feature] = ds_features[ds_name]
             for feature in features:
-                metrics_result[tm.name][ds_name][feature.feature_name] = fn(
+                statistics_result[tm.name][ds_name][feature.feature_name] = fn(
                     ds_name, feature.feature_name, tm, shareable, fl_ctx
                 )
 
@@ -191,12 +195,12 @@ class StatisticsExecutor(Executor):
         ds_features: Dict[str, List[Feature]] = self.stats_generator.features()
         return filter_numeric_features(ds_features)
 
-    def pre_run(self, target_metrics: List[MetricConfig]):
+    def pre_run(self, target_statistics: List[StatisticConfig]):
         feature_num_of_bins = None
         feature_bin_ranges = None
-        target_metric_keys = []
-        for mc in target_metrics:
-            target_metric_keys.append(mc.name)
+        target_statistic_keys = []
+        for mc in target_statistics:
+            target_statistic_keys.append(mc.name)
             if mc.name == StC.STATS_HISTOGRAM:
                 hist_config = mc.config
                 feature_num_of_bins = {}
@@ -207,31 +211,51 @@ class StatisticsExecutor(Executor):
                     bin_range = get_feature_bin_range(feature_name, hist_config)
                     feature_bin_ranges[feature_name] = bin_range
 
-        self.stats_generator.pre_run(target_metric_keys, feature_num_of_bins, feature_bin_ranges)
+        self.stats_generator.pre_run(target_statistic_keys, feature_num_of_bins, feature_bin_ranges)
 
     def get_count(
-        self, dataset_name: str, feature_name: str, metric_config: MetricConfig, inputs: Shareable, fl_ctx: FLContext
+        self,
+        dataset_name: str,
+        feature_name: str,
+        statistic_configs: StatisticConfig,
+        inputs: Shareable,
+        fl_ctx: FLContext,
     ) -> int:
 
         result = self.stats_generator.count(dataset_name, feature_name)
         return result
 
     def get_failure_count(
-        self, dataset_name: str, feature_name: str, metric_config: MetricConfig, inputs: Shareable, fl_ctx: FLContext
+        self,
+        dataset_name: str,
+        feature_name: str,
+        statistic_configs: StatisticConfig,
+        inputs: Shareable,
+        fl_ctx: FLContext,
     ) -> int:
 
         result = self.stats_generator.failure_count(dataset_name, feature_name)
         return result
 
     def get_sum(
-        self, dataset_name: str, feature_name: str, metric_config: MetricConfig, inputs: Shareable, fl_ctx: FLContext
+        self,
+        dataset_name: str,
+        feature_name: str,
+        statistic_configs: StatisticConfig,
+        inputs: Shareable,
+        fl_ctx: FLContext,
     ) -> float:
 
         result = round(self.stats_generator.sum(dataset_name, feature_name), self.precision)
         return result
 
     def get_mean(
-        self, dataset_name: str, feature_name: str, metric_config: MetricConfig, inputs: Shareable, fl_ctx: FLContext
+        self,
+        dataset_name: str,
+        feature_name: str,
+        statistic_configs: StatisticConfig,
+        inputs: Shareable,
+        fl_ctx: FLContext,
     ) -> float:
         count = self.stats_generator.count(dataset_name, feature_name)
         sum_value = self.stats_generator.sum(dataset_name, feature_name)
@@ -240,18 +264,28 @@ class StatisticsExecutor(Executor):
         else:
             # user did not implement count and/or sum, call means directly.
             mean = round(self.stats_generator.mean(dataset_name, feature_name), self.precision)
-            # self._check_result(mean, metric_config.name)
+            # self._check_result(mean, statistic_configs.name)
             return mean
 
     def get_stddev(
-        self, dataset_name: str, feature_name: str, metric_config: MetricConfig, inputs: Shareable, fl_ctx: FLContext
+        self,
+        dataset_name: str,
+        feature_name: str,
+        statistic_configs: StatisticConfig,
+        inputs: Shareable,
+        fl_ctx: FLContext,
     ) -> float:
 
         result = round(self.stats_generator.stddev(dataset_name, feature_name), self.precision)
         return result
 
     def get_variance_with_mean(
-        self, dataset_name: str, feature_name: str, metric_config: MetricConfig, inputs: Shareable, fl_ctx: FLContext
+        self,
+        dataset_name: str,
+        feature_name: str,
+        statistic_configs: StatisticConfig,
+        inputs: Shareable,
+        fl_ctx: FLContext,
     ) -> float:
         if StC.STATS_GLOBAL_MEAN in inputs and StC.STATS_GLOBAL_COUNT in inputs:
             global_mean = inputs[StC.STATS_GLOBAL_MEAN][dataset_name][feature_name]
@@ -263,12 +297,17 @@ class StatisticsExecutor(Executor):
             return None
 
     def get_histogram(
-        self, dataset_name: str, feature_name: str, metric_config: MetricConfig, inputs: Shareable, fl_ctx: FLContext
+        self,
+        dataset_name: str,
+        feature_name: str,
+        statistic_configs: StatisticConfig,
+        inputs: Shareable,
+        fl_ctx: FLContext,
     ) -> Histogram:
         if StC.STATS_MIN in inputs and StC.STATS_MAX in inputs:
             global_min_value = inputs[StC.STATS_MIN][dataset_name][feature_name]
             global_max_value = inputs[StC.STATS_MAX][dataset_name][feature_name]
-            hist_config: dict = metric_config.config
+            hist_config: dict = statistic_configs.config
             num_of_bins: int = self.get_number_of_bins(feature_name, hist_config)
             bin_range: List[int] = self.get_bin_range(feature_name, global_min_value, global_max_value, hist_config)
             result = self.stats_generator.histogram(dataset_name, feature_name, num_of_bins, bin_range[0], bin_range[1])
@@ -277,12 +316,17 @@ class StatisticsExecutor(Executor):
             return Histogram(HistogramType.STANDARD, list())
 
     def get_max_value(
-        self, dataset_name: str, feature_name: str, metric_config: MetricConfig, inputs: Shareable, fl_ctx: FLContext
+        self,
+        dataset_name: str,
+        feature_name: str,
+        statistic_configs: StatisticConfig,
+        inputs: Shareable,
+        fl_ctx: FLContext,
     ) -> float:
         """
         get randomized max value
         """
-        hist_config: dict = metric_config.config
+        hist_config: dict = statistic_configs.config
         feature_bin_range = get_feature_bin_range(feature_name, hist_config)
         if feature_bin_range is None:
             client_max_value = self.stats_generator.max_value(dataset_name, feature_name)
@@ -291,12 +335,17 @@ class StatisticsExecutor(Executor):
             return feature_bin_range[1]
 
     def get_min_value(
-        self, dataset_name: str, feature_name: str, metric_config: MetricConfig, inputs: Shareable, fl_ctx: FLContext
+        self,
+        dataset_name: str,
+        feature_name: str,
+        statistic_configs: StatisticConfig,
+        inputs: Shareable,
+        fl_ctx: FLContext,
     ) -> float:
         """
         get randomized min value
         """
-        hist_config: dict = metric_config.config
+        hist_config: dict = statistic_configs.config
         feature_bin_range = get_feature_bin_range(feature_name, hist_config)
         if feature_bin_range is None:
             client_min_value = self.stats_generator.min_value(dataset_name, feature_name)

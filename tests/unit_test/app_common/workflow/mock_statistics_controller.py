@@ -23,8 +23,8 @@ from nvflare.app_common.workflows.statistics_controller import StatisticsControl
 
 
 class MockStatisticsController(StatisticsController):
-    def __init__(self, metric_configs: Dict[str, dict], writer_id: str):
-        super(MockStatisticsController, self).__init__(metric_configs, writer_id)
+    def __init__(self, statistic_configs: Dict[str, dict], writer_id: str):
+        super(MockStatisticsController, self).__init__(statistic_configs, writer_id)
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         pass
@@ -40,7 +40,7 @@ class MockStatisticsController(StatisticsController):
     ):
         pass
 
-    def metrics_task_flow(self, abort_signal: Signal, fl_ctx: FLContext, metric_task: str):
+    def statistics_task_flow(self, abort_signal: Signal, fl_ctx: FLContext, statistic_task: str):
         pass
 
     def results_cb(self, client_task: ClientTask, fl_ctx: FLContext):
