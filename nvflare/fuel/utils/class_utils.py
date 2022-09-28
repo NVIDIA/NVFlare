@@ -85,7 +85,7 @@ class ModuleScanner:
 
     def _create_classes_table(self):
         for base in self.base_pkgs:
-            package = __import__(base)
+            package = importlib.import_module(base)
 
             for importer, modname, ispkg in pkgutil.walk_packages(path=package.__path__, prefix=package.__name__ + "."):
 
