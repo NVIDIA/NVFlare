@@ -86,6 +86,7 @@ def handle_authz_preview(args):
 
 def parse_args(prog_name: str):
     _parser = argparse.ArgumentParser(description=prog_name)
+    _parser.add_argument("--version", "-V", action="store_true", help="print nvflare version")
     sub_cmd = _parser.add_subparsers(description="sub command parser", dest="sub_command")
     sub_cmd_parsers = {}
     sub_cmd_parsers.update(def_poc_parser(sub_cmd))
@@ -117,6 +118,8 @@ def run(prog_name):
         sub_cmd = prog_args.sub_command
         if sub_cmd:
             handlers[sub_cmd](prog_args)
+        elif prog_args.version:
+            print_nvflare_version()
         else:
             prog_parser.print_help()
 
@@ -137,6 +140,12 @@ def print_help(prog_parser, sub_cmd, sub_cmd_parsers):
             prog_parser.print_help()
     else:
         prog_parser.print_help()
+
+
+def print_nvflare_version():
+    import nvflare
+
+    print(f"NVFlare version is {nvflare.__version__}")
 
 
 def main():
