@@ -53,18 +53,19 @@ COMMAND_CATEGORIES = {
 
 
 class FLAuthorizer(Authorizer):
-    def __init__(self, for_org: str, policy_config: dict):
+    def __init__(self, site_org: str, policy_config: dict):
         """System-wide authorization class.
 
         Examine if a user has certain rights on a specific site
         based on authorization.json file.
 
         """
-        assert isinstance(policy_config, dict), "policy_config must be a dict but got {}".format(type(policy_config))
-        Authorizer.__init__(self, for_org, COMMAND_CATEGORIES)
+        if not isinstance(policy_config, dict):
+            raise ValueError(f"policy_config must be a dict but got {type(policy_config)}")
+        Authorizer.__init__(self, site_org, COMMAND_CATEGORIES)
         err = self.load_policy(policy_config)
         if err:
-            raise SyntaxError("invalid policy config: {}".format(err))
+            raise ValueError(f"invalid policy config: {err}")
 
 
 class EmptyAuthorizer(Authorizer):

@@ -19,38 +19,73 @@ import tempfile
 
 import yaml
 
-from tests.integration_test.utils import read_yaml
+from tests.integration_test.utils import (
+    cleanup_job_and_snapshot,
+    read_yaml,
+    update_job_store_path_in_workspace,
+    update_snapshot_path_in_workspace,
+)
 
 from .site_launcher import ServerProperties, SiteLauncher, SiteProperties, kill_process, run_command_in_subprocess
 
-REF_PROJECT_YML = "./data/project.yml"
-PROJECT_NAME = "integration_test"
 WORKSPACE = "ci_workspace"
-PROVISION_SCRIPT = "nvflare.lighter.provision"
+PROVISION_SCRIPT = "nvflare.cli provision"
 PROD_FOLDER_NAME = "prod_00"
 
 
-def _get_script_dir(site_name: str):
-    return os.path.join(WORKSPACE, PROJECT_NAME, PROD_FOLDER_NAME, site_name)
+def _start_site(site_properties: SiteProperties):
+    process = run_command_in_subprocess(f"bash {os.path.join(site_properties.root_dir, 'startup', 'start.sh')}")
+    print(f"Starting {site_properties.name} ...")
+    site_properties.process = process
+
+
+def _stop_site(site_properties: SiteProperties):
+    run_command_in_subprocess(f"echo 'y' | {os.path.join(site_properties.root_dir, 'startup', 'stop_fl.sh')}")
+    print(f"Stopping {site_properties.name} ...")
 
 
 class ProvisionSiteLauncher(SiteLauncher):
-    def prepare_workspace(self, n_servers: int, n_clients: int) -> str:
-        project_yaml = read_yaml(REF_PROJECT_YML)
+    def __init__(self, project_yaml: str):
+        super().__init__()
+        self.admin_user_names = []
+        self.project_yaml = read_yaml(project_yaml)
+        for p in self.project_yaml["participants"]:
+            name = p["name"]
+            script_dir = os.path.join(self._get_workspace_dir(), name)
+            if p["type"] == "server":
+                admin_port = p["admin_port"]
+                self.server_properties[name] = ServerProperties(name, script_dir, None, admin_port)
+            elif p["type"] == "client":
+                self.client_properties[name] = SiteProperties(name, script_dir, None)
+            elif p["type"] == "overseer":
+                self.overseer_properties = SiteProperties(name, script_dir, None)
+            elif p["type"] == "admin":
+                self.admin_user_names.append(name)
+
+    def _get_workspace_dir(self):
+        return os.path.join(WORKSPACE, self.project_yaml["name"], PROD_FOLDER_NAME)
+
+    def prepare_workspace(self) -> str:
         _, temp_yaml = tempfile.mkstemp()
         with open(temp_yaml, "w") as f:
-            yaml.dump(project_yaml, f, default_flow_style=False)
+            yaml.dump(self.project_yaml, f, default_flow_style=False)
         command = f"{sys.executable} -m {PROVISION_SCRIPT} -p {temp_yaml} -w {WORKSPACE}"
         process = run_command_in_subprocess(command)
         process.wait()
         os.remove(temp_yaml)
-        return os.path.join(WORKSPACE, PROJECT_NAME, PROD_FOLDER_NAME)
+        new_job_store = None
+        new_snapshot_store = None
+        for k in self.server_properties:
+            server_name = self.server_properties[k].name
+            new_job_store = update_job_store_path_in_workspace(self._get_workspace_dir(), server_name, new_job_store)
+            new_snapshot_store = update_snapshot_path_in_workspace(
+                self._get_workspace_dir(), server_name, new_snapshot_store
+            )
+            cleanup_job_and_snapshot(self._get_workspace_dir(), server_name)
+        return os.path.join(WORKSPACE, self.project_yaml["name"], PROD_FOLDER_NAME)
 
     def start_overseer(self):
-        overseer_dir = _get_script_dir("localhost")
-        process = run_command_in_subprocess(f"bash {os.path.join(overseer_dir, 'startup', 'start.sh')}")
-        print("Starting overseer ...")
-        self.overseer_properties = SiteProperties(name="overseer", root_dir=overseer_dir, process=process)
+        _start_site(self.overseer_properties)
 
     def stop_overseer(self):
         try:
@@ -66,37 +101,30 @@ class ProvisionSiteLauncher(SiteLauncher):
         finally:
             self.overseer_properties = None
 
-    def start_server(self, server_id: int):
-        server_name = f"localhost{server_id}"
-        server_dir = _get_script_dir(server_name)
-        process = run_command_in_subprocess(f"bash {os.path.join(server_dir, 'startup', 'start.sh')}")
-        print(f"Starting server {server_name} ...")
-        self.server_properties[server_id] = ServerProperties(
-            name=server_name, root_dir=server_dir, process=process, port=f"8{server_id}03"
-        )
+    def start_servers(self):
+        for k in self.server_properties:
+            self.start_server(k)
 
-    def start_client(self, client_id):
-        client_name = f"site-{client_id}"
-        client_dir = _get_script_dir(client_name)
-        process = run_command_in_subprocess(f"bash {os.path.join(client_dir, 'startup', 'start.sh')}")
-        print(f"Starting client {client_name} ...")
-        self.client_properties[client_id] = SiteProperties(name=client_name, root_dir=client_dir, process=process)
+    def start_clients(self):
+        for k in self.client_properties:
+            self.start_client(k)
 
-    def stop_server(self, server_id):
-        server_name = f"localhost{server_id}"
-        server_dir = _get_script_dir(server_name)
-        run_command_in_subprocess(f"echo 'y' | {os.path.join(server_dir, 'startup', 'stop_fl.sh')}")
-        print(f"Stopping server {server_name} ...")
+    def start_server(self, server_id: str):
+        _start_site(self.server_properties[server_id])
+
+    def stop_server(self, server_id: str):
+        _stop_site(self.server_properties[server_id])
         super().stop_server(server_id)
 
-    def stop_client(self, client_id):
-        client_name = f"site-{client_id}"
-        client_dir = _get_script_dir(client_name)
-        run_command_in_subprocess(f"echo 'y' | {os.path.join(client_dir, 'startup', 'stop_fl.sh')}")
-        print(f"Stopping client {client_name} ...")
+    def start_client(self, client_id: str):
+        _start_site(self.client_properties[client_id])
+
+    def stop_client(self, client_id: str):
+        _stop_site(self.client_properties[client_id])
         super().stop_client(client_id)
 
     def cleanup(self):
         process = run_command_in_subprocess(f"pkill -9 -f {PROD_FOLDER_NAME}")
         process.wait()
+        cleanup_job_and_snapshot(self._get_workspace_dir(), "localhost0")
         shutil.rmtree(WORKSPACE)
