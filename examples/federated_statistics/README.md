@@ -35,6 +35,9 @@ sequenceDiagram
     participant Statistics
     Server->>Client: pre_run: optional handshake (if enabled), passing targeted statistic configs
     Server->>Client: task: Fed_Stats: statistics_task_1: count, sum, mean,std_dev, min, max 
+    loop over dataset and features
+       Client->>Stats_Generator: local stats calculation
+    end
     Client-->>PrivacyFilter: local statistic
      loop over statistics_privacy_filters
         PrivacyFilter->>PrivacyFilter: min_count_cleanser, min_max_cleanser, histogram_bins_cleanser
