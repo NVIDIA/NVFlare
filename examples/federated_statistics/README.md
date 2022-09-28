@@ -39,7 +39,7 @@ sequenceDiagram
        Client->>Statistics: local stats calculation
     end
     Client-->>PrivacyFilter: local statistic
-     loop over statistics_privacy_filters
+     loop over StatisticsPrivacyCleansers
         PrivacyFilter->>PrivacyFilter: min_count_cleanser, min_max_cleanser, histogram_bins_cleanser
     end
     PrivacyFilter-->>Server: filtered local statistic
@@ -51,8 +51,8 @@ sequenceDiagram
        Client->>Statistics: local stats calculation
     end
     Client-->>PrivacyFilter: local statistics: var, Histogram, count
-    loop over statistics_privacy_filters
-        PrivacyFilter->>PrivacyFilter: histogram_max_bins_check, min_max_cleanser, min_count_check
+    loop over StatisticsPrivacyCleansers
+         PrivacyFilter->>PrivacyFilter: min_count_cleanser, min_max_cleanser, histogram_bins_cleanser
     end
     PrivacyFilter-->>Server: filtered local statistic    
     loop over clients
