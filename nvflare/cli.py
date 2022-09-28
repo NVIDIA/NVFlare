@@ -15,6 +15,7 @@
 import argparse
 import os
 import sys
+import traceback
 
 from nvflare.cli_exception import CLIException
 from nvflare.dashboard.cli import define_dashboard_parser, handle_dashboard
@@ -127,6 +128,7 @@ def run(prog_name):
         print(e)
         sys.exit(1)
     except Exception as e:
+        traceback.print_exc()
         print(f"unable to handle command: {sub_cmd} due to: {e}, please check syntax ")
         print_help(prog_parser, sub_cmd, sub_cmd_parsers)
 
