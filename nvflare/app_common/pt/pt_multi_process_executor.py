@@ -21,7 +21,7 @@ from nvflare.fuel.utils.network_utils import get_open_ports
 class PTMultiProcessExecutor(MultiProcessExecutor):
     def get_multi_process_command(self) -> str:
         return (
-            f"torchrun --nproc_per_node="
+            f"{sys.executable} -m torch.distributed.run --nproc_per_node="
             + str(self.num_of_processes)
             + " --nnodes=1 --node_rank=0"
             + ' --master_addr="localhost" --master_port='
