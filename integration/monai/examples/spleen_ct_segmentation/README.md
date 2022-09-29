@@ -59,7 +59,7 @@ please follow step 2 & 3 above but replace `job` with `job_multi_gpu`. This will
 to start multi-gpu training using [torchrun](https://pytorch.org/docs/stable/elastic/run.html). 
 
 ```
-python3 -u -m nvflare.private.fed.app.simulator.simulator job --workspace /tmp/nvflare/sim_spleen_ct_seg --threads 2 --clients site-1,site-2 --gpu 0,1
+python3 -u -m nvflare.private.fed.app.simulator.simulator job_multi_gpu --workspace /tmp/nvflare/sim_spleen_ct_seg --threads 1 --n_clients 1
 ```
 
 #### 4.3 TensorBoard visualization

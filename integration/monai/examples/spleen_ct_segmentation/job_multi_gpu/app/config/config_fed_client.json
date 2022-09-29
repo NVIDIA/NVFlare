@@ -26,7 +26,7 @@
               "path": "monai.fl.client.monai_algo.MonaiAlgo",
               "args": {
                 "bundle_root": "config/spleen_ct_segmentation",
-                "local_epochs": 1,
+                "local_epochs": 10,
                 "multi_gpu": true,
                 "config_train_filename": ["configs/train.json","configs/multi_gpu_train.json"]
               }
