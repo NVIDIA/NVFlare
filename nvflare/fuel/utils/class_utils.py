@@ -85,19 +85,18 @@ class ModuleScanner:
 
     def _create_classes_table(self):
         for base in self.base_pkgs:
-            package = __import__(base)
+            package = importlib.import_module(base)
 
             for importer, modname, ispkg in pkgutil.walk_packages(path=package.__path__, prefix=package.__name__ + "."):
 
                 if modname.startswith(base):
                     if not self.exclude_libs or (".libs" not in modname):
-                        if any(name in modname for name in self.module_names):
+                        if any(modname.startswith(base + "." + name) for name in self.module_names):
                             try:
                                 module = importlib.import_module(modname)
                                 for name, obj in inspect.getmembers(module):
                                     if inspect.isclass(obj) and obj.__module__ == modname:
                                         self._class_table[name] = modname
-                            # TODO: quick fix for scanning module
                             except (ModuleNotFoundError, RuntimeError):
                                 pass
 
