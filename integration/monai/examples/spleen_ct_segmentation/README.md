@@ -22,7 +22,7 @@ pip install -r virtualenv/requirements.txt
 
 ### 2. Download the Spleen Bundle
 ```
-python3 -m monai.bundle download --name "spleen_ct_segmentation_v0.1.1" --bundle_dir ./job/app/config
+python3 -m monai.bundle download --name "spleen_ct_segmentation_v0.2.0" --bundle_dir ./job/app/config
 ``` 
 
 ### 3. Download the data
@@ -48,6 +48,15 @@ python3 -u -m nvflare.private.fed.app.simulator.simulator job --workspace /tmp/n
 If you have several gpus in your system, you can assign one for each client and use two threads. 
 We can also specify the client names via the `--clients` argument 
 and assign them to the appropriate GPU device using the `--gpu` argument.
+
+```
+python3 -u -m nvflare.private.fed.app.simulator.simulator job --workspace /tmp/nvflare/sim_spleen_ct_seg --threads 2 --clients site-1,site-2 --gpu 0,1
+```
+
+#### 4.3 Single thread, multi-gpus training
+If you have several gpus in your system and want to simulate multi-gpu training on one client, 
+please follow step 2 & 3 above but replace `job` with `job_multi_gpu`. This will use NVFlare's `PTMultiProcessExecutor` 
+to start multi-gpu training using [torchrun](https://pytorch.org/docs/stable/elastic/run.html). 
 
 ```
 python3 -u -m nvflare.private.fed.app.simulator.simulator job --workspace /tmp/nvflare/sim_spleen_ct_seg --threads 2 --clients site-1,site-2 --gpu 0,1
