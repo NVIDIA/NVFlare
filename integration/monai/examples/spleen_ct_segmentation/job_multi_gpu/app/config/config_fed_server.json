@@ -4,9 +4,6 @@
   "min_clients": 1,
   "num_rounds": 100,
 
-  "server": {
-    "heart_beat_timeout": 600
-  },
   "task_data_filters": [],
   "task_result_filters": [],
   "components": [
