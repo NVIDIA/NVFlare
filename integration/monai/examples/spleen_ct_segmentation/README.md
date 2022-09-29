@@ -53,10 +53,10 @@ and assign them to the appropriate GPU device using the `--gpu` argument.
 python3 -u -m nvflare.private.fed.app.simulator.simulator job --workspace /tmp/nvflare/sim_spleen_ct_seg --threads 2 --clients site-1,site-2 --gpu 0,1
 ```
 
-#### 4.3 Single thread, multi-gpus training
+#### 4.3 Single thread, multi-gpu training
 If you have several gpus in your system and want to simulate multi-gpu training on one client, 
 please follow step 2 & 3 above but replace `job` with `job_multi_gpu`. This will use NVFlare's `PTMultiProcessExecutor` 
-to start multi-gpu training using [torchrun](https://pytorch.org/docs/stable/elastic/run.html). 
+to start multi-gpu training using [torchrun](https://pytorch.org/docs/stable/elastic/run.html) on one client. 
 
 ```
 python3 -u -m nvflare.private.fed.app.simulator.simulator job_multi_gpu --workspace /tmp/nvflare/sim_spleen_ct_seg --threads 1 --n_clients 1
