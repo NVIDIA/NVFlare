@@ -62,7 +62,7 @@ to start multi-gpu training using [torchrun](https://pytorch.org/docs/stable/ela
 nvflare simulator job_multi_gpu --workspace /tmp/nvflare/sim_spleen_ct_seg --threads 1 --n_clients 1
 ```
 
-#### 4.3 TensorBoard visualization
+#### 4.4 TensorBoard visualization
 To monitor the training job, you can start tensorboard:
 ```
 tensorboard --logdir /tmp/nvflare/sim_spleen_ct_seg
