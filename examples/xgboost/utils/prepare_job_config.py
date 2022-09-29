@@ -20,17 +20,17 @@ import shutil
 
 from nvflare.apis.fl_constant import JobConstants
 
+JOB_CONFIGS_ROOT = "job_configs"
+MODE_ALGO_MAP = {"bagging": "tree-based", "cyclic": "tree-based", "histogram": "histogram-based"}
+
 
 def job_config_args_parser():
     parser = argparse.ArgumentParser(description="generate train configs for HIGGS dataset")
     parser.add_argument("--data_split_path", type=str, default="./data_splits", help="Path to data split folder")
-    parser.add_argument(
-        "--job_configs_root", type=str, default="./job_configs", help="Path to root folder of all job configs"
-    )
     parser.add_argument("--site_num", type=int, default=5, help="Total number of sites")
     parser.add_argument("--round_num", type=int, default=100, help="Total number of training rounds")
     parser.add_argument(
-        "--training_mode", type=str, default="bagging", choices=["bagging", "cyclic", "histogram"], help="Training mode"
+        "--training_mode", type=str, default="bagging", choices=list(MODE_ALGO_MAP.keys()), help="Training mode"
     )
     parser.add_argument("--split_method", type=str, default="uniform", help="How to split the dataset")
     parser.add_argument("--lr_mode", type=str, default="uniform", help="Whether to use uniform or scaled shrinkage")
@@ -41,14 +41,14 @@ def job_config_args_parser():
     return parser
 
 
-def read_json(filename):
+def _read_json(filename):
     if not os.path.isfile(filename):
         raise ValueError(f"{filename} does not exist!")
     with open(filename, "r") as f:
         return json.load(f)
 
 
-def write_json(data, filename):
+def _write_json(data, filename):
     with open(filename, "w") as f:
         json.dump(data, f, indent=4)
 
@@ -72,7 +72,16 @@ def _get_data_split_name(args) -> str:
     return "data_split_" + str(args.site_num) + "_" + args.split_method + ".json"
 
 
-def update_meta(meta: dict, args):
+def _get_src_job_dir(training_mode):
+    base_job_map = {
+        "bagging": "bagging_base",
+        "cyclic": "cyclic_base",
+        "histogram": "base",
+    }
+    return pathlib.Path(MODE_ALGO_MAP[training_mode]) / JOB_CONFIGS_ROOT / base_job_map[training_mode]
+
+
+def _update_meta(meta: dict, args):
     name = _get_job_name(args)
     meta["name"] = name
 
@@ -104,7 +113,7 @@ def _update_server_config(config: dict, args):
         config["workflows"][0]["args"]["num_rounds"] = int(args.round_num / args.site_num)
 
 
-def copy_custom_files(src_job_path, dst_job_path):
+def _copy_custom_files(src_job_path, dst_job_path):
     dst_path = dst_job_path / "app" / "custom"
     os.makedirs(dst_path, exist_ok=True)
     src_path = src_job_path / "app" / "custom"
@@ -118,19 +127,18 @@ def main():
     job_name = _get_job_name(args)
     data_split_name = _get_data_split_name(args)
 
-    ref_job_map = {"bagging": "tree-based", "cyclic": "tree-based", "histogram": "histogram-based"}
-    src_job_path = pathlib.Path(ref_job_map[args.training_mode]) / args.job_configs_root / "base"
-    meta_config = read_json(src_job_path / JobConstants.META_FILE)
-    client_config = read_json(src_job_path / "app" / "config" / JobConstants.CLIENT_JOB_CONFIG)
-    server_config = read_json(src_job_path / "app" / "config" / JobConstants.SERVER_JOB_CONFIG)
+    src_job_path = _get_src_job_dir(args.training_mode)
+    meta_config = _read_json(src_job_path / JobConstants.META_FILE)
+    client_config = _read_json(src_job_path / "app" / "config" / JobConstants.CLIENT_JOB_CONFIG)
+    server_config = _read_json(src_job_path / "app" / "config" / JobConstants.SERVER_JOB_CONFIG)
 
     # adjust file contents according to each job's specs
-    update_meta(meta_config, args)
+    _update_meta(meta_config, args)
     _update_client_config(client_config, args)
     _update_server_config(server_config, args)
 
     # create a new job
-    dst_job_path = pathlib.Path(ref_job_map[args.training_mode]) / args.job_configs_root / job_name
+    dst_job_path = pathlib.Path(MODE_ALGO_MAP[args.training_mode]) / JOB_CONFIGS_ROOT / job_name
     app_config_path = dst_job_path / "app" / "config"
 
     # make target config folders
@@ -141,16 +149,16 @@ def main():
     client_config_filename = app_config_path / JobConstants.CLIENT_JOB_CONFIG
     server_config_filename = app_config_path / JobConstants.SERVER_JOB_CONFIG
 
-    write_json(meta_config, meta_config_filename)
-    write_json(client_config, client_config_filename)
-    write_json(server_config, server_config_filename)
+    _write_json(meta_config, meta_config_filename)
+    _write_json(client_config, client_config_filename)
+    _write_json(server_config, server_config_filename)
 
     # copy data split
     data_split_filename = app_config_path / data_split_name
     shutil.copyfile(os.path.join(args.data_split_path, data_split_name), data_split_filename)
 
     # copy custom file
-    copy_custom_files(src_job_path, dst_job_path)
+    _copy_custom_files(src_job_path, dst_job_path)
 
 
 if __name__ == "__main__":
