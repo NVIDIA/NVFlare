@@ -346,7 +346,7 @@ fl_admin_sh: |
 
 log_config: |
   [loggers]
-  keys=root,modelLogger
+  keys=root
 
   [handlers]
   keys=consoleHandler
@@ -357,12 +357,6 @@ log_config: |
   [logger_root]
   level=INFO
   handlers=consoleHandler
-
-  [logger_modelLogger]
-  level=DEBUG
-  handlers=consoleHandler
-  qualname=modelLogger
-  propagate=0
 
   [handler_consoleHandler]
   class=StreamHandler

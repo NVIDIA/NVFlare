@@ -3,6 +3,6 @@ tqdm
 nibabel
 fire
 pytorch-ignite>=0.4.10
-monai==1.0.0
+monai==1.0.1
 nvflare>=2.2.0
 monai_nvflare>=0.2.0
