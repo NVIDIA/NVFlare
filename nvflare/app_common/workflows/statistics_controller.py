@@ -84,7 +84,7 @@ class StatisticsController(Controller):
                                     in this example, there is no default histogram configuration for other features.
 
                                     This will work correctly if there is only one feature called "density"
-                                    but will fail if there other features in the dataset
+                                    but will fail if there are other features in the dataset
 
                                 In the following configuration
                                  "statistic_configs": {
@@ -225,7 +225,7 @@ class StatisticsController(Controller):
     def statistics_task_flow(self, abort_signal: Signal, fl_ctx: FLContext, statistic_task: str):
 
         self.log_info(fl_ctx, f"start prepare inputs for task {statistic_task}")
-        inputs = self._prepare_inputs(statistic_task, fl_ctx)
+        inputs = self._prepare_inputs(statistic_task)
         results_cb_fn = self._get_result_cb(statistic_task)
 
         self.log_info(fl_ctx, f"task: {self.task_name} statistics_flow for {statistic_task} started.")
