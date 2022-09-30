@@ -61,4 +61,4 @@ if __name__ == "__main__":
     define_simulator_parser(parser)
     args = parser.parse_args()
     status = run_simulator(args)
-    sys.exit(status)
+    os._exit(status)
