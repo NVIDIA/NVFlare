@@ -21,6 +21,7 @@ from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.private.fed.app.deployer.simulator_deployer import SimulatorDeployer
+from nvflare.private.fed.app.simulator.simulator import define_simulator_parser
 from nvflare.private.fed.client.fed_client import FederatedClient
 from nvflare.private.fed.simulator.simulator_server import SimulatorServer
 from nvflare.security.security import EmptyAuthorizer
@@ -37,12 +38,7 @@ class TestSimulatorDeploy(unittest.TestCase):
 
     def _create_parser(self):
         parser = argparse.ArgumentParser()
-        parser.add_argument("job_folder")
-        parser.add_argument("--workspace", "-o", type=str, help="WORKSPACE folder", required=True)
-        parser.add_argument("--clients", "-n", type=int, help="number of clients", required=True)
-        parser.add_argument("--threads", "-t", type=int, help="number of running threads", required=True)
-        parser.add_argument("--gpu", "-gpu", type=str, help="list of GPUs")
-        parser.add_argument("-m", "--max_clients", type=int, default=100, help="max number of clients")
+        define_simulator_parser(parser)
 
         parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
 
@@ -52,7 +48,7 @@ class TestSimulatorDeploy(unittest.TestCase):
         with patch("nvflare.private.fed.app.server.server_train.FedAdminServer") as mock_admin:
             workspace = tempfile.mkdtemp()
             parser = self._create_parser()
-            args = parser.parse_args(["job_folder", "-o" + workspace, "-n 2", "-t 1"])
+            args = parser.parse_args(["job_folder", "-w" + workspace, "-n 2", "-t 1"])
             _, server = self.deployer.create_fl_server(args)
             assert isinstance(server, SimulatorServer)
 
@@ -62,6 +58,6 @@ class TestSimulatorDeploy(unittest.TestCase):
     def test_create_client(self, mock_register, mock_heartbeat, mock_agent):
         workspace = tempfile.mkdtemp()
         parser = self._create_parser()
-        args = parser.parse_args(["job_folder", "-o" + workspace, "-n 2", "-t 1"])
+        args = parser.parse_args(["job_folder", "-w" + workspace, "-n 2", "-t 1"])
         client, _, _ = self.deployer.create_fl_client("client0", args)
         assert isinstance(client, FederatedClient)
