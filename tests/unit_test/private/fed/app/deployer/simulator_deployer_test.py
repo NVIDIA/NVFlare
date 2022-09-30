@@ -42,6 +42,7 @@ class TestSimulatorDeploy(unittest.TestCase):
         parser.add_argument("--clients", "-n", type=int, help="number of clients", required=True)
         parser.add_argument("--threads", "-t", type=int, help="number of running threads", required=True)
         parser.add_argument("--gpu", "-gpu", type=str, help="list of GPUs")
+        parser.add_argument("-m", "--max_clients", type=int, default=100, help="max number of clients")
 
         parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
 
