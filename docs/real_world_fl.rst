@@ -19,10 +19,10 @@ to see the capabilities of the system and how it can be operated.
 .. toctree::
    :maxdepth: 1
 
-   user_guide/overview
-   user_guide/operation
-   user_guide/application
-   user_guide/job
-   user_guide/workspace
-   user_guide/authorization
+   real_world_fl/overview
+   real_world_fl/operation
+   real_world_fl/application
+   real_world_fl/job
+   real_world_fl/workspace
+   real_world_fl/authorization
 
