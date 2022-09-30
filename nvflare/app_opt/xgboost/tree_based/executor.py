@@ -24,9 +24,10 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.shareablegenerators.xgb_model_shareable_generator import update_model
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.security.logging import secure_format_exception
+
+from .shareable_generator import update_model
 
 
 class FedXGBTreeExecutor(Executor, ABC):
@@ -294,7 +295,7 @@ class FedXGBTreeExecutor(Executor, ABC):
                 return make_reply(ReturnCode.TASK_UNKNOWN)
         except Exception as e:
             # Task execution error, return EXECUTION_EXCEPTION Shareable
-            self.log_exception(fl_ctx, f"learner execute exception: {secure_format_exception(e)}")
+            self.log_exception(fl_ctx, f"execute exception: {secure_format_exception(e)}")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):

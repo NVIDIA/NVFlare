@@ -16,19 +16,20 @@ In addition to basic uniform shrinkage setting where all clients have the same l
 To run this example with NVFlare, follow the below steps.
 
 ### Environment Preparation
-(optional) if you would like to plot the TensorBoard event files as shown below, please also install
+Follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions.
+
+Install additional requirements for this xgboost example:
 ```
-python3 -m pip install tensorflow
-python3 -m pip install seaborn
+python3 -m pip install -r requirements.txt
 ```
 
-### Run local experiments with simulator
+### Run federated experiments with simulator locally
 Next, we will use the NVFlare simulator to run FL training automatically.
 ```
 bash run_experiment_simulator.sh
 ```
 
-## Results on 5- and 20-client under various training settings
+### Run centralized experiments
 For comparison, we train baseline models in a centralized manner with same round of training
 ```
 bash run_experiment_centralized.sh
@@ -37,7 +38,10 @@ This will train several models w/ and w/o random forest settings. The results ar
 
 ![Centralized validation curve](./figs/Centralized.png)
 
-As shown, random forest may not yield significant performance gain, and can even make the accuracy worse if subsample rate is too low (e.g. 0.05).
+As shown, random forest may not yield significant performance gain,
+and can even make the accuracy worse if subsample rate is too low (e.g. 0.05).
+
+### Results comparison on 5-client and 20-client under various training settings
 
 Let's then summarize the result of the federated learning experiments run above. We compare the AUC scores of 
 the model on a standalone validation set consisted of the first 1 million instances of HIGGS dataset.
@@ -58,7 +62,73 @@ As illustrated, we can have the following observations:
 - data-size dependent shrinkage will be able to recover the performance drop above (red v.s. green), and achieve comparable/better performance as uniform data split (red v.s. orange) 
 - bagging under uniform data split (orange), and bagging with data-size dependent shrinkage under non-uniform data split(red), can achieve comparable/better performance as compared with centralized training baseline (blue)
 
-For model size, centralized training and cyclic training will have a model consisting of `num_round` trees, while the bagging models consist of `num_round * num_client` trees, since each round, bagging training boosts a forest consisting of individually trained trees from each client.
+For model size, centralized training and cyclic training will have a model consisting of `num_round` trees,
+while the bagging models consist of `num_round * num_client` trees, since each round,
+bagging training boosts a forest consisting of individually trained trees from each client.
+
+### Run federated experiments in real world
+
+To run in a federated setting, follow [Real-World FL](https://nvflare.readthedocs.io/en/main/real_world_fl.html) to
+start the overseer, fl server and fl clients.
+
+You can still generate the data splits and job configs using the scripts provided.
+
+Note that after you generate the job config, you might need to modify the `data_path` in the `data_split_XXX.json`
+inside the `app/config` folder of each job, since each site might save the HIGGS dataset in different places.
+
+One way is that you can copy the app and modify it for each site, for example the job will be:
+
+```commandline
+higgs_5_bagging_uniform_split_uniform_lr/
+    app_server/
+        config/
+            config_fed_server.json
+    app_site-1/
+        config/
+            config_fed_client.json
+            data_split_5_uniform.json
+        custom/
+            higgs_executor.py
+    app_site-2/
+        config/
+            config_fed_client.json
+            data_split_5_uniform.json
+        custom/
+            higgs_executor.py
+    ...
+```
+
+The meta.json can be modified to be:
+
+```json
+{
+    "name": "higgs_5_bagging_uniform_split_uniform_lr",
+    "resource_spec": {},
+    "deploy_map": {
+        "app_server": [
+            "server"
+        ],
+        "app_site-1": [
+            "site-1"
+        ],
+        "app_site-2": [
+            "site-2"
+        ],
+        "app_site-3": [
+            "site-3"
+        ],
+        "app_site-4": [
+            "site-4"
+        ],
+        "app_site-5": [
+            "site-5"
+        ]
+    },
+    "min_clients": 5
+}
+```
+
+Then you can use admin client to submit the job via `submit_job` command.
 
 ## Reference
 [1] Zhao, L. et al., "InPrivate Digging: Enabling Tree-based Distributed Data Mining with Differential Privacy," IEEE INFOCOM 2018 - IEEE Conference on Computer Communications, 2018, pp. 2087-2095

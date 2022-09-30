@@ -58,7 +58,7 @@ class XGBModelShareableGenerator(ShareableGenerator):
         """
 
         if not self.shareable:
-            # initialization or recovering from previous training -
+            # initialization or recovering from previous training
             model = model_learnable[ModelLearnableKey.WEIGHTS]
             if model:
                 # recovering from previous run - distinguish between cyclic and bagging modes as
@@ -67,11 +67,11 @@ class XGBModelShareableGenerator(ShareableGenerator):
                     # bagging mode
                     serialized_model = bytearray(json.dumps(model), "utf-8")
                 else:
-                    # cyclid mode, model should be serialized already
+                    # cyclic mode, model should be serialized already
                     serialized_model = model
                 dxo = DXO(data_kind=DataKind.XGB_MODEL, data={"model_data": serialized_model})
             else:
-                # intial run, starting from empty model
+                # initial run, starting from empty model
                 dxo = model_learnable_to_dxo(model_learnable)
             return dxo.to_shareable()
         else:
@@ -115,7 +115,7 @@ class XGBModelShareableGenerator(ShareableGenerator):
                     model = base_model[ModelLearnableKey.WEIGHTS]
                     for update in model_data_dict:
                         model = update_model(model, update)
-                    # remove model update dict from shareable that will be sesnt
+                    # remove model update dict from shareable that will be sent
                     dxo.data = {"model_data": model_update["model_data"]}
                 else:
                     # model update is serialized full model currently in cyclic mode
