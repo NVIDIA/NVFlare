@@ -437,7 +437,7 @@ class StatisticsController(Controller):
                         targets.append(StatisticConfig(statistic, statistic_configs[statistic]))
         return targets
 
-    def _prepare_inputs(self, statistic_task: str, fl_ctx: FLContext) -> Shareable:
+    def _prepare_inputs(self, statistic_task: str) -> Shareable:
         inputs = Shareable()
         target_statistics: List[StatisticConfig] = StatisticsController._get_target_statistics(
             self.statistic_configs, StC.ordered_statistics[statistic_task]

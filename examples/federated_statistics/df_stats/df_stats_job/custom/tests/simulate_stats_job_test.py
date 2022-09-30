@@ -15,6 +15,7 @@ import os
 import shutil
 import tempfile
 from unittest.mock import patch
+
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
 
 
@@ -33,10 +34,9 @@ class TestSimulateFedStatsJob:
     @patch("nvflare.private.fed.app.deployer.simulator_deployer.FederatedClient.start_heartbeat")
     @patch("nvflare.private.fed.app.deployer.simulator_deployer.FedAdminAgent")
     def test_fed_stats_job_simulate_setup(self, mock_server, mock_admin, mock_register, mock_heartbeat, mock_agent):
-        runner = SimulatorRunner(job_folder=self.stats_job_folder,
-                                 workspace=self.workspace,
-                                 clients="site-1, site-2",
-                                 threads=2)
+        runner = SimulatorRunner(
+            job_folder=self.stats_job_folder, workspace=self.workspace, clients="site-1, site-2", threads=2
+        )
         assert runner.setup()
 
         expected_clients = ["site-1", "site-2"]

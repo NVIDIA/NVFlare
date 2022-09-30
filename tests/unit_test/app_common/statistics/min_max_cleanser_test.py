@@ -48,13 +48,13 @@ NOISE_TEST_CASES = [
 
 class TestAddNoiseToMinMax:
     @pytest.mark.parametrize("value, noise_level, compare_result", MAX_TEST_CASES)
-    def test_max_value_noise_generator(self, value, noise_level, compare_result):
+    def test_get_max_value(self, value, noise_level, compare_result):
         value_with_noise = AddNoiseToMinMax._get_max_value(value, noise_level)
         assert value_with_noise > compare_result[0]
         assert value_with_noise <= compare_result[1]
 
     @pytest.mark.parametrize("value, noise_level, compare_result", MIN_TEST_CASES)
-    def test_min_value_noise_generator(self, value, noise_level, compare_result):
+    def test_get_min_value(self, value, noise_level, compare_result):
         value_with_noise = AddNoiseToMinMax._get_min_value(value, noise_level)
         assert value_with_noise > compare_result[0]
         assert value_with_noise <= compare_result[1]
