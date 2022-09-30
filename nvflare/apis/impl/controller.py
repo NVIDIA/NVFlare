@@ -22,11 +22,11 @@ from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, ControllerSpec, SendOrder, Task, TaskCompletionStatus
 from nvflare.apis.fl_constant import FLContextKey, ReservedTopic
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.fl_exception import WorkflowError
 from nvflare.apis.responder import Responder
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
+from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
 from .any_relay_manager import AnyRelayTaskManager
@@ -225,26 +225,16 @@ class Controller(Responder, ControllerSpec, ABC):
             if task.before_task_sent_cb is not None:
                 try:
                     task.before_task_sent_cb(client_task=client_task_to_send, fl_ctx=fl_ctx)
-                except WorkflowError as ex:
-                    self._engine.ask_to_stop()
+                except BaseException as e:
                     self.log_exception(
                         fl_ctx,
                         "processing error in before_task_sent_cb on task {} ({}): {}".format(
-                            client_task_to_send.task.name, client_task_to_send.id, ex
-                        ),
-                    )
-                    task.completion_status = TaskCompletionStatus.ERROR
-                    task.exception = ex
-                except BaseException as ex:
-                    self.log_exception(
-                        fl_ctx,
-                        "processing error in before_task_sent_cb on task {} ({}): {}".format(
-                            client_task_to_send.task.name, client_task_to_send.id, ex
+                            client_task_to_send.task.name, client_task_to_send.id, secure_format_exception(e)
                         ),
                     )
                     # this task cannot proceed anymore
                     task.completion_status = TaskCompletionStatus.ERROR
-                    task.exception = ex
+                    task.exception = e
 
             self.logger.debug("before_task_sent_cb done on client_task_to_send: {}".format(client_task_to_send))
             self.logger.debug(f"task completion status is {task.completion_status}")
@@ -260,25 +250,15 @@ class Controller(Responder, ControllerSpec, ABC):
             if task.after_task_sent_cb is not None:
                 try:
                     task.after_task_sent_cb(client_task=client_task_to_send, fl_ctx=fl_ctx)
-                except WorkflowError as ex:
-                    self._engine.ask_to_stop()
+                except BaseException as e:
                     self.log_exception(
                         fl_ctx,
                         "processing error in after_task_sent_cb on task {} ({}): {}".format(
-                            client_task_to_send.task.name, client_task_to_send.id, ex
+                            client_task_to_send.task.name, client_task_to_send.id, secure_format_exception(e)
                         ),
                     )
                     task.completion_status = TaskCompletionStatus.ERROR
-                    task.exception = ex
-                except BaseException as ex:
-                    self.log_exception(
-                        fl_ctx,
-                        "processing error in after_task_sent_cb on task {} ({}): {}".format(
-                            client_task_to_send.task.name, client_task_to_send.id, ex
-                        ),
-                    )
-                    task.completion_status = TaskCompletionStatus.ERROR
-                    task.exception = ex
+                    task.exception = e
 
             if task.completion_status is not None:
                 # NOTE: the CB could cancel the task
@@ -341,7 +321,7 @@ class Controller(Responder, ControllerSpec, ABC):
         with self._task_lock:
             # task_id is the uuid associated with the client_task
             client_task = self._client_task_map.get(task_id, None)
-            self.logger.debug("Get submission={} from client task={} id={}".format(result, client_task, task_id))
+            self.logger.debug("Get submission from client task={} id={}".format(client_task, task_id))
 
         if client_task is None:
             # cannot find a standing task for the submission
@@ -371,23 +351,16 @@ class Controller(Responder, ControllerSpec, ABC):
                 try:
                     self.log_info(fl_ctx, "invoking result_received_cb ...")
                     task.result_received_cb(client_task=client_task, fl_ctx=fl_ctx)
-                except WorkflowError as ex:
-                    self._engine.ask_to_stop()
-                    self.log_exception(
-                        fl_ctx,
-                        "processing error in result_received_cb on task {}({}): {}".format(task_name, task_id, ex),
-                    )
-                    task.completion_status = TaskCompletionStatus.ERROR
-                    task.exception = ex
-                    return
-                except BaseException as ex:
+                except BaseException as e:
                     # this task cannot proceed anymore
                     self.log_exception(
                         fl_ctx,
-                        "processing error in result_received_cb on task {}({}): {}".format(task_name, task_id, ex),
+                        "processing error in result_received_cb on task {}({}): {}".format(
+                            task_name, task_id, secure_format_exception(e)
+                        ),
                     )
                     task.completion_status = TaskCompletionStatus.ERROR
-                    task.exception = ex
+                    task.exception = e
                     return
             else:
                 self.log_info(fl_ctx, "no result_received_cb")
@@ -852,21 +825,15 @@ class Controller(Responder, ControllerSpec, ABC):
                     if exit_task.task_done_cb is not None:
                         try:
                             exit_task.task_done_cb(task=exit_task, fl_ctx=fl_ctx)
-                        except WorkflowError as ex:
-                            self._engine.ask_to_stop()
+                        except BaseException as e:
                             self.log_exception(
                                 fl_ctx,
-                                "processing error in task_done_cb error on task {}: {}".format(exit_task.name, ex),
-                            )
-                            task.completion_status = TaskCompletionStatus.ERROR
-                            task.exception = ex
-                        except BaseException as ex:
-                            self.log_exception(
-                                fl_ctx,
-                                "processing error in task_done_cb error on task {}: {}".format(exit_task.name, ex),
+                                "processing error in task_done_cb error on task {}: {}".format(
+                                    exit_task.name, secure_format_exception(e)
+                                ),
                             )
                             exit_task.completion_status = TaskCompletionStatus.ERROR
-                            exit_task.exception = ex
+                            exit_task.exception = e
 
     @staticmethod
     def _process_finished_task(task, func):

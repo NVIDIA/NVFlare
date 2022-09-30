@@ -12,12 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import traceback
 from typing import List
 
 from nvflare.fuel.hci.cmd_arg_utils import split_to_args
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandRegister
+from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .constants import ConnProps
 
@@ -93,11 +93,7 @@ class ServerCommandRegister(CommandRegister):
                 if not ok:
                     return
 
-        if handler is not None:
-            handler(conn, args)
-        else:
-            conn.append_error('Unknown command "{}"'.format(command))
-            return
+        handler(conn, args)
 
         # invoke post filters
         if len(self.filters) > 0:
@@ -108,8 +104,8 @@ class ServerCommandRegister(CommandRegister):
         try:
             self._do_command(conn, command)
         except BaseException as e:
-            traceback.print_exc()
-            conn.append_error(f"Exception Occurred: {e}")
+            secure_log_traceback()
+            conn.append_error(f"Exception Occurred: {secure_format_exception(e)}")
 
     def close(self):
         if self.closed:

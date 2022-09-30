@@ -17,6 +17,7 @@ import logging
 from nvflare.apis.fl_constant import FLContextKey, NonSerializableKeys
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
+from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.utils import fobs
 
 
@@ -28,8 +29,8 @@ def get_serializable_data(fl_ctx: FLContext):
             try:
                 fobs.dumps(v)
                 new_fl_ctx.props[k] = v
-            except:
-                logger.warning(generate_log_message(fl_ctx, f"Object is not serializable (discarded): {k} - {v}"))
+            except BaseException as e:
+                logger.warning(generate_log_message(fl_ctx, f"Object is not serializable (discarded): {k} - {v}: {e}"))
     return new_fl_ctx
 
 
@@ -89,3 +90,14 @@ def generate_log_message(fl_ctx: FLContext, msg: str):
             ctx_items.append(item + "=" + str(all_kvs[item]))
 
     return "[" + ", ".join(ctx_items) + "]: " + msg
+
+
+def add_job_audit_event(fl_ctx: FLContext, ref: str = "", msg: str = "") -> str:
+    return AuditService.add_job_event(
+        job_id=fl_ctx.get_job_id(),
+        scope_name=fl_ctx.get_prop(FLContextKey.EFFECTIVE_JOB_SCOPE_NAME, "?"),
+        task_name=fl_ctx.get_prop(FLContextKey.TASK_NAME, "?"),
+        task_id=fl_ctx.get_prop(FLContextKey.TASK_ID, "?"),
+        ref=ref,
+        msg=msg,
+    )

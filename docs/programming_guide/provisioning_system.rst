@@ -397,12 +397,22 @@ Edit the project.yml configuration file to meet your project requirements:
 Default project.yml file
 ========================
 
-The following is an example of the default project.yml file.
+The following is an example of the default project.yml file of HA mode.
 
-.. literalinclude:: ../../nvflare/lighter/project.yml
+.. literalinclude:: ../../nvflare/lighter/ha_project.yml
   :language: yaml
 
 .. attention:: Please make sure that the Overseer and FL servers ports are accessible by all participating sites.
+
+
+The following is an example of the default project.yml file of non-HA mode.
+
+.. literalinclude:: ../../nvflare/lighter/dummy_project.yml
+  :language: yaml
+
+.. attention:: Please make sure that the FL server ports are accessible by all participating sites.
+
+.. _provision_command:
 
 *****************************
 Provision commandline options
@@ -413,26 +423,91 @@ Running ``provision -h`` shows all available options.
 .. code-block:: shell
 
   (nvflare_venv) ~/workspace/repos/flare$ provision -h
-  usage: provision [-h] [-p PROJECT_FILE] [-w WORKSPACE] [-c CUSTOM_FOLDER] [-u]
+  usage: provision [-h] [-p PROJECT_FILE] [-w WORKSPACE] [-c CUSTOM_FOLDER]
 
   optional arguments:
     -h, --help                                               show this help message and exit
     -p PROJECT_FILE, --project_file PROJECT_FILE                 file to describe FL project
     -w WORKSPACE, --workspace WORKSPACE                          directory used by provision
     -c CUSTOM_FOLDER, --custom_folder CUSTOM_FOLDER    additional folder to load python code
-    -u, --ui_tool                      Run provisioning UI tool to generate project.yml file
 
 Running ``provision`` without any options and without a project.yml file in the current working directory will prompt
 to copy a default project.yml to the current working directory.
 
-*************************
-Provisioning tool UI page
-*************************
+.. _provisioning_output:
 
-The ``-u`` option will open the provisioning tool helper UI page in your browser.  This tool is built to help with
-setting up and generating a project.yml to work with the reference configuration of default bundled builders in the
-NVIDIA FLARE package. You may need to add to or edit the builders section before running ``provision -p project.yml`` if you
-have customized builders.
+*************************
+Provisioning Output
+*************************
+NVFLARE 2.2 supports the concept of "Site Config" to enable Org Admin to manage their own policies for resource management (resources.json), data privacy (privacy.json), as well as security control (authorization.json). The content of the Site Config is managed by the Org Admin for their own sites.
 
-.. image:: ../resources/provisioning_ui.png
-    :height: 400px
+To help Org Admin easily understand and manage their Site Config, the provisioning system will create the Site Config with default policy files.
+
+Furthermore, to help Org Admin install and operate their NVFLARE sites more easily, the Provision system will create a Readme.txt file that describes how to manage their sites.
+
+The output from the Provision process is a package (called Site Installation Kit). The Installation Kit is a folder of this structure::
+
+    Installation Kit
+        startup 
+            Certs, private key, fed_[server|client].json, shell scripts
+        local
+            resources.json - used by main and job process (on client)
+            privacy.json - used by job process only
+            authorization.json - used by main process only
+        Scripts
+            Scripts for installing the "startup" and "site" properly
+        Readme.txt: describe how to use scripts to install startup and site; how to manage content in the "site" folder
+
+The installation kit is encoded to a password-protected zip file.
+
+Changes to Startup Kit Content
+
+1) Move authorization.json from "startup" to "site".
+2) For client sites, remove resource manager and resource consumer configuration from fed_client.json in "startup", and put them into resources.json in "site".
+3) For server sites, remove job scheduler configuration from fed_server.json in "startup", and put them into resources.json in "site".
+
+How do we deal with privacy.json for each site? Put a sample there? 
+Should we define two default scopes: public and private?
+
+Workspace Structure
+===================
+
+.. code-block:: shell
+
+    {WSROOT}
+        Startup
+            Fed_server|client.json
+            Site cert, site private key, root certificate, and site 
+            Start.sh
+            Xxx.sh
+            yyy.sh
+        local
+            Resources.json.default
+            Authorization.json.default
+            Privacy.json.sample
+            Log.config.default
+            Resources.json
+            Authorization.json
+            Privacy.json
+            Log.config
+            custom/
+                local_code.xyz
+        Audit.txt
+        Log.txt
+        1234567 (run)
+                Log.txt
+                job_meta.json
+                App_xxx
+                    Fl_app.txt
+                    Config
+                        Config_fed_client.json
+                        …
+                    Custom
+                            xyz.py
+        234562 (run)
+                Log.txt
+                job_meta.json
+                App_xxx
+                    Fl_app.txt
+                    Config
+                    Custom

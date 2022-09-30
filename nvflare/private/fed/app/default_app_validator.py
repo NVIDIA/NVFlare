@@ -16,18 +16,37 @@ import os
 from typing import Dict, Tuple
 
 from nvflare.apis.app_validation import AppValidationKey, AppValidator
+from nvflare.apis.fl_constant import JobConstants, SiteType, WorkspaceConstants
+
+
+def _check_config(app_root: str, config_folder: str, site_type: str):
+    if site_type == SiteType.SERVER:
+        config_to_check = JobConstants.SERVER_JOB_CONFIG
+    elif site_type == SiteType.CLIENT:
+        config_to_check = JobConstants.CLIENT_JOB_CONFIG
+    else:
+        config_to_check = None
+
+    if config_to_check and not os.path.exists(os.path.join(app_root, config_folder, config_to_check)):
+        return f"Missing required config {config_to_check} inside app/config folder."
+    return ""
 
 
 class DefaultAppValidator(AppValidator):
+    def __init__(self, site_type: str, config_folder="config"):
+        self._site_type = site_type
+        self._config_folder = config_folder
+
     def validate(self, app_folder: str) -> Tuple[str, Dict]:
         result = dict()
         app_root = os.path.abspath(app_folder)
-        if not os.path.exists(os.path.join(app_root, "config")):
+        if not os.path.exists(os.path.join(app_root, self._config_folder)):
             return "Missing config folder inside app folder.", {}
-        if not os.path.exists(os.path.join(app_root, "config", "config_fed_server.json")):
-            return "Missing config_fed_server.json inside app/config folder.", {}
-        if not os.path.exists(os.path.join(app_root, "config", "config_fed_client.json")):
-            return "Missing config_fed_client.json inside app/config folder.", {}
-        if os.path.exists(os.path.join(app_root, "custom")):
+
+        err = _check_config(app_root=app_root, config_folder=self._config_folder, site_type=self._site_type)
+        if err:
+            return err, {}
+
+        if os.path.exists(os.path.join(app_root, WorkspaceConstants.CUSTOM_FOLDER_NAME)):
             result[AppValidationKey.BYOC] = True
         return "", result

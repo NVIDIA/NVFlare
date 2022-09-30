@@ -30,6 +30,7 @@ from nvflare.app_common.abstract.formatter import Formatter
 from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.app_common.app_constant import AppConstants, ModelName
 from nvflare.app_common.app_event_type import AppEventType
+from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
 
@@ -66,7 +67,7 @@ class CrossSiteModelEval(Controller):
                 to all clients connected at start of controller.
             wait_for_clients_timeout (int, optional): Timeout for clients to appear. Defaults to 300 secs
         """
-        super(CrossSiteModelEval, self).__init__(task_check_period=task_check_period)
+        super().__init__(task_check_period=task_check_period)
 
         if not isinstance(task_check_period, float):
             raise TypeError("task_check_period must be float but got {}".format(type(task_check_period)))
@@ -231,7 +232,7 @@ class CrossSiteModelEval(Controller):
                 self.log_debug(fl_ctx, "Checking standing tasks to see if cross site validation finished.")
                 time.sleep(self._task_check_period)
         except BaseException as e:
-            error_msg = f"Exception in cross site validator control_flow: {e.__str__()}"
+            error_msg = f"Exception in cross site validator control_flow: {secure_format_exception(e)}"
             self.log_exception(fl_ctx, error_msg)
             self.system_panic(error_msg, fl_ctx)
 
@@ -263,8 +264,8 @@ class CrossSiteModelEval(Controller):
 
         try:
             model_dxo: DXO = self._load_validation_content(model_name, self._cross_val_models_dir, fl_ctx)
-        except ValueError as v_e:
-            reason = f"Error in loading model shareable for {model_name}: {v_e}. CrossSiteModelEval exiting."
+        except ValueError as e:
+            reason = f"Error in loading model shareable for {model_name}: {secure_format_exception(e)}. CrossSiteModelEval exiting."
             self.log_error(fl_ctx, reason)
             self.system_panic(reason, fl_ctx)
             return
@@ -365,9 +366,10 @@ class CrossSiteModelEval(Controller):
                 self.log_debug(fl_ctx, "Extracting DXO from shareable.")
                 dxo = from_shareable(result)
                 save_path = self._save_validation_content(client_name, self._cross_val_models_dir, dxo, fl_ctx)
-            except ValueError as v_e:
+            except ValueError as e:
                 self.log_error(
-                    fl_ctx, f"Unable to save shareable contents of {client_name}'s model. Exception: {str(v_e)}"
+                    fl_ctx,
+                    f"Unable to save shareable contents of {client_name}'s model. Exception: {secure_format_exception(e)}",
                 )
                 self.log_warning(fl_ctx, f"Ignoring client {client_name}'s model.")
                 return
@@ -440,10 +442,10 @@ class CrossSiteModelEval(Controller):
                 self._val_results[client_name][model_owner] = os.path.join(self._cross_val_results_dir, save_file_name)
 
                 self.log_info(fl_ctx, f"Client {client_name} sent results for validating {model_owner} model.")
-            except ValueError as v_e:
+            except ValueError as e:
                 reason = (
                     f"Unable to save validation result from {client_name} of {model_owner}'s model. "
-                    f"Exception: {str(v_e)}"
+                    f"Exception: {secure_format_exception(e)}"
                 )
                 self.log_exception(fl_ctx, reason)
 
@@ -465,14 +467,14 @@ class CrossSiteModelEval(Controller):
         try:
             bytes_to_save = dxo.to_bytes()
         except Exception as e:
-            raise ValueError(f"Unable to extract shareable contents. Exception: {(e.__str__())}") from e
+            raise ValueError(f"Unable to extract shareable contents. Exception: {(secure_format_exception(e))}")
 
         # Save contents to path
         try:
             with open(data_filename, "wb") as f:
                 f.write(bytes_to_save)
         except Exception as e:
-            raise ValueError(f"Unable to save shareable contents: {str(e)}") from e
+            raise ValueError(f"Unable to save shareable contents: {secure_format_exception(e)}")
 
         self.log_debug(fl_ctx, f"Saved cross validation model with name: {name}.")
 
@@ -491,7 +493,7 @@ class CrossSiteModelEval(Controller):
 
             self.log_debug(fl_ctx, f"Loading cross validation shareable content with name: {name}.")
         except Exception as e:
-            raise ValueError(f"Exception in loading shareable content for {name}: {str(e)}")
+            raise ValueError(f"Exception in loading shareable content for {name}: {secure_format_exception(e)}")
 
         return dxo
 

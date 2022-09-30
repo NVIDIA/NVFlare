@@ -20,7 +20,7 @@ import tempfile
 
 from nvflare.lighter import utils
 
-from .cert import CertPair, Entity, deserialize_key, make_cert
+from .cert import CertPair, Entity, deserialize_ca_key, make_cert
 from .models import Client, Project, User
 
 lighter_folder = os.path.dirname(utils.__file__)
@@ -138,7 +138,7 @@ def gen_server(key, first_server=True):
         _write(os.path.join(dest_dir, "server.crt"), cert_pair.ser_cert, "b", exe=False)
         _write(os.path.join(dest_dir, "server.key"), cert_pair.ser_pri_key, "b", exe=False)
         _write(os.path.join(dest_dir, "rootCA.pem"), project.root_cert, "b", exe=False)
-        signatures = utils.sign_all(dest_dir, deserialize_key(project.root_key))
+        signatures = utils.sign_all(dest_dir, deserialize_ca_key(project.root_key))
         json.dump(signatures, open(os.path.join(dest_dir, "signature.json"), "wt"))
 
         # local folder creation
@@ -237,7 +237,7 @@ def gen_client(key, id):
         _write(os.path.join(dest_dir, "client.crt"), cert_pair.ser_cert, "b", exe=False)
         _write(os.path.join(dest_dir, "client.key"), cert_pair.ser_pri_key, "b", exe=False)
         _write(os.path.join(dest_dir, "rootCA.pem"), project.root_cert, "b", exe=False)
-        signatures = utils.sign_all(dest_dir, deserialize_key(project.root_key))
+        signatures = utils.sign_all(dest_dir, deserialize_ca_key(project.root_key))
         json.dump(signatures, open(os.path.join(dest_dir, "signature.json"), "wt"))
 
         # local folder creation
@@ -325,8 +325,13 @@ def gen_user(key, id):
         _write(os.path.join(dest_dir, "client.crt"), cert_pair.ser_cert, "b", exe=False)
         _write(os.path.join(dest_dir, "client.key"), cert_pair.ser_pri_key, "b", exe=False)
         _write(os.path.join(dest_dir, "rootCA.pem"), project.root_cert, "b", exe=False)
-        signatures = utils.sign_all(dest_dir, deserialize_key(project.root_key))
+        signatures = utils.sign_all(dest_dir, deserialize_ca_key(project.root_key))
         json.dump(signatures, open(os.path.join(dest_dir, "signature.json"), "wt"))
+
+        # local folder creation
+        dest_dir = os.path.join(user_dir, "local")
+        os.mkdir(dest_dir)
+
         # workspace folder file
         _write(
             os.path.join(user_dir, "readme.txt"),

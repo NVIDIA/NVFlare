@@ -37,7 +37,7 @@ class CIFAR10ScaffoldLearner(CIFAR10Learner):
         central: bool = False,
         analytic_sender_id: str = "analytic_sender",
         batch_size: int = 64,
-        num_workers: int = 0
+        num_workers: int = 0,
     ):
         """Simple Scaffold CIFAR-10 Trainer.
         Implements the training algorithm proposed in
@@ -61,10 +61,19 @@ class CIFAR10ScaffoldLearner(CIFAR10Learner):
             or the best local model depending on the specified task.
         """
 
-        CIFAR10Learner.__init__(self, train_idx_root=train_idx_root, aggregation_epochs=aggregation_epochs,
-                                train_task_name=train_task_name, submit_model_task_name=submit_model_task_name, lr=lr,
-                                fedproxloss_mu=fedproxloss_mu, central=central, analytic_sender_id=analytic_sender_id,
-                                batch_size=batch_size, num_workers=num_workers)
+        CIFAR10Learner.__init__(
+            self,
+            train_idx_root=train_idx_root,
+            aggregation_epochs=aggregation_epochs,
+            train_task_name=train_task_name,
+            submit_model_task_name=submit_model_task_name,
+            lr=lr,
+            fedproxloss_mu=fedproxloss_mu,
+            central=central,
+            analytic_sender_id=analytic_sender_id,
+            batch_size=batch_size,
+            num_workers=num_workers,
+        )
         self.scaffold_helper = PTScaffoldHelper()
 
     def initialize(self, parts: dict, fl_ctx: FLContext):

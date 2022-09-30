@@ -11,11 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import shutil
 import tempfile
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.utils.common_utils import get_open_ports
+from nvflare.fuel.utils.network_utils import get_open_ports
+from nvflare.private.fed.app.server.server_train import create_admin_server
 from nvflare.private.fed.client.admin import FedAdminAgent
 from nvflare.private.fed.client.admin_msg_sender import AdminMessageSender
 from nvflare.private.fed.client.client_req_processors import ClientRequestProcessors
@@ -23,7 +25,6 @@ from nvflare.private.fed.client.fed_client import FederatedClient
 from nvflare.private.fed.simulator.simulator_client_engine import SimulatorClientEngine
 from nvflare.private.fed.simulator.simulator_server import SimulatorServer
 
-from ..server.server_train import create_admin_server
 from .base_client_deployer import BaseClientDeployer
 from .server_deployer import ServerDeployer
 
@@ -47,7 +48,7 @@ class SimulatorDeployer(ServerDeployer):
             cmd_modules=self.cmd_modules,
             args=args,
             secure_train=secure_train,
-            enable_byoc=self.enable_byoc,
+            # enable_byoc=self.enable_byoc,
             snapshot_persistor=self.snapshot_persistor,
             overseer_agent=self.overseer_agent,
         )

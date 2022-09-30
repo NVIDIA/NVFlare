@@ -1,0 +1,66 @@
+# Tree-based Federated Learning for XGBoost   
+
+## Cyclic Training 
+
+"Cyclic XGBoost" is one way of performing tree-based federated boosting with multiple sites: at each round of tree boosting, instead of relying on the whole data statistics collected from all clients, the boosting relies on only 1 client's local data. The resulting tree sequence is then forwarded to the next client for next round's boosting. Such training scheme have been proposed in literatures [1] [2].
+
+## Bagging Aggregation
+
+"Bagging XGBoost" is another way of performing tree-based federated boosting with multiple sites: at each round of tree boosting, all sites start from the same "global model", and boost a number of trees (in current example, 1 tree) based on their local data. The resulting trees are then send to server. A bagging aggregation scheme is applied to all the submitted trees to update the global model, which is further distributed to all clients for next round's boosting. 
+
+This scheme bears certain similarity to the [Random Forest mode](https://xgboost.readthedocs.io/en/stable/tutorials/rf.html) of XGBoost, where a `num_parallel_tree` is boosted based on random row/col splits, rather than a single tree. Under federated learning setting, such split is fixed to clients rather than random and without column subsampling. 
+
+In addition to basic uniform shrinkage setting where all clients have the same learning rate, based on our research, we enabled scaled shrinkage across clients for weighted aggregation according to each client's data size, which is shown to significantly improve the model's performance on non-uniform quantity splits over HIGGS data.
+
+## Run automated experiments
+To run this example with NVFlare, follow the below steps.
+
+### Environment Preparation
+(optional) if you would like to plot the TensorBoard event files as shown below, please also install
+```
+python3 -m pip install tensorflow
+python3 -m pip install seaborn
+```
+
+### Run local experiments with simulator
+Next, we will use the NVFlare simulator to run FL training automatically.
+```
+bash run_experiment_simulator.sh
+```
+
+## Results on 5- and 20-client under various training settings
+For comparison, we train baseline models in a centralized manner with same round of training
+```
+bash run_experiment_centralized.sh
+```
+This will train several models w/ and w/o random forest settings. The results are shown below.
+
+![Centralized validation curve](./figs/Centralized.png)
+
+As shown, random forest may not yield significant performance gain, and can even make the accuracy worse if subsample rate is too low (e.g. 0.05).
+
+Let's then summarize the result of the federated learning experiments run above. We compare the AUC scores of 
+the model on a standalone validation set consisted of the first 1 million instances of HIGGS dataset.
+
+We provide a script for plotting the tensorboard records, running
+```
+python3 ./utils/plot_tensorboard_events.py
+```
+The resulting validation AUC curves (no smoothing) are shown below:
+
+![5 clients validation curve](./figs/5_client.png)
+![20 clients validation curve](./figs/20_client.png)
+
+As illustrated, we can have the following observations:
+- cyclic training performs ok under uniform split (the purple curve), however under non-uniform split, it will have significant performance drop (the brown curve)
+- bagging training performs better than cyclic under both uniform and non-uniform data splits (orange v.s. purple, red/green v.s. brown)
+- with uniform shrinkage, bagging will have significant performance drop under non-uniform split (green v.s. orange)
+- data-size dependent shrinkage will be able to recover the performance drop above (red v.s. green), and achieve comparable/better performance as uniform data split (red v.s. orange) 
+- bagging under uniform data split (orange), and bagging with data-size dependent shrinkage under non-uniform data split(red), can achieve comparable/better performance as compared with centralized training baseline (blue)
+
+For model size, centralized training and cyclic training will have a model consisting of `num_round` trees, while the bagging models consist of `num_round * num_client` trees, since each round, bagging training boosts a forest consisting of individually trained trees from each client.
+
+## Reference
+[1] Zhao, L. et al., "InPrivate Digging: Enabling Tree-based Distributed Data Mining with Differential Privacy," IEEE INFOCOM 2018 - IEEE Conference on Computer Communications, 2018, pp. 2087-2095
+
+[2] Yamamoto, F. et al., "New Approaches to Federated XGBoost Learning for Privacy-Preserving Data Analysis," ICONIP 2020 - International Conference on Neural Information Processing, 2020, Lecture Notes in Computer Science, vol 12533 

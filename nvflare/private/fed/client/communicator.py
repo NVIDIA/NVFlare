@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import logging
 import socket
 import time
@@ -27,6 +28,7 @@ from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.private.defs import SpecialTaskName
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
 from nvflare.private.fed.utils.fed_utils import make_context_data, make_shareable_data, shareable_to_modeldata
+from nvflare.security.logging import secure_format_exception
 
 
 def _get_client_state(project_name, token, ssid, fl_ctx: FLContext):
@@ -194,7 +196,7 @@ class Communicator:
                         "client_registration",
                         verbose=self.verbose,
                     )
-                    excep = FLCommunicationError(grpc_error)
+                    excep = FLCommunicationError(grpc_error, "grpc_error:client_registration")
                     if isinstance(grpc_error, grpc.Call):
                         status_code = grpc_error.code()
                         if grpc.StatusCode.UNAUTHENTICATED == status_code:
@@ -247,7 +249,7 @@ class Communicator:
                     return task
                 except grpc.RpcError as grpc_error:
                     self.grpc_error_handler(servers[project_name], grpc_error, "getTask", verbose=self.verbose)
-                    excep = FLCommunicationError(grpc_error)
+                    excep = FLCommunicationError(grpc_error, "grpc_error:getTask")
                     retry -= 1
                     time.sleep(5)
             if self.should_stop:
@@ -412,14 +414,13 @@ class Communicator:
                             response = stub.Heartbeat(message)
                             self._clean_up_runs(engine, response)
                             break
-                        except grpc.RpcError as grpc_error:
-                            self.logger.debug(grpc_error)
+                        except grpc.RpcError:
                             retry -= 1
                             time.sleep(5)
 
                     time.sleep(30)
             except BaseException as e:
-                self.logger.info(f"Failed to send heartbeat. Will try again. Exception: {str(e)}")
+                self.logger.info(f"Failed to send heartbeat. Will try again. Exception: {secure_format_exception(e)}")
                 time.sleep(5)
 
     def _clean_up_runs(self, engine, response):

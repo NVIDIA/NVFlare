@@ -15,10 +15,11 @@
 import json
 from typing import List
 
-from nvflare.private.admin_defs import Message
-from nvflare.private.defs import RequestHeader, TrainingTopic
+from nvflare.private.admin_defs import Message, error_reply, ok_reply
+from nvflare.private.defs import RequestHeader, ScopeInfoKey, TrainingTopic
 from nvflare.private.fed.client.admin import RequestProcessor
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
+from nvflare.private.fed.utils.fed_utils import get_scope_info
 
 
 class StartAppProcessor(RequestProcessor):
@@ -100,16 +101,24 @@ class DeployProcessor(RequestProcessor):
         return [TrainingTopic.DEPLOY]
 
     def process(self, req: Message, app_ctx) -> Message:
+        # Note: this method executes in the Main process of the client
         engine = app_ctx
         if not isinstance(engine, ClientEngineInternalSpec):
             raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
         job_id = req.get_header(RequestHeader.JOB_ID)
+        job_meta = json.loads(req.get_header(RequestHeader.JOB_META))
         app_name = req.get_header(RequestHeader.APP_NAME)
         client_name = engine.get_client_name()
-        result = engine.deploy_app(app_name=app_name, job_id=job_id, client_name=client_name, app_data=req.body)
-        if not result:
-            result = "OK"
-        return Message(topic="reply_" + req.topic, body=result)
+
+        if not job_meta:
+            return error_reply("missing job meta")
+
+        err = engine.deploy_app(
+            app_name=app_name, job_id=job_id, job_meta=job_meta, client_name=client_name, app_data=req.body
+        )
+        if err:
+            return error_reply(err)
+        return ok_reply(f"deployed {app_name} to {client_name}")
 
 
 class DeleteRunNumberProcessor(RequestProcessor):
@@ -148,6 +157,18 @@ class ClientStatusProcessor(RequestProcessor):
         #         ClientStatusKey.RUN_NUM: str(run_info.job_id),
         #         ClientStatusKey.CURRENT_TASK: run_info.current_task_name
         #     }
+        result = json.dumps(result)
+        message = Message(topic="reply_" + req.topic, body=result)
+        return message
+
+
+class ScopeInfoProcessor(RequestProcessor):
+    def get_topics(self) -> List[str]:
+        return [TrainingTopic.GET_SCOPES]
+
+    def process(self, req: Message, app_ctx) -> Message:
+        scope_names, default_scope_name = get_scope_info()
+        result = {ScopeInfoKey.SCOPE_NAMES: scope_names, ScopeInfoKey.DEFAULT_SCOPE: default_scope_name}
         result = json.dumps(result)
         message = Message(topic="reply_" + req.topic, body=result)
         return message

@@ -1,19 +1,10 @@
 import argparse
 import os
 import shutil
-import sys
 
 import wget
-from pyhocon import ConfigFactory
 
-from nvflare.lighter.poc_commands import get_nvflare_home, is_poc_ready
-
-
-def get_poc_workspace():
-    poc_workspace = os.getenv("NVFLARE_POC_WORKSPACE")
-    if poc_workspace is None or len(poc_workspace.strip()) == 0:
-        poc_workspace = "/tmp/nvflare/poc"
-    return poc_workspace
+data_root_dir = "/tmp/nvflare/data"
 
 
 def parse_args(prog_name: str):
@@ -28,35 +19,30 @@ def parse_args(prog_name: str):
     return _parser, _parser.parse_args()
 
 
-def get_data_url(config) -> dict:
-    client_data_config = config.get_config("data_frame_stats.data.clients")
-    client_data = {}
-    for client in client_data_config:
-        url = client_data_config[client]["url"]
-        client_data[client] = url
+def get_data_url() -> dict:
+    client_data = {
+        "site-1": "https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.data",
+        "site-2": "https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.test",
+    }
     return client_data
 
 
-def prepare_data(config, poc_workspace):
-    print(f"prepare data for poc workspace:{poc_workspace}")
-    if not is_poc_ready(poc_workspace):
-        print("poc workspace is not ready, please use `nvflare poc -w <poc_workspace> --prepare` to setup first")
-        sys.exit(1)
-
-    client_data_urls = get_data_url(config)
+def prepare_data():
+    print("prepare data for data directory")
+    client_data_urls = get_data_url()
     for client in client_data_urls:
-        dest = os.path.join(poc_workspace, f"{client}/data.csv")
-        print(f"remove existing data at {dest}")
+        client_data_dir = os.path.join(data_root_dir, client)
+        if not os.path.exists(client_data_dir):
+            os.makedirs(client_data_dir, exist_ok=True)
+
+        dest = os.path.join(client_data_dir, "data.csv")
+        print(f"\nremove existing data at {dest}")
         shutil.rmtree(dest, ignore_errors=True)
 
         print(f"wget download to {dest}")
         url = client_data_urls[client]
         response = wget.download(url, dest)
-    print("done with prepare data")
-
-
-def load_config():
-    return ConfigFactory.parse_file("config/application.conf")
+    print("\ndone with prepare data")
 
 
 def main():
@@ -64,7 +50,7 @@ def main():
     parser, args = parse_args(prog_name)
 
     if args.prepare_data:
-        prepare_data(load_config(), get_poc_workspace())
+        prepare_data()
     else:
         parser.print_help()
 

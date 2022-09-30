@@ -48,8 +48,8 @@ copyright = "2022, NVIDIA"
 author = "NVIDIA"
 
 # The full version, including alpha/beta/rc tags
-release = "2.1.0"
-version = "2.1.0"
+release = "2.2.1"
+version = "2.2.1"
 
 
 # -- General configuration ---------------------------------------------------

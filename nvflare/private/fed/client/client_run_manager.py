@@ -14,19 +14,19 @@
 
 from typing import Dict, List, Optional
 
-from nvflare.apis.client_engine_spec import TaskAssignment
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.workspace import Workspace
 from nvflare.private.event import fire_event
+from nvflare.private.fed.utils.fed_utils import create_job_processing_context_properties
 from nvflare.widgets.fed_event import ClientFedEventRunner
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
 
 from .client_aux_runner import ClientAuxRunner
-from .client_engine_executor_spec import ClientEngineExecutorSpec
+from .client_engine_executor_spec import ClientEngineExecutorSpec, TaskAssignment
 from .client_json_config import ClientJsonConfigurator
 from .client_runner import ClientRunner
 from .fed_client import FederatedClient
@@ -42,7 +42,6 @@ class ClientRunInfo(object):
         self.job_id = job_id
         self.current_task_name = ""
         self.start_time = None
-        # self.status = MachineStatus.STOPPED
 
 
 class ClientRunManager(ClientEngineExecutorSpec):
@@ -63,7 +62,7 @@ class ClientRunManager(ClientEngineExecutorSpec):
         Args:
             client_name: client name
             job_id: job id
-            workspace: workspacee
+            workspace: workspace
             client: FL client object
             components: available FL components
             handlers: available handlers
@@ -79,8 +78,16 @@ class ClientRunManager(ClientEngineExecutorSpec):
         self.add_handler(self.aux_runner)
         self.conf = conf
 
+        if not components:
+            self.components = {}
+
+        if not handlers:
+            self.handlers = []
+
+        # get job meta!
+        job_ctx_props = self.create_job_processing_context_properties(workspace, job_id)
         self.fl_ctx_mgr = FLContextManager(
-            engine=self, identity_name=client_name, job_id=job_id, public_stickers={}, private_stickers={}
+            engine=self, identity_name=client_name, job_id=job_id, public_stickers={}, private_stickers=job_ctx_props
         )
 
         self.run_info = ClientRunInfo(job_id=job_id)
@@ -94,7 +101,6 @@ class ClientRunManager(ClientEngineExecutorSpec):
         task = None
         if pull_success:
             shareable = self.client.extract_shareable(remote_tasks, fl_ctx)
-            # task_id = fl_ctx.get_peer_context().get_cookie(FLContextKey.TASK_ID)
             task_id = shareable.get_header(key=FLContextKey.TASK_ID)
             task = TaskAssignment(name=task_name, task_id=task_id, data=shareable)
         return task
@@ -164,3 +170,6 @@ class ClientRunManager(ClientEngineExecutorSpec):
         runner = fl_ctx.get_prop(key=FLContextKey.RUNNER, default=None)
         if isinstance(runner, ClientRunner):
             runner.abort()
+
+    def create_job_processing_context_properties(self, workspace, job_id):
+        return create_job_processing_context_properties(workspace, job_id)

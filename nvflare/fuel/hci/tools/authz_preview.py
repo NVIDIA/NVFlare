@@ -15,10 +15,12 @@
 import argparse
 import cmd
 import json
+import sys
 
 from nvflare.fuel.hci.cmd_arg_utils import split_to_args
 from nvflare.fuel.hci.table import Table
-from nvflare.fuel.sec.authz import Policy, validate_policy_config
+from nvflare.fuel.sec.authz import AuthzContext, Person, Policy, parse_policy_config
+from nvflare.security.security import COMMAND_CATEGORIES
 
 
 class Commander(cmd.Cmd):
@@ -31,7 +33,7 @@ class Commander(cmd.Cmd):
         cmd.Cmd.__init__(self)
         self.policy = policy
         self.intro = "Type help or ? to list commands.\n"
-        self.prompt = ">"
+        self.prompt = "> "
 
     def do_bye(self, arg):
         """Exits from the client."""
@@ -40,138 +42,85 @@ class Commander(cmd.Cmd):
     def emptyline(self):
         return
 
-    def do_show_users(self, arg):
-        users = self.policy.get_users()
-        table = Table(["user", "org", "roles"])
-        for user_name, user_def in users.items():
-            table.add_row([user_name, user_def["org"], ",".join(user_def["roles"])])
-        self.write_table(table)
-
     def _split_to_args(self, arg):
         if len(arg) <= 0:
             return []
         else:
             return split_to_args(arg)
 
-    def do_show_sites(self, arg):
-        sites = self.policy.get_sites()
-        table = Table(["site", "org"])
-        for site_name, org in sites.items():
-            table.add_row([site_name, org])
-        self.write_table(table)
-
     def do_show_rights(self, arg):
-        rights = self.policy.get_rights()
-        table = Table(["name", "description", "default"])
-        for name, right_def in rights.items():
-            desc = right_def.get("desc", "")
-            default = right_def.get("default", "")
-            table.add_row([name, desc, "{}".format(default)])
+        rights = self.policy.rights
+        table = Table(["right"])
+        for r in rights:
+            table.add_row([r])
         self.write_table(table)
 
-    def do_show_rules(self, arg):
-        rules = self.policy.get_rules()
-        table = Table(["name", "description", "default"])
-        for name, rule_def in rules.items():
-            desc = rule_def.get("desc", "")
-            default = rule_def.get("default", "")
-            table.add_row([name, desc, "{}".format(default)])
+    def do_show_roles(self, arg):
+        roles = self.policy.roles
+        table = Table(["role"])
+        for r in roles:
+            table.add_row([r])
         self.write_table(table)
 
     def do_show_config(self, arg):
-        config = self.policy.get_config()
+        config = self.policy.config
         self.write_string(json.dumps(config, indent=1))
 
-    def do_show_site_rules(self, arg):
-        args = ["show_site_rules"] + self._split_to_args(arg)
-        if len(args) != 2:
-            self.write_string("Usage: {} site_name".format(args[0]))
-            return
-
-        site_name = args[1]
-        rules = self.policy.get_rules()
-        table = Table(["Rule", "Result"])
-        for rule_name, _ in rules.items():
-            result, err = self._eval_rule(site_name, rule_name)
-            if err:
-                self.write_error(err)
-                return
-            else:
-                table.add_row([rule_name, result])
+    def do_show_role_rights(self, arg):
+        role_rights = self.policy.role_rights
+        table = Table(["role", "right", "conditions"])
+        for role_name in sorted(role_rights):
+            right_conds = role_rights[role_name]
+            for right_name in sorted(right_conds):
+                conds = right_conds[right_name]
+                table.add_row([role_name, right_name, str(conds)])
         self.write_table(table)
 
-    def _eval_right(self, user_name, right_name, site_name):
-        result, err = self.policy.evaluate_user_right_on_site(
-            user_name=user_name, site_name=site_name, right_name=right_name
-        )
-        if err:
-            return result, err
-        if result is None:
-            rights = self.policy.get_rights()
-            right_def = rights[right_name]
-            return "({})".format(right_def.get("default", "?")), ""
-        else:
-            return "{}".format(result), ""
+    def _parse_person(self, spec: str):
+        parts = spec.split(":")
+        if len(parts) != 3:
+            return "must be like name:org:role"
+        return Person(parts[0], parts[1], parts[2])
 
     def do_eval_right(self, arg):
         args = ["eval_right"] + self._split_to_args(arg)
-        if len(args) != 4:
-            self.write_string("Usage: {} user_name right_name site_name".format(args[0]))
+        if len(args) < 4:
+            self.write_string(
+                "Usage: {} site_org right_name user_name:org:role [submitter_name:org:role]".format(args[0])
+            )
             return
 
-        user_name = args[1]
+        site_org = args[1]
         right_name = args[2]
-        site_name = args[3]
-        result, err = self._eval_right(user_name=user_name, site_name=site_name, right_name=right_name)
+        user_spec = args[3]
+
+        submitter_spec = None
+        if len(args) > 4:
+            submitter_spec = args[4]
+
+        parsed = self._parse_person(user_spec)
+        if isinstance(parsed, str):
+            # error
+            return self.write_error("bad user spec: " + parsed)
+        user = parsed
+
+        submitter = None
+        if submitter_spec:
+            parsed = self._parse_person(submitter_spec)
+            if isinstance(parsed, str):
+                # error
+                return self.write_error("bad submitter spec: " + parsed)
+            submitter = parsed
+
+        result, err = self.policy.evaluate(
+            site_org=site_org, ctx=AuthzContext(right=right_name, user=user, submitter=submitter)
+        )
         if err:
             self.write_error(err)
+        elif result is None:
+            self.write_string("undetermined")
         else:
-            self.write_string(result)
-
-    def do_eval_user(self, arg):
-        args = ["eval_user"] + self._split_to_args(arg)
-        if len(args) != 3:
-            self.write_string("Usage: {} user_name site_name".format(args[0]))
-            return
-
-        user_name = args[1]
-        site_name = args[2]
-        table = Table(["Right", "Result"])
-        rights = self.policy.get_rights()
-        for right_name, right_def in rights.items():
-            result, err = self._eval_right(user_name=user_name, site_name=site_name, right_name=right_name)
-            if err:
-                self.write_error(err)
-                return
-            else:
-                table.add_row([right_name, result])
-        self.write_table(table)
-
-    def _eval_rule(self, site_name, rule_name):
-        result, err = self.policy.evaluate_rule_on_site(site_name=site_name, rule_name=rule_name)
-        if err:
-            return result, err
-
-        if result is None:
-            rules = self.policy.get_rules()
-            rule_def = rules[rule_name]
-            return "({})".format(rule_def.get("default", "?")), ""
-        else:
-            return "{}".format(result), ""
-
-    def do_eval_rule(self, arg):
-        args = ["eval_rule"] + self._split_to_args(arg)
-        if len(args) != 3:
-            self.write_string("Usage: {} site_name rule_name".format(args[0]))
-            return
-
-        site_name = args[1]
-        rule_name = args[2]
-        result, err = self._eval_rule(site_name=site_name, rule_name=rule_name)
-        if err:
-            self.write_error(err)
-        else:
-            self.write_string(result)
+            self.write_string(str(result))
 
     def write_string(self, data: str):
         content = data + "\n"
@@ -185,35 +134,32 @@ class Commander(cmd.Cmd):
         self.stdout.write(content)
 
 
+def define_authz_preview_parser(parser):
+    parser.add_argument("--policy", "-p", type=str, help="authz policy file", required=True)
+
+
+def load_policy(policy_file_path):
+    with open(policy_file_path) as file:
+        config = json.load(file)
+        policy, err = parse_policy_config(config, COMMAND_CATEGORIES)
+        if err:
+            print("Policy config error: {}".format(err))
+            sys.exit(1)
+    return policy
+
+
+def run_command(args):
+    policy = load_policy(args.policy)
+    commander = Commander(policy)
+    commander.cmdloop(intro="Type help or ? to list commands.")
+
+
 def main():
     """Tool to help preview and see the details of an authorization policy with command line commands."""
     parser = argparse.ArgumentParser()
-    parser.add_argument("--policy", "-p", type=str, help="authz policy file", required=False, default="")
-    parser.add_argument("--defs", "-d", type=str, help="authz definition file", required=False, default="")
-    parser.add_argument("--config", "-c", type=str, help="authz config file", required=False, default="")
-
+    define_authz_preview_parser(parser)
     args = parser.parse_args()
-
-    if args.policy:
-        with open(args.policy) as file:
-            config = json.load(file)
-            err = validate_policy_config(config)
-            if err:
-                print("Policy config error: {}".format(err))
-                return
-    else:
-        assert args.defs, "missing authz definition file"
-        assert args.config, "missing authz config file"
-        with open(args.defs) as file:
-            defs = json.load(file)
-
-        with open(args.config) as file:
-            config = json.load(file)
-
-        config.update(defs)
-
-    commander = Commander(Policy(config))
-    commander.cmdloop(intro="Type help or ? to list commands.")
+    run_command(args)
 
 
 if __name__ == "__main__":

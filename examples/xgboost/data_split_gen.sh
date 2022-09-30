@@ -1,11 +1,25 @@
 #!/usr/bin/env bash
-mkdir data_splits
-for split_mode in uniform exponential
-do
-  python3 utils/prepare_data_split.py --data_path DATASET_PATH --site_num 5 --split_method ${split_mode} --out_path "data_splits/data_split_5_${split_mode}.json"
-done
+DATASET_PATH="$HOME/dataset/HIGGS.csv"
 
-for split_mode in uniform square
+if [ ! -f "${DATASET_PATH}" ]
+then
+    echo "Please check if you saved HIGGS dataset in ${DATASET_PATH}"
+fi
+
+OUTPUT_PATH="data_splits"
+if [ ! -d ${OUTPUT_PATH} ]
+then
+    mkdir ${OUTPUT_PATH}
+fi
+
+for site_num in 2 5 20;
 do
-  python3 utils/prepare_data_split.py --data_path DATASET_PATH --site_num 20 --split_method ${split_mode} --out_path "data_splits/data_split_20_${split_mode}.json"
+    for split_mode in uniform exponential square;
+    do
+        python3 utils/prepare_data_split.py \
+        --data_path "${DATASET_PATH}" \
+        --site_num ${site_num} \
+        --split_method ${split_mode} \
+        --out_path "${OUTPUT_PATH}/data_split_${site_num}_${split_mode}.json"
+    done
 done

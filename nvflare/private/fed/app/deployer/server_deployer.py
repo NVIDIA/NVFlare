@@ -35,7 +35,6 @@ class ServerDeployer:
         self.secure_train = None
         self.app_validator = None
         self.host = None
-        self.enable_byoc = None
         self.snapshot_persistor = None
         self.overseer_agent = None
         self.components = None
@@ -52,7 +51,6 @@ class ServerDeployer:
         self.secure_train = build_ctx["secure_train"]
         self.app_validator = build_ctx["app_validator"]
         self.host = build_ctx["server_host"]
-        self.enable_byoc = build_ctx["enable_byoc"]
         self.snapshot_persistor = build_ctx["snapshot_persistor"]
         self.overseer_agent = build_ctx["overseer_agent"]
         self.components = build_ctx["server_components"]
@@ -86,7 +84,6 @@ class ServerDeployer:
             heart_beat_timeout=heart_beat_timeout,
             args=args,
             secure_train=secure_train,
-            enable_byoc=self.enable_byoc,
             snapshot_persistor=self.snapshot_persistor,
             overseer_agent=self.overseer_agent,
         )

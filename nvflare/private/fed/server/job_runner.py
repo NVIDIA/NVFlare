@@ -12,22 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os.path
+import json
 import shutil
 import threading
 import time
-from typing import List
+from typing import List, Tuple
 
+from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, RunProcessKey, SystemComponents, WorkspaceConstants
+from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, RunProcessKey, SystemComponents
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_def import ALL_SITES, Job, RunStatus
-from nvflare.fuel.hci.zip_utils import zip_directory_to_bytes
-from nvflare.private.admin_defs import Message
+from nvflare.apis.job_def import ALL_SITES, Job, JobMetaKey, RunStatus
+from nvflare.apis.workspace import Workspace
+from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
+from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import check_client_replies
-from nvflare.private.fed.utils.fed_utils import deploy_app
+from nvflare.private.fed.utils.app_deployer import AppDeployer
+from nvflare.security.logging import secure_format_exception
 
 
 def _send_to_clients(admin_server, client_sites: List[str], engine, message):
@@ -57,18 +60,26 @@ class JobRunner(FLComponent):
         elif event_type in [EventType.JOB_COMPLETED, EventType.JOB_ABORTED, EventType.JOB_CANCELLED]:
             self._save_workspace(fl_ctx)
 
-    def _deploy_clients(self, app_data, app_name, job_id, client_sites: List[str], fl_ctx):
-        engine = fl_ctx.get_engine()
-        # deploy app to all the client sites
-        admin_server = engine.server.admin_server
+    def _make_deploy_message(self, job: Job, app_data, app_name):
         message = Message(topic=TrainingTopic.DEPLOY, body=app_data)
-        message.set_header(RequestHeader.JOB_ID, job_id)
-        message.set_header(RequestHeader.APP_NAME, app_name)
-        self.log_debug(fl_ctx, f"Send deploy command to the clients for run: {job_id}")
-        replies = _send_to_clients(admin_server, client_sites, engine, message)
-        return replies
+        message.set_header(RequestHeader.REQUIRE_AUTHZ, "true")
 
-    def _deploy_job(self, job: Job, sites: dict, fl_ctx: FLContext) -> str:
+        message.set_header(RequestHeader.ADMIN_COMMAND, AdminCommandNames.SUBMIT_JOB)
+        message.set_header(RequestHeader.JOB_ID, job.job_id)
+        message.set_header(RequestHeader.APP_NAME, app_name)
+
+        message.set_header(RequestHeader.SUBMITTER_NAME, job.meta.get(JobMetaKey.SUBMITTER_NAME))
+        message.set_header(RequestHeader.SUBMITTER_ORG, job.meta.get(JobMetaKey.SUBMITTER_ORG))
+        message.set_header(RequestHeader.SUBMITTER_ROLE, job.meta.get(JobMetaKey.SUBMITTER_ROLE))
+
+        message.set_header(RequestHeader.USER_NAME, job.meta.get(JobMetaKey.SUBMITTER_NAME))
+        message.set_header(RequestHeader.USER_ORG, job.meta.get(JobMetaKey.SUBMITTER_ORG))
+        message.set_header(RequestHeader.USER_ROLE, job.meta.get(JobMetaKey.SUBMITTER_ROLE))
+
+        message.set_header(RequestHeader.JOB_META, json.dumps(job.meta))
+        return message
+
+    def _deploy_job(self, job: Job, sites: dict, fl_ctx: FLContext) -> Tuple[str, list]:
         """Deploy the application to the list of participants
 
         Args:
@@ -76,19 +87,21 @@ class JobRunner(FLComponent):
             sites: participating sites
             fl_ctx: FLContext
 
-        Returns:
-            job_id
+        Returns:  job id, failed_clients
+
         """
         fl_ctx.remove_prop(FLContextKey.JOB_RUN_NUMBER)
+        fl_ctx.remove_prop(FLContextKey.JOB_DEPLOY_DETAIL)
         engine = fl_ctx.get_engine()
         run_number = job.job_id
-        workspace = os.path.join(self.workspace_root, WorkspaceConstants.WORKSPACE_PREFIX + run_number)
-        count = 1
-        while os.path.exists(workspace):
-            run_number = job.job_id + ":" + str(count)
-            workspace = os.path.join(self.workspace_root, WorkspaceConstants.WORKSPACE_PREFIX + run_number)
-            count += 1
         fl_ctx.set_prop(FLContextKey.JOB_RUN_NUMBER, run_number)
+        workspace = Workspace(root_dir=self.workspace_root, site_name="server")
+
+        client_deploy_requests = {}
+        client_token_to_name = {}
+        client_token_to_reply = {}
+        deploy_detail = []
+        fl_ctx.set_prop(FLContextKey.JOB_DEPLOY_DETAIL, deploy_detail)
 
         for app_name, participants in job.get_deployment().items():
             app_data = job.get_application(app_name, fl_ctx)
@@ -100,28 +113,84 @@ class JobRunner(FLComponent):
             client_sites = []
             for p in participants:
                 if p == "server":
-                    success = deploy_app(app_name=app_name, site_name="server", workspace=workspace, app_data=app_data)
+                    app_deployer = AppDeployer(
+                        app_name=app_name, workspace=workspace, job_id=job.job_id, job_meta=job.meta, app_data=app_data
+                    )
+
+                    err = app_deployer.deploy()
+                    if err:
+                        deploy_detail.append(f"server: {err}")
+                        raise RuntimeError(f"Failed to deploy app '{app_name}': {err}")
+
                     self.log_info(
                         fl_ctx, f"Application {app_name} deployed to the server for job: {run_number}", fire_event=False
                     )
-                    if not success:
-                        raise RuntimeError(f"Failed to deploy the App: {app_name} to the server")
+                    deploy_detail.append("server: OK")
                 else:
                     if p in sites:
                         client_sites.append(p)
 
             if client_sites:
-                replies = self._deploy_clients(app_data, app_name, run_number, client_sites, fl_ctx)
-                check_client_replies(replies=replies, client_sites=client_sites, command="deploy the App")
+                message = self._make_deploy_message(job, app_data, app_name)
+                clients, invalid_inputs = engine.validate_clients(client_sites)
+
+                if invalid_inputs:
+                    deploy_detail.append("invalid_clients: {}".format(",".join(invalid_inputs)))
+                    raise RuntimeError(f"invalid clients: {invalid_inputs}.")
+
+                for c in clients:
+                    assert isinstance(c, Client)
+                    client_token_to_name[c.token] = c.name
+                    client_deploy_requests[c.token] = message
+                    client_token_to_reply[c.token] = None
+
                 display_sites = ",".join(client_sites)
                 self.log_info(
                     fl_ctx,
-                    f"Application {app_name} deployed to the clients: {display_sites} for run: {run_number}",
+                    f"App {app_name} to be deployed to the clients: {display_sites} for run: {run_number}",
                     fire_event=False,
                 )
 
+        abort_job = False
+        failed_clients = []
+        if client_deploy_requests:
+            engine = fl_ctx.get_engine()
+            admin_server = engine.server.admin_server
+            client_token_to_reply = admin_server.send_requests_and_get_reply_dict(
+                client_deploy_requests, timeout_secs=admin_server.timeout
+            )
+
+            # check replies and see whether required clients are okay
+            for client_token, reply in client_token_to_reply.items():
+                client_name = client_token_to_name[client_token]
+                if reply:
+                    assert isinstance(reply, Message)
+                    rc = reply.get_header(MsgHeader.RETURN_CODE, ReturnCode.OK)
+                    if rc != ReturnCode.OK:
+                        failed_clients.append(client_name)
+                        deploy_detail.append(f"{client_name}: {reply.body}")
+                    else:
+                        deploy_detail.append(f"{client_name}: OK")
+                else:
+                    deploy_detail.append(f"{client_name}: unknown")
+
+            # see whether any of the failed clients are required
+            if failed_clients:
+                num_ok_sites = len(client_deploy_requests) - len(failed_clients)
+                if job.min_sites and num_ok_sites < job.min_sites:
+                    abort_job = True
+                    deploy_detail.append(f"num_ok_sites {num_ok_sites} < required_min_sites {job.min_sites}")
+                elif job.required_sites:
+                    for c in failed_clients:
+                        if c in job.required_sites:
+                            abort_job = True
+                            deploy_detail.append(f"failed to deploy to required client {c}")
+
+        if abort_job:
+            raise RuntimeError("deploy failure", deploy_detail)
+
         self.fire_event(EventType.JOB_DEPLOYED, fl_ctx)
-        return run_number
+        return run_number, failed_clients
 
     def _start_run(self, job_id: str, job: Job, client_sites: dict, fl_ctx: FLContext):
         """Start the application
@@ -179,7 +248,7 @@ class JobRunner(FLComponent):
             replies = _send_to_clients(admin_server, client_sites, engine, message)
             check_client_replies(replies=replies, client_sites=client_sites, command="abort the run")
         except RuntimeError as e:
-            self.log_error(fl_ctx, f"Failed to abort run ({job_id}) on the clients: {e}")
+            self.log_error(fl_ctx, f"Failed to abort run ({job_id}) on the clients: {secure_format_exception(e)}")
 
     def _delete_run(self, job_id, client_sites: List[str], fl_ctx: FLContext):
         """Deletes the run workspace
@@ -199,7 +268,9 @@ class JobRunner(FLComponent):
             replies = _send_to_clients(admin_server, client_sites, engine, message)
             check_client_replies(replies=replies, client_sites=client_sites, command="send delete_run command")
         except RuntimeError as e:
-            self.log_error(fl_ctx, f"Failed to execute delete run ({job_id}) on the clients: {e}")
+            self.log_error(
+                fl_ctx, f"Failed to execute delete run ({job_id}) on the clients: {secure_format_exception(e)}"
+            )
 
         err = engine.delete_job_id(job_id)
         if err:
@@ -233,13 +304,14 @@ class JobRunner(FLComponent):
 
     def _save_workspace(self, fl_ctx: FLContext):
         job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
-        workspace = os.path.join(self.workspace_root, WorkspaceConstants.WORKSPACE_PREFIX + job_id)
-        workspace_data = zip_directory_to_bytes(workspace, "")
+        workspace = Workspace(root_dir=self.workspace_root)
+        run_dir = workspace.get_run_dir(job_id)
+        workspace_data = zip_directory_to_bytes(run_dir, "")
         engine = fl_ctx.get_engine()
         job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
 
         job_manager.save_workspace(job_id, workspace_data, fl_ctx)
-        shutil.rmtree(workspace)
+        shutil.rmtree(run_dir)
 
     def run(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
@@ -260,24 +332,47 @@ class JobRunner(FLComponent):
                             try:
                                 self.log_info(fl_ctx, f"Got the job:{ready_job.job_id} from the scheduler to run")
                                 fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, ready_job.job_id)
-                                job_id = self._deploy_job(ready_job, sites, fl_ctx)
+                                job_id, failed_clients = self._deploy_job(ready_job, sites, fl_ctx)
                                 job_manager.set_status(ready_job.job_id, RunStatus.DISPATCHED, fl_ctx)
+
+                                deploy_detail = fl_ctx.get_prop(FLContextKey.JOB_DEPLOY_DETAIL)
+                                if deploy_detail:
+                                    job_manager.update_meta(
+                                        ready_job.job_id, {JobMetaKey.JOB_DEPLOY_DETAIL.value: deploy_detail}, fl_ctx
+                                    )
+
+                                if failed_clients:
+                                    deployable_clients = {
+                                        k: v for k, v in client_sites.items() if k not in failed_clients
+                                    }
+                                else:
+                                    deployable_clients = client_sites
+
                                 self._start_run(
                                     job_id=job_id,
                                     job=ready_job,
-                                    client_sites=client_sites,
+                                    client_sites=deployable_clients,
                                     fl_ctx=fl_ctx,
                                 )
                                 self.running_jobs[job_id] = ready_job
                                 job_manager.set_status(ready_job.job_id, RunStatus.RUNNING, fl_ctx)
-                            except Exception as e:
+                            except BaseException as e:
                                 if job_id:
                                     if job_id in self.running_jobs:
                                         del self.running_jobs[job_id]
                                     self._stop_run(job_id, fl_ctx)
                                 job_manager.set_status(ready_job.job_id, RunStatus.FAILED_TO_RUN, fl_ctx)
+
+                                deploy_detail = fl_ctx.get_prop(FLContextKey.JOB_DEPLOY_DETAIL)
+                                if deploy_detail:
+                                    job_manager.update_meta(
+                                        ready_job.job_id, {JobMetaKey.JOB_DEPLOY_DETAIL.value: deploy_detail}, fl_ctx
+                                    )
+
                                 self.fire_event(EventType.JOB_ABORTED, fl_ctx)
-                                self.log_error(fl_ctx, f"Failed to run the Job ({ready_job.job_id}): {e}")
+                                self.log_error(
+                                    fl_ctx, f"Failed to run the Job ({ready_job.job_id}): {secure_format_exception(e)}"
+                                )
 
                 time.sleep(1.0)
         else:
@@ -293,7 +388,9 @@ class JobRunner(FLComponent):
             with self.lock:
                 self.running_jobs[job_id] = job
         except Exception as e:
-            self.log_error(fl_ctx, f"Failed to restore the job: {job_id} to the running job table: {e}.")
+            self.log_error(
+                fl_ctx, f"Failed to restore the job: {job_id} to the running job table: {secure_format_exception(e)}."
+            )
 
     def stop_run(self, job_id: str, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
@@ -308,7 +405,7 @@ class JobRunner(FLComponent):
                 del self.running_jobs[job_id]
                 self.fire_event(EventType.JOB_ABORTED, fl_ctx)
             else:
-                raise RuntimeError(f"Job run: {job_id} does not exist.")
+                raise RuntimeError(f"Job {job_id} is not running.")
 
     def stop_all_runs(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()

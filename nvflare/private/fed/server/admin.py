@@ -19,28 +19,38 @@ from typing import List
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule
 from nvflare.fuel.hci.server.audit import CommandAudit
-from nvflare.fuel.hci.server.authz import AuthorizationService, AuthzCommandModule, AuthzFilter
+from nvflare.fuel.hci.server.authz import AuthzFilter
 from nvflare.fuel.hci.server.builtin import new_command_register_with_builtin_module
 from nvflare.fuel.hci.server.constants import ConnProps
-from nvflare.fuel.hci.server.file_transfer import FileTransferModule
 from nvflare.fuel.hci.server.hci import AdminServer
 from nvflare.fuel.hci.server.login import LoginModule, SessionManager, SimpleAuthenticator
 from nvflare.fuel.sec.audit import Auditor, AuditService
 from nvflare.private.admin_defs import Message
-from nvflare.private.defs import ERROR_MSG_PREFIX
-
-from .app_authz import AppAuthzService
+from nvflare.private.defs import ERROR_MSG_PREFIX, RequestHeader
 
 
-def new_message(conn: Connection, topic, body) -> Message:
+def new_message(conn: Connection, topic, body, require_authz: bool) -> Message:
     msg = Message(topic=topic, body=body)
-    event_id = conn.get_prop(ConnProps.EVENT_ID, default=None)
-    if event_id:
-        msg.set_header(ConnProps.EVENT_ID, event_id)
 
-    user_name = conn.get_prop(ConnProps.USER_NAME, default=None)
-    if user_name:
-        msg.set_header(ConnProps.USER_NAME, user_name)
+    cmd_entry = conn.get_prop(ConnProps.CMD_ENTRY)
+    if cmd_entry:
+        msg.set_header(RequestHeader.ADMIN_COMMAND, cmd_entry.name)
+        msg.set_header(RequestHeader.REQUIRE_AUTHZ, str(require_authz).lower())
+
+    props_to_copy = [
+        ConnProps.EVENT_ID,
+        ConnProps.USER_NAME,
+        ConnProps.USER_ROLE,
+        ConnProps.USER_ORG,
+        ConnProps.SUBMITTER_NAME,
+        ConnProps.SUBMITTER_ORG,
+        ConnProps.SUBMITTER_ROLE,
+    ]
+
+    for p in props_to_copy:
+        prop = conn.get_prop(p, default=None)
+        if prop:
+            msg.set_header(p, prop)
 
     return msg
 
@@ -161,15 +171,13 @@ class FedAdminServer(AdminServer):
         cmd_modules,
         file_upload_dir,
         file_download_dir,
-        allowed_shell_cmds,
         host,
         port,
         ca_cert_file_name,
         server_cert_file_name,
         server_key_file_name,
         accepted_client_cns=None,
-        app_validator=None,
-        download_job_url=None,
+        download_job_url="",
     ):
         """The FedAdminServer is the framework for developing admin commands.
 
@@ -179,7 +187,6 @@ class FedAdminServer(AdminServer):
             cmd_modules: a list of CommandModules
             file_upload_dir: the directory for uploaded files
             file_download_dir: the directory for files to be downloaded
-            allowed_shell_cmds: list of shell commands allowed. If not specified, all allowed.
             host: the IP address of the admin server
             port: port number of admin server
             ca_cert_file_name: the root CA's cert file name
@@ -187,10 +194,10 @@ class FedAdminServer(AdminServer):
             server_key_file_name: server's private key file
             accepted_client_cns: list of accepted Common Names from client, if specified
             app_validator: Application folder validator.
+            download_job_url: download job url
         """
         cmd_reg = new_command_register_with_builtin_module(app_ctx=fed_admin_interface)
         self.sai = fed_admin_interface
-        self.allowed_shell_cmds = allowed_shell_cmds
 
         authenticator = SimpleAuthenticator(users)
         sess_mgr = SessionManager()
@@ -202,11 +209,8 @@ class FedAdminServer(AdminServer):
         cmd_reg.add_filter(login_module)
 
         # next is the authorization filter and command module
-        authorizer = AuthorizationService.get_authorizer()
-        authz_filter = AuthzFilter(authorizer=authorizer)
+        authz_filter = AuthzFilter()
         cmd_reg.add_filter(authz_filter)
-        authz_cmd_module = AuthzCommandModule(authorizer=authorizer)
-        cmd_reg.register_module(authz_cmd_module)
 
         # audit filter records commands to audit trail
         auditor = AuditService.get_auditor()
@@ -219,15 +223,14 @@ class FedAdminServer(AdminServer):
         self.file_upload_dir = file_upload_dir
         self.file_download_dir = file_download_dir
 
-        AppAuthzService.initialize(app_validator)
-        cmd_reg.register_module(
-            FileTransferModule(
-                upload_dir=file_upload_dir,
-                download_dir=file_download_dir,
-                upload_folder_authz_func=AppAuthzService.authorize_upload,
-                download_job_url=download_job_url,
-            )
-        )
+        # YC: need to register FileTransferModule any more
+        # since upload/download functions are to be implemented by other modules.
+        # cmd_reg.register_module(
+        #     FileTransferModule(
+        #         upload_dir=file_upload_dir,
+        #         download_dir=file_download_dir
+        #     )
+        # )
 
         cmd_reg.register_module(sess_mgr)
 
@@ -249,6 +252,11 @@ class FedAdminServer(AdminServer):
             server_cert=server_cert_file_name,
             server_key=server_key_file_name,
             accepted_client_cns=accepted_client_cns,
+            extra_conn_props={
+                ConnProps.DOWNLOAD_DIR: file_download_dir,
+                ConnProps.UPLOAD_DIR: file_upload_dir,
+                ConnProps.DOWNLOAD_JOB_URL: download_job_url,
+            },
         )
 
         self.clients = {}  # token => _Client
@@ -307,6 +315,26 @@ class FedAdminServer(AdminServer):
             reqs[token] = req
 
         return self.send_requests(reqs, timeout_secs)
+
+    def send_requests_and_get_reply_dict(self, requests: dict, timeout_secs=2.0) -> dict:
+        """Send requests to clients
+
+        Args:
+            requests: A dict of requests: {client token: request}
+            timeout_secs: how long to wait for reply before timeout
+
+        Returns:
+            A dict of {client token: reply}, where reply is a Message or None (no reply received)
+        """
+        result = {}
+        if requests:
+            for token, _ in requests.items():
+                result[token] = None
+
+            replies = self.send_requests(requests, timeout_secs)
+            for r in replies:
+                result[r.client_token] = r.reply
+        return result
 
     def send_requests(self, requests: dict, timeout_secs=2.0) -> [ClientReply]:
         """Send requests to clients.

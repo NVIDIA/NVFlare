@@ -22,8 +22,6 @@ from nvflare.apis.filter import Filter
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-from nvflare.apis.utils.decomposers import flare_decomposers
-from nvflare.app_common.decomposers import common_decomposers
 from nvflare.fuel.utils import fobs
 from nvflare.private.defs import SpecialTaskName
 from nvflare.private.event import fire_event
@@ -46,7 +44,6 @@ class FederatedClient(FederatedClientBase):
         handlers: Optional[List[FLComponent]] = None,
         executors: Optional[List[Executor]] = None,
         compression=None,
-        enable_byoc=False,
         overseer_agent=None,
         args=None,
         components=None,
@@ -63,7 +60,6 @@ class FederatedClient(FederatedClientBase):
             handlers: handlers
             executors: executors
             compression: communication compression algorithm
-            enable_byoc: True/False to allow byoc
         """
         # We call the base implementation directly.
         super().__init__(
@@ -81,12 +77,6 @@ class FederatedClient(FederatedClientBase):
         )
 
         self.executors = executors
-        self.enable_byoc = enable_byoc
-        self.initialize_fobs()
-
-    def initialize_fobs(self):
-        flare_decomposers.register()
-        common_decomposers.register()
 
     def fetch_task(self, fl_ctx: FLContext):
         fire_event(EventType.BEFORE_PULL_TASK, self.handlers, fl_ctx)

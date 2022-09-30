@@ -16,6 +16,7 @@ import logging
 import threading
 
 from nvflare.apis.fl_context import FLContext
+from nvflare.security.logging import secure_format_exception
 
 from ..utils.fed_utils import listen_command
 from .admin_commands import AdminCommands
@@ -63,8 +64,7 @@ class CommandAgent(object):
                 self.logger.info("listener communication terminated.")
                 break
             except Exception as e:
-                # traceback.print_exc()
-                self.logger.error(f"Process communication error: {self.listen_port}: {e}.", exc_info=False)
+                self.logger.error(f"Process communication error: {self.listen_port}: {secure_format_exception(e)}.")
 
     def shutdown(self):
         self.asked_to_stop = True

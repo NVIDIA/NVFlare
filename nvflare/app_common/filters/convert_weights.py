@@ -12,14 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.apis.dxo import DataKind, MetaKey, from_shareable
-from nvflare.apis.filter import Filter
-from nvflare.apis.fl_constant import FLContextKey, ReturnCode
+from typing import Union
+
+from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
+from nvflare.apis.dxo_filter import DXOFilter
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 
 
-class ConvertWeights(Filter):
+class ConvertWeights(DXOFilter):
 
     WEIGHTS_TO_DIFF = "weights_to_diff"
     DIFF_TO_WEIGHTS = "diff_to_weights"
@@ -33,12 +35,12 @@ class ConvertWeights(Filter):
         Raises:
             ValueError: when the direction string is neither weights_to_diff nor diff_to_weights
         """
-        Filter.__init__(self)
+        DXOFilter.__init__(
+            self, supported_data_kinds=[DataKind.WEIGHT_DIFF, DataKind.WEIGHTS], data_kinds_to_filter=None
+        )
         if direction not in (self.WEIGHTS_TO_DIFF, self.DIFF_TO_WEIGHTS):
             raise ValueError(
-                "invalid convert direction {}: must be in {}".format(
-                    direction, (self.WEIGHTS_TO_DIFF, self.DIFF_TO_WEIGHTS)
-                )
+                f"invalid convert direction {direction}: must be in {(self.WEIGHTS_TO_DIFF, self.DIFF_TO_WEIGHTS)}"
             )
 
         self.direction = direction
@@ -46,7 +48,7 @@ class ConvertWeights(Filter):
     def _get_base_weights(self, fl_ctx: FLContext):
         task_data = fl_ctx.get_prop(FLContextKey.TASK_DATA, None)
         if not isinstance(task_data, Shareable):
-            self.log_error(fl_ctx, "invalid task data: expect Shareable but got {}".format(type(task_data)))
+            self.log_error(fl_ctx, f"invalid task data: expect Shareable but got {type(task_data)}")
             return None
 
         try:
@@ -56,54 +58,40 @@ class ConvertWeights(Filter):
             return None
 
         if dxo.data_kind != DataKind.WEIGHTS:
-            self.log_info(fl_ctx, "ignored task: expect data to be WEIGHTS but got {}".format(dxo.data_kind))
+            self.log_info(fl_ctx, f"ignored task: expect data to be WEIGHTS but got {dxo.data_kind}")
             return None
 
         processed_algo = dxo.get_meta_prop(MetaKey.PROCESSED_ALGORITHM, None)
         if processed_algo:
-            self.log_info(fl_ctx, "ignored task since its processed by {}".format(processed_algo))
+            self.log_info(fl_ctx, f"ignored task since its processed by {processed_algo}")
             return None
 
         return dxo.data
 
-    def process(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
+    def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:
         """Called by runners to perform weight conversion.
 
-        When the return code of shareable is not ReturnCode.OK, this
-        function will not perform any process and returns the shareable back.
-
         Args:
-            shareable (Shareable): shareable must conform to DXO format.
+            dxo (DXO): dxo to be processed.
+            shareable: the shareable that the dxo belongs to
             fl_ctx (FLContext): this context must include TASK_DATA, which is another shareable containing base weights.
               If not, the input shareable will be returned.
 
-        Returns:
-            Shareable: a shareable with converted weights
+        Returns: filtered result
         """
-        rc = shareable.get_return_code()
-        if rc != ReturnCode.OK:
-            # don't process if RC not OK
-            return shareable
-
         base_weights = self._get_base_weights(fl_ctx)
         if not base_weights:
-            return shareable
-
-        try:
-            dxo = from_shareable(shareable)
-        except ValueError:
-            self.log_error(fl_ctx, "invalid task result: no DXO")
-            return shareable
+            return None
 
         processed_algo = dxo.get_meta_prop(MetaKey.PROCESSED_ALGORITHM, None)
         if processed_algo:
-            self.log_info(fl_ctx, "cannot process task result since its processed by {}".format(processed_algo))
-            return shareable
+            self.log_info(fl_ctx, f"cannot process task result since its processed by {processed_algo}")
+            return None
 
         if self.direction == self.WEIGHTS_TO_DIFF:
             if dxo.data_kind != DataKind.WEIGHTS:
-                self.log_warning(fl_ctx, "cannot process task result: expect WEIGHTS but got {}".format(dxo.data_kind))
-                return shareable
+                self.log_warning(fl_ctx, f"cannot process task result: expect WEIGHTS but got {dxo.data_kind}")
+                return None
 
             new_weights = dxo.data
             for k, _ in new_weights.items():
@@ -113,10 +101,8 @@ class ConvertWeights(Filter):
         else:
             # diff to weights
             if dxo.data_kind != DataKind.WEIGHT_DIFF:
-                self.log_warning(
-                    fl_ctx, "cannot process task result: expect WEIGHT_DIFF but got {}".format(dxo.data_kind)
-                )
-                return shareable
+                self.log_warning(fl_ctx, f"cannot process task result: expect WEIGHT_DIFF but got {dxo.data_kind}")
+                return None
 
             new_weights = dxo.data
             for k, _ in new_weights.items():
@@ -124,4 +110,4 @@ class ConvertWeights(Filter):
                     new_weights[k] += base_weights[k]
             dxo.data_kind = DataKind.WEIGHTS
 
-        return dxo.update_shareable(shareable)
+        return dxo

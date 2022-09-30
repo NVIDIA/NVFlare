@@ -13,11 +13,9 @@
 # limitations under the License.
 
 import json
-import os
-import shutil
 
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReturnCode
+from nvflare.apis.fl_constant import ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.aggregator import Aggregator
@@ -41,7 +39,11 @@ class XGBoostBaggingAggregator(Aggregator):
         super().__init__()
         self.logger.debug(f"expected data kind: {DataKind.XGB_MODEL}")
         self.history = []
+        self.local_models = []
+        self.local_models_as_dict = []
+        self.global_model = None
         self.expected_data_kind = DataKind.XGB_MODEL
+        self.num_trees = 0
 
     def accept(self, shareable: Shareable, fl_ctx: FLContext) -> bool:
         """Store shareable and update aggregator's internal state
@@ -97,10 +99,9 @@ class XGBoostBaggingAggregator(Aggregator):
             self.log_error(fl_ctx, "no data to aggregate")
             return False
         else:
-            app_root = fl_ctx.get_prop(FLContextKey.APP_ROOT)
-            save_path = os.path.join(app_root, "temp_" + contributor_name + ".json")
-            with open(save_path, "w") as f:
-                json.dump(data, f)
+            self.local_models.append(data["model_data"])
+            self.local_models_as_dict.append(json.loads(data["model_data"]))
+
             self.history.append(
                 {
                     "contributor_name": contributor_name,
@@ -125,50 +126,14 @@ class XGBoostBaggingAggregator(Aggregator):
 
         self.log_info(fl_ctx, f"aggregating {site_num} update(s) at round {current_round}")
 
-        app_root = fl_ctx.get_prop(FLContextKey.APP_ROOT)
-        global_model_path = os.path.join(app_root, "global_model.json")
-
-        client_model_path = []
-        for record in self.history:
-            contributor_name = record["contributor_name"]
-            client_model_path.append(os.path.join(app_root, "temp_" + contributor_name + ".json"))
-
-        if not os.path.exists(global_model_path):
-            # First round, copy from tree 1 to get all xgboost model items
-            shutil.copy(client_model_path[0], global_model_path)
-            # Remove the first tree
-            with open(global_model_path) as f:
-                json_bagging = json.load(f)
-            json_bagging["learner"]["gradient_booster"]["model"]["trees"] = []
-            with open(global_model_path, "w") as f:
-                json.dump(json_bagging, f, separators=(",", ":"))
-
-        with open(global_model_path) as f:
-            json_bagging = json.load(f)
-            # Append this round's trees to global model tree list
-        for site in range(site_num):
-            with open(client_model_path[site]) as f:
-                json_single = json.load(f)
-            # Always 1 tree, so [0]
-            append_info = json_single["learner"]["gradient_booster"]["model"]["trees"][0]
-            append_info["id"] = current_round * site_num + site
-            json_bagging["learner"]["gradient_booster"]["model"]["trees"].append(append_info)
-            json_bagging["learner"]["gradient_booster"]["model"]["tree_info"].append(0)
-        json_bagging["learner"]["attributes"]["best_iteration"] = str(current_round)
-        json_bagging["learner"]["attributes"]["best_ntree_limit"] = str(site_num * (current_round + 1))
-        json_bagging["learner"]["gradient_booster"]["model"]["gbtree_model_param"]["num_trees"] = str(
-            site_num * (current_round + 1)
-        )
-        json_bagging["learner"]["gradient_booster"]["model"]["gbtree_model_param"]["num_parallel_tree"] = str(site_num)
-
-        # Save the global bagging model
-        with open(global_model_path, "w") as f:
-            json.dump(json_bagging, f, separators=(",", ":"))
-
         self.history = []
         self.log_debug(fl_ctx, "End aggregation")
-
-        with open(global_model_path, "rb") as json_file:
-            model_learnable = json.load(json_file)
-        dxo = DXO(data_kind=self.expected_data_kind, data=model_learnable)
+        local_updates = self.local_models
+        local_updates_as_dict = self.local_models_as_dict
+        self.local_models = []
+        self.local_models_as_dict = []
+        dxo = DXO(
+            data_kind=self.expected_data_kind,
+            data={"model_data": local_updates, "model_data_dict": local_updates_as_dict},
+        )
         return dxo.to_shareable()

@@ -14,7 +14,7 @@
 
 
 from flask import current_app as app
-from flask import jsonify, make_response, request
+from flask import jsonify, make_response, redirect, request
 from flask_jwt_extended import create_access_token, get_jwt, jwt_required
 
 from . import jwt
@@ -24,6 +24,11 @@ from .store import Store
 @jwt.expired_token_loader
 def my_expired_token_callback(jwt_header, jwt_payload):
     return jsonify({"status": "unauthenticated"}), 401
+
+
+@app.route("/")
+def index_html():
+    return redirect("/index.html", code=302)
 
 
 @app.route("/api/v1/login", methods=["POST"])
@@ -55,7 +60,7 @@ def overseer_blob():
         fileobj, filename = Store.get_overseer_blob(pin)
         response = make_response(fileobj.read())
         response.headers.set("Content-Type", "zip")
-        response.headers.set("Content-Disposition", "attachment", filename=filename)
+        response.headers.set("Content-Disposition", f'attachment; filename="{filename}"')
         return response
     else:
         return jsonify({"status": "unauthorized"}), 403
@@ -70,7 +75,7 @@ def server_blob(id):
         fileobj, filename = Store.get_server_blob(pin, id == 1)
         response = make_response(fileobj.read())
         response.headers.set("Content-Type", "zip")
-        response.headers.set("Content-Disposition", "attachment", filename=filename)
+        response.headers.set("Content-Disposition", f'attachment; filename="{filename}"')
         return response
     else:
         return jsonify({"status": "unauthorized"}), 403

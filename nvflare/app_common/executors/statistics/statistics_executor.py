@@ -11,20 +11,21 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import random
 from typing import Dict, List, Optional
 
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
-from nvflare.apis.fl_constant import ReservedKey, ReturnCode
+from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
-from nvflare.app_common.abstract.statistics_spec import Feature, Histogram, MetricConfig, Statistics
+from nvflare.app_common.abstract.statistics_spec import Feature, Histogram, HistogramType, StatisticConfig, Statistics
 from nvflare.app_common.app_constant import StatisticsConstants as StC
-from nvflare.app_common.executors.statistics.statistics_executor_exception import StatisticExecutorException
 from nvflare.app_common.statistics.numeric_stats import filter_numeric_features
+from nvflare.app_common.statistics.statisitcs_objects_decomposer import fobs_registration
+from nvflare.app_common.statistics.statistics_config_utils import get_feature_bin_range
+from nvflare.fuel.utils import fobs
 
 """
     StatisticsExecutor is client-side executor that perform local statistics generation and communication to
@@ -37,46 +38,30 @@ class StatisticsExecutor(Executor):
     def __init__(
         self,
         generator_id: str,
-        min_count: int,
-        min_random: float,
-        max_random: float,
+        precision=4,
     ):
         """
 
         Args:
             generator_id:  Id of the statistics component
-            min_count:     minimum of data records (or tabular data rows) that required in order to perform statistics calculation
-                           this is part the data privacy policy.
-                           todo: This configuration will be moved to site/data_privacy.json files
-            min_random:    minimum random noise -- used to protect min/max values before sending to server
-            max_random:    maximum random noise -- used to protect min/max values before sending to server
-                           min/max random is used to generate random noise between (min_random and max_random).
-                           for example, the random noise is to be within (0.1 and 0.3), 10% to 30% level. These noise
-                           will make local min values smaller than the true local min values, and max values larger than
-                           the true local max values. As result, the estimate global max and min values (i.e. with noise)
-                           are still bound the true global min/max values, in such that
 
-                              est. global min value <
-                                        true global min value <
-                                                  client's min value <
-                                                          client's max value <
-                                                                  true global max <
-                                                                           est. global max value
+            precision: number of precision digits
 
-                           todo: the min/max noise level range (min_random, max_random) will be moved to
-                           todo: site/data_privacy.json
         """
 
         super().__init__()
+        self.init_status_ok = True
+        self.init_failure = {"abort_job": None, "fail_client": None}
         self.generator_id = generator_id
-        self.min_count = min_count
         self.stats_generator: Optional[Statistics] = None
-        self.max_random = max_random
-        self.min_random = min_random
+        self.precision = precision
+        self.client_name = None
+        fobs_registration()
 
-    def metric_functions(self) -> dict:
+    def statistic_functions(self) -> dict:
         return {
             StC.STATS_COUNT: self.get_count,
+            StC.STATS_FAILURE_COUNT: self.get_failure_count,
             StC.STATS_SUM: self.get_sum,
             StC.STATS_MEAN: self.get_mean,
             StC.STATS_STDDEV: self.get_stddev,
@@ -94,170 +79,279 @@ class StatisticsExecutor(Executor):
 
     def initialize(self, fl_ctx: FLContext):
         try:
+            self.client_name = fl_ctx.get_identity_name()
             engine = fl_ctx.get_engine()
             self.stats_generator = engine.get_component(self.generator_id)
-            if not isinstance(self.stats_generator, Statistics):
-                raise TypeError(
-                    f"statistics generator must implement Statistics type. Got: {type(self.stats_generator)}"
-                )
+            self._check_generator_type()
             self.stats_generator.initialize(engine.get_all_components(), fl_ctx)
+        except TypeError as te:
+            self.log_exception(
+                fl_ctx,
+                f"local statistics generator must implement `Statistics`,"
+                f"but {type(self.stats_generator).__name__} is provided. {te}",
+            )
+            self.init_status_ok = False
+            self.init_failure = {"abort_job": te}
         except Exception as e:
-            self.log_exception(fl_ctx, f"statistics generator initialize exception: {e}")
+            self.init_status_ok = False
+            self.init_failure = {"fail_client": e}
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
-        client_name = fl_ctx.get_prop(ReservedKey.CLIENT_NAME)
+        init_rc = self._check_init_status(fl_ctx)
+        if init_rc:
+            return make_reply(init_rc)
+
+        client_name = fl_ctx.get_identity_name()
         self.log_info(fl_ctx, f"Executing task '{task_name}' for client: '{client_name}'")
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
         try:
             result = self._client_exec(task_name, shareable, fl_ctx, abort_signal)
             if result:
-                dxo = DXO(data_kind=DataKind.ANALYTIC, data=result)
+                dxo = DXO(data_kind=DataKind.STATISTICS, data=result)
                 return dxo.to_shareable()
             else:
-                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+                return make_reply(ReturnCode.EXECUTION_RESULT_ERROR)
 
         except BaseException as e:
             self.log_exception(fl_ctx, f"Task {task_name} failed. Exception: {e.__str__()}")
-            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+            return make_reply(ReturnCode.EXECUTION_RESULT_ERROR)
 
     def _client_exec(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
-        client_name = fl_ctx.get_prop(ReservedKey.CLIENT_NAME)
+        client_name = fl_ctx.get_identity_name()
         self.log_info(fl_ctx, f"Executing task '{task_name}' for client: '{client_name}'")
         result = Shareable()
-        metrics_result = {}
-        if task_name == StC.FED_STATS_TASK:
+        statistics_result = {}
+        if task_name == StC.FED_STATS_PRE_RUN:
+            # initial handshake
+            target_statistics: List[StatisticConfig] = fobs.loads(shareable.get(StC.STATS_TARGET_STATISTICS))
+            self.pre_run(target_statistics)
+            return make_reply(ReturnCode.OK)
+
+        elif task_name == StC.FED_STATS_TASK:
             ds_features = self.get_numeric_features()
-            self.validate(client_name, ds_features, shareable, fl_ctx)
-            metric_task = shareable.get(StC.METRIC_TASK_KEY)
-            target_metrics: List[MetricConfig] = shareable.get(StC.STATS_TARGET_METRICS)
-            for tm in target_metrics:
-                fn = self.metric_functions()[tm.name]
-                metrics_result[tm.name] = {}
-                for ds_name in ds_features:
-                    metrics_result[tm.name][ds_name] = {}
-                    features: List[Feature] = ds_features[ds_name]
-                    for feature in features:
-                        metrics_result[tm.name][ds_name][feature.feature_name] = fn(
-                            ds_name, feature.feature_name, tm, shareable, fl_ctx
-                        )
+            statistics_task = shareable.get(StC.STATISTICS_TASK_KEY)
+            target_statistics: List[StatisticConfig] = fobs.loads(shareable.get(StC.STATS_TARGET_STATISTICS))
+            if StC.STATS_FAILURE_COUNT not in target_statistics:
+                target_statistics.append(StatisticConfig(StC.STATS_FAILURE_COUNT, {}))
 
-            result[StC.METRIC_TASK_KEY] = metric_task
-            if metric_task == StC.STATS_1st_METRICS:
-                result[StC.STATS_FEATURES] = ds_features
+            for tm in target_statistics:
+                fn = self.statistic_functions()[tm.name]
+                statistics_result[tm.name] = {}
+                StatisticsExecutor._populate_result_statistics(
+                    statistics_result, ds_features, tm, shareable, fl_ctx, fn
+                )
 
-            result[metric_task] = metrics_result
+            # always add count for data privacy needs
+            if StC.STATS_COUNT not in statistics_result:
+                tm = StatisticConfig(StC.STATS_COUNT, {})
+                fn = self.get_count
+                statistics_result[tm.name] = {}
+                StatisticsExecutor._populate_result_statistics(
+                    statistics_result, ds_features, tm, shareable, fl_ctx, fn
+                )
+
+            result[StC.STATISTICS_TASK_KEY] = statistics_task
+            if statistics_task == StC.STATS_1st_STATISTICS:
+                result[StC.STATS_FEATURES] = fobs.dumps(ds_features)
+            result[statistics_task] = fobs.dumps(statistics_result)
+
+            target_statistics: List[StatisticConfig]
         else:
             return make_reply(ReturnCode.TASK_UNKNOWN)
 
         return result
 
+    def _check_generator_type(self):
+        if not isinstance(self.stats_generator, Statistics):
+            raise TypeError(
+                f"{type(self.stats_generator).__name} must implement `Statistics` type."
+                f" Got: {type(self.stats_generator)}"
+            )
+
+    def _check_init_status(self, fl_ctx: FLContext):
+        if not self.init_status_ok:
+            for fail_key in self.init_failure:
+                reason = self.init_failure[fail_key]
+                if fail_key == "abort_job":
+                    return ReturnCode.EXECUTION_EXCEPTION
+                else:
+                    self.system_panic(reason, fl_ctx)
+                    # probably never reach here, but just for type consistency
+                    return ReturnCode.EXECUTION_RESULT_ERROR
+        return None
+
+    @staticmethod
+    def _populate_result_statistics(statistics_result, ds_features, tm: StatisticConfig, shareable, fl_ctx, fn):
+        for ds_name in ds_features:
+            statistics_result[tm.name][ds_name] = {}
+            features: List[Feature] = ds_features[ds_name]
+            for feature in features:
+                statistics_result[tm.name][ds_name][feature.feature_name] = fn(
+                    ds_name, feature.feature_name, tm, shareable, fl_ctx
+                )
+
     def get_numeric_features(self) -> Dict[str, List[Feature]]:
         ds_features: Dict[str, List[Feature]] = self.stats_generator.features()
         return filter_numeric_features(ds_features)
 
-    def validate(
-        self, client_name: str, ds_features: Dict[str, List[Feature]], shareable: Shareable, fl_ctx: FLContext
-    ):
-        count_config = MetricConfig(StC.STATS_COUNT, {})
-        for ds_name in ds_features:
-            features = ds_features[ds_name]
-            for feature in features:
-                feature_name = feature.feature_name
-                count = self.get_count(ds_name, feature.feature_name, count_config, shareable, fl_ctx)
-                if count < self.min_count:
-                    raise StatisticExecutorException(
-                        f" dataset {ds_name} feature{feature_name} item count is "
-                        f"less than required minimum count {self.min_count} for client {client_name} "
-                    )
+    def pre_run(self, target_statistics: List[StatisticConfig]):
+        feature_num_of_bins = None
+        feature_bin_ranges = None
+        target_statistic_keys = []
+        for mc in target_statistics:
+            target_statistic_keys.append(mc.name)
+            if mc.name == StC.STATS_HISTOGRAM:
+                hist_config = mc.config
+                feature_num_of_bins = {}
+                feature_bin_ranges = {}
+                for feature_name in hist_config:
+                    num_of_bins: int = self.get_number_of_bins(feature_name, hist_config)
+                    feature_num_of_bins[feature_name] = num_of_bins
+                    bin_range = get_feature_bin_range(feature_name, hist_config)
+                    feature_bin_ranges[feature_name] = bin_range
+
+        self.stats_generator.pre_run(target_statistic_keys, feature_num_of_bins, feature_bin_ranges)
 
     def get_count(
-        self, dataset_name: str, feature_name: str, metric_config: MetricConfig, inputs: Shareable, fl_ctx: FLContext
+        self,
+        dataset_name: str,
+        feature_name: str,
+        statistic_configs: StatisticConfig,
+        inputs: Shareable,
+        fl_ctx: FLContext,
     ) -> int:
 
         result = self.stats_generator.count(dataset_name, feature_name)
         return result
 
+    def get_failure_count(
+        self,
+        dataset_name: str,
+        feature_name: str,
+        statistic_configs: StatisticConfig,
+        inputs: Shareable,
+        fl_ctx: FLContext,
+    ) -> int:
+
+        result = self.stats_generator.failure_count(dataset_name, feature_name)
+        return result
+
     def get_sum(
-        self, dataset_name: str, feature_name: str, metric_config: MetricConfig, inputs: Shareable, fl_ctx: FLContext
+        self,
+        dataset_name: str,
+        feature_name: str,
+        statistic_configs: StatisticConfig,
+        inputs: Shareable,
+        fl_ctx: FLContext,
     ) -> float:
 
-        result = self.stats_generator.sum(dataset_name, feature_name)
+        result = round(self.stats_generator.sum(dataset_name, feature_name), self.precision)
         return result
 
     def get_mean(
-        self, dataset_name: str, feature_name: str, metric_config: MetricConfig, inputs: Shareable, fl_ctx: FLContext
+        self,
+        dataset_name: str,
+        feature_name: str,
+        statistic_configs: StatisticConfig,
+        inputs: Shareable,
+        fl_ctx: FLContext,
     ) -> float:
         count = self.stats_generator.count(dataset_name, feature_name)
         sum_value = self.stats_generator.sum(dataset_name, feature_name)
         if count is not None and sum_value is not None:
-            return sum_value / count
+            return round(sum_value / count, self.precision)
         else:
             # user did not implement count and/or sum, call means directly.
-            mean = self.stats_generator.mean(dataset_name, feature_name)
-            # self._check_result(mean, metric_config.name)
+            mean = round(self.stats_generator.mean(dataset_name, feature_name), self.precision)
+            # self._check_result(mean, statistic_configs.name)
             return mean
 
     def get_stddev(
-        self, dataset_name: str, feature_name: str, metric_config: MetricConfig, inputs: Shareable, fl_ctx: FLContext
+        self,
+        dataset_name: str,
+        feature_name: str,
+        statistic_configs: StatisticConfig,
+        inputs: Shareable,
+        fl_ctx: FLContext,
     ) -> float:
 
-        result = self.stats_generator.stddev(dataset_name, feature_name)
+        result = round(self.stats_generator.stddev(dataset_name, feature_name), self.precision)
         return result
 
     def get_variance_with_mean(
-        self, dataset_name: str, feature_name: str, metric_config: MetricConfig, inputs: Shareable, fl_ctx: FLContext
+        self,
+        dataset_name: str,
+        feature_name: str,
+        statistic_configs: StatisticConfig,
+        inputs: Shareable,
+        fl_ctx: FLContext,
     ) -> float:
-        global_mean = inputs[StC.STATS_GLOBAL_MEAN][dataset_name][feature_name]
-        global_count = inputs[StC.STATS_GLOBAL_COUNT][dataset_name][feature_name]
-        result = self.stats_generator.variance_with_mean(dataset_name, feature_name, global_mean, global_count)
-        return result
+        if StC.STATS_GLOBAL_MEAN in inputs and StC.STATS_GLOBAL_COUNT in inputs:
+            global_mean = inputs[StC.STATS_GLOBAL_MEAN][dataset_name][feature_name]
+            global_count = inputs[StC.STATS_GLOBAL_COUNT][dataset_name][feature_name]
+            result = self.stats_generator.variance_with_mean(dataset_name, feature_name, global_mean, global_count)
+            result = round(result, self.precision)
+            return result
+        else:
+            return None
 
     def get_histogram(
-        self, dataset_name: str, feature_name: str, metric_config: MetricConfig, inputs: Shareable, fl_ctx: FLContext
+        self,
+        dataset_name: str,
+        feature_name: str,
+        statistic_configs: StatisticConfig,
+        inputs: Shareable,
+        fl_ctx: FLContext,
     ) -> Histogram:
-        global_min_value = inputs[StC.STATS_MIN][dataset_name][feature_name]
-        global_max_value = inputs[StC.STATS_MAX][dataset_name][feature_name]
-        hist_config: dict = metric_config.config
-        num_of_bins: int = self.get_number_of_bins(feature_name, hist_config)
-        bin_range: List[int] = self.get_bin_range(feature_name, global_min_value, global_max_value, hist_config)
-        item_count = self.stats_generator.count(dataset_name, feature_name)
-        if num_of_bins >= item_count:
-            raise ValueError(
-                f"number of bins: {num_of_bins} needs to smaller than item count: {item_count} for feature "
-                f"'{feature_name}' in dataset '{dataset_name}'"
-            )
-
-        result = self.stats_generator.histogram(dataset_name, feature_name, num_of_bins, bin_range[0], bin_range[1])
-        return result
+        if StC.STATS_MIN in inputs and StC.STATS_MAX in inputs:
+            global_min_value = inputs[StC.STATS_MIN][dataset_name][feature_name]
+            global_max_value = inputs[StC.STATS_MAX][dataset_name][feature_name]
+            hist_config: dict = statistic_configs.config
+            num_of_bins: int = self.get_number_of_bins(feature_name, hist_config)
+            bin_range: List[int] = self.get_bin_range(feature_name, global_min_value, global_max_value, hist_config)
+            result = self.stats_generator.histogram(dataset_name, feature_name, num_of_bins, bin_range[0], bin_range[1])
+            return result
+        else:
+            return Histogram(HistogramType.STANDARD, list())
 
     def get_max_value(
-        self, dataset_name: str, feature_name: str, metric_config: MetricConfig, inputs: Shareable, fl_ctx: FLContext
+        self,
+        dataset_name: str,
+        feature_name: str,
+        statistic_configs: StatisticConfig,
+        inputs: Shareable,
+        fl_ctx: FLContext,
     ) -> float:
         """
         get randomized max value
         """
-        hist_config: dict = metric_config.config
-        user_bin_range = self.get_user_bin_range(feature_name, hist_config)
-        if user_bin_range is None:
+        hist_config: dict = statistic_configs.config
+        feature_bin_range = get_feature_bin_range(feature_name, hist_config)
+        if feature_bin_range is None:
             client_max_value = self.stats_generator.max_value(dataset_name, feature_name)
-            return self._get_max_value(client_max_value)
+            return client_max_value
         else:
-            return user_bin_range[1]
+            return feature_bin_range[1]
 
     def get_min_value(
-        self, dataset_name: str, feature_name: str, metric_config: MetricConfig, inputs: Shareable, fl_ctx: FLContext
+        self,
+        dataset_name: str,
+        feature_name: str,
+        statistic_configs: StatisticConfig,
+        inputs: Shareable,
+        fl_ctx: FLContext,
     ) -> float:
         """
         get randomized min value
         """
-        hist_config: dict = metric_config.config
-        user_bin_range = self.get_user_bin_range(feature_name, hist_config)
-        if user_bin_range is None:
+        hist_config: dict = statistic_configs.config
+        feature_bin_range = get_feature_bin_range(feature_name, hist_config)
+        if feature_bin_range is None:
             client_min_value = self.stats_generator.min_value(dataset_name, feature_name)
-            return self._get_min_value(client_min_value)
+            return client_min_value
         else:
-            return user_bin_range[0]
+            return feature_bin_range[0]
 
     def get_number_of_bins(self, feature_name: str, hist_config: dict) -> int:
         err_msg = (
@@ -275,11 +369,9 @@ class StatisticsExecutor(Executor):
             if num_of_bins:
                 return num_of_bins
             else:
-                print(err_msg)
-            raise Exception(err_msg)
+                raise Exception(err_msg)
 
         except KeyError as e:
-            print(err_msg)
             raise Exception(err_msg)
 
     def get_bin_range(
@@ -287,47 +379,11 @@ class StatisticsExecutor(Executor):
     ) -> List[int]:
 
         global_bin_range = [global_min_value, global_max_value]
-        bin_range = self.get_user_bin_range(feature_name, hist_config)
+        bin_range = get_feature_bin_range(feature_name, hist_config)
         if bin_range is None:
             bin_range = global_bin_range
 
         return bin_range
-
-    def get_user_bin_range(self, feature_name: str, hist_config: dict) -> Optional[List[int]]:
-        bin_range = None
-        if feature_name in hist_config:
-            if StC.STATS_BIN_RANGE in hist_config[feature_name]:
-                bin_range = hist_config[feature_name][StC.STATS_BIN_RANGE]
-        elif "*" in hist_config:
-            default_config = hist_config["*"]
-            if StC.STATS_BIN_RANGE in default_config:
-                bin_range = default_config[StC.STATS_BIN_RANGE]
-
-        return bin_range
-
-    def _get_max_value(self, local_max_value: float):
-        r = random.uniform(self.min_random, self.max_random)
-        if local_max_value == 0:
-            max_value = (1 + r) * 1e-5
-        else:
-            if local_max_value > 0:
-                max_value = local_max_value * (1 + r)
-            else:
-                max_value = local_max_value * (1 - r)
-
-        return max_value
-
-    def _get_min_value(self, local_min_value: float):
-        r = random.uniform(self.min_random, self.max_random)
-        if local_min_value == 0:
-            min_value = -(1 - r) * 1e-5
-        else:
-            if local_min_value > 0:
-                min_value = local_min_value * (1 - r)
-            else:
-                min_value = local_min_value * (1 + r)
-
-        return min_value
 
     def finalize(self, fl_ctx: FLContext):
         try:

@@ -15,8 +15,10 @@
 import json
 import logging
 
+from nvflare.apis.overseer_spec import OverseerAgent
 from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
+from nvflare.security.logging import secure_format_exception
 
 
 def list_sp(args, api):
@@ -61,7 +63,7 @@ def shutdown_system(args, api):
     except Exception as e:
         return {
             "status": APIStatus.ERROR_RUNTIME,
-            "details": f"Error getting server status to make sure all jobs are stopped before shutting down system: {e}",
+            "details": f"Error getting server status to make sure all jobs are stopped before shutting down system: {secure_format_exception(e)}",
         }
     print("Shutting down the system...")
     resp = api.overseer_agent.set_state("shutdown")
@@ -77,7 +79,8 @@ def shutdown_system(args, api):
 class HACommandModule(CommandModule):
     """Command module with commands for management in relation to the high availability framework."""
 
-    def __init__(self):
+    def __init__(self, overseer_agent: OverseerAgent):
+        self.overseer_agent = overseer_agent
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def get_spec(self):
@@ -110,3 +113,60 @@ class HACommandModule(CommandModule):
                 ),
             ],
         )
+
+    def list_sp(self, args, api):
+        """List service provider information based on the last heartbeat from the overseer.
+
+        Details are used for displaying the response in the CLI, and data is the data in a dict that is provided in FLAdminAPI.
+
+        """
+        return {
+            "status": APIStatus.SUCCESS,
+            "details": str(self.overseer_agent._overseer_info),
+            "data": self.overseer_agent._overseer_info,
+        }
+
+    def get_active_sp(self, args, api):
+        return {"status": APIStatus.SUCCESS, "details": str(self.overseer_agent.get_primary_sp())}
+
+    def promote_sp(self, args, api):
+        if len(args) != 2:
+            return {"status": APIStatus.ERROR_SYNTAX, "details": "usage: promote_sp example1.com:8002:8003"}
+
+        sp_end_point = args[1]
+        resp = self.overseer_agent.promote_sp(sp_end_point)
+        if json.loads(resp.text).get("Error"):
+            return {
+                "status": APIStatus.ERROR_RUNTIME,
+                "details": "Error: {}".format(json.loads(resp.text).get("Error")),
+            }
+        else:
+            return {
+                "status": APIStatus.SUCCESS,
+                "details": "Promoted endpoint: {}. Synchronizing with overseer...".format(sp_end_point),
+            }
+
+    def shutdown_system(self, args, api):
+        try:
+            status = api.do_command("check_status server").get("data")
+            if status[0].get("data") != "Engine status: stopped":
+                return {
+                    "status": APIStatus.ERROR_RUNTIME,
+                    "details": "Error: There are still jobs running. Please let them finish or abort_job before attempting shutdown.",
+                }
+        except Exception as e:
+            return {
+                "status": APIStatus.ERROR_RUNTIME,
+                "details": "Error getting server status to make sure all jobs are stopped before shutting down system: {}".format(
+                    secure_format_exception(e)
+                ),
+            }
+        print("Shutting down the system...")
+        resp = self.overseer_agent.set_state("shutdown")
+        if json.loads(resp.text).get("Error"):
+            return {
+                "status": APIStatus.ERROR_RUNTIME,
+                "details": "Error: {}".format(json.loads(resp.text).get("Error")),
+            }
+        else:
+            return {"status": APIStatus.SUCCESS, "details": "Set state to shutdown in overseer."}

@@ -46,15 +46,17 @@ from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.fl_snapshot import RunSnapshot
 from nvflare.apis.impl.job_def_manager import JobDefManagerSpec
 from nvflare.apis.shareable import Shareable, make_reply
-from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
-from nvflare.fuel.hci.zip_utils import zip_directory_to_bytes
 from nvflare.fuel.utils import fobs
-from nvflare.private.admin_defs import Message
+from nvflare.fuel.utils.network_utils import get_open_ports
+from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
+from nvflare.private.admin_defs import Message, MsgHeader
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
+from nvflare.private.fed.utils.fed_utils import security_close
 from nvflare.private.scheduler_constants import ShareableHeader
+from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
 
@@ -192,17 +194,15 @@ class ServerEngine(ServerEngineInternalSpec):
 
     def start_app_on_server(self, run_number: str, job_id: str = None, job_clients=None, snapshot=None) -> str:
         if run_number in self.run_processes.keys():
-            return f"Server run_{run_number} already started."
+            return f"Server run: {run_number} already started."
         else:
-            app_root = os.path.join(self._get_run_folder(run_number), self._get_server_app_folder())
+            workspace = Workspace(root_dir=self.args.workspace, site_name="server")
+            app_root = workspace.get_app_dir(run_number)
             if not os.path.exists(app_root):
                 return "Server app does not exist. Please deploy the server app before starting."
 
             self.engine_info.status = MachineStatus.STARTING
-
-            app_custom_folder = ""
-            if self.server.enable_byoc:
-                app_custom_folder = os.path.join(app_root, "custom")
+            app_custom_folder = workspace.get_app_custom_dir(run_number)
 
             open_ports = get_open_ports(2)
             self._start_runner_process(
@@ -242,7 +242,7 @@ class ServerEngine(ServerEngineInternalSpec):
                         )
                         conn.send(replies)
             except BaseException as e:
-                self.logger.warning(f"Failed to process the child process command: {e}", exc_info=True)
+                self.logger.warning(f"Failed to process the child process command: {secure_format_exception(e)}")
 
     def wait_for_complete(self, job_id):
         while True:
@@ -276,6 +276,7 @@ class ServerEngine(ServerEngineInternalSpec):
         command_options = ""
         for t in args.set:
             command_options += " " + t
+
         command = (
             sys.executable
             + " -m nvflare.private.fed.app.server.runner_process -m "
@@ -365,7 +366,7 @@ class ServerEngine(ServerEngineInternalSpec):
 
     def check_app_start_readiness(self, job_id: str) -> str:
         if job_id not in self.run_processes.keys():
-            return f"Server app run_{job_id} has not started."
+            return f"Server app run: {job_id} has not started."
         return ""
 
     def shutdown_server(self) -> str:
@@ -446,7 +447,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 command_data={},
             )
         except BaseException:
-            self.logger.error(f"Failed to get_app_run_info from run_{job_id}")
+            self.logger.error(f"Failed to get_app_run_info from run: {job_id}")
 
         return run_info
 
@@ -539,7 +540,7 @@ class ServerEngine(ServerEngineInternalSpec):
             else:
                 return {}
         except Exception as e:
-            self.logger.error(f"Failed to send the aux_message: {topic} with exception: {e}.")
+            self.logger.error(f"Failed to send the aux_message: {topic} with exception: {secure_format_exception(e)}.")
 
     def sync_clients_from_main_process(self):
         with self.parent_conn_lock:
@@ -581,12 +582,18 @@ class ServerEngine(ServerEngineInternalSpec):
             client_name = self.get_client_name_from_token(r.client_token)
             if r.reply:
                 try:
-                    results[client_name] = fobs.loads(r.reply.body)
-                except BaseException:
+                    error_code = r.reply.get_header(MsgHeader.RETURN_CODE, ReturnCode.OK)
+                    if error_code != ReturnCode.OK:
+                        self.logger.error(f"Aux message send error: {error_code} from client: {client_name}")
+                        shareable = make_reply(ReturnCode.ERROR)
+                    else:
+                        shareable = fobs.loads(r.reply.body)
+                    results[client_name] = shareable
+                except BaseException as e:
                     results[client_name] = make_reply(ReturnCode.COMMUNICATION_ERROR)
                     self.logger.error(
                         f"Received unexpected reply from client: {client_name}, "
-                        f"message body:{r.reply.body} processing topic:{topic}"
+                        f"message body:{r.reply.body} processing topic:{topic} Error:{e}"
                     )
             else:
                 results[client_name] = None
@@ -620,6 +627,7 @@ class ServerEngine(ServerEngineInternalSpec):
         return command_conn
 
     def persist_components(self, fl_ctx: FLContext, completed: bool):
+        self.logger.info("Start saving snapshot on server.")
 
         # Call the State Persistor to persist all the component states
         # 1. call every component to generate the component states data
@@ -667,7 +675,7 @@ class ServerEngine(ServerEngineInternalSpec):
             else:
                 self.logger.info(f"The snapshot: {self.server.snapshot_location} has been removed.")
         except BaseException as e:
-            self.logger.error(f"Failed to persist the components. {str(e)}")
+            self.logger.error(f"Failed to persist the components. {secure_format_exception(e)}")
 
     def restore_components(self, snapshot: RunSnapshot, fl_ctx: FLContext):
         for component_id, component in self.run_manager.components.items():
@@ -701,7 +709,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 command_data={},
             )
         except BaseException:
-            self.logger.error(f"Failed to get_stats from run_{job_id}")
+            self.logger.error(f"Failed to get_stats from run: {job_id}")
 
         return stats
 
@@ -725,11 +733,16 @@ class ServerEngine(ServerEngineInternalSpec):
         for r in replies:
             site_name = self.get_client_name_from_token(r.client_token)
             if r.reply:
-                resp = fobs.loads(r.reply.body)
-                result[site_name] = (
-                    resp.get_header(ShareableHeader.CHECK_RESOURCE_RESULT, False),
-                    resp.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, ""),
-                )
+                error_code = r.reply.get_header(MsgHeader.RETURN_CODE, ReturnCode.OK)
+                if error_code != ReturnCode.OK:
+                    self.logger.error(f"Client reply error: {r.reply.body}")
+                    result[site_name] = (False, "")
+                else:
+                    resp = fobs.loads(r.reply.body)
+                    result[site_name] = (
+                        resp.get_header(ShareableHeader.CHECK_RESOURCE_RESULT, False),
+                        resp.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, ""),
+                    )
             else:
                 result[site_name] = (False, "")
         return result
@@ -784,4 +797,5 @@ def server_shutdown(server, touch_file):
         time.sleep(3.0)
     finally:
         server.status = ServerStatus.SHUTDOWN
+        security_close()
         sys.exit(2)

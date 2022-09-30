@@ -21,6 +21,7 @@ from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.workspace import Workspace
 from nvflare.private.event import fire_event
+from nvflare.private.fed.utils.fed_utils import create_job_processing_context_properties
 
 from .client_manager import ClientManager
 from .server_aux_runner import ServerAuxRunner
@@ -65,8 +66,13 @@ class RunManager:
         self.aux_runner = ServerAuxRunner()
         self.add_handler(self.aux_runner)
 
+        if job_id:
+            job_ctx_props = self.create_job_processing_context_properties(workspace, job_id)
+        else:
+            job_ctx_props = {}
+
         self.fl_ctx_mgr = FLContextManager(
-            engine=engine, identity_name=server_name, job_id=job_id, public_stickers={}, private_stickers={}
+            engine=engine, identity_name=server_name, job_id=job_id, public_stickers={}, private_stickers=job_ctx_props
         )
 
         self.workspace = workspace
@@ -100,3 +106,6 @@ class RunManager:
 
     def add_handler(self, handler: FLComponent):
         self.handlers.append(handler)
+
+    def create_job_processing_context_properties(self, workspace, job_id):
+        return create_job_processing_context_properties(workspace, job_id)

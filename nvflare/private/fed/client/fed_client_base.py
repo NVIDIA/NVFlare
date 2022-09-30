@@ -29,9 +29,17 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import EngineConstant
+from nvflare.security.logging import secure_format_exception
 
 from .client_status import ClientStatus
 from .communicator import Communicator
+
+
+def _check_progress(remote_tasks):
+    if remote_tasks[0] is not None:
+        return True, remote_tasks[0].task_name
+    else:
+        return False, None
 
 
 class FederatedClientBase:
@@ -190,8 +198,7 @@ class FederatedClientBase:
 
             return task
         except FLCommunicationError as e:
-            if e:
-                self.logger.info(e)
+            self.logger.info(secure_format_exception(e))
 
     def push_execute_result(self, project_name, shareable: Shareable, fl_ctx: FLContext):
         """Submit execution results of a task to server.
@@ -220,8 +227,7 @@ class FederatedClientBase:
 
             return message
         except FLCommunicationError as e:
-            if e:
-                self.logger.info(e)
+            self.logger.info(secure_format_exception(e))
 
     def send_aux_message(self, project_name, topic: str, shareable: Shareable, timeout: float, fl_ctx: FLContext):
         """Send auxiliary message to the server.
@@ -244,8 +250,7 @@ class FederatedClientBase:
 
             return message
         except FLCommunicationError as e:
-            if e:
-                self.logger.info(e)
+            self.logger.info(secure_format_exception(e))
 
     def send_heartbeat(self, project_name):
         try:
@@ -255,7 +260,7 @@ class FederatedClientBase:
                 self.communicator.send_heartbeat(
                     self.servers, project_name, self.token, self.ssid, self.client_name, self.engine
                 )
-        except FLCommunicationError as e:
+        except FLCommunicationError:
             self.communicator.heartbeat_done = True
 
     def heartbeat(self):
@@ -274,12 +279,8 @@ class FederatedClientBase:
         try:
             pool = ThreadPool(len(self.servers))
             self.remote_tasks = pool.map(partial(self.fetch_execute_task, fl_ctx=fl_ctx), tuple(self.servers))
-            pull_success, task_name = self.check_progress(self.remote_tasks)
-            # # Update app_ctx's current round info
-            # if self.app_context and self.remote_models[0] is not None:
-            #     self.app_context.global_round = self.remote_models[0].meta.current_round
+            pull_success, task_name = _check_progress(self.remote_tasks)
             # TODO: if some of the servers failed
-            # return self.model_manager.assign_current_model(self.remote_models)
             return pull_success, task_name, self.remote_tasks
         finally:
             if pool:
@@ -362,10 +363,3 @@ class FederatedClientBase:
             self.overseer_agent.end()
 
         return 0
-
-    def check_progress(self, remote_tasks):
-        if remote_tasks[0] is not None:
-            self.server_meta = remote_tasks[0].meta
-            return True, remote_tasks[0].task_name
-        else:
-            return False, None

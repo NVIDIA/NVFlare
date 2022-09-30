@@ -15,10 +15,13 @@
 import argparse
 import os
 
+from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.client.cli import AdminClient, CredentialType
 from nvflare.fuel.hci.client.file_transfer import FileTransferModule
+from nvflare.fuel.hci.client.overseer_service_finder import ServiceFinderByOverseer
 from nvflare.private.fed.app.fl_conf import FLAdminClientStarterConfigurator
+from nvflare.security.logging import secure_format_exception
 
 
 def main():
@@ -38,16 +41,18 @@ def main():
 
     try:
         os.chdir(args.workspace)
-        workspace = os.path.join(args.workspace, "startup")
-        conf = FLAdminClientStarterConfigurator(app_root=workspace, admin_config_file_name=args.fed_admin)
+        workspace = Workspace(root_dir=args.workspace)
+        conf = FLAdminClientStarterConfigurator(workspace=workspace)
         conf.configure()
-    except ConfigError as ex:
-        print("ConfigError:", str(ex))
+    except ConfigError as e:
+        print(f"ConfigError: {secure_format_exception(e)}")
+        return
 
     try:
         admin_config = conf.config_data["admin"]
     except KeyError:
         print("Missing admin section in fed_admin configuration.")
+        return
 
     modules = []
 
@@ -85,6 +90,10 @@ def main():
             print("  Upload Dir: {}".format(admin_config.get("upload_dir")))
             print("  Download Dir: {}".format(admin_config.get("download_dir")))
 
+    service_finder = None
+    if conf.overseer_agent:
+        service_finder = ServiceFinderByOverseer(conf.overseer_agent)
+
     client = AdminClient(
         prompt=admin_config.get("prompt", "> "),
         cmd_modules=modules,
@@ -93,10 +102,9 @@ def main():
         client_key=client_key,
         upload_dir=admin_config.get("upload_dir"),
         download_dir=admin_config.get("download_dir"),
-        require_login=admin_config.get("with_login", True),
         credential_type=CredentialType.PASSWORD if admin_config.get("cred_type") == "password" else CredentialType.CERT,
         debug=args.with_debug,
-        overseer_agent=conf.overseer_agent,
+        service_finder=service_finder,
         # cli_history_size=args.cli_history_size,
     )
 

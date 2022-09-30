@@ -28,11 +28,11 @@ from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
-from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.fuel.common.multi_process_executor_constants import CommunicateData, CommunicationMetaData
 from nvflare.fuel.utils.class_utils import ModuleScanner
 from nvflare.fuel.utils.component_builder import ComponentBuilder
+from nvflare.fuel.utils.network_utils import get_open_ports
 
 
 class WorkerComponentBuilder(ComponentBuilder):
@@ -127,7 +127,7 @@ class MultiProcessExecutor(Executor):
                     return_data = self.conn_clients[0][CommunicationMetaData.HANDLE_CONN].recv()
                     # update the fl_ctx from the child process return data.
                     fl_ctx.props.update(return_data[CommunicationMetaData.FL_CTX].props)
-                except BaseException as e:
+                except BaseException:
                     # Warning: Have to set fire_event=False, otherwise it will cause dead loop on the event handling!!!
                     self.log_warning(
                         fl_ctx, f"Failed to relay the event to child processes. Event: {event_type}", fire_event=False
@@ -145,14 +145,25 @@ class MultiProcessExecutor(Executor):
 
         try:
             self.open_ports = get_open_ports(self.num_of_processes * 3)
+            client_name = fl_ctx.get_identity_name()
+            job_id = fl_ctx.get_job_id()
 
+            simulate_mode = fl_ctx.get_prop(FLContextKey.SIMULATE_MODE, False)
             command = (
                 self.get_multi_process_command()
                 + " -m nvflare.private.fed.app.client.sub_worker_process"
                 + " -m "
                 + fl_ctx.get_prop(FLContextKey.ARGS).workspace
+                + " -c "
+                + client_name
+                + " -n "
+                + job_id
                 + " --ports "
                 + "-".join([str(i) for i in self.open_ports])
+                + " --simulator_engine "
+                + str(simulate_mode)
+                + " --parent_pid "
+                + str(os.getpid())
             )
             self.logger.info(f"multi_process_executor command: {command}")
             # use os.setsid to create new process group ID
@@ -245,7 +256,7 @@ class MultiProcessExecutor(Executor):
             try:
                 address = ("localhost", open_port)
                 conn = Client(address, authkey=CommunicationMetaData.CHILD_PASSWORD.encode())
-            except BaseException as e:
+            except BaseException:
                 time.sleep(1.0)
                 pass
         return conn
@@ -289,7 +300,7 @@ class MultiProcessExecutor(Executor):
                     shareable = return_data[CommunicationMetaData.SHAREABLE]
                     fl_ctx.props.update(return_data[CommunicationMetaData.FL_CTX].props)
                     return shareable
-        except BaseException as e:
+        except BaseException:
             self.log_error(fl_ctx, "Multi-Process Execution error.")
             return make_reply(ReturnCode.EXECUTION_RESULT_ERROR)
 
@@ -312,7 +323,7 @@ class MultiProcessExecutor(Executor):
         try:
             os.killpg(os.getpgid(self.exe_process.pid), 9)
             self.logger.debug("kill signal sent")
-        except Exception as e:
+        except Exception:
             pass
 
         if self.exe_process:

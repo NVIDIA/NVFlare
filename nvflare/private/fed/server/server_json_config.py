@@ -23,7 +23,7 @@ from nvflare.private.json_configer import ConfigContext, ConfigError
 from .server_runner import ServerRunnerConfig
 
 FL_PACKAGES = ["nvflare"]
-FL_MODULES = ["server", "client", "aggregators", "handlers", "pt", "app", "app_common", "workflows"]
+FL_MODULES = ["apis", "app_common", "widgets"]
 
 
 class WorkFlow:
@@ -89,8 +89,8 @@ class ServerJsonConfigurator(FedJsonConfigurator):
             if not isinstance(element, int) and not isinstance(element, float):
                 raise ConfigError('"task_request_interval" must be a number, but got {}'.format(type(element)))
 
-            if element < 1:
-                raise ConfigError('"task_request_interval" must >= 1, but got {}'.format(element))
+            if element <= 0:
+                raise ConfigError('"task_request_interval" must > 0, but got {}'.format(element))
 
             return
 

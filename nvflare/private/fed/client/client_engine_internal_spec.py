@@ -14,26 +14,11 @@
 
 from abc import ABC, abstractmethod
 
-from nvflare.apis.client_engine_spec import ClientEngineSpec, TaskAssignment
-from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable
-from nvflare.apis.workspace import Workspace
+from nvflare.apis.client_engine_spec import ClientEngineSpec
 
 
 class ClientEngineInternalSpec(ClientEngineSpec, ABC):
     """The ClientEngineInternalSpec defines the ClientEngine APIs running in the parent process."""
-
-    def get_task_assignment(self, fl_ctx: FLContext) -> TaskAssignment:
-        pass
-
-    def send_task_result(self, result: Shareable, fl_ctx: FLContext) -> bool:
-        pass
-
-    def get_workspace(self) -> Workspace:
-        pass
-
-    def get_all_components(self) -> dict:
-        pass
 
     @abstractmethod
     def get_engine_status(self):
@@ -49,17 +34,18 @@ class ClientEngineInternalSpec(ClientEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def deploy_app(self, app_name: str, job_id: str, client_name: str, app_data) -> str:
-        """Deploys the app to specified run.
+    def deploy_app(self, app_name: str, job_id: str, job_meta: dict, client_name: str, app_data) -> str:
+        """Deploy the app to specified run.
 
         Args:
             app_name: FL_app name
             job_id: job that the app is to be deployed to
+            job_meta: meta data of the job that the app belongs to
             client_name: name of the client
             app_data: zip data of the app
 
         Returns:
-            A string message.
+            A error message if any; empty str is okay.
         """
         pass
 

@@ -20,10 +20,20 @@ import docker
 from nvflare.lighter.utils import generate_password
 
 
-def start(port, folder, dashboard_image):
-    if not folder:
+def start(args):
+    if not args.folder:
         folder = os.getcwd()
+    else:
+        folder = args.folder
     environment = dict()
+    env_vars = args.env
+    if env_vars:
+        for e in env_vars:
+            splitted = e.split("=")
+            environment[splitted[0]] = splitted[1]
+    passphrase = args.passphrase
+    if passphrase:
+        environment["NVFL_DASHBOARD_PP"] = passphrase
     if not os.path.exists(os.path.join(folder, "db.sqlite")):
         answer = input(
             "Please provide project admin email address.  This person will be the super user of the dashboard and this project.\n"
@@ -33,14 +43,28 @@ def start(port, folder, dashboard_image):
         print(f"Project admin credential is {answer} and the password is {pwd}")
         environment.update({"NVFL_CREDENTIAL": f"{answer}:{pwd}"})
     client = docker.from_env()
+    dashboard_image = "nvflare/nvflare"
+    try:
+        print(f"Pulling {dashboard_image}, may take some time to finish.")
+        _ = client.images.pull(dashboard_image)
+    except docker.errors.APIError:
+        print(f"unable to pull {dashboard_image}")
+        exit(1)
+    print(f"Launching {dashboard_image}")
+    print(f"Dashboard will listen to port {args.port}")
+    print(f"{folder} on host mounted to /var/tmp/nvflare/dashboard in container")
+    if environment:
+        print(f"environment vars set to {environment}")
+    else:
+        print("No additional environment variables set to the launched container.")
     try:
         container_obj = client.containers.run(
-            dashboard_image,
+            "nvflare/nvflare",
             entrypoint=["/usr/local/bin/python3", "nvflare/dashboard/wsgi.py"],
             detach=True,
             auto_remove=True,
             name="nvflare-dashboard",
-            ports={8443: port},
+            ports={8443: args.port},
             volumes={folder: {"bind": "/var/tmp/nvflare/dashboard", "model": "rw"}},
             environment=environment,
         )
@@ -68,8 +92,14 @@ def stop():
     print("nvflare-dashboard exited")
 
 
-def dashboard():
+def main():
     parser = argparse.ArgumentParser()
+    define_dashboard_parser(parser)
+    args = parser.parse_args()
+    handle_dashboard(args)
+
+
+def define_dashboard_parser(parser):
     parser.add_argument("--start", action="store_true", help="start dashboard")
     parser.add_argument("--stop", action="store_true", help="stop dashboard")
     parser.add_argument("-p", "--port", type=str, default="443", help="port to listen")
@@ -77,17 +107,17 @@ def dashboard():
         "-f", "--folder", type=str, help="folder containing necessary info (default: current working directory)"
     )
     parser.add_argument(
-        "-i", "--dashboard_image", default="nvflare/nvflare", help="container image for running dashboard"
+        "--passphrase", help="Passphrase to encrypt/decrypt root CA private key.  !!! Do not share it with others. !!!"
     )
-    args = parser.parse_args()
-    port = args.port
-    folder = args.folder
-    dashboard_image = args.dashboard_image
+    parser.add_argument("-e", "--env", action="append", help="additonal environment variables: var1=value1")
+
+
+def handle_dashboard(args):
     if args.stop:
         stop()
     elif args.start:
-        start(port, folder, dashboard_image)
+        start(args)
 
 
 if __name__ == "__main__":
-    dashboard()
+    main()

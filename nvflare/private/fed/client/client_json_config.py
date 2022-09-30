@@ -30,7 +30,7 @@ class _ExecutorDef(object):
 
 
 FL_PACKAGES = ["nvflare"]
-FL_MODULES = ["server", "client", "aggregators", "handlers", "pt", "app", "app_common", "workflows"]
+FL_MODULES = ["apis", "app_common", "widgets"]
 
 
 class ClientJsonConfigurator(FedJsonConfigurator):
@@ -55,12 +55,18 @@ class ClientJsonConfigurator(FedJsonConfigurator):
         self.runner_config = None
         self.executors = []
         self.current_exe = None
+        self._default_task_fetch_interval = None
 
     def process_config_element(self, config_ctx: ConfigContext, node: Node):
         FedJsonConfigurator.process_config_element(self, config_ctx, node)
 
         element = node.element
         path = node.path()
+
+        # default task fetch interval
+        if re.search(r"default_task_fetch_interval", path):
+            self._default_task_fetch_interval = element
+            return
 
         # executors
         if re.search(r"^executors\.#[0-9]+$", path):
@@ -114,4 +120,5 @@ class ClientJsonConfigurator(FedJsonConfigurator):
             task_result_filters=self.result_filter_table,
             components=self.components,
             handlers=self.handlers,
+            default_task_fetch_interval=self._default_task_fetch_interval,
         )

@@ -19,11 +19,10 @@ from io import BytesIO
 from typing import Optional, Set, Tuple
 from zipfile import ZipFile
 
+from nvflare.apis.fl_constant import JobConstants
 from nvflare.apis.job_def import ALL_SITES, JobMetaKey
+from nvflare.security.logging import secure_format_exception
 
-SERVER_CONFIG = "config_fed_server.json"
-CLIENT_CONFIG = "config_fed_client.json"
-META = "meta.json"
 MAX_CLIENTS = 1000000
 
 logger = logging.getLogger(__name__)
@@ -55,13 +54,13 @@ class JobMetaValidator:
                 self._validate_mandatory_clients(job_name, meta, clients)
 
         except ValueError as e:
-            return False, str(e), meta
+            return False, secure_format_exception(e), meta
 
         return True, "", meta
 
     @staticmethod
     def _validate_meta(job_name: str, zf: ZipFile) -> Optional[dict]:
-        meta_file = f"{job_name}/{META}"
+        meta_file = f"{job_name}/{JobConstants.META_FILE}"
         logger.debug(f"validate file {meta_file} exists for job {job_name}")
         meta = None
 
@@ -74,7 +73,7 @@ class JobMetaValidator:
     def _validate_deploy_map(job_name: str, meta: dict) -> list:
 
         if not meta:
-            raise ValueError(f"meta.json is empty for job {job_name}")
+            raise ValueError(f"{JobConstants.META_FILE} is empty for job {job_name}")
 
         deploy_map = meta.get(JobMetaKey.DEPLOY_MAP.value)
         if not deploy_map:
@@ -112,11 +111,13 @@ class JobMetaValidator:
 
             all_sites = ALL_SITES.casefold() in (site.casefold() for site in deployments)
 
-            if (all_sites or "server" in deployments) and not self._entry_exists(zip_file, zip_folder + SERVER_CONFIG):
+            if (all_sites or "server" in deployments) and not self._entry_exists(
+                zip_file, zip_folder + JobConstants.SERVER_JOB_CONFIG
+            ):
                 raise ValueError(f"App {app} is will be deployed to server but server config is missing")
 
             if (all_sites or [client for client in deployments if client != "server"]) and not self._entry_exists(
-                zip_file, zip_folder + CLIENT_CONFIG
+                zip_file, zip_folder + JobConstants.CLIENT_JOB_CONFIG
             ):
                 raise ValueError(f"App {app} will be deployed to client but client config is missing")
 
@@ -129,9 +130,9 @@ class JobMetaValidator:
                 v = int(v)
                 return v
             except ValueError as e:
-                raise ValueError(f"invalid data type for {v},can't not convert to Int", e)
+                raise ValueError(f"invalid data type for {v},can't not convert to Int", secure_format_exception(e))
             except TypeError as e:
-                raise ValueError(f"invalid data type for {v},can't not convert to Int", e)
+                raise ValueError(f"invalid data type for {v},can't not convert to Int", secure_format_exception(e))
 
     def _validate_min_clients(self, job_name: str, meta: dict, clients: set) -> None:
         logger.debug(f"validate min_clients for job {job_name}")

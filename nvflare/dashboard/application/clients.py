@@ -16,7 +16,7 @@ from flask import current_app as app
 from flask import jsonify, make_response, request
 from flask_jwt_extended import get_jwt, get_jwt_identity, jwt_required
 
-from .store import Store
+from .store import Store, check_role
 
 
 @app.route("/api/v1/clients", methods=["POST"])
@@ -45,18 +45,16 @@ def get_one_client(id):
 @app.route("/api/v1/clients/<id>", methods=["PATCH", "DELETE"])
 @jwt_required()
 def update_client(id):
-    claims = get_jwt()
-    requester = get_jwt_identity()
-    is_creator = requester == Store.get_creator_by_client_id(id)
-    is_project_admin = claims.get("role") == "project_admin"
-    if not is_creator and not is_project_admin:
+    creator_id = Store.get_creator_id_by_client_id(id)
+    c, p = check_role(creator_id, get_jwt(), get_jwt_identity())
+    if not c and not p:
         return jsonify({"status": "unauthorized"}), 403
 
     if request.method == "PATCH":
         req = request.json
-        if is_project_admin:
+        if p:
             result = Store.patch_client_by_project_admin(id, req)
-        elif is_creator:
+        elif c:
             result = Store.patch_client_by_creator(id, req)
     elif request.method == "DELETE":
         result = Store.delete_client(id)
@@ -70,16 +68,14 @@ def update_client(id):
 def client_blob(id):
     if not Store._is_approved_by_client_id(id):
         return jsonify({"status": "not approved yet"}), 200
-    claims = get_jwt()
-    requester = get_jwt_identity()
-    is_creator = requester == Store.get_creator_by_client_id(id)
-    is_project_admin = claims.get("role") == "project_admin"
-    if is_project_admin or is_creator:
+    creator_id = Store.get_creator_id_by_client_id(id)
+    c, p = check_role(creator_id, get_jwt(), get_jwt_identity())
+    if p or c:
         pin = request.json.get("pin")
         fileobj, filename = Store.get_client_blob(pin, id)
         response = make_response(fileobj.read())
         response.headers.set("Content-Type", "zip")
-        response.headers.set("Content-Disposition", "attachment", filename=filename)
+        response.headers.set("Content-Disposition", f'attachment; filename="{filename}"')
         return response
     else:
         return jsonify({"status": "unauthorized"}), 403

@@ -24,3 +24,7 @@ SERVER_CMD_SUBMIT_JOB = "_submit_job"
 SERVER_CMD_DOWNLOAD_JOB = "_download_job"
 SERVER_CMD_DOWNLOAD_JOB_SINGLE_FILE = "_download_job_single_file"
 SERVER_CMD_INFO = "_info"
+
+DOWNLOAD_URL_MARKER = "Download_URL:"
+UPLOAD_FOLDER_FQN = "file_transfer.upload_folder"
+DOWNLOAD_FOLDER_FQN = "file_transfer.download_folder"

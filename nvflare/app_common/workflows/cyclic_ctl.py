@@ -23,6 +23,16 @@ from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
 from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
+from nvflare.security.logging import secure_format_exception
+
+
+class RelayOrder:
+    FIXED = "FIXED"
+    RANDOM = "RANDOM"
+    RANDOM_WITHOUT_SAME_IN_A_ROW = "RANDOM_WITHOUT_SAME_IN_A_ROW"
+
+
+SUPPORTED_ORDERS = (RelayOrder.FIXED, RelayOrder.RANDOM, RelayOrder.RANDOM_WITHOUT_SAME_IN_A_ROW)
 
 
 class CyclicController(Controller):
@@ -33,6 +43,10 @@ class CyclicController(Controller):
         persistor_id="persistor",
         shareable_generator_id="shareable_generator",
         task_name="train",
+        task_check_period: float = 0.5,
+        persist_every_n_rounds: int = 1,
+        snapshot_every_n_rounds: int = 1,
+        order: str = RelayOrder.FIXED,
     ):
         """A sample implementation to demonstrate how to use relay method for Cyclic Federated Learning.
 
@@ -44,11 +58,22 @@ class CyclicController(Controller):
                 Defaults to "persistor".
             shareable_generator_id (str, optional): id of shareable generator. Defaults to "shareable_generator".
             task_name (str, optional): the task name that clients know how to handle. Defaults to "train".
+            task_check_period (float, optional): interval for checking status of tasks. Defaults to 0.5.
+            persist_every_n_rounds (int, optional): persist the global model every n rounds. Defaults to 1.
+                If n is 0 then no persist.
+            snapshot_every_n_rounds (int, optional): persist the server state every n rounds. Defaults to 1.
+                If n is 0 then no persist.
+            order (str, optional): the order of relay.
+                If FIXED means the same order for every round.
+                If RANDOM means random order for every round.
+                If RANDOM_WITHOUT_SAME_IN_A_ROW means every round the order gets shuffled but a client will never be
+                    run twice in a row (in different round).
 
         Raises:
             TypeError: when any of input arguments does not have correct type
         """
-        super().__init__()
+        super().__init__(task_check_period=task_check_period)
+
         if not isinstance(num_rounds, int):
             raise TypeError("num_rounds must be int but got {}".format(type(num_rounds)))
         if not isinstance(task_assignment_timeout, int):
@@ -59,6 +84,10 @@ class CyclicController(Controller):
             raise TypeError("shareable_generator_id must be a string but got {}".format(type(shareable_generator_id)))
         if not isinstance(task_name, str):
             raise TypeError("task_name must be a string but got {}".format(type(task_name)))
+
+        if order not in SUPPORTED_ORDERS:
+            raise ValueError(f"order must be in {SUPPORTED_ORDERS}")
+
         self._num_rounds = num_rounds
         self._start_round = 0
         self._end_round = self._start_round + self._num_rounds
@@ -70,6 +99,11 @@ class CyclicController(Controller):
         self.task_name = task_name
         self.persistor = None
         self.shareable_generator = None
+        self._persist_every_n_rounds = persist_every_n_rounds
+        self._snapshot_every_n_rounds = snapshot_every_n_rounds
+        self._participating_clients = None
+        self._last_client = None
+        self._order = order
 
     def start_controller(self, fl_ctx: FLContext):
         self.log_debug(fl_ctx, "starting controller")
@@ -87,7 +121,24 @@ class CyclicController(Controller):
             )
         self._last_learnable = self.persistor.load(fl_ctx)
         fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._last_learnable, private=True, sticky=True)
+        fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self._num_rounds, private=True, sticky=True)
         self.fire_event(AppEventType.INITIAL_MODEL_LOADED, fl_ctx)
+
+        self._participating_clients = self._engine.get_clients()
+        if len(self._participating_clients) <= 1:
+            self.system_panic("Not enough client sites.", fl_ctx)
+        self._last_client = None
+
+    def _get_relay_orders(self):
+        targets = list(self._participating_clients)
+        if self._order == RelayOrder.RANDOM:
+            random.shuffle(targets)
+        elif self._order == RelayOrder.RANDOM_WITHOUT_SAME_IN_A_ROW:
+            random.shuffle(targets)
+            if self._last_client == targets[0]:
+                targets = targets.append(targets.pop(0))
+        self._last_client = targets[-1]
+        return targets
 
     def _process_result(self, client_task: ClientTask, fl_ctx: FLContext):
         # submitted shareable is stored in client_task.result
@@ -101,6 +152,7 @@ class CyclicController(Controller):
 
         # prepare task shareable data for next client
         task.data = self.shareable_generator.learnable_to_shareable(self._last_learnable, fl_ctx)
+        task.data.set_header(AppConstants.CURRENT_ROUND, self._current_round)
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         try:
@@ -114,8 +166,7 @@ class CyclicController(Controller):
                 fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=False)
 
                 # Task for one cyclic
-                targets = self._engine.get_clients()
-                random.shuffle(targets)
+                targets = self._get_relay_orders()
                 targets_names = [t.name for t in targets]
                 self.log_debug(fl_ctx, f"Relay on {targets_names}")
 
@@ -136,15 +187,28 @@ class CyclicController(Controller):
                     dynamic_targets=False,
                     abort_signal=abort_signal,
                 )
-                self.persistor.save(self._last_learnable, fl_ctx)
+
+                if self._persist_every_n_rounds != 0 and (self._current_round + 1) % self._persist_every_n_rounds == 0:
+                    self.log_info(fl_ctx, "Start persist model on server.")
+                    self.fire_event(AppEventType.BEFORE_LEARNABLE_PERSIST, fl_ctx)
+                    self.persistor.save(self._last_learnable, fl_ctx)
+                    self.fire_event(AppEventType.AFTER_LEARNABLE_PERSIST, fl_ctx)
+                    self.log_info(fl_ctx, "End persist model on server.")
+
+                if (
+                    self._snapshot_every_n_rounds != 0
+                    and (self._current_round + 1) % self._snapshot_every_n_rounds == 0
+                ):
+                    # Call the self._engine to persist the snapshot of all the FLComponents
+                    self._engine.persist_components(fl_ctx, completed=False)
+
                 self.log_debug(fl_ctx, "Ending current round={}.".format(self._current_round))
-                self._engine.persist_components(fl_ctx, completed=False)
 
             self.log_debug(fl_ctx, "Cyclic ended.")
         except BaseException as e:
-            error_msg = f"Cyclic control_flow exception {e}"
+            error_msg = f"Cyclic control_flow exception: {secure_format_exception(e)}"
             self.log_error(fl_ctx, error_msg)
-            self.system_panic(str(e), fl_ctx)
+            self.system_panic(error_msg, fl_ctx)
 
     def stop_controller(self, fl_ctx: FLContext):
         self.persistor.save(learnable=self._last_learnable, fl_ctx=fl_ctx)

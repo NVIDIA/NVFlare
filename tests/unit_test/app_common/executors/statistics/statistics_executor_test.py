@@ -19,17 +19,15 @@ import pytest
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-from nvflare.app_common.abstract.statistics_spec import Feature, HistogramType, MetricConfig
+from nvflare.app_common.abstract.statistics_spec import Feature, HistogramType, StatisticConfig
 from nvflare.app_common.executors.statistics.statistics_executor import StatisticsExecutor
-from nvflare.app_common.executors.statistics.statistics_executor_exception import StatisticExecutorException
-
-from .mock_df_stats_generator import MockDFStatistics
+from tests.unit_test.app_common.executors.statistics.mock_df_stats_executor import MockDFStatistics
 
 
 class MockStatsExecutor(StatisticsExecutor):
-    def __init__(self, min_count, min_random, max_random):
+    def __init__(self):
         super(MockStatsExecutor, self).__init__(
-            generator_id="", min_count=min_count, min_random=min_random, max_random=max_random
+            generator_id="",
         )
 
     def initialize(self, fl_ctx: FLContext):
@@ -41,18 +39,8 @@ class TestStatisticsExecutor:
     @classmethod
     def setup_class(cls):
         print("starting class: {} execution".format(cls.__name__))
-        cls.stats_executor = MockStatsExecutor(min_count=1, min_random=0.1, max_random=0.3)
+        cls.stats_executor = MockStatsExecutor()
         cls.stats_executor.initialize(None)
-
-    @classmethod
-    def teardown_class(cls):
-        print("starting class: {} execution".format(cls.__name__))
-
-    def setup_method(self, method):
-        print("starting execution of tc: {}".format(method.__name__))
-
-    def teardown_method(self, method):
-        print("teardown")
 
     def test_get_numeric_features(self):
         features: Dict[str, List[Feature]] = self.stats_executor.get_numeric_features()
@@ -60,18 +48,9 @@ class TestStatisticsExecutor:
         assert features["train"][0].feature_name == "Age"
         assert len(features["test"]) == 1
 
-    def test_validate(self):
-        stats_executor = MockStatsExecutor(min_count=7, min_random=0.1, max_random=0.3)
-        stats_executor.initialize(None)
-
-        with pytest.raises(StatisticExecutorException) as exc_info:
-            stats_executor.validate("site-1", stats_executor.get_numeric_features(), {}, None)
-            msg = "nvflare.app_common.validation_exception.ValidationException:  dataset train featureAge item count is less than required minimum count 7 for client site-1"
-            assert exc_info == msg
-
     def test_method_implementation(self):
         with pytest.raises(NotImplementedError):
-            r = self.stats_executor.get_sum("train", "Age", MetricConfig("sum", {}), None, None)
+            r = self.stats_executor.get_sum("train", "Age", StatisticConfig("sum", {}), None, None)
 
     def test_histogram_num_of_bins(self):
         hist_config = {"Age": {"bins": 5}}
@@ -121,69 +100,13 @@ class TestStatisticsExecutor:
         inputs = Shareable()
         inputs["min"] = {"train": {"Age": 0}}
         inputs["max"] = {"train": {"Age": 50}}
-        inputs["metric_config"] = hist_config
-        metric_config = MetricConfig("histogram", hist_config)
-        with pytest.raises(ValueError) as e:
-            histogram = self.stats_executor.get_histogram("train", "Age", metric_config, inputs, None)
-        assert (
-            str(e.value) == "number of bins: 10 needs to smaller than item "
-            "count: 6 for feature 'Age' in dataset 'train'"
-        )
-
-        hist_config = {"*": {"bins": 5}}
+        inputs["statistic_config"] = hist_config
+        hist_config = {"*": {"bins": 3}}
         inputs = Shareable()
         inputs["min"] = {"train": {"Age": 0}}
         inputs["max"] = {"train": {"Age": 50}}
-        inputs["metric_config"] = hist_config
-        metric_config = MetricConfig("histogram", hist_config)
-        histogram = self.stats_executor.get_histogram("train", "Age", metric_config, inputs, None)
+        inputs["statistic_config"] = hist_config
+        statistic_config = StatisticConfig("histogram", hist_config)
+        histogram = self.stats_executor.get_histogram("train", "Age", statistic_config, inputs, None)
         assert histogram.hist_type == HistogramType.STANDARD
-        assert len(histogram.bins) == 5
-
-    def test_get_max_value(self):
-        est_max_value = self.stats_executor._get_max_value(100)
-        assert 100 < est_max_value <= 100 * (1 + self.stats_executor.max_random)
-
-        est_max_value = self.stats_executor._get_max_value(0)
-        assert est_max_value > 1e-5
-
-        est_max_value = self.stats_executor._get_max_value(1e-4)
-        assert est_max_value > 1e-4
-
-        est_max_value = self.stats_executor._get_max_value(0.6 * 1e-3)
-        assert 0.6 * 1e-3 < est_max_value
-
-        est_max_value = self.stats_executor._get_max_value(-0.6 * 1e-3)
-        assert est_max_value > -0.6 * 1e-3
-
-        est_max_value = self.stats_executor._get_max_value(-1e-3)
-        assert est_max_value >= -1e-3
-
-        est_max_value = self.stats_executor._get_max_value(-100)
-        assert est_max_value >= -100
-
-    def test_get_min_value(self):
-        est_min_value = self.stats_executor._get_min_value(100)
-        assert (
-            100
-            > 100 * (1 - self.stats_executor.min_random)
-            > est_min_value
-            > 100 * (1 - self.stats_executor.max_random)
-        )
-
-        est_min_value = self.stats_executor._get_min_value(-100)
-        assert (
-            -100
-            > -100 * (1 + self.stats_executor.min_random)
-            > est_min_value
-            > -100 * (1 + self.stats_executor.max_random)
-        )
-
-        est_min_value = self.stats_executor._get_min_value(0)
-        assert est_min_value < 0
-
-        est_min_value = self.stats_executor._get_min_value(1e-4)
-        assert est_min_value < 1e-4
-
-        est_min_value = self.stats_executor._get_min_value(-0.6 * 1e-3)
-        assert -0.6 * 1e-3 > est_min_value
+        assert len(histogram.bins) == 3
