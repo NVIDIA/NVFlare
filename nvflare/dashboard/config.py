@@ -14,14 +14,13 @@
 
 """Flask configuration variables."""
 import os
+from datetime import timedelta
 
 
 class Config:
     # General Config
-    SECRET_KEY = os.environ.get("SECRET_KEY", "dev_key")
-    # FLASK_APP = "nvflare.web.wsgi.py"
-    # applicationenviron.get("FLASK_APP")
-    # FLASK_ENV = environ.get("FLASK_ENV")
+    SECRET_KEY = os.environ.get("SECRET_KEY", "nh0jGcTu8NcaDI1K")
+    JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=30)
 
     # Database
     web_root = os.environ.get("NVFL_WEB_ROOT", "/var/tmp/nvflare/dashboard")

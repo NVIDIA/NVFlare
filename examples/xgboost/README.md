@@ -49,8 +49,8 @@ See [tree-based/README](tree-based/README.md) for more information on two differ
 ## Data Preparation
 ### Download and Store Data
 To run the examples, we first download the dataset from the HIGGS link above, which is a single `.csv` file.
-If dataset is downloaded, uncompressed, and stored in `/tmp/dataset/HIGGS.csv`, make sure to modify the corresponding places
-inside `data_split_gen.sh`.
+If dataset is downloaded, uncompressed, and stored in `/tmp/dataset/HIGGS.csv`, make sure to modify the
+corresponding `DATASET_PATH` inside `data_split_gen.sh`.
 
 ### Data Split
 Since HIGGS dataset is already randomly recorded, data split will be specified by the continuous index ranges for each client, rather than a vector of random instance indices. We provide four options to split the dataset to simulate the non-uniformity in data quantity: 
@@ -77,8 +77,10 @@ The arguments are:
 - out_path: output path for the data split json file 
 
 This will generate data splits for two client sizes: 5 and 20, and 3 split conditions: uniform, square, and exponential.
-- Users can further customize it for more experiments.
-> **_NOTE:_** The generated train config files will be stored in the folder `./data_splits`, and will be used by job_configs by specifying the path within `config_fed_client.json` 
+Users can further customize it for more experiments.
+
+> **_NOTE:_** The generated train config files will be stored in the folder `./data_splits`,
+> and will be used by job_configs by specifying the path within `config_fed_client.json` 
 
 
 ### Prepare job configs under various training schemes
@@ -87,31 +89,31 @@ We then prepare the job configs for NVFlare jobs corresponding to various settin
 bash job_config_gen.sh
 ```
 To be specific, this script calls the python script `./utils/prepare_job_config.py`.
-It modifies settings from base configs `./job_configs/tree-based` or `./job_configs/histogram-based`,
+This script modifies settings from base job configuration
+(`./tree-based/job_configs/bagging_base` or `./tree-based/job_configs/cyclic_base`
+or `./histogram-based/job_configs/base`),
 and copies the correct data split file generated in the data preparation step.
 
-Here, we generated in total 12 different configs: six for each of the 5/20-client settings:
-- tree-based cyclic training with uniform data split 
-- tree-based cyclic training with non-uniform data split 
-- tree-based bagging training with uniform data split and uniform shrinkage 
-- tree-based bagging training with non-uniform data split and uniform shrinkage 
-- tree-based bagging training with non-uniform data split and scaled shrinkage
-- histogram-based training with uniform data split
+The script will generate a total of 10 different configs in `tree-based/job_configs` for tree-based algorithm:
+
+- tree-based cyclic training with uniform data split for 5 clients
+- tree-based cyclic training with non-uniform data split for 5 clients
+- tree-based bagging training with uniform data split and uniform shrinkage for 5 clients
+- tree-based bagging training with non-uniform data split and uniform shrinkage for 5 clients
+- tree-based bagging training with non-uniform data split and scaled shrinkage for 5 clients
+- tree-based cyclic training with uniform data split for 20 clients
+- tree-based cyclic training with non-uniform data split for 20 clients
+- tree-based bagging training with uniform data split and uniform shrinkage for 20 clients
+- tree-based bagging training with non-uniform data split and uniform shrinkage for 20 clients
+- tree-based bagging training with non-uniform data split and scaled shrinkage for 20 clients
+
+
+The script will also generate 2 configs in `histogram-based/job_configs` for histogram-base algorithm:
+
+- histogram-based training with uniform data split for 2 clients
+- histogram-based training with uniform data split for 5 clients
+
 
 By default, cpu based training is used.
 
-For gpu based training, edit `job_conf_gen.sh` to change `TREE_METHOD="hist"` to `TREE_METHOD="gpu_hist"`.
-
-> **_NOTE:_** Cyclic training always use uniform shrinkage. The generated job config files will be stored in the folder `./job_configs`
-
-### Installation
-Follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions.
-
-Install additional requirements for this xgboost example:
-```
-python3 -m pip install pandas
-python3 -m pip install xgboost
-python3 -m pip install sklearn
-python3 -m pip install torch
-python3 -m pip install tensorboard
-```
+For gpu based training, edit `job_confing_gen.sh` to change `TREE_METHOD="hist"` to `TREE_METHOD="gpu_hist"`.
