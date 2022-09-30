@@ -23,7 +23,7 @@ from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.app_constant import AppConstants
 
 
-class JSONModelPersistor(ModelPersistor):
+class XGBModelPersistor(ModelPersistor):
     def __init__(self, save_name="xgboost_model.json", load_as_dict=True):
         super().__init__()
         self.save_name = save_name
@@ -39,18 +39,16 @@ class JSONModelPersistor(ModelPersistor):
         fl_ctx.sync_sticky()
 
     def load_model(self, fl_ctx: FLContext) -> ModelLearnable:
-        """
-            initialize and load the Model.
+        """Initialize and load the Model.
 
         Args:
             fl_ctx: FLContext
 
         Returns:
-            Model object
+            ModelLearnable object
         """
 
-        var_dict = None
-        model_learnable = make_model_learnable(var_dict, dict())
+        model = None
 
         if os.path.exists(self.save_path):
             self.logger.info("Loading server model")
@@ -58,10 +56,9 @@ class JSONModelPersistor(ModelPersistor):
                 model = json.load(json_file)
                 if not self.load_as_dict:
                     model = bytearray(json.dumps(model), "utf-8")
-
-            model_learnable[ModelLearnableKey.WEIGHTS] = model
         else:
             self.logger.info("Initializing server model as None")
+        model_learnable = make_model_learnable(weights=model, meta_props=dict())
 
         return model_learnable
 
@@ -70,11 +67,10 @@ class JSONModelPersistor(ModelPersistor):
             self._initialize(fl_ctx)
 
     def save_model(self, model_learnable: ModelLearnable, fl_ctx: FLContext):
-        """
-            persist the Model object
+        """Persists the Model object.
 
         Args:
-            model: Model object
+            model_learnable: ModelLearnable object
             fl_ctx: FLContext
         """
         if model_learnable:
