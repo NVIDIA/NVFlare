@@ -96,18 +96,24 @@ and copies the correct data split file generated in the data preparation step.
 
 The script will generate a total of 10 different configs in `tree-based/job_configs` for tree-based algorithm:
 
-- tree-based cyclic training with uniform data split for 5/20 clients
-- tree-based cyclic training with non-uniform data split for 5/20 clients
-- tree-based bagging training with uniform data split and uniform shrinkage for 5/20 clients 
-- tree-based bagging training with non-uniform data split and uniform shrinkage for 5/20 clients
-- tree-based bagging training with non-uniform data split and scaled shrinkage for 5/20 clients
+- tree-based cyclic training with uniform data split for 5 clients
+- tree-based cyclic training with non-uniform data split for 5 clients
+- tree-based bagging training with uniform data split and uniform shrinkage for 5 clients
+- tree-based bagging training with non-uniform data split and uniform shrinkage for 5 clients
+- tree-based bagging training with non-uniform data split and scaled shrinkage for 5 clients
+- tree-based cyclic training with uniform data split for 20 clients
+- tree-based cyclic training with non-uniform data split for 20 clients
+- tree-based bagging training with uniform data split and uniform shrinkage for 20 clients
+- tree-based bagging training with non-uniform data split and uniform shrinkage for 20 clients
+- tree-based bagging training with non-uniform data split and scaled shrinkage for 20 clients
 
 
 The script will also generate 2 configs in `histogram-based/job_configs` for histogram-base algorithm:
 
-- histogram-based training with uniform data split for 2/5 clients
+- histogram-based training with uniform data split for 2 clients
+- histogram-based training with uniform data split for 5 clients
 
 
 By default, cpu based training is used.
 
-For gpu based training, edit `job_conf_gen.sh` to change `TREE_METHOD="hist"` to `TREE_METHOD="gpu_hist"`.
+For gpu based training, edit `job_confing_gen.sh` to change `TREE_METHOD="hist"` to `TREE_METHOD="gpu_hist"`.
