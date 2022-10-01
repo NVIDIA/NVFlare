@@ -11,10 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 from collections import OrderedDict
 
 from nvflare.fuel.utils import fobs
-from nvflare.fuel.utils.fobs.decomposers.core_decomposers import OrderedDictDecomposer
 
 
 class TestDecomposers:
