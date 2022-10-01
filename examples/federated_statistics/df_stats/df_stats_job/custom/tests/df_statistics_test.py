@@ -29,10 +29,10 @@ class TestDFStatistics:
 
     def load_data(self, fl_ctx: FLContext = None):
         # initialize list of lists
-        data = [['tom', 10, 4], ['nick', 15, 7], ['juli', 14, 8]]
-        train_df = pd.DataFrame(data, columns=['Name', 'Age', 'Edu'])
-        data = [['sam', 90, 20], ['jack', 75, 20], ['sara', 44, 13]]
-        test_df = pd.DataFrame(data, columns=['Name', 'Age', 'Edu'])
+        data = [["tom", 10, 4], ["nick", 15, 7], ["juli", 14, 8]]
+        train_df = pd.DataFrame(data, columns=["Name", "Age", "Edu"])
+        data = [["sam", 90, 20], ["jack", 75, 20], ["sara", 44, 13]]
+        test_df = pd.DataFrame(data, columns=["Name", "Age", "Edu"])
         return {"train": train_df, "test": test_df}
 
     def test_get_features(self):
@@ -41,9 +41,8 @@ class TestDFStatistics:
         assert "train" in fs.keys()
         assert "test" in fs.keys()
         assert fs["train"] == fs["test"]
-        assert [f.feature_name for f in fs["train"]] == ['Name', 'Age', 'Edu']
+        assert [f.feature_name for f in fs["train"]] == ["Name", "Age", "Edu"]
 
     def test_get_count(self):
         count = self.local_stats_gen.count("train", "Age")
         assert count == 3
-
