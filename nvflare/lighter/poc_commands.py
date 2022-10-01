@@ -76,20 +76,11 @@ def get_stop_cmd(poc_workspace: str, service_dir_name: str):
     return f"touch {stop_file}"
 
 
-def check_nvflare_home():
-    nvflare_home = os.getenv("NVFLARE_HOME")
-    if not nvflare_home:
-        raise CLIException(
-            "NVFLARE_HOME environment variable is not set. Please set NVFLARE_HOME=<NVFLARE install dir>"
-        )
-    return nvflare_home
-
-
 def get_nvflare_home() -> str:
-    nvflare_home = check_nvflare_home()
-
-    if nvflare_home.endswith("/"):
-        nvflare_home = nvflare_home[:-1]
+    nvflare_home = os.getenv("NVFLARE_HOME")
+    if nvflare_home:
+        if nvflare_home.endswith("/"):
+            nvflare_home = nvflare_home[:-1]
     return nvflare_home
 
 
@@ -108,10 +99,12 @@ def get_upload_dir(poc_workspace: str) -> str:
 
 
 def prepare_examples(poc_workspace: str):
-    src = os.path.join(get_nvflare_home(), SC.EXAMPLES)
-    dst = os.path.join(poc_workspace, f"{SC.FLARE_CONSOLE}/{get_upload_dir(poc_workspace)}")
-    print(f"link examples from {src} to {dst}")
-    os.symlink(src, dst)
+    nvflare_home = get_nvflare_home()
+    if nvflare_home:
+        src = os.path.join(nvflare_home, SC.EXAMPLES)
+        dst = os.path.join(poc_workspace, f"{SC.FLARE_CONSOLE}/{get_upload_dir(poc_workspace)}")
+        print(f"link examples from {src} to {dst}")
+        os.symlink(src, dst)
 
 
 def prepare_poc(number_of_clients: int, poc_workspace: str):
@@ -319,7 +312,12 @@ def def_poc_parser(sub_cmd):
         help="gpu device ids will be used as CUDA_VISIBLE_DEVICES. used for poc start command",
     )
     poc_parser.add_argument(
-        "--prepare", dest="prepare_poc", action="store_const", const=prepare_poc, help="prepare poc workspace"
+        "--prepare",
+        dest="prepare_poc",
+        action="store_const",
+        const=prepare_poc,
+        help="prepare poc workspace. "
+        + "export NVFLARE_HOME=<NVFLARE github cloned directory> to setup examples with prepare command",
     )
     poc_parser.add_argument("--start", dest="start_poc", action="store_const", const=start_poc, help="start poc")
     poc_parser.add_argument("--stop", dest="stop_poc", action="store_const", const=stop_poc, help="stop poc")
@@ -354,8 +352,6 @@ def handle_poc_cmd(cmd_args):
     excluded = None
     if cmd_args.exclude != "":
         excluded = [cmd_args.exclude]
-
-    check_nvflare_home()
 
     poc_workspace = os.getenv("NVFLARE_POC_WORKSPACE")
     if poc_workspace is None or len(poc_workspace.strip()) == 0:
