@@ -17,6 +17,7 @@ from typing import Tuple
 
 from nvflare.apis.controller_spec import ClientTask, Task, TaskCompletionStatus
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.server_engine_spec import ServerEngineSpec
 
 from .task_manager import TaskCheckStatus, TaskManager
 
@@ -53,6 +54,13 @@ class BcastTaskManager(TaskManager):
             # nothing has been sent - continue to wait
             return False, TaskCompletionStatus.IGNORED
 
+        if task.targets:
+            num_expected_clients = len(task.targets)
+        else:
+            engine = task.get_prop("___engine")
+            assert isinstance(engine, ServerEngineSpec)
+            num_expected_clients = len(engine.get_clients())
+
         clients_responded = 0
         clients_not_responded = 0
         for s in task.client_tasks:
@@ -60,6 +68,12 @@ class BcastTaskManager(TaskManager):
                 clients_not_responded += 1
             else:
                 clients_responded += 1
+
+        if clients_responded >= num_expected_clients and clients_not_responded == 0:
+            # all clients have responded
+            # total_client_count is the number of clients that the job has been deployed to.
+            # since NVF 2.1, clients can no longer dynamically join a job.
+            return True, TaskCompletionStatus.OK
 
         # if min_responses is 0, need to have all client tasks responded
         if task.props[_KEY_MIN_RESPS] == 0 and clients_not_responded:

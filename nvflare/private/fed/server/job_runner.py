@@ -115,11 +115,15 @@ class JobRunner(FLComponent):
             client_sites = []
             for p in participants:
                 if p == "server":
-                    app_deployer = AppDeployer(
-                        app_name=app_name, workspace=workspace, job_id=job.job_id, job_meta=job.meta, app_data=app_data
+                    app_deployer = AppDeployer()
+                    err = app_deployer.deploy(
+                        app_name=app_name,
+                        workspace=workspace,
+                        job_id=job.job_id,
+                        job_meta=job.meta,
+                        app_data=app_data,
+                        fl_ctx=fl_ctx,
                     )
-
-                    err = app_deployer.deploy()
                     if err:
                         deploy_detail.append(f"server: {err}")
                         raise RuntimeError(f"Failed to deploy app '{app_name}': {err}")
