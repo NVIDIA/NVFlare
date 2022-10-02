@@ -20,6 +20,17 @@ from nvflare.apis.shareable import Shareable
 
 
 class Aggregator(FLComponent, ABC):
+    def reset(self, fl_ctx: FLContext):
+        """Reset the internal state of the aggregator.
+
+        Args:
+            fl_ctx: FLContext
+
+        Returns:
+
+        """
+        pass
+
     @abstractmethod
     def accept(self, shareable: Shareable, fl_ctx: FLContext) -> bool:
         """Accept the shareable submitted by the client.

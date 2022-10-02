@@ -74,6 +74,7 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
         self.logger.debug(f"expected data kind: {expected_data_kind}")
 
         self._single_dxo_key = ""
+        self.meta_props = {}
 
         # Check expected data kind
         if isinstance(expected_data_kind, dict):
@@ -197,6 +198,9 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
                 self.log_warning(fl_ctx, f"Collection does not contain DXO for key {key} but {type(sub_dxo)}.")
                 continue
 
+            # add meta props
+            self.meta_props[contributor_name] = dxo.get_meta_props()
+
             accepted = self.dxo_aggregators[key].accept(
                 dxo=sub_dxo, contributor_name=contributor_name, contribution_round=contribution_round, fl_ctx=fl_ctx
             )
@@ -220,16 +224,33 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
         Returns:
             Shareable: the weighted mean of accepted shareables from contributors
         """
-
         self.log_debug(fl_ctx, "Start aggregation")
         result_dxo_dict = dict()
         # Aggregate the expected DXO(s)
         for key in self.expected_data_kind.keys():
             aggregated_dxo = self.dxo_aggregators[key].aggregate(fl_ctx)
             if key == self._single_dxo_key:  # return single DXO with aggregation results
-                return aggregated_dxo.to_shareable()
+                # return shareable with add T2 meta information
+                return self._add_meta(aggregated_dxo, fl_ctx)
             self.log_info(fl_ctx, f"Aggregated contributions matching key '{key}'.")
             result_dxo_dict.update({key: aggregated_dxo})
         # return collection of DXOs with aggregation results
         collection_dxo = DXO(data_kind=DataKind.COLLECTION, data=result_dxo_dict)
-        return collection_dxo.to_shareable()
+        # return shareable with add T2 meta information
+        return self._add_meta(collection_dxo, fl_ctx)
+
+    def _add_meta(self, dxo: DXO, fl_ctx: FLContext) -> Shareable:
+        if not isinstance(dxo, DXO):
+            raise ValueError(f"Expected dxo to be of type DXO but got {type(dxo)}")
+        if not isinstance(fl_ctx, FLContext):
+            raise ValueError(f"Expected fl_ctx to be of type FLContext but got {type(fl_ctx)}")
+        if self.meta_props:
+            if self.meta_props and isinstance(self.meta_props, Dict):
+                for k, v in self.meta_props.items():
+                    dxo.set_meta_prop(k, v)
+            shareable = dxo.to_shareable()
+            shareable.set_header(AppConstants.CONTRIBUTION_ROUND, fl_ctx.get_prop(AppConstants.CURRENT_ROUND))
+            shareable.set_peer_props({ReservedKey.IDENTITY_NAME: fl_ctx.get_identity_name()})
+            return shareable
+        else:
+            return dxo.to_shareable()
