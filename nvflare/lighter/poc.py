@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import argparse
 import os
 import pathlib
 import shutil
@@ -103,19 +102,6 @@ def main():
     print("*****************************************************************")
     print("** poc command is deprecated, please use 'nvflare poc' instead **")
     print("*****************************************************************")
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-n", "--num_clients", type=int, default=1, help="number of client folders to create")
-    parser.add_argument(
-        "-d",
-        "--poc_workspace",
-        type=str,
-        default=os.path.join(os.getcwd(), "poc"),
-        help="number of client folders to create",
-    )
-
-    args = parser.parse_args()
-    generate_poc(args.num_clients, args.poc_workspace)
 
 
 if __name__ == "__main__":
