@@ -25,7 +25,7 @@ jwt = JWTManager()
 def init_app():
     static_folder = os.environ.get("NVFL_DASHBOARD_STATIC_FOLDER", "static")
     app = Flask(__name__, static_url_path="", static_folder=static_folder)
-    app.config.from_object("config.Config")
+    app.config.from_object("nvflare.dashboard.config.Config")
     db.init_app(app)
     jwt.init_app(app)
     with app.app_context():
