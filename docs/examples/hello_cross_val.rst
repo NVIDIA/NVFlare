@@ -115,7 +115,7 @@ Application Configuration
 
 Inside the config folder there are two files, ``config_fed_client.json`` and ``config_fed_server.json``.
 
-.. literalinclude:: ../../examples/hello-numpy-cross-val/config/config_fed_server.json
+.. literalinclude:: ../../examples/hello-numpy-cross-val/app/config/config_fed_server.json
    :language: python
    :linenos:
    :caption: config_fed_server.json
@@ -126,7 +126,7 @@ The components "model_locator" and "formatter" have been added to work with the 
 and the rest is the same as in :doc:`Hello Scatter and Gather <hello_scatter_and_gather>`.
 
 
-.. literalinclude:: ../../examples/hello-numpy-cross-val/config/config_fed_client.json
+.. literalinclude:: ../../examples/hello-numpy-cross-val/app/config/config_fed_client.json
    :language: python
    :linenos:
    :caption: config_fed_client.json

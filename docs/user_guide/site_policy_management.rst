@@ -187,7 +187,7 @@ Each scope has the following attributes:
 
 The following is a sample policy:
 
-.. code-block::json
+.. code-block:: json
 
     {
         "scopes": [
