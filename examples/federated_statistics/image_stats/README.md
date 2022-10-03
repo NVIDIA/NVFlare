@@ -35,10 +35,11 @@ python3 data/prepare_data.py --input_dir /tmp/nvflare/data
 With this ratio setting, site-3 will have the largest number of images. You should see the following output
 ```
 Created 4 data lists for ['COVID', 'Lung_Opacity', 'Normal', 'Viral Pneumonia'].
-Saved 3616 entries at ./data/site-1_COVID.json
-Saved 6012 entries at ./data/site-2_Lung_Opacity.json
-Saved 10192 entries at ./data/site-3_Normal.json
-Saved 1345 entries at ./data/site-4_Viral Pneumonia.json
+Saved 3616 entries at /tmp/nvflare/data/site-1_COVID.json
+Saved 6012 entries at /tmp/nvflare/data/site-2_Lung_Opacity.json
+Saved 10192 entries at /tmp/nvflare/data/site-3_Normal.json
+Saved 1345 entries at /tmp/nvflare/data/site-4_Viral Pneumonia.json
+
 ```
 ## 2. Run the Fed Statistics Job in Simulator 
 
