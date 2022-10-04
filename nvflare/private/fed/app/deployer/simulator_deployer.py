@@ -36,7 +36,7 @@ class SimulatorDeployer(ServerDeployer):
         self.admin_storage = tempfile.mkdtemp()
 
     def create_fl_server(self, args, secure_train=False):
-        simulator_server = self._create_simulator_server_config(self.admin_storage)
+        simulator_server = self._create_simulator_server_config(self.admin_storage, args.max_clients)
 
         wait_after_min_clients = simulator_server.get("wait_after_min_clients", 10)
         if simulator_server["heart_beat_timeout"]:
@@ -98,7 +98,7 @@ class SimulatorDeployer(ServerDeployer):
 
         return admin_agent
 
-    def _create_simulator_server_config(self, admin_storage):
+    def _create_simulator_server_config(self, admin_storage, max_clients):
         simulator_server = {
             "name": "simulator_server",
             "service": {
@@ -110,7 +110,7 @@ class SimulatorDeployer(ServerDeployer):
             },
             "admin_host": "localhost",
             "admin_port": self.open_ports[1],
-            "max_num_clients": 100,
+            "max_num_clients": max_clients,
             "heart_beat_timeout": 600,
             "num_server_workers": 4,
             "compression": "Gzip",

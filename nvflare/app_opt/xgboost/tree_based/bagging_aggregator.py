@@ -22,19 +22,12 @@ from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.app_constant import AppConstants
 
 
-class XGBoostBaggingAggregator(Aggregator):
-    def __init__(
-        self,
-    ):
+class XGBBaggingAggregator(Aggregator):
+    def __init__(self):
         """Perform bagging aggregation for XGBoost trees.
 
         The trees are pre-weighted during training.
         Bagging aggregation simply add the new trees to existing global model.
-
-        Args:
-            expected_data_kind:
-                DataKind for DXO. Defaults to DataKind.XGB_MODEL
-                Indicating the tree representation given by XGBoost
         """
         super().__init__()
         self.logger.debug(f"expected data kind: {DataKind.XGB_MODEL}")

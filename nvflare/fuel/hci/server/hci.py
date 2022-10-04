@@ -124,7 +124,7 @@ class AdminServer(socketserver.ThreadingTCPServer):
                 extra_conn_props
             )
 
-        socketserver.TCPServer.__init__(self, (host, port), _MsgHandler, False)
+        socketserver.TCPServer.__init__(self, ("0.0.0.0", port), _MsgHandler, False)
 
         self.use_ssl = False
         if ca_cert and server_cert:

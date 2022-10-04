@@ -48,7 +48,9 @@ from nvflare.security.security import EmptyAuthorizer
 
 
 class SimulatorRunner(FLComponent):
-    def __init__(self, job_folder: str, workspace: str, clients=None, n_clients=None, threads=None, gpu=None):
+    def __init__(
+        self, job_folder: str, workspace: str, clients=None, n_clients=None, threads=None, gpu=None, max_clients=100
+    ):
         super().__init__()
 
         self.job_folder = job_folder
@@ -57,6 +59,7 @@ class SimulatorRunner(FLComponent):
         self.n_clients = n_clients
         self.threads = threads
         self.gpu = gpu
+        self.max_clients = max_clients
 
         self.ask_to_stop = False
 
@@ -68,7 +71,9 @@ class SimulatorRunner(FLComponent):
         self.client_config = None
         self.deploy_args = None
 
-    def _generate_args(self, job_folder: str, workspace: str, clients=None, n_clients=None, threads=None, gpu=None):
+    def _generate_args(
+        self, job_folder: str, workspace: str, clients=None, n_clients=None, threads=None, gpu=None, max_clients=100
+    ):
         args = Namespace(
             job_folder=job_folder,
             workspace=workspace,
@@ -76,13 +81,14 @@ class SimulatorRunner(FLComponent):
             n_clients=n_clients,
             threads=threads,
             gpu=gpu,
+            max_clients=max_clients,
         )
         args.set = []
         return args
 
     def setup(self):
         self.args = self._generate_args(
-            self.job_folder, self.workspace, self.clients, self.n_clients, self.threads, self.gpu
+            self.job_folder, self.workspace, self.clients, self.n_clients, self.threads, self.gpu, self.max_clients
         )
 
         if self.args.clients:
@@ -130,6 +136,13 @@ class SimulatorRunner(FLComponent):
             if not self.client_names:
                 self.logger.error("Please provide the client names list, or the number of clients to run the simulator")
                 return False
+            if self.max_clients < len(self.client_names):
+                self.logger.error(
+                    f"The number of clients ({len(self.client_names)}) can not be more than the "
+                    f"max_number of clients ({self.max_clients})"
+                )
+                return False
+
             if self.args.gpu:
                 gpus = self.args.gpu.split(",")
                 host_gpus = [str(x) for x in (get_host_gpu_ids())]

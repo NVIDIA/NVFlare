@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 from typing import List
 
 from nvflare.app_common.abstract.statistics_spec import StatisticConfig
@@ -77,7 +78,7 @@ class TestStatisticsController:
         assert second_spent > 0.5 * 4
 
     def test_prepare_input(self):
-        xs = self.stats_controller._prepare_inputs(SC.STATS_1st_STATISTICS, None)
+        xs = self.stats_controller._prepare_inputs(SC.STATS_1st_STATISTICS)
         assert xs[SC.STATISTICS_TASK_KEY] == SC.STATS_1st_STATISTICS
         seq = StatisticsController._get_target_statistics(
             self.stats_controller.statistic_configs, SC.ordered_statistics[SC.STATS_1st_STATISTICS]
@@ -98,7 +99,7 @@ class TestStatisticsController:
 
         assert self.stats_controller.global_statistics != {}
 
-        xs = self.stats_controller._prepare_inputs(SC.STATS_2nd_STATISTICS, None)
+        xs = self.stats_controller._prepare_inputs(SC.STATS_2nd_STATISTICS)
         assert xs[SC.STATISTICS_TASK_KEY] == SC.STATS_2nd_STATISTICS
         rhs = SC.ordered_statistics[SC.STATS_2nd_STATISTICS]
         rhs.sort()
@@ -116,7 +117,7 @@ class TestStatisticsController:
             "sum": {"site-3": {}},
             "stddev": {"site-4": {}},
         }
-        assert self.stats_controller._validate_min_clients(5, client_statistics) == False
+        assert not self.stats_controller._validate_min_clients(5, client_statistics)
 
         # waiting for 1 more client
         client_statistics = {
@@ -125,4 +126,4 @@ class TestStatisticsController:
             "sum": {"site-3": {"train": {}}},
             "stddev": {"site-4": {"train": {}}},
         }
-        assert self.stats_controller._validate_min_clients(5, client_statistics) == False
+        assert not self.stats_controller._validate_min_clients(5, client_statistics)
