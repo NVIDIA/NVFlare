@@ -38,7 +38,7 @@ Syntax and Usage
 
 .. note::
 
-    After you clone the NVFlare GitHub repository, you need to define a ``NVFLARE_HOME`` environment variable to point to the local NVFlare directory. For example, if the the NVFlare GitHub repository is cloned under ~/projects, then you should set ``NVFLARE_HOME=~/projects/NVFlare``. If the NVFLARE_HOME environment variable is not set, the ``nvflare poc`` command will fail.
+    After you clone the NVFlare GitHub repository, you may optionally define an ``NVFLARE_HOME`` environment variable to point to the local NVFlare directory so a symbolic link is created to point the transfer directory to the examples in the code base. For example, if the the NVFlare GitHub repository is cloned under ~/projects, then you should set ``NVFLARE_HOME=~/projects/NVFlare``. If the NVFLARE_HOME environment variable is not set, you will need to manually copy the examples to the transfer directory.
 
 
 Setup poc workspace
@@ -151,7 +151,7 @@ If there is no GPU, then there will be no assignments. If there are GPUs, they w
 
 .. tip::
 
-    You can check the GPUs available with the command:
+    You can check the GPUs available with the following command (assuming you have NVIDIA GPUs with drivers installed):
 
         .. code-block:: shell
 
