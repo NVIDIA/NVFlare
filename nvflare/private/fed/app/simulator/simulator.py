@@ -15,7 +15,6 @@
 """Federated Simulator launching script."""
 
 import argparse
-import os
 import sys
 
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
