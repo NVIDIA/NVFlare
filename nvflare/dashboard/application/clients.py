@@ -25,7 +25,10 @@ def create_one_client():
     creator = get_jwt_identity()
     req = request.json
     result = Store.create_client(req, creator)
-    return jsonify(result), 201
+    if result is not None:
+        return jsonify(result), 201
+    else:
+        return jsonify({"status": "conflicting"}), 409
 
 
 @app.route("/api/v1/clients", methods=["GET"])
@@ -46,6 +49,8 @@ def get_one_client(id):
 @jwt_required()
 def update_client(id):
     creator_id = Store.get_creator_id_by_client_id(id)
+    if creator_id is None:
+        return jsonify({"status": "error"}), 404
     c, p = check_role(creator_id, get_jwt(), get_jwt_identity())
     if not c and not p:
         return jsonify({"status": "unauthorized"}), 403
@@ -60,7 +65,10 @@ def update_client(id):
         result = Store.delete_client(id)
     else:
         result = {"status": "error"}
-    return jsonify(result)
+    if result is not None:
+        return jsonify(result)
+    else:
+        return jsonify({"status": "conflicting"}), 409
 
 
 @app.route("/api/v1/clients/<int:id>/blob", methods=["POST"])
