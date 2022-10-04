@@ -93,8 +93,8 @@ def handle_provision(args):
 
     project_dict = load_yaml(project_full_path)
     api_version = project_dict.get("api_version")
-    if api_version not in [3]:
-        raise ValueError(f"API version expected 3 but found {api_version}")
+    if api_version not in [4]:
+        raise ValueError(f"API version expected 4 but found {api_version}")
 
     project_name = project_dict.get("name")
     project_description = project_dict.get("description", "")

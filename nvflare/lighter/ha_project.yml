@@ -1,40 +1,16 @@
-api_version: 3
-name: example_project
-description: NVIDIA FLARE sample project yaml file
-
-# client_components: &cln_comps
-#   resource_manager:    # This id is reserved by system.  Do not change it.
-#     path: nvflare.app_common.resource_managers.list_resource_manager.ListResourceManager
-#     args:
-#       resources:
-#         gpu: [0, 1, 2, 3]
-#   resource_consumer:    # This id is reserved by system.  Do not change it.
-#     path: nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer
-#     args:
-#       gpu_resource_key: gpu
-  
-# server_components: &svr_comps
-#   job_scheduler:  # This id is reserved by system.  Do not change it.
-#     path: nvflare.app_common.job_schedulers.job_scheduler.DefaultJobScheduler
-#     args:
-#       max_jobs: 1
-#   job_manager:    # This id is reserved by system.  Do not change it.
-#     path: nvflare.apis.impl.job_def_manager.SimpleJobDefManager
-#     args:
-#       uri_root: /tmp/nvflare/jobs-storage
-#       job_store_id: job_store
-#   job_store:
-#     path: nvflare.app_common.storages.filesystem_storage.FilesystemStorage
+api_version: 4
+name: ex_proj
+description: NVIDIA FLARE example project yaml file
 
 participants:
-  # change overseer.example.com to the FQDN of the overseer
+  # change overseer to the FQDN of the overseer
   - name: overseer
     type: overseer
     org: nvidia
     protocol: https
     api_root: /api/v1
     port: 8443
-  # change example.com to the FQDN of the server
+  # change server1 to the FQDN of the server
   - name: server1
     type: server
     org: nvidia
@@ -78,9 +54,6 @@ builders:
       # if not set, no app_validator is included in fed_server.json
       # app_validator: PATH_TO_YOUR_OWN_APP_VALIDATOR
 
-      # when docker_image is set to a docker image name, docker.sh will be generated on server/client/admin
-      # docker_image:
-
       # download_job_url is set to http://download.server.com/ as default in fed_server.json.  You can override this
       # to different url.
       # download_job_url: http://download.server.com/
@@ -104,25 +77,5 @@ builders:
               root_dir: /tmp/nvflare/snapshot-storage
               uri_root: /
 
-  # - path: nvflare.lighter.impl.auth_policy.AuthPolicyBuilder
-  #   args:
-  #     orgs:
-  #       nvidia:
-  #         - relaxed
-  #     roles:
-  #       super: super user of system
-  #     groups:
-  #       relaxed:
-  #         desc: org group with relaxed policies
-  #         rules:
-  #           allow_byoc: true
-  #           allow_custom_datalist: true
-  #     disabled: false
   - path: nvflare.lighter.impl.cert.CertBuilder
-  # - path: nvflare.lighter.impl.he.HEBuilder
-  #   args:
-  #     poly_modulus_degree: 8192 
-  #     coeff_mod_bit_sizes: [60, 40, 40]
-  #     scale_bits: 40
-  #     scheme: CKKS
   - path: nvflare.lighter.impl.signature.SignatureBuilder
