@@ -21,10 +21,11 @@ from nvflare.lighter.utils import generate_password
 
 
 def start(args):
+    cwd = os.getcwd()
     if not args.folder:
-        folder = os.getcwd()
+        folder = cwd
     else:
-        folder = args.folder
+        folder = os.path.join(cwd, args.folder)
     environment = dict()
     env_vars = args.env
     if env_vars:

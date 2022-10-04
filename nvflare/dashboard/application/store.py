@@ -13,12 +13,15 @@
 # limitations under the License.
 
 import json
+import logging
 
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from .blob import gen_client, gen_overseer, gen_server, gen_user
 from .cert import Entity, make_root_cert
 from .models import Capacity, Client, Organization, Project, Role, User, db
+
+log = logging.getLogger(__name__)
 
 
 def check_role(id, claims, requester):
@@ -255,7 +258,8 @@ class Store(object):
             user.role_id = role.id
             db.session.add(user)
             db.session.commit()
-        except BaseException:
+        except BaseException as e:
+            log.error(f"Error while creating user: {e}")
             return None
         return add_ok({"user": _dict_or_empty(user)})
 
