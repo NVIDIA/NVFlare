@@ -7,5 +7,7 @@ click==8.1.2
 pytest-xdist==2.5.0
 pytest-cov==3.0.0
 pandas
+flask_jwt_extended
+flask_sqlalchemy
 # wait for approval
 # pylint!=2.13  # https://github.com/PyCQA/pylint/issues/5969
