@@ -161,8 +161,12 @@ class Store(object):
         client = Client(name=name, description=description, creator_id=creator_id)
         client.organization_id = org.id
         client.capacity_id = cap.id
-        db.session.add(client)
-        db.session.commit()
+        try:
+            db.session.add(client)
+            db.session.commit()
+        except BaseException as e:
+            log.error(f"Error while creating client: {e}")
+            return None
         return add_ok({"client": _dict_or_empty(client)})
 
     @classmethod
@@ -176,8 +180,12 @@ class Store(object):
 
     @classmethod
     def get_creator_id_by_client_id(cls, id):
-        creator_id = Client.query.get(id).creator_id
-        return creator_id
+        client = Client.query.get(id)
+        if client:
+            creator_id = client.creator_id
+            return creator_id
+        else:
+            return None
 
     @classmethod
     def get_client(cls, id):
@@ -198,8 +206,12 @@ class Store(object):
             client.capacity_id = cap.id
         for k, v in req.items():
             setattr(client, k, v)
-        db.session.add(client)
-        db.session.commit()
+        try:
+            db.session.add(client)
+            db.session.commit()
+        except BaseException as e:
+            log.error(f"Error while patching client: {e}")
+            return None
         return add_ok({"client": _dict_or_empty(client)})
 
     @classmethod
@@ -217,8 +229,12 @@ class Store(object):
             client.capacity_id = cap.id
         for k, v in req.items():
             setattr(client, k, v)
-        db.session.add(client)
-        db.session.commit()
+        try:
+            db.session.add(client)
+            db.session.commit()
+        except BaseException as e:
+            log.error(f"Error while patching client: {e}")
+            return None
         return add_ok({"client": _dict_or_empty(client)})
 
     @classmethod

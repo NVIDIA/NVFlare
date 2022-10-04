@@ -76,6 +76,7 @@ class Project(db.Model):
 
 class Client(CommonMixin, db.Model):
     capacity_id = db.Column(db.Integer, db.ForeignKey("capacity.id"), nullable=False)
+    name = db.Column(db.String(512), unique=True)
     organization_id = db.Column(db.Integer, db.ForeignKey("organization.id"), nullable=False)
     capacity = db.relationship("Capacity", backref="clients")
     organization = db.relationship("Organization", backref="clients")
