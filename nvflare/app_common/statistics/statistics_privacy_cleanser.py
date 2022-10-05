@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import Dict, List, Tuple
 
+from nvflare.app_common.app_constant import StatisticsConstants as StC
+
 
 class StatisticsPrivacyCleanser(ABC):
     @abstractmethod
@@ -21,10 +23,11 @@ class StatisticsPrivacyCleanser(ABC):
         """
         metrics_modified = False
         for metric in metric_keys:
-            for ds_name in list(metrics[metric].keys()):
-                for feature in list(metrics[metric][ds_name].keys()):
-                    if not validation_result[ds_name][feature]:
-                        metrics[metric][ds_name].pop(feature, None)
-                        metrics_modified = True
+            if metric != StC.STATS_COUNT:
+                for ds_name in list(metrics[metric].keys()):
+                    for feature in list(metrics[metric][ds_name].keys()):
+                        if not validation_result[ds_name][feature]:
+                            metrics[metric][ds_name].pop(feature, None)
+                            metrics_modified = True
 
         return metrics, metrics_modified
