@@ -344,7 +344,6 @@ class ServerEngine(ServerEngineInternalSpec):
 
         self.logger.info("Abort the server app run.")
 
-        status_message = ""
         try:
             status_message = self.send_command_to_child_runner_process(
                 job_id=job_id,
@@ -359,10 +358,11 @@ class ServerEngine(ServerEngineInternalSpec):
                     child_process.terminate()
         finally:
             with self.lock:
-                self.run_processes.pop(job_id)
+                if job_id in self.run_processes:
+                    self.run_processes.pop(job_id)
 
         self.engine_info.status = MachineStatus.STOPPED
-        return status_message
+        return ""
 
     def check_app_start_readiness(self, job_id: str) -> str:
         if job_id not in self.run_processes.keys():
