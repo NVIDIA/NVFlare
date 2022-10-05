@@ -234,3 +234,19 @@ by simply set the   "task_result_filters" to empty list to avoid **double** filt
 In current example, two cleanser in the StatisticsPrivacyFilter are put in place.
 "min_count_cleanser",
 "hist_bins_cleanser"
+
+
+## 4.3 Experiments with Privacy Filter
+ 
+You can experiments with different privacy policy, for example, what if you set
+```min_count``` to  1600, which is larger than the 1345 images site-4. 
+
+```
+  {
+      "id": "min_count_cleanser",
+      "path": "nvflare.app_common.statistics.min_count_cleanser.MinCountCleanser",
+      "args": {
+        "min_count": 10
+      }
+    }
+```
