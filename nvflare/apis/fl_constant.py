@@ -301,7 +301,7 @@ class WorkspaceConstants:
 
     SERVER_STARTUP_CONFIG = "fed_server.json"
     CLIENT_STARTUP_CONFIG = "fed_client.json"
-    JOB_META_FILE = "job_meta.json"
+    JOB_META_FILE = "meta.json"
 
     AUTHORIZATION_CONFIG = "authorization.json"
     DEFAULT_AUTHORIZATION_CONFIG = AUTHORIZATION_CONFIG + ".default"
