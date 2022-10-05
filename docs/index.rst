@@ -6,7 +6,6 @@ NVIDIA FLARE
    :maxdepth: 1
    :hidden:
 
-   index
    flare_overview
    key_features
    getting_started
