@@ -87,6 +87,9 @@ class SimulatorRunner(FLComponent):
         return args
 
     def setup(self):
+        running_dir = os.getcwd()
+        self.workspace = os.path.join(running_dir, self.workspace)
+
         self.args = self._generate_args(
             self.job_folder, self.workspace, self.clients, self.n_clients, self.threads, self.gpu, self.max_clients
         )
