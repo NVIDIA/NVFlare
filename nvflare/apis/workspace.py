@@ -34,7 +34,7 @@ class Workspace:
                         ...
                     startup (optional)
                         provisioned content
-                        fed_client.jsonf
+                        fed_client.json
                     run_1
                         app
                             config (required)
