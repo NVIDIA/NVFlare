@@ -358,7 +358,8 @@ class ServerEngine(ServerEngineInternalSpec):
                     child_process.terminate()
         finally:
             with self.lock:
-                self.run_processes.pop(job_id)
+                if job_id in self.run_processes:
+                    self.run_processes.pop(job_id)
 
         self.engine_info.status = MachineStatus.STOPPED
         return ""
