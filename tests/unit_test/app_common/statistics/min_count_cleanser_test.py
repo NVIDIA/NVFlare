@@ -41,7 +41,7 @@ MIN_COUNT_APPLY_TEST_CASES = [
     (
         {"count": {"train": {"age": 6}}, "failure_count": {"train": {"age": 0}}},
         7,
-        ({"count": {"train": {}}, "failure_count": {"train": {}}}, True),
+        ({"count": {"train": {"age": 6}}, "failure_count": {"train": {}}}, True),
     ),
     # statistics with age count = 8, failure count = 1 , min_count = 7, (8 - 0 < 7), valid = True
     # all feature statistics remain. Modified Flag = False
@@ -58,7 +58,11 @@ MIN_COUNT_APPLY_TEST_CASES = [
         },
         7,
         (
-            {"count": {"train": {"age": 8}}, "sum": {"train": {"age": 120}}, "failure_count": {"train": {"age": 0}}},
+            {
+                "count": {"train": {"age": 8, "edu": 5}},
+                "sum": {"train": {"age": 120}},
+                "failure_count": {"train": {"age": 0}},
+            },
             True,
         ),
     ),
