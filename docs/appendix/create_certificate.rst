@@ -1,5 +1,5 @@
 #######################################################################################
-How to create the self-signed SSL Certificate Authority and server-clients certificates
+How to create the self-signed TLS Certificate Authority and server-clients certificates
 #######################################################################################
 
 If you are using the automatically generated startup kits created by the provisioning tool as described in the

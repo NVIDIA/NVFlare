@@ -121,7 +121,7 @@ Authentication
 NVFLARE's authentication model is based on Public Key Infrastructure (PKI) technology:
 
     - For the FL project, the Project Admin uses the Provisioning Tool to create a Root CA with a self-signed root certificate. This Root CA will be used to issue all other certs needed by communicating parties.
-    - Identities involved in the study (Server(s), Clients, the Overseer, Users) are provisioned with the Provisioning Tool. Each identity is defined with a unique common name. For each identity, the Provisioning Tool generates a separate password-protected Startup Kit, which includes security credentials for mutual SSL authentication:
+    - Identities involved in the study (Server(s), Clients, the Overseer, Users) are provisioned with the Provisioning Tool. Each identity is defined with a unique common name. For each identity, the Provisioning Tool generates a separate password-protected Startup Kit, which includes security credentials for mutual TLS authentication:
         - The certificate of the Root CA
         - The cert of the identity
         - The private key of the identity
@@ -131,8 +131,8 @@ NVFLARE's authentication model is based on Public Key Infrastructure (PKI) techn
         - FLARE Console (previously called Admin Client) kits are sent to the user(s)
     - To ensure the integrity of the Startup Kit, each file in the kit is signed by the Root CA.
     - Each Startup Kit also contains a "start.sh" file, which can be used to properly start the NVFLARE application.
-    - Once started, the Client tries to establish a mutually-authenticated SSL connection with the Server, using the PKI credentials in its Startup Kits. This is possible only if the client and the server both have the correct Startup Kits.
-    - Similarly, when a user tries to operate the NVFLARE system with the Admin Client app, the admin client tries to establish a mutually-authenticated SSL connection with the Server, using the PKI credentials in its Startup Kits. This is possible only if the admin client and the server both have the correct Startup Kits. The admin user also must enter his/her assigned user name correctly.
+    - Once started, the Client tries to establish a mutually-authenticated TLS connection with the Server, using the PKI credentials in its Startup Kits. This is possible only if the client and the server both have the correct Startup Kits.
+    - Similarly, when a user tries to operate the NVFLARE system with the Admin Client app, the admin client tries to establish a mutually-authenticated TLS connection with the Server, using the PKI credentials in its Startup Kits. This is possible only if the admin client and the server both have the correct Startup Kits. The admin user also must enter his/her assigned user name correctly.
  
 The security of the system comes from the PKI credentials in the Startup Kits. As you can see, this mechanism involves manual processing and human interactions for Startup Kit distribution, and hence the identity security of the system depends on the trust of the involved people. To minimize security risk, we recommend that people involved follow these best practice guidelines:
 
@@ -154,7 +154,7 @@ See :ref:`Federated Authorization <federated_authorization>`
  
 Communication Security
 -----------------------
-All data communications are through secure channels established with mutually-authenticated SSL connections. The
+All data communications are through secure channels established with mutually-authenticated TLS connections. The
 communication protocol between the FL Server and clients is gRPC. The protocol between FLARE Console instances and the
 FL Server is TCP.
  
