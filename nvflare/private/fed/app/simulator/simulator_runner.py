@@ -23,6 +23,7 @@ import threading
 import time
 from argparse import Namespace
 from concurrent.futures import ThreadPoolExecutor
+from multiprocessing import Manager, Process
 from multiprocessing.connection import Client
 
 from nvflare.apis.fl_component import FLComponent
@@ -284,6 +285,15 @@ class SimulatorRunner(FLComponent):
             client.status = ClientStatus.STARTED
 
     def run(self):
+        manager = Manager()
+        return_dict = manager.dict()
+        process = Process(target=self.run_processs, args=(return_dict,))
+        process.start()
+        process.join()
+        run_status = return_dict["run_status"]
+        return run_status
+
+    def run_processs(self, return_dict):
         if self.setup():
             try:
                 self.create_clients()
@@ -320,7 +330,9 @@ class SimulatorRunner(FLComponent):
                 self.deployer.close()
         else:
             run_status = 1
-        return run_status
+
+        return_dict["run_status"] = run_status
+        os._exit(0)
 
     def client_run(self, clients, gpu):
         client_runner = SimulatorClientRunner(self.args, clients, self.client_config, self.deploy_args)

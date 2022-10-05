@@ -101,6 +101,8 @@ class ClientTaskWorker(FLComponent):
         with client.run_manager.new_context() as fl_ctx:
             self.fire_event(EventType.SWAP_OUT, fl_ctx)
 
+            client.run_manager.aux_runner.abort_signal.trigger("True")
+
             fl_ctx.set_prop(FLContextKey.RUNNER, None, private=True)
         self.logger.info(f"Clean up ClientRunner for : {client.client_name} ")
 
