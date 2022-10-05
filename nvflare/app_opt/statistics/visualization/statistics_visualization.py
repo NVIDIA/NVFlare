@@ -68,7 +68,7 @@ class Visualization:
                         feature_edges[feature].append(bucket[0])
                     if display_format == "percent":
                         sum_value = self.sum_counts_in_histogram(ds_hist)
-                        ds_bucket_counts.append(round(bucket[2] / sum_value, 2))
+                        ds_bucket_counts.append(bucket[2] / sum_value)
                     else:
                         ds_bucket_counts.append(bucket[2])
                     hists[ds] = ds_bucket_counts
