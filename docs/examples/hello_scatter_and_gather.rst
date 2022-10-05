@@ -121,12 +121,12 @@ Inside the config folder there are two files, ``config_fed_client.json`` and ``c
 For now, the default configurations are sufficient.
 
 
-.. literalinclude:: ../../examples/hello-numpy-sag/config/config_fed_server.json
+.. literalinclude:: ../../examples/hello-numpy-sag/app/config/config_fed_server.json
    :language: json
    :linenos:
    :caption: config_fed_server.json
 
-.. literalinclude:: ../../examples/hello-numpy-sag/config/config_fed_client.json
+.. literalinclude:: ../../examples/hello-numpy-sag/app/config/config_fed_client.json
    :language: json
    :linenos:
    :caption: config_fed_client.json

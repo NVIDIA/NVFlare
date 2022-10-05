@@ -4,13 +4,16 @@
 NVIDIA FLARE FL Simulator
 #########################
 
-The NVIDIA FLARE FL Simulator was added in version 2.2 to help researchers accelerate the development of federated
+The NVIDIA FLARE FL Simulator was added in version 2.2 to help researchers
+accelerate the development of federated
 learning workflows.
 
-The FL Simulator is a lightweight simulator of a running NVFLARE FL deployment, and it can allow researchers to test
-and debug their application without provisioning a real project. The FL jobs run on a server and 
-multiple clients in the same process but in a similar way to how it would run in a real deployment so researchers
-can more quickly build out new components and jobs that can then be directly used in a real production deployment.
+The FL Simulator is a lightweight simulator of a running NVFLARE FL deployment,
+and it can allow researchers to test and debug their application without
+provisioning a real project. The FL jobs run on a server and 
+multiple clients in the same process but in a similar way to how it would run
+in a real deployment so researchers can more quickly build out new components
+and jobs that can then be directly used in a real production deployment.
 
 ***********************
 Command Usage
@@ -39,31 +42,33 @@ Command Usage
 Command examples
 *****************
 
-1. Run the single NVFlare app:
+Run a single NVFlare app
+========================
 
 This command will run the same app on the server and 8 clients using 1 thread. The client names will be site-1, site-2, ... , site-8:
 
-.. code-block::python
+.. code-block:: python
 
-    python3 -u -m nvflare.private.fed.app.simulator.simulator app_folder -o WORKSPACE_FOLDER -n 8 -t 1
+    nvflare simulator APP_FOLDER -w WORKSPACE_FOLDER -n 8 -t 1
+
+Run an NVFlare job
+===================
+
+This command will run the job (in the specified JOB_FOLDER), following the meta.json in the job. The executing client list is provided in the command line ("client0,client1,client2,client3"). If there is any client not defined in the deploy_map of the meta.json, the simulator will report an error and not run.
+
+.. code-block:: python
+
+    nvflare simulator JOB_FOLDER -w WORKSPACE_FOLDER -c client0,client1,client2,client3 -t 1
 
 
-2. Run the NVFlare job 
+Run a job with no client name list
+===================================
 
-This command will run the job (in the job_folder), following the job meta.json. The executing client list is provided in the command line ("client0,client1,client2,client3"). If there is any client not defined in the deploy_map of the meta.json, the simulator will report error and not run.
+If there is no client name list provided and no number of clients (-n) option provided, the simulator extracts the list of client names from the deployment_map in meta.json to run.
 
-.. code-block::python
+.. code-block:: python
 
-    python3 -u -m nvflare.private.fed.app.simulator.simulator job_folder -o WORKSPACE_FOLDER -c client0,client1,client2,client3 -t 1
-
-
-3. Not providing client name list
-
-If there is no client name list provided, and there's no number of clients option provided, the simulator is going to extract the client names list from the deployment_map in the meta.json to run.
-
-.. code-block::python
-
-    python3 -u -m nvflare.private.fed.app.simulator.simulator job_folder -o WORKSPACE_FOLDER  -t 1
+    nvflare simulator JOB_FOLDER -w WORKSPACE_FOLDER  -t 1
 
 
 .. note::
@@ -76,7 +81,7 @@ Debug NVFlare Application
 
 One of the goals for the Simulator is to enable researchers easily debug the NVFlare application. The FL simulator is implemented in a way of API design. Actually, the Simulator application is also implemented using the Simulator API. The researchers can simply write a "main" python script like the Simulator App, then place the script into their familiar Python IDE, add the NVFlare app into the python source codes path, then add the breakpoints to debug the application run.
 
-.. code-block::python
+.. code-block:: python
 
     def parse_args():
         parser = argparse.ArgumentParser()
@@ -119,7 +124,7 @@ The simulator "-t" option provides the option to use how many threads to run the
 
 For example: 
 
-.. code-block::shell
+.. code-block:: shell
 
   -c  c1,c2,c3,c4,c5 -gpu 0,1
 
