@@ -158,10 +158,10 @@ def main():
     if not os.path.isfile(log_config_file_path):
         log_config_file_path = os.path.join(os.path.dirname(__file__), WorkspaceConstants.LOGGING_CONFIG)
     logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
-    log_file = os.path.join(args.workspace, SimulatorConstants.JOB_NAME, WorkspaceConstants.LOG_FILE_NAME)
+    workspace = os.path.join(args.workspace, SimulatorConstants.JOB_NAME, "app_" + args.client)
+    log_file = os.path.join(workspace, WorkspaceConstants.LOG_FILE_NAME)
     add_logfile_handler(log_file)
 
-    workspace = os.path.join(args.workspace, SimulatorConstants.JOB_NAME, "app_" + args.client)
     os.chdir(workspace)
     fobs_initialize()
     AuthorizationService.initialize(EmptyAuthorizer())
