@@ -238,15 +238,16 @@ In current example, two cleanser in the StatisticsPrivacyFilter are put in place
 
 ## 4.3 Experiments with Privacy Filter
  
-You can experiments with different privacy policy, for example, what if you set
+You can experiment with different privacy policy, for example, what if you set
 ```min_count``` to  1600, which is larger than the 1345 images site-4. 
+see what results you will get
 
 ```
   {
       "id": "min_count_cleanser",
       "path": "nvflare.app_common.statistics.min_count_cleanser.MinCountCleanser",
       "args": {
-        "min_count": 10
+        "min_count": 1600
       }
     }
 ```
