@@ -58,7 +58,11 @@ MIN_COUNT_APPLY_TEST_CASES = [
         },
         7,
         (
-            {"count": {"train": {"age": 8, "edu": 5}}, "sum": {"train": {"age": 120}}, "failure_count": {"train": {"age": 0}}},
+            {
+                "count": {"train": {"age": 8, "edu": 5}},
+                "sum": {"train": {"age": 120}},
+                "failure_count": {"train": {"age": 0}},
+            },
             True,
         ),
     ),

@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import Dict, List, Tuple
+
 from nvflare.app_common.app_constant import StatisticsConstants as StC
+
 
 class StatisticsPrivacyCleanser(ABC):
     @abstractmethod
