@@ -28,7 +28,7 @@ It includes:
 
   * Extensible management tools for:
 
-    * Secure provisioning (SSL certificates)
+    * Secure provisioning (TLS certificates)
     * Orchestration (Admin Console) | (Admin APIs) 
     * Monitoring of federated learning experiments (Aux APIs; Tensorboard visualization)
   
