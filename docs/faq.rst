@@ -239,7 +239,7 @@ Client related questions
 
     The federated learning clients are identified by a dynamically generated FL token issued by the server during runtime.
     When an FL client first joins an FL training, it first needs to send a login request to the FL server. During the login
-    process, the FL server and client need to exchange SSL certificates for bi-directional authentication. Once the
+    process, the FL server and client need to exchange TLS certificates for bi-directional authentication. Once the
     authentication is successful, the FL server sends an FL token to the client. The FL client will use this FL token to
     identify itself for all following requests for the global model and all model updating operations.
 
