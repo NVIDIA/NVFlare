@@ -222,7 +222,7 @@ the privacy control.  This is useful when you develop these filters
 Once the company decides to instrument certain privacy policy independent of individual
 job, one can copy the local directory privacy.json content to clients' local privacy.json ( merge not overwrite).
 
-This can only demonstrated in POC mode, where the privacy.json is put in each site's local directory
+This can only be demonstrated in POC mode, where the privacy.json is put in each site's local directory
 
 **NOTE** we need to remove the same filters from the job definition in config_fed_client.json
 by simply set the   "task_result_filters" to empty list to avoid **double** filtering.
@@ -231,16 +231,13 @@ by simply set the   "task_result_filters" to empty list to avoid **double** filt
 "task_result_filters": []
 ```
 
-In current example, two cleanser in the StatisticsPrivacyFilter are put in place.
-"min_count_cleanser",
-"hist_bins_cleanser"
+In current example, we include one cleanser in the StatisticsPrivacyFilter: "min_count_cleanser" 
 
 
 ## 4.3 Experiments with Privacy Filter
  
 You can experiment with different privacy policy, for example, what if you set
 ```min_count``` to  1600, which is larger than the 1345 images site-4. 
-see what results you will get
 
 ```
   {
