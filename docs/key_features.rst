@@ -95,8 +95,9 @@ Site Policy Management and Security
 -----------------------------------
 
 Although the concept of client authorization and security policies are not new in FLARE, version 2.2 has shifted to
-federated site policy management.  In the past, authorization policies were defined by the project administrator at time
-of provisioning, or in the job specification.  The shift to federated site policy allows individual sites to control:
+federated :ref:`site policy management <site_policy_management>`. In the past, authorization policies were defined by the
+project administrator at time of provisioning, or in the job specification.  The shift to federated site policy allows
+individual sites to control:
 
  - Site security policy
  - Resource management
