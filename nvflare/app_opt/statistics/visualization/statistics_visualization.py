@@ -36,7 +36,7 @@ class Visualization:
             df = pd.DataFrame.from_dict(feature_metrics)
             display(df)
 
-    def show_histograms(self, data, display_format="sample_count", white_list_features=[], plot_type = "both"):
+    def show_histograms(self, data, display_format="sample_count", white_list_features=[], plot_type="both"):
         feature_dfs = self.get_histogram_dataframes(data, display_format, white_list_features)
         self.show_dataframe_plots(feature_dfs, plot_type)
 
