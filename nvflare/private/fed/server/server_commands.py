@@ -24,6 +24,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.fuel.utils import fobs
+from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.widgets.widget import WidgetID
 
 
@@ -132,7 +133,16 @@ class GetTaskCommand(CommandProcessor):
         client = data.get_header(ServerCommandKey.FL_CLIENT)
         fl_ctx.set_peer_context(shared_fl_ctx)
         server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
-        taskname, task_id, shareable = server_runner.process_task_request(client, fl_ctx)
+        if not server_runner:
+            # this is possible only when the client request is received before the
+            # server_app_runner.start_server_app is called in runner_process.py
+            # We ask the client to try again later.
+            taskname = SpecialTaskName.TRY_AGAIN
+            task_id = ""
+            shareable = Shareable()
+            shareable.set_header(TaskConstant.WAIT_TIME, 1.0)
+        else:
+            taskname, task_id, shareable = server_runner.process_task_request(client, fl_ctx)
         data = {
             ServerCommandKey.TASK_NAME: taskname,
             ServerCommandKey.TASK_ID: task_id,
