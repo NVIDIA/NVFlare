@@ -6,7 +6,7 @@ Provisioning in NVIDIA FLARE
 A necessary first step in establishing a federation is provisioning to establish the identities of the server, clients,
 and admin clients.
 
-When operating federated learning, communication channels use shared SSL certificates generated
+When operating federated learning, communication channels use shared TLS certificates generated
 during provisioning to establish the identities and secure communication between participants.
 
 Provisioning in NVIDIA FLARE generates mutual-trusted system-wide configurations for all participants

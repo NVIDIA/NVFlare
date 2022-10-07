@@ -47,7 +47,7 @@ Please refer to :ref:`user_guide/application:NVIDIA FLARE Application` for more 
    programming_guide/provisioning_system
    programming_guide/high_availability
    programming_guide/system_architecture
-
+   programming_guide/resource_manager_and_consumer
 
 
 Code Structure
