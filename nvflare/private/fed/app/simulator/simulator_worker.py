@@ -154,6 +154,12 @@ def main():
     parser.add_argument("--parent_pid", type=int, help="parent process pid", required=True)
     args = parser.parse_args()
 
+    # start parent process checking thread
+    parent_pid = args.parent_pid
+    stop_event = threading.Event()
+    thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
+    thread.start()
+
     log_config_file_path = os.path.join(args.workspace, "startup", WorkspaceConstants.LOGGING_CONFIG)
     if not os.path.isfile(log_config_file_path):
         log_config_file_path = os.path.join(os.path.dirname(__file__), WorkspaceConstants.LOGGING_CONFIG)
@@ -173,12 +179,6 @@ def main():
 
     conn = _create_connection(args.port)
 
-    # start parent process checking thread
-    parent_pid = args.parent_pid
-    stop_event = threading.Event()
-    thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
-    thread.start()
-
     try:
         task_worker = ClientTaskWorker()
         task_worker.run(args, conn)
@@ -195,4 +195,4 @@ if __name__ == "__main__":
 
     main()
     time.sleep(2)
-    os._exit(0)
+    # os._exit(0)
