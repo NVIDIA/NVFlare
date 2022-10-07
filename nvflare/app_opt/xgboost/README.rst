@@ -239,7 +239,7 @@ function is required,
 
     class CustomXGBExecutor(XGBExecutorBase):
         def xgb_train(self, params: XGBoostParams, fl_ctx: FLContext) -> Shareable:
-            with xgb.rabit.RabitContext([e.encode() for e in params.rabit_env]):
+            with xgb.collective.CommunicatorContext(**params.communicator_env):
                 dtrain = xgb.DMatrix(params.train_data)
                 dtest = xgb.DMatrix(params.test_data)
                 watchlist = [(dtest, "eval"), (dtrain, "train")]
@@ -259,7 +259,7 @@ function is required,
                 run_number = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
                 run_dir = workspace.get_run_dir(run_number)
                 bst.save_model(os.path.join(run_dir, "test.model.json"))
-                xgb.rabit.tracker_print("Finished training\n")
+                xgb.collective.communicator_print("Finished training\n")
 
                 return make_reply(ReturnCode.OK)
 

@@ -170,27 +170,23 @@ class FedXGBHistogramExecutorBase(Executor, ABC):
             verbose_eval=self.verbose_eval,
         )
 
-        rabit_env = [
-            f"federated_server_address={self._server_address}:{xgb_fl_server_port}",
-            f"federated_world_size={self.world_size}",
-            f"federated_rank={self.rank}",
-        ]
+        communicator_env = {
+            "federated_server_address": f"{self._server_address}:{xgb_fl_server_port}",
+            "federated_world_size": {self.world_size},
+            "federated_rank": {self.rank},
+        }
         if secure_comm:
             if not self._get_certificates(fl_ctx):
                 return make_reply(ReturnCode.ERROR)
 
-            rabit_env.extend(
-                [
-                    f"federated_server_cert={self._ca_cert_path}",
-                    f"federated_client_key={self._client_key_path}",
-                    f"federated_client_cert={self._client_cert_path}",
-                ]
-            )
+            communicator_env["federated_server_cert"] = self._ca_cert_path
+            communicator_env["federated_client_key"] = self._client_key_path
+            communicator_env["federated_client_cert"] = self._client_cert_path
 
         try:
-            with xgb.rabit.RabitContext([e.encode() for e in rabit_env]):
+            with xgb.collective.CommunicatorContext(**communicator_env):
                 result = self.xgb_train(params, fl_ctx)
-                xgb.rabit.tracker_print("Finished training\n")
+                xgb.collective.communicator_print("Finished training\n")
         except BaseException as e:
             secure_log_traceback()
             self.log_error(fl_ctx, f"Exception happens when running xgb train: {secure_format_exception(e)}")
