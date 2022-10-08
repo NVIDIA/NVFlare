@@ -51,11 +51,13 @@ class ServerCommandAgent(object):
                     command_name = msg.get(ServerCommandKey.COMMAND)
                     data = msg.get(ServerCommandKey.DATA)
                     command = ServerCommands.get_command(command_name)
+                    self.logger.info(f"receive command_name: {command_name}")
                     if command:
                         with engine.new_context() as new_fl_ctx:
                             reply = command.process(data=data, fl_ctx=new_fl_ctx)
-                            if reply:
+                            if reply is not None:
                                 conn.send(reply)
+                                self.logger.info(f"send back reply: {reply}")
             except EOFError:
                 self.logger.info("listener communication terminated.")
                 break

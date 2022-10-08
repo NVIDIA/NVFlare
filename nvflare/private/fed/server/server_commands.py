@@ -76,20 +76,21 @@ class AbortCommand(CommandProcessor):
 
         """
         server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
-        server_runner.abort(fl_ctx)
-        # wait for the runner process gracefully abort the run.
-        time.sleep(3.0)
+        if server_runner:
+            server_runner.abort(fl_ctx)
+            # wait for the runner process gracefully abort the run.
+            time.sleep(3.0)
         return "Aborted the run"
 
 
 class GetRunInfoCommand(CommandProcessor):
-    """To implement the abort command."""
+    """Implements the GET_RUN_INFO command."""
 
     def get_command_name(self) -> str:
-        """To get the command name.
+        """Gets the command name.
 
-        Returns: ServerCommandNames.GET_RUN_INFO
-
+        Returns:
+            ServerCommandNames.GET_RUN_INFO
         """
         return ServerCommandNames.GET_RUN_INFO
 
@@ -100,8 +101,8 @@ class GetRunInfoCommand(CommandProcessor):
             data: process data
             fl_ctx: FLContext
 
-        Returns: Engine run_info
-
+        Returns:
+            A dict.
         """
         engine = fl_ctx.get_engine()
         return engine.get_run_info()
@@ -174,16 +175,17 @@ class SubmitUpdateCommand(CommandProcessor):
 
         """
 
-        shareable = data.get(ReservedKey.SHAREABLE)
-        shared_fl_ctx = data.get(ReservedKey.SHARED_FL_CONTEXT)
-        client = shareable.get_header(ServerCommandKey.FL_CLIENT)
-        fl_ctx.set_peer_context(shared_fl_ctx)
-        contribution_task_name = shareable.get_header(ServerCommandKey.TASK_NAME)
-        task_id = shareable.get_cookie(FLContextKey.TASK_ID)
         server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
-        server_runner.process_submission(client, contribution_task_name, task_id, shareable, fl_ctx)
+        if server_runner:
+            shareable = data.get(ReservedKey.SHAREABLE)
+            shared_fl_ctx = data.get(ReservedKey.SHARED_FL_CONTEXT)
+            client = shareable.get_header(ServerCommandKey.FL_CLIENT)
+            fl_ctx.set_peer_context(shared_fl_ctx)
+            contribution_task_name = shareable.get_header(ServerCommandKey.TASK_NAME)
+            task_id = shareable.get_cookie(FLContextKey.TASK_ID)
+            server_runner.process_submission(client, contribution_task_name, task_id, shareable, fl_ctx)
 
-        return ""
+        return None
 
 
 class AuxCommunicateCommand(CommandProcessor):

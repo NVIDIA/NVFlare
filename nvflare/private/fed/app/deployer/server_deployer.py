@@ -98,6 +98,7 @@ class ServerDeployer:
         Returns: FL Server
 
         """
+        args.name = "Outer Server"
         first_server, services = self.create_fl_server(args, secure_train=self.secure_train)
         services.deploy(args, grpc_args=first_server, secure_train=self.secure_train)
 

@@ -114,7 +114,7 @@ class InfoCollector(Widget):
 
             self.add_error(group_name=group_name, key=key, err=analytic_data.value)
 
-    def get_run_stats(self):
+    def get_run_stats(self) -> dict:
         """Gets status for this current run.
 
         Returns:
@@ -125,7 +125,7 @@ class InfoCollector(Widget):
         # self.engine to be set to None, just after checking it being None and before using it!
         engine = self.engine
         if not engine:
-            return None
+            return {}
 
         # NOTE: we need a new context here to make sure all sticky props are copied!
         # We create a new StatusCollector to hold status info.

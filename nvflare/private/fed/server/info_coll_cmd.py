@@ -120,10 +120,6 @@ class InfoCollectorCommandModule(JobCommandModule, CommandUtil):
             replies = self.send_request_to_clients(conn, message)
             self._process_stats_replies(conn, replies)
 
-        # collector = conn.get_prop(self.CONN_KEY_COLLECTOR)
-        # result = collector.get_run_stats()
-        # conn.append_any(result)
-
     def show_errors(self, conn: Connection, args: List[str]):
         engine = conn.app_ctx
         if not isinstance(engine, ServerEngineInternalSpec):
@@ -140,7 +136,6 @@ class InfoCollectorCommandModule(JobCommandModule, CommandUtil):
             self._process_stats_replies(conn, replies)
 
     def reset_errors(self, conn: Connection, args: List[str]):
-        job_id = conn.get_prop(self.JOB_ID)
         collector = conn.get_prop(self.CONN_KEY_COLLECTOR)
         collector.reset_errors()
         conn.append_string("errors reset")

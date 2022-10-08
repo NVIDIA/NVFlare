@@ -104,6 +104,7 @@ def main():
 
         try:
             # create the FL server
+            args.name = "Inner Server"
             _, server = deployer.create_fl_server(args, secure_train=secure_train)
 
             command_agent = ServerCommandAgent(int(args.port))
