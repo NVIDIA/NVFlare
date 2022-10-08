@@ -15,11 +15,10 @@
 import logging
 import os
 import shutil
-import threading
 import time
 from abc import ABC, abstractmethod
 from concurrent import futures
-from threading import Lock
+from threading import Lock, Thread
 from typing import List, Optional
 
 import grpc
@@ -101,6 +100,7 @@ class BaseServer(ABC):
 
         self.grpc_server = None
         self.admin_server = None
+        self.lock = Lock()
         self.snapshot_lock = Lock()
         self.fl_ctx = FLContext()
         self.platform = None
@@ -111,7 +111,7 @@ class BaseServer(ABC):
         self.abort_signal = None
         self.executor = None
 
-        self.lock = threading.Lock()
+        self.logger = logging.getLogger(self.__class__.__name__)
 
     def get_all_clients(self):
         return self.client_manager.get_clients()
@@ -184,9 +184,7 @@ class BaseServer(ABC):
             self.logger.info("starting insecure server at %s", target)
         self.grpc_server.start()
 
-        # return self.start()
-        cleanup_thread = threading.Thread(target=self.client_cleanup)
-        # heartbeat_thread.daemon = True
+        cleanup_thread = Thread(target=self.client_cleanup)
         cleanup_thread.start()
 
     def client_cleanup(self):
@@ -247,10 +245,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             handlers: A list of handler
             args: arguments
             secure_train: whether to use secure communication
-            enable_byoc: whether to enable custom components
         """
-        self.logger = logging.getLogger("FederatedServer" + args.name)
-
         BaseServer.__init__(
             self,
             project_name=project_name,
@@ -712,7 +707,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                 fl_ctx.set_prop(FLContextKey.SECURE_MODE, self.secure_train, private=True, sticky=True)
                 fl_ctx.set_prop(FLContextKey.RUNNER, self.server_runner, private=True, sticky=True)
 
-            engine_thread = threading.Thread(target=self.run_engine)
+            engine_thread = Thread(target=self.run_engine)
             engine_thread.start()
 
             self.engine.engine_info.status = MachineStatus.STARTED
@@ -792,11 +787,11 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             self.server_state = self.server_state.handle_sd_callback(sp, fl_ctx)
 
         if isinstance(self.server_state, Cold2HotState):
-            server_thread = threading.Thread(target=self._turn_to_hot)
+            server_thread = Thread(target=self._turn_to_hot)
             server_thread.start()
 
         if isinstance(self.server_state, Hot2ColdState):
-            server_thread = threading.Thread(target=self._turn_to_cold)
+            server_thread = Thread(target=self._turn_to_cold)
             server_thread.start()
 
     def _turn_to_hot(self):

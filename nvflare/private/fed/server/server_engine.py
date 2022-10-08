@@ -20,11 +20,11 @@ import shlex
 import shutil
 import subprocess
 import sys
-import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from multiprocessing.connection import Client as CommandClient
 from multiprocessing.connection import Listener
+from threading import Lock, Thread
 from typing import Dict, List, Tuple
 
 from nvflare.apis.client import Client
@@ -110,13 +110,13 @@ class ServerEngine(ServerEngineInternalSpec):
             raise ValueError("workers must >= 1 but got {}".format(workers))
 
         self.executor = ThreadPoolExecutor(max_workers=workers)
-        self.logger = logging.getLogger(self.__class__.__name__ + args.name)
-        self.lock = threading.Lock()
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self.lock = Lock()
 
         self.asked_to_stop = False
         self.snapshot_persistor = snapshot_persistor
         self.parent_conn = None
-        self.parent_conn_lock = threading.Lock()
+        self.parent_conn_lock = Lock()
         self.job_runner = None
         self.job_def_manager = None
 
@@ -165,7 +165,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 time.sleep(1.0)
                 pass
 
-        threading.Thread(target=self.heartbeat_to_parent, args=[]).start()
+        Thread(target=self.heartbeat_to_parent, args=[]).start()
 
     def heartbeat_to_parent(self):
         while True:
@@ -210,7 +210,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 self.args, app_root, run_number, app_custom_folder, open_ports, job_id, job_clients, snapshot
             )
 
-            threading.Thread(target=self._listen_command, args=(open_ports[0], run_number)).start()
+            Thread(target=self._listen_command, args=(open_ports[0], run_number)).start()
 
             self.engine_info.status = MachineStatus.STARTED
             return ""
@@ -323,7 +323,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 RunProcessKey.PARTICIPANTS: job_clients,
             }
 
-        threading.Thread(target=self.wait_for_complete, args=[run_number]).start()
+        Thread(target=self.wait_for_complete, args=[run_number]).start()
         return process
 
     def get_job_clients(self, client_sites):

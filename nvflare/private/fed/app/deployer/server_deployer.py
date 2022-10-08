@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """FL Server deployer."""
-import threading
+from threading import Thread
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import SystemComponents
@@ -98,7 +98,6 @@ class ServerDeployer:
         Returns: FL Server
 
         """
-        args.name = "Outer Server"
         first_server, services = self.create_fl_server(args, secure_train=self.secure_train)
         services.deploy(args, grpc_args=first_server, secure_train=self.secure_train)
 
@@ -120,7 +119,7 @@ class ServerDeployer:
         run_manager.add_component(SystemComponents.JOB_RUNNER, job_runner)
         fl_ctx = services.engine.new_context()
 
-        threading.Thread(target=self._start_job_runner, args=[job_runner, fl_ctx]).start()
+        Thread(target=self._start_job_runner, args=[job_runner, fl_ctx]).start()
 
         services.engine.fire_event(EventType.SYSTEM_START, services.engine.new_context())
         print("deployed FL server trainer.")
