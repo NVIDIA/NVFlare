@@ -255,7 +255,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
                 raise LookupError(reply_data_full_response)
             if "unknown site" in reply_data_full_response:
                 raise LookupError(reply_data_full_response)
-            if "Authorization Error" in reply_data_full_response:
+            if "not authorized" in reply_data_full_response:
                 raise PermissionError(reply_data_full_response)
         if reply.get("status") != APIStatus.SUCCESS:
             raise RuntimeError(reply.get("details"))
