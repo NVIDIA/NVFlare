@@ -5,15 +5,6 @@ The [U-Net](https://arxiv.org/abs/1505.04597) model is trained to segment the wh
 
 ![](./figs/Prostate2D.png)
 
-
-```
-mv poc workspace_prostate
-mv workspace_prostate/site-1 workspace_prostate/client_All
-for dataset in ; do
-  cp -r workspace_prostate/client_All workspace_prostate/client_${dataset}
-done
-```
-
 ## Run automated experiments
 We use the NVFlare simulator to run FL training automatically, the 6 clients are named `client_I2CVB, client_MSD, client_NCI_ISBI_3T, client_NCI_ISBI_Dx, client_Promise12, client_PROSTATEx`
 ### Prepare local configs
