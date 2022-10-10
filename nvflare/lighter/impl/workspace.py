@@ -103,7 +103,7 @@ class DistributionBuilder(Builder):
 
     def build(self, project: Project, ctx: dict):
         """Create a zip for each individual folder.
-        Note that if zip_password is True, the zip command will be used to encrypt zip files.  Users have to to
+        Note that if zip_password is True, the zip command will be used to encrypt zip files.  Users have to
         install this zip utility before provisioning.  In Ubuntu system, use this command to install zip utility:
         sudo apt-get install zip
 
