@@ -22,7 +22,7 @@ from xgboost import callback
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
-from nvflare.app_opt.xgboost.histogram_based.executor_base import FedXGBHistogramExecutorBase, XGBoostParams
+from nvflare.app_opt.xgboost.histogram_based.executor import FedXGBHistogramExecutor, XGBoostParams
 
 
 def _read_HIGGS_with_pandas(data_path, start: int, end: int):
@@ -37,7 +37,7 @@ def _read_HIGGS_with_pandas(data_path, start: int, end: int):
     return x, y, data_num
 
 
-class FedXGBHistogramHiggsExecutor(FedXGBHistogramExecutorBase):
+class FedXGBHistogramHiggsExecutor(FedXGBHistogramExecutor):
     def __init__(self, data_split_filename, num_rounds, early_stopping_round, xgboost_params, verbose_eval=False):
         """Federated XGBoost Executor for histogram-base collaboration.
 

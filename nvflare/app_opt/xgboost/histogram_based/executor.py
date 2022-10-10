@@ -39,7 +39,7 @@ class XGBoostParams:
         self.xgb_params: dict = xgb_params if xgb_params else {}
 
 
-class FedXGBHistogramExecutorBase(Executor, ABC):
+class FedXGBHistogramExecutor(Executor, ABC):
     def __init__(self, num_rounds, early_stopping_round, xgboost_params, verbose_eval=False):
         """Federated XGBoost Executor for histogram-base collaboration.
 
@@ -171,9 +171,10 @@ class FedXGBHistogramExecutorBase(Executor, ABC):
         )
 
         communicator_env = {
+            "xgboost_communicator": "federated",
             "federated_server_address": f"{self._server_address}:{xgb_fl_server_port}",
-            "federated_world_size": {self.world_size},
-            "federated_rank": {self.rank},
+            "federated_world_size": self.world_size,
+            "federated_rank": self.rank,
         }
         if secure_comm:
             if not self._get_certificates(fl_ctx):
