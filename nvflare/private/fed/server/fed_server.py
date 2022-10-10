@@ -15,10 +15,11 @@
 import logging
 import os
 import shutil
+import threading
 import time
 from abc import ABC, abstractmethod
 from concurrent import futures
-from threading import Lock, Thread
+from threading import Lock
 from typing import List, Optional
 
 import grpc
@@ -184,7 +185,9 @@ class BaseServer(ABC):
             self.logger.info("starting insecure server at %s", target)
         self.grpc_server.start()
 
-        cleanup_thread = Thread(target=self.client_cleanup)
+        # return self.start()
+        cleanup_thread = threading.Thread(target=self.client_cleanup)
+        # heartbeat_thread.daemon = True
         cleanup_thread.start()
 
     def client_cleanup(self):
@@ -399,10 +402,9 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
             shared_fl_ctx = fobs.loads(proto_to_bytes(request.context["fl_context"]))
             job_id = str(shared_fl_ctx.get_prop(FLContextKey.CURRENT_RUN))
-            run_processes = self.engine.get_run_processes()
 
             with self.lock:
-                if job_id not in run_processes.keys():
+                if job_id not in self.engine.run_processes.keys():
                     self.logger.info("server has no current run - asked client to end the run")
                     task_name = SpecialTaskName.END_RUN
                     task_id = ""
@@ -484,13 +486,12 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                 response_comment = "Ignored the submit from invalid client. "
                 self.logger.info(response_comment)
             else:
-                run_processes = self.engine.get_run_processes()
                 with self.lock:
                     shareable = Shareable.from_bytes(proto_to_bytes(request.data.params["data"]))
                     shared_fl_context = fobs.loads(proto_to_bytes(request.data.params["fl_context"]))
 
                     job_id = str(shared_fl_context.get_prop(FLContextKey.CURRENT_RUN))
-                    if job_id not in run_processes.keys():
+                    if job_id not in self.engine.run_processes.keys():
                         self.logger.info("ignored result submission since Server Engine isn't ready")
                         context.abort(grpc.StatusCode.OUT_OF_RANGE, "Server has stopped")
 
@@ -563,7 +564,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             shared_fl_context = fobs.loads(proto_to_bytes(request.data["fl_context"]))
 
             job_id = str(shared_fl_context.get_prop(FLContextKey.CURRENT_RUN))
-            if job_id not in self.engine.get_run_processes().keys():
+            if job_id not in self.engine.run_processes.keys():
                 self.logger.info("ignored AuxCommunicate request since Server Engine isn't ready")
                 reply = make_reply(ReturnCode.SERVER_NOT_READY)
                 aux_reply = fed_msg.AuxReply()
@@ -646,7 +647,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
     def _sync_client_jobs(self, request):
         client_jobs = request.jobs
-        server_jobs = self.engine.get_run_processes().keys()
+        server_jobs = self.engine.run_processes.keys()
         jobs_need_abort = list(set(client_jobs).difference(server_jobs))
         return jobs_need_abort
 
@@ -707,7 +708,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                 fl_ctx.set_prop(FLContextKey.SECURE_MODE, self.secure_train, private=True, sticky=True)
                 fl_ctx.set_prop(FLContextKey.RUNNER, self.server_runner, private=True, sticky=True)
 
-            engine_thread = Thread(target=self.run_engine)
+            engine_thread = threading.Thread(target=self.run_engine)
             engine_thread.start()
 
             self.engine.engine_info.status = MachineStatus.STARTED
@@ -787,11 +788,11 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             self.server_state = self.server_state.handle_sd_callback(sp, fl_ctx)
 
         if isinstance(self.server_state, Cold2HotState):
-            server_thread = Thread(target=self._turn_to_hot)
+            server_thread = threading.Thread(target=self._turn_to_hot)
             server_thread.start()
 
         if isinstance(self.server_state, Hot2ColdState):
-            server_thread = Thread(target=self._turn_to_cold)
+            server_thread = threading.Thread(target=self._turn_to_cold)
             server_thread.start()
 
     def _turn_to_hot(self):

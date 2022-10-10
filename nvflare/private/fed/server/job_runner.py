@@ -222,7 +222,7 @@ class JobRunner(FLComponent):
             fl_ctx: FLContext
         """
         engine = fl_ctx.get_engine()
-        run_process = engine.get_run_processes().get(job_id)
+        run_process = engine.run_processes.get(job_id)
         if run_process:
             client_sites = run_process.get(RunProcessKey.PARTICIPANTS)
             self.abort_client_run(job_id, client_sites, fl_ctx)
@@ -281,10 +281,9 @@ class JobRunner(FLComponent):
         job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
         while not self.ask_to_stop:
             with self.lock:
-                run_processes = engine.get_run_processes()
-                execution_exception_run_processes = engine.get_execution_exception_run_processes()
+                execution_exception_run_processes = engine.execution_exception_run_processes
                 for job_id in list(self.running_jobs.keys()):
-                    if job_id not in run_processes.keys():
+                    if job_id not in engine.run_processes.keys():
                         job = self.running_jobs.get(job_id)
                         if job:
                             if job_id in execution_exception_run_processes:
@@ -414,7 +413,7 @@ class JobRunner(FLComponent):
 
     def stop_all_runs(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
-        for job_id in engine.get_run_processes().keys():
+        for job_id in engine.run_processes.keys():
             self.stop_run(job_id, fl_ctx)
 
         self.log_info(fl_ctx, "Stop all the running jobs.")

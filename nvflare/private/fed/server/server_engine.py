@@ -20,11 +20,12 @@ import shlex
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from multiprocessing.connection import Client as CommandClient
 from multiprocessing.connection import Listener
-from threading import Lock, Thread
+from threading import Lock
 from typing import Dict, List, Tuple
 
 from nvflare.apis.client import Client
@@ -110,8 +111,8 @@ class ServerEngine(ServerEngineInternalSpec):
             raise ValueError("workers must >= 1 but got {}".format(workers))
 
         self.executor = ThreadPoolExecutor(max_workers=workers)
-        self.logger = logging.getLogger(self.__class__.__name__)
         self.lock = Lock()
+        self.logger = logging.getLogger(self.__class__.__name__)
 
         self.asked_to_stop = False
         self.snapshot_persistor = snapshot_persistor
@@ -165,7 +166,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 time.sleep(1.0)
                 pass
 
-        Thread(target=self.heartbeat_to_parent, args=[]).start()
+        threading.Thread(target=self.heartbeat_to_parent, args=[]).start()
 
     def heartbeat_to_parent(self):
         while True:
@@ -210,7 +211,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 self.args, app_root, run_number, app_custom_folder, open_ports, job_id, job_clients, snapshot
             )
 
-            Thread(target=self._listen_command, args=(open_ports[0], run_number)).start()
+            threading.Thread(target=self._listen_command, args=(open_ports[0], run_number)).start()
 
             self.engine_info.status = MachineStatus.STARTED
             return ""
@@ -263,15 +264,6 @@ class ServerEngine(ServerEngineInternalSpec):
                 self.engine_info.status = MachineStatus.STOPPED
                 break
 
-    def get_run_processes(self) -> dict:
-        with self.lock:
-            result = self.run_processes
-        return result
-
-    def get_execution_exception_run_processes(self) -> dict:
-        with self.lock:
-            return self.execution_exception_run_processes
-
     def _start_runner_process(
         self, args, app_root, run_number, app_custom_folder, open_ports, job_id, job_clients, snapshot
     ):
@@ -323,7 +315,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 RunProcessKey.PARTICIPANTS: job_clients,
             }
 
-        Thread(target=self.wait_for_complete, args=[run_number]).start()
+        threading.Thread(target=self.wait_for_complete, args=[run_number]).start()
         return process
 
     def get_job_clients(self, client_sites):
