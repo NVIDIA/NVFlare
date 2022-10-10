@@ -280,12 +280,12 @@ class JobRunner(FLComponent):
         engine = fl_ctx.get_engine()
         job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
         while not self.ask_to_stop:
-            with self.lock:
-                execution_exception_run_processes = engine.execution_exception_run_processes
-                for job_id in list(self.running_jobs.keys()):
-                    if job_id not in engine.run_processes.keys():
+            for job_id in list(self.running_jobs.keys()):
+                if job_id not in engine.run_processes.keys():
+                    with self.lock:
                         job = self.running_jobs.get(job_id)
                         if job:
+                            execution_exception_run_processes = engine.execution_exception_run_processes
                             if job_id in execution_exception_run_processes:
                                 self.log_info(fl_ctx, f"Try to abort run ({job_id}) on clients.")
                                 run_process = execution_exception_run_processes[job_id]

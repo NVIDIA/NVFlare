@@ -14,6 +14,7 @@
 
 import time
 from abc import ABC, abstractmethod
+from typing import Optional
 
 from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import MachineStatus
@@ -23,7 +24,7 @@ from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import Shareable
 
 from .job_runner import JobRunner
-from .run_manager import RunManager
+from .run_manager import RunInfo, RunManager
 from .server_json_config import ServerJsonConfigurator
 
 
@@ -82,7 +83,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def get_app_run_info(self, job_id) -> dict:
+    def get_app_run_info(self, job_id) -> Optional[RunInfo]:
         """Gets the app RunInfo from the child process."""
         pass
 

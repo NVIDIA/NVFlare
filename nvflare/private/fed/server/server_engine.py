@@ -26,7 +26,7 @@ from concurrent.futures import ThreadPoolExecutor
 from multiprocessing.connection import Client as CommandClient
 from multiprocessing.connection import Listener
 from threading import Lock
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from nvflare.apis.client import Client
 from nvflare.apis.fl_component import FLComponent
@@ -64,6 +64,7 @@ from .admin import ClientReply
 from .client_manager import ClientManager
 from .job_runner import JobRunner
 from .run_manager import RunInfo, RunManager
+from .server_commands import NO_OP_REPLY
 from .server_engine_internal_spec import EngineInfo, ServerEngineInternalSpec
 from .server_status import ServerStatus
 
@@ -148,14 +149,11 @@ class ServerEngine(ServerEngineInternalSpec):
 
         return self.engine_info
 
-    def get_run_info(self) -> dict:
+    def get_run_info(self) -> Optional[RunInfo]:
         if self.run_manager:
             run_info: RunInfo = self.run_manager.get_run_info()
-            return {
-                "job_id": run_info.job_id,
-                "start_time": run_info.start_time,
-            }
-        return {}
+            return run_info
+        return None
 
     def create_parent_connection(self, port):
         while not self.parent_conn:
@@ -441,7 +439,7 @@ class ServerEngine(ServerEngineInternalSpec):
         data = zip_directory_to_bytes(fullpath_src, "")
         return "", data
 
-    def get_app_run_info(self, job_id) -> dict:
+    def get_app_run_info(self, job_id) -> Optional[RunInfo]:
         run_info = None
         try:
             run_info = self.send_command_to_child_runner_process(
@@ -450,7 +448,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 command_data={},
             )
         except BaseException:
-            self.logger.error(f"Failed to get_app_run_info from run: {job_id}")
+            self.logger.error(f"Failed to get_app_run_info for run: {job_id}")
         return run_info
 
     def set_run_manager(self, run_manager: RunManager):
@@ -611,6 +609,8 @@ class ServerEngine(ServerEngineInternalSpec):
                 command_conn.send(data)
                 if return_result:
                     result = command_conn.recv()
+                    if result == NO_OP_REPLY:
+                        result = None
         return result
 
     def get_command_conn(self, job_id):
@@ -698,7 +698,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 command_data={},
             )
         except BaseException:
-            self.logger.error(f"Failed to get_stats from JOB: {job_id}")
+            self.logger.error(f"Failed to show_stats for JOB: {job_id}")
 
         if stats is None:
             stats = {}
@@ -713,7 +713,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 command_data={},
             )
         except BaseException:
-            self.logger.error(f"Failed to get_errors from JOB: {job_id}")
+            self.logger.error(f"Failed to get_errors for JOB: {job_id}")
 
         if errors is None:
             errors = {}

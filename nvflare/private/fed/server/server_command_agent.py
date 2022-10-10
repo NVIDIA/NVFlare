@@ -17,9 +17,9 @@ import threading
 
 from nvflare.apis.fl_constant import ServerCommandKey
 from nvflare.fuel.utils import fobs
+from nvflare.private.fed.utils.fed_utils import listen_command
 from nvflare.security.logging import secure_format_exception
 
-from ..utils.fed_utils import listen_command
 from .server_commands import ServerCommands
 
 
