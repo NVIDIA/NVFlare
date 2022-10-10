@@ -1,0 +1,9 @@
+{
+  "name": "xgboost_tree_cyclic",
+  "resource_spec": {},
+  "deploy_map": {
+    "app": [
+      "@ALL"
+    ]
+  }
+}

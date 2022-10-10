@@ -17,6 +17,7 @@ import os
 
 import torch
 import torch.optim as optim
+from learners.supervised_learner import SupervisedLearner
 from monai.data import CacheDataset, DataLoader, Dataset, load_decathlon_datalist
 from monai.inferers import SimpleInferer
 from monai.losses import DiceLoss
@@ -34,12 +35,10 @@ from monai.transforms import (
     Resized,
     ScaleIntensityRanged,
 )
-from pt.learners.supervised_learner import SupervisedLearner
-from pt.utils.custom_client_datalist_json_path import custom_client_datalist_json_path
-
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.pt.pt_fedproxloss import PTFedProxLoss
+from utils.custom_client_datalist_json_path import custom_client_datalist_json_path
 
 
 class SupervisedMonaiProstateLearner(SupervisedLearner):
@@ -76,7 +75,9 @@ class SupervisedMonaiProstateLearner(SupervisedLearner):
         engine = fl_ctx.get_engine()
         ws = engine.get_workspace()
         app_config_dir = ws.get_app_config_dir(fl_ctx.get_job_id())
-        train_config_file_path = os.path.join(app_config_dir, self.train_config_filename)
+        train_config_file_path = os.path.join(
+            app_config_dir, self.train_config_filename
+        )
         if not os.path.isfile(train_config_file_path):
             self.log_error(
                 fl_ctx,
@@ -93,7 +94,9 @@ class SupervisedMonaiProstateLearner(SupervisedLearner):
         datalist_json_path = self.config_info["datalist_json_path"]
 
         # Get datalist json
-        datalist_json_path = custom_client_datalist_json_path(datalist_json_path, self.client_id)
+        datalist_json_path = custom_client_datalist_json_path(
+            datalist_json_path, self.client_id
+        )
 
         # Set datalist
         train_list = load_decathlon_datalist(
@@ -134,13 +137,22 @@ class SupervisedMonaiProstateLearner(SupervisedLearner):
             [
                 LoadImaged(keys=["image", "label"]),
                 EnsureChannelFirstd(keys=["image", "label"]),
-                ScaleIntensityRanged(keys=["image", "label"], a_min=0, a_max=255, b_min=0.0, b_max=1.0),
-                Resized(keys=["image", "label"], spatial_size=(256, 256), mode=("bilinear"), align_corners=True),
+                ScaleIntensityRanged(
+                    keys=["image", "label"], a_min=0, a_max=255, b_min=0.0, b_max=1.0
+                ),
+                Resized(
+                    keys=["image", "label"],
+                    spatial_size=(256, 256),
+                    mode=("bilinear"),
+                    align_corners=True,
+                ),
                 AsDiscreted(keys=["label"], threshold=0.5),
                 EnsureTyped(keys=["image", "label"]),
             ]
         )
-        self.transform_post = Compose([EnsureType(), Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
+        self.transform_post = Compose(
+            [EnsureType(), Activations(sigmoid=True), AsDiscrete(threshold=0.5)]
+        )
 
         # Set dataset
         if cache_rate > 0.0:
@@ -181,4 +193,6 @@ class SupervisedMonaiProstateLearner(SupervisedLearner):
 
         # Set inferer and evaluation metric
         self.inferer = SimpleInferer()
-        self.valid_metric = DiceMetric(include_background=False, reduction="mean", get_not_nans=False)
+        self.valid_metric = DiceMetric(
+            include_background=False, reduction="mean", get_not_nans=False
+        )

@@ -24,10 +24,11 @@
   "components": [
     {
       "id": "prostate-learner",
-      "path": "pt.learners.supervised_monai_prostate_learner.SupervisedMonaiProstateLearner",
+      "path": "learners.supervised_monai_prostate_ditto_learner.SupervisedMonaiProstateDittoLearner",
       "args": {
         "train_config_filename": "config_train.json",
-        "aggregation_epochs": 1
+        "aggregation_epochs": 1,
+        "ditto_model_epochs": 1
       }
     }
   ]
