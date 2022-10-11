@@ -38,6 +38,7 @@ from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.fuel.utils.zip_utils import split_path, unzip_all_from_bytes, zip_directory_to_bytes
 from nvflare.lighter.poc_commands import get_host_gpu_ids
 from nvflare.private.defs import AppFolderConstants
+from nvflare.private.fed.app.client.worker_process import kill_child_processes
 from nvflare.private.fed.app.deployer.simulator_deployer import SimulatorDeployer
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
@@ -285,13 +286,17 @@ class SimulatorRunner(FLComponent):
             client.status = ClientStatus.STARTED
 
     def run(self):
-        manager = Manager()
-        return_dict = manager.dict()
-        process = Process(target=self.run_processs, args=(return_dict,))
-        process.start()
-        process.join()
-        run_status = return_dict["run_status"]
-        return run_status
+        try:
+            manager = Manager()
+            return_dict = manager.dict()
+            process = Process(target=self.run_processs, args=(return_dict,))
+            process.start()
+            process.join()
+            run_status = return_dict["run_status"]
+            return run_status
+        except KeyboardInterrupt:
+            self.logger.info("KeyboardInterrupt, terminate all the child processes.")
+            kill_child_processes(os.getpid())
 
     def run_processs(self, return_dict):
         if self.setup():

@@ -154,14 +154,20 @@ def main():
     parser.add_argument("--parent_pid", type=int, help="parent process pid", required=True)
     args = parser.parse_args()
 
+    # start parent process checking thread
+    parent_pid = args.parent_pid
+    stop_event = threading.Event()
+    thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
+    thread.start()
+
     log_config_file_path = os.path.join(args.workspace, "startup", WorkspaceConstants.LOGGING_CONFIG)
     if not os.path.isfile(log_config_file_path):
         log_config_file_path = os.path.join(os.path.dirname(__file__), WorkspaceConstants.LOGGING_CONFIG)
     logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
-    log_file = os.path.join(args.workspace, SimulatorConstants.JOB_NAME, WorkspaceConstants.LOG_FILE_NAME)
+    workspace = os.path.join(args.workspace, SimulatorConstants.JOB_NAME, "app_" + args.client)
+    log_file = os.path.join(workspace, WorkspaceConstants.LOG_FILE_NAME)
     add_logfile_handler(log_file)
 
-    workspace = os.path.join(args.workspace, SimulatorConstants.JOB_NAME, "app_" + args.client)
     os.chdir(workspace)
     fobs_initialize()
     AuthorizationService.initialize(EmptyAuthorizer())
@@ -172,12 +178,6 @@ def main():
         os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 
     conn = _create_connection(args.port)
-
-    # start parent process checking thread
-    parent_pid = args.parent_pid
-    stop_event = threading.Event()
-    thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
-    thread.start()
 
     try:
         task_worker = ClientTaskWorker()
@@ -195,4 +195,4 @@ if __name__ == "__main__":
 
     main()
     time.sleep(2)
-    os._exit(0)
+    # os._exit(0)

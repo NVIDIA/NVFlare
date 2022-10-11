@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import time
+from abc import ABC, abstractmethod
 
 _KEY_PERMISSIONS = "permissions"
 _KEY_FORMAT_VERSION = "format_version"
@@ -22,35 +23,27 @@ _ANY_RIGHT = "*"
 
 
 class Person(object):
-    def __init__(self, name: str, org: str, role):
+    def __init__(self, name: str, org: str, role: str):
         self.name = _normalize_str(name)
         self.org = _normalize_str(org)
-        self.roles = []
-        if isinstance(role, str):
-            self.roles.append(_normalize_str(role))
-        elif isinstance(role, list):
-            if len(role) <= 0:
-                raise TypeError("roles not specified - it must be a list of strings")
-
-            for r in role:
-                if not isinstance(r, str):
-                    raise TypeError(f"role value must be a str but got {type(r)}")
-                self.roles.append(_normalize_str(r))
-        else:
-            raise TypeError(f"role must be a str or list of str but got {type(role)}")
+        self.role = _normalize_str(role)
 
     def __str__(self):
-        return f"{self.name}:{self.org}:{self.roles[0]}"
+        return f"{self.name}:{self.org}:{self.role}"
 
 
 class AuthzContext(object):
     def __init__(self, right: str, user: Person, submitter: Person = None):
         """Base class to contain context data for authorization."""
+        if not isinstance(user, Person):
+            raise ValueError(f"user need to be of type Person but got {type(user)}")
+        if submitter and not isinstance(submitter, Person):
+            raise ValueError(f"submitter need to be of type Person but got {type(submitter)}")
         self.right = right
         self.user = user
         self.submitter = submitter
         self.attrs = {}
-        if not submitter:
+        if submitter is None:
             self.submitter = Person("", "", "")
 
     def set_attr(self, key: str, value):
@@ -60,7 +53,8 @@ class AuthzContext(object):
         return self.attrs.get(key, default)
 
 
-class ConditionEvaluator(object):
+class ConditionEvaluator(ABC):
+    @abstractmethod
     def evaluate(self, site_org: str, ctx: AuthzContext) -> bool:
         pass
 
@@ -119,17 +113,14 @@ class _RoleRightConditions(object):
         if self.blocked_conditions:
             if self._any_condition_matched(self.blocked_conditions, site_org, ctx):
                 # if any block condition is met, return False
-                # print("blocked")
                 return False
 
         # evaluate allowed list
         if self.allowed_conditions:
             if self._any_condition_matched(self.allowed_conditions, site_org, ctx):
-                # print("allowed")
                 return True
             else:
                 # all allowed conditions failed
-                # print("not allowed")
                 return False
 
         # no allowed list specified - only blocked list specified
@@ -170,17 +161,13 @@ class _RoleRightConditions(object):
         return ""
 
     def parse_expression(self, exp):
-        """
-        Parse the value expression into a list of condition(s)
-
+        """Parses the value expression into a list of condition(s).
 
         Args:
             exp: expression to be parsed
 
         Returns:
-            A list of conditions if exp is valid. Each condition is expressed as str to be evaluated.
-            Return an error str if value is invalid
-
+            An error string if value is invalid.
         """
         self.exp = exp
         if isinstance(exp, str):
@@ -199,6 +186,7 @@ class _RoleRightConditions(object):
                     return err
         else:
             return f"bad condition expression type - expect str or list but got {type(exp)}"
+        return ""
 
 
 class Policy(object):
@@ -225,30 +213,29 @@ class Policy(object):
         if not conds:
             return False
 
-        assert isinstance(conds, _RoleRightConditions)
         return conds.evaluate(site_org, ctx)
 
-    def evaluate(self, site_org: str, ctx: AuthzContext):
+    def evaluate(self, site_org: str, ctx: AuthzContext) -> (bool, str):
         """
 
         Args:
             site_org:
-            right: right to be evaluated
             ctx:
 
-        Returns: a tuple of (result, error)
-
+        Returns:
+            A tuple of (result, error)
         """
         site_org = _normalize_str(site_org)
-        for role in ctx.user.roles:
-            permitted = self._eval_for_role(role=role, site_org=site_org, ctx=ctx)
-            if permitted:
-                # permitted if any role is okay
-                return True, ""
+        permitted = self._eval_for_role(role=ctx.user.role, site_org=site_org, ctx=ctx)
+        if permitted:
+            # permitted if any role is okay
+            return True, ""
         return False, ""
 
 
 def _normalize_str(s: str) -> str:
+    if not isinstance(s, str):
+        raise TypeError(f"{s} must be a str but got {type(s)}")
     return " ".join(s.lower().split())
 
 
@@ -387,9 +374,10 @@ class Authorizer(object):
         if not ctx:
             return True, ""
 
-        assert isinstance(ctx, AuthzContext), f"ctx must be AuthzContext but got {type(ctx)}"
-        assert isinstance(ctx.user, Person), "program error: no user in ctx!"
-        if "super" in ctx.user.roles:
+        if not isinstance(ctx, AuthzContext):
+            return False, f"ctx must be AuthzContext but got {type(ctx)}"
+
+        if "super" == ctx.user.role:
             # use this for testing purpose
             return True, ""
 
@@ -398,20 +386,22 @@ class Authorizer(object):
             if err:
                 return False, err
             else:
-                return False, f"user '{ctx.user.name}' is not authorized for '{ctx.right}'"
+                return (
+                    False,
+                    f"user '{ctx.user.name}' is not authorized for '{ctx.right}'",
+                )
 
         return True, ""
 
-    def evaluate(self, ctx: AuthzContext):
+    def evaluate(self, ctx: AuthzContext) -> (bool, str):
         if not self.policy:
-            return None, "policy not defined"
+            return False, "policy not defined"
 
         return self.policy.evaluate(ctx=ctx, site_org=self.site_org)
 
     def load_policy(self, policy_config: dict) -> str:
         policy, err = parse_policy_config(policy_config, self.right_categories)
         if err:
-            # this is an error
             return err
 
         self.policy = policy
@@ -425,7 +415,8 @@ class AuthorizationService(object):
 
     @staticmethod
     def initialize(authorizer: Authorizer) -> (Authorizer, str):
-        assert isinstance(authorizer, Authorizer), "authorizer must be Authorizer but got {}".format(type(authorizer))
+        if not isinstance(authorizer, Authorizer):
+            raise ValueError(f"authorizer must be Authorizer but got {type(authorizer)}")
 
         if not AuthorizationService.the_authorizer:
             # authorizer is not loaded
