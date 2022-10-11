@@ -21,12 +21,12 @@ import tensorflow as tf
 
 # simulator workspace
 client_results_root = "../prostate_2D/workspaces/"
-#client_results_root = "../prostate_3D/workspaces"
+# client_results_root = "../prostate_3D/workspaces"
 client_pre = "app_client_"
 
 # 4 (for 3D) or 6 (for 2D) sites
 sites_fl = ["I2CVB", "MSD", "NCI_ISBI_3T", "NCI_ISBI_Dx", "Promise12", "PROSTATEx"]
-#sites_fl = ["I2CVB", "MSD", "NCI_ISBI_3T", "NCI_ISBI_Dx"]
+# sites_fl = ["I2CVB", "MSD", "NCI_ISBI_3T", "NCI_ISBI_Dx"]
 
 # Central vs. FedAvg vs. FedProx vs. Ditto
 experiments = {
@@ -93,11 +93,11 @@ def main():
         for config, exp in experiments.items():
             spec_site = exp.get("site", None)
             if spec_site is not None:
-                record_path = os.path.join(client_results_root + config, "simulate_job", client_pre + spec_site,
-                                           "events.*")
+                record_path = os.path.join(
+                    client_results_root + config, "simulate_job", client_pre + spec_site, "events.*"
+                )
             else:
-                record_path = os.path.join(client_results_root + config, "simulate_job", client_pre + site,
-                                           "events.*")
+                record_path = os.path.join(client_results_root + config, "simulate_job", client_pre + site, "events.*")
 
             eventfile = glob.glob(record_path, recursive=True)
             assert len(eventfile) == 1, "No unique event file found!"

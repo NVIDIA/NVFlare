@@ -21,6 +21,7 @@ from helpers.supervised_pt_ditto import SupervisedPTDittoHelper
 from learners.supervised_monai_prostate_learner import SupervisedMonaiProstateLearner
 from monai.losses import DiceLoss
 from monai.networks.nets.unet import UNet
+
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
@@ -108,9 +109,7 @@ class SupervisedMonaiProstateDittoLearner(SupervisedMonaiProstateLearner):
         # get round information
         current_round = shareable.get_header(AppConstants.CURRENT_ROUND)
         total_rounds = shareable.get_header(AppConstants.NUM_ROUNDS)
-        self.log_info(
-            fl_ctx, f"Current/Total Round: {current_round + 1}/{total_rounds}"
-        )
+        self.log_info(fl_ctx, f"Current/Total Round: {current_round + 1}/{total_rounds}")
         self.log_info(fl_ctx, f"Client identity: {fl_ctx.get_identity_name()}")
 
         # update local model weights with received weights
@@ -125,17 +124,11 @@ class SupervisedMonaiProstateDittoLearner(SupervisedMonaiProstateLearner):
                 weights = global_weights[var_name]
                 try:
                     # reshape global weights to compute difference later on
-                    global_weights[var_name] = np.reshape(
-                        weights, local_var_dict[var_name].shape
-                    )
+                    global_weights[var_name] = np.reshape(weights, local_var_dict[var_name].shape)
                     # update the local dict
                     local_var_dict[var_name] = torch.as_tensor(global_weights[var_name])
                 except Exception as e:
-                    raise ValueError(
-                        "Convert weight from {} failed with error: {}".format(
-                            var_name, str(e)
-                        )
-                    )
+                    raise ValueError("Convert weight from {} failed with error: {}".format(var_name, str(e)))
         self.model.load_state_dict(local_var_dict)
 
         # Load Ditto personalized model
