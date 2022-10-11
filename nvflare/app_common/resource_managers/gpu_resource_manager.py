@@ -56,9 +56,7 @@ class GPUResourceManager(AutoCleanResourceManager):
         if num_of_gpus != 0:
             num_host_gpus = len(get_host_gpu_ids())
             if num_of_gpus > num_host_gpus:
-                raise ValueError(
-                    f"num_of_gpus specified ({num_of_gpus}) exceeds available GPUs: {num_host_gpus}."
-                )
+                raise ValueError(f"num_of_gpus specified ({num_of_gpus}) exceeds available GPUs: {num_host_gpus}.")
 
             host_gpu_mem = get_host_gpu_memory_total()
             for i in host_gpu_mem:
