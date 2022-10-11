@@ -20,8 +20,8 @@ import seaborn as sns
 import tensorflow as tf
 
 # simulator workspace
-client_results_root = "../prostate_2D/workspaces/workspace_"
-#client_results_root = "../prostate_3D/workspace_prostate"
+client_results_root = "../prostate_2D/workspaces/"
+#client_results_root = "../prostate_3D/workspaces"
 client_pre = "app_client_"
 
 # 4 (for 3D) or 6 (for 2D) sites
@@ -30,10 +30,10 @@ sites_fl = ["I2CVB", "MSD", "NCI_ISBI_3T", "NCI_ISBI_Dx", "Promise12", "PROSTATE
 
 # Central vs. FedAvg vs. FedProx vs. Ditto
 experiments = {
-    "central": {"tag": "val_metric_global_model", "site": "All"},
-    "fedavg": {"tag": "val_metric_global_model"},
-    "fedprox": {"tag": "val_metric_global_model"},
-    "ditto": {"tag": "val_metric_per_model"},
+    "prostate_central": {"tag": "val_metric_global_model", "site": "All"},
+    "prostate_fedavg": {"tag": "val_metric_global_model"},
+    "prostate_fedprox": {"tag": "val_metric_global_model"},
+    "prostate_ditto": {"tag": "val_metric_per_model"},
 }
 
 weight = 0.8

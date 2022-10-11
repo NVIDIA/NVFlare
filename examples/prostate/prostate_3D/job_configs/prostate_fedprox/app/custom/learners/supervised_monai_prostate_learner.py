@@ -126,7 +126,7 @@ class SupervisedMonaiProstateLearner(SupervisedLearner):
         # Set the training-related context
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.model = UNet(
-            dimensions=3,
+            spatial_dims=3,
             in_channels=1,
             out_channels=1,
             channels=(16, 32, 64, 128, 256),
@@ -144,13 +144,13 @@ class SupervisedMonaiProstateLearner(SupervisedLearner):
             [
                 LoadImaged(keys=["image", "label"]),
                 EnsureChannelFirstd(keys=["image", "label"]),
+                Orientationd(keys=["image", "label"], axcodes="RAS"),
                 Spacingd(
                     keys=["image", "label"],
                     pixdim=(0.3, 0.3, 1.0),
                     mode=("bilinear", "nearest"),
                 ),
                 DivisiblePadd(keys=["image", "label"], k=32),
-                Orientationd(keys=["image", "label"], axcodes="RAS"),
                 RandCropByPosNegLabeld(
                     keys=["image", "label"],
                     label_key="label",

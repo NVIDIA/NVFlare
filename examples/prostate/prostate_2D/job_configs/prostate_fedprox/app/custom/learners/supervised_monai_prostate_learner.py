@@ -119,7 +119,7 @@ class SupervisedMonaiProstateLearner(SupervisedLearner):
         # Set the training-related context
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.model = UNet(
-            dimensions=2,
+            spatial_dims=2,
             in_channels=1,
             out_channels=1,
             channels=(16, 32, 64, 128, 256),

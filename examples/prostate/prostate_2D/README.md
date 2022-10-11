@@ -18,14 +18,14 @@ done
 ### Use NVFlare simulator to run the experiments
 FL training will be run with the simulator command, following the pattern:
 ```
-nvflare simulator configs/[config] -w ${PWD}/workspaces/[config] -c [clients] -gpu [gpu]
+nvflare simulator job_configs/[job] -w ${PWD}/workspaces/[job] -c [clients] -gpu [gpu] -t [thread]
 ```
-`[config]` is the experiment job that will be submitted for the FL training, in this example, this includes `prostate_central`, `prostate_fedavg`, `prostate_fedprox`, and `prostate_ditto`.  
-The combination of `-c` and `-gpu` controls the resource allocation. In this example, we run centralized training on GPU 0, and six clients on two GPUs, three clients for each GPU with 12 GB memory, each in a separate thread. 
+`[job]` is the experiment job that will be submitted for the FL training, in this example, this includes `prostate_central`, `prostate_fedavg`, `prostate_fedprox`, and `prostate_ditto`.  
+The combination of `-c` and `-gpu`/`-t` controls the resource allocation. In this example, we run centralized training with single thread, and six clients on two GPUs, three clients for each GPU with 12 GB memory, each in a separate thread. 
 
 For centralized training, we use
 ```
--c client_All -gpu 0
+-c client_All -t 1
 ```
 For federated training, we use
 ```
@@ -66,7 +66,7 @@ We provide a script for performing validation on testing data split.
 
 The best global models are stored at
 ```
-workspaces/workspace_[method]/simulated_job/app_server/best_FL_global_model.pt
+workspaces/[job]/simulated_job/app_server/best_FL_global_model.pt
 ```
 
 Please then add the correct paths to the testing script, and run
