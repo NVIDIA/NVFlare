@@ -29,7 +29,7 @@ from nvflare.app_common.app_constant import AppConstants
 
 class Cifar10Validator(Executor):
     def __init__(self, data_path="~/data", validate_task_name=AppConstants.TASK_VALIDATION):
-        super(Cifar10Validator, self).__init__()
+        super().__init__()
 
         self._validate_task_name = validate_task_name
 
@@ -45,8 +45,8 @@ class Cifar10Validator(Executor):
                 Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
             ]
         )
-        self.test_data = CIFAR10(root=data_path, train=False, transform=transforms)
-        self.test_loader = DataLoader(self.test_data, batch_size=4, shuffle=False)
+        test_data = CIFAR10(root=data_path, train=False, transform=transforms)
+        self._test_loader = DataLoader(test_data, batch_size=4, shuffle=False)
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         if task_name == self._validate_task_name:
@@ -68,7 +68,7 @@ class Cifar10Validator(Executor):
                 weights = {k: torch.as_tensor(v, device=self.device) for k, v in dxo.data.items()}
 
                 # Get validation accuracy
-                val_accuracy = self.do_validation(weights, abort_signal)
+                val_accuracy = self._validate(weights, abort_signal)
                 if abort_signal.triggered:
                     return make_reply(ReturnCode.TASK_ABORTED)
 
@@ -87,7 +87,7 @@ class Cifar10Validator(Executor):
         else:
             return make_reply(ReturnCode.TASK_UNKNOWN)
 
-    def do_validation(self, weights, abort_signal):
+    def _validate(self, weights, abort_signal):
         self.model.load_state_dict(weights)
 
         self.model.eval()
@@ -95,7 +95,7 @@ class Cifar10Validator(Executor):
         correct = 0
         total = 0
         with torch.no_grad():
-            for i, (images, labels) in enumerate(self.test_loader):
+            for i, (images, labels) in enumerate(self._test_loader):
                 if abort_signal.triggered:
                     return 0
 
