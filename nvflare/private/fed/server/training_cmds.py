@@ -126,7 +126,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                 clients_to_be_removed.remove(r.client_token)
 
         if clients_to_be_removed:
-            err = engine.remove_clients(clients)
+            err = engine.remove_clients(clients_to_be_removed)
             if err:
                 conn.append_error(err)
                 return False
