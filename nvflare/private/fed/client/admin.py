@@ -216,7 +216,7 @@ class FedAdminAgent(object):
                                 if err:
                                     reply = error_reply(err)
                                 elif not authorized:
-                                    reply = error_reply("not_authorized")
+                                    reply = error_reply("not authorized")
                             else:
                                 reply = error_reply("requires authz but missing admin command")
 

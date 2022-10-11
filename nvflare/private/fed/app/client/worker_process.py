@@ -17,6 +17,7 @@
 import argparse
 import logging
 import os
+import signal
 import sys
 import threading
 import time
@@ -38,13 +39,22 @@ from nvflare.security.logging import secure_format_exception
 
 def check_parent_alive(parent_pid, stop_event: threading.Event):
     while True:
-        if stop_event.is_set():
-            break
-        if not psutil.pid_exists(parent_pid):
-            # if parent is not alive, kill its worker process
-            os.killpg(os.getpgid(os.getpid()), 9)
+        if stop_event.is_set() or not psutil.pid_exists(parent_pid):
+            pid = os.getpid()
+            kill_child_processes(pid)
+            os.killpg(os.getpgid(pid), 9)
             break
         time.sleep(1)
+
+
+def kill_child_processes(parent_pid, sig=signal.SIGTERM):
+    try:
+        parent = psutil.Process(parent_pid)
+    except psutil.NoSuchProcess:
+        return
+    children = parent.children(recursive=True)
+    for process in children:
+        process.send_signal(sig)
 
 
 def main():
