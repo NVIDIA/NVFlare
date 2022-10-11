@@ -27,11 +27,9 @@ from nvflare.app_common.pt.pt_fed_utils import PTModelPersistenceFormatManager
 
 
 class PTModelLocator(ModelLocator):
-    def __init__(self, exclude_vars=None):
-        super(PTModelLocator, self).__init__()
-
+    def __init__(self):
+        super().__init__()
         self.model = SimpleNetwork()
-        self.exclude_vars = exclude_vars
 
     def get_model_names(self, fl_ctx: FLContext) -> List[str]:
         return [PTConstants.PTServerName]

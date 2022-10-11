@@ -55,7 +55,7 @@ class Cifar10Trainer(Executor):
             submit_model_task_name (str, optional): Task name for submit model. Defaults to "submit_model".
             exclude_vars (list): List of variables to exclude during model loading.
         """
-        super(Cifar10Trainer, self).__init__()
+        super().__init__()
 
         self._lr = lr
         self._epochs = epochs
@@ -89,7 +89,57 @@ class Cifar10Trainer(Executor):
             data=self.model.state_dict(), default_train_conf=self._default_train_conf
         )
 
-    def local_train(self, fl_ctx, weights, abort_signal):
+    def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
+        try:
+            if task_name == self._train_task_name:
+                # Get model weights
+                try:
+                    dxo = from_shareable(shareable)
+                except:
+                    self.log_error(fl_ctx, "Unable to extract dxo from shareable.")
+                    return make_reply(ReturnCode.BAD_TASK_DATA)
+
+                # Ensure data kind is weights.
+                if not dxo.data_kind == DataKind.WEIGHTS:
+                    self.log_error(fl_ctx, f"data_kind expected WEIGHTS but got {dxo.data_kind} instead.")
+                    return make_reply(ReturnCode.BAD_TASK_DATA)
+
+                # Convert weights to tensor. Run training
+                torch_weights = {k: torch.as_tensor(v) for k, v in dxo.data.items()}
+                self._local_train(fl_ctx, torch_weights, abort_signal)
+
+                # Check the abort_signal after training.
+                # local_train returns early if abort_signal is triggered.
+                if abort_signal.triggered:
+                    return make_reply(ReturnCode.TASK_ABORTED)
+
+                # Save the local model after training.
+                self._save_local_model(fl_ctx)
+
+                # Get the new state dict and send as weights
+                new_weights = self.model.state_dict()
+                new_weights = {k: v.cpu().numpy() for k, v in new_weights.items()}
+
+                outgoing_dxo = DXO(
+                    data_kind=DataKind.WEIGHTS,
+                    data=new_weights,
+                    meta={MetaKey.NUM_STEPS_CURRENT_ROUND: self._n_iterations},
+                )
+                return outgoing_dxo.to_shareable()
+            elif task_name == self._submit_model_task_name:
+                # Load local model
+                ml = self._load_local_model(fl_ctx)
+
+                # Get the model parameters and create dxo from it
+                dxo = model_learnable_to_dxo(ml)
+                return dxo.to_shareable()
+            else:
+                return make_reply(ReturnCode.TASK_UNKNOWN)
+        except Exception as e:
+            self.log_exception(fl_ctx, f"Exception in simple trainer: {e}.")
+            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+
+    def _local_train(self, fl_ctx, weights, abort_signal):
         # Set the model weights
         self.model.load_state_dict(state_dict=weights)
 
@@ -118,57 +168,7 @@ class Cifar10Trainer(Executor):
                     )
                     running_loss = 0.0
 
-    def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
-        try:
-            if task_name == self._train_task_name:
-                # Get model weights
-                try:
-                    dxo = from_shareable(shareable)
-                except:
-                    self.log_error(fl_ctx, "Unable to extract dxo from shareable.")
-                    return make_reply(ReturnCode.BAD_TASK_DATA)
-
-                # Ensure data kind is weights.
-                if not dxo.data_kind == DataKind.WEIGHTS:
-                    self.log_error(fl_ctx, f"data_kind expected WEIGHTS but got {dxo.data_kind} instead.")
-                    return make_reply(ReturnCode.BAD_TASK_DATA)
-
-                # Convert weights to tensor. Run training
-                torch_weights = {k: torch.as_tensor(v) for k, v in dxo.data.items()}
-                self.local_train(fl_ctx, torch_weights, abort_signal)
-
-                # Check the abort_signal after training.
-                # local_train returns early if abort_signal is triggered.
-                if abort_signal.triggered:
-                    return make_reply(ReturnCode.TASK_ABORTED)
-
-                # Save the local model after training.
-                self.save_local_model(fl_ctx)
-
-                # Get the new state dict and send as weights
-                new_weights = self.model.state_dict()
-                new_weights = {k: v.cpu().numpy() for k, v in new_weights.items()}
-
-                outgoing_dxo = DXO(
-                    data_kind=DataKind.WEIGHTS,
-                    data=new_weights,
-                    meta={MetaKey.NUM_STEPS_CURRENT_ROUND: self._n_iterations},
-                )
-                return outgoing_dxo.to_shareable()
-            elif task_name == self._submit_model_task_name:
-                # Load local model
-                ml = self.load_local_model(fl_ctx)
-
-                # Get the model parameters and create dxo from it
-                dxo = model_learnable_to_dxo(ml)
-                return dxo.to_shareable()
-            else:
-                return make_reply(ReturnCode.TASK_UNKNOWN)
-        except:
-            self.log_exception(fl_ctx, "Exception in simple trainer.")
-            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-
-    def save_local_model(self, fl_ctx: FLContext):
+    def _save_local_model(self, fl_ctx: FLContext):
         run_dir = fl_ctx.get_engine().get_workspace().get_run_dir(fl_ctx.get_prop(ReservedKey.RUN_NUM))
         models_dir = os.path.join(run_dir, PTConstants.PTModelsDir)
         if not os.path.exists(models_dir):
@@ -179,7 +179,7 @@ class Cifar10Trainer(Executor):
         self.persistence_manager.update(ml)
         torch.save(self.persistence_manager.to_persistence_dict(), model_path)
 
-    def load_local_model(self, fl_ctx: FLContext):
+    def _load_local_model(self, fl_ctx: FLContext):
         run_dir = fl_ctx.get_engine().get_workspace().get_run_dir(fl_ctx.get_prop(ReservedKey.RUN_NUM))
         models_dir = os.path.join(run_dir, PTConstants.PTModelsDir)
         if not os.path.exists(models_dir):
