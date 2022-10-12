@@ -53,7 +53,7 @@ class GPUResourceManager(AutoCleanResourceManager):
         _check_non_negative(num_of_gpus, "num_of_gpus")
         _check_non_negative(mem_per_gpu_in_GiB, "mem_per_gpu_in_GiB")
         _check_non_negative(expiration_period, "expiration_period")
-        if num_of_gpus != 0:
+        if num_of_gpus > 0:
             num_host_gpus = len(get_host_gpu_ids())
             if num_of_gpus > num_host_gpus:
                 raise ValueError(f"num_of_gpus specified ({num_of_gpus}) exceeds available GPUs: {num_host_gpus}.")
