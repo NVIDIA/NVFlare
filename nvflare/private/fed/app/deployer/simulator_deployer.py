@@ -38,9 +38,7 @@ class SimulatorDeployer(ServerDeployer):
     def create_fl_server(self, args, secure_train=False):
         simulator_server = self._create_simulator_server_config(self.admin_storage, args.max_clients)
 
-        wait_after_min_clients = simulator_server.get("wait_after_min_clients", 10)
-        if simulator_server["heart_beat_timeout"]:
-            heart_beat_timeout = simulator_server["heart_beat_timeout"]
+        heart_beat_timeout = simulator_server.get("heart_beat_timeout", 600)
 
         self.services = SimulatorServer(
             project_name=simulator_server.get("name", ""),
@@ -48,9 +46,9 @@ class SimulatorDeployer(ServerDeployer):
             cmd_modules=self.cmd_modules,
             args=args,
             secure_train=secure_train,
-            # enable_byoc=self.enable_byoc,
             snapshot_persistor=self.snapshot_persistor,
             overseer_agent=self.overseer_agent,
+            heart_beat_timeout=heart_beat_timeout,
         )
 
         admin_server = create_admin_server(

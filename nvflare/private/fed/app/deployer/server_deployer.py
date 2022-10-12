@@ -68,9 +68,7 @@ class ServerDeployer:
         """
         # We only deploy the first server right now .....
         first_server = sorted(self.server_config)[0]
-        heart_beat_timeout = 600
-        if first_server["heart_beat_timeout"]:
-            heart_beat_timeout = first_server["heart_beat_timeout"]
+        heart_beat_timeout = first_server.get("heart_beat_timeout", 600)
 
         if self.host:
             target = first_server["service"].get("target", None)
