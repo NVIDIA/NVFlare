@@ -12,8 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
 from unittest.mock import patch
 
+import pytest
 from cifar10trainer import Cifar10Trainer
 from cifar10validator import Cifar10Validator
 
@@ -22,23 +24,29 @@ from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.signal import Signal
 
+TRAIN_TASK_NAME = "train"
+
+
+@pytest.fixture()
+def get_cifar_trainer():
+    with patch.object(Cifar10Trainer, "_save_local_model") as mock_save:
+        with patch.object(Cifar10Trainer, "_load_local_model") as mock_load:
+            yield Cifar10Trainer(train_task_name=TRAIN_TASK_NAME, epochs=1)
+
 
 class TestCifar10Trainer:
-    # mock unneeded method
-    @patch.object(Cifar10Trainer, "_save_local_model")
-    @patch.object(Cifar10Trainer, "_load_local_model")
-    def test_execute(self, mock_save, mock_load):
-        train_task_name = "train"
-        trainer = Cifar10Trainer(train_task_name=train_task_name, epochs=1)
+    @pytest.mark.parametrize("num_rounds", [1, 3])
+    def test_execute(self, get_cifar_trainer, num_rounds):
+        trainer = get_cifar_trainer
         # just take first batch
         iterator = iter(trainer._train_loader)
         trainer._train_loader = [next(iterator)]
 
         dxo = DXO(data_kind=DataKind.WEIGHTS, data=trainer.model.state_dict())
-        result = trainer.execute(
-            train_task_name, shareable=dxo.to_shareable(), fl_ctx=FLContext(), abort_signal=Signal()
-        )
-        assert result.get_return_code() == ReturnCode.OK
+        result = dxo.to_shareable()
+        for i in range(num_rounds):
+            result = trainer.execute(TRAIN_TASK_NAME, shareable=result, fl_ctx=FLContext(), abort_signal=Signal())
+            assert result.get_return_code() == ReturnCode.OK
 
 
 class TestCifar10Validator:
