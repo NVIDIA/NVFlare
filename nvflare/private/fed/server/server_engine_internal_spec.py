@@ -14,6 +14,7 @@
 
 import time
 from abc import ABC, abstractmethod
+from typing import Optional
 
 from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import MachineStatus
@@ -39,9 +40,6 @@ class EngineInfo(object):
 class ServerEngineInternalSpec(ServerEngineSpec, ABC):
     def get_engine_info(self) -> EngineInfo:
         """Get general info of the engine."""
-        pass
-
-    def get_run_info(self) -> RunInfo:
         pass
 
     @abstractmethod
@@ -85,13 +83,8 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def get_app_run_info(self, job_id) -> RunInfo:
-        """Get the app RunInfo from the child process.
-
-        Returns:
-            App RunInfo
-
-        """
+    def get_app_run_info(self, job_id) -> Optional[RunInfo]:
+        """Gets the app RunInfo from the child process."""
         pass
 
     @abstractmethod
@@ -274,7 +267,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def show_stats(self, job_id):
+    def show_stats(self, job_id) -> dict:
         """Show_stats of the server.
 
         Args:
@@ -287,7 +280,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def get_errors(self, job_id):
+    def get_errors(self, job_id) -> dict:
         """Get the errors of the server components.
 
         Args:

@@ -248,10 +248,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             handlers: A list of handler
             args: arguments
             secure_train: whether to use secure communication
-            enable_byoc: whether to enable custom components
         """
-        self.logger = logging.getLogger("FederatedServer")
-
         BaseServer.__init__(
             self,
             project_name=project_name,
@@ -403,13 +400,10 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             self.logger.debug(f"Fetch task requested from client: {client.name} ({client.get_token()})")
             token = client.get_token()
 
-            # engine = fl_ctx.get_engine()
             shared_fl_ctx = fobs.loads(proto_to_bytes(request.context["fl_context"]))
             job_id = str(shared_fl_ctx.get_prop(FLContextKey.CURRENT_RUN))
-            # fl_ctx.set_peer_context(shared_fl_ctx)
 
             with self.lock:
-                # if self.server_runner is None or engine is None or self.engine.run_manager is None:
                 if job_id not in self.engine.run_processes.keys():
                     self.logger.info("server has no current run - asked client to end the run")
                     task_name = SpecialTaskName.END_RUN
@@ -539,8 +533,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
     def _submit_update(self, submit_update_data, shared_fl_context):
         try:
-            with self.engine.lock:
-                job_id = shared_fl_context.get_prop(FLContextKey.CURRENT_RUN)
+            job_id = shared_fl_context.get_prop(FLContextKey.CURRENT_RUN)
             self.engine.send_command_to_child_runner_process(
                 job_id=job_id,
                 command_name=ServerCommandNames.SUBMIT_UPDATE,
