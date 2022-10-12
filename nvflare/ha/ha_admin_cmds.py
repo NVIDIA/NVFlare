@@ -16,30 +16,34 @@ import json
 import logging
 
 from nvflare.apis.overseer_spec import OverseerAgent
+from nvflare.fuel.hci.client.api_spec import CommandContext
 from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.security.logging import secure_format_exception
 
 
-def list_sp(args, api):
+def list_sp(args, ctx: CommandContext):
     """Lists service provider information based on the last heartbeat from the overseer."""
+    overseer_agent = ctx.get_api().service_finder.overseer_agent
     return {
         "status": APIStatus.SUCCESS,
-        "details": str(api.overseer_agent.overseer_info),
-        "data": api.overseer_agent.overseer_info,
+        "details": str(overseer_agent.overseer_info),
+        "data": overseer_agent.overseer_info,
     }
 
 
-def get_active_sp(args, api):
-    return {"status": APIStatus.SUCCESS, "details": str(api.overseer_agent.get_primary_sp())}
+def get_active_sp(args, ctx: CommandContext):
+    overseer_agent = ctx.get_api().service_finder.overseer_agent
+    return {"status": APIStatus.SUCCESS, "details": str(overseer_agent.get_primary_sp())}
 
 
-def promote_sp(args, api):
+def promote_sp(args, ctx: CommandContext):
+    overseer_agent = ctx.get_api().service_finder.overseer_agent
     if len(args) != 2:
         return {"status": APIStatus.ERROR_SYNTAX, "details": "usage: promote_sp example1.com:8002:8003"}
 
     sp_end_point = args[1]
-    resp = api.overseer_agent.promote_sp(sp_end_point)
+    resp = overseer_agent.promote_sp(sp_end_point)
     if json.loads(resp.text).get("Error"):
         return {
             "status": APIStatus.ERROR_RUNTIME,
@@ -52,7 +56,8 @@ def promote_sp(args, api):
         }
 
 
-def shutdown_system(args, api):
+def shutdown_system(args, ctx: CommandContext):
+    api = ctx.get_api()
     try:
         status = api.do_command("check_status server").get("data")
         if status[0].get("data") != "Engine status: stopped":
