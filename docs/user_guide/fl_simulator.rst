@@ -120,14 +120,18 @@ During the FLARE simulator execution, the client Apps are executed in turn in th
 ****************************************************
 Multi-GPU and Separate Client Process with Simulator
 ****************************************************
-The simulator "-t" option provides the option to use how many threads to run the simulator. The simulator runs within the same process, and it makes use of the single GPU. If there's multiple GPUs available and you want to make use of them all for the simulator run, you can use the "-gpu" option for this. The "-gpu" option provides the "," list of GPUs for the simulator to run on. The clients list will be distributed among the GPUs.
+The simulator "-t" option provides the ability to specify how many threads to run the simulator with. The simulator runs within the same process, and it will make use of a single GPU (if it is detected with ``nvidia-smi``). If there are multiple GPUs available and you want to make use of them all for the simulator run, you can use the "-gpu" option for this. The "-gpu" option provides the "," list of GPUs for the simulator to run on. The clients list will be distributed among the GPUs.
 
 For example: 
 
-.. code-block:: shell
+.. code-block::shell
 
   -c  c1,c2,c3,c4,c5 -gpu 0,1
 
-The client c1, c3, c5 will run on GPU 0 in one process, and client c2, c4 will run on GPU 1 in another process.
+The clients c1, c3, and c5 will run on GPU 0 in one process, and clients c2 and c4 will run on GPU 1 in another process.
 
-The GPU numbers do not have to be unique. If you use "-gpu 0,0", this will run 2 separate client processes on GPU 0, assuming this GPU will have enough memory to support the applicationss.
+The GPU numbers do not have to be unique. If you use "-gpu 0,0", this will run 2 separate client processes on GPU 0, assuming this GPU will have enough memory to support the applications.
+
+.. note::
+
+    If you have invalid GPU IDs assigned, the simulation will run on CPU.
