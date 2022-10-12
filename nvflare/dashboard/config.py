@@ -16,10 +16,12 @@
 import os
 from datetime import timedelta
 
+from nvflare.lighter.utils import generate_password
+
 
 class Config:
     # General Config
-    SECRET_KEY = os.environ.get("SECRET_KEY", "nh0jGcTu8NcaDI1K")
+    SECRET_KEY = os.environ.get("SECRET_KEY", generate_password(16))
     JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=30)
 
     # Database
