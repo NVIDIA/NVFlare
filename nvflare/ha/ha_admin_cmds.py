@@ -58,6 +58,7 @@ def promote_sp(args, ctx: CommandContext):
 
 def shutdown_system(args, ctx: CommandContext):
     api = ctx.get_api()
+    overseer_agent = api.service_finder.overseer_agent
     try:
         status = api.do_command("check_status server").get("data")
         if status[0].get("data") != "Engine status: stopped":
@@ -71,7 +72,7 @@ def shutdown_system(args, ctx: CommandContext):
             "details": f"Error getting server status to make sure all jobs are stopped before shutting down system: {secure_format_exception(e)}",
         }
     print("Shutting down the system...")
-    resp = api.overseer_agent.set_state("shutdown")
+    resp = overseer_agent.set_state("shutdown")
     if json.loads(resp.text).get("Error"):
         return {
             "status": APIStatus.ERROR_RUNTIME,
