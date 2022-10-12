@@ -31,7 +31,8 @@ class TestCifar10Trainer:
         train_task_name = "train"
         trainer = Cifar10Trainer(train_task_name=train_task_name, epochs=1)
         # just take first batch
-        trainer._train_loader = [iter(trainer._train_loader).next()]
+        iterator = iter(trainer._train_loader)
+        trainer._train_loader = [next(iterator)]
 
         dxo = DXO(data_kind=DataKind.WEIGHTS, data=trainer.model.state_dict())
         result = trainer.execute(
@@ -45,7 +46,8 @@ class TestCifar10Validator:
         validate_task_name = "validate"
         validator = Cifar10Validator(validate_task_name=validate_task_name)
         # just take first batch
-        validator._test_loader = [iter(validator._test_loader).next()]
+        iterator = iter(validator._test_loader)
+        validator._test_loader = [next(iterator)]
 
         dxo = DXO(data_kind=DataKind.WEIGHTS, data=validator.model.state_dict())
         result = validator.execute(
