@@ -165,16 +165,14 @@ class SubmitUpdateCommand(CommandProcessor):
         Returns:
 
         """
-
+        shareable = data.get(ReservedKey.SHAREABLE)
+        shared_fl_ctx = data.get(ReservedKey.SHARED_FL_CONTEXT)
+        client = shareable.get_header(ServerCommandKey.FL_CLIENT)
+        fl_ctx.set_peer_context(shared_fl_ctx)
+        contribution_task_name = shareable.get_header(ServerCommandKey.TASK_NAME)
+        task_id = shareable.get_cookie(FLContextKey.TASK_ID)
         server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
-        if server_runner:
-            shareable = data.get(ReservedKey.SHAREABLE)
-            shared_fl_ctx = data.get(ReservedKey.SHARED_FL_CONTEXT)
-            client = shareable.get_header(ServerCommandKey.FL_CLIENT)
-            fl_ctx.set_peer_context(shared_fl_ctx)
-            contribution_task_name = shareable.get_header(ServerCommandKey.TASK_NAME)
-            task_id = shareable.get_cookie(FLContextKey.TASK_ID)
-            server_runner.process_submission(client, contribution_task_name, task_id, shareable, fl_ctx)
+        server_runner.process_submission(client, contribution_task_name, task_id, shareable, fl_ctx)
 
         return None
 
