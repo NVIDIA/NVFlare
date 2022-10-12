@@ -83,7 +83,7 @@ class RunManager:
     def get_server_name(self):
         return self.server_name
 
-    def get_run_info(self):
+    def get_run_info(self) -> RunInfo:
         return self.run_info
 
     def get_handlers(self):
