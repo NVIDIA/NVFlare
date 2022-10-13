@@ -17,6 +17,7 @@ import os
 import signal
 
 import docker
+from nvflare.apis.utils.format_check import name_check
 from nvflare.lighter.utils import generate_password
 
 
@@ -36,9 +37,16 @@ def start(args):
     if passphrase:
         environment["NVFL_DASHBOARD_PP"] = passphrase
     if not os.path.exists(os.path.join(folder, "db.sqlite")):
-        answer = input(
-            "Please provide project admin email address.  This person will be the super user of the dashboard and this project.\n"
-        )
+        need_email = True
+        while need_email:
+            answer = input(
+                "Please provide project admin email address.  This person will be the super user of the dashboard and this project.\n"
+            )
+            error, reason = name_check(answer, "email")
+            if error:
+                print(f"Expecting an email address, but got one in an invalid format.  Reason: {reason}")
+            else:
+                need_email = False
         print("generating random password")
         pwd = generate_password(8)
         print(f"Project admin credential is {answer} and the password is {pwd}")
