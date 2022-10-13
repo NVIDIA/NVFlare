@@ -14,7 +14,7 @@
 
 
 from flask import current_app as app
-from flask import jsonify, make_response, redirect, request
+from flask import jsonify, make_response, request
 from flask_jwt_extended import create_access_token, get_jwt, jwt_required
 
 from . import jwt
@@ -28,52 +28,52 @@ def my_expired_token_callback(jwt_header, jwt_payload):
 
 @app.route("/application-config")
 def application_config_html():
-    return redirect("/application-config.html", code=302)
+    return app.send_static_file("application-config.html")
 
 
 @app.route("/downloads")
 def downloads_html():
-    return redirect("/downloads.html", code=302)
+    return app.send_static_file("downloads.html")
 
 
 @app.route("/")
 def index_html():
-    return redirect("/index.html", code=302)
+    return app.send_static_file("index.html")
 
 
 @app.route("/logout")
 def logout_html():
-    return redirect("/logout.html", code=302)
+    return app.send_static_file("logout.html")
 
 
 @app.route("/project-admin-dashboard")
 def project_admin_dashboard_html():
-    return redirect("/project-admin-dashboard.html", code=302)
+    return app.send_static_file("project-admin-dashboard.html")
 
 
 @app.route("/project-configuration")
 def project_configuration_html():
-    return redirect("/project-configuration.html", code=302)
+    return app.send_static_file("project-configuration.html")
 
 
 @app.route("/registration-form")
 def registration_form_html():
-    return redirect("/registration-form.html", code=302)
+    return app.send_static_file("registration-form.html")
 
 
 @app.route("/server-config")
 def server_config_html():
-    return redirect("/server-config.html", code=302)
+    return app.send_static_file("server-config.html")
 
 
 @app.route("/site-dashboard")
 def site_dashboard_html():
-    return redirect("/site-dashboard.html", code=302)
+    return app.send_static_file("site-dashboard.html")
 
 
 @app.route("/user-dashboard")
 def user_dashboard_html():
-    return redirect("/user-dashboard.html", code=302)
+    return app.send_static_file("user-dashboard.html")
 
 
 @app.route("/api/v1/login", methods=["POST"])
