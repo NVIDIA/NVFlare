@@ -29,8 +29,8 @@ To get started with these examples, please follow the [Quickstart](https://nvfla
   * Includes examples of using [FedAvg](https://arxiv.org/abs/1602.05629), [FedProx](https://arxiv.org/abs/1812.06127), [FedOpt](https://arxiv.org/abs/2003.00295), [SCAFFOLD](https://arxiv.org/abs/1910.06378), [homomorphic encryption](https://developer.nvidia.com/blog/federated-learning-with-homomorphic-encryption/), and streaming of TensorBoard metrics to the server during training.
 
 ## 3. Medical Image Analysis
-* [Hello MONAI](./hello-monai/README.md)
-   * Example using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) to train a medical image analysis model using [FedAvg]([FedAvg](https://arxiv.org/abs/1602.05629)) and [MONAI](https://monai.io/)
+* [Hello MONAI Bundle](./hello-monai-bundle/README.md)
+  * For an example of using NVIDIA FLARE to train a medical image analysis model using federated averaging (FedAvg) and MONAI Bundle, see ../../integration/monai/README.md.
 * [Federated Learning with Differential Privacy for BraTS18 segmentation](./brats18/README.md)
    * Illustrates the use of differential privacy for training brain tumor segmentation models using federated learning.
 * [Federated Learning for Prostate Segmentation from Multi-source Data](./prostate/README.md)
@@ -38,6 +38,8 @@ To get started with these examples, please follow the [Quickstart](https://nvfla
 
 
 ## 4. Federated Statistics
+* [Federated Statistic Overview](federated_statistics/README.md)
+  * Discuss the overall federated statistics features 
 * [Federated Statistics for Medical Imaging](federated_statistics/image_stats/README.md)
   * Example of gathering local image histogram to compute the global dataset histograms.
 * [Federated Statistics for DataFrame](federated_statistics/df_stats/README.md)
