@@ -87,9 +87,8 @@ class DFStatistics(Statistics):
         return results
 
     def count(self, dataset_name: str, feature_name: str) -> int:
-        # df: pd.DataFrame = self.data[dataset_name]
-        # return df[feature_name].count()
-        return 0
+        df: pd.DataFrame = self.data[dataset_name]
+        return df[feature_name].count()
 
     def sum(self, dataset_name: str, feature_name: str) -> float:
         df: pd.DataFrame = self.data[dataset_name]
