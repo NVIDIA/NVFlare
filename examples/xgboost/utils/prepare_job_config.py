@@ -72,10 +72,6 @@ def _get_data_split_name(args) -> str:
     return "data_split_" + str(args.site_num) + "_" + args.split_method + ".json"
 
 
-def _get_lr_scale_json_name(args) -> str:
-    return "lr_scale_" + str(args.site_num) + "_" + args.split_method + ".json"
-
-
 def _get_src_job_dir(training_mode):
     base_job_map = {
         "bagging": "bagging_base",
