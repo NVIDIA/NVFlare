@@ -240,5 +240,6 @@ sequenceDiagram
 
 ## Summary
 
-We hope this feature provides the needed capability for initial data analysis.   
+We provided federated statistics operators that can easily aggregate and visualize the local statistics for 
+different data site and features. we hope this feature will make it easier to perform federated data analysis. 
 
