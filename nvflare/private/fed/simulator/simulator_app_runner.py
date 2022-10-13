@@ -48,4 +48,3 @@ class SimulatorServerAppRunner(ServerAppRunner):
 
     def update_job_run_status(self, server):
         pass
-

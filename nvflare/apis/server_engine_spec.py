@@ -44,9 +44,7 @@ class ServerEngineSpec(ABC):
 
     @abstractmethod
     def update_job_run_status(self):
-        """To update the job run status to parent process.
-
-        """
+        """To update the job run status to parent process."""
         pass
 
     @abstractmethod

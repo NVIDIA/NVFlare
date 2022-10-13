@@ -578,10 +578,11 @@ class ServerEngine(ServerEngineInternalSpec):
         with self.parent_conn_lock:
             with self.new_context() as fl_ctx:
                 execution_error = fl_ctx.get_prop(FLContextKey.FATAL_SYSTEM_ERROR, False)
-                data = {ServerCommandKey.COMMAND: ServerCommandNames.UPDATE_RUN_STATUS,
-                        ServerCommandKey.DATA: {
-                            "execution_error": execution_error,
-                        }
+                data = {
+                    ServerCommandKey.COMMAND: ServerCommandNames.UPDATE_RUN_STATUS,
+                    ServerCommandKey.DATA: {
+                        "execution_error": execution_error,
+                    },
                 }
                 self.parent_conn.send(data)
 

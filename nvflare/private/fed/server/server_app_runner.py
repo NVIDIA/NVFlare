@@ -14,7 +14,7 @@
 
 import os
 
-from nvflare.apis.fl_constant import MachineStatus, FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, MachineStatus
 from nvflare.apis.workspace import Workspace
 from nvflare.private.fed.app.fl_conf import create_privacy_manager
 from nvflare.private.fed.server.server_engine import ServerEngine
