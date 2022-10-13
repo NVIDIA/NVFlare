@@ -207,34 +207,11 @@ count - failure_count
 If you would like to see failure_count as one statistic in reporting, you will need to add "failure_count" to the statistic_config
 arguments for the statistics controller.
 
-
 ## 4. Privacy Policy
 
-There are different ways to set privacy filter depending the use cases
+In current example, we include one cleanser in the `StatisticsPrivacyFilter`: `min_count_cleanser` 
 
-### 4.1 Set Privacy Policy as researcher
-
-one can specify the "task_result_filters" config_fed_client.json to specify
-the privacy control.  This is useful when you develop these filters
-
-### 4.2 setup site privacy policy as org admin
-
-Once the company decides to instrument certain privacy policy independent of individual
-job, one can copy the local directory privacy.json content to clients' local privacy.json ( merge not overwrite).
-
-This can only be demonstrated in POC mode, where the privacy.json is put in each site's local directory
-
-**NOTE** we need to remove the same filters from the job definition in config_fed_client.json
-by simply set the   "task_result_filters" to empty list to avoid **double** filtering.
-
-```
-"task_result_filters": []
-```
-
-In current example, we include one cleanser in the StatisticsPrivacyFilter: "min_count_cleanser" 
-
-
-## 4.3 Experiments with Privacy Filter
+### Experiments with Privacy Filter
  
 You can experiment with different privacy policy, for example, what if you set
 ```min_count``` to  1600, which is larger than the 1345 images site-4. 
