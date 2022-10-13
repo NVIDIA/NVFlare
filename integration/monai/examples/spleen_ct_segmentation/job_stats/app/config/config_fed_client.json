@@ -44,7 +44,7 @@
       "id": "min_count_cleanser",
       "path": "nvflare.app_common.statistics.min_count_cleanser.MinCountCleanser",
       "args": {
-        "min_count": 2
+        "min_count": 5
       }
     },
     {
