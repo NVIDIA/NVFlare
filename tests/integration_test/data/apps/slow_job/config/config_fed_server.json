@@ -3,45 +3,8 @@
   "server": {
     "heart_beat_timeout": 600
   },
-  "handlers": [],
-  "task_data_filters": [
-    {
-      "tasks": ["train"],
-      "filters": [
-        {
-          "path": "nvflare.app_common.filters.exclude_vars.ExcludeVars",
-          "args": {}
-        },
-        {
-          "path": "nvflare.app_common.filters.percentile_privacy.PercentilePrivacy",
-          "args": {}
-        },
-        {
-          "path": "nvflare.app_common.filters.svt_privacy.SVTPrivacy",
-          "args": {}
-        }
-      ]
-    }
-  ],
-  "task_result_filters": [
-    {
-      "tasks": ["train"],
-      "filters": [
-        {
-          "path": "nvflare.app_common.filters.exclude_vars.ExcludeVars",
-          "args": {}
-        },
-        {
-          "path": "nvflare.app_common.filters.percentile_privacy.PercentilePrivacy",
-          "args": {}
-        },
-        {
-          "path": "nvflare.app_common.filters.svt_privacy.SVTPrivacy",
-          "args": {}
-        }
-      ]
-    }
-  ],
+  "task_data_filters": [],
+  "task_result_filters": [],
   "components": [
     {
       "id": "persistor",
@@ -67,9 +30,9 @@
       "path": "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather",
       "args": {
         "min_clients": 2,
-        "num_rounds": 3,
+        "num_rounds": 2,
         "start_round": 0,
-        "wait_time_after_min_received": 0,
+        "wait_time_after_min_received": 10,
         "aggregator_id": "aggregator",
         "persistor_id": "persistor",
         "shareable_generator_id": "shareable_generator",
