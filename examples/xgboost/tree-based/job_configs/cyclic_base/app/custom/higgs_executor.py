@@ -40,6 +40,7 @@ class FedXGBTreeHiggsExecutor(FedXGBTreeExecutor):
         self,
         data_split_filename,
         training_mode,
+        lr_scale,
         num_tree_bagging: int = 1,
         lr_mode: str = "uniform",
         local_model_path: str = "model.json",
@@ -55,6 +56,7 @@ class FedXGBTreeHiggsExecutor(FedXGBTreeExecutor):
         super().__init__(
             training_mode=training_mode,
             num_tree_bagging=num_tree_bagging,
+            lr_scale=lr_scale,
             lr_mode=lr_mode,
             local_model_path=local_model_path,
             global_model_path=global_model_path,
@@ -107,4 +109,4 @@ class FedXGBTreeHiggsExecutor(FedXGBTreeExecutor):
         )
         dmat_valid = xgb.DMatrix(X_valid, label=y_valid)
 
-        return dmat_train, dmat_valid, site_index["lr_scale"]
+        return dmat_train, dmat_valid
