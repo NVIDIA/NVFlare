@@ -18,7 +18,7 @@ from monai.apps.utils import download_and_extract
 
 def download_spleen_dataset(filepath, output_dir):
     url = "https://msd-for-monai.s3-us-west-2.amazonaws.com/Task09_Spleen.tar"
-    download_and_extract(url=url, filepath="./data/Task09_Spleen.tar", output_dir="./data")
+    download_and_extract(url=url, filepath=filepath, output_dir=output_dir)
 
 
 if __name__ == "__main__":

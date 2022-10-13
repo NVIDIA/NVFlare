@@ -24,16 +24,16 @@ from nvflare.app_common.abstract.statistics_spec import Bin, DataType, Feature, 
 
 
 class ClientAlgoStatistics(Statistics):
-    def __init__(self, client_stats_id):
+    def __init__(self, client_algo_stats_id):
         """Statistics generator that gets data statistics from ClientAlgoStats.
 
         Args:
-            client_stats_id (str): id pointing to the client_stats object
+            client_algo_stats_id (str): id pointing to the client_stats object
         Returns:
             a Shareable with the computed local statistics`
         """
         super().__init__()
-        self.client_stats_id = client_stats_id
+        self.client_algo_stats_id = client_algo_stats_id
         self.client_name = None
         self.client_stats = None
         self.stats = None
@@ -43,7 +43,7 @@ class ClientAlgoStatistics(Statistics):
         self.fl_ctx = fl_ctx
         self.client_name = fl_ctx.get_identity_name()
         engine = fl_ctx.get_engine()
-        self.client_stats = engine.get_component(self.client_stats_id)
+        self.client_stats = engine.get_component(self.client_algo_stats_id)
         if not isinstance(self.client_stats, ClientAlgoStats):
             raise TypeError(f"client_stats must be client_stats type. Got: {type(self.client_stats)}")
         self.client_stats.initialize(

@@ -37,7 +37,7 @@
       "id": "local_stats_generator",
       "path": "monai_nvflare.client_algo_statistics.ClientAlgoStatistics",
       "args": {
-        "client_stats_id": "client_stats"
+        "client_algo_stats_id": "client_algo_stats"
       }
     },
     {
@@ -48,7 +48,7 @@
       }
     },
     {
-      "id": "client_stats",
+      "id": "client_algo_stats",
       "path": "monai.fl.client.MonaiAlgoStats",
       "args": {
         "bundle_root": "config/spleen_ct_segmentation"
