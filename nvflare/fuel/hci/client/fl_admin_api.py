@@ -444,7 +444,9 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
             AdminCommandNames.DELETE_JOB + " " + str(job_id)
         )
         if reply_data_full_response:
-            if "can not be deleted" in reply_data_full_response:
+            if ("can not be deleted" in reply_data_full_response) or (
+                "could not be deleted" in reply_data_full_response
+            ):
                 return FLAdminAPIResponse(APIStatus.ERROR_RUNTIME, {"message": reply_data_full_response})
         if success:
             return FLAdminAPIResponse(APIStatus.SUCCESS, {"message": reply_data_full_response}, reply)
