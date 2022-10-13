@@ -68,7 +68,7 @@ class SupervisedMonaiProstateDittoLearner(SupervisedMonaiProstateLearner):
 
         # Initialize PTDittoHelper
         ditto_model = UNet(
-            dimensions=2,
+            spatial_dims=2,
             in_channels=1,
             out_channels=1,
             channels=(16, 32, 64, 128, 256),
