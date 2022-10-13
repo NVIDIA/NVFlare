@@ -15,6 +15,7 @@
 import argparse
 import os
 import signal
+import sys
 
 import docker
 from nvflare.apis.utils.format_check import name_check
@@ -109,6 +110,13 @@ def stop():
     print("nvflare-dashboard exited")
 
 
+def has_no_arguments() -> bool:
+    last_item = sys.argv[-1]
+    return (
+        last_item.endswith("dashboard.cli") or last_item.endswith("dashboard/cli.py") or last_item.endswith("dashboard")
+    )
+
+
 def main():
     parser = argparse.ArgumentParser()
     define_dashboard_parser(parser)
@@ -130,6 +138,9 @@ def define_dashboard_parser(parser):
 
 
 def handle_dashboard(args):
+    if has_no_arguments():
+        print("Add -h option to see usage")
+        exit(0)
     if args.stop:
         stop()
     elif args.start:
