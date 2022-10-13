@@ -95,7 +95,7 @@ class ServerEngine(ServerEngineInternalSpec):
         self.server = server
         self.args = args
         self.run_processes = {}
-        self.execution_exception_run_processes = {}
+        self.exception_run_processes = {}
         self.run_manager = None
         self.conf = None
         # TODO:: does this class need client manager?
@@ -244,11 +244,17 @@ class ServerEngine(ServerEngineInternalSpec):
                     elif command == ServerCommandNames.UPDATE_RUN_STATUS:
                         execution_error = data.get("execution_error")
                         if execution_error:
-                            run_process_info = self.run_processes.get(job_id)
-                            self.execution_exception_run_processes[job_id] = run_process_info
+                            with self.lock:
+                                run_process_info = self.run_processes.get(job_id)
+                                self.exception_run_processes[job_id] = run_process_info
 
             except BaseException as e:
                 self.logger.warning(f"Failed to process the child process command: {secure_format_exception(e)}")
+
+    def remove_exception_process(self, job_id):
+        with self.lock:
+            if job_id in self.exception_run_processes:
+                self.exception_run_processes.pop(job_id)
 
     def wait_for_complete(self, job_id):
         while True:
@@ -260,11 +266,7 @@ class ServerEngine(ServerEngineInternalSpec):
             except BaseException:
                 with self.lock:
                     if job_id in self.run_processes:
-                        run_process_info = self.run_processes.pop(job_id)
-                        return_code = run_process_info[RunProcessKey.CHILD_PROCESS].poll()
-                        # if process exit but with Execution exception
-                        if return_code and return_code != 0:
-                            self.execution_exception_run_processes[job_id] = run_process_info
+                        self.run_processes.pop(job_id)
                 self.engine_info.status = MachineStatus.STOPPED
                 break
 

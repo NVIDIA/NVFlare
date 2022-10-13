@@ -46,6 +46,6 @@ class SimulatorServerAppRunner(ServerAppRunner):
     def sync_up_parents_process(self, args, server):
         pass
 
-    def update_job_run_sstatus(self, server):
+    def update_job_run_status(self, server):
         pass
 
