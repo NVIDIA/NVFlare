@@ -92,8 +92,7 @@ def _update_meta(meta: dict, args):
     name = _get_job_name(args)
     meta["name"] = name
     meta["deploy_map"] = _gen_deploy_map(args.site_num)
-    if args.training_mode == "histogram":
-        meta["min_clients"] = args.site_num
+    meta["min_clients"] = args.site_num
 
 
 def _get_lr_scale_from_split_json(data_split: dict):
