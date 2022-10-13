@@ -51,7 +51,11 @@ def start(args):
         pwd = generate_password(8)
         print(f"Project admin credential is {answer} and the password is {pwd}")
         environment.update({"NVFL_CREDENTIAL": f"{answer}:{pwd}"})
-    client = docker.from_env()
+    try:
+        client = docker.from_env()
+    except docker.errors.DockerException:
+        print("Unable to communicate to docker daemon/socket.  Please make sure your docker is up and running.")
+        exit(0)
     dashboard_image = "nvflare/nvflare"
     try:
         print(f"Pulling {dashboard_image}, may take some time to finish.")
@@ -91,7 +95,11 @@ def start(args):
 
 
 def stop():
-    client = docker.from_env()
+    try:
+        client = docker.from_env()
+    except docker.errors.DockerException:
+        print("Unable to communicate to docker daemon/socket.  Please make sure your docker is up and running.")
+        exit(0)
     try:
         container_obj = client.containers.get("nvflare-dashboard")
     except docker.errors.NotFound:
