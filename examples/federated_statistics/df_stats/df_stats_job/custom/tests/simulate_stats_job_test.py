@@ -44,18 +44,3 @@ class TestSimulateFedStatsJob:
         for client in runner.client_names:
             client_names.append(client.strip())
         assert sorted(client_names) == sorted(expected_clients)
-
-    # @patch("nvflare.private.fed.app.deployer.simulator_deployer.SimulatorServer.deploy")
-    # @patch("nvflare.private.fed.app.server.server_train.FedAdminServer")
-    # @patch("nvflare.private.fed.app.deployer.simulator_deployer.FederatedClient.register")
-    # @patch("nvflare.private.fed.app.deployer.simulator_deployer.FederatedClient.start_heartbeat")
-    # @patch("nvflare.private.fed.app.deployer.simulator_deployer.FedAdminAgent")
-    # def test_fed_stats_job_simulate_setup(self, mock_server, mock_admin, mock_register, mock_heartbeat, mock_agent):
-    #     runner = SimulatorRunner(job_folder=self.stats_job_folder,
-    #                              workspace=self.workspace,
-    #                              clients="site-1",
-    #                              threads=1)
-    #     # note this test may not work due to 1) configuration failure, 2) data not available 3) dependency not available
-    #     # but the code doesn't stop even in failure conditions.
-    #     status = runner.run()
-    #     assert(status == 0)

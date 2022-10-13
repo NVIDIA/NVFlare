@@ -309,34 +309,11 @@ so we need to provide local min/max calculation methods
 ```
 
 
-## 6. Privacy Policy
 
-There are different ways to set privacy filter depending the use cases
+## to run pytest in examples
 
-### 6.1 Set Privacy Policy as researcher
+under df_stats directory
 
-one can specify the "task_result_filters" config_fed_client.json to specify
-the privacy control.  This is useful when you develop these filters
-
-### 6.2 setup site privacy policy as org admin
-
-Once the company decides to instrument certain privacy policy independent of individual
-job, one can copy the local directory privacy.json content to clients' local privacy.json ( merge not overwrite).
-in this example, since we only has one app, we can simply copy the private.json from local directory to
-
-<poc-workspace>/site-1/local/privacy.json
-<poc-workspace>/site-2/local/privacy.json
-
-we need to remove the same filters from the job definition in config_fed_client.json
-by simply set the "task_result_filters" to empty list to avoid **double filtering**
 ```
-"task_result_filters": []
+pytest df_stats_job/custom/
 ```
-### 6.3 job filter vis filters in private.json filters
-
-privacy filters are defined within a privacy scope.
-If a job's privacy scope is defined or has default scope, then the scope’s filters (if any) are applied
-before the job-specified filters (if any). This rule is enforced during task execution time.
-
-With such rules, if we have both task result filters and privacy scoped filters, we need to understand
-that the privacy filters will be applied first, then job filters. 
