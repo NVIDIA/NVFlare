@@ -123,8 +123,8 @@ Once the company decides to instrument certain privacy policy independent of ind
 job, one can copy the local directory privacy.json content to clients' local privacy.json ( merge not overwrite).
 in this example, since we only has one app, we can simply copy the private.json from local directory to
 
-site-1/local/privacy.json
-site-2/local/privacy.json
+* site-1/local/privacy.json
+* site-2/local/privacy.json
 
 we need to remove the same filters from the job definition in config_fed_client.json
 by simply set the "task_result_filters" to empty list to avoid **double filtering**
