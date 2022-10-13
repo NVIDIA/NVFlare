@@ -28,7 +28,8 @@
                 "bundle_root": "config/spleen_ct_segmentation",
                 "local_epochs": 10,
                 "multi_gpu": true,
-                "config_train_filename": ["configs/train.json","configs/multi_gpu_train.json"]
+                "config_train_filename": ["configs/train.json","configs/multi_gpu_train.json"],
+                "config_evaluate_filename": ["configs/train.json", "configs/evaluate.json", "configs/multi_gpu_evaluate.json"]
               }
             }
           ]

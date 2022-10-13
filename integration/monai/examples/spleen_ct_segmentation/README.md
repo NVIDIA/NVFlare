@@ -22,7 +22,7 @@ pip install -r virtualenv/requirements.txt
 
 ### 2. Download the Spleen Bundle
 ```
-python3 -m monai.bundle download --name "spleen_ct_segmentation_v0.2.0" --bundle_dir ./job/app/config
+python3 -m monai.bundle download --name "spleen_ct_segmentation_v0.3.1" --bundle_dir ./job/app/config
 ``` 
 
 ### 3. Download the data
