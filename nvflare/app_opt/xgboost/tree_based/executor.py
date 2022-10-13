@@ -34,6 +34,7 @@ class FedXGBTreeExecutor(Executor, ABC):
     def __init__(
         self,
         training_mode,
+        lr_scale,
         num_tree_bagging: int = 1,
         lr_mode: str = "uniform",
         local_model_path: str = "model.json",
@@ -53,6 +54,7 @@ class FedXGBTreeExecutor(Executor, ABC):
         self.training_mode = training_mode
         self.num_tree_bagging = num_tree_bagging
         self.lr = None
+        self.lr_scale = lr_scale
         self.base_lr = learning_rate
         self.lr_mode = lr_mode
         self.local_model_path = local_model_path
@@ -74,7 +76,6 @@ class FedXGBTreeExecutor(Executor, ABC):
 
         self.dmat_train = None
         self.dmat_valid = None
-        self.valid_y = None
 
         # use dynamic shrinkage - adjusted by personalized scaling factor
         if lr_mode not in ["uniform", "scaled"]:
@@ -106,10 +107,10 @@ class FedXGBTreeExecutor(Executor, ABC):
             return
 
         # load data and lr_scale, this is task/site-specific
-        self.dmat_train, self.dmat_valid, self.valid_y, lr_scale = self.load_data(fl_ctx)
-        self.lr = self._get_effective_learning_rate(lr_scale=lr_scale)
+        self.dmat_train, self.dmat_valid = self.load_data(fl_ctx)
+        self.lr = self._get_effective_learning_rate()
 
-    def _get_effective_learning_rate(self, lr_scale):
+    def _get_effective_learning_rate(self):
         if self.training_mode == "bagging":
             # Bagging mode
             if self.lr_mode == "uniform":
@@ -117,7 +118,7 @@ class FedXGBTreeExecutor(Executor, ABC):
                 lr = self.base_lr / self.num_tree_bagging
             else:
                 # scaled lr, global learning_rate scaled by data size percentage
-                lr = self.base_lr * lr_scale
+                lr = self.base_lr * self.lr_scale
         else:
             # Cyclic mode, directly use the base learning_rate
             lr = self.base_lr
@@ -125,12 +126,13 @@ class FedXGBTreeExecutor(Executor, ABC):
 
     @abstractmethod
     def load_data(self, fl_ctx: FLContext):
-        """Load data customized to individual tasks
+        """Loads data customized to individual tasks.
+
         This can be specified / loaded in any ways
         as long as they are made available for training and validation
-        Return:
-            A tuple of (dmat_train, dmat_valid, valid_y, lr_scale)
 
+        Return:
+            A tuple of (dmat_train, dmat_valid)
         """
         raise NotImplementedError
 

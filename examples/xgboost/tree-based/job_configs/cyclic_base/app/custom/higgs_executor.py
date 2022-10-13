@@ -107,4 +107,4 @@ class FedXGBTreeHiggsExecutor(FedXGBTreeExecutor):
         )
         dmat_valid = xgb.DMatrix(X_valid, label=y_valid)
 
-        return dmat_train, dmat_valid, y_valid, site_index["lr_scale"]
+        return dmat_train, dmat_valid, site_index["lr_scale"]

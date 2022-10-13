@@ -28,6 +28,9 @@ from nvflare.security.logging import secure_format_exception, secure_log_traceba
 
 from .constants import XGB_TRAIN_TASK, XGBShareableHeader
 
+xgb, _ = optional_import(module="xgboost")
+callback, _ = optional_import(module="xgboost.callback")
+
 
 class XGBoostParams:
     """Container for all XGBoost parameters"""
@@ -65,15 +68,20 @@ class FedXGBHistogramExecutor(Executor, ABC):
         self._client_key_path = None
         self._client_cert_path = None
         self._server_address = "localhost"
-        self._data_loaded = False
 
-    @abstractmethod
-    def xgb_train(self, params: XGBoostParams, fl_ctx: FLContext) -> Shareable:
-        """Main XGBoost training method"""
-        pass
+        self.dmat_train = None
+        self.dmat_valid = None
 
     @abstractmethod
     def load_data(self, fl_ctx: FLContext):
+        """Loads data customized to individual tasks.
+
+        This can be specified / loaded in any ways
+        as long as they are made available for training and validation
+
+        Return:
+            A tuple of (dmat_train, dmat_valid)
+        """
         pass
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
@@ -119,19 +127,40 @@ class FedXGBHistogramExecutor(Executor, ABC):
             self.log_exception(fl_ctx, f"learner execute exception: {secure_format_exception(e)}")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
+    def _xgb_train(self, params: XGBoostParams, fl_ctx: FLContext) -> Shareable:
+        # Load file, file will not be sharded in federated mode.
+        dtrain = self.dmat_train
+        dval = self.dmat_valid
+
+        # Specify validations set to watch performance
+        watchlist = [(dval, "eval"), (dtrain, "train")]
+
+        # Run training, all the features in training API is available.
+        bst = xgb.train(
+            params.xgb_params,
+            dtrain,
+            params.num_rounds,
+            evals=watchlist,
+            early_stopping_rounds=params.early_stopping_rounds,
+            verbose_eval=params.verbose_eval,
+            callbacks=[callback.EvaluationMonitor(rank=self.rank)],
+        )
+
+        # Save the model.
+        workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+        run_number = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
+        run_dir = workspace.get_run_dir(run_number)
+        bst.save_model(os.path.join(run_dir, "test.model.json"))
+
+        return make_reply(ReturnCode.OK)
+
     def train(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         """XGBoost training task pipeline which handles NVFlare specific tasks"""
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
 
-        xgb, flag = optional_import(module="xgboost")
-        if not flag:
-            self.log_error(fl_ctx, "Can't import xgboost")
-            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-
-        if not self._data_loaded:
-            self.load_data(fl_ctx)
-            self._data_loaded = True
+        if self.dmat_train is None:
+            self.dmat_train, self.dmat_valid = self.load_data(fl_ctx)
 
         # Print round information
         current_round = shareable.get_header(AppConstants.CURRENT_ROUND)
@@ -186,7 +215,7 @@ class FedXGBHistogramExecutor(Executor, ABC):
 
         try:
             with xgb.collective.CommunicatorContext(**communicator_env):
-                result = self.xgb_train(params, fl_ctx)
+                result = self._xgb_train(params, fl_ctx)
                 xgb.collective.communicator_print("Finished training\n")
         except BaseException as e:
             secure_log_traceback()
