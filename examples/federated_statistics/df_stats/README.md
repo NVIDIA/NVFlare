@@ -307,3 +307,13 @@ so we need to provide local min/max calculation methods
    def max_value(self, dataset_name: str, feature_name: str) -> float:
    def min_value(self, dataset_name: str, feature_name: str) -> float:
 ```
+
+
+
+## to run pytest in examples
+
+under df_stats directory
+
+```
+pytest df_stats_job/custom/
+```
