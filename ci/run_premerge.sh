@@ -75,8 +75,6 @@ integration_test() {
     rm -rf /tmp/snapshot-storage
     pushd ${testFolder}
     pipenv run ./run_integration_tests.sh -m numpy
-    pipenv run ./run_integration_tests.sh -m auth
-    pipenv run ./run_integration_tests.sh -m overseer
     popd
     rm -rf /tmp/snapshot-storage
     remove_dns_entries
