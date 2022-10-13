@@ -1,6 +1,6 @@
 workspace_path="../prostate_3D/workspaces"
-dataset_path="../data_preparation/dataset"
-datalist_path="../data_preparation/datalist"
+dataset_path="../Data_Prostate/dataset"
+datalist_path="../Data_Prostate/datalist"
 echo "Centralized"
 python3 prostate_3d_test_only.py --model_path "${workspace_path}/prostate_central/simulate_job/app_server/best_FL_global_model.pt" --dataset_base_dir ${dataset_path} --datalist_json_path "${datalist_path}/client_All.json"
 echo "FedAvg"
