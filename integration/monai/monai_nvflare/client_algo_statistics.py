@@ -35,18 +35,19 @@ class ClientAlgoStatistics(Statistics):
         super().__init__()
         self.client_algo_stats_id = client_algo_stats_id
         self.client_name = None
-        self.client_stats = None
+        self.client_algo_stats = None
         self.stats = None
+        self.histograms = None
         self.fl_ctx = None
 
     def initialize(self, parts: dict, fl_ctx: FLContext):
         self.fl_ctx = fl_ctx
         self.client_name = fl_ctx.get_identity_name()
         engine = fl_ctx.get_engine()
-        self.client_stats = engine.get_component(self.client_algo_stats_id)
-        if not isinstance(self.client_stats, ClientAlgoStats):
-            raise TypeError(f"client_stats must be client_stats type. Got: {type(self.client_stats)}")
-        self.client_stats.initialize(
+        self.client_algo_stats = engine.get_component(self.client_algo_stats_id)
+        if not isinstance(self.client_algo_stats, ClientAlgoStats):
+            raise TypeError(f"client_stats must be client_stats type. Got: {type(self.client_algo_stats)}")
+        self.client_algo_stats.initialize(
             extra={
                 ExtraItems.CLIENT_NAME: fl_ctx.get_identity_name(),
                 ExtraItems.APP_ROOT: fl_ctx.get_prop(FLContextKey.APP_ROOT),
@@ -60,17 +61,31 @@ class ClientAlgoStatistics(Statistics):
         bin_ranges: Optional[Dict[str, Optional[List[float]]]],
     ):
 
-        req_num_of_bins, req_bin_ranges = [], []
-        for _, value in num_of_bins.items():
-            req_num_of_bins.append(value)
-        for _, value in bin_ranges.items():
-            req_bin_ranges.append(value)
+        if num_of_bins:
+            req_num_of_bins = list(num_of_bins.values())
+        else:
+            req_num_of_bins = []
+
+        if bin_ranges:
+            req_bin_ranges = list(bin_ranges.values())
+        else:
+            req_bin_ranges = []
+
         requested_stats = {
             FlStatistics.STATISTICS: statistics,
             FlStatistics.HIST_BINS: req_num_of_bins,
             FlStatistics.HIST_RANGE: req_bin_ranges,
         }
-        self.stats = self.client_stats.get_data_stats(extra=requested_stats).statistics
+        self.stats = self.client_algo_stats.get_data_stats(extra=requested_stats).statistics
+
+        # parse histograms
+        self.histograms = {}
+        for dataset_name in self.stats:
+            self.histograms[dataset_name] = {}
+            hist_list = self.stats[dataset_name][FlStatistics.DATA_STATS][DataStatsKeys.IMAGE_HISTOGRAM][ImageStatsKeys.HISTOGRAM]
+            hist_feature_names = self.stats[dataset_name][FlStatistics.FEATURE_NAMES]
+            for _hist_fn, _histo in zip(hist_feature_names, hist_list):
+                self.histograms[dataset_name][_hist_fn] = _histo
 
     def features(self) -> Dict[str, List[Feature]]:
         features = {}
@@ -100,19 +115,10 @@ class ClientAlgoStatistics(Statistics):
         self, dataset_name: str, feature_name: str, num_of_bins: int, global_min_value: float, global_max_value: float
     ) -> Histogram:
         if dataset_name in self.stats:
-            hist_list = self.stats[dataset_name][FlStatistics.DATA_STATS][DataStatsKeys.IMAGE_HISTOGRAM][
-                ImageStatsKeys.HISTOGRAM
-            ]
-            hist_feature_names = self.stats[dataset_name][FlStatistics.FEATURE_NAMES]
-            histo = None
-            for _hist_fn, _histo in zip(hist_feature_names, hist_list):
-                if _hist_fn == feature_name:
-                    histo = _histo
-            if histo is None:
-                self.log_warning(
-                    self.fl_ctx,
-                    f"Could not find a matching histogram for feature {feature_name} " f"in {hist_feature_names}.",
-                )
+            if feature_name in self.histograms[dataset_name]:
+                histo = self.histograms[dataset_name][feature_name]
+            else:
+                self.log_warning(self.fl_ctx, f"Could not find a matching histogram for feature {feature_name} in dataset {dataset_name}.")
                 return Histogram(HistogramType.STANDARD, list())
         else:
             self.log_warning(self.fl_ctx, f"No such dataset {dataset_name}")
