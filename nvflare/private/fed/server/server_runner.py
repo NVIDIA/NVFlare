@@ -187,6 +187,7 @@ class ServerRunner(FLComponent):
                             info={"job_id": self.job_id, "status": self.status, "workflow": self.current_wf.id},
                         )
         elif event_type == EventType.FATAL_SYSTEM_ERROR:
+            fl_ctx.set_prop(key=FLContextKey.FATAL_SYSTEM_ERROR, value=True, private=True, sticky=True)
             reason = fl_ctx.get_prop(key=FLContextKey.EVENT_DATA, default="")
             self.log_error(fl_ctx, "Aborting current RUN due to FATAL_SYSTEM_ERROR received: {}".format(reason))
             self.abort(fl_ctx)

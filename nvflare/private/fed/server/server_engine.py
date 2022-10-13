@@ -241,6 +241,12 @@ class ServerEngine(ServerEngineInternalSpec):
                             targets=targets, topic=topic, request=request, timeout=timeout, fl_ctx=fl_ctx
                         )
                         conn.send(replies)
+                    elif command == ServerCommandNames.UPDATE_RUN_STATUS:
+                        execution_error = data.get("execution_error")
+                        if execution_error:
+                            run_process_info = self.run_processes.get(job_id)
+                            self.execution_exception_run_processes[job_id] = run_process_info
+
             except BaseException as e:
                 self.logger.warning(f"Failed to process the child process command: {secure_format_exception(e)}")
 
@@ -565,6 +571,17 @@ class ServerEngine(ServerEngineInternalSpec):
             self.parent_conn.send(data)
             return_data = self.parent_conn.recv()
             return return_data
+
+    def update_job_run_status(self):
+        with self.parent_conn_lock:
+            with self.new_context() as fl_ctx:
+                execution_error = fl_ctx.get_prop(FLContextKey.FATAL_SYSTEM_ERROR, False)
+                data = {ServerCommandKey.COMMAND: ServerCommandNames.UPDATE_RUN_STATUS,
+                        ServerCommandKey.DATA: {
+                            "execution_error": execution_error,
+                        }
+                }
+                self.parent_conn.send(data)
 
     def aux_send(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
         # Send the aux messages through admin_server
