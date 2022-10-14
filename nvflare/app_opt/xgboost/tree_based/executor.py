@@ -15,6 +15,9 @@
 import json
 import os
 from abc import ABC, abstractmethod
+from typing import Tuple
+
+import xgboost as xgb
 
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.event_type import EventType
@@ -81,6 +84,18 @@ class FedXGBTreeExecutor(Executor, ABC):
         if lr_mode not in ["uniform", "scaled"]:
             raise ValueError(f"Only support [uniform] or [scaled] mode, but got {lr_mode}")
 
+    @abstractmethod
+    def load_data(self, fl_ctx: FLContext) -> Tuple[xgb.core.DMatrix, xgb.core.DMatrix]:
+        """Loads data customized to individual tasks.
+
+        This can be specified / loaded in any ways
+        as long as they are made available for training and validation
+
+        Return:
+            A tuple of (dmat_train, dmat_valid)
+        """
+        raise NotImplementedError
+
     def initialize(self, fl_ctx: FLContext):
         # set the paths according to fl_ctx
         engine = fl_ctx.get_engine()
@@ -123,18 +138,6 @@ class FedXGBTreeExecutor(Executor, ABC):
             # Cyclic mode, directly use the base learning_rate
             lr = self.base_lr
         return lr
-
-    @abstractmethod
-    def load_data(self, fl_ctx: FLContext):
-        """Loads data customized to individual tasks.
-
-        This can be specified / loaded in any ways
-        as long as they are made available for training and validation
-
-        Return:
-            A tuple of (dmat_train, dmat_valid)
-        """
-        raise NotImplementedError
 
     def _get_train_params(self):
         param = {
@@ -198,11 +201,6 @@ class FedXGBTreeExecutor(Executor, ABC):
         if abort_signal.triggered:
             self.finalize(fl_ctx)
             return make_reply(ReturnCode.TASK_ABORTED)
-
-        xgb, flag = optional_import(module="xgboost")
-        if not flag:
-            self.system_panic("Can't import xgboost", fl_ctx)
-            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
         # retrieve current global model download from server's shareable
         dxo = from_shareable(shareable)

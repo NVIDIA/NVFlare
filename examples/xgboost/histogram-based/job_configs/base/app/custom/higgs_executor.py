@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import json
-import os
 
 import pandas as pd
 import xgboost as xgb
@@ -38,9 +37,6 @@ class FedXGBHistogramHiggsExecutor(FedXGBHistogramExecutor):
     def __init__(self, data_split_filename, num_rounds, early_stopping_round, xgboost_params, verbose_eval=False):
         """Federated XGBoost Executor for histogram-base collaboration.
 
-        This class sets up the training environment for Federated XGBoost. This is an abstract class and xgb_train
-        method must be implemented by a subclass.
-
         Args:
             data_split_filename: file name to data splits
             num_rounds: number of boosting rounds
@@ -54,23 +50,16 @@ class FedXGBHistogramHiggsExecutor(FedXGBHistogramExecutor):
         self.test_data = None
 
     def load_data(self, fl_ctx: FLContext):
-        """Loads data."""
-        engine = fl_ctx.get_engine()
-        ws = engine.get_workspace()
-        app_config_dir = ws.get_app_config_dir(fl_ctx.get_job_id())
-        client_id = fl_ctx.get_identity_name()
-
-        data_split_file_path = os.path.join(app_config_dir, self.data_split_filename)
-        with open(data_split_file_path) as file:
+        with open(self.data_split_filename, "r") as file:
             data_split = json.load(file)
 
         data_path = data_split["data_path"]
         data_index = data_split["data_index"]
 
         # check if site_id and "valid" in the mapping dict
-        if client_id not in data_index.keys():
+        if self.client_id not in data_index.keys():
             raise ValueError(
-                f"Dict of data_index does not contain Client {client_id} split",
+                f"Dict of data_index does not contain Client {self.client_id} split",
             )
 
         if "valid" not in data_index.keys():
@@ -78,7 +67,7 @@ class FedXGBHistogramHiggsExecutor(FedXGBHistogramExecutor):
                 "Dict of data_index does not contain Validation split",
             )
 
-        site_index = data_index[client_id]
+        site_index = data_index[self.client_id]
         valid_index = data_index["valid"]
 
         # training

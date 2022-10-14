@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import json
-import os
 
 import pandas as pd
 import xgboost as xgb
@@ -72,12 +71,7 @@ class FedXGBTreeHiggsExecutor(FedXGBTreeExecutor):
 
     def load_data(self, fl_ctx: FLContext):
         """Loads data."""
-        engine = fl_ctx.get_engine()
-        ws = engine.get_workspace()
-        app_config_dir = ws.get_app_config_dir(fl_ctx.get_job_id())
-
-        data_split_file_path = os.path.join(app_config_dir, self.data_split_filename)
-        with open(data_split_file_path) as file:
+        with open(self.data_split_filename) as file:
             data_split = json.load(file)
 
         data_path = data_split["data_path"]
@@ -109,4 +103,8 @@ class FedXGBTreeHiggsExecutor(FedXGBTreeExecutor):
         )
         dmat_valid = xgb.DMatrix(X_valid, label=y_valid)
 
+        self.log_info(
+            fl_ctx,
+            f"Total training/validation data count: {total_train_data_num}/{total_valid_data_num}",
+        )
         return dmat_train, dmat_valid

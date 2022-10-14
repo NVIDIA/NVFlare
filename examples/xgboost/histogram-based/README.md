@@ -28,7 +28,9 @@ start the overseer, fl server and fl clients.
 
 You can still generate the data splits and job configs using the scripts provided.
 
-Note that after you generate the job config, you might need to modify the `data_path` in the `data_split_XXX.json`
-inside the `app_[site name]/config` folder of each job, since each site might save the HIGGS dataset in different places.
+Note that after you generate the job config,
+you might need to modify the `data_path` in the `data_site-XXX.json`
+inside the `/tmp/nvflare/xgboost_higgs_dataset` folder,
+since each site might save the HIGGS dataset in different places.
 
 Then you can use admin client to submit the job via `submit_job` command.
