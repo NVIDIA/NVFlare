@@ -42,6 +42,10 @@ class ClientAlgoStatistics(Statistics):
         self.histograms = None
         self.fl_ctx = None
 
+        self.req_num_of_bins = None
+        self.req_bin_ranges = None
+        self.feature_names = None
+
     def initialize(self, parts: dict, fl_ctx: FLContext):
         self.fl_ctx = fl_ctx
         self.client_name = fl_ctx.get_identity_name()
@@ -64,19 +68,21 @@ class ClientAlgoStatistics(Statistics):
     ):
 
         if num_of_bins:
-            req_num_of_bins = list(num_of_bins.values())
+            self.req_num_of_bins = list(num_of_bins.values())
+            self.feature_names = list(num_of_bins.keys())
         else:
-            req_num_of_bins = []
+            self.req_num_of_bins = []
 
         if bin_ranges:
-            req_bin_ranges = list(bin_ranges.values())
+            self.req_bin_ranges = list(bin_ranges.values())
         else:
-            req_bin_ranges = []
+            self.req_bin_ranges = []
 
         requested_stats = {
             FlStatistics.STATISTICS: statistics,
-            FlStatistics.HIST_BINS: req_num_of_bins,
-            FlStatistics.HIST_RANGE: req_bin_ranges,
+            FlStatistics.HIST_BINS: self.req_num_of_bins,
+            FlStatistics.HIST_RANGE: self.req_bin_ranges,
+            FlStatistics.FEATURE_NAMES: self.feature_names,
         }
         self.stats = self.client_algo_stats.get_data_stats(extra=requested_stats).statistics
 
@@ -87,8 +93,19 @@ class ClientAlgoStatistics(Statistics):
             hist_list = self.stats[dataset_name][FlStatistics.DATA_STATS][DataStatsKeys.IMAGE_HISTOGRAM][
                 ImageStatsKeys.HISTOGRAM
             ]
-            hist_feature_names = self.stats[dataset_name][FlStatistics.FEATURE_NAMES]
-            for _hist_fn, _histo in zip(hist_feature_names, hist_list):
+            # if only one histogram feature was given, use that to name each feature for all image channels.
+            if len(self.feature_names) == 1:
+                fn = self.feature_names[0]
+                if fn == "*":
+                    fn = "Intensity"
+                self.feature_names = [f"{fn}-{i}" for i in range(len(hist_list))]
+
+            if len(self.feature_names) != len(hist_list):
+                raise ValueError(
+                    f"Given length of feature names {self.feature_names} ({len(self.feature_names)}) "
+                    f"do not match returned histograms ({len(hist_list)})!"
+                )
+            for _hist_fn, _histo in zip(self.feature_names, hist_list):
                 self.histograms[dataset_name][_hist_fn] = _histo
 
         # convert dataset names to str to support FOBS
@@ -99,7 +116,7 @@ class ClientAlgoStatistics(Statistics):
         for ds in self.stats:
             # convert dataset names to str to support FOBS
             features[str(ds)] = []
-            for feat_name in self.stats[ds][FlStatistics.FEATURE_NAMES]:
+            for feat_name in self.feature_names:
                 features[str(ds)].append(Feature(feat_name, DataType.FLOAT))
 
         return features
