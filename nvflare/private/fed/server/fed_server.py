@@ -723,7 +723,6 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
         finally:
             self.engine.engine_info.status = MachineStatus.STOPPED
-            self.engine.run_manager = None
             self.run_manager = None
 
     def create_run_manager(self, workspace, job_id):

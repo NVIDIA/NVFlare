@@ -14,7 +14,7 @@
 
 import os
 
-from nvflare.apis.fl_constant import MachineStatus
+from nvflare.apis.fl_constant import FLContextKey, MachineStatus
 from nvflare.apis.workspace import Workspace
 from nvflare.private.fed.app.fl_conf import create_privacy_manager
 from nvflare.private.fed.server.server_engine import ServerEngine
@@ -61,9 +61,12 @@ class ServerAppRunner:
 
             server.start_run(job_id, app_root, conf, args, snapshot)
         except BaseException as e:
+            with server.engine.new_context() as fl_ctx:
+                fl_ctx.set_prop(key=FLContextKey.FATAL_SYSTEM_ERROR, value=True, private=True, sticky=True)
             logger.exception(f"FL server execution exception: {secure_format_exception(e)}")
             raise e
         finally:
+            self.update_job_run_status(server)
             server.status = ServerStatus.STOPPED
             server.engine.engine_info.status = MachineStatus.STOPPED
             server.stop_training()
@@ -71,3 +74,6 @@ class ServerAppRunner:
     def sync_up_parents_process(self, args, server):
         server.engine.create_parent_connection(int(args.conn))
         server.engine.sync_clients_from_main_process()
+
+    def update_job_run_status(self, server):
+        server.engine.update_job_run_status()
