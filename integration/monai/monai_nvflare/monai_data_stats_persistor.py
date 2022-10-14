@@ -28,8 +28,8 @@ class MonaiDataStatsPersistor(FLComponent):
         """Persist pytorch-based from MONAI bundle configuration.
 
         Args:
-            output_path: path to save the analysis result.
-            fmt: format used to save the analysis results. Defaults to "yaml".
+            fmt: format used to save the analysis results using MONAI's `ConfigParser`.
+                Supported suffixes are "json", "yaml", "yml". Defaults to "yaml".
 
         Raises:
             ValueError: when source_ckpt_filename does not exist
