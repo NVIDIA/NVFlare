@@ -8,15 +8,16 @@ The [U-Net](https://arxiv.org/abs/1505.04597) model is trained to segment the wh
 ## Run automated experiments
 We use the NVFlare simulator to run FL training automatically, the 6 clients are named `client_I2CVB, client_MSD, client_NCI_ISBI_3T, client_NCI_ISBI_Dx, client_Promise12, client_PROSTATEx`
 ### Prepare local configs
-First, we add the image directory root to `config_train.json` files for generating the absolute path to dataset and datalist. In the current folder structure, it will be `${PWD}/..`, it can be any arbitary path where the data locates.  
+First, we copy the custom code to job folders, and add the image directory root to `config_train.json` files for generating the absolute path to dataset and datalist. In the current folder structure, it will be `${PWD}/..`, it can be any arbitary path where the data locates.  
 ```
-for alg in prostate_central prostate_fedavg prostate_fedprox prostate_ditto
+for job in prostate_central prostate_fedavg prostate_fedprox prostate_ditto
 do
-  sed -i "s|DATASET_ROOT|${PWD}/../data_preparation|g" configs/${alg}/config/config_train.json
+  cp -r custom/ job_configs/${job}/app/
+  sed -i "s|DATASET_ROOT|${PWD}/../data_preparation|g" job_configs/${job}/app/config/config_train.json
 done
 ```
 ### Use NVFlare simulator to run the experiments
-FL training will be run with the simulator command, following the pattern:
+We use NVFlare simulator to run the FL training experiments, following the pattern:
 ```
 nvflare simulator job_configs/[job] -w ${PWD}/workspaces/[job] -c [clients] -gpu [gpu] -t [thread]
 ```
@@ -31,6 +32,7 @@ For federated training, we use
 ```
 -c client_I2CVB, client_MSD, client_NCI_ISBI_3T, client_NCI_ISBI_Dx, client_Promise12, client_PROSTATEx -gpu 0,1,0,1,0,1
 ```
+
 Note that since the current experiments are performed on a light 2D dataset, we used [`CacheDataset`](https://docs.monai.io/en/stable/data.html#cachedataset) and set cache rate to 1.0 to accelerate the training process. Please adjust the cache rate if memory resource is limited on your system.
 
 ### Experiment list

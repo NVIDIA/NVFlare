@@ -8,16 +8,16 @@ The [3D U-Net](https://arxiv.org/abs/1606.06650) model is trained to segment the
 ## Run automated experiments
 We use the NVFlare simulator to run FL training automatically, the 4 clients are named `client_I2CVB, client_MSD, client_NCI_ISBI_3T, client_NCI_ISBI_Dx`
 ### Prepare local configs
-First, we add the image directory root to `config_train.json` files for generating the absolute path to dataset and datalist. In the current folder structure, it will be `${PWD}/..`, it can be any arbitary path where the data locates.  
+First, we copy the custom code to job folders, and add the image directory root to `config_train.json` files for generating the absolute path to dataset and datalist. In the current folder structure, it will be `${PWD}/..`, it can be any arbitary path where the data locates.  
 ```
-for alg in prostate_central prostate_fedavg prostate_fedprox prostate_ditto
+for job in prostate_central prostate_fedavg prostate_fedprox prostate_ditto
 do
-  sed -i "s|DATASET_ROOT|${PWD}/../data_preparation|g" configs/${alg}/config/config_train.json
+  cp -r custom/ job_configs/${job}/app/
+  sed -i "s|DATASET_ROOT|${PWD}/../data_preparation|g" job_configs/${job}/app/config/config_train.json
 done
 ```
-### 2.2 Start the FL system and submit jobs
-Use NVFlare simulator to run the experiments
-FL training will be run with the simulator command, following the pattern:
+### Use NVFlare simulator to run the experiments
+We use NVFlare simulator to run the FL training experiments, following the pattern:
 ```
 nvflare simulator job_configs/[job] -w ${PWD}/workspaces/[job] -c [clients] -gpu [gpu] -t [thread]
 ```
