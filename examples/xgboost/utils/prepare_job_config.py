@@ -26,7 +26,12 @@ MODE_ALGO_MAP = {"bagging": "tree-based", "cyclic": "tree-based", "histogram": "
 
 def job_config_args_parser():
     parser = argparse.ArgumentParser(description="generate train configs for HIGGS dataset")
-    parser.add_argument("--data_root", type=str, default="/tmp/nvflare/xgboost_higgs_dataset", help="Path to dataset")
+    parser.add_argument(
+        "--data_root",
+        type=str,
+        default="/tmp/nvflare/xgboost_higgs_dataset",
+        help="Path to dataset config files for each site",
+    )
     parser.add_argument("--site_num", type=int, default=5, help="Total number of sites")
     parser.add_argument("--site_name_prefix", type=str, default="site-", help="Site name prefix")
     parser.add_argument("--round_num", type=int, default=100, help="Total number of training rounds")
