@@ -43,6 +43,11 @@ class ServerEngineSpec(ABC):
         pass
 
     @abstractmethod
+    def update_job_run_status(self):
+        """To update the job run status to parent process."""
+        pass
+
+    @abstractmethod
     def validate_clients(self, client_names: List[str]) -> Tuple[List[Client], List[str]]:
         """Validate specified client names.
 

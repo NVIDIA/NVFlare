@@ -106,6 +106,11 @@ class Store(object):
         if project.frozen:
             return {"status": "Project is frozen"}
         req.pop("id", None)
+        short_name = req.pop("short_name", "")
+        if short_name:
+            if len(short_name) > 16:
+                short_name = short_name[:16]
+            project.short_name = short_name
         for k, v in req.items():
             setattr(project, k, v)
         db.session.add(project)

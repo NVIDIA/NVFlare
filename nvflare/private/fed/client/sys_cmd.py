@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+from typing import List
 
 import psutil
 
@@ -27,7 +28,7 @@ from nvflare.private.fed.client.admin import RequestProcessor
 
 
 class SysInfoProcessor(RequestProcessor):
-    def get_topics(self) -> [str]:
+    def get_topics(self) -> List[str]:
         return [SysCommandTopic.SYS_INFO]
 
     def process(self, req: Message, app_ctx) -> Message:

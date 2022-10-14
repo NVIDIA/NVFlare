@@ -1,0 +1,25 @@
+n_servers: 1
+n_clients: 2
+jobs_root_dir: ./data/apps
+cleanup: True
+poll_period: 1
+
+tests:
+  - test_name: "run cyclic"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job cyclic" ]
+        "result":
+          "type": "run_state"
+          "data": { }
+      - "trigger":
+          "type": "run_state"
+          "data": { "run_finished": True }
+        "actions": [ "ensure_current_job_done" ]
+        "result":
+          "type": "run_state"
+          "data": { "run_finished": True }
+    validators:
+      - path: tests.integration_test.validators.TFModelValidator

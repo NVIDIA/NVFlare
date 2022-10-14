@@ -15,12 +15,20 @@
 import json
 import os
 import shutil
+import tempfile
+from typing import Dict
 
 import yaml
 
+from nvflare.apis.job_def import RunStatus
+from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.hci.client.fl_admin_api import FLAdminAPI
+from nvflare.fuel.hci.client.fl_admin_api_constants import FLDetailKey
+from nvflare.fuel.hci.client.fl_admin_api_spec import TargetType
 
+# need to be consistent with provision
 RESOURCE_CONFIG = "resources.json"
+DEFAULT_RESOURCE_CONFIG = "resources.json.default"
 FILE_STORAGE = "nvflare.app_common.storages.filesystem_storage.FilesystemStorage"
 
 
@@ -40,17 +48,17 @@ def cleanup_path(path: str):
         shutil.rmtree(path)
 
 
-def _read_resource_json(poc_path: str, site_type: str) -> dict:
-    resource_json_path = os.path.join(poc_path, site_type, "local", RESOURCE_CONFIG)
+def _get_resource_json_file(workspace_path: str, site_name: str) -> str:
+    resource_json_path = os.path.join(workspace_path, site_name, "local", RESOURCE_CONFIG)
     if not os.path.exists(resource_json_path):
-        raise RuntimeError(f"Missing {RESOURCE_CONFIG} at: {resource_json_path}")
-    with open(resource_json_path, "r") as f:
-        resource_json = json.load(f)
-    return resource_json
+        default_json_path = os.path.join(workspace_path, site_name, "local", DEFAULT_RESOURCE_CONFIG)
+        if not os.path.exists(default_json_path):
+            raise RuntimeError(f"Missing {RESOURCE_CONFIG} at: {resource_json_path}")
+        resource_json_path = default_json_path
+    return resource_json_path
 
 
-def get_snapshot_path_from_poc(path: str) -> str:
-    resource_json = _read_resource_json(poc_path=path, site_type="server")
+def _check_snapshot_persistor_in_resource(resource_json: dict):
     if "snapshot_persistor" not in resource_json:
         raise RuntimeError(f"Missing snapshot_persistor in {RESOURCE_CONFIG}")
     if "args" not in resource_json["snapshot_persistor"]:
@@ -65,11 +73,30 @@ def get_snapshot_path_from_poc(path: str) -> str:
         raise RuntimeError(f"Only support {FILE_STORAGE} storage in snapshot_persistor's args")
     if "root_dir" not in resource_json["snapshot_persistor"]["args"]["storage"]["args"]:
         raise RuntimeError("Missing root_dir in snapshot_persistor's storage's args")
+    return True
+
+
+def _get_snapshot_path_from_workspace(path: str, server_name: str) -> str:
+    resource_json_path = _get_resource_json_file(path, server_name)
+    with open(resource_json_path, "r") as f:
+        resource_json = json.load(f)
+    _check_snapshot_persistor_in_resource(resource_json)
     return resource_json["snapshot_persistor"]["args"]["storage"]["args"]["root_dir"]
 
 
-def get_job_store_path_from_poc(path: str) -> str:
-    resource_json = _read_resource_json(poc_path=path, site_type="server")
+def update_snapshot_path_in_workspace(path: str, server_name: str, snapshot_path: str = None):
+    new_snapshot_path = snapshot_path if snapshot_path else tempfile.mkdtemp()
+    resource_json_path = _get_resource_json_file(workspace_path=path, site_name=server_name)
+    with open(resource_json_path, "r") as f:
+        resource_json = json.load(f)
+    _check_snapshot_persistor_in_resource(resource_json)
+    resource_json["snapshot_persistor"]["args"]["storage"]["args"]["root_dir"] = new_snapshot_path
+    with open(resource_json_path, "w") as f:
+        json.dump(resource_json, f)
+    return new_snapshot_path
+
+
+def _check_job_store_in_resource(resource_json: dict):
     if "components" not in resource_json:
         raise RuntimeError(f"Missing components in {RESOURCE_CONFIG}")
     job_manager_config = None
@@ -82,7 +109,101 @@ def get_job_store_path_from_poc(path: str) -> str:
         raise RuntimeError("Missing args in job_manager.")
     if "uri_root" not in job_manager_config["args"]:
         raise RuntimeError("Missing uri_root in job_manager's args.")
-    return job_manager_config["args"]["uri_root"]
+
+
+def _get_job_store_path_from_workspace(path: str, server_name: str) -> str:
+    resource_json_path = _get_resource_json_file(path, server_name)
+    with open(resource_json_path, "r") as f:
+        resource_json = json.load(f)
+    _check_job_store_in_resource(resource_json)
+    for c in resource_json["components"]:
+        if "id" in c and c["id"] == "job_manager":
+            return c["args"]["uri_root"]
+
+
+def update_job_store_path_in_workspace(path: str, server_name: str, job_store_path: str = None):
+    new_job_store_path = job_store_path if job_store_path else tempfile.mkdtemp()
+    resource_json_path = _get_resource_json_file(workspace_path=path, site_name=server_name)
+    with open(resource_json_path, "r") as f:
+        resource_json = json.load(f)
+
+    if "components" not in resource_json:
+        raise RuntimeError(f"Missing components in {RESOURCE_CONFIG}")
+    _check_job_store_in_resource(resource_json)
+    for c in resource_json["components"]:
+        if "id" in c and c["id"] == "job_manager":
+            c["args"]["uri_root"] = new_job_store_path
+
+    with open(resource_json_path, "w") as f:
+        json.dump(resource_json, f)
+
+    return new_job_store_path
+
+
+def cleanup_job_and_snapshot(workspace: str, server_name: str):
+    job_store_path = _get_job_store_path_from_workspace(workspace, server_name)
+    snapshot_path = _get_snapshot_path_from_workspace(workspace, server_name)
+    cleanup_path(job_store_path)
+    cleanup_path(snapshot_path)
+
+
+def _parse_job_run_statuses(list_jobs_string: str) -> Dict[str, RunStatus]:
+    """Parse the list_jobs string to return job run status."""
+    job_statuses = {}
+    # first three is table start and header row, last one is table end
+    rows = list_jobs_string.splitlines()[3:-1]
+    for r in rows:
+        segments = [s.strip() for s in r.split("|")]
+        job_statuses[segments[1]] = RunStatus(segments[3])
+    return job_statuses
+
+
+def get_job_run_statuses(admin_api: FLAdminAPI):
+    list_jobs_result = admin_api.list_jobs()
+    if list_jobs_result["status"] == APIStatus.SUCCESS:
+        list_jobs_string = list_jobs_result["details"]["message"]
+        job_run_statuses = _parse_job_run_statuses(list_jobs_string)
+        return job_run_statuses
+    return {}
+
+
+def check_job_done(job_id: str, admin_api: FLAdminAPI):
+    response = admin_api.check_status(target_type=TargetType.SERVER)
+    if response and "status" in response:
+        if response["status"] != APIStatus.SUCCESS:
+            print(f"Check server status failed: {response}.")
+            return False
+        else:
+            if "details" not in response:
+                print(f"Check server status missing details: {response}.")
+                return False
+            else:
+                # check if run is stopped
+                if (
+                    FLDetailKey.SERVER_ENGINE_STATUS in response["details"]
+                    and response["details"][FLDetailKey.SERVER_ENGINE_STATUS] == "stopped"
+                ):
+                    response = admin_api.check_status(target_type=TargetType.CLIENT)
+                    if response["status"] != APIStatus.SUCCESS:
+                        print(f"CHECK client status failed: {response}")
+                        return False
+                    if "details" not in response:
+                        print(f"Check client status missing details: {response}.")
+                        return False
+                    else:
+                        job_run_statuses = get_job_run_statuses(admin_api)
+                        print(f"response is {response}")
+                        print(f"job_run_statuses is {job_run_statuses}")
+                        for row in response["details"]["client_statuses"]:
+                            if row[3] != "stopped":
+                                continue
+                        # check if the current job is completed
+                        if job_id in job_run_statuses and job_run_statuses[job_id] in (
+                            RunStatus.FINISHED_COMPLETED.value,
+                            RunStatus.FINISHED_ABORTED.value,
+                        ):
+                            return True
+    return False
 
 
 def run_admin_api_tests(admin_api: FLAdminAPI):

@@ -15,8 +15,10 @@
 import argparse
 import os
 import signal
+import sys
 
 import docker
+from nvflare.apis.utils.format_check import name_check
 from nvflare.lighter.utils import generate_password
 
 
@@ -36,14 +38,25 @@ def start(args):
     if passphrase:
         environment["NVFL_DASHBOARD_PP"] = passphrase
     if not os.path.exists(os.path.join(folder, "db.sqlite")):
-        answer = input(
-            "Please provide project admin email address.  This person will be the super user of the dashboard and this project.\n"
-        )
+        need_email = True
+        while need_email:
+            answer = input(
+                "Please provide project admin email address.  This person will be the super user of the dashboard and this project.\n"
+            )
+            error, reason = name_check(answer, "email")
+            if error:
+                print(f"Expecting an email address, but got one in an invalid format.  Reason: {reason}")
+            else:
+                need_email = False
         print("generating random password")
         pwd = generate_password(8)
         print(f"Project admin credential is {answer} and the password is {pwd}")
         environment.update({"NVFL_CREDENTIAL": f"{answer}:{pwd}"})
-    client = docker.from_env()
+    try:
+        client = docker.from_env()
+    except docker.errors.DockerException:
+        print("Unable to communicate to docker daemon/socket.  Please make sure your docker is up and running.")
+        exit(0)
     dashboard_image = "nvflare/nvflare"
     try:
         print(f"Pulling {dashboard_image}, may take some time to finish.")
@@ -83,7 +96,11 @@ def start(args):
 
 
 def stop():
-    client = docker.from_env()
+    try:
+        client = docker.from_env()
+    except docker.errors.DockerException:
+        print("Unable to communicate to docker daemon/socket.  Please make sure your docker is up and running.")
+        exit(0)
     try:
         container_obj = client.containers.get("nvflare-dashboard")
     except docker.errors.NotFound:
@@ -91,6 +108,13 @@ def stop():
         exit(0)
     container_obj.kill(signal=signal.SIGINT)
     print("nvflare-dashboard exited")
+
+
+def has_no_arguments() -> bool:
+    last_item = sys.argv[-1]
+    return (
+        last_item.endswith("dashboard.cli") or last_item.endswith("dashboard/cli.py") or last_item.endswith("dashboard")
+    )
 
 
 def main():
@@ -114,6 +138,9 @@ def define_dashboard_parser(parser):
 
 
 def handle_dashboard(args):
+    if has_no_arguments():
+        print("Add -h option to see usage")
+        exit(0)
     if args.stop:
         stop()
     elif args.start:

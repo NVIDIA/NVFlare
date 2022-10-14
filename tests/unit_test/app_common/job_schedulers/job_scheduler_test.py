@@ -141,6 +141,9 @@ class MockServerEngine(ServerEngineSpec):
                         resource_requirement=resource_reqs[site_name], token=token, fl_ctx=fl_ctx
                     )
 
+    def update_job_run_status(self):
+        pass
+
 
 def create_servers(server_num, sites: List[Site]):
     servers = []

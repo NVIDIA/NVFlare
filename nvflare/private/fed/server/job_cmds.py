@@ -113,7 +113,7 @@ class JobCommandModule(CommandModule, CommandUtil):
                     description="abort the client current task execution",
                     usage="abort_task job_id <client-name>",
                     handler_func=self.abort_task,
-                    authz_func=self.authorize_abort_client_operation,
+                    authz_func=self.authorize_abort_client_task,
                 ),
                 CommandSpec(
                     name=AdminCommandNames.CLONE_JOB,

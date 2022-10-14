@@ -285,9 +285,10 @@ class JobRunner(FLComponent):
                     with self.lock:
                         job = self.running_jobs.get(job_id)
                         if job:
-                            if job_id in engine.execution_exception_run_processes:
+                            exception_run_processes = engine.exception_run_processes
+                            if job_id in exception_run_processes:
                                 self.log_info(fl_ctx, f"Try to abort run ({job_id}) on clients.")
-                                run_process = engine.execution_exception_run_processes[job_id]
+                                run_process = exception_run_processes[job_id]
 
                                 # stop client run
                                 client_sites = run_process.get(RunProcessKey.PARTICIPANTS)
@@ -300,6 +301,7 @@ class JobRunner(FLComponent):
                             fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id)
                             self.fire_event(EventType.JOB_COMPLETED, fl_ctx)
                             self.log_debug(fl_ctx, f"Finished running job:{job.job_id}")
+                    engine.remove_exception_process(job_id)
             time.sleep(1.0)
 
     def _save_workspace(self, fl_ctx: FLContext):
@@ -316,7 +318,8 @@ class JobRunner(FLComponent):
     def run(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
 
-        threading.Thread(target=self._job_complete_process, args=[fl_ctx]).start()
+        thread = threading.Thread(target=self._job_complete_process, args=[fl_ctx])
+        thread.start()
 
         job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
         if job_manager:
@@ -377,6 +380,8 @@ class JobRunner(FLComponent):
                 time.sleep(1.0)
         else:
             self.log_error(fl_ctx, "There's no Job Manager defined. Won't be able to run the jobs.")
+
+        thread.join()
 
     def restore_running_job(self, run_number: str, job_id: str, job_clients, snapshot, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()

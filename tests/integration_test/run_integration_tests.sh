@@ -8,7 +8,7 @@ usage()
     echo
     echo "Syntax: ./run_integration_tests.sh -m [-c]"
     echo "options:"
-    echo "m     Which backend/test to run (options: numpy, tensorflow, pytorch, overseer)."
+    echo "m     Which backend/test to run (options: numpy, tensorflow, pytorch, overseer, ha, auth)."
     echo "c     Clean up integration test results."
     echo
     exit 1
@@ -20,7 +20,7 @@ while getopts ":m:c" option; do
     case "${option}" in
         m) # framework/backend
             m=${OPTARG}
-            [[ $m == "numpy" || $m == "tensorflow" || $m == "pytorch" || $m == "overseer" ]] || usage
+            [[ $m == "numpy" || $m == "tensorflow" || $m == "pytorch" || $m == "overseer" || $m == "ha" || $m == "auth" ]] || usage
             prefix="NVFLARE_TEST_FRAMEWORK=$m"
             ;;
         c) # Clean up
@@ -68,6 +68,22 @@ run_pytorch()
     eval "$cmd"
 }
 
+run_ha()
+{
+    echo "Running HA integration tests."
+    cmd="$prefix $cmd system_test.py"
+    echo "$cmd"
+    eval "$cmd"
+}
+
+run_auth()
+{
+    echo "Running federated authorization integration tests."
+    cmd="$prefix $cmd system_test.py"
+    echo "$cmd"
+    eval "$cmd"
+}
+
 if [[ $m == "numpy" ]]; then
     run_numpy
 elif [[ $m == "tensorflow" ]]; then
@@ -76,4 +92,8 @@ elif [[ $m == "pytorch" ]]; then
     run_pytorch
 elif [[ $m == "overseer" ]]; then
     run_overseer
+elif [[ $m == "ha" ]]; then
+    run_ha
+elif [[ $m == "auth" ]]; then
+    run_auth
 fi
