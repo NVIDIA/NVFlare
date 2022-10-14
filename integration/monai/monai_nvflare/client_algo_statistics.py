@@ -22,6 +22,8 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.statistics_spec import Bin, DataType, Feature, Histogram, HistogramType, Statistics
 
+from .utils import convert_dict_keys
+
 
 class ClientAlgoStatistics(Statistics):
     def __init__(self, client_algo_stats_id):
@@ -82,10 +84,15 @@ class ClientAlgoStatistics(Statistics):
         self.histograms = {}
         for dataset_name in self.stats:
             self.histograms[dataset_name] = {}
-            hist_list = self.stats[dataset_name][FlStatistics.DATA_STATS][DataStatsKeys.IMAGE_HISTOGRAM][ImageStatsKeys.HISTOGRAM]
+            hist_list = self.stats[dataset_name][FlStatistics.DATA_STATS][DataStatsKeys.IMAGE_HISTOGRAM][
+                ImageStatsKeys.HISTOGRAM
+            ]
             hist_feature_names = self.stats[dataset_name][FlStatistics.FEATURE_NAMES]
             for _hist_fn, _histo in zip(hist_feature_names, hist_list):
                 self.histograms[dataset_name][_hist_fn] = _histo
+
+        # convert dataset names to str to support FOBS
+        return convert_dict_keys(self.stats)
 
     def features(self) -> Dict[str, List[Feature]]:
         features = {}
@@ -118,7 +125,10 @@ class ClientAlgoStatistics(Statistics):
             if feature_name in self.histograms[dataset_name]:
                 histo = self.histograms[dataset_name][feature_name]
             else:
-                self.log_warning(self.fl_ctx, f"Could not find a matching histogram for feature {feature_name} in dataset {dataset_name}.")
+                self.log_warning(
+                    self.fl_ctx,
+                    f"Could not find a matching histogram for feature {feature_name} in dataset {dataset_name}.",
+                )
                 return Histogram(HistogramType.STANDARD, list())
         else:
             self.log_warning(self.fl_ctx, f"No such dataset {dataset_name}")

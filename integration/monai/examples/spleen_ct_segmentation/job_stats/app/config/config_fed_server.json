@@ -27,6 +27,13 @@
         "output_path": "statistics/image_statistics.json",
         "json_encoder_path": "nvflare.app_common.utils.json_utils.ObjectEncoder"
       }
+    },
+    {
+      "id": "data_stats_persistor",
+      "path": "monai_nvflare.MonaiDataStatsPersistor",
+      "args": {
+        "fmt": "yaml"
+      }
     }
   ]
 }
