@@ -306,14 +306,25 @@ class StatisticsExecutor(Executor):
         inputs: Shareable,
         fl_ctx: FLContext,
     ) -> Histogram:
+
         if StC.STATS_MIN in inputs and StC.STATS_MAX in inputs:
-            global_min_value = inputs[StC.STATS_MIN][dataset_name][feature_name]
-            global_max_value = inputs[StC.STATS_MAX][dataset_name][feature_name]
-            hist_config: dict = statistic_configs.config
-            num_of_bins: int = self.get_number_of_bins(feature_name, hist_config)
-            bin_range: List[int] = self.get_bin_range(feature_name, global_min_value, global_max_value, hist_config)
-            result = self.stats_generator.histogram(dataset_name, feature_name, num_of_bins, bin_range[0], bin_range[1])
-            return result
+            global_min_value = None
+            global_max_value = None
+            if dataset_name in inputs[StC.STATS_MIN] and feature_name in inputs[StC.STATS_MIN][dataset_name]:
+                global_min_value = inputs[StC.STATS_MIN][dataset_name][feature_name]
+            if dataset_name in inputs[StC.STATS_MAX] and feature_name in inputs[StC.STATS_MAX][dataset_name]:
+                global_max_value = inputs[StC.STATS_MAX][dataset_name][feature_name]
+
+            if global_min_value and global_max_value:
+                hist_config: dict = statistic_configs.config
+                num_of_bins: int = self.get_number_of_bins(feature_name, hist_config)
+                bin_range: List[int] = self.get_bin_range(feature_name, global_min_value, global_max_value, hist_config)
+                result = self.stats_generator.histogram(
+                    dataset_name, feature_name, num_of_bins, bin_range[0], bin_range[1]
+                )
+                return result
+            else:
+                return Histogram(HistogramType.STANDARD, list())
         else:
             return Histogram(HistogramType.STANDARD, list())
 
