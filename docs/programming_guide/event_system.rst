@@ -166,3 +166,5 @@ The :class:`ConvertToFedEvent<nvflare.app_common.widgets.convert_to_fed_event.Co
 to a federated event and adds a prefix to that event, which in the example becomes "fed.analytix_log_stats". This event
 is processed by the :class:`TBAnalyticsReceiver<nvflare.app_common.pt.tb_receiver.TBAnalyticsReceiver>` component
 on the server so the server can receive the streamed analytics.
+
+See the :ref:`Hello PyTorch with TensorBoard <hello_pt_tb>` example for an example that uses these components.

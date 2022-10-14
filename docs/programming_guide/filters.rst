@@ -43,6 +43,7 @@ purpose of security. In fact, privacy and homomorphic encryption techniques are 
     - SVTPrivacy for differential privacy through sparse vector techniques (:mod:`nvflare.app_common.filters.svt_privacy`)
     - Homomorphic encryption filters to encrypt data before sharing (:mod:`nvflare.app_common.homomorphic_encryption.he_model_encryptor.py` and :mod:`nvflare.app_common.homomorphic_encryption.he_model_decryptor`)
 
+For an example application using SVTPrivacy, see `Differential Privacy for BraTS18 segmentation (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/brats18>`_.
 
 DXO - Data Exchange Object
 ===========================

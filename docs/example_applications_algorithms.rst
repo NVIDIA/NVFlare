@@ -32,7 +32,7 @@ The following quickstart guides walk you through some of these examples:
     * :ref:`Hello PyTorch <hello_pt>` - Example image classifier using FedAvg and PyTorch as the deep learning training framework
     * :ref:`Hello PyTorch with TensorBoard <hello_pt_tb>` - Example building on Hello PyTorch with TensorBoard streaming from clients to server
     * :ref:`Hello TensorFlow <hello_tf2>` - Example image classifier using FedAvg and TensorFlow as the deep learning training frameworks
-    * `Hello Cyclic Weight Transfer (GitHub) <https://github.com/NVIDIA/NVFlare/blob/main/examples/hello-cyclic>`_ - Example using the CyclicController workflow to implement `Cyclic Weight Transfer <https://pubmed.ncbi.nlm.nih.gov/29617797/>`_ with TensorFlow as the deep learning training framework
+    * `Hello Cyclic Weight Transfer (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-cyclic>`_ - Example using the CyclicController workflow to implement `Cyclic Weight Transfer <https://pubmed.ncbi.nlm.nih.gov/29617797/>`_ with TensorFlow as the deep learning training framework
 
   * **Advanced examples**
     
@@ -75,7 +75,7 @@ redistributed to clients and the process repeats for the specified number of rou
 FedProx
 ^^^^^^^
 `FedProx <https://arxiv.org/abs/1812.06127>`_ implements a :class:`Loss function <nvflare.app_common.pt.pt_fedproxloss.PTFedProxLoss>`
-to penalize a client’s local weights based on deviation from the global model. An example configuration can be found in
+to penalize a client's local weights based on deviation from the global model. An example configuration can be found in
 cifar10_fedprox of the `CIFAR-10 example <https://github.com/NVIDIA/NVFlare/tree/main/examples/cifar10>`_.
 
 FedOpt
