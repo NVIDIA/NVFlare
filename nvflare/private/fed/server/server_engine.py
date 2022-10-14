@@ -266,7 +266,11 @@ class ServerEngine(ServerEngineInternalSpec):
             except BaseException:
                 with self.lock:
                     if job_id in self.run_processes:
-                        self.run_processes.pop(job_id)
+                        run_process_info = self.run_processes.pop(job_id)
+                        return_code = run_process_info[RunProcessKey.CHILD_PROCESS].poll()
+                        # if process exit but with Execution exception
+                        if return_code and return_code != 0:
+                            self.exception_run_processes[job_id] = run_process_info
                 self.engine_info.status = MachineStatus.STOPPED
                 break
 
