@@ -41,6 +41,7 @@ The following quickstart guides walk you through some of these examples:
     * `Hello MONAI (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-monai>`_ - Example medical image analysis using FedAvg and `MONAI <https://monai.io/>`_
     * `Differential Privacy for BraTS18 segmentation (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/brats18>`_ - Illustrates the use of differential privacy for training brain tumor segmentation models using federated learning
     * `Prostate Segmentation from Multi-source Data (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/prostate>`_ - Example of training a multi-institutional prostate segmentation model using `FedAvg <https://arxiv.org/abs/1602.05629>`_, `FedProx <https://arxiv.org/abs/1812.06127>`_, and `Ditto <https://arxiv.org/abs/2012.04221>`_
+    * `Federated Learning for XGBoost (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/prostate>`_ - Example of using NVIDIA FLARE to train an XGBoost model
 
 For the complete collection of example applications, see https://github.com/NVIDIA/NVFlare/tree/main/examples.
 
