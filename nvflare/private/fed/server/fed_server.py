@@ -495,7 +495,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                         self.logger.info("ignored result submission since Server Engine isn't ready")
                         context.abort(grpc.StatusCode.OUT_OF_RANGE, "Server has stopped")
 
-                    shared_fl_context.set_prop(FLContextKey.SHAREABLE, shareable, private=False)
+                    shared_fl_context.set_prop(FLContextKey.SHAREABLE, shareable, private=True)
 
                     contribution_meta = contribution.client.meta
                     client_contrib_id = "{}_{}_{}".format(
@@ -575,7 +575,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             fl_ctx.set_peer_context(shared_fl_context)
             shareable.set_peer_props(shared_fl_context.get_all_public_props())
 
-            shared_fl_context.set_prop(FLContextKey.SHAREABLE, shareable, private=False)
+            shared_fl_context.set_prop(FLContextKey.SHAREABLE, shareable, private=True)
 
             topic = shareable.get_header(ReservedHeaderKey.TOPIC)
 
@@ -723,7 +723,6 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
         finally:
             self.engine.engine_info.status = MachineStatus.STOPPED
-            self.engine.run_manager = None
             self.run_manager = None
 
     def create_run_manager(self, workspace, job_id):

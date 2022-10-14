@@ -98,6 +98,7 @@ class ReservedKey(object):
     CURRENT_JOB_ID = "__current_job_id__"
     JOB_RUN_NUMBER = "__job_run_number__"
     JOB_DEPLOY_DETAIL = "__job_deploy_detail__"
+    FATAL_SYSTEM_ERROR = "__fatal_system_error__"
 
 
 class FLContextKey(object):
@@ -139,6 +140,7 @@ class FLContextKey(object):
     EFFECTIVE_JOB_SCOPE_NAME = "__effective_job_scope_name__"
     SCOPE_PROPERTIES = "__scope_props__"
     SCOPE_OBJECT = "__scope_object__"
+    FATAL_SYSTEM_ERROR = ReservedKey.FATAL_SYSTEM_ERROR
 
 
 class ReservedTopic(object):
@@ -192,6 +194,7 @@ class ServerCommandNames(object):
     AUX_SEND = "aux_send"
     SHOW_STATS = "show_stats"
     GET_ERRORS = "get_errors"
+    UPDATE_RUN_STATUS = "update_run_status"
 
 
 class ServerCommandKey(object):

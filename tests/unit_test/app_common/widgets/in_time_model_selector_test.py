@@ -82,7 +82,7 @@ class TestInTimeModelSelector:
                 },
             )
 
-            peer_ctx.set_prop(FLContextKey.SHAREABLE, dxo.to_shareable(), private=False)
+            peer_ctx.set_prop(FLContextKey.SHAREABLE, dxo.to_shareable(), private=True)
             fl_ctx = engine.fl_ctx_mgr.new_context()
             fl_ctx.set_prop(FLContextKey.PEER_CONTEXT, peer_ctx)
 
