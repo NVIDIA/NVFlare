@@ -9,18 +9,45 @@
 
     },
     {
-      "name": "private",
+      "name": "test",
       "task_result_filters": [
         {
           "path": "test_filter.TestFilter",
           "args": {
-            "name": "============== Result filter for private scope ============"
+            "name": "============== Result filter for test scope ============"
           }
         }
       ],
       "task_data_filters": [
+        {
+          "path": "test_filter.TestFilter",
+          "args": {
+            "name": "============== Data filter for test scope ============"
+          }
+        }
+      ]
+    },
+    {
+      "name": "private",
+      "task_result_filters": [
+        {
+          "path": "nvflare.app_common.filters.percentile_privacy.PercentilePrivacy",
+          "args": {
+            "percentile": 10,
+            "gamma": 0.02
+          }
+        }
+      ],
+      "task_data_filters": [
+        {
+          "path": "test_filter.TestFilter",
+          "args": {
+            "name": "============== Data filter for test scope ============"
+          }
+        }
       ]
     }
+
 
   ],
   "default_scope": "public"

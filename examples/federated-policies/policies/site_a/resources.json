@@ -16,7 +16,7 @@
         },
         {
           "id": "resource_consumer",
-          "path": "nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer",
+          "path": "nvflare.app_common.resource_consumers.list_resource_consumer.ListResourceConsumer",
           "args": {
           }
         }

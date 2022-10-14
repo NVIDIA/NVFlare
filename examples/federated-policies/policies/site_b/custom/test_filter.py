@@ -31,3 +31,4 @@ class TestFilter(Filter):
             raise ContentBlockedException("Content blocked by filter " + self.name)
 
         log.info(f"Filter {self.name} is invoked")
+        return shareable

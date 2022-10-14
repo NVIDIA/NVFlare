@@ -74,7 +74,7 @@ Multiple users can login at the same time by using multiple terminals.
 
 The setup.sh copies the jobs folder to the workspace folder. Job can be submitted like this,
 ::
-   submit_job ../../jobs/job1
+   submit_job ../../job1
 
 Shutting down NVFlare
 _____________________
@@ -104,10 +104,12 @@ Jobs
 ____
 All the jobs run the same app (numpy-sag) but have different scopes defined in :code:`meta.json`.
 
-* job1: Scope is :code:`public`
-* job2: Scope is :code:`private`
-* job3: It has no scope defined.
-* job4: It defines an non-existent scope :code:`foo`
+* job1: Scope is :code:`public`. No filters.
+* job2: Scope is :code:`test`. Test filters are applied to data and result.
+* job3: Scope is :code:`private`. PercentilePrivacy filter is applied to result.
+* job4: It has no scope defined.
+* job5: It defines an non-existent scope :code:`foo`
+
 
 Use Cases
 ---------
@@ -125,16 +127,16 @@ nothing to do with job, :code:`job1` can be used in all tests.
       - Command
       - Expected behavior
     * - trainer@a.org
-      - submit_job job1
+      - submit_job ../../job1
       - Job deployed on all sites
     * - trainer@b.org
       - clone_job
       - Rejected because submitter is diff
     * - admin@a.org
-      - submit_job job1
+      - submit_job ../../job1
       - Rejected because org_admin is not allowed to submit jobs
     * - trainer@b.org
-      - submit_job
+      - submit_job ../../job1
       - site_a rejected the job due to diff org
 
 Privacy
@@ -152,9 +154,11 @@ site_a has no privacy policy defined, all these behaviors can be seen on site_b.
     * - job2
       - Job deployed with TestFilter applied
     * - job3
-      - Job deployed using default scope :code:`public`
+      - Job deployed with PercentilePrivacy filter applied to the result
     * - job4
-      - Job rejected because :code:`foo` doesn't exist
+      - Job deployed using default scope :code:`public`
+    * - job5
+      - Job rejected by site_b because :code:`foo` doesn't exist
 
 
 
