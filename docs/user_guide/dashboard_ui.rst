@@ -18,7 +18,8 @@ Users of the role ``Org Admin`` have the additional ability to specify the name 
 and then download startup kits for each client site after it is approved.
 
 Finally, the ``Project Admin`` or project administrator is responsible for overall site management from setting up the project
-to approving the users and client sites after inviting users to sign up. The ``Project Admin`` can also download startup kits
+to approving the users and client sites after inviting users to sign up (for details on how the project administrator can set up
+the site, see :ref:`dashboard_api`). The ``Project Admin`` can also download startup kits
 for the server(s) and overseer (if :ref:`HA mode <high_availability>` is enabled).
 
 Member and Lead User Experience

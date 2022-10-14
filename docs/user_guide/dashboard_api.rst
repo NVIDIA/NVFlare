@@ -10,6 +10,49 @@ as well as to generate those startup kits for users to download.
  
 Most of the details about provisioning can be found in :ref:`provisioning`.  In this section, we focus on the user interaction with Dashboard and its backend API.
 
+*****************************
+Dashboard commandline options
+*****************************
+
+Running ``nvflare dashboard -h`` shows all available options.
+
+.. code-block:: shell
+
+    (nvflare_venv) ~/workspace/repos/flare$ nvflare dashboard -h
+    usage: nvflare dashboard [-h] [--start] [--stop] [-p PORT] [-f FOLDER] [-i DASHBOARD_IMAGE] [--passphrase PASSPHRASE] [-e ENV]
+
+    optional arguments:
+    -h, --help            show this help message and exit
+    --start               start dashboard
+    --stop                stop dashboard
+    -p PORT, --port PORT  port to listen
+    -f FOLDER, --folder FOLDER
+                            folder containing necessary info (default: current working directory)
+    --passphrase PASSPHRASE
+                            Passphrase to encrypt/decrypt root CA private key. !!! Do not share it with others. !!!
+    -e ENV, --env ENV     additonal environment variables: var1=value1
+
+To start Dashboard, run ``nvflare dashboard --start``.  For the first time, it may take a while to download the nvflare image.
+
+We suggest you to set the passphrase to protect the private key of root CA.  Once it's set, you have to provide the same passphrase everytime you
+restart the dashboard for the same project.
+
+Dashboard docker will detect if the database is initialized.  If not, it will ask the project_admin email address and will generate a random password.  Please
+login with this credential as project_admin to finish the project setting in Dashboard.  The project_admin can change his/her password in the Dashboard.
+
+If you would like to start a new project, please remove the db.sqlite file in current working directory (or the directory set in --folder option).  Dashboard will start
+from scratch and proceed as the previous paragraph.
+
+The Dashboard will also check the cert folder inside current working directory (or --folder option) to load web.crt and web.key.  If those files exists, Dashboard will
+load them and run as HTTPS server.  If Dashboard does not find both of them, it runs as HTTP server.  In both cases, the service listens to port 443, unless it's set otherwise
+by --port option.
+
+
+.. note::
+
+    Running Dashboard requires docker. You have to ensure your system can pull and run docker images. The docker pull may take some time depending on your network connection.
+
+To stop the running Dashboard, run ``nvflare dashboard --stop``.
 
 **********************************
 NVIDIA FLARE Dashboard backend API
@@ -56,47 +99,3 @@ The following is the schema of the underlying database used by the backend API.
 
 .. image:: ../resources/dashboard_schema.png
     :height: 800px
-
-*****************************
-Dashboard commandline options
-*****************************
-
-Running ``nvflare dashboard -h`` shows all available options.
-
-.. code-block:: shell
-
-    (nvflare_venv) ~/workspace/repos/flare$ nvflare dashboard -h
-    usage: nvflare dashboard [-h] [--start] [--stop] [-p PORT] [-f FOLDER] [-i DASHBOARD_IMAGE] [--passphrase PASSPHRASE] [-e ENV]
-
-    optional arguments:
-    -h, --help            show this help message and exit
-    --start               start dashboard
-    --stop                stop dashboard
-    -p PORT, --port PORT  port to listen
-    -f FOLDER, --folder FOLDER
-                            folder containing necessary info (default: current working directory)
-    --passphrase PASSPHRASE
-                            Passphrase to encrypt/decrypt root CA private key. !!! Do not share it with others. !!!
-    -e ENV, --env ENV     additonal environment variables: var1=value1
-
-To start Dashboard, run ``nvflare dashboard --start``.  For the first time, it may take a while to download the nvflare image.
-
-We suggest you to set the passphrase to protect the private key of root CA.  Once it's set, you have to provide the same passphrase everytime you
-restart the dashboard for the same project.
-
-Dashboard docker will detect if the database is initialized.  If not, it will ask the project_admin email address and will generate a random password.  Please
-login with this credential as project_admin to finish the project setting in Dashboard.  The project_admin can change his/her password in the Dashboard.
-
-If you would like to start a new project, please remove the db.sqlite file in current working directory (or the directory set in --folder option).  Dashboard will start
-from scratch and proceed as the previous paragraph.
-
-The Dashboard will also check the cert folder inside current working directory (or --folder option) to load web.crt and web.key.  If those files exists, Dashboard will
-load them and run as HTTPS server.  If Dashboard does not find both of them, it runs as HTTP server.  In both cases, the service listens to port 443, unless it's set otherwise
-by --port option.
-
-
-.. note::
-
-    Running Dashboard requires docker.  You have to ensure your system can pull and run docker images
-
-To stop the running Dashboard, run ``nvflare dashboard --stop``.
