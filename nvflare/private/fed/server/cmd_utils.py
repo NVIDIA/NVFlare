@@ -50,7 +50,11 @@ class CommandUtil(object):
 
         return PreAuthzReturnCode.REQUIRE_AUTHZ
 
-    def authorize_abort_client_operation(self, conn: Connection, args: List[str]) -> PreAuthzReturnCode:
+    def authorize_abort_client_task(self, conn: Connection, args: List[str]) -> PreAuthzReturnCode:
+        if len(args) < 2:
+            conn.append_error("missing job_id (syntax is: abort_task job_id <client-name>)")
+            return PreAuthzReturnCode.ERROR
+
         auth_args = [args[0], self.TARGET_TYPE_CLIENT]
         auth_args.extend(args[2:])
 

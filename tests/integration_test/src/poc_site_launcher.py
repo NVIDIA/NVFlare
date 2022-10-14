@@ -16,6 +16,13 @@ import os
 import shutil
 import sys
 import tempfile
+import time
+
+from tests.integration_test.utils import (
+    cleanup_job_and_snapshot,
+    update_job_store_path_in_workspace,
+    update_snapshot_path_in_workspace,
+)
 
 from .site_launcher import ServerProperties, SiteLauncher, SiteProperties, run_command_in_subprocess
 
@@ -36,7 +43,7 @@ def _get_server_name(server_id: int):
 
 
 class POCSiteLauncher(SiteLauncher):
-    def __init__(self, poc_dir: str):
+    def __init__(self, poc_dir: str, n_servers: int, n_clients: int):
         """Launches and keeps track of servers and clients."""
         super().__init__()
 
@@ -45,6 +52,8 @@ class POCSiteLauncher(SiteLauncher):
             shutil.rmtree(self.poc_dir)
         shutil.copytree(poc_dir, self.poc_dir)
         print(f"Using POC at dir: {self.poc_dir}")
+        self.n_servers = n_servers
+        self.n_clients = n_clients
 
     def start_overseer(self):
         raise RuntimeError("POC mode does not have overseer.")
@@ -52,16 +61,17 @@ class POCSiteLauncher(SiteLauncher):
     def stop_overseer(self):
         pass
 
-    def prepare_workspace(self, n_servers: int, n_clients: int) -> str:
+    def prepare_workspace(self) -> str:
         # prepare server
         src_server_dir = os.path.join(self.poc_dir, "server")
+        update_job_store_path_in_workspace(self.poc_dir, "server")
+        update_snapshot_path_in_workspace(self.poc_dir, "server")
 
         # Create upload directory
         os.makedirs(os.path.join(src_server_dir, "transfer"), exist_ok=True)
 
-        for i in range(n_servers):
-            server_id = i
-            server_name = _get_server_name(server_id)
+        for i in range(self.n_servers):
+            server_name = _get_server_name(i)
 
             # Copy and create new directory
             server_dir_name = os.path.join(self.poc_dir, server_name)
@@ -77,16 +87,28 @@ class POCSiteLauncher(SiteLauncher):
             with open(fed_server_path, "w") as f:
                 f.write(fed_server_json)
 
+            # clean up previous snapshot/job
+            cleanup_job_and_snapshot(self.poc_dir, server_name)
+
         # prepare client
         src_client_directory = os.path.join(self.poc_dir, "client")
-        for i in range(1, n_clients + 1):
-            client_id = i
-            client_name = _get_client_name(client_id)
+        for i in range(1, self.n_clients + 1):
+            client_name = _get_client_name(i)
 
             # Copy and create new directory
             client_dir_name = os.path.join(self.poc_dir, client_name)
             shutil.copytree(src_client_directory, client_dir_name)
+
         return self.poc_dir
+
+    def start_servers(self):
+        for i in range(self.n_servers):
+            self.start_server(i)
+            time.sleep(1)
+
+    def start_clients(self):
+        for i in range(1, self.n_clients + 1):
+            self.start_client(i)
 
     def start_server(self, server_id: int):
         server_name = _get_server_name(server_id)
@@ -99,10 +121,10 @@ class POCSiteLauncher(SiteLauncher):
         )
         process = run_command_in_subprocess(command)
 
-        self.server_properties[server_id] = ServerProperties(
+        self.server_properties[server_name] = ServerProperties(
             name=server_name, root_dir=server_dir_name, process=process, port=f"8{server_id}03"
         )
-        print(f"Launched server ({server_id}) using {command}. process_id: {process.pid}")
+        print(f"Launched server ({server_name}) using {command}. process_id: {process.pid}")
 
     def start_client(self, client_id: int):
         client_name = _get_client_name(client_id)
@@ -116,9 +138,12 @@ class POCSiteLauncher(SiteLauncher):
         )
         process = run_command_in_subprocess(command)
 
-        self.client_properties[client_id] = SiteProperties(name=client_name, root_dir=client_dir_name, process=process)
+        self.client_properties[client_name] = SiteProperties(
+            name=client_name, root_dir=client_dir_name, process=process
+        )
         print(f"Launched client {client_name} process using {command}. process_id: {process.pid}")
 
     def cleanup(self):
+        cleanup_job_and_snapshot(self.poc_dir, "server")
         print(f"Deleting temporary directory: {self.poc_dir}.")
         shutil.rmtree(self.poc_dir)

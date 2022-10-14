@@ -22,14 +22,7 @@ import time
 import pytest
 
 from tests.integration_test.src import AdminController, POCSiteLauncher, ProvisionSiteLauncher
-from tests.integration_test.utils import (
-    cleanup_path,
-    get_job_store_path_from_poc,
-    get_snapshot_path_from_poc,
-    read_yaml,
-)
-
-POC_PATH = "../../nvflare/poc"
+from tests.integration_test.utils import cleanup_path, read_yaml
 
 
 def get_module_class_from_full_path(full_path):
@@ -44,7 +37,8 @@ def get_test_config(test_config_yaml: str):
     test_config = read_yaml(test_config_yaml)
     test_config["single_app_as_job"] = test_config.get("single_app_as_job", False)
     test_config["cleanup"] = test_config.get("cleanup", True)
-    for x in ["n_servers", "n_clients", "cleanup", "single_app_as_job"]:
+    test_config["ha"] = test_config.get("ha", False)
+    for x in ["cleanup", "single_app_as_job"]:
         if x not in test_config:
             raise RuntimeError(f"Test config: {test_config_yaml} missing required attributes {x}.")
         print(f"\t{x}: {test_config[x]}")
@@ -58,26 +52,21 @@ def get_test_config(test_config_yaml: str):
             raise RuntimeError(f"Test config: {test_config_yaml} missing jobs_root_dir.")
         print(f"\tjobs_root_dir: {test_config['jobs_root_dir']}")
 
+    if test_config["ha"]:
+        if "project_yaml" not in test_config:
+            raise RuntimeError(f"Test config: {test_config_yaml} missing project_yaml.")
+    else:
+        for x in ["n_servers", "n_clients"]:
+            if x not in test_config:
+                raise RuntimeError(f"Test config: {test_config_yaml} missing required attributes {x}.")
+
     return test_config
-
-
-def _cleanup(additional_paths=None, site_launcher=None):
-    path_to_clean = additional_paths if additional_paths else []
-    snapshot_path = get_snapshot_path_from_poc(POC_PATH)
-    job_store_path = get_job_store_path_from_poc(POC_PATH)
-    path_to_clean.append(snapshot_path)
-    path_to_clean.append(job_store_path)
-    if site_launcher:
-        site_launcher.cleanup()
-
-    for p in path_to_clean:
-        cleanup_path(p)
 
 
 test_configs = read_yaml("./test_cases.yml")
 framework = os.environ.get("NVFLARE_TEST_FRAMEWORK", "numpy")
-if framework not in ["numpy", "tensorflow", "pytorch"]:
-    print(f"Framework {framework} is not supported, using default numpy.")
+if framework not in test_configs["test_configs"]:
+    print(f"Framework/test {framework} is not supported, using default numpy.")
     framework = "numpy"
 print(f"Testing framework {framework}")
 test_configs = test_configs["test_configs"][framework]
@@ -93,9 +82,8 @@ def setup_and_teardown_system(request):
 
     cleaned = False
     cleanup_in_the_end = test_config["cleanup"]
-    n_servers = int(test_config["n_servers"])
-    n_clients = int(test_config["n_clients"])
-    ha = test_config.get("ha", False)
+    ha = test_config["ha"]
+    poll_period = test_config.get("poll_period", 5)
 
     test_temp_dir = tempfile.mkdtemp()
 
@@ -103,28 +91,30 @@ def setup_and_teardown_system(request):
     site_launcher = None
     test_cases = []
     try:
-        if not os.path.isdir(POC_PATH):
-            raise RuntimeError(f"Missing POC folder at {POC_PATH}.")
-
-        _cleanup()
-
         if ha:
-            site_launcher = ProvisionSiteLauncher()
+            project_yaml_path = test_config.get("project_yaml")
+            if not os.path.isfile(project_yaml_path):
+                raise RuntimeError(f"Missing project_yaml at {project_yaml_path}.")
+            site_launcher = ProvisionSiteLauncher(project_yaml=project_yaml_path)
+            poc = False
+            super_user_name = "super@test.org"
         else:
-            site_launcher = POCSiteLauncher(poc_dir=POC_PATH)
+            POC_PATH = "../../nvflare/poc"
+            if not os.path.isdir(POC_PATH):
+                raise RuntimeError(f"Missing POC folder at {POC_PATH}.")
+            n_servers = int(test_config["n_servers"])
+            n_clients = int(test_config["n_clients"])
+            site_launcher = POCSiteLauncher(poc_dir=POC_PATH, n_servers=n_servers, n_clients=n_clients)
+            poc = True
+            super_user_name = "admin"
 
-        workspace_root = site_launcher.prepare_workspace(n_servers=n_servers, n_clients=n_clients)
+        workspace_root = site_launcher.prepare_workspace()
         print(f"Workspace root is {workspace_root}")
 
         if ha:
             site_launcher.start_overseer()
-        for i in range(n_servers):
-            site_launcher.start_server(i)
-            time.sleep(5)
-        client_names = []
-        for i in range(1, n_clients + 1):
-            site_launcher.start_client(i)
-            client_names.append(f"site-{i}")
+        site_launcher.start_servers()
+        site_launcher.start_clients()
 
         # testing cases
         test_cases = []
@@ -136,28 +126,44 @@ def setup_and_teardown_system(request):
                     x.get("validators"),
                     x.get("setup", []),
                     x.get("teardown", []),
-                    x.get("event_sequence", ""),
+                    x.get("event_sequence", []),
+                    x.get("reset_job_info", True),
                 ),
             )
 
         download_root_dir = os.path.join(test_temp_dir, "download_result")
         os.mkdir(download_root_dir)
-        admin_controller = AdminController(download_root_dir=download_root_dir)
-        if not admin_controller.initialize(workspace_root_dir=workspace_root, upload_root_dir=jobs_root_dir, ha=ha):
-            raise RuntimeError("AdminController init failed.")
-        admin_controller.ensure_clients_started(num_clients=test_config["n_clients"])
+        admin_controller = AdminController(
+            site_launcher=site_launcher, download_root_dir=download_root_dir, poll_period=poll_period
+        )
+        if not admin_controller.initialize_super_user(
+            workspace_root_dir=workspace_root, upload_root_dir=jobs_root_dir, poc=poc, super_user_name=super_user_name
+        ):
+            raise RuntimeError("AdminController initialize_super_user failed.")
+        if ha:
+            if not admin_controller.initialize_admin_users(
+                workspace_root_dir=workspace_root,
+                upload_root_dir=jobs_root_dir,
+                poc=poc,
+                admin_user_names=site_launcher.admin_user_names,
+            ):
+                raise RuntimeError("AdminController initialize_admin_users failed.")
+        admin_controller.ensure_clients_started(num_clients=len(site_launcher.client_properties.keys()))
     except RuntimeError:
         if admin_controller:
             admin_controller.finalize()
         if site_launcher:
             site_launcher.stop_all_sites()
-        _cleanup([test_temp_dir], site_launcher)
+            site_launcher.cleanup()
+        cleanup_path(test_temp_dir)
         cleaned = True
     yield ha, test_cases, site_launcher, admin_controller
     admin_controller.finalize()
     site_launcher.stop_all_sites()
     if cleanup_in_the_end and not cleaned:
-        _cleanup([test_temp_dir], site_launcher)
+        if site_launcher:
+            site_launcher.cleanup()
+        cleanup_path(test_temp_dir)
 
 
 @pytest.mark.xdist_group(name="system_tests_group")
@@ -170,7 +176,7 @@ class TestSystem:
 
         test_validate_results = []
         for test_data in test_cases:
-            test_name, validators, setup, teardown, event_sequence = test_data
+            test_name, validators, setup, teardown, event_sequence, reset_job_info = test_data
             print(f"Running test {test_name}")
 
             start_time = time.time()
@@ -179,7 +185,7 @@ class TestSystem:
                 process = subprocess.Popen(shlex.split(command))
                 process.wait()
 
-            admin_controller.run_event_sequence(site_launcher, event_sequence)
+            admin_controller.run_event_sequence(event_sequence)
 
             # Get the job validator
             if validators:
@@ -198,26 +204,56 @@ class TestSystem:
                         client_props=list(site_launcher.client_properties.values()),
                     )
                     print(f"Test {test_name}, Validator {job_validator.__class__.__name__}, Result: {job_validate_res}")
-                    validate_result = validate_result and job_validate_res
-
-                test_validate_results.append((test_name, validate_result))
+                    if not job_validate_res:
+                        validate_result = False
+                        break
             else:
-                print("No validators provided so results won't be checked.")
+                print("No validators provided so results set to No Validators.")
+                validate_result = "No Validators"
+            test_validate_results.append((test_name, str(validate_result)))
 
-            print(f"Finished running {test_name} in {time.time() - start_time} seconds.")
+            print(f"Finished running test '{test_name}' in {time.time() - start_time} seconds.")
             for command in teardown:
                 print(f"Running teardown command: {command}")
                 process = subprocess.Popen(shlex.split(command))
                 process.wait()
+            admin_controller.reset_test_info(reset_job_info=reset_job_info)
+            print("\n\n\n\n\n")
 
-        print("==============================================================")
-        print(f"Job validate results: {test_validate_results}")
-        failure = False
-        for job_name, job_result in test_validate_results:
-            print(f"Job name: {job_name}, Result: {job_result}")
-            if not job_result:
-                failure = True
-        print(f"Final result: {not failure}")
-        print("==============================================================")
+        _print_validate_result(validate_result=test_validate_results)
 
-        assert not failure
+
+def _print_validate_result(validate_result: list):
+    test_name_length = 10
+    result_length = 20
+    failure = False
+    for test_name, result in validate_result:
+        test_name_length = max(test_name_length, len(test_name))
+        result_length = max(result_length, len(str(result)))
+        if not result:
+            failure = True
+    print("=" * (test_name_length + result_length + 7))
+    print("| {arg:<{width}s} |".format(arg="Test validate results", width=test_name_length + result_length + 3))
+    print("|" + "-" * (test_name_length + result_length + 5) + "|")
+    print(
+        "| {test_name:<{width1}s} | {result:<{width2}s} |".format(
+            test_name="Test Name",
+            result="Validate Result",
+            width1=test_name_length,
+            width2=result_length,
+        )
+    )
+    print("|" + "-" * (test_name_length + result_length + 5) + "|")
+    for test_name, result in validate_result:
+        print(
+            "| {test_name:<{width1}s} | {result:<{width2}s} |".format(
+                test_name=test_name,
+                result=result,
+                width1=test_name_length,
+                width2=result_length,
+            )
+        )
+    print("|" + "-" * (test_name_length + result_length + 5) + "|")
+    print("| {arg:<{width}s} |".format(arg=f"Final result: {not failure}", width=test_name_length + result_length + 3))
+    print("=" * (test_name_length + result_length + 7))
+    assert not failure

@@ -311,7 +311,7 @@ class AdminClient(cmd.Cmd):
                 info = CommandInfo.CONFIRM_YN
 
         if info == CommandInfo.CONFIRM_YN:
-            answer = input("Are you sure (Y/N): ")
+            answer = input("Are you sure (y/N): ")
             answer = answer.lower()
             if answer != "y" and answer != "yes":
                 return
