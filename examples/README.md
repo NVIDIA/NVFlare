@@ -30,7 +30,7 @@ To get started with these examples, please follow the [Quickstart](https://nvfla
 
 ## 3. Medical Image Analysis
 * [Hello MONAI Bundle](./hello-monai-bundle/README.md)
-  * For an example of using NVIDIA FLARE to train a medical image analysis model using federated averaging (FedAvg) and MONAI Bundle, see ../../integration/monai/README.md.
+  * For an example of using NVIDIA FLARE to train a 3D medical image analysis model using federated averaging (FedAvg) and MONAI Bundle, see [../integration/monai/examples/README.md](../integration/monai/examples/README.md).
 * [Federated Learning with Differential Privacy for BraTS18 segmentation](./brats18/README.md)
    * Illustrates the use of differential privacy for training brain tumor segmentation models using federated learning.
 * [Federated Learning for Prostate Segmentation from Multi-source Data](./prostate/README.md)

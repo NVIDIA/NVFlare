@@ -25,7 +25,7 @@
   "components": [
     {
       "id": "client_algo",
-      "path": "monai.fl.client.monai_algo.MonaiAlgo",
+      "path": "monai.fl.client.MonaiAlgo",
       "args": {
         "bundle_root": "config/spleen_ct_segmentation",
         "local_epochs": 10
