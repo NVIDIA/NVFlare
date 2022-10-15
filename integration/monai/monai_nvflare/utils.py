@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,8 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import json
 
-from .client_algo_executor import ClientAlgoExecutor
-from .client_algo_statistics import ClientAlgoStatistics
-from .monai_bundle_persistor import MonaiBundlePersistor
-from .monai_data_stats_persistor import MonaiDataStatsPersistor
+
+def convert_dict_keys(src_dict):
+    """Convert dictionary to simple types"""
+    return json.loads(json.dumps(src_dict))

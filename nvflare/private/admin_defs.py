@@ -67,10 +67,13 @@ def error_reply(err: str) -> Message:
     return msg
 
 
-def ok_reply(data=None) -> Message:
-    if data is None:
-        data = "ok"
+def ok_reply(topic=None, body=None) -> Message:
+    if body is None:
+        body = "ok"
 
-    msg = Message(topic="reply", body=data)
+    if topic is None:
+        topic = "reply"
+
+    msg = Message(topic=topic, body=body)
     msg.set_header(MsgHeader.RETURN_CODE, ReturnCode.OK)
     return msg
