@@ -32,7 +32,7 @@ The following quickstart guides walk you through some of these examples:
     * :ref:`Hello PyTorch <hello_pt>` - Example image classifier using FedAvg and PyTorch as the deep learning training framework
     * :ref:`Hello PyTorch with TensorBoard <hello_pt_tb>` - Example building on Hello PyTorch with TensorBoard streaming from clients to server
     * :ref:`Hello TensorFlow <hello_tf2>` - Example image classifier using FedAvg and TensorFlow as the deep learning training frameworks
-    * `Hello Cyclic Weight Transfer (GitHub) <https://github.com/NVIDIA/NVFlare/blob/main/examples/hello-cyclic>`_ - Example using the CyclicController workflow to implement `Cyclic Weight Transfer <https://pubmed.ncbi.nlm.nih.gov/29617797/>`_ with TensorFlow as the deep learning training framework
+    * `Hello Cyclic Weight Transfer (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-cyclic>`_ - Example using the CyclicController workflow to implement `Cyclic Weight Transfer <https://pubmed.ncbi.nlm.nih.gov/29617797/>`_ with TensorFlow as the deep learning training framework
 
   * **Advanced examples**
     
@@ -41,6 +41,7 @@ The following quickstart guides walk you through some of these examples:
     * `Hello MONAI (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-monai>`_ - Example medical image analysis using FedAvg and `MONAI <https://monai.io/>`_
     * `Differential Privacy for BraTS18 segmentation (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/brats18>`_ - Illustrates the use of differential privacy for training brain tumor segmentation models using federated learning
     * `Prostate Segmentation from Multi-source Data (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/prostate>`_ - Example of training a multi-institutional prostate segmentation model using `FedAvg <https://arxiv.org/abs/1602.05629>`_, `FedProx <https://arxiv.org/abs/1812.06127>`_, and `Ditto <https://arxiv.org/abs/2012.04221>`_
+    * `Federated Learning for XGBoost (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/prostate>`_ - Example of using NVIDIA FLARE to train an XGBoost model
 
 For the complete collection of example applications, see https://github.com/NVIDIA/NVFlare/tree/main/examples.
 
@@ -75,7 +76,7 @@ redistributed to clients and the process repeats for the specified number of rou
 FedProx
 ^^^^^^^
 `FedProx <https://arxiv.org/abs/1812.06127>`_ implements a :class:`Loss function <nvflare.app_common.pt.pt_fedproxloss.PTFedProxLoss>`
-to penalize a client’s local weights based on deviation from the global model. An example configuration can be found in
+to penalize a client's local weights based on deviation from the global model. An example configuration can be found in
 cifar10_fedprox of the `CIFAR-10 example <https://github.com/NVIDIA/NVFlare/tree/main/examples/cifar10>`_.
 
 FedOpt

@@ -21,8 +21,8 @@ which are explained in more detail in their own sections linked below.
    user_guide/nvflare_cli
    user_guide/fl_simulator
    user_guide/poc_command
-   user_guide/dashboard_ui
    user_guide/dashboard_api
+   user_guide/dashboard_ui
    user_guide/dynamic_provisioning
    user_guide/nvflare_security
    user_guide/federated_authorization

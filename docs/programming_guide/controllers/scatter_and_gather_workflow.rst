@@ -42,3 +42,8 @@ Below is the signature for an aggregator.
 .. literalinclude:: ../../../nvflare/app_common/abstract/aggregator.py
     :language: python
     :lines: 22-
+
+Example with Scatter and Gather Workflow
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+See the `Hello Numpy Scatter and Gather Example <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-numpy-sag>`_ for an example application with
+the scatter and gather workflow.

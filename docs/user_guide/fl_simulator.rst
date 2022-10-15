@@ -45,20 +45,20 @@ Command examples
 Run a single NVFlare app
 ========================
 
-This command will run the same app on the server and 8 clients using 1 thread. The client names will be site-1, site-2, ... , site-8:
+This command will run the same ``hello-numpy-sag`` app on the server and 8 clients using 1 thread. The client names will be site-1, site-2, ... , site-8:
 
 .. code-block:: python
 
-    nvflare simulator APP_FOLDER -w WORKSPACE_FOLDER -n 8 -t 1
+    nvflare simulator NVFlare/examples/hello-numpy-sag/app -w /tmp/nvflare/workspace_folder/ -n 8 -t 1
 
 Run an NVFlare job
 ===================
 
-This command will run the job (in the specified JOB_FOLDER), following the meta.json in the job. The executing client list is provided in the command line ("client0,client1,client2,client3"). If there is any client not defined in the deploy_map of the meta.json, the simulator will report an error and not run.
+This command will run the job following the meta.json in the job. The executing client list is provided in the command line ("client0,client1,client2,client3"). If there is any client not defined in the deploy_map of the meta.json, the simulator will report an error and not run.
 
 .. code-block:: python
 
-    nvflare simulator JOB_FOLDER -w WORKSPACE_FOLDER -c client0,client1,client2,client3 -t 1
+    nvflare simulator NVFlare/examples/hello-numpy-sag -w /tmp/nvflare/workspace_folder/ -c client0,client1,client2,client3 -t 1
 
 
 Run a job with no client name list
@@ -68,7 +68,7 @@ If there is no client name list provided and no number of clients (-n) option pr
 
 .. code-block:: python
 
-    nvflare simulator JOB_FOLDER -w WORKSPACE_FOLDER  -t 1
+    nvflare simulator NVFlare/examples/hello-numpy-sag -w /tmp/nvflare/workspace_folder/  -t 1
 
 
 .. note::
@@ -134,4 +134,4 @@ The GPU numbers do not have to be unique. If you use "-gpu 0,0", this will run 2
 
 .. note::
 
-    If you have invalid GPU IDs assigned, the simulation will run on CPU.
+    If you have invalid GPU IDs assigned and ``nvidia-smi`` is available, the simuilation will be aborted. Otherwise if ``nvidia-smi`` is not available, the simulation will run on CPU.
