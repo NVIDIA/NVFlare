@@ -289,14 +289,15 @@ class StatisticsExecutor(Executor):
         inputs: Shareable,
         fl_ctx: FLContext,
     ) -> float:
+        result = None
         if StC.STATS_GLOBAL_MEAN in inputs and StC.STATS_GLOBAL_COUNT in inputs:
-            global_mean = inputs[StC.STATS_GLOBAL_MEAN][dataset_name][feature_name]
-            global_count = inputs[StC.STATS_GLOBAL_COUNT][dataset_name][feature_name]
-            result = self.stats_generator.variance_with_mean(dataset_name, feature_name, global_mean, global_count)
-            result = round(result, self.precision)
-            return result
-        else:
-            return None
+            global_mean = self._get_global_value_from_input(StC.STATS_GLOBAL_MEAN, dataset_name, feature_name, inputs)
+            global_count = self._get_global_value_from_input(StC.STATS_GLOBAL_COUNT, dataset_name, feature_name, inputs)
+            if global_mean is not None and global_count is not None:
+                result = self.stats_generator.variance_with_mean(dataset_name, feature_name, global_mean, global_count)
+                result = round(result, self.precision)
+
+        return result
 
     def get_histogram(
         self,
@@ -306,14 +307,21 @@ class StatisticsExecutor(Executor):
         inputs: Shareable,
         fl_ctx: FLContext,
     ) -> Histogram:
+
         if StC.STATS_MIN in inputs and StC.STATS_MAX in inputs:
-            global_min_value = inputs[StC.STATS_MIN][dataset_name][feature_name]
-            global_max_value = inputs[StC.STATS_MAX][dataset_name][feature_name]
-            hist_config: dict = statistic_configs.config
-            num_of_bins: int = self.get_number_of_bins(feature_name, hist_config)
-            bin_range: List[int] = self.get_bin_range(feature_name, global_min_value, global_max_value, hist_config)
-            result = self.stats_generator.histogram(dataset_name, feature_name, num_of_bins, bin_range[0], bin_range[1])
-            return result
+
+            global_min_value = self._get_global_value_from_input(StC.STATS_MIN, dataset_name, feature_name, inputs)
+            global_max_value = self._get_global_value_from_input(StC.STATS_MAX, dataset_name, feature_name, inputs)
+            if global_min_value is not None and global_max_value is not None:
+                hist_config: dict = statistic_configs.config
+                num_of_bins: int = self.get_number_of_bins(feature_name, hist_config)
+                bin_range: List[int] = self.get_bin_range(feature_name, global_min_value, global_max_value, hist_config)
+                result = self.stats_generator.histogram(
+                    dataset_name, feature_name, num_of_bins, bin_range[0], bin_range[1]
+                )
+                return result
+            else:
+                return Histogram(HistogramType.STANDARD, list())
         else:
             return Histogram(HistogramType.STANDARD, list())
 
@@ -393,3 +401,13 @@ class StatisticsExecutor(Executor):
                 self.stats_generator.finalize()
         except Exception as e:
             self.log_exception(fl_ctx, f"Statistics generator finalize exception: {e}")
+
+    def _get_global_value_from_input(self, statistic_key: str, dataset_name: str, feature_name: str, inputs):
+        global_value = None
+        if dataset_name in inputs[statistic_key]:
+            if feature_name in inputs[statistic_key][dataset_name]:
+                global_value = inputs[statistic_key][dataset_name][feature_name]
+            elif "*" in inputs[StC.STATS_MIN][dataset_name]:
+                global_value = inputs[statistic_key][dataset_name][feature_name]
+
+        return global_value
