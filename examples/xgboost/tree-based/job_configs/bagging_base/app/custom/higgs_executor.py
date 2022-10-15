@@ -17,7 +17,6 @@ import json
 import pandas as pd
 import xgboost as xgb
 
-from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_opt.xgboost.tree_based.executor import FedXGBTreeExecutor
 
@@ -69,7 +68,7 @@ class FedXGBTreeHiggsExecutor(FedXGBTreeExecutor):
         )
         self.data_split_filename = data_split_filename
 
-    def load_data(self, fl_ctx: FLContext):
+    def load_data(self):
         with open(self.data_split_filename) as file:
             data_split = json.load(file)
 
@@ -102,8 +101,4 @@ class FedXGBTreeHiggsExecutor(FedXGBTreeExecutor):
         )
         dmat_valid = xgb.DMatrix(X_valid, label=y_valid)
 
-        self.log_info(
-            fl_ctx,
-            f"Total training/validation data count: {total_train_data_num}/{total_valid_data_num}",
-        )
         return dmat_train, dmat_valid

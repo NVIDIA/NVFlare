@@ -85,7 +85,7 @@ class FedXGBTreeExecutor(Executor, ABC):
             raise ValueError(f"Only support [uniform] or [scaled] mode, but got {lr_mode}")
 
     @abstractmethod
-    def load_data(self, fl_ctx: FLContext) -> Tuple[xgb.core.DMatrix, xgb.core.DMatrix]:
+    def load_data(self) -> Tuple[xgb.core.DMatrix, xgb.core.DMatrix]:
         """Loads data customized to individual tasks.
 
         This can be specified / loaded in any ways
@@ -122,7 +122,7 @@ class FedXGBTreeExecutor(Executor, ABC):
             return
 
         # load data and lr_scale, this is task/site-specific
-        self.dmat_train, self.dmat_valid = self.load_data(fl_ctx)
+        self.dmat_train, self.dmat_valid = self.load_data()
         self.lr = self._get_effective_learning_rate()
 
     def _get_effective_learning_rate(self):
