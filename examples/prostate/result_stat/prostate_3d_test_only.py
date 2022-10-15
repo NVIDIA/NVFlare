@@ -46,7 +46,6 @@ def main():
     dataset_base_dir = args.dataset_base_dir
     datalist_json_path = args.datalist_json_path
     model_path = args.model_path
-    cache_rate = args.cache_rate
     infer_roi_size = (224, 224, 32)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -62,7 +61,7 @@ def main():
 
     # Network, optimizer, and loss
     model = UNet(
-        dimensions=3,
+        spatial_dims=3,
         in_channels=1,
         out_channels=1,
         channels=(16, 32, 64, 128, 256),
