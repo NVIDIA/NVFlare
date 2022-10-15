@@ -15,6 +15,9 @@
 import json
 import os
 from abc import ABC, abstractmethod
+from typing import Tuple
+
+import xgboost as xgb
 
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.event_type import EventType
@@ -34,6 +37,7 @@ class FedXGBTreeExecutor(Executor, ABC):
     def __init__(
         self,
         training_mode,
+        lr_scale,
         num_tree_bagging: int = 1,
         lr_mode: str = "uniform",
         local_model_path: str = "model.json",
@@ -53,6 +57,7 @@ class FedXGBTreeExecutor(Executor, ABC):
         self.training_mode = training_mode
         self.num_tree_bagging = num_tree_bagging
         self.lr = None
+        self.lr_scale = lr_scale
         self.base_lr = learning_rate
         self.lr_mode = lr_mode
         self.local_model_path = local_model_path
@@ -74,11 +79,22 @@ class FedXGBTreeExecutor(Executor, ABC):
 
         self.dmat_train = None
         self.dmat_valid = None
-        self.valid_y = None
 
         # use dynamic shrinkage - adjusted by personalized scaling factor
         if lr_mode not in ["uniform", "scaled"]:
             raise ValueError(f"Only support [uniform] or [scaled] mode, but got {lr_mode}")
+
+    @abstractmethod
+    def load_data(self) -> Tuple[xgb.core.DMatrix, xgb.core.DMatrix]:
+        """Loads data customized to individual tasks.
+
+        This can be specified / loaded in any ways
+        as long as they are made available for training and validation
+
+        Return:
+            A tuple of (dmat_train, dmat_valid)
+        """
+        raise NotImplementedError
 
     def initialize(self, fl_ctx: FLContext):
         # set the paths according to fl_ctx
@@ -106,10 +122,10 @@ class FedXGBTreeExecutor(Executor, ABC):
             return
 
         # load data and lr_scale, this is task/site-specific
-        self.dmat_train, self.dmat_valid, self.valid_y, lr_scale = self.load_data(fl_ctx)
-        self.lr = self._get_effective_learning_rate(lr_scale=lr_scale)
+        self.dmat_train, self.dmat_valid = self.load_data()
+        self.lr = self._get_effective_learning_rate()
 
-    def _get_effective_learning_rate(self, lr_scale):
+    def _get_effective_learning_rate(self):
         if self.training_mode == "bagging":
             # Bagging mode
             if self.lr_mode == "uniform":
@@ -117,22 +133,11 @@ class FedXGBTreeExecutor(Executor, ABC):
                 lr = self.base_lr / self.num_tree_bagging
             else:
                 # scaled lr, global learning_rate scaled by data size percentage
-                lr = self.base_lr * lr_scale
+                lr = self.base_lr * self.lr_scale
         else:
             # Cyclic mode, directly use the base learning_rate
             lr = self.base_lr
         return lr
-
-    @abstractmethod
-    def load_data(self, fl_ctx: FLContext):
-        """Load data customized to individual tasks
-        This can be specified / loaded in any ways
-        as long as they are made available for training and validation
-        Return:
-            A tuple of (dmat_train, dmat_valid, valid_y, lr_scale)
-
-        """
-        raise NotImplementedError
 
     def _get_train_params(self):
         param = {
@@ -196,11 +201,6 @@ class FedXGBTreeExecutor(Executor, ABC):
         if abort_signal.triggered:
             self.finalize(fl_ctx)
             return make_reply(ReturnCode.TASK_ABORTED)
-
-        xgb, flag = optional_import(module="xgboost")
-        if not flag:
-            self.system_panic("Can't import xgboost", fl_ctx)
-            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
         # retrieve current global model download from server's shareable
         dxo = from_shareable(shareable)

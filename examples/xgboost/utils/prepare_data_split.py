@@ -14,21 +14,20 @@
 
 import argparse
 import json
+import os
 
 import numpy as np
 
 
 def data_split_args_parser():
     parser = argparse.ArgumentParser(description="generate data split for HIGGS dataset")
-    parser.add_argument("--data_path", type=str, default="./dataset/HIGGS_UCI.csv", help="Path to data file")
+    parser.add_argument("--data_path", type=str, default="~/dataset/HIGGS.csv", help="Path to data file")
     parser.add_argument("--site_num", type=int, default=5, help="Total number of sites")
-    parser.add_argument("--site_name", type=str, default="site-", help="Site name prefix")
-    parser.add_argument(
-        "--size_total", type=int, default=11000000, help="Total number of instances, default 11 million"
-    )
+    parser.add_argument("--site_name_prefix", type=str, default="site-", help="Site name prefix")
+    parser.add_argument("--size_total", type=int, default=11000000, help="Total number of data, default 11 million")
     parser.add_argument("--size_valid", type=int, default=1000000, help="Validation size, default 1 million")
     parser.add_argument("--split_method", type=str, default="uniform", help="How to split the dataset")
-    parser.add_argument("--out_path", type=str, default="data_splits/data_split.json", help="Path to json file")
+    parser.add_argument("--out_path", type=str, default="~/dataset", help="Path to data index file")
     return parser
 
 
@@ -64,16 +63,17 @@ def main():
     site_size = split_num_proportion((args.size_total - args.size_valid), args.site_num, args.split_method)
 
     for site in range(args.site_num):
-        site_id = args.site_name + str(site + 1)
+        site_id = args.site_name_prefix + str(site + 1)
         idx_start = args.size_valid + sum(site_size[:site])
         idx_end = args.size_valid + sum(site_size[: site + 1])
-        json_data["data_index"][site_id] = {}
-        json_data["data_index"][site_id]["start"] = idx_start
-        json_data["data_index"][site_id]["end"] = idx_end
-        json_data["data_index"][site_id]["lr_scale"] = site_size[site] / sum(site_size)
+        json_data["data_index"][site_id] = {"start": idx_start, "end": idx_end}
 
-    with open(args.out_path, "w") as f:
-        json.dump(json_data, f, indent=4)
+    if not os.path.exists(args.out_path):
+        os.makedirs(args.out_path, exist_ok=True)
+    for site in range(args.site_num):
+        output_file = os.path.join(args.out_path, f"data_{args.site_name_prefix}{site + 1}.json")
+        with open(output_file, "w") as f:
+            json.dump(json_data, f, indent=4)
 
 
 if __name__ == "__main__":

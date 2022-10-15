@@ -49,7 +49,7 @@ See [tree-based/README](tree-based/README.md) for more information on two differ
 ## Data Preparation
 ### Download and Store Data
 To run the examples, we first download the dataset from the HIGGS link above, which is a single `.csv` file.
-If dataset is downloaded, uncompressed, and stored in `/tmp/dataset/HIGGS.csv`, make sure to modify the
+If dataset is downloaded, uncompressed, and stored in `~/dataset/HIGGS.csv`, make sure to modify the
 corresponding `DATASET_PATH` inside `data_split_gen.sh`.
 
 ### Data Split
@@ -79,7 +79,7 @@ The arguments are:
 This will generate data splits for two client sizes: 5 and 20, and 3 split conditions: uniform, square, and exponential.
 Users can further customize it for more experiments.
 
-> **_NOTE:_** The generated train config files will be stored in the folder `./data_splits`,
+> **_NOTE:_** The generated train config files will be stored in the folder `/tmp/nvflare/xgboost_higgs_dataset/`,
 > and will be used by job_configs by specifying the path within `config_fed_client.json` 
 
 
@@ -114,6 +114,6 @@ The script will also generate 2 configs in `histogram-based/job_configs` for his
 - histogram-based training with uniform data split for 5 clients
 
 
-By default, cpu based training is used.
+By default, CPU based training is used.
 
-For gpu based training, edit `job_confing_gen.sh` to change `TREE_METHOD="hist"` to `TREE_METHOD="gpu_hist"`.
+For GPU based training, edit `job_confing_gen.sh` to change `TREE_METHOD="hist"` to `TREE_METHOD="gpu_hist"`.

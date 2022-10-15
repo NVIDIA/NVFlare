@@ -12,8 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+
 import os
 from abc import ABC, abstractmethod
+from typing import Tuple
+
+import xgboost as xgb
+from xgboost import callback
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
@@ -23,10 +28,10 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .constants import XGB_TRAIN_TASK, XGBShareableHeader
+from .executor_spec import FedXGBHistogramExecutorSpec
 
 
 class XGBoostParams:
@@ -39,12 +44,17 @@ class XGBoostParams:
         self.xgb_params: dict = xgb_params if xgb_params else {}
 
 
-class FedXGBHistogramExecutor(Executor, ABC):
-    def __init__(self, num_rounds, early_stopping_round, xgboost_params, verbose_eval=False):
-        """Federated XGBoost Executor for histogram-base collaboration.
+class FedXGBHistogramExecutor(FedXGBHistogramExecutorSpec, Executor, ABC):
+    """Federated XGBoost Executor Spec for histogram-base collaboration.
 
-        This class sets up the training environment for Federated XGBoost. This is an abstract class and xgb_train
-        method must be implemented by a subclass.
+    This class implements the basic xgb_train logic, the subclass must implement load_data.
+    """
+
+    def __init__(self, num_rounds, early_stopping_round, xgboost_params, verbose_eval=False):
+        """Federated XGBoost Executor Spec for histogram-base collaboration.
+
+        This class sets up the training environment for Federated XGBoost.
+        This is an abstract class, load_data and xgb_train method must be implemented by a subclass.
 
         Args:
             num_rounds: number of boosting rounds
@@ -61,20 +71,39 @@ class FedXGBHistogramExecutor(Executor, ABC):
 
         self.rank = None
         self.world_size = None
+        self.client_id = None
         self._ca_cert_path = None
         self._client_key_path = None
         self._client_cert_path = None
         self._server_address = "localhost"
-        self._data_loaded = False
+
+        self.dmat_train = None
+        self.dmat_valid = None
 
     @abstractmethod
-    def xgb_train(self, params: XGBoostParams, fl_ctx: FLContext) -> Shareable:
-        """Main XGBoost training method"""
-        pass
+    def load_data(self) -> Tuple[xgb.core.DMatrix, xgb.core.DMatrix]:
+        raise NotImplementedError
 
-    @abstractmethod
-    def load_data(self, fl_ctx: FLContext):
-        pass
+    def xgb_train(self, params: XGBoostParams) -> xgb.core.Booster:
+        # Load file, file will not be sharded in federated mode.
+        dtrain = self.dmat_train
+        dval = self.dmat_valid
+
+        # Specify validations set to watch performance
+        watchlist = [(dval, "eval"), (dtrain, "train")]
+
+        # Run training, all the features in training API is available.
+        bst = xgb.train(
+            params.xgb_params,
+            dtrain,
+            params.num_rounds,
+            evals=watchlist,
+            early_stopping_rounds=params.early_stopping_rounds,
+            verbose_eval=params.verbose_eval,
+            callbacks=[callback.EvaluationMonitor(rank=self.rank)],
+        )
+
+        return bst
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
@@ -83,6 +112,7 @@ class FedXGBHistogramExecutor(Executor, ABC):
                 sp = engine.client.overseer_agent.get_primary_sp()
                 if sp and sp.primary is True:
                     self._server_address = sp.name
+            self.client_id = fl_ctx.get_identity_name()
             self.log_info(fl_ctx, f"server address is {self._server_address}")
 
     def _get_certificates(self, fl_ctx: FLContext):
@@ -124,14 +154,8 @@ class FedXGBHistogramExecutor(Executor, ABC):
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
 
-        xgb, flag = optional_import(module="xgboost")
-        if not flag:
-            self.log_error(fl_ctx, "Can't import xgboost")
-            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-
-        if not self._data_loaded:
-            self.load_data(fl_ctx)
-            self._data_loaded = True
+        if self.dmat_train is None:
+            self.dmat_train, self.dmat_valid = self.load_data()
 
         # Print round information
         current_round = shareable.get_header(AppConstants.CURRENT_ROUND)
@@ -186,14 +210,17 @@ class FedXGBHistogramExecutor(Executor, ABC):
 
         try:
             with xgb.collective.CommunicatorContext(**communicator_env):
-                result = self.xgb_train(params, fl_ctx)
+                bst = self.xgb_train(params)
+
+                # Save the model.
+                workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+                run_number = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
+                run_dir = workspace.get_run_dir(run_number)
+                bst.save_model(os.path.join(run_dir, "test.model.json"))
                 xgb.collective.communicator_print("Finished training\n")
         except BaseException as e:
             secure_log_traceback()
             self.log_error(fl_ctx, f"Exception happens when running xgb train: {secure_format_exception(e)}")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-        if not (result and isinstance(result, Shareable)):
-            return make_reply(ReturnCode.EMPTY_RESULT)
-
-        return result
+        return make_reply(ReturnCode.OK)

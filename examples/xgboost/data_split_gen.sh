@@ -6,10 +6,10 @@ then
     echo "Please check if you saved HIGGS dataset in ${DATASET_PATH}"
 fi
 
-OUTPUT_PATH="data_splits"
-if [ ! -d ${OUTPUT_PATH} ]
+OUTPUT_PATH="/tmp/nvflare/xgboost_higgs_dataset"
+if [ ! -d "${OUTPUT_PATH}" ]
 then
-    mkdir ${OUTPUT_PATH}
+    mkdir "${OUTPUT_PATH}"
 fi
 
 for site_num in 2 5 20;
@@ -20,6 +20,6 @@ do
         --data_path "${DATASET_PATH}" \
         --site_num ${site_num} \
         --split_method ${split_mode} \
-        --out_path "${OUTPUT_PATH}/data_split_${site_num}_${split_mode}.json"
+        --out_path "${OUTPUT_PATH}/${site_num}_${split_mode}"
     done
 done

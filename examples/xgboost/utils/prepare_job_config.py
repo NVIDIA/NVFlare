@@ -26,8 +26,14 @@ MODE_ALGO_MAP = {"bagging": "tree-based", "cyclic": "tree-based", "histogram": "
 
 def job_config_args_parser():
     parser = argparse.ArgumentParser(description="generate train configs for HIGGS dataset")
-    parser.add_argument("--data_split_path", type=str, default="./data_splits", help="Path to data split folder")
+    parser.add_argument(
+        "--data_root",
+        type=str,
+        default="/tmp/nvflare/xgboost_higgs_dataset",
+        help="Path to dataset config files for each site",
+    )
     parser.add_argument("--site_num", type=int, default=5, help="Total number of sites")
+    parser.add_argument("--site_name_prefix", type=str, default="site-", help="Site name prefix")
     parser.add_argument("--round_num", type=int, default=100, help="Total number of training rounds")
     parser.add_argument(
         "--training_mode", type=str, default="bagging", choices=list(MODE_ALGO_MAP.keys()), help="Training mode"
@@ -68,8 +74,8 @@ def _get_job_name(args) -> str:
     )
 
 
-def _get_data_split_name(args) -> str:
-    return "data_split_" + str(args.site_num) + "_" + args.split_method + ".json"
+def _get_data_split_name(args, site_name: str) -> str:
+    return os.path.join(args.data_root, f"{args.site_num}_{args.split_method}", f"data_{site_name}.json")
 
 
 def _get_src_job_dir(training_mode):
@@ -81,24 +87,52 @@ def _get_src_job_dir(training_mode):
     return pathlib.Path(MODE_ALGO_MAP[training_mode]) / JOB_CONFIGS_ROOT / base_job_map[training_mode]
 
 
+def _gen_deploy_map(num_sites: int, site_name_prefix: str) -> dict:
+    deploy_map = {"app_server": ["server"]}
+    for i in range(1, num_sites + 1):
+        deploy_map[f"app_{site_name_prefix}{i}"] = [f"{site_name_prefix}{i}"]
+    return deploy_map
+
+
 def _update_meta(meta: dict, args):
     name = _get_job_name(args)
     meta["name"] = name
+    meta["deploy_map"] = _gen_deploy_map(args.site_num, args.site_name_prefix)
+    meta["min_clients"] = args.site_num
 
 
-def _update_client_config(config: dict, args):
-    data_split_name = _get_data_split_name(args)
+def _get_lr_scale_from_split_json(data_split: dict):
+    split = {}
+    total_data_num = 0
+    for k, v in data_split["data_index"].items():
+        if k == "valid":
+            continue
+        data_num = int(v["end"] - v["start"])
+        total_data_num += data_num
+        split[k] = data_num
+
+    lr_scales = {}
+    for k in split:
+        lr_scales[k] = split[k] / total_data_num
+
+    return lr_scales
+
+
+def _update_client_config(config: dict, args, lr_scale, site_name: str):
+    data_split_name = _get_data_split_name(args, site_name)
     if args.training_mode == "bagging" or args.training_mode == "cyclic":
         # update client config
         config["executors"][0]["executor"]["args"]["data_split_filename"] = data_split_name
+        config["executors"][0]["executor"]["args"]["lr_scale"] = lr_scale
         config["executors"][0]["executor"]["args"]["lr_mode"] = args.lr_mode
         config["executors"][0]["executor"]["args"]["nthread"] = args.nthread
         config["executors"][0]["executor"]["args"]["tree_method"] = args.tree_method
         config["executors"][0]["executor"]["args"]["training_mode"] = args.training_mode
+        num_tree_bagging = 1
         if args.training_mode == "bagging":
-            config["executors"][0]["executor"]["args"]["num_tree_bagging"] = args.site_num
-        elif args.training_mode == "cyclic":
-            config["executors"][0]["executor"]["args"]["num_tree_bagging"] = 1
+            num_tree_bagging = args.site_num
+
+        config["executors"][0]["executor"]["args"]["num_tree_bagging"] = num_tree_bagging
     else:
         config["executors"][0]["executor"]["args"]["data_split_filename"] = data_split_name
         config["executors"][0]["executor"]["args"]["xgboost_params"]["nthread"] = args.nthread
@@ -113,52 +147,82 @@ def _update_server_config(config: dict, args):
         config["workflows"][0]["args"]["num_rounds"] = int(args.round_num / args.site_num)
 
 
-def _copy_custom_files(src_job_path, dst_job_path):
-    dst_path = dst_job_path / "app" / "custom"
+def _copy_custom_files(src_job_path, src_app_name, dst_job_path, dst_app_name):
+    dst_path = dst_job_path / dst_app_name / "custom"
     os.makedirs(dst_path, exist_ok=True)
-    src_path = src_job_path / "app" / "custom"
+    src_path = src_job_path / src_app_name / "custom"
     if os.path.isdir(src_path):
         shutil.copytree(src_path, dst_path, dirs_exist_ok=True)
+
+
+def create_server_app(src_job_path, src_app_name, dst_job_path, site_name, args):
+    dst_app_name = f"app_{site_name}"
+    server_config = _read_json(src_job_path / src_app_name / "config" / JobConstants.SERVER_JOB_CONFIG)
+    dst_config_path = dst_job_path / dst_app_name / "config"
+
+    # make target config folders
+    if not os.path.exists(dst_config_path):
+        os.makedirs(dst_config_path)
+
+    _update_server_config(server_config, args)
+    server_config_filename = dst_config_path / JobConstants.SERVER_JOB_CONFIG
+    _write_json(server_config, server_config_filename)
+
+
+def create_client_app(src_job_path, src_app_name, dst_job_path, site_name, args):
+    dst_app_name = f"app_{site_name}"
+    client_config = _read_json(src_job_path / src_app_name / "config" / JobConstants.CLIENT_JOB_CONFIG)
+    dst_config_path = dst_job_path / dst_app_name / "config"
+
+    # make target config folders
+    if not os.path.exists(dst_config_path):
+        os.makedirs(dst_config_path)
+
+    # get lr scale
+    data_split_name = _get_data_split_name(args, site_name)
+    data_split = _read_json(data_split_name)
+    lr_scales = _get_lr_scale_from_split_json(data_split)
+
+    # adjust file contents according to each job's specs
+    _update_client_config(client_config, args, lr_scales[site_name], site_name)
+    client_config_filename = dst_config_path / JobConstants.CLIENT_JOB_CONFIG
+    _write_json(client_config, client_config_filename)
+
+    # copy custom file
+    _copy_custom_files(src_job_path, src_app_name, dst_job_path, dst_app_name)
 
 
 def main():
     parser = job_config_args_parser()
     args = parser.parse_args()
     job_name = _get_job_name(args)
-    data_split_name = _get_data_split_name(args)
-
     src_job_path = _get_src_job_dir(args.training_mode)
-    meta_config = _read_json(src_job_path / JobConstants.META_FILE)
-    client_config = _read_json(src_job_path / "app" / "config" / JobConstants.CLIENT_JOB_CONFIG)
-    server_config = _read_json(src_job_path / "app" / "config" / JobConstants.SERVER_JOB_CONFIG)
-
-    # adjust file contents according to each job's specs
-    _update_meta(meta_config, args)
-    _update_client_config(client_config, args)
-    _update_server_config(server_config, args)
 
     # create a new job
     dst_job_path = pathlib.Path(MODE_ALGO_MAP[args.training_mode]) / JOB_CONFIGS_ROOT / job_name
-    app_config_path = dst_job_path / "app" / "config"
+    if not os.path.exists(dst_job_path):
+        os.makedirs(dst_job_path)
 
-    # make target config folders
-    if not os.path.exists(app_config_path):
-        os.makedirs(app_config_path)
+    # update meta
+    meta_config_dst = dst_job_path / JobConstants.META_FILE
+    meta_config = _read_json(src_job_path / JobConstants.META_FILE)
+    _update_meta(meta_config, args)
+    _write_json(meta_config, meta_config_dst)
 
-    meta_config_filename = dst_job_path / JobConstants.META_FILE
-    client_config_filename = app_config_path / JobConstants.CLIENT_JOB_CONFIG
-    server_config_filename = app_config_path / JobConstants.SERVER_JOB_CONFIG
+    # create server side app
+    create_server_app(
+        src_job_path=src_job_path, src_app_name="app", dst_job_path=dst_job_path, site_name="server", args=args
+    )
 
-    _write_json(meta_config, meta_config_filename)
-    _write_json(client_config, client_config_filename)
-    _write_json(server_config, server_config_filename)
-
-    # copy data split
-    data_split_filename = app_config_path / data_split_name
-    shutil.copyfile(os.path.join(args.data_split_path, data_split_name), data_split_filename)
-
-    # copy custom file
-    _copy_custom_files(src_job_path, dst_job_path)
+    # create client side app
+    for i in range(1, args.site_num + 1):
+        create_client_app(
+            src_job_path=src_job_path,
+            src_app_name="app",
+            dst_job_path=dst_job_path,
+            site_name=f"{args.site_name_prefix}{i}",
+            args=args,
+        )
 
 
 if __name__ == "__main__":

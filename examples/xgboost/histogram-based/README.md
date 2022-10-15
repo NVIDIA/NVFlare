@@ -28,49 +28,9 @@ start the overseer, fl server and fl clients.
 
 You can still generate the data splits and job configs using the scripts provided.
 
-Note that after you generate the job config, you might need to modify the `data_path` in the `data_split_XXX.json`
-inside the `app/config` folder of each job, since each site might save the HIGGS dataset in different places.
-
-One way is that you can copy the app and modify it for each site, for example the job will be:
-
-```commandline
-higgs_2_histogram_uniform_split_uniform_lr/
-    app_server/
-        config/
-            config_fed_server.json
-    app_site-1/
-        config/
-            config_fed_client.json
-            data_split_2_uniform.json
-        custom/
-            higgs_executor.py
-    app_site-2/
-        config/
-            config_fed_client.json
-            data_split_2_uniform.json
-        custom/
-            higgs_executor.py
-```
-
-The meta.json can be modified to be:
-
-```json
-{
-    "name": "higgs_2_histogram_uniform_split_uniform_lr",
-    "resource_spec": {},
-    "deploy_map": {
-        "app_server": [
-            "server"
-        ],
-        "app_site-1": [
-            "site-1"
-        ],
-        "app_site-2": [
-            "site-2"
-        ]
-    },
-    "min_clients": 2
-}
-```
+Note that after you generate the job config,
+you might need to modify the `data_path` in the `data_site-XXX.json`
+inside the `/tmp/nvflare/xgboost_higgs_dataset` folder,
+since each site might save the HIGGS dataset in different places.
 
 Then you can use admin client to submit the job via `submit_job` command.
