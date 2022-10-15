@@ -125,8 +125,7 @@ class StatisticsExecutor(Executor):
         if task_name == StC.FED_STATS_PRE_RUN:
             # initial handshake
             target_statistics: List[StatisticConfig] = fobs.loads(shareable.get(StC.STATS_TARGET_STATISTICS))
-            self.pre_run(target_statistics)
-            return make_reply(ReturnCode.OK)
+            return self.pre_run(target_statistics)
 
         elif task_name == StC.FED_STATS_TASK:
             ds_features = self.get_numeric_features()
@@ -213,7 +212,7 @@ class StatisticsExecutor(Executor):
                     bin_range = get_feature_bin_range(feature_name, hist_config)
                     feature_bin_ranges[feature_name] = bin_range
 
-        self.stats_generator.pre_run(target_statistic_keys, feature_num_of_bins, feature_bin_ranges)
+        return self.stats_generator.pre_run(target_statistic_keys, feature_num_of_bins, feature_bin_ranges)
 
     def get_count(
         self,

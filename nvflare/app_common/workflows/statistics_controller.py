@@ -16,6 +16,7 @@ from typing import Callable, Dict, List, Optional
 
 from nvflare.apis.client import Client
 from nvflare.apis.dxo import from_shareable
+from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import ClientTask, Controller, Task
@@ -271,8 +272,10 @@ class StatisticsController(Controller):
 
         rc = result.get_return_code()
         if rc == ReturnCode.OK:
-            self.log_info(fl_ctx, f"Received handshake from client:{client_name} for task {task_name}")
+            self.log_info(fl_ctx, f"Received pre-run handshake result from client:{client_name} for task {task_name}")
             self.client_handshake_ok = {client_name: True}
+            fl_ctx.set_prop(StC.PRE_RUN_RESULT, {client_name: from_shareable(result)})
+            self.fire_event(EventType.PRE_RUN_RESULT_AVAILABLE, fl_ctx)
         else:
             if rc in self.abort_job_in_error.keys():
                 self.handle_client_errors(rc, client_task, fl_ctx)
