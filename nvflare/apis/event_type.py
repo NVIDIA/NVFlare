@@ -55,3 +55,5 @@ class EventType(object):
     WARNING_LOG_AVAILABLE = "_warning_log_available"
     INFO_LOG_AVAILABLE = "_info_log_available"
     DEBUG_LOG_AVAILABLE = "_debug_log_available"
+
+    PRE_RUN_RESULT_AVAILABLE = "_pre_run_result_available"
