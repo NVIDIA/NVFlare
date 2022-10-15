@@ -5,115 +5,49 @@ The [U-Net](https://arxiv.org/abs/1505.04597) model is trained to segment the wh
 
 ![](./figs/Prostate2D.png)
 
-## 1. Create your FL workspace 
-From now on, we assume the PWD to be `./prostate_2D`.
-
-### 1.1 POC ("proof of concept") workspace
-In this example, we run FL experiments in POC mode, starting with creating local FL workspace with
-
+## Run automated experiments
+We use the NVFlare simulator to run FL training automatically, the 6 clients are named `client_I2CVB, client_MSD, client_NCI_ISBI_3T, client_NCI_ISBI_Dx, client_Promise12, client_PROSTATEx`
+### Prepare local configs
+First, we copy the custom code to job folders, and add the image directory root to `config_train.json` files for generating the absolute path to dataset and datalist. In the current folder structure, it will be `${PWD}/..`, it can be any arbitary path where the data locates.  
 ```
-python3 -m nvflare.lighter.poc
-```
-
-Press y and enter when prompted.   
-In the following experiments, we will be using 6 clients. Let's rename and make additional client folders as
-
-```
-mv poc workspace_prostate
-mv workspace_prostate/site-1 workspace_prostate/client_All
-for dataset in I2CVB MSD NCI_ISBI_3T NCI_ISBI_Dx Promise12 PROSTATEx; do
-  cp -r workspace_prostate/client_All workspace_prostate/client_${dataset}
-done
-```
-
-### 1.2 (Optional) Secure FL workspace
-We only cover POC mode in this example. To run it with Secure mode, please refer to the [`cifar10`](../cifar10) example.
-> **_NOTE:_** **POC** stands for "proof of concept" and is used for quick experimentation 
-> with different amounts of clients.
-> It doesn't need any advanced configurations while provisioning the startup kits for the server and clients. 
->
-> The **secure** workspace, on the other hand, is needed to run experiments that require encryption keys. These startup kits allow secure deployment of FL in real-world scenarios 
-> using SSL certificated communication channels.
-
-### GPU resource and Multi-tasking
-In this example, we assume two local GPUs with at least 12GB of memory are available. 
-
-As we use the POC workspace without `meta.json`, we control the client GPU directly when starting the clients by specifying `CUDA_VISIBLE_DEVICES`. 
-
-To enable multi-tasking, here we adjust the default value in `workspace_server/server/startup/fed_server.json` by setting `max_jobs: 2` (defualt value 1). Please adjust this properly accodrding to resource available and task demand. 
-
-(Optional) If using secure workspace, in secure project configuration `secure_project.yml`, we can set the available GPU indices as `gpu: [0, 1]` using the `ListResourceManager` and `max_jobs: 2` in `DefaultJobScheduler`.
-
-For details, please refer to the [documentation](https://nvflare.readthedocs.io/en/main/user_guide/job.html).
-
-## 2. Run automated experiments
-The next scripts will start the FL server and clients automatically to run FL experiments on localhost.
-### 2.1 Prepare local configs
-First, we add the image directory root to `config_train.json` files for generating the absolute path to dataset and datalist. In the current folder structure, it will be `${PWD}/..`, it can be any arbitary path where the data locates.  
-```
-for alg in prostate_central prostate_fedavg prostate_fedprox prostate_ditto
+for job in prostate_central prostate_fedavg prostate_fedprox prostate_ditto
 do
-  sed -i "s|DATASET_ROOT|${PWD}/../data_preparation|g" configs/${alg}/config/config_train.json
+  cp -r custom/ job_configs/${job}/app/
+  sed -i "s|DATASET_ROOT|${PWD}/../data_preparation|g" job_configs/${job}/app/config/config_train.json
 done
 ```
-### 2.2 Start the FL system and submit jobs
-Next, we will start the FL system and submit jobs to start FL training automatically.
+### Use NVFlare simulator to run the experiments
+We use NVFlare simulator to run the FL training experiments, following the pattern:
+```
+nvflare simulator job_configs/[job] -w ${PWD}/workspaces/[job] -c [clients] -gpu [gpu] -t [thread]
+```
+`[job]` is the experiment job that will be submitted for the FL training, in this example, this includes `prostate_central`, `prostate_fedavg`, `prostate_fedprox`, and `prostate_ditto`.  
+The combination of `-c` and `-gpu`/`-t` controls the resource allocation. In this example, we run centralized training with single thread, and six clients on two GPUs, three clients for each GPU with 12 GB memory, each in a separate thread. 
 
-Start the FL system with either 1 client for centralized training, or 6 clients for federated learning by running
+For centralized training, we use
 ```
-bash start_fl_poc.sh "All"
+-c client_All -t 1
 ```
-or
+For federated training, we use
 ```
-bash start_fl_poc.sh "I2CVB MSD NCI_ISBI_3T NCI_ISBI_Dx Promise12 PROSTATEx"
+-c client_I2CVB, client_MSD, client_NCI_ISBI_3T, client_NCI_ISBI_Dx, client_Promise12, client_PROSTATEx -gpu 0,1,0,1,0,1
 ```
-This script will start the FL server and clients automatically to run FL experiments on localhost. 
-Each client will be alternately assigned a GPU using `export CUDA_VISIBLE_DEVICES=${gpu_idx}` in the [start_fl_poc.sh](./start_fl_poc.sh). 
-In this example, we run six clients on two GPUs, three clients for each GPU with 12 GB memory.  
-
-Then FL training will be run with an automatic script utilizing the FLAdminAPI functionality.    
-The [submit_job.sh](./submit_job.sh) script follows the pattern:
-```
-bash ./submit_job.sh [config]
-```
-`[config]` is the experiment job that will be submitted for the FL training, in this example, this includes `prostate_central`, `prostate_fedavg`, `prostate_fedprox`, and `prostate_ditto`.  
 
 Note that since the current experiments are performed on a light 2D dataset, we used [`CacheDataset`](https://docs.monai.io/en/stable/data.html#cachedataset) and set cache rate to 1.0 to accelerate the training process. Please adjust the cache rate if memory resource is limited on your system.
 
-### 2.3 Centralized training
-To simulate a centralized training baseline, we run FL with 1 client using all the training data. 
-```
-bash start_fl_poc.sh "All"
-bash submit_job.sh prostate_central
-```
-### 2.4 Federated learning
-Start 6 FL clients
-```
-bash start_fl_poc.sh "I2CVB MSD NCI_ISBI_3T NCI_ISBI_Dx Promise12 PROSTATEx"
-```
-#### 2.4.1 FedAvg 
-To run FL with standard [fedAvg](https://arxiv.org/abs/1602.05629), we use
-```
-bash submit_job.sh prostate_fedavg
-```
-#### 2.4.2 FedProx 
-To run FL with [FedProx](https://arxiv.org/abs/1812.06127), which adds a regularizer to the loss used in `SupervisedProstateLearner` (`fedproxloss_mu`), we use
-```
-bash submit_job.sh prostate_fedprox 
-```
-#### 2.4. Ditto 
-To run FL with [Ditto](https://arxiv.org/abs/2012.04221)(official [implementation](https://github.com/litian96/ditto)), which uses a slightly modified version of the prostate Learner implementation, namely the `ProstateDittoLearner`, which decouples local personalized model from global model via an additional model training and a controllable prox term (`ditto_lambda`), we use
-```
-bash submit_job.sh prostate_ditto
-```
-> **_NOTE:_** You can always use the admin console to manually abort a running job. 
-  using `abort_job [JOB_ID]`. 
-> For a complete list of admin commands, see [here](https://nvflare.readthedocs.io/en/main/user_guide/operation.html).
+### Experiment list
+In this example, we perform the following examples:
+1. Centralized training, using the combination of training and validation data from all clients
+2. Standard [FedAvg](https://arxiv.org/abs/1602.05629)
+3. [FedProx](https://arxiv.org/abs/1812.06127), which adds a regularizer to the loss used in `SupervisedProstateLearner` (`fedproxloss_mu`)
+4. [Ditto](https://arxiv.org/abs/2012.04221)(official [implementation](https://github.com/litian96/ditto)), which uses a slightly modified version of the prostate Learner implementation, namely the `ProstateDittoLearner`, which decouples local personalized model from global model via an additional model training and a controllable prox term (`ditto_lambda`)
 
-> To log into the POC workspace admin console no username is required 
-> (use "admin" for commands requiring conformation with username). 
+To run all experiments, use the script
+```
+bash run_experiment_simulator.sh
+```
 
-## 3. Results on 6 clients for Central vs. FedAvg vs. FedProx vs. Ditto
+## Results on 6 clients for Central vs. FedAvg vs. FedProx vs. Ditto
 In this example, for Central/FedAvg/FedProx, only the global model gets evaluated at each round, and saved as the final model. For Ditto, each client will have its own personalized model, which is validated and saved locally.
 ### Validation curve on each site
 
@@ -132,19 +66,12 @@ The TensorBoard curves (smoothed with weight 0.8) for validation Dice for the 15
 The testing score is computed based on the best global model for Central/FedAvg/FedProx, and the six best personalized models for Ditto.
 We provide a script for performing validation on testing data split.
 
-To get the model after training, the results can be downloaded and shown with the admin console using
+The best global models are stored at
 ```
-  download_job [JOB_ID]
-```
-where `[JOB_ID]` is the ID assigned by the system when submitting the job.
-
-The results/models will be downloaded to your admin workspace (the exact download path will be displayed when running the command).
-You should see the best global model at
-```
-[DOWNLOAD_DIR]/[JOB_ID]/workspace/app_server/best_FL_global_model.pt
+workspaces/[job]/simulated_job/app_server/best_FL_global_model.pt
 ```
 
-Please then add the correct paths and job_ids to the testing script, and run
+Please then add the correct paths to the testing script, and run
 
 ```
 bash ./result_stat/testing_models_2d.sh
