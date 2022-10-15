@@ -35,7 +35,7 @@ class StartAppProcessor(RequestProcessor):
         result = engine.start_app(job_id)
         if not result:
             result = "OK"
-        return Message(topic="reply_" + req.topic, body=result)
+        return ok_reply(topic=f"reply_{req.topic}", body=result)
 
 
 class AbortAppProcessor(RequestProcessor):
@@ -50,7 +50,7 @@ class AbortAppProcessor(RequestProcessor):
         result = engine.abort_app(job_id)
         if not result:
             result = "OK"
-        return Message(topic="reply_" + req.topic, body=result)
+        return ok_reply(topic=f"reply_{req.topic}", body=result)
 
 
 class AbortTaskProcessor(RequestProcessor):
@@ -65,7 +65,7 @@ class AbortTaskProcessor(RequestProcessor):
         result = engine.abort_task(job_id)
         if not result:
             result = "OK"
-        return Message(topic="reply_" + req.topic, body=result)
+        return ok_reply(topic=f"reply_{req.topic}", body=result)
 
 
 class ShutdownClientProcessor(RequestProcessor):
@@ -79,7 +79,7 @@ class ShutdownClientProcessor(RequestProcessor):
         result = engine.shutdown()
         if not result:
             result = "OK"
-        return Message(topic="reply_" + req.topic, body=result)
+        return ok_reply(topic=f"reply_{req.topic}", body=result)
 
 
 class RestartClientProcessor(RequestProcessor):
@@ -93,7 +93,7 @@ class RestartClientProcessor(RequestProcessor):
         result = engine.restart()
         if not result:
             result = "OK"
-        return Message(topic="reply_" + req.topic, body=result)
+        return ok_reply(topic=f"reply_{req.topic}", body=result)
 
 
 class DeployProcessor(RequestProcessor):
@@ -118,7 +118,7 @@ class DeployProcessor(RequestProcessor):
         )
         if err:
             return error_reply(err)
-        return ok_reply(f"deployed {app_name} to {client_name}")
+        return ok_reply(body=f"deployed {app_name} to {client_name}")
 
 
 class DeleteRunNumberProcessor(RequestProcessor):
@@ -133,8 +133,7 @@ class DeleteRunNumberProcessor(RequestProcessor):
         result = engine.delete_run(job_id)
         if not result:
             result = "OK"
-        message = Message(topic="reply_" + req.topic, body=result)
-        return message
+        return ok_reply(topic=f"reply_{req.topic}", body=result)
 
 
 class ClientStatusProcessor(RequestProcessor):
@@ -146,20 +145,8 @@ class ClientStatusProcessor(RequestProcessor):
         if not isinstance(engine, ClientEngineInternalSpec):
             raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
         result = engine.get_engine_status()
-        # run_info = engine.get_current_run_info()
-        # if not run_info or run_info.job_id < 0:
-        #     result = {
-        #         ClientStatusKey.RUN_NUM: 'none',
-        #         ClientStatusKey.CURRENT_TASK: 'none'
-        #     }
-        # else:
-        #     result = {
-        #         ClientStatusKey.RUN_NUM: str(run_info.job_id),
-        #         ClientStatusKey.CURRENT_TASK: run_info.current_task_name
-        #     }
         result = json.dumps(result)
-        message = Message(topic="reply_" + req.topic, body=result)
-        return message
+        return ok_reply(topic=f"reply_{req.topic}", body=result)
 
 
 class ScopeInfoProcessor(RequestProcessor):
@@ -170,5 +157,4 @@ class ScopeInfoProcessor(RequestProcessor):
         scope_names, default_scope_name = get_scope_info()
         result = {ScopeInfoKey.SCOPE_NAMES: scope_names, ScopeInfoKey.DEFAULT_SCOPE: default_scope_name}
         result = json.dumps(result)
-        message = Message(topic="reply_" + req.topic, body=result)
-        return message
+        return ok_reply(topic=f"reply_{req.topic}", body=result)

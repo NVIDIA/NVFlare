@@ -186,10 +186,9 @@ class FedAdminAgent(object):
                     ref_event_id = req.get_header(ConnProps.EVENT_ID, "")
                     self.auditor.add_event(user=user_name, action=topic, ref=ref_event_id)
 
-                processor = self.processors.get(topic)
+                processor: RequestProcessor = self.processors.get(topic)
                 if processor:
                     try:
-                        assert isinstance(processor, RequestProcessor)
                         reply = None
 
                         # see whether pre-authorization is needed
@@ -226,9 +225,8 @@ class FedAdminAgent(object):
                                 # simply ack
                                 reply = ok_reply()
                             else:
-                                assert isinstance(
-                                    reply, Message
-                                ), "processor for topic {} failed to produce valid reply".format(topic)
+                                if not isinstance(reply, Message):
+                                    raise RuntimeError(f"processor for topic {topic} failed to produce valid reply")
                     except BaseException as e:
                         secure_log_traceback()
                         reply = error_reply(f"exception_occurred: {secure_format_exception(e)}")
