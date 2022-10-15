@@ -18,6 +18,7 @@ from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
+from nvflare.private.fed.server.admin import FedAdminServer
 
 
 class CommandUtil(object):
@@ -31,8 +32,6 @@ class CommandUtil(object):
     TARGET_TYPE_SERVER = "server"
     TARGET_TYPE_ALL = "all"
 
-    SITE_SERVER = "server"
-    ALL_SITES = "@ALL"
     JOB_ID = "job_id"
     JOB = "job"
 
@@ -143,13 +142,9 @@ class CommandUtil(object):
         else:
             return PreAuthzReturnCode.OK
 
-    def send_request_to_clients(self, conn, message, process_client_replies=None):
+    def send_request_to_clients(self, conn, message):
         client_tokens = conn.get_prop(self.TARGET_CLIENT_TOKENS)
 
-        # for client in clients:
-        #     requests.update({client.strip(): message})
-
-        # client_names = conn.get_prop(self.TARGET_CLIENT_NAMES, None)
         if not client_tokens:
             return None
 
@@ -157,13 +152,10 @@ class CommandUtil(object):
         for token in client_tokens:
             requests.update({token: message})
 
-        admin_server = conn.server
+        admin_server: FedAdminServer = conn.server
         replies = admin_server.send_requests(requests, timeout_secs=admin_server.timeout)
 
-        if process_client_replies:
-            return process_client_replies(replies)
-        else:
-            return replies
+        return replies
 
     @staticmethod
     def get_job_name(meta: dict) -> str:

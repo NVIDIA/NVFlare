@@ -59,7 +59,7 @@ class CheckResourceProcessor(RequestProcessor):
         engine = app_ctx
         result = Shareable()
         resource_manager = _get_resource_manager(engine)
-        check_result, token = True, ""
+        check_result, token = False, ""
 
         with engine.new_context() as fl_ctx:
             try:

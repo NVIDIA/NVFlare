@@ -44,7 +44,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
 
         Returns:
             A dict of {client_name: client_check_result}
-            where client_check_result is a tuple of {client check OK, resource reserve token if any}
+            where client_check_result is a tuple of (client check OK, resource reserve token if any)
         """
         engine = fl_ctx.get_engine()
         if not isinstance(engine, ServerEngineSpec):

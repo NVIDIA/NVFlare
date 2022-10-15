@@ -22,6 +22,7 @@ from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import ConfirmMethod
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
+from nvflare.private.admin_defs import MsgHeader, ReturnCode
 from nvflare.private.defs import ClientStatusKey, ScopeInfoKey, TrainingTopic
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
@@ -119,11 +120,23 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         replies = self.send_request_to_clients(conn, message)
         self.process_replies_to_table(conn, replies)
 
-        err = engine.remove_clients(clients)
-        if err:
-            conn.append_error(err)
-            return False
-        return True
+        clients_to_be_removed = set(clients)
+        for r in replies:
+            if r.reply.get_header(MsgHeader.RETURN_CODE) == ReturnCode.ERROR:
+                clients_to_be_removed.remove(r.client_token)
+
+        result = True
+        if clients_to_be_removed != set(clients):
+            # means some clients can not be shutdown
+            result = False
+
+        if clients_to_be_removed:
+            # needs to remove all the clients that can be removed
+            err = engine.remove_clients(clients_to_be_removed)
+            if err:
+                conn.append_error(err)
+                result = False
+        return result
 
     def shutdown(self, conn: Connection, args: List[str]):
         target_type = args[1]
