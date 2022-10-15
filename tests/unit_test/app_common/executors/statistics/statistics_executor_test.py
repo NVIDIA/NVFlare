@@ -96,16 +96,12 @@ class TestStatisticsExecutor:
         assert bin_range == [0, 50]
 
     def test_histogram(self):
-        hist_config = {"*": {"bins": 5}, "Age": {"bins": 10}}
-        inputs = Shareable()
-        inputs["min"] = {"train": {"Age": 0}}
-        inputs["max"] = {"train": {"Age": 50}}
-        inputs["statistic_config"] = hist_config
         hist_config = {"*": {"bins": 3}}
         inputs = Shareable()
         inputs["min"] = {"train": {"Age": 0}}
         inputs["max"] = {"train": {"Age": 50}}
         inputs["statistic_config"] = hist_config
+
         statistic_config = StatisticConfig("histogram", hist_config)
         histogram = self.stats_executor.get_histogram("train", "Age", statistic_config, inputs, None)
         assert histogram.hist_type == HistogramType.STANDARD
