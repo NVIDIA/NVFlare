@@ -171,8 +171,10 @@ class ServerEngineSpec(ABC):
             resource_reqs: A dict of {client_name: resource requirements dict}
 
         Returns:
-            A dict of {client_name: client_check_result} where client_check_result
-                is a tuple of {client check OK, resource reserve token if any}
+            A dict of {client_name: client_check_result}.
+                client_check_result is a tuple of (is_resource_enough, token);
+                is_resource_enough is a bool indicates whether there is enough resources;
+                token is for resource reservation / cancellation for this check request.
         """
         pass
 
@@ -184,7 +186,7 @@ class ServerEngineSpec(ABC):
 
         Args:
             resource_check_results: A dict of {client_name: client_check_result}
-                where client_check_result is a tuple of {client check OK, resource reserve token if any}
+                where client_check_result is a tuple of (is_resource_enough, resource reserve token if any)
             resource_reqs: A dict of {client_name: resource requirements dict}
         """
         pass
