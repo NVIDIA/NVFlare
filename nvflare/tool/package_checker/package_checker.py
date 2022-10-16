@@ -51,17 +51,15 @@ class PackageChecker(ABC):
     def get_dry_run_command(self) -> str:
         pass
 
-    def stop_dry_run(self, force: bool = False):
-        # todo: add gracefully shutdown command
+    def stop_dry_run(self, force: bool = True):
+        # todo: add gracefully shutdown command, currently
         print("killing dry run process")
-        if force:
-            cmd = f"pkill -9 -f '{self.package_path}'"
-        else:
-            cmd = f"pkill -9 -f '{self.package_path}'"
+
+        cmd = f"pkill -9 -f '{self.package_path}'"
         process = run_command_in_subprocess(cmd)
         process.wait()
 
-    def check(self) -> bool:
+    def check(self) -> int:
         """Checks if the package is runnable on the current system."""
         ret_code = 0
         try:

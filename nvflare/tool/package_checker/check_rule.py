@@ -151,8 +151,10 @@ class CheckSPSocketServerAvailable(CheckRule):
         if not check_socket_server_running(startup=startup, host=sp_name, port=int(admin_port)):
             return CheckResult(
                 f"Can't connect to ({sp_end_point})/DNS can't resolve its ip",
-                f" 1) If ({sp_end_point}) is public, check internet connection, try ping  ({sp_end_point}) "
-                + f" 2) If ({sp_end_point}) is private, then you need to add its ip to the etc/hosts",
+                f" 1) If ({sp_end_point}) is public, check internet connection, try ping  ({sp_end_point})."
+                + f" 2) If ({sp_end_point}) is private, then you need to add its ip to the etc/hosts."
+                + "3) If network is good, Please contact NVFLARE system admin and make sure the primary FL server"
+                + "is running."
             )
         return CheckResult(CHECK_PASSED, "N/A", data)
 
