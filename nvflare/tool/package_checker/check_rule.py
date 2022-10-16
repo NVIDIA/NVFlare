@@ -86,12 +86,16 @@ class CheckOverseerRunning(CheckRule):
         if err:
             return CheckResult(
                 f"Can't connect to overseer ({overseer_agent_args['overseer_end_point']}): {err}",
-                "Please check if overseer is up or certificates are correct.",
+                "1) Please check if overseer is up or certificates are correct." +
+                "2) Please check if overseer hostname in project.yml is available." +
+                "3) if running in local machine, check if overseer defined in project.yml is defined in /etc/hosts"
             )
         elif not check_response(resp):
             return CheckResult(
                 f"Can't connect to overseer ({overseer_agent_args['overseer_end_point']})",
-                "Please check if overseer is up or certificates are correct.",
+                "1) Please check if overseer is up or certificates are correct." +
+                "2) Please check if overseer hostname in project.yml is available." +
+                "3) if running in local machine, check if overseer defined in project.yml is defined in /etc/hosts"
             )
         return CheckResult(CHECK_PASSED, "N/A", resp)
 
