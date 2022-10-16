@@ -51,12 +51,17 @@ class PackageChecker(ABC):
     def get_dry_run_command(self) -> str:
         pass
 
-    def stop_dry_run(self):
-        process = run_command_in_subprocess(f"pkill -9 -f '{self.package_path}'")
+    def stop_dry_run(self, force: bool = True):
+        # todo: add gracefully shutdown command, currently
+        print("killing dry run process")
+
+        cmd = f"pkill -9 -f '{self.package_path}'"
+        process = run_command_in_subprocess(cmd)
         process.wait()
 
-    def check(self):
+    def check(self) -> int:
         """Checks if the package is runnable on the current system."""
+        ret_code = 0
         try:
             all_passed = True
             for rule in self.rules:
@@ -77,35 +82,56 @@ class PackageChecker(ABC):
 
             # check if server can run
             if all_passed:
-                self.check_dry_run(timeout=self.dry_run_timeout)
-
+                ret_code = self.check_dry_run(timeout=self.dry_run_timeout)
+            return ret_code
         except Exception as e:
             self.add_report(
                 "Package Error",
                 f"Exception happens in checking: {e}, this package is not in correct format.",
                 "Please download a new package.",
             )
+            return ret_code
 
-    def check_dry_run(self, timeout: int):
+    def check_dry_run(self, timeout: int) -> int:
         command = self.get_dry_run_command()
         process = run_command_in_subprocess(command)
         try:
             out, _ = process.communicate(timeout=timeout)
-            self.add_report(
-                "Check dry run",
-                f"Can't start successfully: {out}",
-                "Please check the error message of dry run.",
-            )
+            ret_code = process.returncode
+            if ret_code == 0:
+                self.add_report(
+                    "Check dry run",
+                    CHECK_PASSED,
+                    "N/A",
+                )
+            else:
+                self.add_report(
+                    "Check dry run",
+                    f"Can't start successfully: {out}",
+                    "Please check the error message of dry run.",
+                )
         except TimeoutExpired:
             os.killpg(process.pid, signal.SIGTERM)
+            # Assumption, preflight check is focused on the connectivity, so we assume all sub-systems should
+            # behave as designed if configured correctly.
+            # In such case, a dry run for any of the sub systems (overseer, server(s), clients etc.) will
+            # run as service forever once started, unless it is asked to stop. Therefore, we will get TimeoutExpired
+            # with above assumption, we consider the sub-system as running in good condition if it is started running
+            # in give timeout period
             self.add_report(
                 "Check dry run",
                 CHECK_PASSED,
                 "N/A",
             )
+
         finally:
             if process:
-                self.stop_dry_run()
+                if process.returncode == 0:
+                    return 1
+                else:
+                    return 2
+            else:
+                return 0
 
     def add_report(self, check_name, problem_text: str, fix_text: str):
         self.report[self.package_path].append((check_name, problem_text, fix_text))

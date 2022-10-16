@@ -86,12 +86,16 @@ class CheckOverseerRunning(CheckRule):
         if err:
             return CheckResult(
                 f"Can't connect to overseer ({overseer_agent_args['overseer_end_point']}): {err}",
-                "Please check if overseer is up or certificates are correct.",
+                "1) Please check if overseer is up or certificates are correct."
+                + "2) Please check if overseer hostname in project.yml is available."
+                + "3) if running in local machine, check if overseer defined in project.yml is defined in /etc/hosts",
             )
         elif not check_response(resp):
             return CheckResult(
                 f"Can't connect to overseer ({overseer_agent_args['overseer_end_point']})",
-                "Please check if overseer is up or certificates are correct.",
+                "1) Please check if overseer is up or certificates are correct."
+                + "2) Please check if overseer hostname in project.yml is available."
+                + "3) if running in local machine, check if overseer defined in project.yml is defined in /etc/hosts",
             )
         return CheckResult(CHECK_PASSED, "N/A", resp)
 
@@ -136,8 +140,9 @@ class CheckPrimarySPInResponse(CheckRule):
         psp = data.get("primary_sp")
         if not psp:
             return CheckResult(
-                f"Can't get primary service provider ({psp}) from overseer",
-                "Please check if server is up.",
+                "Can't get primary service provider from overseer",
+                "Please contact NVFLARE system admin and make sure at least one of the FL servers"
+                + " is up and can connect to overseer.",
             )
         return CheckResult(CHECK_PASSED, "N/A", psp)
 
@@ -149,8 +154,11 @@ class CheckSPSocketServerAvailable(CheckRule):
         sp_name, grpc_port, admin_port = sp_end_point.split(":")
         if not check_socket_server_running(startup=startup, host=sp_name, port=int(admin_port)):
             return CheckResult(
-                f"Can't connect to primary service provider's ({sp_end_point}) socketserver",
-                "Please check if server is up.",
+                f"Can't connect to ({sp_end_point})/DNS can't resolve its ip",
+                f" 1) If ({sp_end_point}) is public, check internet connection, try ping  ({sp_end_point})."
+                + f" 2) If ({sp_end_point}) is private, then you need to add its ip to the etc/hosts."
+                + "3) If network is good, Please contact NVFLARE system admin and make sure the primary FL server"
+                + "is running.",
             )
         return CheckResult(CHECK_PASSED, "N/A", data)
 
