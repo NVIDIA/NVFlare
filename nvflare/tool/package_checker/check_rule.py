@@ -86,16 +86,16 @@ class CheckOverseerRunning(CheckRule):
         if err:
             return CheckResult(
                 f"Can't connect to overseer ({overseer_agent_args['overseer_end_point']}): {err}",
-                "1) Please check if overseer is up or certificates are correct." +
-                "2) Please check if overseer hostname in project.yml is available." +
-                "3) if running in local machine, check if overseer defined in project.yml is defined in /etc/hosts"
+                "1) Please check if overseer is up or certificates are correct."
+                + "2) Please check if overseer hostname in project.yml is available."
+                + "3) if running in local machine, check if overseer defined in project.yml is defined in /etc/hosts",
             )
         elif not check_response(resp):
             return CheckResult(
                 f"Can't connect to overseer ({overseer_agent_args['overseer_end_point']})",
-                "1) Please check if overseer is up or certificates are correct." +
-                "2) Please check if overseer hostname in project.yml is available." +
-                "3) if running in local machine, check if overseer defined in project.yml is defined in /etc/hosts"
+                "1) Please check if overseer is up or certificates are correct."
+                + "2) Please check if overseer hostname in project.yml is available."
+                + "3) if running in local machine, check if overseer defined in project.yml is defined in /etc/hosts",
             )
         return CheckResult(CHECK_PASSED, "N/A", resp)
 
@@ -158,7 +158,7 @@ class CheckSPSocketServerAvailable(CheckRule):
                 f" 1) If ({sp_end_point}) is public, check internet connection, try ping  ({sp_end_point})."
                 + f" 2) If ({sp_end_point}) is private, then you need to add its ip to the etc/hosts."
                 + "3) If network is good, Please contact NVFLARE system admin and make sure the primary FL server"
-                + "is running."
+                + "is running.",
             )
         return CheckResult(CHECK_PASSED, "N/A", data)
 
