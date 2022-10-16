@@ -67,13 +67,7 @@ def get_host_gpu_ids() -> List:
     """
     result = use_nvidia_smi("index")
     gpu_ids = []
-
-    print("Failed to get gpu device IDs, assume no gpu device.")
     if result:
         for i in result[1:]:
             gpu_ids.append(int(i))
-    else:
-        # Failed to get gpu device IDs, assume no gpu device.
-        pass
-
     return gpu_ids
