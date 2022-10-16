@@ -18,6 +18,7 @@ import sys
 
 from nvflare.cli_exception import CLIException
 from nvflare.dashboard.cli import define_dashboard_parser, handle_dashboard
+from nvflare.fuel.hci.tools.authz_preview import define_authz_preview_parser, run_command
 from nvflare.lighter.poc_commands import def_poc_parser, handle_poc_cmd
 from nvflare.lighter.provision import define_provision_parser, handle_provision
 from nvflare.private.fed.app.simulator.simulator import define_simulator_parser, run_simulator
@@ -28,6 +29,7 @@ CMD_PROVISION = "provision"
 CMD_PREFLIGHT_CHECK = "preflight_check"
 CMD_SIMULATOR = "simulator"
 CMD_DASHBOARD = "dashboard"
+CMD_AUTHZ_PREVIEW = "authz_preview"
 
 
 def check_python_version():
@@ -71,8 +73,20 @@ def handle_simulator_cmd(simulator_args):
     os._exit(status)
 
 
+def def_authz_preview_parser(sub_cmd):
+    cmd = CMD_AUTHZ_PREVIEW
+    authz_preview_parser = sub_cmd.add_parser(cmd)
+    define_authz_preview_parser(authz_preview_parser)
+    return {cmd: authz_preview_parser}
+
+
+def handle_authz_preview(args):
+    run_command(args)
+
+
 def parse_args(prog_name: str):
     _parser = argparse.ArgumentParser(description=prog_name)
+    _parser.add_argument("--version", "-V", action="store_true", help="print nvflare version")
     sub_cmd = _parser.add_subparsers(description="sub command parser", dest="sub_command")
     sub_cmd_parsers = {}
     sub_cmd_parsers.update(def_poc_parser(sub_cmd))
@@ -80,6 +94,7 @@ def parse_args(prog_name: str):
     sub_cmd_parsers.update(def_provision_parser(sub_cmd))
     sub_cmd_parsers.update(def_simulator_parser(sub_cmd))
     sub_cmd_parsers.update(def_dashboard_parser(sub_cmd))
+    sub_cmd_parsers.update(def_authz_preview_parser(sub_cmd))
 
     return _parser, _parser.parse_args(), sub_cmd_parsers
 
@@ -90,6 +105,7 @@ handlers = {
     CMD_PREFLIGHT_CHECK: check_packages,
     CMD_SIMULATOR: handle_simulator_cmd,
     CMD_DASHBOARD: handle_dashboard,
+    CMD_AUTHZ_PREVIEW: handle_authz_preview,
 }
 
 
@@ -102,6 +118,8 @@ def run(prog_name):
         sub_cmd = prog_args.sub_command
         if sub_cmd:
             handlers[sub_cmd](prog_args)
+        elif prog_args.version:
+            print_nvflare_version()
         else:
             prog_parser.print_help()
 
@@ -109,7 +127,7 @@ def run(prog_name):
         print(e)
         sys.exit(1)
     except Exception as e:
-        print(f"unable to handle command: {sub_cmd} due to : {e}, please check syntax ")
+        print(f"unable to handle command: {sub_cmd} due to: {e}, please check syntax ")
         print_help(prog_parser, sub_cmd, sub_cmd_parsers)
 
 
@@ -122,6 +140,12 @@ def print_help(prog_parser, sub_cmd, sub_cmd_parsers):
             prog_parser.print_help()
     else:
         prog_parser.print_help()
+
+
+def print_nvflare_version():
+    import nvflare
+
+    print(f"NVFlare version is {nvflare.__version__}")
 
 
 def main():

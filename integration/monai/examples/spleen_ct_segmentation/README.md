@@ -22,7 +22,8 @@ pip install -r virtualenv/requirements.txt
 
 ### 2. Download the Spleen Bundle
 ```
-python3 -m monai.bundle download --name "spleen_ct_segmentation_v0.1.1" --bundle_dir ./job/app/config
+JOB_NAME=job
+python3 -m monai.bundle download --name "spleen_ct_segmentation_v0.3.2" --bundle_dir ./${JOB_NAME}/app/config
 ``` 
 
 ### 3. Download the data
@@ -30,8 +31,9 @@ Download the spleen CT data from the [MSD challenge](http://medicaldecathlon.com
 
 > **Note:** The dataset will be saved under `./data`. 
 ```
+JOB_NAME=job
 python3 download_spleen_dataset.py
-sed -i "s|/workspace/data/Task09_Spleen|${PWD}/data/Task09_Spleen|g" job/app/config/spleen_ct_segmentation/configs/train.json
+sed -i "s|/workspace/data/Task09_Spleen|${PWD}/data/Task09_Spleen|g" ${JOB_NAME}/app/config/spleen_ct_segmentation/configs/train.json
 ```
 
 ### 4. Run experiment in simulator
@@ -41,7 +43,7 @@ In resource restricted environments where you need to simulate several clients (
 you can run the simulator using:
 
 ```
-python3 -u -m nvflare.private.fed.app.simulator.simulator job --workspace /tmp/nvflare/sim_spleen_ct_seg --threads 1 --n_clients 2
+nvflare simulator job --workspace /tmp/nvflare/sim_spleen_ct_seg --threads 1 --n_clients 2
 ```
 
 #### 4.2 Multiple threads, multiple gpus
@@ -50,10 +52,19 @@ We can also specify the client names via the `--clients` argument
 and assign them to the appropriate GPU device using the `--gpu` argument.
 
 ```
-python3 -u -m nvflare.private.fed.app.simulator.simulator job --workspace /tmp/nvflare/sim_spleen_ct_seg --threads 2 --clients site-1,site-2 --gpu 0,1
+nvflare simulator job --workspace /tmp/nvflare/sim_spleen_ct_seg --threads 2 --clients site-1,site-2 --gpu 0,1
 ```
 
-#### 4.3 TensorBoard visualization
+#### 4.3 Multi-gpu training
+If you have several gpus in your system and want to simulate multi-gpu training on one client, 
+please follow step 2 & 3 above but replace `JOB_NAME=job` with `JOB_NAME=job_multi_gpu`. This will use NVFlare's `PTMultiProcessExecutor` 
+to start multi-gpu training using [torchrun](https://pytorch.org/docs/stable/elastic/run.html) on one client. 
+
+```
+nvflare simulator job_multi_gpu --workspace /tmp/nvflare/sim_spleen_ct_seg --threads 1 --n_clients 1
+```
+
+#### 4.4 TensorBoard visualization
 To monitor the training job, you can start tensorboard:
 ```
 tensorboard --logdir /tmp/nvflare/sim_spleen_ct_seg
@@ -75,6 +86,24 @@ In order to load a pretrained model provided in the MONAI bundle, define the `so
 ```
 
 > **_NOTE:_** For more information about the simulator, see [here](https://nvflare.readthedocs.io).
+
+#### 4.5 Federated statistics
+
+To compute summary statistics on the datasets defined in the MONAI bundle, we can use NVFlare's `StatisticsController`.
+Again, please step 2 & 3 above but replace `JOB_NAME=job` with `JOB_NAME=job_stats`.
+To avoid caching the data for training (which will not be executed during the statistics workflow), set `cache_rate=0` in train.json. 
+```
+nvflare simulator job_stats --workspace /tmp/nvflare/sim_spleen_ct_seg --threads 2 --n_clients 2 --gpu 0,1
+```
+The results will be placed in the workspace directory under `simulate_job/statistics/image_statistics.json`.
+
+For an end-to-end demo, including visualization of the gathered statistics, start a Jupyter Lab with `stats_demo`
+```
+jupyter lab stats_demo
+```
+and open `visualization.ipynb`.
+
+See [here](https://jupyterlab.readthedocs.io/en/stable/getting_started/installation.html) for installing jupyter lab.
 
 ### 5. Run NVFlare in POC mode
 

@@ -22,10 +22,12 @@ from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import ConfirmMethod
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
+from nvflare.private.admin_defs import MsgHeader, ReturnCode
 from nvflare.private.defs import ClientStatusKey, ScopeInfoKey, TrainingTopic
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
 from nvflare.private.fed.utils.fed_utils import get_scope_info
+from nvflare.security.logging import secure_format_exception
 
 from .cmd_utils import CommandUtil
 from .server_engine import ServerEngine
@@ -118,11 +120,23 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         replies = self.send_request_to_clients(conn, message)
         self.process_replies_to_table(conn, replies)
 
-        err = engine.remove_clients(clients)
-        if err:
-            conn.append_error(err)
-            return False
-        return True
+        clients_to_be_removed = set(clients)
+        for r in replies:
+            if r.reply and r.reply.get_header(MsgHeader.RETURN_CODE) == ReturnCode.ERROR:
+                clients_to_be_removed.remove(r.client_token)
+
+        result = True
+        if clients_to_be_removed != set(clients):
+            # means some clients can not be shutdown
+            result = False
+
+        if clients_to_be_removed:
+            # needs to remove all the clients that can be removed
+            err = engine.remove_clients(clients_to_be_removed)
+            if err:
+                conn.append_error(err)
+                result = False
+        return result
 
     def shutdown(self, conn: Connection, args: List[str]):
         target_type = args[1]
@@ -280,8 +294,8 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                                 table.add_row([client_name, app_name, job_id, status])
                         else:
                             table.add_row([client_name, app_name, job_id, "No Jobs"])
-                except BaseException as ex:
-                    self.logger.error(f"Bad reply from client: {ex}")
+                except BaseException as e:
+                    self.logger.error(f"Bad reply from client: {secure_format_exception(e)}")
             else:
                 table.add_row([client_name, app_name, job_id, "No Reply"])
 
@@ -310,9 +324,9 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                         self._add_scope_info(table, client_name, scope_names, default_scope)
                     else:
                         conn.append_error(f"bad response from client {client_name}: expect dict but got {type(body)}")
-                except BaseException as ex:
-                    self.logger.error(f"Bad reply from client: {ex}")
-                    conn.append_error(f"bad response from client {client_name}: {ex}")
+                except BaseException as e:
+                    self.logger.error(f"Bad reply from client: {secure_format_exception(e)}")
+                    conn.append_error(f"bad response from client {client_name}: {secure_format_exception(e)}")
             else:
                 self._add_scope_info(table, client_name, [], "no reply")
 

@@ -16,13 +16,13 @@
 
 import threading
 import time
-import traceback
 
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.sec.audit import Auditor, AuditService
 from nvflare.fuel.sec.authz import AuthorizationService, AuthzContext, Person
 from nvflare.private.admin_defs import Message, error_reply, ok_reply
 from nvflare.private.defs import RequestHeader
+from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 
 class Sender(object):
@@ -186,10 +186,9 @@ class FedAdminAgent(object):
                     ref_event_id = req.get_header(ConnProps.EVENT_ID, "")
                     self.auditor.add_event(user=user_name, action=topic, ref=ref_event_id)
 
-                processor = self.processors.get(topic)
+                processor: RequestProcessor = self.processors.get(topic)
                 if processor:
                     try:
-                        assert isinstance(processor, RequestProcessor)
                         reply = None
 
                         # see whether pre-authorization is needed
@@ -216,7 +215,7 @@ class FedAdminAgent(object):
                                 if err:
                                     reply = error_reply(err)
                                 elif not authorized:
-                                    reply = error_reply("not_authorized")
+                                    reply = error_reply("not authorized")
                             else:
                                 reply = error_reply("requires authz but missing admin command")
 
@@ -226,12 +225,11 @@ class FedAdminAgent(object):
                                 # simply ack
                                 reply = ok_reply()
                             else:
-                                assert isinstance(
-                                    reply, Message
-                                ), "processor for topic {} failed to produce valid reply".format(topic)
+                                if not isinstance(reply, Message):
+                                    raise RuntimeError(f"processor for topic {topic} failed to produce valid reply")
                     except BaseException as e:
-                        traceback.print_exc()
-                        reply = error_reply("exception_occurred: {}".format(e))
+                        secure_log_traceback()
+                        reply = error_reply(f"exception_occurred: {secure_format_exception(e)}")
                 else:
                     reply = error_reply("invalid_request")
 

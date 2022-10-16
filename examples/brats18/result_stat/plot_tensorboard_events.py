@@ -100,7 +100,7 @@ def main():
         site = site + 1
         data = {"Config": [], "Epoch": [], "Dice": []}
         for config, exp in experiments.items():
-            job_id = find_job_id(workdir=client_results_root+"/site-1", fl_app_name=config)
+            job_id = find_job_id(workdir=client_results_root + "/site-1", fl_app_name=config)
             print(f"Found run {job_id} for {config}")
             spec_site = exp.get("site", None)
             if spec_site is not None:

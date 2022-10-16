@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.app_common.resource_managers.resouce_manager import BaseResourceManager
+from nvflare.app_common.resource_managers.auto_clean_resource_manager import AutoCleanResourceManager
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids, get_host_gpu_memory_total
 
 
@@ -32,7 +32,7 @@ class GPUResource:
         return {"gpu_id": self.id, "memory": self.memory}
 
 
-class GPUResourceManager(BaseResourceManager):
+class GPUResourceManager(AutoCleanResourceManager):
     def __init__(
         self,
         num_of_gpus: int,
@@ -53,17 +53,17 @@ class GPUResourceManager(BaseResourceManager):
         _check_non_negative(num_of_gpus, "num_of_gpus")
         _check_non_negative(mem_per_gpu_in_GiB, "mem_per_gpu_in_GiB")
         _check_non_negative(expiration_period, "expiration_period")
+        if num_of_gpus > 0:
+            num_host_gpus = len(get_host_gpu_ids())
+            if num_of_gpus > num_host_gpus:
+                raise ValueError(f"num_of_gpus specified ({num_of_gpus}) exceeds available GPUs: {num_host_gpus}.")
 
-        num_host_gpus = len(get_host_gpu_ids())
-        if num_of_gpus > num_host_gpus:
-            raise ValueError(f"num_of_gpus specified {num_of_gpus} is greater than available GPUs: {num_host_gpus}.")
-
-        host_gpu_mem = get_host_gpu_memory_total()
-        for i in host_gpu_mem:
-            if mem_per_gpu_in_GiB * 1024 > i:
-                raise ValueError(
-                    f"mem_per_gpu_in_GiB specified {mem_per_gpu_in_GiB * 1024} is greater than available GPU memory: {i}"
-                )
+            host_gpu_mem = get_host_gpu_memory_total()
+            for i in host_gpu_mem:
+                if mem_per_gpu_in_GiB * 1024 > i:
+                    raise ValueError(
+                        f"Memory per GPU specified ({mem_per_gpu_in_GiB * 1024}) exceeds available GPU memory: {i}."
+                    )
 
         self.num_gpu_key = num_gpu_key
         self.gpu_mem_key = gpu_mem_key

@@ -160,6 +160,7 @@ class AlgorithmConstants(object):
 
 class StatisticsConstants(AppConstants):
     STATS_COUNT = "count"
+    STATS_FAILURE_COUNT = "failure_count"
     STATS_MEAN = "mean"
     STATS_SUM = "sum"
     STATS_VAR = "var"
@@ -173,16 +174,19 @@ class StatisticsConstants(AppConstants):
     STATS_GLOBAL_COUNT = "global_count"
     STATS_BINS = "bins"
     STATS_BIN_RANGE = "range"
-    STATS_TARGET_METRICS = "metrics"
+    STATS_TARGET_STATISTICS = "statistics"
 
+    FED_STATS_PRE_RUN = "fed_stats_pre_run"
     FED_STATS_TASK = "fed_stats"
-    METRIC_TASK_KEY = "fed_stats_metric"
-    STATS_1st_METRICS = "fed_stats_1st_metric"
-    STATS_2nd_METRICS = "fed_stats_2nd_metric"
+    STATISTICS_TASK_KEY = "fed_stats_task_key"
+    STATS_1st_STATISTICS = "fed_stats_1st_statistics"
+    STATS_2nd_STATISTICS = "fed_stats_2nd_statistics"
 
     GLOBAL = "Global"
 
-    ordered_metrics = {
-        STATS_1st_METRICS: [STATS_COUNT, STATS_SUM, STATS_MEAN, STATS_MIN, STATS_MAX],
-        STATS_2nd_METRICS: [STATS_HISTOGRAM, STATS_VAR, STATS_STDDEV],
+    ordered_statistics = {
+        STATS_1st_STATISTICS: [STATS_COUNT, STATS_FAILURE_COUNT, STATS_SUM, STATS_MEAN, STATS_MIN, STATS_MAX],
+        STATS_2nd_STATISTICS: [STATS_HISTOGRAM, STATS_VAR, STATS_STDDEV],
     }
+
+    PRE_RUN_RESULT = "fed_stats_pre_run_result"

@@ -42,7 +42,7 @@
         "min_clients": 2,
         "num_rounds": 3,
         "start_round": 0,
-        "wait_time_after_min_received": 10,
+        "wait_time_after_min_received": 0,
         "aggregator_id": "aggregator",
         "persistor_id": "persistor",
         "shareable_generator_id": "shareable_generator",

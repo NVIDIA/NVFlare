@@ -17,13 +17,14 @@
 import argparse
 import logging
 import os
+import signal
 import sys
 import threading
 import time
 
 import psutil
 
-from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants
+from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import SecurityContentService
@@ -32,18 +33,28 @@ from nvflare.private.defs import EngineConstant
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger
 from nvflare.private.fed.client.client_app_runner import ClientAppRunner
 from nvflare.private.fed.client.client_status import ClientStatus
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler
+from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize
+from nvflare.security.logging import secure_format_exception
 
 
 def check_parent_alive(parent_pid, stop_event: threading.Event):
     while True:
-        if stop_event.is_set():
-            break
-        if not psutil.pid_exists(parent_pid):
-            # if parent is not alive, kill its worker process
-            os.killpg(os.getpgid(os.getpid()), 9)
+        if stop_event.is_set() or not psutil.pid_exists(parent_pid):
+            pid = os.getpid()
+            kill_child_processes(pid)
+            os.killpg(os.getpgid(pid), 9)
             break
         time.sleep(1)
+
+
+def kill_child_processes(parent_pid, sig=signal.SIGTERM):
+    try:
+        parent = psutil.Process(parent_pid)
+    except psutil.NoSuchProcess:
+        return
+    children = parent.children(recursive=True)
+    for process in children:
+        process.send_signal(sig)
 
 
 def main():
@@ -76,9 +87,9 @@ def main():
     config_folder = kv_list.get("config_folder", "")
     secure_train = kv_list.get("secure_train", True)
     if config_folder == "":
-        args.client_config = WorkspaceConstants.CLIENT_JOB_CONFIG
+        args.client_config = JobConstants.CLIENT_JOB_CONFIG
     else:
-        args.client_config = os.path.join(config_folder, WorkspaceConstants.CLIENT_JOB_CONFIG)
+        args.client_config = os.path.join(config_folder, JobConstants.CLIENT_JOB_CONFIG)
     args.config_folder = config_folder
     args.env = os.path.join("config", "environment.json")
     workspace = Workspace(args.workspace, args.client_name, config_folder)
@@ -93,6 +104,7 @@ def main():
     if os.path.exists(restart_file):
         os.remove(restart_file)
 
+    fobs_initialize()
     # Initialize audit service since the job execution will need it!
     audit_file_name = workspace.get_audit_file_path()
     AuditService.initialize(audit_file_name)
@@ -140,7 +152,8 @@ def main():
         client_app_runner.start_run(app_root, args, config_folder, federated_client, secure_train)
 
     except BaseException as e:
-        logger.error(f"FL client execution exception: {e}", exc_info=True)
+        logger = logging.getLogger("worker_process")
+        logger.error(f"FL client execution exception: {secure_format_exception(e)}")
         raise e
     finally:
         stop_event.set()

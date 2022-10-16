@@ -106,8 +106,8 @@ class AdminMessageSender(Sender):
         return messages
 
     def _retrieve_client_requests(self, taskname):
+        message_list = []
         try:
-            message_list = []
             with self._set_up_channel(self.servers[taskname]) as channel:
                 stub = admin_service.AdminCommunicatingStub(channel)
 
@@ -116,8 +116,8 @@ class AdminMessageSender(Sender):
                 messages = stub.Retrieve(client)
                 for i in messages.message:
                     message_list.append(proto_to_message(i))
-        except Exception as e:
-            messages = None
+        except Exception:
+            pass
         return message_list
 
     def send_result(self, message: Message):

@@ -74,47 +74,46 @@ gunicorn_conf_py: |
 
 local_client_resources: |
   {
-      "format_version": 2,
-      "client": {
-        "retry_timeout": 30,
-        "compression": "Gzip"
+    "format_version": 2,
+    "client": {
+      "retry_timeout": 30,
+      "compression": "Gzip"
+    },
+    "components": [
+      {
+        "id": "resource_manager",
+        "path": "nvflare.app_common.resource_managers.gpu_resource_manager.GPUResourceManager",
+        "args": {
+          "num_of_gpus": 0,
+          "mem_per_gpu_in_GiB": 0
+        }
       },
-      "components": [
-          {
-            "id": "resource_manager",
-            "path": "nvflare.app_common.resource_managers.gpu_resource_manager.GPUResourceManager",
-            "args": {
-              "num_of_gpus": 1,
-              "mem_per_gpu_in_GiB": 2
-            }
-          },
-          {
-            "id": "resource_consumer",
-            "path": "nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer",
-            "args": {
-            }
-          }
-      ]
+      {
+        "id": "resource_consumer",
+        "path": "nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer",
+        "args": {}
+      }
+    ]
   }
 
 fed_client: |
   {
     "format_version": 2,
     "servers": [
-        {
-            "name": "spleen_segmentation",
-            "service": {
-                "options": [
-                    ["grpc.max_send_message_length",    2147483647],
-                    ["grpc.max_receive_message_length", 2147483647]
-                ]
-            }
+      {
+        "name": "spleen_segmentation",
+        "service": {
+          "options": [
+            ["grpc.max_send_message_length",    2147483647],
+            ["grpc.max_receive_message_length", 2147483647]
+          ]
         }
+      }
     ],
     "client": {
-        "ssl_private_key": "client.key",
-        "ssl_cert": "client.crt",
-        "ssl_root_cert": "rootCA.pem"
+      "ssl_private_key": "client.key",
+      "ssl_cert": "client.crt",
+      "ssl_root_cert": "rootCA.pem"
     }
   }
 
@@ -207,7 +206,7 @@ local_server_resources: |
               "id": "job_scheduler",
               "path": "nvflare.app_common.job_schedulers.job_scheduler.DefaultJobScheduler",
               "args": {
-                  "max_jobs": 1
+                  "max_jobs": 4
               }
           },
           {
@@ -347,7 +346,7 @@ fl_admin_sh: |
 
 log_config: |
   [loggers]
-  keys=root,modelLogger
+  keys=root
 
   [handlers]
   keys=consoleHandler
@@ -358,12 +357,6 @@ log_config: |
   [logger_root]
   level=INFO
   handlers=consoleHandler
-
-  [logger_modelLogger]
-  level=DEBUG
-  handlers=consoleHandler
-  qualname=modelLogger
-  propagate=0
 
   [handler_consoleHandler]
   class=StreamHandler

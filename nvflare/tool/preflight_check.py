@@ -24,30 +24,18 @@ from nvflare.tool.package_checker import (
 
 
 def define_preflight_check_parser(parser):
-    parser.add_argument("--package_root", required=True, type=str, help="root folder of all the packages")
-    parser.add_argument("--packages", type=str, nargs="*")
+    parser.add_argument("-p", "--package_path", required=True, type=str, help="path to specific package")
 
 
 def check_packages(args):
-    package_root = args.package_root
-    if not os.path.isdir(package_root):
-        print(f"package_root {package_root} is not a valid directory.")
+    package_path = args.package_path
+    if not os.path.isdir(package_path):
+        print(f"package_path {package_path} is not a valid directory.")
         return
 
-    if not args.packages:
-        print("Did not specify any package.")
+    if not os.path.isdir(os.path.join(package_path, "startup")):
+        print(f"package in {package_path} is not in the correct format.")
         return
-
-    package_names = list(os.listdir(package_root))
-    package_to_check = args.packages
-    for name in package_to_check:
-        if name not in package_names:
-            print(f"package name {name} is not in the specified root dir.")
-            return
-
-        if not os.path.isdir(os.path.join(package_root, name, "startup")):
-            print(f"package {name} is not in the correct format.")
-            return
 
     package_checkers = [
         OverseerPackageChecker(),
@@ -56,12 +44,16 @@ def check_packages(args):
         NVFlareConsolePackageChecker(),
     ]
     for p in package_checkers:
-        for name in package_to_check:
-            package_path = os.path.abspath(os.path.join(package_root, name))
-            p.init(package_path=package_path)
-            if p.should_be_checked():
-                p.check()
+        p.init(package_path=package_path)
+        ret_code = 0
+        if p.should_be_checked():
+            ret_code = p.check()
         p.print_report()
+
+        if ret_code == 1:
+            p.stop_dry_run(force=False)
+        elif ret_code == 2:
+            p.stop_dry_run()
 
 
 def main():

@@ -19,7 +19,6 @@ import os
 import pathlib
 import shutil
 import sys
-import webbrowser
 
 from nvflare.fuel.utils.class_utils import instantiate_class
 from nvflare.lighter.spec import Participant, Project, Provisioner
@@ -50,18 +49,13 @@ def define_provision_parser(parser):
     parser.add_argument("-p", "--project_file", type=str, default="project.yml", help="file to describe FL project")
     parser.add_argument("-w", "--workspace", type=str, default="workspace", help="directory used by provision")
     parser.add_argument("-c", "--custom_folder", type=str, default=".", help="additional folder to load python codes")
-    parser.add_argument(
-        "-u",
-        "--ui_tool",
-        action="store_true",
-        help="Run provisioning UI tool to generate project.yml file",
-    )
     parser.add_argument("--add_user", type=str, default="", help="yaml file for added user")
     parser.add_argument("--add_client", type=str, default="", help="yaml file for added client")
 
 
 def has_no_arguments() -> bool:
-    return sys.argv[-1].endswith("provision")
+    last_item = sys.argv[-1]
+    return last_item.endswith("provision") or last_item.endswith("provision.py")
 
 
 def handle_provision(args):
@@ -76,24 +70,19 @@ def handle_provision(args):
     current_project_yml = os.path.join(current_path, "project.yml")
 
     if has_no_arguments() and not os.path.exists(current_project_yml):
-        answer = input(
-            f"No project.yml found in current folder.  Is it OK to generate one at {current_project_yml} for you? (y/N) "
-        )
-        if answer.strip().upper() == "Y":
-            shutil.copyfile(os.path.join(file_path, "project.yml"), current_project_yml)
-            print(f"{current_project_yml} was created.  Please edit it to fit your FL configuration.")
-        exit(0)
-
-    if args.ui_tool:
-        ui_helper_path = os.path.join(file_path, "provision_helper.html")
-        ui_helper_url = f"file://{ui_helper_path}"
-        webbrowser.open_new_tab(ui_helper_url)
+        files = {"1": "ha_project.yml", "2": "dummy_project.yml", "3": None}
+        print("No project.yml found in current folder.\nThere are two types of templates for project.yml.")
         print(
-            "\n******\n"
-            "Now launching provisioning UI tool.\n"
-            "After generating project.yml in the browser and saving it to your local folder,\n"
-            "please re-run provision with -p option, pointing to the generated project.yml, to generate all packages.\n******\n"
+            "1) project.yml for HA mode\n2) project.yml for non-HA mode\n3) Don't generate project.yml.  Exit this program."
         )
+        answer = input(f"Which type of project.yml should be generated at {current_project_yml} for you? (1/2/3) ")
+        answer = answer.strip()
+        src_project = files.get(answer, None)
+        if src_project:
+            shutil.copyfile(os.path.join(file_path, src_project), current_project_yml)
+            print(f"{current_project_yml} was created.  Please edit it to fit your FL configuration.")
+        else:
+            print(f"{answer} was selected.  No project.yml was created.")
         exit(0)
 
     workspace = args.workspace

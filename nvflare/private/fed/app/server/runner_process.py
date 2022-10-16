@@ -19,6 +19,7 @@ import logging
 import os
 import sys
 
+from nvflare.apis.fl_constant import JobConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.sec.audit import AuditService
@@ -28,7 +29,8 @@ from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger
 from nvflare.private.fed.server.server_app_runner import ServerAppRunner
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler
+from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize
+from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 
 def main():
@@ -50,9 +52,9 @@ def main():
 
     config_folder = kv_list.get("config_folder", "")
     if config_folder == "":
-        args.server_config = AppFolderConstants.CONFIG_FED_SERVER
+        args.server_config = JobConstants.SERVER_JOB_CONFIG
     else:
-        args.server_config = os.path.join(config_folder, AppFolderConstants.CONFIG_FED_SERVER)
+        args.server_config = os.path.join(config_folder, JobConstants.SERVER_JOB_CONFIG)
 
     # TODO:: remove env and train config since they are not core
     args.env = os.path.join("config", AppFolderConstants.CONFIG_ENV)
@@ -68,6 +70,8 @@ def main():
     command_agent = None
     try:
         os.chdir(args.workspace)
+        fobs_initialize()
+
         SecurityContentService.initialize(content_folder=workspace.get_startup_kit_dir())
 
         # Initialize audit service since the job execution will need it!
@@ -118,9 +122,11 @@ def main():
                 deployer.close()
             AuditService.close()
 
-    except ConfigError as ex:
-        logger.exception(f"ConfigError: {ex}", exc_info=True)
-        raise ex
+    except ConfigError as e:
+        logger = logging.getLogger("runner_process")
+        logger.exception(f"ConfigError: {secure_format_exception(e)}")
+        secure_log_traceback(logger)
+        raise e
 
 
 if __name__ == "__main__":

@@ -35,33 +35,64 @@ age_hist = Histogram(hist_type=HistogramType.STANDARD, bins=hist_bins, hist_name
         # 10 < 20 
 """
 HIST_BINS_VALIDATION_TEST_CASES = [
-    ({"count": {"train": {"age": 6}}, "histogram": {"train": {"age": age_hist}}}, 10, {"train": {"age": False}}),
-    ({"count": {"train": {"age": 200}}, "histogram": {"train": {"age": age_hist}}}, 10, {"train": {"age": True}}),
+    (
+        {
+            "count": {"train": {"age": 6}},
+            "failure_count": {"train": {"age": 0}},
+            "histogram": {"train": {"age": age_hist}},
+        },
+        10,
+        {"train": {"age": False}},
+    ),
+    (
+        {
+            "count": {"train": {"age": 200}},
+            "failure_count": {"train": {"age": 0}},
+            "histogram": {"train": {"age": age_hist}},
+        },
+        10,
+        {"train": {"age": True}},
+    ),
 ]
 
 HIST_BINS_APPLY_TEST_CASES = [
     (
-        {"count": {"train": {"age": 6}}, "histogram": {"train": {"age": age_hist}}},
+        {
+            "count": {"train": {"age": 6}},
+            "failure_count": {"train": {"age": 0}},
+            "histogram": {"train": {"age": age_hist}},
+        },
         10,
-        ({"count": {"train": {"age": 6}}, "histogram": {"train": {}}}, True),
+        ({"count": {"train": {"age": 6}}, "failure_count": {"train": {"age": 0}}, "histogram": {"train": {}}}, True),
     ),
     (
-        {"count": {"train": {"age": 200}}, "histogram": {"train": {"age": age_hist}}},
+        {
+            "count": {"train": {"age": 200}},
+            "failure_count": {"train": {"age": 0}},
+            "histogram": {"train": {"age": age_hist}},
+        },
         10,
-        ({"count": {"train": {"age": 200}}, "histogram": {"train": {"age": age_hist}}}, False),
+        (
+            {
+                "count": {"train": {"age": 200}},
+                "failure_count": {"train": {"age": 0}},
+                "histogram": {"train": {"age": age_hist}},
+            },
+            False,
+        ),
     ),
 ]
 
 
 class TestHistBinsCleanser:
-    @pytest.mark.parametrize("metrics, max_bins_percent, expected_result", HIST_BINS_VALIDATION_TEST_CASES)
-    def test_hist_bins_validate(self, metrics, max_bins_percent, expected_result):
+    @pytest.mark.parametrize("statistics, max_bins_percent, expected_result", HIST_BINS_VALIDATION_TEST_CASES)
+    def test_hist_bins_validate(self, statistics, max_bins_percent, expected_result):
         checker = HistogramBinsCleanser(max_bins_percent=max_bins_percent)
-        results = checker.hist_bins_validate("site-1", metrics=metrics)
+        results = checker.hist_bins_validate("site-1", statistics=statistics)
         assert results == expected_result
 
-    @pytest.mark.parametrize("metrics, max_bins_percent, expected_result", HIST_BINS_APPLY_TEST_CASES)
-    def test_hist_bins_apply(self, metrics, max_bins_percent, expected_result):
+    @pytest.mark.parametrize("statistics, max_bins_percent, expected_result", HIST_BINS_APPLY_TEST_CASES)
+    def test_hist_bins_apply(self, statistics, max_bins_percent, expected_result):
         checker = HistogramBinsCleanser(max_bins_percent=max_bins_percent)
-        results = checker.apply(metrics=metrics, client_name="site-1")
+        results = checker.apply(statistics=statistics, client_name="site-1")
         assert results == expected_result

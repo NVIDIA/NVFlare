@@ -1,0 +1,8 @@
+numpy
+itk-io
+monai
+pandas
+kaleido
+matplotlib
+jupyter
+notebook

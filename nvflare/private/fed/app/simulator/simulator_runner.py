@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
+import logging.config
 import os
 import shlex
 import shutil
@@ -23,30 +23,36 @@ import threading
 import time
 from argparse import Namespace
 from concurrent.futures import ThreadPoolExecutor
+from multiprocessing import Manager, Process
 from multiprocessing.connection import Client
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import MachineStatus, WorkspaceConstants
+from nvflare.apis.fl_constant import JobConstants, MachineStatus, WorkspaceConstants
 from nvflare.apis.job_def import ALL_SITES, JobMetaKey
-from nvflare.apis.utils.common_utils import get_open_ports
+from nvflare.apis.utils.job_utils import convert_legacy_zipped_app_to_job
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.multi_process_executor_constants import CommunicationMetaData
 from nvflare.fuel.hci.server.authz import AuthorizationService
-from nvflare.fuel.hci.zip_utils import convert_legacy_zip, split_path, unzip_all_from_bytes, zip_directory_to_bytes
 from nvflare.fuel.sec.audit import AuditService
+from nvflare.fuel.utils.network_utils import get_open_ports
+from nvflare.fuel.utils.zip_utils import split_path, unzip_all_from_bytes, zip_directory_to_bytes
 from nvflare.lighter.poc_commands import get_host_gpu_ids
 from nvflare.private.defs import AppFolderConstants
+from nvflare.private.fed.app.client.worker_process import kill_child_processes
 from nvflare.private.fed.app.deployer.simulator_deployer import SimulatorDeployer
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorServerAppRunner
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler
+from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize
+from nvflare.security.logging import secure_format_exception
 from nvflare.security.security import EmptyAuthorizer
 
 
 class SimulatorRunner(FLComponent):
-    def __init__(self, job_folder: str, workspace: str, clients=None, n_clients=None, threads=None, gpu=None):
+    def __init__(
+        self, job_folder: str, workspace: str, clients=None, n_clients=None, threads=None, gpu=None, max_clients=100
+    ):
         super().__init__()
 
         self.job_folder = job_folder
@@ -55,6 +61,7 @@ class SimulatorRunner(FLComponent):
         self.n_clients = n_clients
         self.threads = threads
         self.gpu = gpu
+        self.max_clients = max_clients
 
         self.ask_to_stop = False
 
@@ -66,7 +73,9 @@ class SimulatorRunner(FLComponent):
         self.client_config = None
         self.deploy_args = None
 
-    def _generate_args(self, job_folder: str, workspace: str, clients=None, n_clients=None, threads=None, gpu=None):
+    def _generate_args(
+        self, job_folder: str, workspace: str, clients=None, n_clients=None, threads=None, gpu=None, max_clients=100
+    ):
         args = Namespace(
             job_folder=job_folder,
             workspace=workspace,
@@ -74,13 +83,17 @@ class SimulatorRunner(FLComponent):
             n_clients=n_clients,
             threads=threads,
             gpu=gpu,
+            max_clients=max_clients,
         )
         args.set = []
         return args
 
     def setup(self):
+        running_dir = os.getcwd()
+        self.workspace = os.path.join(running_dir, self.workspace)
+
         self.args = self._generate_args(
-            self.job_folder, self.workspace, self.clients, self.n_clients, self.threads, self.gpu
+            self.job_folder, self.workspace, self.clients, self.n_clients, self.threads, self.gpu, self.max_clients
         )
 
         if self.args.clients:
@@ -89,16 +102,18 @@ class SimulatorRunner(FLComponent):
             for i in range(self.args.n_clients):
                 self.client_names.append("site-" + str(i + 1))
 
-        log_config_file_path = os.path.join(self.args.workspace, "startup", "log.config")
+        log_config_file_path = os.path.join(self.args.workspace, "startup", WorkspaceConstants.LOGGING_CONFIG)
         if not os.path.isfile(log_config_file_path):
-            log_config_file_path = os.path.join(os.path.dirname(__file__), "resource/log.config")
+            log_config_file_path = os.path.join(os.path.dirname(__file__), WorkspaceConstants.LOGGING_CONFIG)
         logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
+        local_dir = os.path.join(self.args.workspace, "local")
+        os.makedirs(local_dir, exist_ok=True)
+        shutil.copyfile(log_config_file_path, os.path.join(local_dir, WorkspaceConstants.LOGGING_CONFIG))
 
-        # self.logger = logging.getLogger()
         self.args.log_config = None
         self.args.config_folder = "config"
         self.args.job_id = SimulatorConstants.JOB_NAME
-        self.args.client_config = os.path.join(self.args.config_folder, "config_fed_client.json")
+        self.args.client_config = os.path.join(self.args.config_folder, JobConstants.CLIENT_JOB_CONFIG)
         self.args.env = os.path.join("config", AppFolderConstants.CONFIG_ENV)
         cwd = os.getcwd()
         self.args.job_folder = os.path.join(cwd, self.args.job_folder)
@@ -106,6 +121,7 @@ class SimulatorRunner(FLComponent):
         if not os.path.exists(self.args.workspace):
             os.makedirs(self.args.workspace)
         os.chdir(self.args.workspace)
+        fobs_initialize()
         AuthorizationService.initialize(EmptyAuthorizer())
         AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
 
@@ -114,7 +130,7 @@ class SimulatorRunner(FLComponent):
             shutil.rmtree(self.simulator_root)
 
         os.makedirs(self.simulator_root)
-        log_file = os.path.join(self.simulator_root, "log.txt")
+        log_file = os.path.join(self.simulator_root, WorkspaceConstants.LOG_FILE_NAME)
         add_logfile_handler(log_file)
 
         try:
@@ -125,6 +141,13 @@ class SimulatorRunner(FLComponent):
             if not self.client_names:
                 self.logger.error("Please provide the client names list, or the number of clients to run the simulator")
                 return False
+            if self.max_clients < len(self.client_names):
+                self.logger.error(
+                    f"The number of clients ({len(self.client_names)}) can not be more than the "
+                    f"max_number of clients ({self.max_clients})"
+                )
+                return False
+
             if self.args.gpu:
                 gpus = self.args.gpu.split(",")
                 host_gpus = [str(x) for x in (get_host_gpu_ids())]
@@ -166,18 +189,17 @@ class SimulatorRunner(FLComponent):
             self.logger.info("Deploy the Apps.")
             self._deploy_apps(job_name, data_bytes, meta)
 
-            # self.create_clients(data_bytes, job_name, meta)
             return True
 
-        except BaseException as error:
-            self.logger.error(f"Simulator setup error. {error}")
+        except BaseException as e:
+            self.logger.error(f"Simulator setup error: {secure_format_exception(e)}")
             return False
 
     def validate_job_data(self):
         # Validate the simulate job
         job_name = split_path(self.args.job_folder)[1]
         data = zip_directory_to_bytes("", self.args.job_folder)
-        data_bytes = convert_legacy_zip(data)
+        data_bytes = convert_legacy_zipped_app_to_job(data)
         job_validator = JobMetaValidator()
         valid, error, meta = job_validator.validate(job_name, data_bytes)
         if not valid:
@@ -264,6 +286,19 @@ class SimulatorRunner(FLComponent):
             client.status = ClientStatus.STARTED
 
     def run(self):
+        try:
+            manager = Manager()
+            return_dict = manager.dict()
+            process = Process(target=self.run_processs, args=(return_dict,))
+            process.start()
+            process.join()
+            run_status = return_dict["run_status"]
+            return run_status
+        except KeyboardInterrupt:
+            self.logger.info("KeyboardInterrupt, terminate all the child processes.")
+            kill_child_processes(os.getpid())
+
+    def run_processs(self, return_dict):
         if self.setup():
             try:
                 self.create_clients()
@@ -293,14 +328,16 @@ class SimulatorRunner(FLComponent):
                 executor.shutdown()
                 server_thread.join()
                 run_status = 0
-            except BaseException as error:
-                self.logger.error(f"Simulator run error {error}")
+            except BaseException as e:
+                self.logger.error(f"Simulator run error: {secure_format_exception(e)}")
                 run_status = 2
             finally:
                 self.deployer.close()
         else:
             run_status = 1
-        return run_status
+
+        return_dict["run_status"] = run_status
+        os._exit(0)
 
     def client_run(self, clients, gpu):
         client_runner = SimulatorClientRunner(self.args, clients, self.client_config, self.deploy_args)
@@ -308,7 +345,7 @@ class SimulatorRunner(FLComponent):
 
     def start_server_app(self):
         app_server_root = os.path.join(self.simulator_root, "app_server")
-        self.args.server_config = os.path.join("config", AppFolderConstants.CONFIG_FED_SERVER)
+        self.args.server_config = os.path.join("config", JobConstants.SERVER_JOB_CONFIG)
         app_custom_folder = os.path.join(app_server_root, "custom")
         sys.path.append(app_custom_folder)
 
@@ -346,8 +383,8 @@ class SimulatorClientRunner(FLComponent):
 
             # wait for the server and client running thread to finish.
             executor.shutdown()
-        except BaseException as error:
-            self.logger.error(f"SimulatorClientRunner run error. {error}")
+        except BaseException as e:
+            self.logger.error(f"SimulatorClientRunner run error: {secure_format_exception(e)}")
         finally:
             for client in self.federated_clients:
                 # client.engine.shutdown()
@@ -372,8 +409,8 @@ class SimulatorClientRunner(FLComponent):
                 stop_run, client_to_run = self.do_one_task(client, num_of_threads, gpu, lock)
 
                 client.simulate_running = False
-        except BaseException as error:
-            self.logger.error(f"run_client_thread error. {error}")
+        except BaseException as e:
+            self.logger.error(f"run_client_thread error: {secure_format_exception(e)}")
 
     def do_one_task(self, client, num_of_threads, gpu, lock):
         open_port = get_open_ports(1)[0]
@@ -423,7 +460,7 @@ class SimulatorClientRunner(FLComponent):
             try:
                 address = ("localhost", open_port)
                 conn = Client(address, authkey=CommunicationMetaData.CHILD_PASSWORD.encode())
-            except BaseException as e:
+            except BaseException:
                 time.sleep(1.0)
                 pass
         return conn

@@ -36,7 +36,7 @@ if versions["error"]:
     year = today[0] % 1000
     month = today[1]
     day = today[2]
-    version = f"0.0.{year:02d}{month:02d}{day:02d}"
+    version = f"2.2.1.dev{year:02d}{month:02d}{day:02d}"
 else:
     version = versions["version"]
 
@@ -60,7 +60,7 @@ setup(
         ],
         exclude=["tests", "tests.*"],
     ),
-    package_data={"": ["*.yml", "*.html", "poc.zip"]},
+    package_data={"": ["*.yml", "*.html", "poc.zip", "*.config"]},
     zip_safe=True,
     license_files=("LICENSE",),
     classifiers=[
@@ -81,14 +81,14 @@ setup(
         "grpcio==1.46.3",
         "gunicorn==20.1.0",
         "numpy",
-        "protobuf==3.20.1",
+        "protobuf==3.20.2",
         "psutil==5.9.1",
         "PyYAML==6.0",
         "six>=1.15.0",
-        "tenseal==0.3.0",
         "msgpack==1.0.3",
         "docker>=6.0",
     ],
+    extras_require={"HE": ["tenseal==0.3.0"]},
     entry_points={
         "console_scripts": [
             "provision=nvflare.lighter.provision:main",

@@ -19,23 +19,23 @@ from nvflare.app_common.statistics.numeric_stats import get_min_or_max_values
 
 class TestNumericStats:
     def test_get_min_or_max_values(self):
-        client_metrics = {
+        client_statistics = {
             "site-1": {"train": {"Age": 0}, "test": {"Age": 2}},
             "site-2": {"train": {"Age": 1}, "test": {"Age": 3}},
         }
 
-        global_metrics: Dict[str, Dict[str, int]] = {}
-        for client in client_metrics:
-            metrics = client_metrics[client]
-            print("get_min_or_max_values =", global_metrics)
-            global_metrics = get_min_or_max_values(metrics, global_metrics, min)
+        global_statistics: Dict[str, Dict[str, int]] = {}
+        for client in client_statistics:
+            statistics = client_statistics[client]
+            print("get_min_or_max_values =", global_statistics)
+            global_statistics = get_min_or_max_values(statistics, global_statistics, min)
 
-        assert global_metrics == {"test": {"Age": 0}, "train": {"Age": 0}}
+        assert global_statistics == {"test": {"Age": 0}, "train": {"Age": 0}}
 
-        global_metrics: Dict[str, Dict[str, int]] = {}
-        for client in client_metrics:
-            metrics = client_metrics[client]
-            print("get_min_or_max_values =", global_metrics)
-            global_metrics = get_min_or_max_values(metrics, global_metrics, max)
+        global_statistics: Dict[str, Dict[str, int]] = {}
+        for client in client_statistics:
+            statistics = client_statistics[client]
+            print("get_min_or_max_values =", global_statistics)
+            global_statistics = get_min_or_max_values(statistics, global_statistics, max)
 
-        assert global_metrics == {"test": {"Age": 3}, "train": {"Age": 3}}
+        assert global_statistics == {"test": {"Age": 3}, "train": {"Age": 3}}

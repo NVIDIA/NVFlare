@@ -29,6 +29,8 @@ class Workspace:
                     local
                         authorization.json.default
                         resources.json.default
+                        custom/
+                            custom python code
                         ...
                     startup (optional)
                         provisioned content
@@ -142,10 +144,10 @@ class Workspace:
         return os.path.join(self.get_app_dir(job_id), WorkspaceConstants.CUSTOM_FOLDER_NAME)
 
     def get_job_meta_path(self, job_id: str) -> str:
-        return os.path.join(self.get_app_dir(job_id), WorkspaceConstants.JOB_META_FILE)
+        return os.path.join(self.get_run_dir(job_id), WorkspaceConstants.JOB_META_FILE)
 
     def get_site_privacy_file_path(self):
         return self.get_file_path_in_site_config(WorkspaceConstants.PRIVACY_CONFIG)
 
     def get_client_custom_dir(self) -> str:
-        return os.path.join(self.root_dir, WorkspaceConstants.CUSTOM_FOLDER_NAME)
+        return os.path.join(self.get_site_config_dir(), WorkspaceConstants.CUSTOM_FOLDER_NAME)

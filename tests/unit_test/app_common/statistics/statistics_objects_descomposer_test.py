@@ -22,7 +22,7 @@ from nvflare.app_common.abstract.statistics_spec import (
     Feature,
     Histogram,
     HistogramType,
-    MetricConfig,
+    StatisticConfig,
 )
 from nvflare.app_common.app_constant import StatisticsConstants
 from nvflare.app_common.statistics.statisitcs_objects_decomposer import (
@@ -32,12 +32,12 @@ from nvflare.app_common.statistics.statisitcs_objects_decomposer import (
     FeatureDecomposer,
     HistogramDecomposer,
     HistogramTypeDecomposer,
-    MetricConfigDecomposer,
+    StatisticConfigDecomposer,
 )
 from nvflare.fuel.utils import fobs
 
 
-class TestMetricConfigDecomposer:
+class TestStatisticConfigDecomposer:
     @classmethod
     def setup_class(cls):
         pass
@@ -46,16 +46,16 @@ class TestMetricConfigDecomposer:
     def teardown_class(cls):
         pass
 
-    def test_metric_configs_serde(self):
-        fobs.register(MetricConfigDecomposer)
+    def test_statistic_configs_serde(self):
+        fobs.register(StatisticConfigDecomposer)
 
-        data = fobs.dumps(MetricConfig("foo", {}))
-        obj: MetricConfig = fobs.loads(data)
-        assert isinstance(obj, MetricConfig)
+        data = fobs.dumps(StatisticConfig("foo", {}))
+        obj: StatisticConfig = fobs.loads(data)
+        assert isinstance(obj, StatisticConfig)
         assert obj.config == {}
         assert obj.name == "foo"
 
-    def test_metric_configs_serde2(self):
+    def test_statistic_configs_serde2(self):
 
         config = """
             {
@@ -70,11 +70,11 @@ class TestMetricConfigDecomposer:
             }
         """
         config_dict = json.loads(config)
-        metric_configs = []
+        statistic_configs = []
         for k in config_dict:
-            metric_configs.append([k, config_dict[k]])
+            statistic_configs.append([k, config_dict[k]])
 
-        data = fobs.dumps(metric_configs)
+        data = fobs.dumps(statistic_configs)
         obj = fobs.loads(data)
         assert isinstance(obj, List)
         for o in obj:
@@ -82,8 +82,8 @@ class TestMetricConfigDecomposer:
             print(o)
             assert o[0] in config_dict.keys()
 
-    def test_metric_configs_serde3(self):
-        fobs.register(MetricConfigDecomposer)
+    def test_statistic_configs_serde3(self):
+        fobs.register(StatisticConfigDecomposer)
         config = """
             {
                 "count": {},
@@ -99,8 +99,10 @@ class TestMetricConfigDecomposer:
         config_dict = json.loads(config)
         from nvflare.app_common.workflows.statistics_controller import StatisticsController
 
-        ordered_metrics = StatisticsConstants.ordered_metrics[StatisticsConstants.STATS_1st_METRICS]
-        target_configs: List[MetricConfig] = StatisticsController._get_target_metrics(config_dict, ordered_metrics)
+        ordered_statistics = StatisticsConstants.ordered_statistics[StatisticsConstants.STATS_1st_STATISTICS]
+        target_configs: List[StatisticConfig] = StatisticsController._get_target_statistics(
+            config_dict, ordered_statistics
+        )
         o = fobs.dumps(target_configs)
         target_configs1 = fobs.loads(o)
         assert target_configs == target_configs1

@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.fuel.hci.server.constants import ConnProps
 
 
@@ -122,8 +121,6 @@ class AppFolderConstants:
 
     CONFIG_TRAIN = "config_train.json"
     CONFIG_ENV = "environment.json"
-    CONFIG_FED_SERVER = WorkspaceConstants.SERVER_JOB_CONFIG
-    CONFIG_FED_CLIENT = WorkspaceConstants.CLIENT_JOB_CONFIG
 
 
 class SSLConstants:

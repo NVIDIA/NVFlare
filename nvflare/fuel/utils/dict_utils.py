@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import collections
-import json
 
 
 def update(d, u):
@@ -51,13 +50,10 @@ def extract_first_level_primitive(d):
     return result
 
 
-def save_to_json(data, path, sort_keys=False, indent=None):
-    with open(path, "w") as f:
-        json.dump(data, f, sort_keys=sort_keys, indent=indent)
-
-
 def augment(to_dict: dict, from_dict: dict, from_override_to=False) -> str:
-    """Augment the to_dict with the content from the from_dict.
+    """Augments the to_dict with the content from the from_dict.
+
+
     - Items in from_dict but not in to_dict are added to the to_dict
     - Items in both from_dict and to_dict must be ether dicts or list of dicts,
     and augment will be done on these items recursively
@@ -68,20 +64,17 @@ def augment(to_dict: dict, from_dict: dict, from_override_to=False) -> str:
         from_dict: content to augment the to_dict
         from_override_to: content in from_dict overrides content in to_dict when conflict happens
 
-    Returns: error message if any; empty str if success.
+    Returns:
+        An error message if any; empty str if success.
 
-    The content of the to_dict is updated
+    Note:
+        The content of the to_dict is updated
     """
     if not isinstance(to_dict, dict):
         return f"to_dict must be dict but got {type(to_dict)}"
 
     if not isinstance(from_dict, dict):
         return f"from_dict must be dict but got {type(from_dict)}"
-
-    # print("AUGMENTING ===============")
-    # print(json.dumps(to_dict, indent=4, sort_keys=True))
-    # print("with =====")
-    # print(json.dumps(from_dict, indent=4, sort_keys=True))
 
     for k, fv in from_dict.items():
         if k not in to_dict:

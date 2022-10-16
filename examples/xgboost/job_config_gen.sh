@@ -1,12 +1,23 @@
 #!/usr/bin/env bash
-python3 utils/prepare_job_config.py --site_num 5 --training_mode bagging --split_method exponential --lr_mode scaled --nthread 16
-python3 utils/prepare_job_config.py --site_num 5 --training_mode bagging --split_method exponential --lr_mode uniform --nthread 16
-python3 utils/prepare_job_config.py --site_num 5 --training_mode bagging --split_method uniform --lr_mode uniform --nthread 16
-python3 utils/prepare_job_config.py --site_num 5 --training_mode cyclic --split_method exponential --lr_mode uniform --nthread 16
-python3 utils/prepare_job_config.py --site_num 5 --training_mode cyclic --split_method uniform --lr_mode uniform --nthread 16
+# change to "gpu_hist" for gpu training
+TREE_METHOD="hist"
 
-python3 utils/prepare_job_config.py --site_num 20 --training_mode bagging --split_method square --lr_mode scaled --nthread 4
-python3 utils/prepare_job_config.py --site_num 20 --training_mode bagging --split_method square --lr_mode uniform --nthread 4
-python3 utils/prepare_job_config.py --site_num 20 --training_mode bagging --split_method uniform --lr_mode uniform --nthread 4
-python3 utils/prepare_job_config.py --site_num 20 --training_mode cyclic --split_method square --lr_mode uniform --nthread 4
-python3 utils/prepare_job_config.py --site_num 20 --training_mode cyclic --split_method uniform --lr_mode uniform --nthread 4
+prepare_job_config() {
+    python3 utils/prepare_job_config.py --site_num "$1" --training_mode "$2" --split_method "$3" \
+    --lr_mode "$4" --nthread 16 --tree_method "$5"
+}
+
+prepare_job_config 5 bagging exponential scaled $TREE_METHOD
+prepare_job_config 5 bagging exponential uniform $TREE_METHOD
+prepare_job_config 5 bagging uniform uniform $TREE_METHOD
+prepare_job_config 5 cyclic exponential uniform $TREE_METHOD
+prepare_job_config 5 cyclic uniform uniform $TREE_METHOD
+
+prepare_job_config 20 bagging square scaled $TREE_METHOD
+prepare_job_config 20 bagging square uniform $TREE_METHOD
+prepare_job_config 20 bagging uniform uniform $TREE_METHOD
+prepare_job_config 20 cyclic square uniform $TREE_METHOD
+prepare_job_config 20 cyclic uniform uniform $TREE_METHOD
+
+prepare_job_config 2 histogram uniform uniform $TREE_METHOD
+prepare_job_config 5 histogram uniform uniform $TREE_METHOD

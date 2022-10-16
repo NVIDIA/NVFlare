@@ -25,6 +25,7 @@ from nvflare.fuel.hci.client.api import AdminAPI
 from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.hci.client.fl_admin_api_constants import FLDetailKey
 from nvflare.fuel.hci.client.fl_admin_api_spec import APISyntaxError, FLAdminAPIResponse, FLAdminAPISpec, TargetType
+from nvflare.security.logging import secure_format_exception
 
 from .overseer_service_finder import ServiceFinderByOverseer
 
@@ -43,20 +44,26 @@ def wrap_with_return_exception_responses(func):
                     APIStatus.ERROR_RUNTIME, {"message": "Runtime error: could not generate reply."}
                 )
         except ConnectionRefusedError as e:
-            return FLAdminAPIResponse(APIStatus.ERROR_AUTHENTICATION, {"message": "Error: " + str(e)})
+            return FLAdminAPIResponse(
+                APIStatus.ERROR_AUTHENTICATION, {"message": f"Error: {secure_format_exception(e)}"}
+            )
         except PermissionError as e:
-            return FLAdminAPIResponse(APIStatus.ERROR_AUTHORIZATION, {"message": "Error: " + str(e)})
+            return FLAdminAPIResponse(
+                APIStatus.ERROR_AUTHORIZATION, {"message": f"Error: {secure_format_exception(e)}"}
+            )
         except LookupError as e:
-            return FLAdminAPIResponse(APIStatus.ERROR_INVALID_CLIENT, {"message": "Error: " + str(e)})
+            return FLAdminAPIResponse(
+                APIStatus.ERROR_INVALID_CLIENT, {"message": f"Error: {secure_format_exception(e)}"}
+            )
         except APISyntaxError as e:
-            return FLAdminAPIResponse(APIStatus.ERROR_SYNTAX, {"message": "Error: " + str(e)})
+            return FLAdminAPIResponse(APIStatus.ERROR_SYNTAX, {"message": f"Error: {secure_format_exception(e)}"})
         except TimeoutError as e:
             return FLAdminAPIResponse(
                 APIStatus.ERROR_RUNTIME,
-                {"message": "TimeoutError: possibly unable to communicate with server. " + str(e)},
+                {"message": f"TimeoutError: possibly unable to communicate with server: {secure_format_exception(e)}"},
             )
         except Exception as e:
-            return FLAdminAPIResponse(APIStatus.ERROR_RUNTIME, {"message": "Exception: " + str(e)})
+            return FLAdminAPIResponse(APIStatus.ERROR_RUNTIME, {"message": f"Exception: {secure_format_exception(e)}"})
 
     return wrapper
 
@@ -248,7 +255,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
                 raise LookupError(reply_data_full_response)
             if "unknown site" in reply_data_full_response:
                 raise LookupError(reply_data_full_response)
-            if "Authorization Error" in reply_data_full_response:
+            if "not authorized" in reply_data_full_response:
                 raise PermissionError(reply_data_full_response)
         if reply.get("status") != APIStatus.SUCCESS:
             raise RuntimeError(reply.get("details"))
@@ -360,9 +367,9 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
     @wrap_with_return_exception_responses
     def clone_job(self, job_id: str) -> FLAdminAPIResponse:
         if not job_id:
-            raise APISyntaxError("job_folder is required but not specified.")
+            raise APISyntaxError("job_id is required but not specified.")
         if not isinstance(job_id, str):
-            raise APISyntaxError("job_folder must be str but got {}.".format(type(job_id)))
+            raise APISyntaxError("job_id must be str but got {}.".format(type(job_id)))
         success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(
             AdminCommandNames.CLONE_JOB + " " + job_id
         )
@@ -437,7 +444,9 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
             AdminCommandNames.DELETE_JOB + " " + str(job_id)
         )
         if reply_data_full_response:
-            if "can not be deleted" in reply_data_full_response:
+            if ("can not be deleted" in reply_data_full_response) or (
+                "could not be deleted" in reply_data_full_response
+            ):
                 return FLAdminAPIResponse(APIStatus.ERROR_RUNTIME, {"message": reply_data_full_response})
         if success:
             return FLAdminAPIResponse(APIStatus.SUCCESS, {"message": reply_data_full_response}, reply)
@@ -859,7 +868,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
                     print("Could not get reply from check status client, trying again later")
                     failed_attempts += 1
             except BaseException as e:
-                print("Could not get clients stats, trying again later. Exception: ", e)
+                print(f"Could not get clients stats, trying again later. Exception: {secure_format_exception(e)}")
                 failed_attempts += 1
 
             now = time.time()
@@ -921,7 +930,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
                     if reply.get("details").get("message") == "App is not running":
                         return FLAdminAPIResponse(APIStatus.SUCCESS, {"message": "Waited until app not running."}, None)
             except BaseException as e:
-                print("Could not get server stats, trying again later. Exception: ", e)
+                print(f"Could not get server stats, trying again later. Exception: {secure_format_exception(e)}")
                 failed_attempts += 1
 
             now = time.time()

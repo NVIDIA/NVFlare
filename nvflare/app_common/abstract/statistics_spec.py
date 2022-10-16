@@ -77,7 +77,7 @@ class Feature(NamedTuple):
     data_type: DataType
 
 
-class MetricConfig(NamedTuple):
+class StatisticConfig(NamedTuple):
     # metric name
     name: str
 
@@ -88,14 +88,41 @@ class MetricConfig(NamedTuple):
 class Statistics(FLComponent, ABC):
     def initialize(self, parts: dict, fl_ctx: FLContext):
         """
+        This is called when client is start Run. At this point
+        the server hasn't not communicate to the Statistics calculator yet.
         Args:
             parts: parts: components to be used by the Statistics
             fl_ctx: fl_ctx: FLContext of the running environment
-
         Returns:
 
         """
 
+        pass
+
+    def pre_run(
+        self,
+        statistics: List[str],
+        num_of_bins: Optional[Dict[str, Optional[int]]],
+        bin_ranges: Optional[Dict[str, Optional[List[float]]]],
+    ):
+        """
+            This method is the initial hand-shake, where controller pass all the requested statistics configuration
+            to client.
+            This method invocation is optional and Configured via controller argument. If it is configured,
+            this method will be called before all other statistic calculation methods
+        Args:
+            statistics: list of statistics to be calculated, count, sum, etc.
+            num_of_bins: if histogram statistic is required, num_of_bins will be specified for each feature.
+                         "*" implies default feature.
+                         None value implies the feature's number of bins is not specified.
+            bin_ranges: if histogram statistic is required, bin_ranges for the feature may be provided.
+                        if bin_ranges is None. no bin_range is provided for any feature.
+                        if bins_range is not None, but bins_ranges['feature_A'] is None, means that for specific feature
+                        'feature_A', the bin_range is not provided by user.
+
+        Returns: None
+
+        """
         pass
 
     @abstractmethod
@@ -141,7 +168,7 @@ class Statistics(FLComponent, ABC):
         Returns: sum of all records
 
         Raises:
-            NotImplementedError will be raised when sum metric is configured but not implemented. If the sum is not
+            NotImplementedError will be raised when sum statistic is configured but not implemented. If the sum is not
             configured to be calculated, no need to implement this method and NotImplementedError will not be raised.
 
         """
@@ -157,7 +184,7 @@ class Statistics(FLComponent, ABC):
         Returns: mean (average) value
 
         Raises:
-            NotImplementedError will be raised when mean metric is configured but not implemented. If the mean is not
+            NotImplementedError will be raised when mean statistic is configured but not implemented. If the mean is not
             configured to be calculated, no need to implement this method and NotImplementedError will not be raised.
 
         """
@@ -174,7 +201,7 @@ class Statistics(FLComponent, ABC):
         Returns: local standard deviation
 
         Raises:
-            NotImplementedError will be raised when stddev metric is configured but not implemented. If the stddev is not
+            NotImplementedError will be raised when stddev statistic is configured but not implemented. If the stddev is not
             configured to be calculated, no need to implement this method and NotImplementedError will not be raised.
         """
         raise NotImplementedError
@@ -195,7 +222,7 @@ class Statistics(FLComponent, ABC):
             variance = (sum ( x - m)^2))/ (N-1)
 
             This is used to calculate global standard deviation.
-            Therefore, this method must implement if stddev metric is requested
+            Therefore, this method must implement if stddev statistic is requested
 
         Args:
             dataset_name: dataset name
@@ -206,7 +233,7 @@ class Statistics(FLComponent, ABC):
         Returns: variance result
 
         Raises:
-            NotImplementedError will be raised when stddev metric is configured but not implemented. If the stddev is not
+            NotImplementedError will be raised when stddev statistic is configured but not implemented. If the stddev is not
             configured to be calculated, no need to implement this method and NotImplementedError will not be raised.
         """
 
@@ -225,7 +252,7 @@ class Statistics(FLComponent, ABC):
 
         Returns: histogram
         Raises:
-            NotImplementedError will be raised when histogram metric is configured but not implemented. If the histogram
+            NotImplementedError will be raised when histogram statistic is configured but not implemented. If the histogram
              is not configured to be calculated, no need to implement this method and NotImplementedError will not be raised.
         """
 
@@ -233,7 +260,7 @@ class Statistics(FLComponent, ABC):
 
     def max_value(self, dataset_name: str, feature_name: str) -> float:
         """
-            This method is only needed when "histogram" metric is configured and the histogram range is not specified.
+            This method is only needed when "histogram" statistic is configured and the histogram range is not specified.
             And the histogram range needs to dynamically estimated based on the client's local min/max values.
             this method returns local max value. The actual max value will not directly return to the FL server.
             the data privacy policy will add additional noise to the estimated value.
@@ -245,7 +272,7 @@ class Statistics(FLComponent, ABC):
         Returns: local max value
 
         Raises:
-            NotImplementedError will be raised when histogram metric is configured and histogram range for the
+            NotImplementedError will be raised when histogram statistic is configured and histogram range for the
             given feature is not specified, and this method is not implemented. If the histogram
             is not configured to be calculated; or the given feature histogram range is already specified.
             no need to implement this method and NotImplementedError will not be raised.
@@ -255,7 +282,7 @@ class Statistics(FLComponent, ABC):
 
     def min_value(self, dataset_name: str, feature_name: str) -> float:
         """
-            This method is only needed when "histogram" metric is configured and the histogram range is not specified.
+            This method is only needed when "histogram" statistic is configured and the histogram range is not specified.
             And the histogram range needs to dynamically estimated based on the client's local min/max values.
             this method returns local min value. The actual min value will not directly return to the FL server.
             the data privacy policy will add additional noise to the estimated value.
@@ -267,13 +294,25 @@ class Statistics(FLComponent, ABC):
         Returns: local min value
 
         Raises:
-            NotImplementedError will be raised when histogram metric is configured and histogram range for the
+            NotImplementedError will be raised when histogram statistic is configured and histogram range for the
             given feature is not specified, and this method is not implemented. If the histogram
             is not configured to be calculated; or the given feature histogram range is already specified.
             no need to implement this method and NotImplementedError will not be raised.
         """
 
         raise NotImplementedError
+
+    def failure_count(self, dataset_name: str, feature_name: str) -> int:
+        """
+           return failed count for given dataset and feature
+           to perform data privacy min_count check, failure_count is always required
+        Args:
+            dataset_name:
+            feature_name:
+
+        Returns: number of failure records, default to 0
+        """
+        return 0
 
     def finalize(self):
         """

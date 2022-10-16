@@ -69,7 +69,8 @@ class HttpOverseerAgent(OverseerAgent):
                 prepared = self._session.prepare_request(req)
                 resp = self._session.send(prepared)
                 return resp
-            except RequestException:
+            except RequestException as e:
+                self._logger.debug(f"Overseer error: {e}")
                 try_count += 1
                 time.sleep(self._retry_delay)
 

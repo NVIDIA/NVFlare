@@ -105,7 +105,8 @@ class CertBuilder(Builder):
         ctx["root_cert"] = self.root_cert
         ctx["root_pri_key"] = self.pri_key
         overseer = project.get_participants_by_type("overseer")
-        self._build_write_cert_pair(overseer, "overseer", ctx)
+        if overseer:
+            self._build_write_cert_pair(overseer, "overseer", ctx)
 
         servers = project.get_participants_by_type("server", first_only=False)
         for server in servers:

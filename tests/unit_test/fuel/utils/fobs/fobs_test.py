@@ -11,9 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import queue
 from datetime import datetime
-from typing import Any, Type
+from typing import Any
 
 import pytest
 
@@ -54,25 +55,25 @@ class TestFobs:
             fobs.dumps(unsupported_class)
 
     def test_decomposers(self):
-        test_class = TestClass(TestFobs.NUMBER)
-        fobs.register(TestClassDecomposer)
+        test_class = ExampleClass(TestFobs.NUMBER)
+        fobs.register(ExampleClassDecomposer)
         buf = fobs.dumps(test_class)
         new_class = fobs.loads(buf)
         assert new_class.number == TestFobs.NUMBER
 
 
-class TestClass:
+class ExampleClass:
     def __init__(self, number):
         self.number = number
 
 
-class TestClassDecomposer(Decomposer):
+class ExampleClassDecomposer(Decomposer):
     @staticmethod
     def supported_type():
-        return TestClass
+        return ExampleClass
 
-    def decompose(self, target: TestClass) -> Any:
+    def decompose(self, target: ExampleClass) -> Any:
         return target.number
 
-    def recompose(self, data: Any) -> TestClass:
-        return TestClass(data)
+    def recompose(self, data: Any) -> ExampleClass:
+        return ExampleClass(data)

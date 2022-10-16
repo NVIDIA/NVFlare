@@ -18,7 +18,6 @@ import re
 import shutil
 import sys
 import time
-import traceback
 from concurrent.futures import ThreadPoolExecutor
 
 from nvflare.apis.event_type import EventType
@@ -26,13 +25,14 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import MachineStatus, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.shareable import Shareable
-from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.apis.workspace import Workspace
+from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import ERROR_MSG_PREFIX, ClientStatusKey, EngineConstant
 from nvflare.private.event import fire_event
 from nvflare.private.fed.utils.app_deployer import AppDeployer
 from nvflare.private.fed.utils.fed_utils import security_close
+from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .client_engine_internal_spec import ClientEngineInternalSpec
 from .client_executor import ProcessExecutor
@@ -292,5 +292,5 @@ def _shutdown_client(federated_client, admin_agent, touch_file):
         admin_agent.shutdown()
         security_close()
     except BaseException as e:
-        traceback.print_exc()
-        print("Failed to shutdown client: " + str(e))
+        secure_log_traceback()
+        print(f"Failed to shutdown client: {secure_format_exception(e)}")

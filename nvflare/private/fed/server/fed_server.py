@@ -43,17 +43,16 @@ from nvflare.apis.fl_constant import (
 )
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, ReturnCode, Shareable, make_reply
-from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.apis.workspace import Workspace
-from nvflare.app_common.decomposers import common_decomposers
-from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.argument_utils import parse_vars
+from nvflare.fuel.utils.zip_utils import unzip_all_from_bytes
 from nvflare.private.defs import SpecialTaskName
 from nvflare.private.fed.server.server_runner import ServerRunner
 from nvflare.private.fed.utils.fed_utils import shareable_to_modeldata
 from nvflare.private.fed.utils.messageproto import message_to_proto, proto_to_message
 from nvflare.private.fed.utils.numproto import proto_to_bytes
+from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.fed_event import ServerFedEventRunner
 
 from .client_manager import ClientManager
@@ -249,10 +248,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             handlers: A list of handler
             args: arguments
             secure_train: whether to use secure communication
-            enable_byoc: whether to enable custom components
         """
-        self.logger = logging.getLogger("FederatedServer")
-
         BaseServer.__init__(
             self,
             project_name=project_name,
@@ -289,9 +285,6 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         self.overseer_agent = overseer_agent
         self.server_state: ServerState = ColdState()
         self.snapshot_persistor = snapshot_persistor
-
-        flare_decomposers.register()
-        common_decomposers.register()
 
     def _create_server_engine(self, args, snapshot_persistor):
         return ServerEngine(
@@ -407,13 +400,10 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             self.logger.debug(f"Fetch task requested from client: {client.name} ({client.get_token()})")
             token = client.get_token()
 
-            # engine = fl_ctx.get_engine()
             shared_fl_ctx = fobs.loads(proto_to_bytes(request.context["fl_context"]))
             job_id = str(shared_fl_ctx.get_prop(FLContextKey.CURRENT_RUN))
-            # fl_ctx.set_peer_context(shared_fl_ctx)
 
             with self.lock:
-                # if self.server_runner is None or engine is None or self.engine.run_manager is None:
                 if job_id not in self.engine.run_processes.keys():
                     self.logger.info("server has no current run - asked client to end the run")
                     task_name = SpecialTaskName.END_RUN
@@ -475,7 +465,9 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
                     fl_ctx.props.update(child_fl_ctx)
         except BaseException as e:
-            self.logger.info(f"Could not connect to server runner process: {e} - asked client to end the run")
+            self.logger.info(
+                f"Could not connect to server runner process: {secure_format_exception(e)} - asked client to end the run"
+            )
         return shareable, task_id, task_name
 
     def SubmitUpdate(self, request, context):
@@ -503,7 +495,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                         self.logger.info("ignored result submission since Server Engine isn't ready")
                         context.abort(grpc.StatusCode.OUT_OF_RANGE, "Server has stopped")
 
-                    shared_fl_context.set_prop(FLContextKey.SHAREABLE, shareable, private=False)
+                    shared_fl_context.set_prop(FLContextKey.SHAREABLE, shareable, private=True)
 
                     contribution_meta = contribution.client.meta
                     client_contrib_id = "{}_{}_{}".format(
@@ -541,8 +533,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
     def _submit_update(self, submit_update_data, shared_fl_context):
         try:
-            with self.engine.lock:
-                job_id = shared_fl_context.get_prop(FLContextKey.CURRENT_RUN)
+            job_id = shared_fl_context.get_prop(FLContextKey.CURRENT_RUN)
             self.engine.send_command_to_child_runner_process(
                 job_id=job_id,
                 command_name=ServerCommandNames.SUBMIT_UPDATE,
@@ -584,7 +575,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             fl_ctx.set_peer_context(shared_fl_context)
             shareable.set_peer_props(shared_fl_context.get_all_public_props())
 
-            shared_fl_context.set_prop(FLContextKey.SHAREABLE, shareable, private=False)
+            shared_fl_context.set_prop(FLContextKey.SHAREABLE, shareable, private=True)
 
             topic = shareable.get_header(ReservedHeaderKey.TOPIC)
 
@@ -732,7 +723,6 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
         finally:
             self.engine.engine_info.status = MachineStatus.STOPPED
-            self.engine.run_manager = None
             self.run_manager = None
 
     def create_run_manager(self, workspace, job_id):

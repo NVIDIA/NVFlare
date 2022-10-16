@@ -77,7 +77,7 @@ architecture are modified from
 
 Let's see what an extremely simplified CIFAR10 training looks like:
 
-.. literalinclude:: ../../examples/hello-pt/custom/simple_network.py
+.. literalinclude:: ../../examples/hello-pt/app/custom/simple_network.py
    :language: python
    :lines: 15-
    :lineno-start: 15
@@ -101,7 +101,7 @@ You can think of all of this code as part of your local training loop, as every 
 Since you will encapsulate every training-related step in the ``Cifar10Trainer`` class,
 let's put this preparation stage into the ``__init__`` method:
 
-.. literalinclude:: ../../examples/hello-pt/custom/cifar10trainer.py
+.. literalinclude:: ../../examples/hello-pt/app/custom/cifar10trainer.py
    :language: python
    :lines: 37-82
    :lineno-start: 37
@@ -114,7 +114,7 @@ Local Train
 Now that you have your network and dataset setup, in the ``Cifar10Trainer`` class.
 Let's also implement a local training loop in a method called ``local_train``:
 
-.. literalinclude:: ../../examples/hello-pt/custom/cifar10trainer.py
+.. literalinclude:: ../../examples/hello-pt/app/custom/cifar10trainer.py
    :language: python
    :pyobject: Cifar10Trainer.local_train
 
@@ -144,7 +144,7 @@ We can then call our local train inside the ``execute`` method.
 
 Take a look at the following code:
 
-.. literalinclude:: ../../examples/hello-pt/custom/cifar10trainer.py
+.. literalinclude:: ../../examples/hello-pt/app/custom/cifar10trainer.py
    :language: python
    :pyobject: Cifar10Trainer.execute
 
@@ -187,7 +187,7 @@ Application Configuration
 
 Inside the config folder there are two files, ``config_fed_client.json`` and ``config_fed_server.json``.
 
-.. literalinclude:: ../../examples/hello-pt/config/config_fed_client.json
+.. literalinclude:: ../../examples/hello-pt/app/config/config_fed_client.json
    :language: json
    :linenos:
    :caption: config_fed_client.json
@@ -205,7 +205,7 @@ The "validate" task for ``Cifar10Validator`` and the "submit_model" task are use
 so we will be addressing that in a later example.
 
 
-.. literalinclude:: ../../examples/hello-pt/config/config_fed_server.json
+.. literalinclude:: ../../examples/hello-pt/app/config/config_fed_server.json
    :language: json
    :linenos:
    :caption: config_fed_server.json

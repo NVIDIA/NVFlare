@@ -14,7 +14,6 @@
 
 from typing import Dict, List, Optional
 
-from nvflare.apis.client_engine_spec import TaskAssignment
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext, FLContextManager
@@ -27,7 +26,7 @@ from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
 
 from .client_aux_runner import ClientAuxRunner
-from .client_engine_executor_spec import ClientEngineExecutorSpec
+from .client_engine_executor_spec import ClientEngineExecutorSpec, TaskAssignment
 from .client_json_config import ClientJsonConfigurator
 from .client_runner import ClientRunner
 from .fed_client import FederatedClient
@@ -43,7 +42,6 @@ class ClientRunInfo(object):
         self.job_id = job_id
         self.current_task_name = ""
         self.start_time = None
-        # self.status = MachineStatus.STOPPED
 
 
 class ClientRunManager(ClientEngineExecutorSpec):

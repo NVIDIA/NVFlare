@@ -62,7 +62,9 @@ def find_job_id(workdir, fl_app_name="cifar10_fedavg", alpha=None):
         with open(fl_app_file, "r") as f:
             _fl_app_name = f.read()
         if fl_app_name == _fl_app_name:  # alpha will be matched based on value in config file
-            job_id = os.path.basename(os.path.dirname(os.path.dirname(os.path.join(fl_app_file))))  # skip "workspace" subfolder
+            job_id = os.path.basename(
+                os.path.dirname(os.path.dirname(os.path.join(fl_app_file)))
+            )  # skip "workspace" subfolder
             if alpha is not None:
                 config_fed_server_file = glob.glob(
                     os.path.join(os.path.dirname(fl_app_file), "**", "config_fed_server.json"), recursive=True
@@ -131,9 +133,7 @@ def main():
         add_eventdata(data, config, eventfile, tag=exp["tag"])
 
         if add_cross_site_val:
-            xsite_file = glob.glob(
-                os.path.join(download_dir, job_id, "**", "cross_val_results.json"), recursive=True
-            )
+            xsite_file = glob.glob(os.path.join(download_dir, job_id, "**", "cross_val_results.json"), recursive=True)
             assert len(xsite_file) == 1, "No unique x-site file found!"
             with open(xsite_file[0], "r") as f:
                 xsite_results = json.load(f)

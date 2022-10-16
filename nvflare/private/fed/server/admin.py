@@ -14,7 +14,7 @@
 
 import threading
 import time
-from typing import List
+from typing import List, Optional
 
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule
@@ -193,7 +193,6 @@ class FedAdminServer(AdminServer):
             server_cert_file_name: server's cert, signed by the CA
             server_key_file_name: server's private key file
             accepted_client_cns: list of accepted Common Names from client, if specified
-            app_validator: Application folder validator.
             download_job_url: download job url
         """
         cmd_reg = new_command_register_with_builtin_module(app_ctx=fed_admin_interface)
@@ -297,7 +296,7 @@ class FedAdminServer(AdminServer):
                 result.append(token)
         return result
 
-    def send_request_to_client(self, req: Message, client_token: str, timeout_secs=2.0) -> ClientReply:
+    def send_request_to_client(self, req: Message, client_token: str, timeout_secs=2.0) -> Optional[ClientReply]:
         if not isinstance(req, Message):
             raise TypeError("request must be Message but got {}".format(type(req)))
         reqs = {client_token: req}
@@ -306,15 +305,6 @@ class FedAdminServer(AdminServer):
             return None
         else:
             return replies[0]
-
-    def send_request_to_clients(self, req: Message, client_tokens: [str], timeout_secs=2.0) -> [ClientReply]:
-        if not isinstance(req, Message):
-            raise TypeError("request must be Message but got {}".format(type(req)))
-        reqs = {}
-        for token in client_tokens:
-            reqs[token] = req
-
-        return self.send_requests(reqs, timeout_secs)
 
     def send_requests_and_get_reply_dict(self, requests: dict, timeout_secs=2.0) -> dict:
         """Send requests to clients
@@ -356,7 +346,7 @@ class FedAdminServer(AdminServer):
         if not isinstance(requests, dict):
             raise TypeError("requests must be a dict but got {}".format(type(requests)))
 
-        if len(requests) <= 0:
+        if len(requests) == 0:
             return []
 
         if timeout_secs <= 0.0:
@@ -443,7 +433,8 @@ class FedAdminServer(AdminServer):
         client = self.client_heartbeat(client_token)
 
         ref_id = reply.get_ref_id()
-        assert ref_id is not None, "protocol error: missing ref_id in reply from client {}".format(client_token)
+        if ref_id is None:
+            raise RuntimeError("protocol error: missing ref_id in reply from client {}".format(client_token))
 
         client.accept_reply(reply)
 

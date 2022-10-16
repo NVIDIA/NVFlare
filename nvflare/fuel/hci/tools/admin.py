@@ -21,6 +21,7 @@ from nvflare.fuel.hci.client.cli import AdminClient, CredentialType
 from nvflare.fuel.hci.client.file_transfer import FileTransferModule
 from nvflare.fuel.hci.client.overseer_service_finder import ServiceFinderByOverseer
 from nvflare.private.fed.app.fl_conf import FLAdminClientStarterConfigurator
+from nvflare.security.logging import secure_format_exception
 
 
 def main():
@@ -40,17 +41,18 @@ def main():
 
     try:
         os.chdir(args.workspace)
-        workspace_dir = os.path.join(args.workspace, "startup")
         workspace = Workspace(root_dir=args.workspace)
         conf = FLAdminClientStarterConfigurator(workspace=workspace)
         conf.configure()
-    except ConfigError as ex:
-        print("ConfigError:", str(ex))
+    except ConfigError as e:
+        print(f"ConfigError: {secure_format_exception(e)}")
+        return
 
     try:
         admin_config = conf.config_data["admin"]
     except KeyError:
         print("Missing admin section in fed_admin configuration.")
+        return
 
     modules = []
 

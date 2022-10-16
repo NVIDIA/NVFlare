@@ -91,12 +91,14 @@ class ReservedKey(object):
     NUM_OF_PROCESSES = "__num_of_processes__"
     FROM_RANK_NUMBER = "__from_rank_number__"
     SECURE_MODE = "__secure_mode__"
+    SIMULATE_MODE = "__simulate_mode__"
     SP_END_POINT = "__sp_end_point__"
     JOB_INFO = "__job_info__"
     JOB_META = "__job_meta__"
     CURRENT_JOB_ID = "__current_job_id__"
     JOB_RUN_NUMBER = "__job_run_number__"
     JOB_DEPLOY_DETAIL = "__job_deploy_detail__"
+    FATAL_SYSTEM_ERROR = "__fatal_system_error__"
 
 
 class FLContextKey(object):
@@ -127,6 +129,7 @@ class FLContextKey(object):
     NUM_OF_PROCESSES = ReservedKey.NUM_OF_PROCESSES
     FROM_RANK_NUMBER = ReservedKey.FROM_RANK_NUMBER
     SECURE_MODE = ReservedKey.SECURE_MODE
+    SIMULATE_MODE = ReservedKey.SIMULATE_MODE
     SP_END_POINT = ReservedKey.SP_END_POINT
     JOB_INFO = ReservedKey.JOB_INFO
     JOB_META = ReservedKey.JOB_META
@@ -137,6 +140,7 @@ class FLContextKey(object):
     EFFECTIVE_JOB_SCOPE_NAME = "__effective_job_scope_name__"
     SCOPE_PROPERTIES = "__scope_props__"
     SCOPE_OBJECT = "__scope_object__"
+    FATAL_SYSTEM_ERROR = ReservedKey.FATAL_SYSTEM_ERROR
 
 
 class ReservedTopic(object):
@@ -190,6 +194,7 @@ class ServerCommandNames(object):
     AUX_SEND = "aux_send"
     SHOW_STATS = "show_stats"
     GET_ERRORS = "get_errors"
+    UPDATE_RUN_STATUS = "update_run_status"
 
 
 class ServerCommandKey(object):
@@ -232,6 +237,7 @@ class NonSerializableKeys(object):
         ReservedKey.RUNNER,
         FLContextKey.SCOPE_PROPERTIES,
         FLContextKey.SCOPE_OBJECT,
+        FLContextKey.WORKSPACE_OBJECT,
     ]
 
 
@@ -299,9 +305,7 @@ class WorkspaceConstants:
 
     SERVER_STARTUP_CONFIG = "fed_server.json"
     CLIENT_STARTUP_CONFIG = "fed_client.json"
-    SERVER_JOB_CONFIG = "config_fed_server.json"
-    CLIENT_JOB_CONFIG = "config_fed_client.json"
-    JOB_META_FILE = "job_meta.json"
+    JOB_META_FILE = "meta.json"
 
     AUTHORIZATION_CONFIG = "authorization.json"
     DEFAULT_AUTHORIZATION_CONFIG = AUTHORIZATION_CONFIG + ".default"
@@ -313,7 +317,12 @@ class WorkspaceConstants:
     ADMIN_STARTUP_CONFIG = "fed_admin.json"
 
 
-class SiteType:
+class JobConstants:
+    SERVER_JOB_CONFIG = "config_fed_server.json"
+    CLIENT_JOB_CONFIG = "config_fed_client.json"
+    META_FILE = "meta.json"
 
+
+class SiteType:
     SERVER = "server"
     CLIENT = "client"

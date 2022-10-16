@@ -22,6 +22,7 @@ from nvflare.fuel.utils.component_builder import ComponentBuilder
 from nvflare.fuel.utils.dict_utils import augment, extract_first_level_primitive
 from nvflare.fuel.utils.json_scanner import JsonObjectProcessor, JsonScanner, Node
 from nvflare.fuel.utils.wfconf import _EnvUpdater
+from nvflare.security.logging import secure_format_exception
 
 
 class ConfigContext(object):
@@ -80,9 +81,9 @@ class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
                 try:
                     data = json.load(file)
                     augment(to_dict=config_data, from_dict=data, from_override_to=False)
-                except BaseException as ex:
-                    print("Error processing config file {}: {}".format(file, ex))
-                    raise ex
+                except BaseException as e:
+                    print("Error processing config file {}: {}".format(file, secure_format_exception(e)))
+                    raise e
 
         self.config_data = config_data
         self.json_scanner = JsonScanner(config_data, config_files)
@@ -111,11 +112,11 @@ class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
     def configure(self):
         try:
             self._do_configure()
-        except ConfigError as ex:
-            raise ConfigError("Config error in {}: {}".format(self.config_file_name, ex))
-        except Exception as ex:
-            print("Error processing config {}: {}".format(self.config_file_name, ex))
-            raise ex
+        except ConfigError as e:
+            raise ConfigError("Config error in {}: {}".format(self.config_file_name, secure_format_exception(e)))
+        except Exception as e:
+            print("Error processing config {}: {}".format(self.config_file_name, secure_format_exception(e)))
+            raise e
 
     def process_element(self, node: Node):
         self.process_config_element(self.config_ctx, node)

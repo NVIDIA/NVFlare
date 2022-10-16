@@ -20,7 +20,7 @@ import sys
 import time
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import SiteType, WorkspaceConstants
+from nvflare.apis.fl_constant import JobConstants, SiteType, WorkspaceConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.utils.argument_utils import parse_vars
@@ -30,8 +30,9 @@ from nvflare.private.fed.client.admin import FedAdminAgent
 from nvflare.private.fed.client.admin_msg_sender import AdminMessageSender
 from nvflare.private.fed.client.client_engine import ClientEngine
 from nvflare.private.fed.client.fed_client import FederatedClient
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler, security_init
+from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize, security_init
 from nvflare.private.privacy_manager import PrivacyService
+from nvflare.security.logging import secure_format_exception
 
 
 def main():
@@ -50,9 +51,9 @@ def main():
 
     config_folder = kv_list.get("config_folder", "")
     if config_folder == "":
-        args.client_config = AppFolderConstants.CONFIG_FED_CLIENT
+        args.client_config = JobConstants.CLIENT_JOB_CONFIG
     else:
-        args.client_config = os.path.join(config_folder, AppFolderConstants.CONFIG_FED_CLIENT)
+        args.client_config = os.path.join(config_folder, JobConstants.CLIENT_JOB_CONFIG)
     # TODO:: remove env and train config since they are not core
     args.env = os.path.join("config", AppFolderConstants.CONFIG_ENV)
     args.train_config = os.path.join("config", AppFolderConstants.CONFIG_TRAIN)
@@ -73,6 +74,8 @@ def main():
 
     try:
         os.chdir(args.workspace)
+        fobs_initialize()
+
         conf = FLClientStarterConfiger(
             workspace=workspace,
             kv_list=args.set,
@@ -128,8 +131,8 @@ def main():
 
         deployer.close()
 
-    except ConfigError as ex:
-        print("ConfigError:", str(ex))
+    except ConfigError as e:
+        print(f"ConfigError: {secure_format_exception(e)}")
     finally:
         pass
 

@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import argparse
-import logging
+import logging.config
 import os
 import sys
 import threading
@@ -34,7 +34,8 @@ from nvflare.private.fed.client.fed_client import FederatedClient
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorClientAppRunner
 from nvflare.private.fed.simulator.simulator_client_engine import SimulatorClientEngine
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler
+from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize
+from nvflare.security.logging import secure_format_exception
 from nvflare.security.security import EmptyAuthorizer
 
 
@@ -100,6 +101,8 @@ class ClientTaskWorker(FLComponent):
         with client.run_manager.new_context() as fl_ctx:
             self.fire_event(EventType.SWAP_OUT, fl_ctx)
 
+            client.run_manager.aux_runner.abort_signal.trigger("True")
+
             fl_ctx.set_prop(FLContextKey.RUNNER, None, private=True)
         self.logger.info(f"Clean up ClientRunner for : {client.client_name} ")
 
@@ -110,8 +113,6 @@ class ClientTaskWorker(FLComponent):
             client = data[SimulatorConstants.CLIENT]
             client_config = data[SimulatorConstants.CLIENT_CONFIG]
             deploy_args = data[SimulatorConstants.DEPLOY_ARGS]
-
-            client.initialize_fobs()
 
             app_root = os.path.join(args.workspace, SimulatorConstants.JOB_NAME, "app_" + client.client_name)
             app_custom_folder = os.path.join(app_root, "custom")
@@ -130,8 +131,8 @@ class ClientTaskWorker(FLComponent):
                     break
                 time.sleep(interval)
 
-        except BaseException as error:
-            self.logger.error(f"ClientTaskWorker run error. {error}")
+        except BaseException as e:
+            self.logger.error(f"ClientTaskWorker run error: {secure_format_exception(e)}")
         finally:
             if admin_agent:
                 admin_agent.shutdown()
@@ -153,15 +154,22 @@ def main():
     parser.add_argument("--parent_pid", type=int, help="parent process pid", required=True)
     args = parser.parse_args()
 
-    log_config_file_path = os.path.join(args.workspace, "startup", "log.config")
+    # start parent process checking thread
+    parent_pid = args.parent_pid
+    stop_event = threading.Event()
+    thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
+    thread.start()
+
+    log_config_file_path = os.path.join(args.workspace, "startup", WorkspaceConstants.LOGGING_CONFIG)
     if not os.path.isfile(log_config_file_path):
-        log_config_file_path = os.path.join(os.path.dirname(__file__), "resource/log.config")
+        log_config_file_path = os.path.join(os.path.dirname(__file__), WorkspaceConstants.LOGGING_CONFIG)
     logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
-    log_file = os.path.join(args.workspace, SimulatorConstants.JOB_NAME, "log.txt")
+    workspace = os.path.join(args.workspace, SimulatorConstants.JOB_NAME, "app_" + args.client)
+    log_file = os.path.join(workspace, WorkspaceConstants.LOG_FILE_NAME)
     add_logfile_handler(log_file)
 
-    workspace = os.path.join(args.workspace, SimulatorConstants.JOB_NAME, "app_" + args.client)
     os.chdir(workspace)
+    fobs_initialize()
     AuthorizationService.initialize(EmptyAuthorizer())
     AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
 
@@ -170,12 +178,6 @@ def main():
         os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 
     conn = _create_connection(args.port)
-
-    # start parent process checking thread
-    parent_pid = args.parent_pid
-    stop_event = threading.Event()
-    thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
-    thread.start()
 
     try:
         task_worker = ClientTaskWorker()
@@ -193,4 +195,4 @@ if __name__ == "__main__":
 
     main()
     time.sleep(2)
-    os._exit(0)
+    # os._exit(0)

@@ -13,12 +13,15 @@
 # limitations under the License.
 
 import json
+import logging
 
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from .blob import gen_client, gen_overseer, gen_server, gen_user
 from .cert import Entity, make_root_cert
 from .models import Capacity, Client, Organization, Project, Role, User, db
+
+log = logging.getLogger(__name__)
 
 
 def check_role(id, claims, requester):
@@ -103,6 +106,11 @@ class Store(object):
         if project.frozen:
             return {"status": "Project is frozen"}
         req.pop("id", None)
+        short_name = req.pop("short_name", "")
+        if short_name:
+            if len(short_name) > 16:
+                short_name = short_name[:16]
+            project.short_name = short_name
         for k, v in req.items():
             setattr(project, k, v)
         db.session.add(project)
@@ -158,8 +166,12 @@ class Store(object):
         client = Client(name=name, description=description, creator_id=creator_id)
         client.organization_id = org.id
         client.capacity_id = cap.id
-        db.session.add(client)
-        db.session.commit()
+        try:
+            db.session.add(client)
+            db.session.commit()
+        except BaseException as e:
+            log.error(f"Error while creating client: {e}")
+            return None
         return add_ok({"client": _dict_or_empty(client)})
 
     @classmethod
@@ -173,8 +185,12 @@ class Store(object):
 
     @classmethod
     def get_creator_id_by_client_id(cls, id):
-        creator_id = Client.query.get(id).creator_id
-        return creator_id
+        client = Client.query.get(id)
+        if client:
+            creator_id = client.creator_id
+            return creator_id
+        else:
+            return None
 
     @classmethod
     def get_client(cls, id):
@@ -195,8 +211,12 @@ class Store(object):
             client.capacity_id = cap.id
         for k, v in req.items():
             setattr(client, k, v)
-        db.session.add(client)
-        db.session.commit()
+        try:
+            db.session.add(client)
+            db.session.commit()
+        except BaseException as e:
+            log.error(f"Error while patching client: {e}")
+            return None
         return add_ok({"client": _dict_or_empty(client)})
 
     @classmethod
@@ -214,8 +234,12 @@ class Store(object):
             client.capacity_id = cap.id
         for k, v in req.items():
             setattr(client, k, v)
-        db.session.add(client)
-        db.session.commit()
+        try:
+            db.session.add(client)
+            db.session.commit()
+        except BaseException as e:
+            log.error(f"Error while patching client: {e}")
+            return None
         return add_ok({"client": _dict_or_empty(client)})
 
     @classmethod
@@ -255,7 +279,8 @@ class Store(object):
             user.role_id = role.id
             db.session.add(user)
             db.session.commit()
-        except BaseException:
+        except BaseException as e:
+            log.error(f"Error while creating user: {e}")
             return None
         return add_ok({"user": _dict_or_empty(user)})
 

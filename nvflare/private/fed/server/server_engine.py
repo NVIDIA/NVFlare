@@ -26,7 +26,7 @@ from concurrent.futures import ThreadPoolExecutor
 from multiprocessing.connection import Client as CommandClient
 from multiprocessing.connection import Listener
 from threading import Lock
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from nvflare.apis.client import Client
 from nvflare.apis.fl_component import FLComponent
@@ -46,24 +46,26 @@ from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.fl_snapshot import RunSnapshot
 from nvflare.apis.impl.job_def_manager import JobDefManagerSpec
 from nvflare.apis.shareable import Shareable, make_reply
-from nvflare.apis.utils.common_utils import get_open_ports
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
-from nvflare.fuel.hci.zip_utils import zip_directory_to_bytes
 from nvflare.fuel.utils import fobs
-from nvflare.private.admin_defs import Message
+from nvflare.fuel.utils.network_utils import get_open_ports
+from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
+from nvflare.private.admin_defs import Message, MsgHeader
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.private.fed.utils.fed_utils import security_close
 from nvflare.private.scheduler_constants import ShareableHeader
+from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
 
 from .admin import ClientReply
 from .client_manager import ClientManager
 from .job_runner import JobRunner
-from .run_manager import RunManager
-from .server_engine_internal_spec import EngineInfo, RunInfo, ServerEngineInternalSpec
+from .run_manager import RunInfo, RunManager
+from .server_commands import NO_OP_REPLY
+from .server_engine_internal_spec import EngineInfo, ServerEngineInternalSpec
 from .server_status import ServerStatus
 
 
@@ -93,7 +95,7 @@ class ServerEngine(ServerEngineInternalSpec):
         self.server = server
         self.args = args
         self.run_processes = {}
-        self.execution_exception_run_processes = {}
+        self.exception_run_processes = {}
         self.run_manager = None
         self.conf = None
         # TODO:: does this class need client manager?
@@ -119,7 +121,6 @@ class ServerEngine(ServerEngineInternalSpec):
         self.parent_conn_lock = Lock()
         self.job_runner = None
         self.job_def_manager = None
-        # self.snapshot_lock = multiprocessing.Lock()
 
     def _get_server_app_folder(self):
         return WorkspaceConstants.APP_PREFIX + "server"
@@ -148,11 +149,11 @@ class ServerEngine(ServerEngineInternalSpec):
 
         return self.engine_info
 
-    def get_run_info(self) -> RunInfo:
+    def get_run_info(self) -> Optional[RunInfo]:
         if self.run_manager:
-            return self.run_manager.get_run_info()
-        else:
-            return None
+            run_info: RunInfo = self.run_manager.get_run_info()
+            return run_info
+        return None
 
     def create_parent_connection(self, port):
         while not self.parent_conn:
@@ -193,7 +194,7 @@ class ServerEngine(ServerEngineInternalSpec):
 
     def start_app_on_server(self, run_number: str, job_id: str = None, job_clients=None, snapshot=None) -> str:
         if run_number in self.run_processes.keys():
-            return f"Server run_{run_number} already started."
+            return f"Server run: {run_number} already started."
         else:
             workspace = Workspace(root_dir=self.args.workspace, site_name="server")
             app_root = workspace.get_app_dir(run_number)
@@ -240,8 +241,20 @@ class ServerEngine(ServerEngineInternalSpec):
                             targets=targets, topic=topic, request=request, timeout=timeout, fl_ctx=fl_ctx
                         )
                         conn.send(replies)
+                    elif command == ServerCommandNames.UPDATE_RUN_STATUS:
+                        execution_error = data.get("execution_error")
+                        if execution_error:
+                            with self.lock:
+                                run_process_info = self.run_processes.get(job_id)
+                                self.exception_run_processes[job_id] = run_process_info
+
             except BaseException as e:
-                self.logger.warning(f"Failed to process the child process command: {e}", exc_info=True)
+                self.logger.warning(f"Failed to process the child process command: {secure_format_exception(e)}")
+
+    def remove_exception_process(self, job_id):
+        with self.lock:
+            if job_id in self.exception_run_processes:
+                self.exception_run_processes.pop(job_id)
 
     def wait_for_complete(self, job_id):
         while True:
@@ -252,11 +265,12 @@ class ServerEngine(ServerEngineInternalSpec):
                 time.sleep(1.0)
             except BaseException:
                 with self.lock:
-                    run_process_info = self.run_processes.pop(job_id)
-                    return_code = run_process_info[RunProcessKey.CHILD_PROCESS].poll()
-                    # if process exit but with Execution exception
-                    if return_code and return_code != 0:
-                        self.execution_exception_run_processes[job_id] = run_process_info
+                    if job_id in self.run_processes:
+                        run_process_info = self.run_processes.pop(job_id)
+                        return_code = run_process_info[RunProcessKey.CHILD_PROCESS].poll()
+                        # if process exit but with Execution exception
+                        if return_code and return_code != 0:
+                            self.exception_run_processes[job_id] = run_process_info
                 self.engine_info.status = MachineStatus.STOPPED
                 break
 
@@ -343,7 +357,6 @@ class ServerEngine(ServerEngineInternalSpec):
 
         self.logger.info("Abort the server app run.")
 
-        status_message = ""
         try:
             status_message = self.send_command_to_child_runner_process(
                 job_id=job_id,
@@ -358,14 +371,15 @@ class ServerEngine(ServerEngineInternalSpec):
                     child_process.terminate()
         finally:
             with self.lock:
-                self.run_processes.pop(job_id)
+                if job_id in self.run_processes:
+                    self.run_processes.pop(job_id)
 
         self.engine_info.status = MachineStatus.STOPPED
-        return status_message
+        return ""
 
     def check_app_start_readiness(self, job_id: str) -> str:
         if job_id not in self.run_processes.keys():
-            return f"Server app run_{job_id} has not started."
+            return f"Server app run: {job_id} has not started."
         return ""
 
     def shutdown_server(self) -> str:
@@ -437,7 +451,7 @@ class ServerEngine(ServerEngineInternalSpec):
         data = zip_directory_to_bytes(fullpath_src, "")
         return "", data
 
-    def get_app_run_info(self, job_id) -> RunInfo:
+    def get_app_run_info(self, job_id) -> Optional[RunInfo]:
         run_info = None
         try:
             run_info = self.send_command_to_child_runner_process(
@@ -446,8 +460,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 command_data={},
             )
         except BaseException:
-            self.logger.error(f"Failed to get_app_run_info from run_{job_id}")
-
+            self.logger.error(f"Failed to get_app_run_info for run: {job_id}")
         return run_info
 
     def set_run_manager(self, run_manager: RunManager):
@@ -539,7 +552,7 @@ class ServerEngine(ServerEngineInternalSpec):
             else:
                 return {}
         except Exception as e:
-            self.logger.error(f"Failed to send the aux_message: {topic} with exception: {e}.")
+            self.logger.error(f"Failed to send the aux_message: {topic} with exception: {secure_format_exception(e)}.")
 
     def sync_clients_from_main_process(self):
         with self.parent_conn_lock:
@@ -565,6 +578,18 @@ class ServerEngine(ServerEngineInternalSpec):
             return_data = self.parent_conn.recv()
             return return_data
 
+    def update_job_run_status(self):
+        with self.parent_conn_lock:
+            with self.new_context() as fl_ctx:
+                execution_error = fl_ctx.get_prop(FLContextKey.FATAL_SYSTEM_ERROR, False)
+                data = {
+                    ServerCommandKey.COMMAND: ServerCommandNames.UPDATE_RUN_STATUS,
+                    ServerCommandKey.DATA: {
+                        "execution_error": execution_error,
+                    },
+                }
+                self.parent_conn.send(data)
+
     def aux_send(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
         # Send the aux messages through admin_server
         request.set_peer_props(fl_ctx.get_all_public_props())
@@ -581,12 +606,18 @@ class ServerEngine(ServerEngineInternalSpec):
             client_name = self.get_client_name_from_token(r.client_token)
             if r.reply:
                 try:
-                    results[client_name] = fobs.loads(r.reply.body)
-                except BaseException:
+                    error_code = r.reply.get_header(MsgHeader.RETURN_CODE, ReturnCode.OK)
+                    if error_code != ReturnCode.OK:
+                        self.logger.error(f"Aux message send error: {error_code} from client: {client_name}")
+                        shareable = make_reply(ReturnCode.ERROR)
+                    else:
+                        shareable = fobs.loads(r.reply.body)
+                    results[client_name] = shareable
+                except BaseException as e:
                     results[client_name] = make_reply(ReturnCode.COMMUNICATION_ERROR)
                     self.logger.error(
                         f"Received unexpected reply from client: {client_name}, "
-                        f"message body:{r.reply.body} processing topic:{topic}"
+                        f"message body:{r.reply.body} processing topic:{topic} Error:{e}"
                     )
             else:
                 results[client_name] = None
@@ -602,6 +633,8 @@ class ServerEngine(ServerEngineInternalSpec):
                 command_conn.send(data)
                 if return_result:
                     result = command_conn.recv()
+                    if result == NO_OP_REPLY:
+                        result = None
         return result
 
     def get_command_conn(self, job_id):
@@ -668,7 +701,7 @@ class ServerEngine(ServerEngineInternalSpec):
             else:
                 self.logger.info(f"The snapshot: {self.server.snapshot_location} has been removed.")
         except BaseException as e:
-            self.logger.error(f"Failed to persist the components. {str(e)}")
+            self.logger.error(f"Failed to persist the components. {secure_format_exception(e)}")
 
     def restore_components(self, snapshot: RunSnapshot, fl_ctx: FLContext):
         for component_id, component in self.run_manager.components.items():
@@ -680,7 +713,7 @@ class ServerEngine(ServerEngineInternalSpec):
     def dispatch(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         return self.run_manager.aux_runner.dispatch(topic=topic, request=request, fl_ctx=fl_ctx)
 
-    def show_stats(self, job_id):
+    def show_stats(self, job_id) -> dict:
         stats = None
         try:
             stats = self.send_command_to_child_runner_process(
@@ -689,22 +722,26 @@ class ServerEngine(ServerEngineInternalSpec):
                 command_data={},
             )
         except BaseException:
-            self.logger.error(f"Failed to get_stats from JOB: {job_id}")
+            self.logger.error(f"Failed to show_stats for JOB: {job_id}")
 
+        if stats is None:
+            stats = {}
         return stats
 
-    def get_errors(self, job_id):
-        stats = None
+    def get_errors(self, job_id) -> dict:
+        errors = None
         try:
-            stats = self.send_command_to_child_runner_process(
+            errors = self.send_command_to_child_runner_process(
                 job_id=job_id,
                 command_name=ServerCommandNames.GET_ERRORS,
                 command_data={},
             )
         except BaseException:
-            self.logger.error(f"Failed to get_stats from run_{job_id}")
+            self.logger.error(f"Failed to get_errors for JOB: {job_id}")
 
-        return stats
+        if errors is None:
+            errors = {}
+        return errors
 
     def _send_admin_requests(self, requests, timeout_secs=10) -> List[ClientReply]:
         return self.server.admin_server.send_requests(requests, timeout_secs=timeout_secs)
@@ -726,11 +763,16 @@ class ServerEngine(ServerEngineInternalSpec):
         for r in replies:
             site_name = self.get_client_name_from_token(r.client_token)
             if r.reply:
-                resp = fobs.loads(r.reply.body)
-                result[site_name] = (
-                    resp.get_header(ShareableHeader.CHECK_RESOURCE_RESULT, False),
-                    resp.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, ""),
-                )
+                error_code = r.reply.get_header(MsgHeader.RETURN_CODE, ReturnCode.OK)
+                if error_code != ReturnCode.OK:
+                    self.logger.error(f"Client reply error: {r.reply.body}")
+                    result[site_name] = (False, "")
+                else:
+                    resp = fobs.loads(r.reply.body)
+                    result[site_name] = (
+                        resp.get_header(ShareableHeader.CHECK_RESOURCE_RESULT, False),
+                        resp.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, ""),
+                    )
             else:
                 result[site_name] = (False, "")
         return result

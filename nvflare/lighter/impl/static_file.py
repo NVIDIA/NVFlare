@@ -361,7 +361,8 @@ class StaticFileBuilder(Builder):
         self.project_name = project.name
         self.project = project
         overseer = project.get_participants_by_type("overseer")
-        self._build_overseer(overseer, ctx)
+        if overseer:
+            self._build_overseer(overseer, ctx)
         servers = project.get_participants_by_type("server", first_only=False)
         for server in servers:
             self._build_server(server, ctx)

@@ -18,6 +18,7 @@ from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
+from nvflare.private.fed.server.admin import FedAdminServer
 
 
 class CommandUtil(object):
@@ -31,8 +32,6 @@ class CommandUtil(object):
     TARGET_TYPE_SERVER = "server"
     TARGET_TYPE_ALL = "all"
 
-    SITE_SERVER = "server"
-    ALL_SITES = "@ALL"
     JOB_ID = "job_id"
     JOB = "job"
 
@@ -50,7 +49,11 @@ class CommandUtil(object):
 
         return PreAuthzReturnCode.REQUIRE_AUTHZ
 
-    def authorize_abort_client_operation(self, conn: Connection, args: List[str]) -> PreAuthzReturnCode:
+    def authorize_abort_client_task(self, conn: Connection, args: List[str]) -> PreAuthzReturnCode:
+        if len(args) < 2:
+            conn.append_error("missing job_id (syntax is: abort_task job_id <client-name>)")
+            return PreAuthzReturnCode.ERROR
+
         auth_args = [args[0], self.TARGET_TYPE_CLIENT]
         auth_args.extend(args[2:])
 
@@ -139,13 +142,9 @@ class CommandUtil(object):
         else:
             return PreAuthzReturnCode.OK
 
-    def send_request_to_clients(self, conn, message, process_client_replies=None):
+    def send_request_to_clients(self, conn, message):
         client_tokens = conn.get_prop(self.TARGET_CLIENT_TOKENS)
 
-        # for client in clients:
-        #     requests.update({client.strip(): message})
-
-        # client_names = conn.get_prop(self.TARGET_CLIENT_NAMES, None)
         if not client_tokens:
             return None
 
@@ -153,17 +152,14 @@ class CommandUtil(object):
         for token in client_tokens:
             requests.update({token: message})
 
-        admin_server = conn.server
+        admin_server: FedAdminServer = conn.server
         replies = admin_server.send_requests(requests, timeout_secs=admin_server.timeout)
 
-        if process_client_replies:
-            return process_client_replies(replies)
-        else:
-            return replies
+        return replies
 
     @staticmethod
     def get_job_name(meta: dict) -> str:
-        """Get job name from meta.json"""
+        """Gets job name from job meta."""
 
         name = meta.get(JobMetaKey.JOB_NAME)
         if not name:

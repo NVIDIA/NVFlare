@@ -20,8 +20,10 @@ from zipfile import ZipFile
 
 import pytest
 
-from nvflare.fuel.hci.zip_utils import convert_legacy_zip, get_all_file_paths, normpath_for_zip, split_path
-from nvflare.private.fed.server.job_meta_validator import META, JobMetaValidator
+from nvflare.apis.fl_constant import JobConstants
+from nvflare.apis.utils.job_utils import convert_legacy_zipped_app_to_job
+from nvflare.fuel.utils.zip_utils import get_all_file_paths, normpath_for_zip, split_path
+from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 
 
 def _zip_directory_with_meta(root_dir: str, folder_name: str, meta: str, writer: io.BytesIO):
@@ -39,7 +41,7 @@ def _zip_directory_with_meta(root_dir: str, folder_name: str, meta: str, writer:
         # writing each file one by one
         for full_path in file_paths:
             rel_path = full_path[prefix_len:]
-            if len(meta) > 0 and rel_path.endswith(META):
+            if len(meta) > 0 and rel_path.endswith(JobConstants.META_FILE):
                 z.writestr(rel_path, meta)
             else:
                 z.write(full_path, arcname=rel_path)
@@ -50,7 +52,7 @@ def _zip_job_with_meta(folder_name: str, meta: str) -> bytes:
     bio = io.BytesIO()
     _zip_directory_with_meta(job_path, folder_name, meta, bio)
     zip_data = bio.getvalue()
-    return convert_legacy_zip(zip_data)
+    return convert_legacy_zipped_app_to_job(zip_data)
 
 
 META_WITH_VALID_DEPLOY_MAP = [

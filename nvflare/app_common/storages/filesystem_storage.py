@@ -22,6 +22,7 @@ from typing import List, Tuple
 
 from nvflare.apis.storage import StorageException, StorageSpec
 from nvflare.apis.utils.format_check import validate_class_methods_args
+from nvflare.security.logging import secure_format_exception
 
 
 def _write(path: str, content):
@@ -35,7 +36,7 @@ def _write(path: str, content):
     except Exception as e:
         if os.path.isfile(tmp_path):
             os.remove(tmp_path)
-        raise StorageException("failed to write content: {}".format(e))
+        raise StorageException(f"failed to write content: {secure_format_exception(e)}")
 
     if os.path.exists(tmp_path):
         os.rename(tmp_path, path)
@@ -46,7 +47,7 @@ def _read(path: str) -> bytes:
         with open(path, "rb") as f:
             content = f.read()
     except Exception as e:
-        raise StorageException("failed to read content: {}".format(e))
+        raise StorageException(f"failed to read content: {secure_format_exception(e)}")
 
     return content
 

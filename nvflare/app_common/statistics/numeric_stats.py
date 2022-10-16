@@ -39,7 +39,7 @@ def get_global_feature_data_types(
 
 def get_global_stats(global_metrics: dict, client_metrics: dict, metric_task: str) -> dict:
     # we need to calculate the metrics in specified order
-    ordered_target_metrics = StC.ordered_metrics[metric_task]
+    ordered_target_metrics = StC.ordered_statistics[metric_task]
     ordered_metrics = [metric for metric in ordered_target_metrics if metric in client_metrics]
 
     for metric in ordered_metrics:
@@ -47,7 +47,7 @@ def get_global_stats(global_metrics: dict, client_metrics: dict, metric_task: st
             global_metrics[metric] = {}
 
         stats = client_metrics[metric]
-        if metric == StC.STATS_COUNT or metric == StC.STATS_SUM:
+        if metric == StC.STATS_COUNT or metric == StC.STATS_FAILURE_COUNT or metric == StC.STATS_SUM:
             for client_name in stats:
                 global_metrics[metric] = accumulate_metrics(stats[client_name], global_metrics[metric])
         elif metric == StC.STATS_MEAN:
@@ -85,10 +85,11 @@ def accumulate_metrics(metrics: dict, global_metrics: dict) -> dict:
 
         feature_metrics = metrics[ds_name]
         for feature_name in feature_metrics:
-            if feature_name not in global_metrics[ds_name]:
-                global_metrics[ds_name][feature_name] = feature_metrics[feature_name]
-            else:
-                global_metrics[ds_name][feature_name] += feature_metrics[feature_name]
+            if feature_metrics[feature_name]:
+                if feature_name not in global_metrics[ds_name]:
+                    global_metrics[ds_name][feature_name] = feature_metrics[feature_name]
+                else:
+                    global_metrics[ds_name][feature_name] += feature_metrics[feature_name]
 
     return global_metrics
 

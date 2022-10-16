@@ -1,0 +1,43 @@
+n_servers: 1
+n_clients: 2
+jobs_root_dir: ../../examples
+cleanup: True
+
+
+tests:
+  - test_name: "run hello-cyclic"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job hello-cyclic" ]
+        "result":
+          "type": "run_state"
+          "data": { }
+      - "trigger":
+          "type": "run_state"
+          "data": { "run_finished": True }
+        "actions": [ "ensure_current_job_done" ]
+        "result":
+          "type": "run_state"
+          "data": { "run_finished": True }
+    validators:
+      - path: tests.integration_test.validators.TFModelValidator
+  - test_name: "run hello-tf2"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job hello-tf2" ]
+        "result":
+          "type": "run_state"
+          "data": { }
+      - "trigger":
+          "type": "run_state"
+          "data": { "run_finished": True }
+        "actions": [ "ensure_current_job_done" ]
+        "result":
+          "type": "run_state"
+          "data": { "run_finished": True }
+    validators:
+      - path: tests.integration_test.validators.TFModelValidator

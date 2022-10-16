@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.private.fed.client.client_app_runner import ClientAppRunner
 from nvflare.private.fed.client.client_run_manager import ClientRunManager
 from nvflare.private.fed.server.server_app_runner import ServerAppRunner
@@ -27,7 +28,7 @@ class SimulatorClientAppRunner(ClientAppRunner):
         pass
 
     def create_run_manager(self, args, conf, federated_client, workspace):
-        return SimulatorClientRunManager(
+        run_manager = SimulatorClientRunManager(
             client_name=args.client_name,
             job_id=args.job_id,
             workspace=workspace,
@@ -36,8 +37,14 @@ class SimulatorClientAppRunner(ClientAppRunner):
             handlers=conf.runner_config.handlers,
             conf=conf,
         )
+        with run_manager.new_context() as fl_ctx:
+            fl_ctx.set_prop(FLContextKey.SIMULATE_MODE, True, private=True, sticky=True)
+        return run_manager
 
 
 class SimulatorServerAppRunner(ServerAppRunner):
     def sync_up_parents_process(self, args, server):
+        pass
+
+    def update_job_run_status(self, server):
         pass

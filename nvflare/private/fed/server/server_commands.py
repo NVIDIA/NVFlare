@@ -24,7 +24,10 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.fuel.utils import fobs
+from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.widgets.widget import WidgetID
+
+NO_OP_REPLY = "__no_op_reply"
 
 
 class CommandProcessor(ABC):
@@ -75,35 +78,25 @@ class AbortCommand(CommandProcessor):
 
         """
         server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
-        server_runner.abort(fl_ctx)
-        # wait for the runner process gracefully abort the run.
-        time.sleep(3.0)
+        if server_runner:
+            server_runner.abort(fl_ctx)
+            # wait for the runner process gracefully abort the run.
+            time.sleep(3.0)
         return "Aborted the run"
 
 
 class GetRunInfoCommand(CommandProcessor):
-    """To implement the abort command."""
+    """Implements the GET_RUN_INFO command."""
 
     def get_command_name(self) -> str:
-        """To get the command name.
-
-        Returns: ServerCommandNames.GET_RUN_INFO
-
-        """
         return ServerCommandNames.GET_RUN_INFO
 
     def process(self, data: Shareable, fl_ctx: FLContext):
-        """Called to process the abort command.
-
-        Args:
-            data: process data
-            fl_ctx: FLContext
-
-        Returns: Engine run_info
-
-        """
         engine = fl_ctx.get_engine()
-        return engine.get_run_info()
+        run_info = engine.get_run_info()
+        if run_info:
+            return run_info
+        return NO_OP_REPLY
 
 
 class GetTaskCommand(CommandProcessor):
@@ -132,7 +125,16 @@ class GetTaskCommand(CommandProcessor):
         client = data.get_header(ServerCommandKey.FL_CLIENT)
         fl_ctx.set_peer_context(shared_fl_ctx)
         server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
-        taskname, task_id, shareable = server_runner.process_task_request(client, fl_ctx)
+        if not server_runner:
+            # this is possible only when the client request is received before the
+            # server_app_runner.start_server_app is called in runner_process.py
+            # We ask the client to try again later.
+            taskname = SpecialTaskName.TRY_AGAIN
+            task_id = ""
+            shareable = Shareable()
+            shareable.set_header(TaskConstant.WAIT_TIME, 1.0)
+        else:
+            taskname, task_id, shareable = server_runner.process_task_request(client, fl_ctx)
         data = {
             ServerCommandKey.TASK_NAME: taskname,
             ServerCommandKey.TASK_ID: task_id,
@@ -163,7 +165,6 @@ class SubmitUpdateCommand(CommandProcessor):
         Returns:
 
         """
-
         shareable = data.get(ReservedKey.SHAREABLE)
         shared_fl_ctx = data.get(ReservedKey.SHARED_FL_CONTEXT)
         client = shareable.get_header(ServerCommandKey.FL_CLIENT)
@@ -173,7 +174,7 @@ class SubmitUpdateCommand(CommandProcessor):
         server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
         server_runner.process_submission(client, contribution_task_name, task_id, shareable, fl_ctx)
 
-        return ""
+        return None
 
 
 class AuxCommunicateCommand(CommandProcessor):

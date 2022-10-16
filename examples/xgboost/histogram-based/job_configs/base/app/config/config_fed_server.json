@@ -1,0 +1,18 @@
+{
+  "format_version": 2,
+  "server": {
+    "heart_beat_timeout": 600
+  },
+  "task_data_filters": [],
+  "task_result_filters": [],
+  "components": [],
+  "workflows": [
+    {
+      "id": "xgb_controller",
+      "path": "nvflare.app_opt.xgboost.histogram_based.controller.XGBFedController",
+      "args": {
+        "train_timeout": 30000
+      }
+    }
+  ]
+}

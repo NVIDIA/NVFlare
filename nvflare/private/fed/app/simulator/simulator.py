@@ -15,7 +15,6 @@
 """Federated Simulator launching script."""
 
 import argparse
-import os
 import sys
 
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
@@ -28,6 +27,7 @@ def define_simulator_parser(simulator_parser):
     simulator_parser.add_argument("-c", "--clients", type=str, help="client names list")
     simulator_parser.add_argument("-t", "--threads", type=int, help="number of parallel running clients")
     simulator_parser.add_argument("-gpu", "--gpu", type=str, help="list of GPU Device Ids, comma separated")
+    simulator_parser.add_argument("-m", "--max_clients", type=int, default=100, help="max number of clients")
 
 
 def run_simulator(simulator_args):
@@ -38,6 +38,7 @@ def run_simulator(simulator_args):
         n_clients=simulator_args.n_clients,
         threads=simulator_args.threads,
         gpu=simulator_args.gpu,
+        max_clients=simulator_args.max_clients,
     )
     run_status = simulator.run()
 
@@ -59,4 +60,4 @@ if __name__ == "__main__":
     define_simulator_parser(parser)
     args = parser.parse_args()
     status = run_simulator(args)
-    os._exit(status)
+    sys.exit(status)

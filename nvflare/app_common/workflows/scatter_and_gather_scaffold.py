@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import copy
-import traceback
 
 import numpy as np
 
@@ -25,6 +24,7 @@ from nvflare.app_common.abstract.model import model_learnable_to_dxo
 from nvflare.app_common.app_constant import AlgorithmConstants, AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
+from nvflare.security.logging import secure_format_exception
 
 
 class ScatterAndGatherScaffold(ScatterAndGather):
@@ -213,20 +213,16 @@ class ScatterAndGatherScaffold(ScatterAndGather):
 
                 self.fire_event(AppEventType.ROUND_DONE, fl_ctx)
                 self.log_info(fl_ctx, f"Round {self._current_round} finished.")
-
-                if (
-                    self._snapshot_every_n_rounds != 0
-                    and (self._current_round + 1) % self._snapshot_every_n_rounds == 0
-                ):
-                    # Call the self._engine to persist the snapshot of all the FLComponents
-                    self._engine.persist_components(fl_ctx, completed=False)
-
                 self._current_round += 1
+
+                # need to persist snapshot after round increased because the global weights should be set to
+                # the last finished round's result
+                if self._snapshot_every_n_rounds != 0 and self._current_round % self._snapshot_every_n_rounds == 0:
+                    self._engine.persist_components(fl_ctx, completed=False)
 
             self._phase = AppConstants.PHASE_FINISHED
             self.log_info(fl_ctx, "Finished ScatterAndGatherScaffold Training.")
         except BaseException as e:
-            traceback.print_exc()
-            error_msg = f"Exception in ScatterAndGatherScaffold control_flow: {e}"
+            error_msg = f"Exception in ScatterAndGatherScaffold control_flow: {secure_format_exception(e)}"
             self.log_exception(fl_ctx, error_msg)
-            self.system_panic(str(e), fl_ctx)
+            self.system_panic(error_msg, fl_ctx)

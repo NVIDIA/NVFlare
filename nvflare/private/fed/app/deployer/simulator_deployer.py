@@ -11,11 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import shutil
 import tempfile
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.utils.common_utils import get_open_ports
+from nvflare.fuel.utils.network_utils import get_open_ports
+from nvflare.private.fed.app.server.server_train import create_admin_server
 from nvflare.private.fed.client.admin import FedAdminAgent
 from nvflare.private.fed.client.admin_msg_sender import AdminMessageSender
 from nvflare.private.fed.client.client_req_processors import ClientRequestProcessors
@@ -23,7 +25,6 @@ from nvflare.private.fed.client.fed_client import FederatedClient
 from nvflare.private.fed.simulator.simulator_client_engine import SimulatorClientEngine
 from nvflare.private.fed.simulator.simulator_server import SimulatorServer
 
-from ..server.server_train import create_admin_server
 from .base_client_deployer import BaseClientDeployer
 from .server_deployer import ServerDeployer
 
@@ -35,11 +36,9 @@ class SimulatorDeployer(ServerDeployer):
         self.admin_storage = tempfile.mkdtemp()
 
     def create_fl_server(self, args, secure_train=False):
-        simulator_server = self._create_simulator_server_config(self.admin_storage)
+        simulator_server = self._create_simulator_server_config(self.admin_storage, args.max_clients)
 
-        wait_after_min_clients = simulator_server.get("wait_after_min_clients", 10)
-        if simulator_server["heart_beat_timeout"]:
-            heart_beat_timeout = simulator_server["heart_beat_timeout"]
+        heart_beat_timeout = simulator_server.get("heart_beat_timeout", 600)
 
         self.services = SimulatorServer(
             project_name=simulator_server.get("name", ""),
@@ -47,9 +46,9 @@ class SimulatorDeployer(ServerDeployer):
             cmd_modules=self.cmd_modules,
             args=args,
             secure_train=secure_train,
-            # enable_byoc=self.enable_byoc,
             snapshot_persistor=self.snapshot_persistor,
             overseer_agent=self.overseer_agent,
+            heart_beat_timeout=heart_beat_timeout,
         )
 
         admin_server = create_admin_server(
@@ -97,7 +96,7 @@ class SimulatorDeployer(ServerDeployer):
 
         return admin_agent
 
-    def _create_simulator_server_config(self, admin_storage):
+    def _create_simulator_server_config(self, admin_storage, max_clients):
         simulator_server = {
             "name": "simulator_server",
             "service": {
@@ -109,7 +108,7 @@ class SimulatorDeployer(ServerDeployer):
             },
             "admin_host": "localhost",
             "admin_port": self.open_ports[1],
-            "max_num_clients": 100,
+            "max_num_clients": max_clients,
             "heart_beat_timeout": 600,
             "num_server_workers": 4,
             "compression": "Gzip",
