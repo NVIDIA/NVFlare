@@ -90,7 +90,7 @@ similarly, you can check server2 if you are in the HA mode
 Client
 ======
 
-Before you check the server, make sure the overseer and server are running.
+Before you check the clients, make sure the overseer and server are running.
 
 If the client package is in "/path_to_NVFlare/NVFlare/workspace/example_project/prod_00" and it is called "site-1"
 So on the client site, a user will run: 
