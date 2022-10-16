@@ -122,7 +122,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
 
         clients_to_be_removed = set(clients)
         for r in replies:
-            if r.reply.get_header(MsgHeader.RETURN_CODE) == ReturnCode.ERROR:
+            if r.reply and r.reply.get_header(MsgHeader.RETURN_CODE) == ReturnCode.ERROR:
                 clients_to_be_removed.remove(r.client_token)
 
         result = True
