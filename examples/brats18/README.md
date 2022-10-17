@@ -47,7 +47,12 @@ pip install -r ./virtualenv/plot-requirements.txt
 ```
 
 ## 2. Create your FL workspace
-### 2.1 POC ("proof of concept") workspace
+### 2.1 FL simulator workspace
+If we use FL simulator, the only thing we nee to do is to create an empty folder to serve as the workspace.
+```
+mkdir ./workspace_brats
+```
+### 2.2 POC ("proof of concept") workspace
 In this example, we run FL experiments in POC mode, starting with creating local FL workspace.
 The [create_poc_workspace.sh](./create_poc_workspace.sh) script follows this pattern:
 ```
@@ -58,7 +63,7 @@ In the following experiments, we will be using 4 clients.
 ./create_poc_workspace.sh 4
 ```
 Press y and enter when prompted.
-### 2.2 (Optional) Secure FL workspace
+### 2.3 (Optional) Secure FL workspace
 We only cover POC mode in this example. To run it with Secure mode, please refer to the [`cifar10`](../cifar10) example.
 > **_NOTE:_** **POC** stands for "proof of concept" and is used for quick experimentation 
 > with different amounts of clients.
@@ -66,7 +71,7 @@ We only cover POC mode in this example. To run it with Secure mode, please refer
 >
 > The **secure** workspace, on the other hand, is needed to run experiments that require encryption keys. These startup kits allow secure deployment of FL in real-world scenarios 
 > using SSL certificated communication channels.
-### 2.3 GPU resource and Multi-tasking
+### 2.4 GPU resource and Multi-tasking
 In this example, we assume four local GPUs with at least 12GB of memory are available. 
 
 As we use the POC workspace without `meta.json`, we control the client GPU directly when starting the clients by specifying `CUDA_VISIBLE_DEVICES`. 
@@ -90,7 +95,21 @@ done
 ```
 ### 3.2 Start the FL system and submit jobs
 Next, we will start the FL system and submit jobs to start FL training automatically.
+#### 3.2.1 Run the FL simulator to verify the codes
+To verify the codes, we can run the FL simulator with either 1 client for centralized training
+```
+python3 -u -m nvflare.private.fed.app.simulator.simulator './configs/brats_central' -w './workspace_brats/brats_central' -n 1 -t 1 -gpu 0
+```
+Run the FL simulator with 4 clients for federated learning by running
+```
+python3 -u -m nvflare.private.fed.app.simulator.simulator './configs/brats_fedavg' -w './workspace_brats/brats_fedavg' -n 4 -t 4 -gpu 0,1,2,3
+```
+Run the FL simulator with 4 clients for federated learning with differential privacy by running
+```
+python3 -u -m nvflare.private.fed.app.simulator.simulator './configs/brats_fedavg_dp' -w './workspace_brats/brats_fedavg_dp' -n 4 -t 4 -gpu 0,1,2,3
+```
 
+#### 3.2.2 Start the FL system and submit jobs in POC mode
 Start the FL system with either 1 client for centralized training, or 4 clients for federated learning by running
 ```
 bash start_fl_poc.sh "All"
