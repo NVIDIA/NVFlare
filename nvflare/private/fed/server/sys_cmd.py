@@ -18,6 +18,7 @@ import psutil
 
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
+from nvflare.private.admin_defs import MsgHeader, ReturnCode
 from nvflare.private.defs import SysCommandTopic
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.cmd_utils import CommandUtil
@@ -32,10 +33,13 @@ def _parse_replies(conn, replies):
         client_name = engine.get_client_name_from_token(r.client_token)
 
         if r.reply:
-            try:
-                resources = json.loads(r.reply.body)
-            except BaseException as e:
-                resources = f"Bad replies: {secure_format_exception(e)}"
+            if r.reply.get_header(MsgHeader.RETURN_CODE) == ReturnCode.ERROR:
+                resources = r.reply.body
+            else:
+                try:
+                    resources = json.loads(r.reply.body)
+                except BaseException as e:
+                    resources = f"Bad replies: {secure_format_exception(e)}"
         else:
             resources = "No replies"
         site_resources[client_name] = resources
@@ -105,21 +109,24 @@ class SystemCommandModule(CommandModule, CommandUtil):
             client_name = engine.get_client_name_from_token(r.client_token)
             conn.append_string("Client: " + client_name)
 
+            table = conn.append_table(["Metrics", "Value"])
             if r.reply:
-                try:
-                    infos = json.loads(r.reply.body)
-                    table = conn.append_table(["Metrics", "Value"])
+                if r.reply.get_header(MsgHeader.RETURN_CODE) == ReturnCode.ERROR:
+                    table.add_row([r.reply.body, ""])
+                else:
+                    try:
+                        infos = json.loads(r.reply.body)
 
-                    for k, v in infos.items():
-                        table.add_row([str(k), str(v)])
-                    table.add_row(
-                        [
-                            "available_percent",
-                            "%.1f" % (psutil.virtual_memory().available * 100 / psutil.virtual_memory().total),
-                        ]
-                    )
-                except BaseException:
-                    conn.append_string(": Bad replies")
+                        for k, v in infos.items():
+                            table.add_row([str(k), str(v)])
+                        table.add_row(
+                            [
+                                "available_percent",
+                                "%.1f" % (psutil.virtual_memory().available * 100 / psutil.virtual_memory().total),
+                            ]
+                        )
+                    except BaseException:
+                        conn.append_string(": Bad replies")
             else:
                 conn.append_string(": No replies")
 
