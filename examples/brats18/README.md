@@ -60,6 +60,7 @@ done
 ## 3. Run experiments with FL simulator
 FL simulator is used to simulate FL experiments or debug codes, not for real FL deployment.
 In this example, we assume four local GPUs with at least 12GB of memory are available.
+
 Let's create an empty folder to serve as the workspace.
 ```
 mkdir ./workspace_brats
@@ -83,6 +84,7 @@ nvflare simulator './configs/brats_fedavg_dp' -w './workspace_brats/brats_fedavg
 ```
 
 ## 4. Run experiments with more realistic FL setting
+After verifying the codes with FL simulator, we can perform FL exprriments in a more realistic setting.
 ### 4.1 Create your FL workspace
 #### 4.1.1 POC ("proof of concept") workspace
 In this example, we run FL experiments in POC mode, starting with creating local FL workspace.
@@ -103,7 +105,7 @@ We only cover POC mode in this example. To run it with Secure mode, please refer
 >
 > The **secure** workspace, on the other hand, is needed to run experiments that require encryption keys. These startup kits allow secure deployment of FL in real-world scenarios 
 > using SSL certificated communication channels.
-### 4.1.3 GPU resource and Multi-tasking
+#### 4.1.3 GPU resource and Multi-tasking
 In this example, we assume four local GPUs with at least 12GB of memory are available. 
 
 As we use the POC workspace without `meta.json`, we control the client GPU directly when starting the clients by specifying `CUDA_VISIBLE_DEVICES`. 
