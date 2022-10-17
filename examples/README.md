@@ -47,3 +47,8 @@ To get started with these examples, please follow the [Quickstart](https://nvfla
   * Example of gathering local image histogram to compute the global dataset histograms.
 * [Federated Statistics for DataFrame](federated_statistics/df_stats/README.md)
   * Example of gathering local statistics summary from Pandas DataFrame to compute the global dataset statistics.
+
+
+## 5. Federated Policies
+* [Federated Policies](./federated-policies/README.rst) 
+  * Discuss the federated site policies for authorization, resource and data privacy management
