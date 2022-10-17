@@ -80,8 +80,10 @@ def handle_provision(args):
         src_project = files.get(answer, None)
         if src_project:
             shutil.copyfile(os.path.join(file_path, src_project), current_project_yml)
-            print(f"{current_project_yml} was created.  Please edit it to fit your FL configuration. " +
-                  f"Once done please run nvflare provision command again with newly edited project.yml file")
+            print(
+                f"{current_project_yml} was created.  Please edit it to fit your FL configuration. "
+                + f"Once done please run nvflare provision command again with newly edited project.yml file"
+            )
 
         else:
             print(f"{answer} was selected.  No project.yml was created.")
