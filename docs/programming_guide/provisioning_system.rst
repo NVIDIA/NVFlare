@@ -219,8 +219,8 @@ And in project.yml, add an entry in the builders section::
 
 Case 2: enhancing an existing builder
 -------------------------------------
-The developer would like to push the generated zip file, done by nvflare.lighter.impl.workspace.DistributionBuilder, to
-a web server via a POST method.  This can be done easily by replacing the DistributionBuilder with a new builder as
+The developer would like to push zip files of each generated folder, to
+a web server via a POST method.  This can be done easily by implementing a new builder as
 follows (after pip install requests)::
 
     class WebPostDistributionBuilder(Builder):
@@ -305,12 +305,11 @@ own requirements:
 
     - :class:`WorkspaceBuilder<nvflare.lighter.impl.workspace.WorkspaceBuilder>`
     - :class:`TemplateBuilder<nvflare.lighter.impl.template.TemplateBuilder>`
+    - :class:`DockerBuilder<nvflare.lighter.impl.docker.DockerBuilder>`
+    - :class:`HelmChartBuilder<nvflare.lighter.impl.helm_chart.HelmChartBuilder>`
     - :class:`StaticFileBuilder<nvflare.lighter.impl.static_file.StaticFileBuilder>`
-    - :class:`AuthPolicyBuilder<nvflare.lighter.impl.auth_policy.AuthPolicyBuilder>`
     - :class:`CertBuilder<nvflare.lighter.impl.cert.CertBuilder>`
-    - :class:`HEBuilder<nvflare.lighter.impl.he.HEBuilder>`
     - :class:`SignatureBuilder<nvflare.lighter.impl.signature.SignatureBuilder>`
-    - :class:`DistributionBuilder<nvflare.lighter.impl.workspace.DistributionBuilder>`
 
 ::
 
@@ -318,33 +317,35 @@ own requirements:
     └── example_project
         ├── prod_00
         │   ├── admin@nvidia.com
-        │   │   └── startup
-        │   ├── localhost
-        │   │   └── startup
-        │   ├── site1
-        │   │   └── startup
-        │   └── site2
-        │       └── startup
-        ├── prod_01
-        │   ├── admin@nvidia.com
-        │   │   └── startup
-        │   ├── localhost
-        │   │   └── startup
-        │   ├── site1
-        │   │   └── startup
-        │   └── site2
-        │       └── startup
-        ├── prod_02
-        │   ├── admin@nvidia.com
-        │   │   └── startup
-        │   ├── localhost
-        │   │   └── startup
-        │   ├── site1
-        │   │   └── startup
-        │   └── site2
-        │       └── startup
+        │   │   ├── local
+        │   │   ├── startup
+        │   │   └── transfer
+        │   ├── nvflare_compose
+        │   ├── nvflare_hc
+        │   │   └── templates
+        │   ├── overseer
+        │   │   ├── local
+        │   │   ├── startup
+        │   │   └── transfer
+        │   ├── server1
+        │   │   ├── local
+        │   │   ├── startup
+        │   │   └── transfer
+        │   ├── server2
+        │   │   ├── local
+        │   │   ├── startup
+        │   │   └── transfer
+        │   ├── site-1
+        │   │   ├── local
+        │   │   ├── startup
+        │   │   └── transfer
+        │   └── site-2
+        │       ├── local
+        │       ├── startup
+        │       └── transfer
         ├── resources
         └── state
+
 
 The prod_NN folders contain the provisioning results.  The number, NN, increases every time the provision command runs successfully.
 
