@@ -163,9 +163,13 @@ bash submit_job.sh brats_fedavg_dp
 
 ## 4. Results on 4 clients for Central vs. FedAvg vs. FedAvg with DP 
 In this example, only the global model gets evaluated at each round, and saved as the final model. 
-### 4.1 Validation curve 
-We compare the validation curves of the global models for different settings during FL. In this example, all clients compute their validation scores using the
-same BraTS validation set. 
+### 4.1 Validation curve
+We can use tensorboard tool to view the training and validation curves for each setting, e.g.,
+```
+tensorboard --logdir=./workspace_brats/brats_fedavg
+```
+
+We compare the validation curves of the global models for different settings during FL. In this example, all clients compute their validation scores using the same BraTS validation set. 
 
 We provide a script for plotting the tensorboard records, running
 ```
