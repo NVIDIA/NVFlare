@@ -96,7 +96,7 @@ done
 ### 3.2 Start the FL system and submit jobs
 Next, we will start the FL system and submit jobs to start FL training automatically.
 #### 3.2.1 Run the FL simulator to verify the codes
-To verify the codes, we can run the FL simulator with either 1 client for centralized training
+To verify the codes, we can run the FL simulator with 1 client for centralized training
 ```
 nvflare simulator './configs/brats_central' -w './workspace_brats/brats_central' -n 1 -t 1 -gpu 0
 ```
