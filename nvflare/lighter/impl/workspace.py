@@ -15,10 +15,8 @@
 import os
 import pathlib
 import shutil
-import subprocess
 
 from nvflare.lighter.spec import Builder, Project
-from nvflare.lighter.utils import generate_password
 
 
 class WorkspaceBuilder(Builder):
