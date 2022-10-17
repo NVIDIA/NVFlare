@@ -234,6 +234,8 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         if self._error_buffer:
             err = self._error_buffer
             self._error_buffer = None
+            if "not authorized" in err:
+                raise PermissionError(err)
             raise RuntimeError(err)
         if reply.get("status") == APIStatus.SUCCESS:
             success_in_data = True
@@ -257,6 +259,8 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
                 raise LookupError(reply_data_full_response)
             if "not authorized" in reply_data_full_response:
                 raise PermissionError(reply_data_full_response)
+        if reply.get("details") and ("not authorized" in reply.get("details")):
+            raise PermissionError(reply.get("details"))
         if reply.get("status") != APIStatus.SUCCESS:
             raise RuntimeError(reply.get("details"))
         return success_in_data, reply_data_full_response, reply
