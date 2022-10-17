@@ -91,7 +91,7 @@ class SimulatorRunner(FLComponent):
     def setup(self):
         running_dir = os.getcwd()
         if self.workspace is None:
-            self.workspace = "simulator"
+            self.workspace = "simulator_workspace"
             self.logger.warn(
                 f"Simulator workspace is not provided. Set it to the default location:"
                 f" {os.path.join(running_dir, self.workspace)}"
