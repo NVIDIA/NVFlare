@@ -360,8 +360,12 @@ will ask you if you would like to have one sample copy of this file created.
 .. code-block:: shell
 
   (nvflare-venv) ~/workspace$ provision
-  No project.yml found in current folder.  Is it OK to generate one at /home/nvflare/workspace/project.yml for you? (y/N) y
-  /home/nvflare/workspace/project.yml was created.  Please edit it to fit your FL configuration.
+  No project.yml found in current folder.
+  There are two types of templates for project.yml.
+  1) project.yml for HA mode
+  2) project.yml for non-HA mode
+  3) Don't generate project.yml.  Exit this program.
+  Which type of project.yml should be generated at /home/nvflare/workspace/project.yml for you? (1/2/3) 
 
 
 Edit the project.yml configuration file to meet your project requirements:
@@ -377,21 +381,8 @@ Edit the project.yml configuration file to meet your project requirements:
             - "fed_learn_port" is the port number for communication between the FL server and FL clients
             - "admin_port" is the port number for communication between the FL server and FL administration client
         - Type "client" describes the FL clients, with one "org" and "name" for each client as well as "enable_byoc" settings.
-        - Type "admin" describes the admin clients with the name being a unique email. The roles must be defined in AuthPolicyBuilder below.
+        - Type "admin" describes the admin clients with the name being a unique email. The role must be one of "project_admin", "org_admin", "lead" and "member".
     - "builders" contains all of the builders and the args to be passed into each. See the details in docstrings of the :ref:`bundled_builders`.
-    - See :ref:`system_components` for information on the components configured in StaticFileBuilder.
-
-.. note::
-
-   For each participant, the ``enable_byoc`` flag can be set to enable loading of code in the custom folder of applications.
-   If the ``enable_byoc`` flag is disabled, even if you have custom code in your application folder, it will not be loaded.
-
-   There is also a setting for ``allow_byoc`` in the rules for authorization groups (in AuthPolicyBuilder). This controls
-   whether or not applications containing custom code will be allowed to be uploaded and deployed to the participants
-   of the orgs of that rule group.
-
-   Here, ``byoc`` is referring to the custom code in the custom folder in an FL application. Code already in the python path
-   through other means is not considered ``byoc`` for these purposes.
 
 .. _project_yml:
 
@@ -423,14 +414,22 @@ Running ``provision -h`` shows all available options.
 
 .. code-block:: shell
 
-  (nvflare_venv) ~/workspace/repos/flare$ provision -h
-  usage: provision [-h] [-p PROJECT_FILE] [-w WORKSPACE] [-c CUSTOM_FOLDER]
+    (nvflare_venv) ~/workspace/repos/flare$ provision -h
+    usage: provision [-h] [-p PROJECT_FILE] [-w WORKSPACE] [-c CUSTOM_FOLDER] [--add_user ADD_USER] [--add_client ADD_CLIENT]
 
-  optional arguments:
-    -h, --help                                               show this help message and exit
-    -p PROJECT_FILE, --project_file PROJECT_FILE                 file to describe FL project
-    -w WORKSPACE, --workspace WORKSPACE                          directory used by provision
-    -c CUSTOM_FOLDER, --custom_folder CUSTOM_FOLDER    additional folder to load python code
+    optional arguments:
+    -h, --help            show this help message and exit
+    -p PROJECT_FILE, --project_file PROJECT_FILE
+                            file to describe FL project
+    -w WORKSPACE, --workspace WORKSPACE
+                            directory used by provision
+    -c CUSTOM_FOLDER, --custom_folder CUSTOM_FOLDER
+                            additional folder to load python codes
+    --add_user ADD_USER   yaml file for added user
+    --add_client ADD_CLIENT
+                            yaml file for added client
+
+For options, ``--add_user`` and ``--add_client``, please see the details in :ref:`dynamic_provisioning`.
 
 Running ``provision`` without any options and without a project.yml file in the current working directory will prompt
 to copy a default project.yml to the current working directory.
@@ -455,11 +454,8 @@ The output from the Provision process is a package (called Site Installation Kit
             resources.json - used by main and job process (on client)
             privacy.json - used by job process only
             authorization.json - used by main process only
-        Scripts
-            Scripts for installing the "startup" and "site" properly
         Readme.txt: describe how to use scripts to install startup and site; how to manage content in the "site" folder
 
-The installation kit is encoded to a password-protected zip file.
 
 Changes to Startup Kit Content
 
@@ -467,8 +463,8 @@ Changes to Startup Kit Content
 2) For client sites, remove resource manager and resource consumer configuration from fed_client.json in "startup", and put them into resources.json in "site".
 3) For server sites, remove job scheduler configuration from fed_server.json in "startup", and put them into resources.json in "site".
 
-How do we deal with privacy.json for each site? Put a sample there? 
-Should we define two default scopes: public and private?
+
+During the runtime, the workspace used by each participant will be updated, resulting in the following workspace structure:
 
 Workspace Structure
 ===================
