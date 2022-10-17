@@ -48,7 +48,7 @@ pip install -r ./virtualenv/plot-requirements.txt
 
 ## 2. Create your FL workspace
 ### 2.1 FL simulator workspace
-If we use FL simulator, the only thing we nee to do is to create an empty folder to serve as the workspace.
+If we use FL simulator, we need to create an empty folder to serve as the workspace.
 ```
 mkdir ./workspace_brats
 ```
@@ -98,15 +98,15 @@ Next, we will start the FL system and submit jobs to start FL training automatic
 #### 3.2.1 Run the FL simulator to verify the codes
 To verify the codes, we can run the FL simulator with either 1 client for centralized training
 ```
-python3 -u -m nvflare.private.fed.app.simulator.simulator './configs/brats_central' -w './workspace_brats/brats_central' -n 1 -t 1 -gpu 0
+nvflare simulator './configs/brats_central' -w './workspace_brats/brats_central' -n 1 -t 1 -gpu 0
 ```
 Run the FL simulator with 4 clients for federated learning by running
 ```
-python3 -u -m nvflare.private.fed.app.simulator.simulator './configs/brats_fedavg' -w './workspace_brats/brats_fedavg' -n 4 -t 4 -gpu 0,1,2,3
+nvflare simulator './configs/brats_fedavg' -w './workspace_brats/brats_fedavg' -n 4 -t 4 -gpu 0,1,2,3
 ```
 Run the FL simulator with 4 clients for federated learning with differential privacy by running
 ```
-python3 -u -m nvflare.private.fed.app.simulator.simulator './configs/brats_fedavg_dp' -w './workspace_brats/brats_fedavg_dp' -n 4 -t 4 -gpu 0,1,2,3
+nvflare simulator './configs/brats_fedavg_dp' -w './workspace_brats/brats_fedavg_dp' -n 4 -t 4 -gpu 0,1,2,3
 ```
 
 #### 3.2.2 Start the FL system and submit jobs in POC mode
