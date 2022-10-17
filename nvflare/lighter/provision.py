@@ -82,7 +82,7 @@ def handle_provision(args):
             shutil.copyfile(os.path.join(file_path, src_project), current_project_yml)
             print(
                 f"{current_project_yml} was created.  Please edit it to fit your FL configuration. "
-                + f"Once done please run nvflare provision command again with newly edited project.yml file"
+                + "Once done please run nvflare provision command again with newly edited project.yml file"
             )
 
         else:
