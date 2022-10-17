@@ -61,7 +61,7 @@ The results are stored in workspace "/tmp/nvflare"
 ```
 you should be able to get the visualization similar to the followings
 
-![stats](demo/df_stats.png) and ![histogram plot](demo/hist_plot.png)
+![stats](demo/stats_df.png) and ![histogram plot](demo/hist_plot.png)
 
 
 ## 4. Run Example using POC command

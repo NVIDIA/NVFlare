@@ -74,7 +74,8 @@ Creating a DXO Filter
 ---------------------
 You create a new DXO-based filter by extending the DXOFilter class, and provide the "process_dxo" method.
 
-In your constructor, you need to determine supported DXO kinds and make them known to the super class. You also need to specify what data kinds your filter is to be applied to, which should be a subset of the supported data kinds. Typically these data kinds should be user configurable.
+In your constructor, you need to determine supported DXO kinds and make them known to the super class (supported_data_kinds). You also need to specify what data kinds your filter is to be applied to (data_kinds_to_filter). Of course, data_kinds_to_filter must be a subset of the supported_data_kinds. Typically data_kinds_to_filter should be user configurable.
+Specifying supported_data_kinds makes it clear what the filter is capable of, and data_kinds_to_filter specifies how this particular filter is used.
 
 Pay attention to the return value of the "process_dxo" method that you will write. You must return None if no processing is done to the DXO object passed to you. You must return a DXO object (could be the same DXO passed to you or a newly created one) if processing is applied to the DXO passed to you.
 
