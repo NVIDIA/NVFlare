@@ -111,7 +111,7 @@ class SystemCommandModule(CommandModule, CommandUtil):
 
             table = conn.append_table(["Metrics", "Value"])
             if r.reply:
-                if isinstance(r.reply.body, str) and r.reply.body:
+                if r.reply.get_header(MsgHeader.RETURN_CODE) == ReturnCode.ERROR:
                     table.add_row([r.reply.body, ""])
                 else:
                     try:
