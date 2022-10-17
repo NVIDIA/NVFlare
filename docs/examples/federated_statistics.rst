@@ -15,8 +15,8 @@ A client will only need to implement the selected methods of "Statistics" class 
 
 The result will be a statistics for all features, all datasets at all sites as well as global aggregates. The result should be visualized via visualization utility in notebook.
 
-Approaches
-==========
+Assumptions
+===========
 
 Assume that client will provide the followings:
 
@@ -110,7 +110,7 @@ Set Privacy Policy as researcher
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 one can specify the "task_result_filters" config_fed_client.json to specify the privacy control. This is useful when you develop these filters
 
-setup site privacy policy as org admin
+Setup site privacy policy as org admin
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Once the company decides to instrument certain privacy policy independent of individual job, one can copy the local directory privacy.json content to clients' local privacy.json ( merge not overwrite). in this example, since we only has one app, we can simply copy the private.json from local directory to
 
@@ -123,7 +123,7 @@ we need to remove the same filters from the job definition in config_fed_client.
 
     "task_result_filters": []
 
-job filter vis filters in private.json
+Job filter vs. filters in private.json
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 privacy filters are defined within a privacy scope. If a job's privacy scope is defined or has default scope, then the scope’s filters (if any) are applied before the job-specified filters (if any). This rule is enforced during task execution time.
@@ -180,4 +180,5 @@ Some of the local statistics (such as count, failure count, sum etc.) can be cal
 
 Summary
 =======
-We provided federated statistics operators that can easily aggregate and visualize the local statistics for different data site and features. we hope this feature will make it easier to perform federated data analysis.
+We provided federated statistics operators that can easily aggregate and visualize the local statistics for different data site and features.
+We hope this feature will make it easier to perform federated data analysis. For more details, please look at `Federated Statistics (Github) <https://github.com/NVIDIA/NVFlare/tree/main/examples/federated_statistics/README.md>`_
