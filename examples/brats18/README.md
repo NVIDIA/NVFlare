@@ -183,16 +183,9 @@ As shown, FedAvg achieves similar accuracy as centralized training, while DP wil
 ### 4.2 Validation score
 We also provide a script for performing standalone validation on the data split based on the best global model for Central/FedAvg/FedAvg_DP. 
 
-To get the model after training, the results can be downloaded and shown with the admin console using
+The best global models are stored at
 ```
-  download_job [JOB_ID]
-```
-where `[JOB_ID]` is the ID assigned by the system when submitting the job.
-
-The results/models will be downloaded to your admin workspace (the exact download path will be displayed when running the command).
-You should see the best global model at
-```
-[DOWNLOAD_DIR]/[JOB_ID]/workspace/app_server/best_FL_global_model.pt
+workspace_brats/[job]/simulated_job/app_server/best_FL_global_model.pt
 ```
 
 Please then add the correct paths and job_ids to the testing script, and run
