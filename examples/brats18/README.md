@@ -166,7 +166,7 @@ In this example, only the global model gets evaluated at each round, and saved a
 ### 4.1 Validation curve
 We can use tensorboard tool to view the training and validation curves for each setting, e.g.,
 ```
-tensorboard --logdir=./workspace_brats/brats_fedavg
+tensorboard --logdir='./workspace_brats/brats_fedavg'
 ```
 
 We compare the validation curves of the global models for different settings during FL. In this example, all clients compute their validation scores using the same BraTS validation set. 
