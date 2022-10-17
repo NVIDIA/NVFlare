@@ -100,7 +100,11 @@ To verify the codes, we can run the FL simulator with 1 client for centralized t
 ```
 nvflare simulator './configs/brats_central' -w './workspace_brats/brats_central' -n 1 -t 1 -gpu 0
 ```
-Run the FL simulator with 4 clients for federated learning by running
+or
+```
+python3 -u -m nvflare.private.fed.app.simulator.simulator './configs/brats_central' -w './workspace_brats/brats_central' -n 1 -t 1 -gpu 0
+```
+Similarly, run the FL simulator with 4 clients for federated learning by running
 ```
 nvflare simulator './configs/brats_fedavg' -w './workspace_brats/brats_fedavg' -n 4 -t 4 -gpu 0,1,2,3
 ```
