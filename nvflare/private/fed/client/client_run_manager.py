@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 from typing import Dict, List, Optional
 
 from nvflare.apis.fl_component import FLComponent
@@ -21,6 +22,7 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.workspace import Workspace
 from nvflare.private.event import fire_event
 from nvflare.private.fed.utils.fed_utils import create_job_processing_context_properties
+from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.fed_event import ClientFedEventRunner
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
@@ -96,6 +98,8 @@ class ClientRunManager(ClientEngineExecutorSpec):
         for _, widget in self.widgets.items():
             self.handlers.append(widget)
 
+        self.logger = logging.getLogger(self.__class__.__name__)
+
     def get_task_assignment(self, fl_ctx: FLContext) -> TaskAssignment:
         pull_success, task_name, remote_tasks = self.client.fetch_task(fl_ctx)
         task = None
@@ -112,7 +116,8 @@ class ClientRunManager(ClientEngineExecutorSpec):
         try:
             self.client.push_results(result, fl_ctx)  # push task execution results
             return True
-        except BaseException:
+        except BaseException as e:
+            self.logger.error(f"send_task_result exception: {secure_format_exception(e)}.")
             return False
 
     def get_workspace(self) -> Workspace:
