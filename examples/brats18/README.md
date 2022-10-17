@@ -84,7 +84,7 @@ nvflare simulator './configs/brats_fedavg_dp' -w './workspace_brats/brats_fedavg
 ```
 
 ## 4. Run experiments with more realistic FL setting
-After verifying the codes with FL simulator, we can perform FL exprriments in a more realistic setting.
+After verifying the codes with FL simulator, we have more confidence to perform FL experiments in a more realistic setting.
 ### 4.1 Create your FL workspace
 #### 4.1.1 POC ("proof of concept") workspace
 In this example, we run FL experiments in POC mode, starting with creating local FL workspace.
