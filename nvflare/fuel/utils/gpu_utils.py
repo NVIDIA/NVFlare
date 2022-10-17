@@ -38,9 +38,7 @@ def use_nvidia_smi(query: str, report_format: str = "csv"):
 
 def _parse_gpu_mem(result: str = None, unit: str = "MiB") -> List:
     gpu_memory = []
-    if not result:
-        print("Failed to get gpu memory, assume no gpu device.")
-    else:
+    if result:
         for i in result[1:]:
             mem, mem_unit = i.split(" ")
             if mem_unit != unit:
