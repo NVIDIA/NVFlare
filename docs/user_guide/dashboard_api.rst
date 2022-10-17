@@ -47,7 +47,6 @@ The Dashboard will also check the cert folder inside current working directory (
 load them and run as HTTPS server.  If Dashboard does not find both of them, it runs as HTTP server.  In both cases, the service listens to port 443, unless it's set otherwise
 by --port option.
 
-
 .. note::
 
     Running Dashboard requires docker. You have to ensure your system can pull and run docker images. The docker pull may take some time depending on your network connection.
