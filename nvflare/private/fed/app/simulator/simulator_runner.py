@@ -90,6 +90,12 @@ class SimulatorRunner(FLComponent):
 
     def setup(self):
         running_dir = os.getcwd()
+        if self.workspace is None:
+            self.workspace = "simulator_workspace"
+            self.logger.warn(
+                f"Simulator workspace is not provided. Set it to the default location:"
+                f" {os.path.join(running_dir, self.workspace)}"
+            )
         self.workspace = os.path.join(running_dir, self.workspace)
 
         self.args = self._generate_args(
@@ -98,7 +104,13 @@ class SimulatorRunner(FLComponent):
 
         if self.args.clients:
             self.client_names = self.args.clients.strip().split(",")
-        elif self.args.n_clients:
+        else:
+            if self.args.n_clients is None:
+                self.args.n_clients = 2
+                self.logger.warn("The number of simulate clients is not provided. Set it to default: 2")
+                if self.args.threads is None:
+                    self.args.threads = 1
+                    self.logger.warn("The number of threads is not provided. Set it to default: 1")
             for i in range(self.args.n_clients):
                 self.client_names.append("site-" + str(i + 1))
 
@@ -138,9 +150,6 @@ class SimulatorRunner(FLComponent):
 
             if not self.client_names:
                 self.client_names = self._extract_client_names_from_meta(meta)
-            if not self.client_names:
-                self.logger.error("Please provide the client names list, or the number of clients to run the simulator")
-                return False
             if self.max_clients < len(self.client_names):
                 self.logger.error(
                     f"The number of clients ({len(self.client_names)}) can not be more than the "
