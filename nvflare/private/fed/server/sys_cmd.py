@@ -18,6 +18,7 @@ import psutil
 
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
+from nvflare.private.admin_defs import MsgHeader, ReturnCode
 from nvflare.private.defs import SysCommandTopic
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.cmd_utils import CommandUtil
@@ -32,7 +33,7 @@ def _parse_replies(conn, replies):
         client_name = engine.get_client_name_from_token(r.client_token)
 
         if r.reply:
-            if isinstance(r.reply.body, str) and r.reply.body:
+            if r.reply.get_header(MsgHeader.RETURN_CODE) == ReturnCode.ERROR:
                 resources = r.reply.body
             else:
                 try:

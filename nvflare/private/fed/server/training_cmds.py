@@ -282,7 +282,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             client_name = engine.get_client_name_from_token(r.client_token)
 
             if r.reply:
-                if isinstance(r.reply.body, str) and r.reply.body:
+                if r.reply.get_header(MsgHeader.RETURN_CODE) == ReturnCode.ERROR:
                     table.add_row([client_name, app_name, job_id, r.reply.body])
                 else:
                     try:
@@ -319,7 +319,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             client_name = engine.get_client_name_from_token(r.client_token)
 
             if r.reply:
-                if isinstance(r.reply.body, str) and r.reply.body:
+                if r.reply.get_header(MsgHeader.RETURN_CODE) == ReturnCode.ERROR:
                     self._add_scope_info(table, client_name, r.reply.body, "")
                 else:
                     try:
