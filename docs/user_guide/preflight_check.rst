@@ -97,7 +97,7 @@ So on the client site, a user will run:
 
 .. code-block::
 
-  nvflare preflight_check --p /path_to_NVFlare/NVFlare/workspace/example_project/prod_00/site-1
+  nvflare preflight_check -p /path_to_NVFlare/NVFlare/workspace/example_project/prod_00/site-1
 
 The problems that may be reported:
 
@@ -122,7 +122,7 @@ a user should run:
 
 .. code-block::
 
-  nvflare preflight_check --p /path_to_NVFlare/NVFlare/workspace/example_project/prod_00/admin@nvidia.com
+  nvflare preflight_check -p /path_to_NVFlare/NVFlare/workspace/example_project/prod_00/admin@nvidia.com
 
 The problems that may be reported:
 
