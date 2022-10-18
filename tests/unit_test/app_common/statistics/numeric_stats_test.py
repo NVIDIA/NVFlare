@@ -14,10 +14,50 @@
 
 from typing import Dict
 
+import pytest
+
 from nvflare.app_common.statistics.numeric_stats import get_min_or_max_values
+
+TEST_CASE_1 = [
+    (
+        {
+            "site-1": {
+                "train": {
+                    "Age": 630,
+                    "fnlwgt": 3673746,
+                    "Education-Num": 177,
+                    "Capital Gain": 16258,
+                    "Capital Loss": 0,
+                    "Hours per week": 631,
+                },
+            }
+        },
+        {
+            "train": {
+                "Age": 630,
+                "fnlwgt": 3673746,
+                "Education-Num": 177,
+                "Capital Gain": 16258,
+                "Capital Loss": 0,
+                "Hours per week": 631,
+            }
+        },
+    )
+]
 
 
 class TestNumericStats:
+    @pytest.mark.parametrize("client_stats, expected_global_stats", TEST_CASE_1)
+    def test_accumulate_metrics(self, client_stats, expected_global_stats):
+        from nvflare.app_common.statistics.numeric_stats import accumulate_metrics
+
+        global_stats = {}
+        for client_name in client_stats:
+            global_stats = accumulate_metrics(metrics=client_stats[client_name], global_metrics=global_stats)
+
+        assert global_stats.keys() == expected_global_stats.keys()
+        assert global_stats == expected_global_stats
+
     def test_get_min_or_max_values(self):
         client_statistics = {
             "site-1": {"train": {"Age": 0}, "test": {"Age": 2}},

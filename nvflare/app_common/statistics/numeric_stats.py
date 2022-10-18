@@ -85,7 +85,7 @@ def accumulate_metrics(metrics: dict, global_metrics: dict) -> dict:
 
         feature_metrics = metrics[ds_name]
         for feature_name in feature_metrics:
-            if feature_metrics[feature_name]:
+            if feature_metrics[feature_name] is not None:
                 if feature_name not in global_metrics[ds_name]:
                     global_metrics[ds_name][feature_name] = feature_metrics[feature_name]
                 else:
