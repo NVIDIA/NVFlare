@@ -110,7 +110,7 @@ In the following experiments, we will be using 4 clients.
 ```
 Press y and enter when prompted.
 
-#### 4.2 GPU resource and Multi-tasking
+### 4.2 GPU resource and Multi-tasking
 In this example, we assume four local GPUs with at least 12GB of memory are available. 
 
 As we use the POC workspace without `meta.json`, we control the client GPU directly when starting the clients by specifying `CUDA_VISIBLE_DEVICES`. 
