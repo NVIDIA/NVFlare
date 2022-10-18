@@ -1,0 +1,9 @@
+{
+  "name": "brats_central",
+  "resource_spec": {},
+  "deploy_map": {
+    "app": [
+      "@ALL"
+    ]
+  }
+}

@@ -20,12 +20,11 @@ import seaborn as sns
 import tensorflow as tf
 
 # poc workspace
-client_results_root = "../workspace_brats/"
+client_results_root = "../workspace_brats"
 
-# All sites used the same validation set for Brats, so only 1 site's record is needed
+# All sites used the same validation set, so only 1 site's record is needed
 site_num = 1
-client_pre = "app_site-"
-sites_fl = [str(site+1) for site in range(site_num)]
+site_pre = "site-"
 
 # Central vs. FedAvg vs. FedAvg_DP
 experiments = {
@@ -45,6 +44,20 @@ def smooth(scalars, weight):  # Weight between 0 and 1
         smoothed.append(smoothed_val)  # Save it
         last = smoothed_val  # Anchor the last smoothed value
     return smoothed
+
+
+def find_job_id(workdir, fl_app_name="prostate_central"):
+    """Find the first matching experiment"""
+    target_path = os.path.join(workdir, "*", "fl_app.txt")
+    fl_app_files = glob.glob(target_path, recursive=True)
+    assert len(fl_app_files) > 0, f"No `fl_app.txt` files found in workdir={workdir}."
+    for fl_app_file in fl_app_files:
+        with open(fl_app_file, "r") as f:
+            _fl_app_name = f.read()
+        if fl_app_name == _fl_app_name:  # alpha will be matched based on value in config file
+            job_id = os.path.basename(os.path.dirname(fl_app_file))
+            return job_id
+    raise ValueError(f"No job id found for fl_app_name={fl_app_name} in workdir={workdir}")
 
 
 def read_eventfile(filepath, tags=["val_metric_global_model"]):
@@ -79,35 +92,30 @@ def add_eventdata(data, config, filepath, tag="val_metric_global_model"):
 
 def main():
     plt.figure()
-    num_site = len(sites_fl)
     i = 1
     # add event files
-
     data = {"Config": [], "Epoch": [], "Dice": []}
-
-    for site in sites_fl:
+    for site in range(site_num):
         # clear data for each site
+        site = site + 1
         data = {"Config": [], "Epoch": [], "Dice": []}
         for config, exp in experiments.items():
+            job_id = find_job_id(workdir=client_results_root + "/site-1", fl_app_name=config)
+            print(f"Found run {job_id} for {config}")
             spec_site = exp.get("site", None)
             if spec_site is not None:
-                record_path = os.path.join(
-                    client_results_root + config, "simulate_job", client_pre + spec_site, "events.*"
-                )
+                record_path = os.path.join(client_results_root, site_pre + spec_site, job_id, "*", "events.*")
             else:
-                record_path = os.path.join(client_results_root + config, "simulate_job", client_pre + site, "events.*")
-
+                record_path = os.path.join(client_results_root, site_pre + str(site), job_id, "*", "events.*")
             eventfile = glob.glob(record_path, recursive=True)
-            print(record_path,len(eventfile))
             assert len(eventfile) == 1, "No unique event file found!"
             eventfile = eventfile[0]
             print("adding", eventfile)
             add_eventdata(data, config, eventfile, tag=exp["tag"])
 
-        ax = plt.subplot(1, num_site, i)
+        ax = plt.subplot(1, site_num, i)
         ax.set_title(site)
         sns.lineplot(x="Epoch", y="Dice", hue="Config", data=data)
-        # ax.set_xlim([0, 1000])
         i = i + 1
     plt.subplots_adjust(hspace=0.3)
     plt.show()
