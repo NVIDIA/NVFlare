@@ -58,6 +58,7 @@ done
 ```
 
 ## 3. Run experiments with FL simulator
+### 3.1 Training with FL simulator
 FL simulator is used to simulate FL experiments or debug codes, not for real FL deployment.
 In this example, we assume four local GPUs with at least 12GB of memory are available.
 
@@ -83,10 +84,21 @@ Run the FL simulator with 4 clients for federated learning with differential pri
 nvflare simulator './configs/brats_fedavg_dp' -w './workspace_brats/brats_fedavg_dp' -n 4 -t 4 -gpu 0,1,2,3
 ```
 
-## 4. Run experiments with more realistic FL setting
-After verifying the codes with FL simulator, we have more confidence to perform FL experiments in a more realistic setting.
-### 4.1 Create your FL workspace
-#### 4.1.1 POC ("proof of concept") workspace
+### 3.2 Testing with FL simulator
+The best global models are stored at
+```
+workspace_brats/[job]/simulated_job/app_server/best_FL_global_model.pt
+```
+
+Please then add the correct paths and job_ids to the testing script, and run
+```
+cd ./result_stat
+bash testing_models_3d.sh
+```
+
+## 4. Run experiments with POC ("proof of concept") FL setting
+After verifying the codes with FL simulator, we have more confidence to perform FL experiments in POC setting.
+### 4.1 Create your POC ("proof of concept") workspace
 In this example, we run FL experiments in POC mode, starting with creating local FL workspace.
 The [create_poc_workspace.sh](./create_poc_workspace.sh) script follows this pattern:
 ```
@@ -97,28 +109,19 @@ In the following experiments, we will be using 4 clients.
 ./create_poc_workspace.sh 4
 ```
 Press y and enter when prompted.
-#### 4.1.2 (Optional) Secure FL workspace
-We only cover POC mode in this example. To run it with Secure mode, please refer to the [`cifar10`](../cifar10) example.
-> **_NOTE:_** **POC** stands for "proof of concept" and is used for quick experimentation 
-> with different amounts of clients.
-> It doesn't need any advanced configurations while provisioning the startup kits for the server and clients. 
->
-> The **secure** workspace, on the other hand, is needed to run experiments that require encryption keys. These startup kits allow secure deployment of FL in real-world scenarios 
-> using SSL certificated communication channels.
-#### 4.1.3 GPU resource and Multi-tasking
+
+#### 4.2 GPU resource and Multi-tasking
 In this example, we assume four local GPUs with at least 12GB of memory are available. 
 
 As we use the POC workspace without `meta.json`, we control the client GPU directly when starting the clients by specifying `CUDA_VISIBLE_DEVICES`. 
 
 To enable multitasking (if there are more computation resources - e.g. 4 x 32 GB GPUs), we can adjust the default value in `workspace_server/server/startup/fed_server.json` by setting `max_jobs: 2` (default value 1). Please adjust this properly according to resource available and task demand. 
 
-(Optional) If using secure workspace, in secure project configuration `secure_project.yml`, we can set the available GPU indices as `gpu: [0, 1, 2, 3]` using the `ListResourceManager` and `max_jobs: 2` in `DefaultJobScheduler`.
-
 For details, please refer to the [documentation](https://nvflare.readthedocs.io/en/main/user_guide/job.html).
 
-### 4.2 Run automated experiments
+### 4.3 Training with POC FL setting
 The next scripts will start the FL server and clients automatically to run FL experiments on localhost.
-#### 4.2.1 Start the FL system and submit jobs
+#### 4.3.1 Start the FL system and submit jobs
 Next, we will start the FL system and submit jobs to start FL training automatically.
 
 Start the FL system with either 1 client for centralized training, or 4 clients for federated learning by running
@@ -142,13 +145,13 @@ bash ./submit_job.sh [config]
 
 Note that in order to make it working under most system resource conditions, the current config set `"cache_dataset": 0.0`, which could be slow. If resource permits, it will make the training much faster by caching the dataset. More information available [here](https://docs.monai.io/en/stable/data.html#cachedataset).  
 For reference, with `"cache_dataset": 0.5` setting (cache half the data), the centralized training for 100 round, 1 epoch per round takes around 24.5 hours on a 12GB NVIDIA TITAN Xp GPU. 
-#### 4.2.2 Centralized training
+#### 4.3.2 Centralized training
 To simulate a centralized training baseline, we run FL with 1 client using all the training data. 
 ```
 bash start_fl_poc.sh "All"
 bash submit_job.sh brats_central
 ```
-#### 4.2.3 Federated learning
+#### 4.3.3 Federated learning
 Start 4 FL clients
 ```
 bash start_fl_poc.sh "1 2 3 4"
@@ -167,6 +170,18 @@ bash submit_job.sh brats_fedavg_dp
 
 > To log into the POC workspace admin console no username is required 
 > (use "admin" for commands requiring conformation with username). 
+
+### 4.4 Testing with POC FL setting
+The best global models are stored at
+```
+workspace_brats/[job]/simulated_job/app_server/best_FL_global_model.pt
+```
+
+Please then add the correct paths and job_ids to the testing script, and run
+```
+cd ./result_stat
+bash testing_models_3d.sh
+```
 
 ## 5. Results on 4 clients for Central vs. FedAvg vs. FedAvg with DP 
 In this example, only the global model gets evaluated at each round, and saved as the final model. 
@@ -188,18 +203,6 @@ The TensorBoard curves (smoothed with weight 0.8) for validation Dice for 600 ep
 As shown, FedAvg achieves similar accuracy as centralized training, while DP will lead to some performance degradation based on the specific [parameter settings](./configs/brats_fedavg_dp/config/config_fed_client.json). Different DP settings will have different impacts over the performance. 
 
 ### 5.2 Validation score
-We also provide a script for performing standalone validation on the data split based on the best global model for Central/FedAvg/FedAvg_DP. 
-
-The best global models are stored at
-```
-workspace_brats/[job]/simulated_job/app_server/best_FL_global_model.pt
-```
-
-Please then add the correct paths and job_ids to the testing script, and run
-```
-cd ./result_stat
-bash testing_models_3d.sh
-```
 The accuracy metrics under each settings are:
 
 | Config	| Val Overall Dice | 	Val TC Dice	 | 	Val WT Dice	 | 	Val ET Dice	 | 
