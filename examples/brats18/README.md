@@ -102,7 +102,7 @@ After verifying the codes with FL simulator, we have more confidence to perform 
 In this example, we run FL experiments in POC mode, starting with creating local FL workspace.
 The [create_poc_workspace.sh](./create_poc_workspace.sh) script follows this pattern:
 ```
-./create_poc_workspace.sh.sh [n_clients]
+./create_poc_workspace.sh [n_clients]
 ```
 In the following experiments, we will be using 4 clients. 
 ```
@@ -164,39 +164,72 @@ To run FL with differential privacy, we use
 ```
 bash submit_job.sh brats_fedavg_dp 
 ```
-> **_NOTE:_** You can always use the admin console to manually abort a running job. 
-  using `abort_job [JOB_ID]`. 
-> For a complete list of admin commands, see [here](https://nvflare.readthedocs.io/en/main/user_guide/operation.html).
 
-> To log into the POC workspace admin console no username is required 
-> (use "admin" for commands requiring conformation with username). 
+### 4.4 Control the process with admin console
+You can always use the admin console to manually abort a running job.
+To access the admin console, run:
+```
+bash ./workspace_brats/admin/startup/fl_admin.sh
+``` 
 
-### 4.4 Testing with POC FL setting
+Then using `abort_job [JOB_ID]` to abort a job, where `[JOB_ID]` is the ID assigned by the system when submitting the job. 
+For a complete list of admin commands, see [here](https://nvflare.readthedocs.io/en/main/user_guide/operation.html).
+The `[JOB_ID]` can be found from site folder like `./workspace_brats/site-1`.
+
+To log into the POC workspace admin console no username is required 
+(use "admin" for commands requiring conformation with username). 
+
+### 4.5 Testing with POC FL setting
+After training, each client's best model will be used for cross-site validation.
+The results can be downloaded and shown with the admin console using
+```
+  download_job [JOB_ID]
+```
+where `[JOB_ID]` is the ID assigned by the system when submitting the job.
+
+The result will be downloaded to your admin workspace (the exact download path will be displayed when running the command).
+You should see the cross-site validation results at
+```
+[DOWNLOAD_DIR]/[JOB_ID]/workspace/cross_site_val/cross_val_results.json
+```
+
 The best global models are stored at
 ```
-workspace_brats/[job]/simulated_job/app_server/best_FL_global_model.pt
+[DOWNLOAD_DIR]/[JOB_ID]/workspace/app_server/best_FL_global_model.pt
 ```
 
-Please then add the correct paths to the testing script, and run
+Then for each job, please add the correct paths and `[JOB_ID]` to the testing script `./result_stat/testing_models_3d_poc.sh`, and run the following code to get the validation score of the best FL global model.
 ```
 cd ./result_stat
-bash testing_models_3d.sh
+bash testing_models_3d_poc.sh
 ```
 
 ## 5. Results on 4 clients for Central vs. FedAvg vs. FedAvg with DP 
 In this example, only the global model gets evaluated at each round, and saved as the final model. 
 ### 5.1 Validation curve
-We can use tensorboard tool to view the training and validation curves for each setting, e.g.,
+For FL simulator, we can use tensorboard tool to view the training and validation curves for each setting, e.g.,
 ```
 tensorboard --logdir='./workspace_brats/brats_fedavg'
+```
+For FL with POC mode, we can use tensorboard tool to view the training and validation curves for each site, e.g.,
+```
+tensorboard --logdir='./workspace_brats/site-1'
 ```
 
 We compare the validation curves of the global models for different settings during FL. In this example, all clients compute their validation scores using the same BraTS validation set. 
 
-We provide a script for plotting the tensorboard records, running
+We provide a script for plotting the tensorboard records, running the following code.
+
+For FL simulator, run:
 ```
 python3 ./result_stat/plot_tensorboard_events.py
 ```
+
+For FL with POC mode, run:
+```
+python3 ./result_stat/plot_tensorboard_events_poc.py
+```
+
 The TensorBoard curves (smoothed with weight 0.8) for validation Dice for 600 epochs (600 rounds, 1 local epoch per round) during training are shown below:
 ![All training curve](./figs/nvflare_brats18.png)
 
