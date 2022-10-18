@@ -95,6 +95,10 @@ as an alternative to the bare-metal Python virtual environment described above a
 use a similar installation to simplify transitioning between a bare metal and containerized
 environment.
 
+To get started with a containerized deployment, you will first need to install a supported
+container runtime and the NVIDIA Container Toolkit to enable support for GPUs.  System requirements
+and instructions for this can be found in the `NVIDIA Container Toolkit Install Guide <https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html>`.
+
 A simple Dockerfile is used to capture the base requirements and dependencies.  In
 this case, we're building an environment that will support PyTorch-based workflows,
 in particular the `Hello PyTorch with Tensorboard Streaming <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-pt-tb>`_
@@ -104,7 +108,7 @@ source code into the root workspace directory.
 
 .. code-block:: dockerfile
 
-   ARG PYTORCH_IMAGE=nvcr.io/nvidia/pytorch:22.04-py3
+   ARG PYTORCH_IMAGE=nvcr.io/nvidia/pytorch:22.09-py3
    FROM ${PYTORCH_IMAGE}
 
    RUN python3 -m pip install -U pip
@@ -121,12 +125,30 @@ this Dockerfile, for example tagging it nvflare-pt:
 
   docker build -t nvflare-pt .
 
-You will then have a docker image nvflare-pt:latest.
+This will result in a docker image, ``nvflare-pt:latest``.  You can run this container with Docker,
+in this example mounting a local ``my-workspace`` directory into the container for use as a persistent
+workspace:
 
-This container can be used to run the FL Simulator or any FL server or client.
+.. code-block:: shell
+  
+  mkdir my-workspace
+  docker run --rm -it --gpus all \
+      --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 \
+      -w $(pwd -P)my-workspace:/workspace/my-workspace \
+      nvflare-pt:latest
 
-When using the FL Simulator (described in the next section), you can simply mount in any directories
-needed for your FLARE application code, and run the Simulator within the Docker container with
+Once the container is running, you can also exec into the container, for example if you need another
+terminal to start additional FLARE clients.  First find the ``CONTAINER ID`` using ``docker ps``, and then
+use that ID to exec into the container:
+
+.. code-block:: shell
+
+  docker ps  # use the CONTAINER ID in the output
+  docker exec -it <CONTAINER ID> /bin/bash
+  
+This container can be used to run the FL Simulator or any FL server or client.  When using the
+FL Simulator (described in the next section), you can simply mount in any directories needed for
+your FLARE application code, and run the Simulator within the Docker container with
 all dependencies installed.
 
 .. _starting_fl_simulator:
@@ -138,7 +160,7 @@ After installing the nvflare pip package, you have access to the NVFlare CLI inc
 The Simulator allows you to start a FLARE server and any number of connected clients on your local
 workstation or laptop, and to quickly deploy an application for testing and debugging.
 
-Basic usage for the FL Simulator is available with `nvflare simulator -h`:
+Basic usage for the FL Simulator is available with ``nvflare simulator -h``:
 
 .. code-block:: shell
 
@@ -198,7 +220,7 @@ we can install these in the Python virtual environment by running:
 If using the Dockerfile above to run in a container, these dependencies have already been installed.
 
 Next, we can create a workspace for the Simulator to use for outputs of the application run, and launch
-the simulator using `simulator-example/hello-pt-tb` as the input job directory.  In this example, we'll
+the simulator using ``simulator-example/hello-pt-tb`` as the input job directory.  In this example, we'll
 run on two clients using two threads:
 
 .. code-block:: shell
