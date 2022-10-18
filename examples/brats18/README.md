@@ -177,7 +177,7 @@ The best global models are stored at
 workspace_brats/[job]/simulated_job/app_server/best_FL_global_model.pt
 ```
 
-Please then add the correct paths and job_ids to the testing script, and run
+Please then add the correct paths to the testing script, and run
 ```
 cd ./result_stat
 bash testing_models_3d.sh
