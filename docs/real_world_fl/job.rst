@@ -46,11 +46,11 @@ Here is an example for meta.json::
       "resource_spec": {
         "client1": {
           "num_gpus": 1,
-          "mem_per_gpu": "16G"
+          "mem_per_gpu_in_GiB": 1
         },
         "client2": {
           "num_gpus": 1,
-          "mem_per_gpu": "16G"
+          "mem_per_gpu_in_GiB": 1
         }
       },
       "deploy_map": {
@@ -90,7 +90,7 @@ The system also keeps additional information about the job such as:
 Resources
 =========
 For a job to be runnable, the system must have sufficient resources: all relevant sites of the job must be able to
-support the job’s specified resource requirements. Since resource is a generic concept - anything could be regarded
+support the job's specified resource requirements. Since resource is a generic concept - anything could be regarded
 as a resource - NVIDIA FLARE 2.1.0 itself does not define any specific resources. Instead, NVIDIA FLARE provides a general
 framework for resource definition and interpretation.
 
@@ -146,12 +146,12 @@ different clients).
 On each client, there is a Resource Manager component, it will check whether the resource requirements coming from a job
 can be satisfied (using a check_resources method).
 
-If runnable clients meet the job’s client requirements (minimum number of clients and mandatory clients), then the
+If runnable clients meet the job's client requirements (minimum number of clients and mandatory clients), then the
 job is runnable for the system, and the job is dispatched to these clients.
 
 When checking resources, some clients might reserve resources. (like running an instance from the cloud).
 
-After checking all the clients and if the Job Scheduler decides the job is not runnable. The client’s Resource
+After checking all the clients and if the Job Scheduler decides the job is not runnable. The client's Resource
 Manager will be called to cancel the resources it might have reserved for the job (using the cancel_resources method in
 Resource Manager).
 
@@ -169,8 +169,8 @@ Example of GPU-based job automation
 -----------------------------------
 Here is an example of GPU-based job automation, where a job is deployed only if clients have enough GPUs.
 
-First, the resource requirement of GPUs is defined as the key/value pair of “num_gpus”/integer in the job’s
-resource_spec, say, “num_gpus”: 2.
+First, the resource requirement of GPUs is defined as the key/value pair of "num_gpus"/integer in the job's
+resource_spec, say, "num_gpus": 2.
 
 Second, the Resource Manager on the Client decides whether it has 2 GPUs when called. This could be done by
 statically configuring available GPUs at the start of the Resource Manager, or it might be able to auto-detect. Here
@@ -180,7 +180,7 @@ check resource requirements, it simply checks whether the list contains at least
 Third, if the Job Scheduler decides to run the job, the Resource Manager will be called to allocate the 2 required
 GPUs - it will return a list of 2 GPU IDs and remove them from the list of available GPUs .
 
-Fourth, when the job is started (in a separate “bubble”), the Resource Consumer will be called to consume the
+Fourth, when the job is started (in a separate "bubble"), the Resource Consumer will be called to consume the
 resources (which is the list of 2 GPU device IDs). In this case, this Resource Consumer simply sets the
 CUDA_VISIBLE_DEVICES system variable to the 2 GPU IDs. This ensures that each concurrent job will be using different
 GPU devices.
@@ -210,8 +210,8 @@ job execution got aborted, the job runner will remove the job id from the runnin
 One-Shot Execution
 ------------------
 Once submitted, a job only has one chance to be executed, whether the execution succeeds or not. Once executed, the
-job status will be updated and won’t be scheduled again. If the user wants to run the same job again, the user can
-use the “clone job” command to make a new job from an existing job; or the user can submit the same job definition
+job status will be updated and won't be scheduled again. If the user wants to run the same job again, the user can
+use the "clone job" command to make a new job from an existing job; or the user can submit the same job definition
 again.
 
 System State Self Healing

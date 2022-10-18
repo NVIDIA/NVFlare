@@ -4,7 +4,7 @@
 Programming Guide
 #################
 
-The NVIDIA FLARE Controller and Worker APIs are used to implement the task-based interaction defined in an :ref:`user_guide/application:NVIDIA FLARE Application`.
+The NVIDIA FLARE Controller and Worker APIs are used to implement the task-based interaction defined in an :ref:`application`.
 In the application, the server configuration defines the components to be used in the controller workflow.
 For example, the server configuration may define the aggregator used to accumulate client task data, a persistor used to
 save models, and the shareable object used to exchange data.  The server configuration also defines the Controller
@@ -30,7 +30,7 @@ framework.
 This guide contains details on the key concepts, objects, and information you should know to implement your own components.
 
 If you want to use your components in an FL application, you will need to change the config in the application folder.
-Please refer to :ref:`user_guide/application:NVIDIA FLARE Application` for more details.
+Please refer to :ref:`application` for more details.
 
 .. toctree::
    :maxdepth: 1

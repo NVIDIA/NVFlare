@@ -53,15 +53,5 @@ builders:
         args:
           sp_end_point: server1:8002:8003
 
-      snapshot_persistor:
-        path: nvflare.app_common.state_persistors.storage_state_persistor.StorageStatePersistor
-        args:
-          uri_root: /
-          storage:
-            path: nvflare.app_common.storages.filesystem_storage.FilesystemStorage
-            args:
-              root_dir: /tmp/nvflare/snapshot-storage
-              uri_root: /
-
   - path: nvflare.lighter.impl.cert.CertBuilder
   - path: nvflare.lighter.impl.signature.SignatureBuilder
