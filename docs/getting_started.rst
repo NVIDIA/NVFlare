@@ -134,7 +134,7 @@ workspace:
   mkdir my-workspace
   docker run --rm -it --gpus all \
       --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 \
-      -w $(pwd -P)my-workspace:/workspace/my-workspace \
+      -w $(pwd -P)/my-workspace:/workspace/my-workspace \
       nvflare-pt:latest
 
 Once the container is running, you can also exec into the container, for example if you need another
