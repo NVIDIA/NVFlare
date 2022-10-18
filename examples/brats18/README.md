@@ -188,11 +188,6 @@ The results can be downloaded and shown with the admin console using
 where `[JOB_ID]` is the ID assigned by the system when submitting the job.
 
 The result will be downloaded to your admin workspace (the exact download path will be displayed when running the command).
-You should see the cross-site validation results at
-```
-[DOWNLOAD_DIR]/[JOB_ID]/workspace/cross_site_val/cross_val_results.json
-```
-
 The best global models are stored at
 ```
 [DOWNLOAD_DIR]/[JOB_ID]/workspace/app_server/best_FL_global_model.pt
