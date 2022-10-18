@@ -410,12 +410,11 @@ The following is an example of the default project.yml file of non-HA mode.
 Provision commandline options
 *****************************
 
-Running ``provision -h`` shows all available options.
+Running ``nvflare provision -h`` shows all available options.
 
 .. code-block:: shell
 
-    (nvflare_venv) ~/workspace/repos/flare$ provision -h
-    usage: provision [-h] [-p PROJECT_FILE] [-w WORKSPACE] [-c CUSTOM_FOLDER] [--add_user ADD_USER] [--add_client ADD_CLIENT]
+    usage: nvflare provision [-h] [-p PROJECT_FILE] [-w WORKSPACE] [-c CUSTOM_FOLDER] [--add_user ADD_USER] [--add_client ADD_CLIENT]
 
     optional arguments:
     -h, --help                                               show this help message and exit
