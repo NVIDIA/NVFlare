@@ -143,24 +143,25 @@ Basic usage for the FL Simulator is available with `nvflare simulator -h`:
 .. code-block:: shell
 
   $ nvflare simulator -h
-usage: nvflare simulator [-h] [-w WORKSPACE] [-n N_CLIENTS] [-c CLIENTS] [-t THREADS] [-gpu GPU] [-m MAX_CLIENTS] job_folder
+  usage: nvflare simulator [-h] [-w WORKSPACE] [-n N_CLIENTS] [-c CLIENTS] [-t THREADS] [-gpu GPU] [-m MAX_CLIENTS] job_folder
+  
+  positional arguments:
+    job_folder
+  
+  optional arguments:
+    -h, --help            show this help message and exit
+    -w WORKSPACE, --workspace WORKSPACE
+                          WORKSPACE folder
+    -n N_CLIENTS, --n_clients N_CLIENTS
+                          number of clients
+    -c CLIENTS, --clients CLIENTS
+                          client names list
+    -t THREADS, --threads THREADS
+                          number of parallel running clients
+    -gpu GPU, --gpu GPU   list of GPU Device Ids, comma separated
+    -m MAX_CLIENTS, --max_clients MAX_CLIENTS
+                          max number of clients
 
-positional arguments:
-  job_folder
-
-optional arguments:
-  -h, --help            show this help message and exit
-  -w WORKSPACE, --workspace WORKSPACE
-                        WORKSPACE folder
-  -n N_CLIENTS, --n_clients N_CLIENTS
-                        number of clients
-  -c CLIENTS, --clients CLIENTS
-                        client names list
-  -t THREADS, --threads THREADS
-                        number of parallel running clients
-  -gpu GPU, --gpu GPU   list of GPU Device Ids, comma separated
-  -m MAX_CLIENTS, --max_clients MAX_CLIENTS
-                        max number of clients
 
 Before we get into the Simulator, we'll walk through a few additional setup steps in the next section required
 to run an example application.
@@ -211,6 +212,7 @@ and codes, logs of the output, site and global models, cross-site validation res
 Tensorboard event files.
 
 .. code-block:: shell
+  
   $ tree -L 3 simulator-example/workspace/
   simulator-example/workspace/
   ├── audit.log
@@ -252,7 +254,7 @@ We can view the training performance for the two sites by launching Tensorboard:
 
 For this example run over 5 epochs, the training loss:
 
-.. figure:: ../resources/getting_started_tb-train-loss.png
+.. figure:: resources/getting_started_tb-train-loss.png
     :height: 305px
 
     Tensorboard graph showing train_loss for two sites in the hello_pt_tb example.
