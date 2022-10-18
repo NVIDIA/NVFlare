@@ -77,6 +77,7 @@ setup(
         "Flask==2.1.2",
         "Flask-JWT-Extended==4.4.3",
         "Flask-SQLAlchemy==2.5.1",
+        "SQLAlchemy==1.4.31",
         "google-api-python-client==2.49.0",
         "grpcio==1.46.3",
         "gunicorn==20.1.0",
