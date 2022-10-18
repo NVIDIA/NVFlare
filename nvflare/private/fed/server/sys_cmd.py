@@ -145,7 +145,7 @@ class SystemCommandModule(CommandModule, CommandUtil):
         site_resources = {"server": "unlimited"}
 
         if target_type == self.TARGET_TYPE_CLIENT:
-            message = new_message(conn, topic=SysCommandTopic.REPORT_RESOURCES, body="")
+            message = new_message(conn, topic=SysCommandTopic.REPORT_RESOURCES, body="", require_authz=True)
             replies = self.send_request_to_clients(conn, message)
             if not replies:
                 conn.append_error("no responses from clients")
