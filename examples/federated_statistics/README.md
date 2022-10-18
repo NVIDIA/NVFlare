@@ -114,7 +114,7 @@ There are different ways to set privacy filter depending the use cases
 
 ####  Set Privacy Policy as researcher
 
-You can specify the "task_result_filters" config_fed_client.json to specify
+You can specify the "task_result_filters" in config_fed_client.json to specify
 the privacy control.  This is useful when you develop these filters
 
 #### Setup site privacy policy as org admin
