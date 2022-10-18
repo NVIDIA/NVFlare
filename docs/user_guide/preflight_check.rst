@@ -12,6 +12,7 @@ General Usage
 =============
 
 .. code-block::
+
     nvflare preflight_check -p PACKAGE_PATH
     nvflare preflight_check --package_path PACKAGE_PATH
 
@@ -36,12 +37,13 @@ on the overseer site, a user should run:
   nvflare preflight_check -p /path_to_NVFlare/NVFlare/workspace/example_project/prod_00/overseer
 
 If things passed, users will see things like:
+
 .. csv-table::
     :header: Checks,Problems,How to fix
     :widths: 15, 20, 15
 
     Check overseer port binding,PASSED,N/A.
-    Check dry run,	PASSED,	,N/A.
+    Check dry run,	PASSED,N/A.
 
 If something is wrong, it will be reported:
 The problems that may be reported:
@@ -72,12 +74,14 @@ The problems that may be reported:
     :header: Checks,Problems,How to fix
     :widths: 15, 20, 25
 
-    Check overseer running,	Can't connect to overseer, 1) Please check if overseer is up or certificates are correct 2) Please check if overseer hostname in project.yml is available 3) if running in local machine, check if overseer defined in project.yml is defined in /etc/hosts".
+    Check overseer running,	Can't connect to overseer,"1) Please check if overseer is up or certificates are correct
+    2) Please check if overseer hostname in project.yml is available
+    3) If running in local machine, check if overseer defined in project.yml is defined in /etc/hosts."
     Check grpc port binding,Can't bind to address ({grpc_target_address}) for grpc service: {e},Please check the DNS and port.
     Check admin port binding,Can't bind to address ({admin_host}:{admin_port}) for admin service: {e},Please check the DNS and port.
     Check snapshot storage writable,Can't write to {self.snapshot_storage_root}: {e}.,Please check the user permission.
     Check job storage writable,	Can't write to {self.job_storage_root}: {e}.,Please check the user permission.
-    Check dry run,Can't start successfully: \n{out},Please check the error message of dry run.
+    Check dry run,Can't start successfully: {error},Please check the error message of dry run.
 
 similarly, you can check server2 if you are in the HA mode
 
@@ -105,11 +109,13 @@ The problems that may be reported:
     :header: Checks,Problems,How to fix
     :widths: 15, 20, 25
 
-    Check overseer running,	Can't connect to overseer,1) Please check if overseer is up or certificates are correct 2) Please check if overseer hostname in project.yml is available 3) if running in local machine, check if overseer defined in project.yml is defined in /etc/hosts".
+    Check overseer running,	Can't connect to overseer,"1) Please check if overseer is up or certificates are correct
+    2) Please check if overseer hostname in project.yml is available
+    3) If running in local machine, check if overseer defined in project.yml is defined in /etc/hosts."
     Check primary service provider available,Can't get primary service provider ({psp}) from overseer,Please check if server is up.
     Check SP's socket server available,Can't connect to primary service provider's ({sp_end_point}) socketserver,Please check if server is up.
     Check SP's GRPC server available,Can't connect to primary service provider's ({sp_end_point}) grpc server,Please check if server is up.
-    Check dry run,	Can't start successfully: \n{out},	Please check the error message of dry run.
+    Check dry run,	Can't start successfully: {error},	Please check the error message of dry run.
 
 
 Admin
@@ -130,8 +136,10 @@ The problems that may be reported:
     :header: Checks,Problems,How to fix
     :widths: 15, 20, 25
 
-    Check overseer running,	Can't connect to overseer,1) Please check if overseer is up or certificates are correct 2) Please check if overseer hostname in project.yml is available 3) if running in local machine, check if overseer defined in project.yml is defined in /etc/hosts".
+    Check overseer running,	Can't connect to overseer,"1) Please check if overseer is up or certificates are correct
+    2) Please check if overseer hostname in project.yml is available
+    3) if running in local machine, check if overseer defined in project.yml is defined in /etc/hosts."
     Check primary service provider available,Can't get primary service provider ({psp}) from overseer,Please check if server is up.
     Check SP's socket server available,Can't connect to primary service provider's ({sp_end_point}) socketserver,Please check if server is up.
     Check SP's GRPC server available,Can't connect to primary service provider's ({sp_end_point}) grpc server,Please check if server is up.
-    Check dry run,	Can't start successfully: \n{out},	Please check the error message of dry run.
+    Check dry run,	Can't start successfully: {error},	Please check the error message of dry run.

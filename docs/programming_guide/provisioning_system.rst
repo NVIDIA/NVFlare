@@ -410,26 +410,21 @@ The following is an example of the default project.yml file of non-HA mode.
 Provision commandline options
 *****************************
 
-Running ``provision -h`` shows all available options.
+Running ``nvflare provision -h`` shows all available options.
 
 .. code-block:: shell
 
-    (nvflare_venv) ~/workspace/repos/flare$ provision -h
-    usage: provision [-h] [-p PROJECT_FILE] [-w WORKSPACE] [-c CUSTOM_FOLDER] [--add_user ADD_USER] [--add_client ADD_CLIENT]
+    usage: nvflare provision [-h] [-p PROJECT_FILE] [-w WORKSPACE] [-c CUSTOM_FOLDER] [--add_user ADD_USER] [--add_client ADD_CLIENT]
 
     optional arguments:
-    -h, --help            show this help message and exit
-    -p PROJECT_FILE, --project_file PROJECT_FILE
-                            file to describe FL project
-    -w WORKSPACE, --workspace WORKSPACE
-                            directory used by provision
-    -c CUSTOM_FOLDER, --custom_folder CUSTOM_FOLDER
-                            additional folder to load python codes
-    --add_user ADD_USER   yaml file for added user
-    --add_client ADD_CLIENT
-                            yaml file for added client
+    -h, --help                                               show this help message and exit
+    -p PROJECT_FILE, --project_file PROJECT_FILE                 file to describe FL project
+    -w WORKSPACE, --workspace WORKSPACE                          directory used by provision
+    -c CUSTOM_FOLDER, --custom_folder CUSTOM_FOLDER    additional folder to load python code
+    --add_user ADD_USER                                             yaml file for added user
+    --add_client ADD_CLIENT                                       yaml file for added client
 
-For options, ``--add_user`` and ``--add_client``, please see the details in :ref:`dynamic_provisioning`.
+For options ``--add_user`` and ``--add_client``, please see the details in :ref:`dynamic_provisioning`.
 
 Running ``provision`` without any options and without a project.yml file in the current working directory will prompt
 to copy a default project.yml to the current working directory.

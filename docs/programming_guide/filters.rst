@@ -1,7 +1,8 @@
 .. _filters:
 
+#######
 Filters
-=======
+#######
 Filters in NVIDIA FLARE are a type of FLComponent that has a ``process`` method to transform the ``Shareable`` object between
 the communicating parties. A ``Filter`` can be used to provide additional processing to shareable data before sending or
 after receiving from the peer.
@@ -12,7 +13,7 @@ The ``FLContext`` is available for the ``Filter`` to use.
     :language: python
     :lines: 22-
 
-In config_fed_server.json and config_fed_client.json (for details see :ref:`user_guide/application:NVIDIA FLARE Application`),
+In config_fed_server.json and config_fed_client.json (for details see :ref:`application`),
 task_result_filters and task_data_filters can be configured for processing data at the points
 highlighted in the image below:
 

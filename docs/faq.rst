@@ -351,7 +351,7 @@ Overall training flow related questions
 
     The admin commands to the clients pass through the server. If for some reason the command is delayed by the network, or
     if the client command takes a long time to process, the admin console will experience a delay for the response. The
-    default timeout is 10 seconds. You can use the “set_timeout” command to adjust the command timeout. If this timeout
+    default timeout is 10 seconds. You can use the "set_timeout" command to adjust the command timeout. If this timeout
     value is set too low, the admin command may not reach the client to execute the command.
 
 #. Why do commands sometimes fail?
