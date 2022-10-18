@@ -207,13 +207,9 @@ bash testing_models_3d_poc.sh
 ## 5. Results on 4 clients for Central vs. FedAvg vs. FedAvg with DP 
 In this example, only the global model gets evaluated at each round, and saved as the final model. 
 ### 5.1 Validation curve
-For FL simulator, we can use tensorboard tool to view the training and validation curves for each setting, e.g.,
+We can use tensorboard tool to view the training and validation curves for each setting and each site, e.g.,
 ```
-tensorboard --logdir='./workspace_brats/brats_fedavg'
-```
-For FL with POC mode, we can use tensorboard tool to view the training and validation curves for each site, e.g.,
-```
-tensorboard --logdir='./workspace_brats/site-1'
+tensorboard --logdir='./workspace_brats'
 ```
 
 We compare the validation curves of the global models for different settings during FL. In this example, all clients compute their validation scores using the same BraTS validation set. 
