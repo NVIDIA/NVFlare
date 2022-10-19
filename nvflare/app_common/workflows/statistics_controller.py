@@ -35,6 +35,7 @@ class StatisticsController(Controller):
         self,
         statistic_configs: Dict[str, dict],
         writer_id: str,
+        wait_time_after_min_received: int = 1,
         result_wait_timeout: int = 10,
         precision=4,
         min_clients: Optional[int] = None,
@@ -100,6 +101,8 @@ class StatisticsController(Controller):
             writer_id:    ID for StatisticsWriter. The StatisticWriter will save the result to output specified by the
                           StatisticsWriter
 
+            wait_time_after_min_received: numbers of seconds to wait after minimum numer of clients specified has received.
+
             result_wait_timeout: numbers of seconds to wait until we received all results.
                                  Notice this is after the min_clients have arrived, and we wait for result process
                                  callback, this becomes important if the data size to be processed is large
@@ -117,6 +120,7 @@ class StatisticsController(Controller):
         self.global_statistics = {}
         self.client_features = {}
         self.result_wait_timeout = result_wait_timeout
+        self.wait_time_after_min_received = wait_time_after_min_received
         self.precision = precision
         self.min_clients = min_clients
         self.result_cb_status = {}
@@ -218,7 +222,7 @@ class StatisticsController(Controller):
             targets=None,
             min_responses=self.min_clients,
             fl_ctx=fl_ctx,
-            wait_time_after_min_received=0,
+            wait_time_after_min_received=self.wait_time_after_min_received,
             abort_signal=abort_signal,
         )
         self.log_info(fl_ctx, f" client {client_name} pre_run task flow end.")
@@ -242,7 +246,7 @@ class StatisticsController(Controller):
             targets=None,
             min_responses=self.min_clients,
             fl_ctx=fl_ctx,
-            wait_time_after_min_received=1,
+            wait_time_after_min_received=self.wait_time_after_min_received,
             abort_signal=abort_signal,
         )
 

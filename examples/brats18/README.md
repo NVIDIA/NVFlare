@@ -46,41 +46,9 @@ pip3 install -r ./virtualenv/min-requirements.txt
 pip install -r ./virtualenv/plot-requirements.txt
 ```
 
-## 2. Create your FL workspace
-### 2.1 POC ("proof of concept") workspace
-In this example, we run FL experiments in POC mode, starting with creating local FL workspace.
-The [create_poc_workspace.sh](./create_poc_workspace.sh) script follows this pattern:
-```
-./create_poc_workspace.sh.sh [n_clients]
-```
-In the following experiments, we will be using 4 clients. 
-```
-./create_poc_workspace.sh 4
-```
-Press y and enter when prompted.
-### 2.2 (Optional) Secure FL workspace
-We only cover POC mode in this example. To run it with Secure mode, please refer to the [`cifar10`](../cifar10) example.
-> **_NOTE:_** **POC** stands for "proof of concept" and is used for quick experimentation 
-> with different amounts of clients.
-> It doesn't need any advanced configurations while provisioning the startup kits for the server and clients. 
->
-> The **secure** workspace, on the other hand, is needed to run experiments that require encryption keys. These startup kits allow secure deployment of FL in real-world scenarios 
-> using SSL certificated communication channels.
-### 2.3 GPU resource and Multi-tasking
-In this example, we assume four local GPUs with at least 12GB of memory are available. 
 
-As we use the POC workspace without `meta.json`, we control the client GPU directly when starting the clients by specifying `CUDA_VISIBLE_DEVICES`. 
-
-To enable multitasking (if there are more computation resources - e.g. 4 x 32 GB GPUs), we can adjust the default value in `workspace_server/server/startup/fed_server.json` by setting `max_jobs: 2` (default value 1). Please adjust this properly according to resource available and task demand. 
-
-(Optional) If using secure workspace, in secure project configuration `secure_project.yml`, we can set the available GPU indices as `gpu: [0, 1, 2, 3]` using the `ListResourceManager` and `max_jobs: 2` in `DefaultJobScheduler`.
-
-For details, please refer to the [documentation](https://nvflare.readthedocs.io/en/main/user_guide/job.html).
-
-## 3. Run automated experiments
-The next scripts will start the FL server and clients automatically to run FL experiments on localhost.
-### 3.1 Prepare local configs
-First, we add the image and datalist directory roots to `config_train.json` files for generating the absolute path to the dataset by replacing the `DATASET_ROOT` and  `DATALIST_ROOT` placeholders. In the current folder structure, it will be `${PWD}/dataset_brats18/dataset` for `DATASET_ROOT` and  `${PWD}/dataset_brats18/datalist` for `DATALIST_ROOT` but you can update the below `sed` commands if the data locates somewhere else.
+## 2. Prepare local configs
+First, we add the image and datalist directory roots to `config_train.json` files for generating the absolute path to the dataset by replacing the `DATASET_ROOT` and  `DATALIST_ROOT` placeholders. In the current folder structure, it will be `${PWD}/dataset_brats18/dataset` for `DATASET_ROOT` and  `${PWD}/dataset_brats18/datalist` for `DATALIST_ROOT` but you can update the below `sed` commands if the data is located somewhere else.
 ```
 for alg in brats_central brats_fedavg brats_fedavg_dp
 do
@@ -88,7 +56,72 @@ do
   sed -i "s|DATALIST_ROOT|${PWD}/dataset_brats18/datalist|g" configs/${alg}/config/config_train.json
 done
 ```
-### 3.2 Start the FL system and submit jobs
+
+## 3. Run experiments with FL simulator
+### 3.1 Training with FL simulator
+FL simulator is used to simulate FL experiments or debug codes, not for real FL deployment.
+In this example, we assume four local GPUs with at least 12GB of memory are available.
+
+Let's create an empty folder to serve as the workspace.
+```
+mkdir ./workspace_brats
+```
+
+Then, we can run the FL simulator with 1 client for centralized training
+```
+nvflare simulator './configs/brats_central' -w './workspace_brats/brats_central' -n 1 -t 1 -gpu 0
+```
+or
+```
+python3 -u -m nvflare.private.fed.app.simulator.simulator './configs/brats_central' -w './workspace_brats/brats_central' -n 1 -t 1 -gpu 0
+```
+Similarly, run the FL simulator with 4 clients for federated learning by running
+```
+nvflare simulator './configs/brats_fedavg' -w './workspace_brats/brats_fedavg' -n 4 -t 4 -gpu 0,1,2,3
+```
+Run the FL simulator with 4 clients for federated learning with differential privacy by running
+```
+nvflare simulator './configs/brats_fedavg_dp' -w './workspace_brats/brats_fedavg_dp' -n 4 -t 4 -gpu 0,1,2,3
+```
+
+### 3.2 Testing with FL simulator
+The best global models are stored at
+```
+workspace_brats/[job]/simulated_job/app_server/best_FL_global_model.pt
+```
+
+Please then add the correct paths to the testing script, and run
+```
+cd ./result_stat
+bash testing_models_3d.sh
+```
+
+## 4. Run experiments with POC ("proof of concept") FL setting
+After verifying the codes with FL simulator, we have more confidence to perform FL experiments in POC setting.
+### 4.1 Create your POC ("proof of concept") workspace
+In this example, we run FL experiments in POC mode, starting with creating local FL workspace.
+The [create_poc_workspace.sh](./create_poc_workspace.sh) script follows this pattern:
+```
+./create_poc_workspace.sh [n_clients]
+```
+In the following experiments, we will be using 4 clients. 
+```
+./create_poc_workspace.sh 4
+```
+Press y and enter when prompted.
+
+### 4.2 GPU resource and Multi-tasking
+In this example, we assume four local GPUs with at least 12GB of memory are available. 
+
+As we use the POC workspace without `meta.json`, we control the client GPU directly when starting the clients by specifying `CUDA_VISIBLE_DEVICES`. 
+
+To enable multitasking (if there are more computation resources - e.g. 4 x 32 GB GPUs), we can adjust the default value in `workspace_server/server/startup/fed_server.json` by setting `max_jobs: 2` (default value 1). Please adjust this properly according to resource available and task demand. 
+
+For details, please refer to the [documentation](https://nvflare.readthedocs.io/en/main/user_guide/job.html).
+
+### 4.3 Training with POC FL setting
+The next scripts will start the FL server and clients automatically to run FL experiments on localhost.
+#### 4.3.1 Start the FL system and submit jobs
 Next, we will start the FL system and submit jobs to start FL training automatically.
 
 Start the FL system with either 1 client for centralized training, or 4 clients for federated learning by running
@@ -112,13 +145,13 @@ bash ./submit_job.sh [config]
 
 Note that in order to make it working under most system resource conditions, the current config set `"cache_dataset": 0.0`, which could be slow. If resource permits, it will make the training much faster by caching the dataset. More information available [here](https://docs.monai.io/en/stable/data.html#cachedataset).  
 For reference, with `"cache_dataset": 0.5` setting (cache half the data), the centralized training for 100 round, 1 epoch per round takes around 24.5 hours on a 12GB NVIDIA TITAN Xp GPU. 
-### 3.3 Centralized training
+#### 4.3.2 Centralized training
 To simulate a centralized training baseline, we run FL with 1 client using all the training data. 
 ```
 bash start_fl_poc.sh "All"
 bash submit_job.sh brats_central
 ```
-### 3.4 Federated learning
+#### 4.3.3 Federated learning
 Start 4 FL clients
 ```
 bash start_fl_poc.sh "1 2 3 4"
@@ -131,48 +164,69 @@ To run FL with differential privacy, we use
 ```
 bash submit_job.sh brats_fedavg_dp 
 ```
-> **_NOTE:_** You can always use the admin console to manually abort a running job. 
-  using `abort_job [JOB_ID]`. 
-> For a complete list of admin commands, see [here](https://nvflare.readthedocs.io/en/main/user_guide/operation.html).
 
-> To log into the POC workspace admin console no username is required 
-> (use "admin" for commands requiring conformation with username). 
-
-## 4. Results on 4 clients for Central vs. FedAvg vs. FedAvg with DP 
-In this example, only the global model gets evaluated at each round, and saved as the final model. 
-### 4.1 Validation curve 
-We compare the validation curves of the global models for different settings during FL. In this example, all clients compute their validation scores using the
-same BraTS validation set. 
-
-We provide a script for plotting the tensorboard records, running
+### 4.4 Control the process with admin console
+You can always use the admin console to manually abort a running job.
+To access the admin console, run:
 ```
-python3 ./result_stat/plot_tensorboard_events.py
-```
-The TensorBoard curves (smoothed with weight 0.8) for validation Dice for 600 epochs (600 rounds, 1 local epoch per round) during training are shown below:
-![All training curve](./figs/nvflare_brats18.png)
+bash ./workspace_brats/admin/startup/fl_admin.sh
+``` 
 
-As shown, FedAvg achieves similar accuracy as centralized training, while DP will lead to some performance degradation based on the specific [parameter settings](./configs/brats_fedavg_dp/config/config_fed_client.json). Different DP settings will have different impacts over the performance. 
+Then using `abort_job [JOB_ID]` to abort a job, where `[JOB_ID]` is the ID assigned by the system when submitting the job. 
+For a complete list of admin commands, see [here](https://nvflare.readthedocs.io/en/main/user_guide/operation.html).
+The `[JOB_ID]` can be found from site folder like `./workspace_brats/site-1`.
 
-### 4.2 Validation score
-We also provide a script for performing standalone validation on the data split based on the best global model for Central/FedAvg/FedAvg_DP. 
+To log into the POC workspace admin console no username is required 
+(use "admin" for commands requiring conformation with username). 
 
-To get the model after training, the results can be downloaded and shown with the admin console using
+### 4.5 Testing with POC FL setting
+After training, each client's best model will be used for cross-site validation.
+The results can be downloaded and shown with the admin console using
 ```
   download_job [JOB_ID]
 ```
 where `[JOB_ID]` is the ID assigned by the system when submitting the job.
 
-The results/models will be downloaded to your admin workspace (the exact download path will be displayed when running the command).
-You should see the best global model at
+The result will be downloaded to your admin workspace (the exact download path will be displayed when running the command).
+The best global models are stored at
 ```
 [DOWNLOAD_DIR]/[JOB_ID]/workspace/app_server/best_FL_global_model.pt
 ```
 
-Please then add the correct paths and job_ids to the testing script, and run
+Then for each job, please add the correct paths and `[JOB_ID]` to the testing script `./result_stat/testing_models_3d_poc.sh`, and run the following code to get the validation score of the best FL global model.
 ```
 cd ./result_stat
-bash testing_models_3d.sh
+bash testing_models_3d_poc.sh
 ```
+
+## 5. Results on 4 clients for Central vs. FedAvg vs. FedAvg with DP 
+In this example, only the global model gets evaluated at each round, and saved as the final model. 
+### 5.1 Validation curve
+We can use tensorboard tool to view the training and validation curves for each setting and each site, e.g.,
+```
+tensorboard --logdir='./workspace_brats'
+```
+
+We compare the validation curves of the global models for different settings during FL. In this example, all clients compute their validation scores using the same BraTS validation set. 
+
+We provide a script for plotting the tensorboard records, running the following code.
+
+For FL simulator, run:
+```
+python3 ./result_stat/plot_tensorboard_events.py
+```
+
+For FL with POC mode, run:
+```
+python3 ./result_stat/plot_tensorboard_events_poc.py
+```
+
+The TensorBoard curves (smoothed with weight 0.8) for validation Dice for 600 epochs (600 rounds, 1 local epoch per round) during training are shown below:
+![All training curve](./figs/nvflare_brats18.png)
+
+As shown, FedAvg achieves similar accuracy as centralized training, while DP will lead to some performance degradation based on the specific [parameter settings](./configs/brats_fedavg_dp/config/config_fed_client.json). Different DP settings will have different impacts over the performance. 
+
+### 5.2 Validation score
 The accuracy metrics under each settings are:
 
 | Config	| Val Overall Dice | 	Val TC Dice	 | 	Val WT Dice	 | 	Val ET Dice	 | 
