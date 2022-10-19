@@ -69,9 +69,10 @@ class ClientAlgoStatistics(Statistics):
 
         if num_of_bins:
             self.req_num_of_bins = list(num_of_bins.values())
-            self.feature_names = list(num_of_bins.keys())
+            _feature_names = list(num_of_bins.keys())
         else:
             self.req_num_of_bins = []
+            _feature_names = None
 
         if bin_ranges:
             self.req_bin_ranges = list(bin_ranges.values())
@@ -82,7 +83,7 @@ class ClientAlgoStatistics(Statistics):
             FlStatistics.STATISTICS: statistics,
             FlStatistics.HIST_BINS: self.req_num_of_bins,
             FlStatistics.HIST_RANGE: self.req_bin_ranges,
-            FlStatistics.FEATURE_NAMES: self.feature_names,
+            FlStatistics.FEATURE_NAMES: _feature_names,
         }
         self.stats = self.client_algo_stats.get_data_stats(extra=requested_stats).statistics
 
@@ -94,16 +95,23 @@ class ClientAlgoStatistics(Statistics):
                 ImageStatsKeys.HISTOGRAM
             ]
             # if only one histogram feature was given, use that to name each feature for all image channels.
-            if len(self.feature_names) == 1:
-                fn = self.feature_names[0]
+            # Else, use the given feature names
+            n_hists = len(hist_list)
+            if len(_feature_names) == 1:
+                fn = _feature_names[0]
                 if fn == "*":
                     fn = "Intensity"
-                self.feature_names = [f"{fn}-{i}" for i in range(len(hist_list))]
+                if n_hists > 1:
+                    self.feature_names = [f"{fn}-{i}" for i in range(n_hists)]
+                else:
+                    self.feature_names = [fn]
+            else:
+                self.feature_names = _feature_names
 
-            if len(self.feature_names) != len(hist_list):
+            if len(self.feature_names) != n_hists:
                 raise ValueError(
                     f"Given length of feature names {self.feature_names} ({len(self.feature_names)}) "
-                    f"do not match returned histograms ({len(hist_list)})!"
+                    f"do not match returned histograms ({n_hists})!"
                 )
             for _hist_fn, _histo in zip(self.feature_names, hist_list):
                 self.histograms[dataset_name][_hist_fn] = _histo

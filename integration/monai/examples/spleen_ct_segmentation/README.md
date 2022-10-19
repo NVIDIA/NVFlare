@@ -101,7 +101,7 @@ For an end-to-end demo, including visualization of the gathered statistics, star
 ```
 jupyter lab stats_demo
 ```
-and open `visualization.ipynb`.
+and open `stats_demo.ipynb`.
 
 See [here](https://jupyterlab.readthedocs.io/en/stable/getting_started/installation.html) for installing jupyter lab.
 

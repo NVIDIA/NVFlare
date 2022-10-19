@@ -55,5 +55,5 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     python_requires=">=3.7,<3.9",
-    install_requires=["monai==1.0.1rc2", "nvflare>=2.2.1rc7"],
+    install_requires=["monai==1.0.1rc3", "nvflare>=2.2.1rc8"],
 )
