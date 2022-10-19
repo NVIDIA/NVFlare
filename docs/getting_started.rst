@@ -28,7 +28,7 @@ NVIDIA FLARE requires Python 3.8.  It may work with Python 3.7 but currently is 
 Install NVIDIA FLARE in a virtual environment
 ---------------------------------------------
 
-It is highly recommended to install NVIDIA FLARE in a virtual environment.
+It is highly recommended to install NVIDIA FLARE in a virtual environment if you are not using :ref:`containerized_deployment`.
 This guide briefly describes how to create a virtual environment with venv.
 
 Virtual Environments and Packages
@@ -40,7 +40,8 @@ You can find more information there.  We only describe a few necessary steps for
 
 
 Depending on your OS and the Python distribution, you may need to install the Python's venv package separately.  For example, in Ubuntu
-20.04, you need to run the following commands to continue creating a virtual environment with venv.
+20.04, you need to run the following commands to continue creating a virtual environment with venv. Note that in newer versions of Ubuntu,
+you may need to make sure you are using Python 3.8 and not a newer version.
 
 .. code-block:: shell
 
@@ -54,7 +55,7 @@ Once venv is installed, you can use it to create a virtual environment with:
 
     $ python3 -m venv nvflare-env
 
-This will create the ``nvflare-env`` directory in current working directory if it doesn’t exist,
+This will create the ``nvflare-env`` directory in current working directory if it doesn't exist,
 and also create directories inside it containing a copy of the Python interpreter,
 the standard library, and various supporting files.
 
@@ -104,7 +105,8 @@ this case, we're building an environment that will support PyTorch-based workflo
 in particular the `Hello PyTorch with Tensorboard Streaming <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-pt-tb>`_
 example. The base for this build is the NGC PyTorch container.  On this base image,
 we will install the necessary dependencies and clone the NVIDIA FLARE GitHub
-source code into the root workspace directory.
+source code into the root workspace directory. To create a Dockerfile, create a file named ``Dockerfile``
+using any text editor and include the following:
 
 .. code-block:: dockerfile
 

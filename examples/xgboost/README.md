@@ -46,53 +46,59 @@ The XGBoost Booster api is leveraged to create in-memory Booster objects that pe
 See [tree-based/README](tree-based/README.md) for more information on two different types of tree-based collaboration algorithms.
 
 
-## Data Preparation
+## HIGGS Data Preparation
 ### Download and Store Data
 To run the examples, we first download the dataset from the HIGGS link above, which is a single `.csv` file.
-If dataset is downloaded, uncompressed, and stored in `~/dataset/HIGGS.csv`, make sure to modify the
-corresponding `DATASET_PATH` inside `data_split_gen.sh`.
+By default, we assume the dataset is downloaded, uncompressed, and stored in `~/dataset/HIGGS.csv`.
+
+> **_NOTE:_** If the dataset is downloaded in another place,
+> make sure to modify the corresponding `DATASET_PATH` inside `data_split_gen.sh`.
 
 ### Data Split
-Since HIGGS dataset is already randomly recorded, data split will be specified by the continuous index ranges for each client, rather than a vector of random instance indices. We provide four options to split the dataset to simulate the non-uniformity in data quantity: 
+Since HIGGS dataset is already randomly recorded,
+data split will be specified by the continuous index ranges for each client,
+rather than a vector of random instance indices.
+We provide four options to split the dataset to simulate the non-uniformity in data quantity: 
 
 1. uniform: all clients has the same amount of data 
 2. linear: the amount of data is linearly correlated with the client ID (1 to M)
 3. square: the amount of data is correlated with the client ID in a squared fashion (1^2 to M^2)
 4. exponential: the amount of data is correlated with the client ID in an exponential fashion (exp(1) to exp(M))
 
-The choice of data split depends on dataset and the number of participants. For a large dataset as HIGGS, if the number of clients is small (e.g. 5), each client will still have sufficient data to train on with uniform split, and hence exponential would be used to observe the performance drop caused by non-uniform data split. If the number of clients is large (e.g. 20), exponential split will be too aggressive, and linear/square should be used.
+The choice of data split depends on dataset and the number of participants.
 
-Data splits used in the following experiment can be generated with
+For a large dataset like HIGGS, if the number of clients is small (e.g. 5),
+each client will still have sufficient data to train on with uniform split,
+and hence exponential would be used to observe the performance drop caused by non-uniform data split.
+If the number of clients is large (e.g. 20), exponential split will be too aggressive, and linear/square should be used.
+
+Data splits used in this example can be generated with
 ```
 bash data_split_gen.sh
 ```
-To be specific, this script calls the python script `./utils/prepare_data_split.py`.
-The arguments are:
 
-- site_num: total number of sites
-- site_name: site name prefix
-- size_total: total number of instances, for HIGGS dataset it is 11 million
-- size_valid: validation size, for the experiments here, it is 1 million, indicating the first 1 million instances will be used as standalone validation set. 
-- split_method: how to split the dataset, can be uniform, linear, square, and exponential
-- out_path: output path for the data split json file 
-
-This will generate data splits for two client sizes: 5 and 20, and 3 split conditions: uniform, square, and exponential.
-Users can further customize it for more experiments.
+This will generate data splits for three client sizes: 2, 5 and 20, and 3 split conditions: uniform, square, and exponential.
+If you want to customize for your experiments, please check `utils/prepare_data_split.py`.
 
 > **_NOTE:_** The generated train config files will be stored in the folder `/tmp/nvflare/xgboost_higgs_dataset/`,
 > and will be used by job_configs by specifying the path within `config_fed_client.json` 
 
 
-### Prepare job configs under various training schemes
-We then prepare the job configs for NVFlare jobs corresponding to various settings by running
+## HIGGS job configs preparation under various training schemes
+Please follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions to install NVFlare.
+
+We then prepare the NVFlare job configs for different settings by running
 ```
 bash job_config_gen.sh
 ```
-To be specific, this script calls the python script `./utils/prepare_job_config.py`.
+
 This script modifies settings from base job configuration
 (`./tree-based/job_configs/bagging_base` or `./tree-based/job_configs/cyclic_base`
 or `./histogram-based/job_configs/base`),
 and copies the correct data split file generated in the data preparation step.
+
+> **_NOTE:_** To customize your own job configs, you can just edit from the generated ones.
+> Or check the code in `./utils/prepare_job_config.py`.
 
 The script will generate a total of 10 different configs in `tree-based/job_configs` for tree-based algorithm:
 
@@ -116,4 +122,9 @@ The script will also generate 2 configs in `histogram-based/job_configs` for his
 
 By default, CPU based training is used.
 
-For GPU based training, edit `job_confing_gen.sh` to change `TREE_METHOD="hist"` to `TREE_METHOD="gpu_hist"`.
+For GPU based training, edit `job_config_gen.sh` to change `TREE_METHOD="hist"` to `TREE_METHOD="gpu_hist"`.
+
+## Run experiments for tree-based and histogram-based settings
+After you run the two scripts `data_split_gen.sh` and `job_config_gen.sh`,
+please go to sub-folder [tree-based](tree-based) for running tree-based algorithms,
+and sub-folder [histogram-based](histogram-based) for running histogram-based algorithms.

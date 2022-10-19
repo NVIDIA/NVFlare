@@ -43,15 +43,5 @@ builders:
         path: nvflare.ha.overseer_agent.HttpOverseerAgent
         overseer_exists: true
 
-      snapshot_persistor:
-        path: nvflare.app_common.state_persistors.storage_state_persistor.StorageStatePersistor
-        args:
-          uri_root: /
-          storage:
-            path: nvflare.app_common.storages.filesystem_storage.FilesystemStorage
-            args:
-              root_dir: /tmp/nvflare/snapshot-storage
-              uri_root: /
-
   - path: nvflare.lighter.impl.cert.CertBuilder
   - path: nvflare.lighter.impl.signature.SignatureBuilder

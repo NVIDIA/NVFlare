@@ -20,14 +20,17 @@ import numpy as np
 
 
 def data_split_args_parser():
-    parser = argparse.ArgumentParser(description="generate data split for HIGGS dataset")
-    parser.add_argument("--data_path", type=str, default="~/dataset/HIGGS.csv", help="Path to data file")
-    parser.add_argument("--site_num", type=int, default=5, help="Total number of sites")
+    parser = argparse.ArgumentParser(description="Generate data split for dataset")
+    parser.add_argument("--data_path", type=str, help="Path to data file")
+    parser.add_argument("--site_num", type=int, help="Total number of sites")
     parser.add_argument("--site_name_prefix", type=str, default="site-", help="Site name prefix")
-    parser.add_argument("--size_total", type=int, default=11000000, help="Total number of data, default 11 million")
-    parser.add_argument("--size_valid", type=int, default=1000000, help="Validation size, default 1 million")
-    parser.add_argument("--split_method", type=str, default="uniform", help="How to split the dataset")
-    parser.add_argument("--out_path", type=str, default="~/dataset", help="Path to data index file")
+    parser.add_argument("--size_total", type=int, help="Total number of instances")
+    parser.add_argument("--size_valid", type=int,
+                        help="Validation size, the first N instances to be treated as validation data")
+    parser.add_argument("--split_method", type=str, default="uniform",
+                        choices=["uniform", "linear", "square", "exponential"],
+                        help="How to split the dataset")
+    parser.add_argument("--out_path", type=str, default="~/dataset", help="Output path for the data split json file")
     return parser
 
 
