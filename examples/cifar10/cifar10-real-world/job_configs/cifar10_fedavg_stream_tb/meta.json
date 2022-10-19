@@ -1,5 +1,5 @@
 {
-    "name": "cifar10_fedavg_stream_tb_alpha1.0",
+    "name": "cifar10_fedavg_stream_tb",
     "resource_spec": {
         "site-1": {
             "num_of_gpus": 1,

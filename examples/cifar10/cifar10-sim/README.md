@@ -42,7 +42,7 @@ python3 ../pt/utils/cifar10_download_data.py
 
 ## 3. Run simulated FL experiments
 
-We are using NVFlare's [simulator]() to run the following experiments. 
+We are using NVFlare's [FL simulator](https://nvflare.readthedocs.io/en/latest/user_guide/fl_simulator.html) to run the following experiments. 
 
 First set the output root where to save the results
 ```
@@ -88,7 +88,7 @@ nvflare simulator job_configs/cifar10_fedavg --workspace ${RESULT_ROOT}/fedavg_a
 nvflare simulator job_configs/cifar10_fedavg --workspace ${RESULT_ROOT}/fedavg_alpha0.1 --threads 8 --n_clients 8
 ```
 
-### 3.4: Advanced FL algorithms (FedProx, FedOpt, and SCAFFOLD)
+### 3.4 Advanced FL algorithms (FedProx, FedOpt, and SCAFFOLD)
 
 Next, let's try some different FL algorithms on a more heterogeneous split:
 
@@ -109,7 +109,7 @@ nvflare simulator job_configs/cifar10_fedopt --workspace ${RESULT_ROOT}/fedopt_a
 nvflare simulator job_configs/cifar10_scaffold --workspace ${RESULT_ROOT}/scaffold_alpha0.1 --threads 8 --n_clients 8
 ```
 
-### 4. Running experiments in parallel
+### 3.5 Running experiments in parallel
 
 If you have several GPUs available in your system, you can run simulations in parallel by adjusting `CUDA_VISIBLE_DEVICES`.
 
