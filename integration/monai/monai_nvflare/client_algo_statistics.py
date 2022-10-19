@@ -99,6 +99,12 @@ class ClientAlgoStatistics(Statistics):
             n_hists = len(hist_list)
             if len(_feature_names) == 1:
                 fn = _feature_names[0]
+                if n_hists > 1 and fn != "*":
+                    raise ValueError(
+                        f"There are more returned histograms ({n_hists}) for dataset "
+                        f"{dataset_name} than provided feature names. "
+                        f"Please use '*' to define the histogram bins and range for all features."
+                    )
                 if fn == "*":
                     fn = "Intensity"
                 if n_hists > 1:
