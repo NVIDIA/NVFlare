@@ -53,11 +53,11 @@ class HistogramBinsCleanser(FLComponent, StatisticsPrivacyCleanser):
                     item_failure_count = feature_item_failure_counts[feature]
                     effective_count = item_count - item_failure_count
                     result[ds_name][feature] = True
-                    if num_of_bins >= effective_count * self.max_bins_percent / 100:
+                    limit_count = round(effective_count * self.max_bins_percent / 100)
+                    if num_of_bins >= limit_count:
                         result[ds_name][feature] = False
-                        limit_count = round(effective_count * self.max_bins_percent)
                         self.logger.info(
-                            f"number of bins: '{num_of_bins}' needs to be smaller than: {effective_count}], which"
+                            f"number of bins: '{num_of_bins}' needs to be smaller than: {limit_count}], which"
                             f" is '{self.max_bins_percent}' percent of ( total count - failure count) '{effective_count}'"
                             f" for feature '{feature}' in dataset '{ds_name}' for client {client_name}"
                         )
