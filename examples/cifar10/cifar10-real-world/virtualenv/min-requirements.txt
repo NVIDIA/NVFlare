@@ -1,0 +1,5 @@
+nvflare>=2.2.1rc7
+torch
+torchvision
+tensorboard
+tenseal==0.3.12
