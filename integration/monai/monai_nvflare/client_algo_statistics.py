@@ -101,7 +101,7 @@ class ClientAlgoStatistics(Statistics):
                 fn = _feature_names[0]
                 if fn == "*":
                     fn = "Intensity"
-                if n_hists > 0:
+                if n_hists > 1:
                     self.feature_names = [f"{fn}-{i}" for i in range(n_hists)]
                 else:
                     self.feature_names = [fn]
