@@ -48,7 +48,7 @@ fobs.register(SimpleDecomposer)
   The decomposers must be registered in both server and client code before FOBS is used. 
   A good place for registration is the constructors for controllers and executors. It can also be done in START_RUN event handler.
 
-* use FOB to serialize data before you them sharable
+* use FOB to serialize data before you use sharable
   Custom object cannot be put in shareable directly, it must be serialized using FOBS first. Assuming custom_data contains custom type, this is how data can be stored in shareable,
 ```
     shareable[CUSTOM_DATA] = fobs.dumps(custom_data)
