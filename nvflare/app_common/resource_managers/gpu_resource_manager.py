@@ -58,7 +58,7 @@ class GPUResourceManager(AutoCleanResourceManager):
             raise ValueError("mem_per_gpu_in_GiB should be greater than or equal to 0.")
 
         if not isinstance(expiration_period, (float, int)):
-            raise ValueError(f"num_of_gpus should be of type int or float, but got {type(expiration_period)}.")
+            raise ValueError(f"expiration_period should be of type int or float, but got {type(expiration_period)}.")
         if expiration_period < 0:
             raise ValueError("expiration_period should be greater than or equal to 0.")
 
