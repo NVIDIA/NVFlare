@@ -10,8 +10,8 @@ we switched to Flare Object Serializer (FOBS), you might experience failures if 
 To migrate the code or you experience error due to this, please refer to [Flare Object Serializer (FOBS)](https://github.com/NVIDIA/NVFlare/tree/main/nvflare/fuel/utils/fobs/README.rst)
 
 Another type of failure is due to data types that are not supported by FOBS. By default FOBs supports some data types, if the data type (Custom Class or Class from 3rd parties)
-is not part of supported FOBS data type. You need to follow the steps described in [Flare Object Serializer (FOBS)](https://github.com/NVIDIA/NVFlare/tree/main/nvflare/fuel/utils/fobs/README.rst).
-To address this type of issue, you need to the following steps: 
+is not part of supported FOBS data type, then you need to follow [Flare Object Serializer (FOBS)](https://github.com/NVIDIA/NVFlare/tree/main/nvflare/fuel/utils/fobs/README.rst) instructions.
+Essentially, to address this type of issue, you need to do the following steps: 
 * create a FobDecomposer class for the targeted data type
 
 * Registered the newly created FobDecomposer before the data type is transmitted between client and server.  
