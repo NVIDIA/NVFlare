@@ -151,7 +151,7 @@ class SimulatorRunner(FLComponent):
                 self.logger.warn("The number of simulate clients is not provided. Set it to default: 2")
                 for i in range(self.args.n_clients):
                     self.client_names.append("site-" + str(i + 1))
-            if self.args.threads is None:
+            if self.args.gpu is None and self.args.threads is None:
                 self.args.threads = 1
                 self.logger.warn("The number of threads is not provided. Set it to default: 1")
 
