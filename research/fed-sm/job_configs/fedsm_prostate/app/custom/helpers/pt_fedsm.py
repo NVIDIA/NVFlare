@@ -121,7 +121,7 @@ class PTFedSMHelper(object):
             torch.save(save_dict, self.person_model_file_path)
 
     def local_train_select(self, train_loader, select_label, abort_signal: Signal, writer):
-        # Train selector model, and keep track of curves
+        # Train selector model in full batch manner, and keep track of curves
         for epoch in range(self.select_model_epochs):
             if abort_signal.triggered:
                 return make_reply(ReturnCode.TASK_ABORTED)
@@ -136,16 +136,15 @@ class PTFedSMHelper(object):
                 labels = np.ones(inputs.size()[0], dtype=np.int64) * select_label
                 labels = torch.tensor(labels).to(self.device)
 
-                # forward + backward + optimize
+                # forward + backward
                 outputs = self.select_model(inputs)
                 loss = self.select_criterion(outputs, labels)
-
-                self.select_optimizer.zero_grad()
                 loss.backward()
-                self.select_optimizer.step()
-
-                current_step = epoch_len * self.select_epoch_global + i
-                writer.add_scalar("train_loss_selector", loss.item(), current_step)
+            # Full batch training, 1 step per epoch
+            self.select_optimizer.zero_grad()
+            self.select_optimizer.step()
+            current_step = self.select_epoch_global + epoch
+            writer.add_scalar("train_loss_selector", loss.item(), current_step)
         self.select_epoch_of_start_time += self.select_model_epochs
 
     def local_valid_select(self, valid_loader, select_label, abort_signal: Signal, tb_id=None, writer=None, record_epoch=None):

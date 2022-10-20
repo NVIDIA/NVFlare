@@ -30,7 +30,7 @@ from nvflare.app_common.app_constant import AppConstants, DefaultCheckpointFileN
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.model_desc import ModelDescriptor
 
-from pt.persistors.pt_fed_utils import PTModelPersistenceFormatManagerFedSM
+from persistors.pt_fed_utils import PTModelPersistenceFormatManagerFedSM
 
 
 class PTFileFedSMModelPersistor(PTFileModelPersistor):

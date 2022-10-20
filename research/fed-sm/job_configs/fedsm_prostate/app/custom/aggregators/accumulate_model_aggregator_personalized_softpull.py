@@ -264,7 +264,6 @@ class AccumulateWeightedAggregatorPersonalizedSoftPull(Aggregator):
                         )
                     clients_with_messages.append(client_name)
 
-                #
                 # print(acc.client)
                 # print(acc.steps)
                 # print(acc.data.keys())

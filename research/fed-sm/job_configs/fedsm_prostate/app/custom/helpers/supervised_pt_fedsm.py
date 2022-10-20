@@ -17,7 +17,7 @@ from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.shareable import make_reply
 from nvflare.apis.signal import Signal
 #from nvflare.app_common.pt.pt_fedsm import PTFedSMHelper
-from pt.helpers.pt_fedsm import PTFedSMHelper
+from helpers.pt_fedsm import PTFedSMHelper
 
 class SupervisedPTFedSMHelper(PTFedSMHelper):
     """Helper to be used with FedSM components under supervised training specs"""

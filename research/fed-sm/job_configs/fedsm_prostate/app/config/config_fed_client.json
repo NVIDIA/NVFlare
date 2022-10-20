@@ -24,7 +24,7 @@
   "components": [
     {
       "id": "prostate-fedsm-learner",
-      "path": "pt.learners.supervised_monai_prostate_fedsm_learner.SupervisedMonaiProstateFedSMLearner",
+      "path": "learners.supervised_monai_prostate_fedsm_learner.SupervisedMonaiProstateFedSMLearner",
       "args": {
         "train_config_filename": "config_train.json",
         "aggregation_epochs": 1,

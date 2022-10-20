@@ -37,71 +37,23 @@ This example uses 2D (axial slices) segmentation of the prostate in T2-weighted 
 
 Please refer to [Prostate Example](../prostate) for details of data preparation and task specs. In the following, we assume the data has been prepared in the same way to `./data_preparation`.
 
-## 3. Create your FL workspace 
-
-### 3.1 POC ("proof of concept") workspace
-In this example, we run FL experiments in POC mode, starting with creating local FL workspace with
-
-```
-python3 -m nvflare.lighter.poc
-```
-
-Press y and enter when prompted.   
-In the following experiments, we will be using 6 clients. Let's rename and make additional client folders as
-
-```
-mv poc workspace_prostate
-mv workspace_prostate/site-1 workspace_prostate/client_I2CVB
-for dataset in MSD NCI_ISBI_3T NCI_ISBI_Dx Promise12 PROSTATEx; do
-  cp -r workspace_prostate/client_I2CVB workspace_prostate/client_${dataset}
-done
-```
-
-### 3.2 (Optional) Secure FL workspace
-We only cover POC mode in this example. To run it with Secure mode, please refer to the [`cifar10`](../cifar10) example.
-> **_NOTE:_** **POC** stands for "proof of concept" and is used for quick experimentation 
-> with different amounts of clients.
-> It doesn't need any advanced configurations while provisioning the startup kits for the server and clients. 
->
-> The **secure** workspace, on the other hand, is needed to run experiments that require encryption keys. These startup kits allow secure deployment of FL in real-world scenarios 
-> using SSL certificated communication channels.
-
-### GPU resource and Multi-tasking
-In this example, we assume two local GPUs with at least 12GB of memory are available. 
-
-As we use the POC workspace without `meta.json`, we control the client GPU directly when starting the clients by specifying `CUDA_VISIBLE_DEVICES`. 
-
-To enable multi-tasking, here we adjust the default value in `workspace_server/server/startup/fed_server.json` by setting `max_jobs: 2` (defualt value 1). Please adjust this properly accodrding to resource available and task demand. 
-
-(Optional) If using secure workspace, in secure project configuration `secure_project.yml`, we can set the available GPU indices as `gpu: [0, 1]` using the `ListResourceManager` and `max_jobs: 2` in `DefaultJobScheduler`.
-
-For details, please refer to the [documentation](https://nvflare.readthedocs.io/en/dev-2.1/user_guide/job.html).
-
-## 4. Run automated experiments
-The next scripts will start the FL server and clients automatically to run FL experiments on localhost.
-### 4.1 Prepare local configs
+## 3. Run automated experiments
+We use the NVFlare simulator to run FL training automatically, the 6 clients are named `client_I2CVB, client_MSD, client_NCI_ISBI_3T, client_NCI_ISBI_Dx, client_Promise12, client_PROSTATEx`
+### 3.1 Prepare local configs
 First, we add the image directory root to `config_train.json` files for generating the absolute path to dataset and datalist. In the current folder structure, it will be `${PWD}/..`, it can be any arbitary path where the data locates.  
 ```
-for alg in fedsm_prostate
+for job in fedsm_prostate
 do
-  sed -i "s|DATASET_ROOT|${PWD}/data_preparation|g" configs/${alg}/config/config_train.json
+  sed -i "s|DATASET_ROOT|${PWD}/data_preparation|g" job_configs/${job}/app/config/config_train.json
 done
 ```
-### 4.2 Start the FL system and submit jobs
-Next, we will start the FL system and submit jobs to start FL training automatically.
-
-Start the FL system with 6 clients for federated learning by running
+### Use NVFlare simulator to run the experiments
+NWe use NVFlare simulator to run the FL training experiments, following the pattern:
 ```
-bash start_fl_poc.sh "I2CVB MSD NCI_ISBI_3T NCI_ISBI_Dx Promise12 PROSTATEx"
+nvflare simulator job_configs/[job] -w ${PWD}/workspaces/[job] -c [clients] -gpu [gpu] -t [thread]
 ```
-This script will start the FL server and clients automatically to run FL experiments on localhost. 
-Each client will be alternately assigned a GPU using `export CUDA_VISIBLE_DEVICES=${gpu_idx}` in the [start_fl_poc.sh](./start_fl_poc.sh). 
-In this example, we run six clients on two GPUs, three clients for each GPU with 12 GB memory.  
-
-Then FL training will be run with an automatic script utilizing the FLAdminAPI functionality by running
-```
-bash ./submit_job.sh fedsm_prostate
-```
+`[job]` is the experiment job that will be submitted for the FL training, in this example, this is `fedsm_prostate`.  
+The combination of `-c` and `-gpu`/`-t` controls the resource allocation. In this example, we run six clients on two GPUs, three clients for each GPU with 12 GB memory, each in a separate thread. 
 
 Note that since the current experiments are performed on a light 2D dataset, we used [`CacheDataset`](https://docs.monai.io/en/stable/data.html#cachedataset) and set cache rate to 1.0 to accelerate the training process. Please adjust the cache rate if memory resource is limited on your system.
 

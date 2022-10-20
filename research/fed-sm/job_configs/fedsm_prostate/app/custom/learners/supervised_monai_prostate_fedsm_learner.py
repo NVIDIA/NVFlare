@@ -19,9 +19,9 @@ import torch
 import torch.optim as optim
 from monai.losses import DiceLoss
 from monai.networks.nets.unet import UNet
-from pt.networks.vgg import vgg11
-from pt.helpers.supervised_pt_fedsm import SupervisedPTFedSMHelper
-from pt.learners.supervised_monai_prostate_learner import SupervisedMonaiProstateLearner
+from networks.vgg import vgg11
+from helpers.supervised_pt_fedsm import SupervisedPTFedSMHelper
+from learners.supervised_monai_prostate_learner import SupervisedMonaiProstateLearner
 
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.fl_constant import ReturnCode

@@ -34,8 +34,8 @@ from monai.transforms import (
     Resized,
     ScaleIntensityRanged,
 )
-from pt.learners.supervised_learner import SupervisedLearner
-from pt.utils.custom_client_datalist_json_path import custom_client_datalist_json_path
+from learners.supervised_learner import SupervisedLearner
+from utils.custom_client_datalist_json_path import custom_client_datalist_json_path
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.app_constant import AppConstants

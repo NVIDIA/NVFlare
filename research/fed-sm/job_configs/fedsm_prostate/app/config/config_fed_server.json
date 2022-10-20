@@ -10,7 +10,7 @@
   "components": [
     {
       "id": "persistor",
-      "path": "pt.persistors.pt_file_fedsm_model_persistor.PTFileFedSMModelPersistor",
+      "path": "persistors.pt_file_fedsm_model_persistor.PTFileFedSMModelPersistor",
       "args": {
         "client_ids": [
           "client_I2CVB",
@@ -43,7 +43,7 @@
           }
         },
         "model_selector": {
-          "path": "pt.networks.vgg.vgg11",
+          "path": "networks.vgg.vgg11",
           "args": {
             "num_classes": 6
           }
@@ -52,17 +52,17 @@
     },
     {
       "id": "shareable_generator",
-      "path": "pt.shareablegenerators.full_model_shareable_fedsm_generator.FullModelShareableFedSMGenerator",
+      "path": "shareablegenerators.full_model_shareable_fedsm_generator.FullModelShareableFedSMGenerator",
       "args": {}
     },
     {
       "id": "aggregator",
-      "path": "pt.aggregators.accumulate_model_aggregator_personalized_softpull.AccumulateWeightedAggregatorPersonalizedSoftPull",
+      "path": "aggregators.accumulate_model_aggregator_personalized_softpull.AccumulateWeightedAggregatorPersonalizedSoftPull",
       "args": {}
     },
     {
       "id": "model_selector",
-      "path": "pt.widgets.intime_model_fedsm_selector.IntimeModelFedSMSelector",
+      "path": "widgets.intime_model_fedsm_selector.IntimeModelFedSMSelector",
       "args": {
         "weigh_by_local_iter": true
       }
@@ -71,7 +71,7 @@
   "workflows": [
     {
       "id": "scatter_and_gather",
-      "path": "pt.workflows.scatter_and_gather_fedsm.ScatterAndGatherFedSM",
+      "path": "workflows.scatter_and_gather_fedsm.ScatterAndGatherFedSM",
       "args": {
         "client_id_label_mapping": {
           "client_I2CVB": 0,
