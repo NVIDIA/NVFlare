@@ -81,12 +81,13 @@ The resource allocation used to be in project.yml is now in resources.json and e
 you need to place/modify your own site's authorization.json and privacy.json as well if you like to change the default policies. 
 
 The default configurations are provided in each site's local directory:
+```
 local
 ├── authorization.json.default
 ├── log.config.default
 ├── privacy.json.sample
 └── resources.json.default
-
+```
 And that these defaults can be overridden by removing the default suffix and modifying the configuration as needed for the specific site.
 
  
