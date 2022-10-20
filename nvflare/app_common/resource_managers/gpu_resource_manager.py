@@ -12,19 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Union
+
 from nvflare.app_common.resource_managers.auto_clean_resource_manager import AutoCleanResourceManager
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids, get_host_gpu_memory_total
 
 
-def _check_non_negative(prop, prop_name: str):
-    if not isinstance(prop, int):
-        raise TypeError(f"{prop_name} should be of type int, but got {type(prop)}.")
-    if prop < 0:
-        raise ValueError(f"{prop_name} should be greater than 0.")
-
-
 class GPUResource:
-    def __init__(self, gpu_id: int, gpu_memory: int):
+    def __init__(self, gpu_id: int, gpu_memory: Union[int, float]):
         self.id = gpu_id
         self.memory = gpu_memory
 
@@ -36,23 +31,37 @@ class GPUResourceManager(AutoCleanResourceManager):
     def __init__(
         self,
         num_of_gpus: int,
-        mem_per_gpu_in_GiB: int,
+        mem_per_gpu_in_GiB: Union[int, float],
         num_gpu_key: str = "num_of_gpus",
         gpu_mem_key: str = "mem_per_gpu_in_GiB",
-        expiration_period: int = 30,
+        expiration_period: Union[int, float] = 30,
     ):
         """Resource manager for GPUs.
 
         Args:
-            num_of_gpus (int): Number of GPUs.
-            mem_per_gpu_in_GiB (int): Memory for each GPU.
-            expiration_period (int): Number of seconds to hold the resources reserved.
+            num_of_gpus: Number of GPUs.
+            mem_per_gpu_in_GiB: Memory for each GPU.
+            num_gpu_key: The key in resource requirements that specify the number of GPUs.
+            gpu_mem_key: The key in resource requirements that specify the memory per GPU.
+            expiration_period: Number of seconds to hold the resources reserved.
                 If check_resources is called but after "expiration_period" no allocate resource is called,
                 then the reserved resources will be released.
         """
-        _check_non_negative(num_of_gpus, "num_of_gpus")
-        _check_non_negative(mem_per_gpu_in_GiB, "mem_per_gpu_in_GiB")
-        _check_non_negative(expiration_period, "expiration_period")
+        if not isinstance(num_of_gpus, int):
+            raise ValueError(f"num_of_gpus should be of type int, but got {type(num_of_gpus)}.")
+        if num_of_gpus < 0:
+            raise ValueError("num_of_gpus should be greater than or equal to 0.")
+
+        if not isinstance(mem_per_gpu_in_GiB, (float, int)):
+            raise ValueError(f"mem_per_gpu_in_GiB should be of type int or float, but got {type(mem_per_gpu_in_GiB)}.")
+        if mem_per_gpu_in_GiB < 0:
+            raise ValueError("mem_per_gpu_in_GiB should be greater than or equal to 0.")
+
+        if not isinstance(expiration_period, (float, int)):
+            raise ValueError(f"num_of_gpus should be of type int or float, but got {type(expiration_period)}.")
+        if expiration_period < 0:
+            raise ValueError("expiration_period should be greater than or equal to 0.")
+
         if num_of_gpus > 0:
             num_host_gpus = len(get_host_gpu_ids())
             if num_of_gpus > num_host_gpus:
