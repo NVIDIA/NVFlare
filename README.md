@@ -33,16 +33,15 @@ pip install nvflare
  build out new components and jobs that can then be directly used in a real production deployment.
 
 * [FLARE Dashboard](https://nvflare.readthedocs.io/en/latest/user_guide/dashboard_api.html) --
-  A new web UI that becomes part of the NVFLARE. In its initial incarnation, the Flare Dashboard is used to help
+  NVFLARE's web UI. In its initial incarnation, the Flare Dashboard is used to help
   project setup, user registration, startup kits distribution and dynamic provisions.  
 
 * [Site-policy management](https://nvflare.readthedocs.io/en/latest/user_guide/site_policy_management.html) -- 
   Prior to NVFLARE 2.2, all policies (resource management, authorization and privacy protection, logging configurations) 
   can only be defined by the Project Admin during provision time; and authorization policies are centrally enforced by the FL Server.
   NVFLARE 2.2 makes it possible for each site to define its own policies in the following areas:
-  * Resource Management: the configuration of system resources that are solely the decisions of local IT;
-  * Authorization Policy: local authorization policy that determines what a user can or cannot do on the local site;
-    * see related [Federated Authorization](https://nvflare.readthedocs.io/en/latest/user_guide/federated_authorization.html)
+  * Resource Management: the configuration of system resources that are solely the decisions of local IT.
+  * Authorization Policy: local authorization policy that determines what a user can or cannot do on the local site. see related [Federated Authorization](https://nvflare.readthedocs.io/en/latest/user_guide/federated_authorization.html)
   * Privacy Policy: local policy that specifies what types of studies are allowed and how to add privacy protection to the learning results produced by the FL client on the local site.
   * Logging Configuration: each site can now define its own logging configuration for system generated log messages.
   
