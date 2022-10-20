@@ -39,7 +39,7 @@ def main():
     api_command_wrapper(runner.api.submit_job(args.job))
 
     # finish
-    runner.api.overseer_agent.end()
+    runner.api.logout()
 
 
 if __name__ == "__main__":

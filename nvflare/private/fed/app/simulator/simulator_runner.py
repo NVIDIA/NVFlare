@@ -105,14 +105,9 @@ class SimulatorRunner(FLComponent):
         if self.args.clients:
             self.client_names = self.args.clients.strip().split(",")
         else:
-            if self.args.n_clients is None:
-                self.args.n_clients = 2
-                self.logger.warn("The number of simulate clients is not provided. Set it to default: 2")
-                if self.args.threads is None:
-                    self.args.threads = 1
-                    self.logger.warn("The number of threads is not provided. Set it to default: 1")
-            for i in range(self.args.n_clients):
-                self.client_names.append("site-" + str(i + 1))
+            if self.args.n_clients:
+                for i in range(self.args.n_clients):
+                    self.client_names.append("site-" + str(i + 1))
 
         log_config_file_path = os.path.join(self.args.workspace, "startup", WorkspaceConstants.LOGGING_CONFIG)
         if not os.path.isfile(log_config_file_path):
@@ -150,6 +145,16 @@ class SimulatorRunner(FLComponent):
 
             if not self.client_names:
                 self.client_names = self._extract_client_names_from_meta(meta)
+
+            if not self.client_names:
+                self.args.n_clients = 2
+                self.logger.warn("The number of simulate clients is not provided. Set it to default: 2")
+                for i in range(self.args.n_clients):
+                    self.client_names.append("site-" + str(i + 1))
+            if self.args.threads is None:
+                self.args.threads = 1
+                self.logger.warn("The number of threads is not provided. Set it to default: 1")
+
             if self.max_clients < len(self.client_names):
                 self.logger.error(
                     f"The number of clients ({len(self.client_names)}) can not be more than the "

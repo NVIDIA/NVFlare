@@ -39,8 +39,6 @@ class CIFAR10Learner(Learner):  # also supports CIFAR10ScaffoldLearner
         self,
         train_idx_root: str = "./dataset",
         aggregation_epochs: int = 1,
-        train_task_name: str = AppConstants.TASK_TRAIN,
-        submit_model_task_name: str = AppConstants.TASK_SUBMIT_MODEL,
         lr: float = 1e-2,
         fedproxloss_mu: float = 0.0,
         central: bool = False,
@@ -53,12 +51,11 @@ class CIFAR10Learner(Learner):  # also supports CIFAR10ScaffoldLearner
         Args:
             train_idx_root: directory with site training indices for CIFAR-10 data.
             aggregation_epochs: the number of training epochs for a round. Defaults to 1.
-            train_task_name: name of the task to train the model.
-            submit_model_task_name: name of the task to submit the best local model.
             lr: local learning rate. Float number. Defaults to 1e-2.
             fedproxloss_mu: weight for FedProx loss. Float number. Defaults to 0.0 (no FedProx).
             central: Bool. Whether to simulate central training. Default False.
-            analytic_sender_id: id of `AnalyticsSender` if configured as a client component. If configured, TensorBoard events will be fired. Defaults to "analytic_sender".
+            analytic_sender_id: id of `AnalyticsSender` if configured as a client component.
+                If configured, TensorBoard events will be fired. Defaults to "analytic_sender".
             batch_size: batch size for training and validation.
             num_workers: number of workers for data loaders.
 
@@ -71,10 +68,8 @@ class CIFAR10Learner(Learner):  # also supports CIFAR10ScaffoldLearner
         # the actual run has not started at this point
         self.train_idx_root = train_idx_root
         self.aggregation_epochs = aggregation_epochs
-        self.train_task_name = train_task_name
         self.lr = lr
         self.fedproxloss_mu = fedproxloss_mu
-        self.submit_model_task_name = submit_model_task_name
         self.best_acc = 0.0
         self.central = central
         self.batch_size = batch_size
@@ -281,8 +276,8 @@ class CIFAR10Learner(Learner):  # also supports CIFAR10ScaffoldLearner
                     global_weights[var_name] = np.reshape(weights, local_var_dict[var_name].shape)
                     # update the local dict
                     local_var_dict[var_name] = torch.as_tensor(global_weights[var_name])
-                except Exception as e:
-                    raise ValueError("Convert weight from {} failed with error: {}".format(var_name, str(e)))
+                except BaseException as e:
+                    raise ValueError(f"Convert weight from {var_name} failed") from e
         self.model.load_state_dict(local_var_dict)
 
         # local steps
@@ -343,12 +338,16 @@ class CIFAR10Learner(Learner):  # also supports CIFAR10ScaffoldLearner
             try:
                 # load model to cpu as server might or might not have a GPU
                 model_data = torch.load(self.best_local_model_file, map_location="cpu")
-            except Exception as e:
-                self.log_error(fl_ctx, f"Unable to load best model: {e}")
+            except BaseException as e:
+                raise ValueError("Unable to load best model") from e
 
             # Create DXO and shareable from model data.
             if model_data:
-                dxo = DXO(data_kind=DataKind.WEIGHTS, data=model_data["model_weights"])
+                # convert weights to numpy to support FOBS
+                model_weights = model_data["model_weights"]
+                for k, v in model_weights.items():
+                    model_weights[k] = v.numpy()
+                dxo = DXO(data_kind=DataKind.WEIGHTS, data=model_weights)
                 return dxo.to_shareable()
             else:
                 # Set return code.
@@ -361,7 +360,7 @@ class CIFAR10Learner(Learner):  # also supports CIFAR10ScaffoldLearner
         self.model.eval()
         with torch.no_grad():
             correct, total = 0, 0
-            for i, (inputs, labels) in enumerate(valid_loader):
+            for _i, (inputs, labels) in enumerate(valid_loader):
                 if abort_signal.triggered:
                     return None
                 inputs, labels = inputs.to(self.device), labels.to(self.device)
@@ -405,8 +404,8 @@ class CIFAR10Learner(Learner):  # also supports CIFAR10ScaffoldLearner
                     # update the local dict
                     local_var_dict[var_name] = torch.as_tensor(torch.reshape(weights, local_var_dict[var_name].shape))
                     n_loaded += 1
-                except Exception as e:
-                    raise ValueError("Convert weight from {} failed with error: {}".format(var_name, str(e)))
+                except BaseException as e:
+                    raise ValueError(f"Convert weight from {var_name} failed") from e
         self.model.load_state_dict(local_var_dict)
         if n_loaded == 0:
             raise ValueError(f"No weights loaded for validation! Received weight dict is {global_weights}")

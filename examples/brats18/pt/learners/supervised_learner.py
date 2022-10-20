@@ -264,6 +264,9 @@ class SupervisedLearner(Learner):
                 self.system_panic(f"{name} weights became NaN...", fl_ctx)
                 return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
+        # flush the tb writer
+        self.writer.flush()
+
         # build the shareable
         dxo = DXO(data_kind=DataKind.WEIGHT_DIFF, data=model_diff)
         dxo.set_meta_prop(MetaKey.NUM_STEPS_CURRENT_ROUND, epoch_len)

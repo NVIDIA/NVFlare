@@ -38,6 +38,7 @@ COMMAND_CATEGORIES = {
     AC.SHOW_ERRORS: CommandCategory.VIEW,
     AC.LIST_JOBS: CommandCategory.VIEW,
     AC.SYS_INFO: CommandCategory.OPERATE,
+    AC.REPORT_RESOURCES: CommandCategory.OPERATE,
     AC.RESTART: CommandCategory.OPERATE,
     AC.SHUTDOWN: CommandCategory.OPERATE,
     AC.REMOVE_CLIENT: CommandCategory.OPERATE,

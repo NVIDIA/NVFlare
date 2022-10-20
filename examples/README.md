@@ -26,7 +26,14 @@ To get started with these examples, please follow the [Quickstart](https://nvfla
 
 ## 2. FL algorithms
 * [Federated Learning with CIFAR-10](./cifar10/README.md)
-  * Includes examples of using [FedAvg](https://arxiv.org/abs/1602.05629), [FedProx](https://arxiv.org/abs/1812.06127), [FedOpt](https://arxiv.org/abs/2003.00295), [SCAFFOLD](https://arxiv.org/abs/1910.06378), [homomorphic encryption](https://developer.nvidia.com/blog/federated-learning-with-homomorphic-encryption/), and streaming of TensorBoard metrics to the server during training.
+  * [Simulated Federated Learning with CIFAR-10](./cifar10/cifar10-sim/README.md)
+    * This example includes instructions on running [FedAvg](https://arxiv.org/abs/1602.05629), 
+  [FedProx](https://arxiv.org/abs/1812.06127), [FedOpt](https://arxiv.org/abs/2003.00295), 
+  and [SCAFFOLD](https://arxiv.org/abs/1910.06378) algorithms using NVFlare's FL simulator.
+  * [Real-world Federated Learning with CIFAR-10](./cifar10/cifar10-real-world/README.md)
+    * Includes instructions on running [FedAvg](https://arxiv.org/abs/1602.05629) with streaming 
+  of TensorBoard metrics to the server during training 
+  and [homomorphic encryption](https://developer.nvidia.com/blog/federated-learning-with-homomorphic-encryption/).
 * [Federated XGBoost](./xgboost/README.md)
   * Includes examples of [histogram-based](./xgboost/histogram-based/README.md) algorithm, [tree-based](./xgboost/tree-based/README.md). Tree-based algorithms also includes [bagging](./xgboost/tree-based/job_configs/bagging_base) and [cyclic](./xgboost/tree-based/job_configs/cyclic_base) approaches 
 
@@ -38,7 +45,6 @@ To get started with these examples, please follow the [Quickstart](https://nvfla
 * [Federated Learning for Prostate Segmentation from Multi-source Data](./prostate/README.md)
   * Example of training a multi-institutional prostate segmentation model using [FedAvg](https://arxiv.org/abs/1602.05629), [FedProx](https://arxiv.org/abs/1812.06127), and [Ditto](https://arxiv.org/abs/2012.04221).
 
-
 ## 4. Federated Statistics
 * [Federated Statistic Overview](federated_statistics/README.md)
   * Discuss the overall federated statistics features 
@@ -46,7 +52,6 @@ To get started with these examples, please follow the [Quickstart](https://nvfla
   * Example of gathering local image histogram to compute the global dataset histograms.
 * [Federated Statistics for DataFrame](federated_statistics/df_stats/README.md)
   * Example of gathering local statistics summary from Pandas DataFrame to compute the global dataset statistics.
-
 
 ## 5. Federated Policies
 * [Federated Policies](./federated-policies/README.rst) 

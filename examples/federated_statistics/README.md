@@ -1,25 +1,25 @@
 # Federated Statistics Overview
 
 ## Objective
-NVFLARE will provide built-in federated statistics operators (controller and executors) that 
+NVIDIA FLARE will provide built-in federated statistics operators (controller and executors) that 
 can generate global statistics based on local client side statistics.
 
 At each client site, we could have one or more datasets (such as "train" and "test" datasets); each dataset may have many 
-features. For each feature in the dataset, we will calculate the statistics and combined to produce 
+features. For each feature in the dataset, we will calculate the statistics and then combine them to produce 
 global statistics for all the numeric features. The output would be complete statistics for all datasets in clients and global.    
 
 The statistics here are commonly used statistics: count, sum, mean, std_dev and histogram for the numerical features.
-The max, min are not included as it might violate the client's data privacy. median is not included due to the complexity 
+The max, min are not included as it might violate the client's data privacy. Median is not included due to the complexity 
 of the algorithms. If the statistics sum and count are selected, the mean will be calculated with count and sum. 
 
 A client will only need to implement the selected methods of "Statistics" class from statistics_spec.
 
-The result will be a statistics for all features, all datasets at all sites as well as global aggregates. 
-The result should be visualized via visualization utility in notebook. 
+The result will be statistics for all features of all datasets at all sites as well as global aggregates. 
+The result should be visualized via the visualization utility in the notebook. 
 
 ## Assumptions
  
-Assume that client will provide the followings: 
+Assume that clients will provide the following: 
    * user needs to provide target statistics such as count, histogram only
    * user needs to provide the local statistics for the target statistics (by implementing the statistic_spec)
    * user needs to provide the data sets and dataset features (feature name, data type)
@@ -29,23 +29,23 @@ the non-numerical features will be removed.
 
 ## Examples
 
-We provided several examples to demonstrate how should the operators be used. 
+We provide several examples to demonstrate how should the operators be used. 
 
 ### Tabular Examples
 
-The 1st example is to calculate the statistics for **tabular** data. The data can be loaded into Pandas DataFrame, 
+The first example is to calculate the statistics for **tabular** data. The data can be loaded into Pandas DataFrame, 
 the data can be cached in memory we can leverage DataFrame and Numpy to calculate the local statistics.
 
 [Data frame statistics](df_stats)
 
-The result will be saved to job workspace in json format, which can be loaded in pandas data frame.
-In jupyter notebook, one can visualize via provided visualization utility
-for example, this table shows the statistics for a particular feature "Age" on each site, each dataset. 
+The result will be saved to the job workspace in json format, which can be loaded in Pandas DataFrame.
+In the jupyter notebook, one can visualize via provided visualization utility
+For example, this table shows the statistics for a particular feature "Age" on each site and each dataset. 
 
 ![stats](df_stats/demo/df_stats.png)
-One can compare global feature and client's future statistics side-by-side for each datasets for all features.   
+You can compare global features and clients feature statistics side-by-side for each dataset for all features.   
 
-Here is example for histograms comparison
+Here is an example for histograms comparison
 ![histogram plot](df_stats/demo/hist_plot.png)
 
 The main steps are 
@@ -57,9 +57,9 @@ The detailed example instructions can be found [Data frame statistics](df_stats/
 
 ### COVID 19 Radiology Image Examples
 
-The 2nd example provided is image histogram example. Different from **Tabular** data example, 
+The second example provided is image histogram example. Different from **Tabular** data example, 
 
-the image examples show the followings
+The image examples show the followings
 * The [image_statistics.py](image_stats/image_stats_job/custom/image_statistics.py) only needs 
 to calculate the count and histogram target statistics, then user only needs to provide the calculation count, failure_count and histogram functions. There is no need to implement other metrics functions
  (sum, mean,std_dev etc.) ( get_failure_count by default return 0 )
@@ -92,7 +92,7 @@ so it can be used to load the statistics.
 NVFLARE provide data privacy protection through privacy filters [privacy-management](https://nvflare.readthedocs.io/en/latest/user_guide/site_policy_management.html#privacy-management)
 Each site can have its own privacy policy. 
 
-### local privacy policy
+### Local privacy policy
 
 privacy.json provides local site specific privacy policy.
 The policy is likely setup by the company and implemented by organization admin
@@ -114,7 +114,7 @@ There are different ways to set privacy filter depending the use cases
 
 ####  Set Privacy Policy as researcher
 
-one can specify the "task_result_filters" config_fed_client.json to specify
+You can specify the "task_result_filters" in config_fed_client.json to specify
 the privacy control.  This is useful when you develop these filters
 
 #### Setup site privacy policy as org admin
@@ -126,14 +126,14 @@ in this example, since we only has one app, we can simply copy the private.json 
 * site-1/local/privacy.json
 * site-2/local/privacy.json
 
-we need to remove the same filters from the job definition in config_fed_client.json
+We need to remove the same filters from the job definition in config_fed_client.json
 by simply set the "task_result_filters" to empty list to avoid **double filtering**
 ```
 "task_result_filters": []
 ```
 #### Job filter vs filters in private.json
 
-privacy filters are defined within a privacy scope.
+Privacy filters are defined within a privacy scope.
 If a job's privacy scope is defined or has default scope, then the scope’s filters (if any) are applied
 before the job-specified filters (if any). This rule is enforced during task execution time.
 
@@ -154,9 +154,9 @@ Currently, we use three `StatisticsPrivacyCleanser`s to guard the data privacy. 
 `StatisticsPrivacyCleanser` instead of separate filters is to avoid repeated data de-serialization.
 
 #### MinCountCleanser:
-check against the number of count returned from client for each dataset and each feature.
+Check against the number of count returned from client for each dataset and each feature.
 
-if the min_count is not satisfied, there is potential risk of reveal client's real data. Then remove that feature's statistics
+If the min_count is not satisfied, there is potential risk of reveal client's real data. Then remove that feature's statistics
 from the result for this client.
 
 #### HistogramBinsCleanser:
@@ -172,7 +172,7 @@ and max values to calculate the global min/max values, then use the global min, 
 calculation. But send the server the local min, max values will reveal client's real data.
 To protect data privacy, we add noise to the local min/max values.
 
-min/max random is used to generate random noise between (min_noise_level and max_noise_level).
+Min/max random is used to generate random noise between (min_noise_level and max_noise_level).
 for example, the random noise is to be within (0.1 and 0.3),i.e. 10% to 30% level. These noise
 will make local min values smaller than the true local min values, and max values larger than
 the true local max values. As result, the estimate global max and min values (i.e. with noise)

@@ -7,6 +7,7 @@ prepare_job_config() {
     --lr_mode "$4" --nthread 16 --tree_method "$5"
 }
 
+echo "Generating job configs"
 prepare_job_config 5 bagging exponential scaled $TREE_METHOD
 prepare_job_config 5 bagging exponential uniform $TREE_METHOD
 prepare_job_config 5 bagging uniform uniform $TREE_METHOD
@@ -21,3 +22,4 @@ prepare_job_config 20 cyclic uniform uniform $TREE_METHOD
 
 prepare_job_config 2 histogram uniform uniform $TREE_METHOD
 prepare_job_config 5 histogram uniform uniform $TREE_METHOD
+echo "Job configs generated"

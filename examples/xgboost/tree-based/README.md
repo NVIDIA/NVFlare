@@ -13,18 +13,18 @@ This scheme bears certain similarity to the [Random Forest mode](https://xgboost
 In addition to basic uniform shrinkage setting where all clients have the same learning rate, based on our research, we enabled scaled shrinkage across clients for weighted aggregation according to each client's data size, which is shown to significantly improve the model's performance on non-uniform quantity splits over HIGGS data.
 
 ## Run automated experiments
+Please make sure to finish the [preparation steps](../README.md) before running the following steps.
 To run this example with NVFlare, follow the below steps.
 
 ### Environment Preparation
-Follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions.
 
-Install additional requirements for this xgboost example:
+Switch to this directory and install additional requirements:
 ```
 python3 -m pip install -r requirements.txt
 ```
 
 ### Run federated experiments with simulator locally
-Next, we will use the NVFlare simulator to run FL training automatically.
+Next, we will use the NVFlare simulator to run FL training.
 ```
 bash run_experiment_simulator.sh
 ```
@@ -69,14 +69,17 @@ bagging training boosts a forest consisting of individually trained trees from e
 ### Run federated experiments in real world
 
 To run in a federated setting, follow [Real-World FL](https://nvflare.readthedocs.io/en/main/real_world_fl.html) to
-start the overseer, fl server and fl clients.
+start the overseer, FL servers and FL clients.
+
+You need to download the HIGGS data on each client site.
 
 You can still generate the data splits and job configs using the scripts provided.
 
-Note that after you generate the job config,
-you might need to modify the `data_path` in the `data_site-XXX.json`
+You will need to copy the generated data split file into each client site.
+You might also need to modify the `data_path` in the `data_site-XXX.json`
 inside the `/tmp/nvflare/xgboost_higgs_dataset` folder,
 since each site might save the HIGGS dataset in different places.
+
 Then you can use admin client to submit the job via `submit_job` command.
 
 ## Reference

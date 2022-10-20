@@ -4,7 +4,7 @@
 Dynamic Provisioning
 ******************************
 
-In version 2.2, two additional options, ``--add_user`` and ``--add_client``, were added to the ``nvflare provision`` command to allow for adding to an existing project.
+In version 2.2, :ref:`provisioning` has been enhanced with two additional options, ``--add_user`` and ``--add_client``, added to the ``nvflare provision`` command to allow for adding to an existing project.
 Both of these commands take a yaml file to define the additional participant to provision. Type ``nvflare provision -h`` to see the details for the ``nvflare provision``
 command.
 
