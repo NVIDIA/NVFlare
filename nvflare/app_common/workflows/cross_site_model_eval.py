@@ -378,10 +378,10 @@ class CrossSiteModelEval(Controller):
 
             self._client_models[client_name] = save_path
 
-            # Send a model to this client to validate
             self._send_validation_task(client_name, fl_ctx)
 
     def _send_validation_task(self, model_name: str, fl_ctx: FLContext):
+        """Sends the model to all participating clients for validation."""
         self.log_info(fl_ctx, f"Sending {model_name} model to all participating clients for validation.")
 
         # Create validation task and broadcast to all participating clients.
