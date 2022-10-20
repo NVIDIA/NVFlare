@@ -28,6 +28,6 @@ class GPUResourceConsumer(ResourceConsumerSpec):
         for gpu_id, gpu_mem in resources.items():
             if gpu_id not in host_gpus:
                 raise RuntimeError(f"GPU ID {gpu_id} does not exist")
-            if gpu_mem * 1024 > host_gpu_memory_free[gpu_id]:
+            if gpu_mem * 1024.0 > host_gpu_memory_free[gpu_id]:
                 raise RuntimeError("GPU free mem is not enough")
         os.environ["CUDA_VISIBLE_DEVICES"] = ",".join([str(i) for i in resources.keys()])
