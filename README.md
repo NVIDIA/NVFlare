@@ -28,7 +28,7 @@ pip install nvflare
 ### Release 2.2.1
 
 * [FL Simulator]( https://nvflare.readthedocs.io/en/main/user_guide/fl_simulator.html) -- 
-  A lightweight simulator of a running NVFLARE FL deployment. It can allow researchers to test and debug their application without provisioning 
+  A lightweight simulator of a running NVFLARE FL development. It allows researchers to test and debug their application without provisioning 
  a real project. The FL jobs run on a server and multiple clients in the same process but 
  in a similar way to how it would run in a real deployment. Researchers can quickly 
  build out new components and jobs that can then be directly used in a real production deployment.
