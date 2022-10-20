@@ -311,6 +311,7 @@ class SimulatorRunner(FLComponent):
         except KeyboardInterrupt:
             self.logger.info("KeyboardInterrupt, terminate all the child processes.")
             kill_child_processes(os.getpid())
+            return -9
 
     def run_processs(self, return_dict):
         if self.setup():
