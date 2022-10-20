@@ -46,15 +46,15 @@ pip install nvflare
   * Logging Configuration: each site can now define its own logging configuration for system generated log messages.
   
 * [Federated XGBoost](<https://github.com/NVIDIA/NVFlare/tree/main/examples/xgboost>) --
-  We provided federated XGBoost for Data scientist to use traditional machine learning. In this release, we provided several 
-  different approaches for the Horizontal Federated XGBoost Algorithms. 
-  * Histogram-based Collaboration -- leverages XGBoost open-source newly added distributed XGBoost training algorithm to operate in a federated manner
+  We developed federated XGBoost for data scientists to perform traditional machine learning. In this release, we provide several 
+  approaches for the horizontal federated XGBoost algorithms. 
+  * Histogram-based Collaboration -- leverages newly added XGBoost open-source distributed XGBoost training algorithm to operate in a federated manner.
   * Tree-based Collaboration -- individual trees are independently trained on each client's local data without aggregating the global sample gradient histogram information. 
   Trained trees are collected and passed to the server / other clients for aggregation and further boosting rounds.
   
 * [Federated Statistics](<https://github.com/NVIDIA/NVFlare/tree/main/examples/federated_statistics>) -- 
   built-in federated statistics operators that can generate global statistics based on local client side statistics. 
-  The results of statistics, for all features of all datasets at all sites as well as global aggregates, can be visualized via the visualization utility in the notebook.  
+  The results, for all features of all datasets at all sites as well as global aggregates, can be visualized via the visualization utility in the notebook.  
 
 * [MONAI Integration](<https://github.com/NVIDIA/NVFlare/tree/main/integration/monai/README.md>)
   In 2.2 release, we provided two implementations by leveraging Monai "bundle"
