@@ -59,7 +59,7 @@ pip install nvflare
 
 * [MONAI Integration](<https://github.com/NVIDIA/NVFlare/tree/main/integration/monai/README.md>)
   In 2.2 release, we provided two implementations by leveraging Monai "bundle"
-  * Monai [ClientAlgo](https://docs.monai.io/en/latest/fl.html#monai.fl.client.ClientAlgo) Integration -- enable Monai bundle directly run on NVFLARE federated setting
+  * Monai [ClientAlgo](https://docs.monai.io/en/latest/fl.html#monai.fl.client.ClientAlgo) Integration -- enable running MONAI bundles directly in a federated setting using NVFLARE
   * Monai [Statistics](https://docs.monai.io/en/latest/fl.html#monai.fl.client.ClientAlgoStats) Integration -- through NVFLARE Federated Statistics we can generate, compare and visualize all client's data statistics generated from Monai summary statistics
 
 * Tools and Production Support
