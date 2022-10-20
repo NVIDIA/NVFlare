@@ -47,9 +47,9 @@ pip install nvflare
   * Logging Configuration: each site can now define its own logging configuration for system generated log messages.
   
 * [Federated XGBoost](<https://github.com/NVIDIA/NVFlare/tree/main/examples/xgboost>) --
-  We developed federated XGBoost for data scientists to perform traditional machine learning. In this release, we provide several 
+  We developed federated XGBoost for data scientists to perform machine learning on tabular data with popular tree-based method. In this release, we provide several 
   approaches for the horizontal federated XGBoost algorithms. 
-  * Histogram-based Collaboration -- leverages newly added XGBoost open-source distributed XGBoost training algorithm to operate in a federated manner.
+  * Histogram-based Collaboration -- leverages newly added XGBoost open-source distributed XGBoost training algorithm to operate in a federated manner achieving identical results as centralized training (trees trained on global data information).
   * Tree-based Collaboration -- individual trees are independently trained on each client's local data without aggregating the global sample gradient histogram information. 
   Trained trees are collected and passed to the server / other clients for aggregation and further boosting rounds.
   
@@ -59,8 +59,8 @@ pip install nvflare
 
 * [MONAI Integration](<https://github.com/NVIDIA/NVFlare/tree/main/integration/monai/README.md>)
   In 2.2 release, we provided two implementations by leveraging Monai "bundle"
-  * Monai ClientAlgo Integration -- enable Monai bundle directly run on NVFLARE federated setting
-  * Monai Statistics Integration -- through NVFLARE Federated Statistics we can generate, compare and visualize all client's statistics
+  * Monai [ClientAlgo](https://docs.monai.io/en/latest/fl.html#monai.fl.client.ClientAlgo) Integration -- enable Monai bundle directly run on NVFLARE federated setting
+  * Monai [Statistics](https://docs.monai.io/en/latest/fl.html#monai.fl.client.ClientAlgoStats) Integration -- through NVFLARE Federated Statistics we can generate, compare and visualize all client's data statistics generated from Monai summary statistics
 
 * Tools and Production Support
   * [Improved POC command](https://nvflare.readthedocs.io/en/main/user_guide/poc_command.html) 
