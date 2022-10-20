@@ -43,7 +43,7 @@ python3 ../pt/utils/cifar10_download_data.py
 ## 3. Create your FL workspace and start FL system 
 
 The next scripts will start the FL server and 8 clients automatically to run FL experiments on localhost.
-In this example, we run all 8 clients on one GPU with 12 GB memory per job.
+In this example, we run all 8 clients on one GPU with at least 8 GB memory per job.
 
 ### 3.1 Secure FL workspace
 
@@ -61,9 +61,10 @@ cd ..
 For more information about secure provisioning see the [documentation](https://nvflare.readthedocs.io/en/latest/programming_guide/provisioning_system.html).
 
 ### 3.3 Multi-tasking resource management
-In this example, we assume two local GPUs with at least 12GB of memory are available. 
+In this example, we assume two local GPUs with at least 8 GB of memory are available. 
 
-Hence, we need to change the clients' local `GPUResourceManager` configurations to show two GPUs at each client.
+Hence, we need to change the clients' local `GPUResourceManager` configurations to show two GPUs at each client, 
+each with 1 GB of memory in order to equally distribute 8 clients on each GPU. 
 To do this, we copy `resource.json.default` to `resources.json` and modify as required: 
 ```
 n_clients=8
@@ -72,9 +73,11 @@ do
   client_local_dir=workspaces/secure_workspace/site-${id}/local 
   cp ${client_local_dir}/resources.json.default ${client_local_dir}/resources.json
   sed -i "s|\"num_of_gpus\": 0|\"num_of_gpus\": 2|g" ${client_local_dir}/resources.json
-  sed -i "s|\"mem_per_gpu_in_GiB\": 0|\"mem_per_gpu_in_GiB\": 12|g" ${client_local_dir}/resources.json 
+  sed -i "s|\"mem_per_gpu_in_GiB\": 0|\"mem_per_gpu_in_GiB\": 1|g" ${client_local_dir}/resources.json 
 done
 ```
+In the `meta.json` of each job, we can request 1 GB of memory for each client. 
+Hence, the FL system will schedule at most 2 jobs to be run in parallel.
 
 ### 3.4 Start FL system
 
@@ -109,7 +112,7 @@ for id in $(eval echo "{1..$n_clients}")
 do
   client_local_dir=/tmp/nvflare/poc/site-${id}/local 
   sed -i "s|\"num_of_gpus\": 0|\"num_of_gpus\": 2|g" ${client_local_dir}/resources.json
-  sed -i "s|\"mem_per_gpu_in_GiB\": 0|\"mem_per_gpu_in_GiB\": 12|g" ${client_local_dir}/resources.json 
+  sed -i "s|\"mem_per_gpu_in_GiB\": 0|\"mem_per_gpu_in_GiB\": 1|g" ${client_local_dir}/resources.json 
 done
 ```
 
