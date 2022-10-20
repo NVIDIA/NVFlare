@@ -32,10 +32,12 @@ pip install nvflare
  a real project. The FL jobs run on a server and multiple clients in the same process but 
  in a similar way to how it would run in a real deployment. Researchers can quickly 
  build out new components and jobs that can then be directly used in a real production deployment.
+ 
 
-* [FLARE Dashboard](https://nvflare.readthedocs.io/en/main/user_guide/dashboard_api.html) --
+* [FLARE Dashboard](https://nvflare.readthedocs.io/en/main/user_guide/dashboard_ui.html)
   NVFLARE's web UI. In its initial incarnation, the Flare Dashboard is used to help
-  project setup, user registration, startup kits distribution and dynamic provisions.  
+  project setup, user registration, startup kits distribution and dynamic provisions.
+  Dashboard setup and apis can be found [here](https://nvflare.readthedocs.io/en/main/user_guide/dashboard_api.html)
 
 * [Site-policy management](https://nvflare.readthedocs.io/en/main/user_guide/site_policy_management.html) -- 
   Prior to NVFLARE 2.2, all policies (resource management, authorization and privacy protection, logging configurations) 
