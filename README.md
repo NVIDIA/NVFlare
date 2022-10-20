@@ -19,6 +19,7 @@ pip install nvflare
 ```
 
 ## Quick Start
+
  * [Getting Started](https://nvflare.readthedocs.io/en/latest/getting_started.html)
  * [Examples](https://github.com/NVIDIA/NVFlare/tree/2.1/examples/)
 
@@ -69,6 +70,7 @@ pip install nvflare
 
     
 ### migrations tips 
+
    To migrate from releases prior to 2.2.1, here are few notes that might help
    [migrate to 2.2.1](docs/release_notes/2.2.1/migration_notes.md)
    
