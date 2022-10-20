@@ -49,7 +49,7 @@ pip install nvflare
 * [Federated XGBoost](<https://github.com/NVIDIA/NVFlare/tree/main/examples/xgboost>) --
   We developed federated XGBoost for data scientists to perform machine learning on tabular data with popular tree-based method. In this release, we provide several 
   approaches for the horizontal federated XGBoost algorithms. 
-  * Histogram-based Collaboration -- leverages recently released (XGBoost 1.7.0) federated versions of open-source XGBoost histogram-based distributed training algorithms that operates in a federated manner achieving identical results as centralized training (trees trained on global data information).
+  * Histogram-based Collaboration -- leverages recently released (XGBoost 1.7.0) federated versions of open-source XGBoost histogram-based distributed training algorithms, achieving identical results as centralized training (trees trained on global data information).
   * Tree-based Collaboration -- individual trees are independently trained on each client's local data without aggregating the global sample gradient histogram information. 
   Trained trees are collected and passed to the server / other clients for aggregation and further boosting rounds.
   
