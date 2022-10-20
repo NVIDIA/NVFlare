@@ -18,6 +18,62 @@ To install [the current release](https://pypi.org/project/nvflare), you can simp
 pip install nvflare
 ```
 
+## Quick Start
+ * [Getting Started](https://nvflare.readthedocs.io/en/latest/getting_started.html)
+ * [Examples](https://github.com/NVIDIA/NVFlare/tree/2.1/examples/)
+
+## Release Highlights
+
+### Release 2.2
+
+* [FL Simulator]( https://nvflare.readthedocs.io/en/latest/user_guide/fl_simulator.html) -- 
+  A lightweight simulator of a running NVFLARE FL deployment. It can allow researchers to test and debug their application without provisioning 
+ a real project. The FL jobs run on a server and multiple clients in the same process but 
+ in a similar way to how it would run in a real deployment. Researchers can quickly 
+ build out new components and jobs that can then be directly used in a real production deployment.
+
+* [FLARE Dashboard](https://nvflare.readthedocs.io/en/latest/user_guide/dashboard_api.html) --
+  A new web UI that becomes part of the NVFLARE. In its initial incarnation, the Flare Dashboard is used to help
+  project setup, user registration, startup kits distribution and dynamic provisions.  
+
+* [Site-policy management](https://nvflare.readthedocs.io/en/latest/user_guide/site_policy_management.html) -- 
+  Prior to NVFLARE 2.2, all policies (resource management, authorization and privacy protection, logging configurations) 
+  can only be defined by the Project Admin during provision time; and authorization policies are centrally enforced by the FL Server.
+  NVFLARE 2.2 makes it possible for each site to define its own policies in the following areas:
+  * Resource Management: the configuration of system resources that are solely the decisions of local IT;
+  * Authorization Policy: local authorization policy that determines what a user can or cannot do on the local site;
+    * see related [Federated Authorization](https://nvflare.readthedocs.io/en/latest/user_guide/federated_authorization.html)
+  * Privacy Policy: local policy that specifies what types of studies are allowed and how to add privacy protection to the learning results produced by the FL client on the local site.
+  * Logging Configuration: each site can now define its own logging configuration for system generated log messages.
+  
+* [Federated XGBoost](<https://github.com/NVIDIA/NVFlare/tree/main/examples/xgboost>) --
+  We provided federated XGBoost for Data scientist to use traditional machine learning. In this release, we provided several 
+  different approaches for the Horizontal Federated XGBoost Algorithms. 
+  * Histogram-based Collaboration -- leverages XGBoost open-source newly added distributed XGBoost training algorithm to operate in a federated manner
+  * Tree-based Collaboration -- individual trees are independently trained on each client's local data without aggregating the global sample gradient histogram information. 
+  Trained trees are collected and passed to the server / other clients for aggregation and further boosting rounds.
+  
+* [Federated Statistics](<https://github.com/NVIDIA/NVFlare/tree/main/examples/federated_statistics>) -- 
+  built-in federated statistics operators that can generate global statistics based on local client side statistics. 
+  The results of statistics, for all features of all datasets at all sites as well as global aggregates, can be visualized via the visualization utility in the notebook.  
+
+* [MONAI Integration](<https://github.com/NVIDIA/NVFlare/tree/main/integration/monai/README.md>)
+  In 2.2 release, we provided two implementations by leveraging Monai "bundle"
+  * Monai ClientAlgo Integration -- enable Monai bundle directly run on NVFLARE federated setting
+  * Monai Statistics Integration -- through NVFLARE Federated Statistics we can generate, compare and visualize all client's statistics
+
+* Tools and Production Support
+  * [Improved POC command](https://nvflare.readthedocs.io/en/latest/user_guide/poc_command.html) 
+  * [Dynamic Provision](https://nvflare.readthedocs.io/en/latest/user_guide/dynamic_provisioning.html)
+  * [Docker Compose](https://nvflare.readthedocs.io/en/latest/user_guide/docker_compose.html)
+  * [Preflight Check](https://nvflare.readthedocs.io/en/latest/user_guide/preflight_check.html#nvidia-flare-preflight-check)
+
+    
+### migrations tips 
+   To migrate from releases prior to 2.2.1, here are few notes that might help
+   [migrate to 2.2.1](docs/release_notes/2.2.1/migration_notes.md)
+   
+
 ## Third party license
 
 See 3rdParty folder for their license files.
