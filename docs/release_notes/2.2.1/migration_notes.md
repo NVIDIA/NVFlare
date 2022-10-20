@@ -75,7 +75,7 @@ re-provision your project
 
 Since 2.2.1, we enabled federated site policies which require the new project.yml template. Please refer [default project.yml](https://nvflare.readthedocs.io/en/main/programming_guide/provisioning_system.html#default-project-yml-file)  
 
-### new local directory
+### New local directory
 With 2.2.1, the provision will produce not only the ```startup``` directory, but a ```local``` directory. 
 The resource allocation used to be in project.yml is now in resources.json and each sites/clients need to manage them separately in each location. 
 you need to place/modify your own site's authorization.json and privacy.json as well if you like to change the default policies. 
