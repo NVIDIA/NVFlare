@@ -62,7 +62,7 @@ pip install nvflare
 * [MONAI Integration](<https://github.com/NVIDIA/NVFlare/tree/main/integration/monai/README.md>)
   In 2.2 release, we provided two implementations by leveraging MONAI [Bundle](https://docs.monai.io/en/latest/bundle_intro.html).
   * MONAI [ClientAlgo](https://docs.monai.io/en/latest/fl.html#monai.fl.client.ClientAlgo) Integration -- enable running MONAI bundles directly in a federated setting using NVFLARE
-  * MONAI [ClientAlgoStats](https://docs.monai.io/en/latest/fl.html#monai.fl.client.ClientAlgoStats) Integration -- through NVFLARE Federated Statistics we can generate, compare and visualize all clients' data statistics generated from Monai summary statistics
+  * MONAI [ClientAlgoStats](https://docs.monai.io/en/latest/fl.html#monai.fl.client.ClientAlgoStats) Integration -- through NVFLARE Federated Statistics we can generate, compare and visualize all clients' data statistics generated from MONAI summary statistics
 
 * Tools and Production Support
   * [Improved POC command](https://nvflare.readthedocs.io/en/main/user_guide/poc_command.html) 
