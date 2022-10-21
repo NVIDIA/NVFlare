@@ -103,7 +103,8 @@ class ClientAlgoStatistics(Statistics):
                     raise ValueError(
                         f"There are more returned histograms ({n_hists}) for dataset "
                         f"{dataset_name} than provided feature names. "
-                        f"Please use '*' to define the histogram bins and range for all features."
+                        f"Please use '*' to define the histogram bins and range for all features "
+                        f"or provide histograms bins and range for each feature."
                     )
                 if fn == "*":
                     fn = "Intensity"
@@ -117,7 +118,7 @@ class ClientAlgoStatistics(Statistics):
             if len(self.feature_names) != n_hists:
                 raise ValueError(
                     f"Given length of feature names {self.feature_names} ({len(self.feature_names)}) "
-                    f"do not match returned histograms ({n_hists})!"
+                    f"do not match returned histograms ({n_hists}) for dataset {dataset_name}!"
                 )
             for _hist_fn, _histo in zip(self.feature_names, hist_list):
                 self.histograms[dataset_name][_hist_fn] = _histo

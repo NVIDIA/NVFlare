@@ -1,8 +1,8 @@
-tensorboard
 tqdm
 nibabel
 fire
 pytorch-ignite>=0.4.10
 monai>=1.0.1rc3
-nvflare>=2.2.1rc8
-monai_nvflare>=0.2.0
+nvflare>=2.2.1rc9
+monai_nvflare>=0.2.1rc1
+tensorboard

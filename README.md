@@ -60,9 +60,9 @@ pip install nvflare
   The results, for all features of all datasets at all sites as well as global aggregates, can be visualized via the visualization utility in the notebook.  
 
 * [MONAI Integration](<https://github.com/NVIDIA/NVFlare/tree/main/integration/monai/README.md>)
-  In 2.2 release, we provided two implementations by leveraging Monai "bundle"
-  * Monai [ClientAlgo](https://docs.monai.io/en/latest/fl.html#monai.fl.client.ClientAlgo) Integration -- enable running MONAI bundles directly in a federated setting using NVFLARE
-  * Monai [Statistics](https://docs.monai.io/en/latest/fl.html#monai.fl.client.ClientAlgoStats) Integration -- through NVFLARE Federated Statistics we can generate, compare and visualize all client's data statistics generated from Monai summary statistics
+  In 2.2 release, we provided two implementations by leveraging MONAI [Bundle](https://docs.monai.io/en/latest/bundle_intro.html).
+  * MONAI [ClientAlgo](https://docs.monai.io/en/latest/fl.html#monai.fl.client.ClientAlgo) Integration -- enable running MONAI bundles directly in a federated setting using NVFLARE
+  * MONAI [ClientAlgoStats](https://docs.monai.io/en/latest/fl.html#monai.fl.client.ClientAlgoStats) Integration -- through NVFLARE Federated Statistics we can generate, compare and visualize all clients' data statistics generated from MONAI summary statistics
 
 * Tools and Production Support
   * [Improved POC command](https://nvflare.readthedocs.io/en/main/user_guide/poc_command.html) 
@@ -74,7 +74,7 @@ pip install nvflare
 ### Migrations tips 
 
    To migrate from releases prior to 2.2.1, here are few notes that might help
-   [migrate to 2.2.1](docs/release_notes/2.2.1/migration_notes.md)
+   [migrate to 2.2.1](docs/release_notes/2.2.1/migration_notes.md).
    
 
 ## Third party license
