@@ -85,6 +85,7 @@ If you want to customize for your experiments, please check `utils/prepare_data_
 
 
 ## HIGGS job configs preparation under various training schemes
+
 Please follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions to install NVFlare.
 
 We then prepare the NVFlare job configs for different settings by running
