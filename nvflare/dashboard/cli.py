@@ -60,7 +60,18 @@ def start(args):
     dashboard_image = "nvflare/nvflare"
     try:
         print(f"Pulling {dashboard_image}, may take some time to finish.")
-        _ = client.images.pull(dashboard_image)
+        api_client = docker.APIClient()
+
+        last_status = ""
+        for line in api_client.pull(dashboard_image, stream=True, decode=True):
+            current_status = line.get("status", "")
+            if current_status != last_status:
+                print()
+                print(current_status, end=" ")
+                last_status = current_status
+            else:
+                print(".", end="")
+        print()
     except docker.errors.APIError:
         print(f"unable to pull {dashboard_image}")
         exit(1)
