@@ -18,7 +18,7 @@ To run this example with NVFlare, follow the below steps.
 
 ### Environment Preparation
 
-Switch to this directory and install additional requirements:
+Switch to this directory and install additional requirements (suggest to do this inside virtual environment):
 ```
 python3 -m pip install -r requirements.txt
 ```
