@@ -6,9 +6,10 @@ To run this example with NVFlare, follow the below steps.
 
 ### Environment Preparation
 
-1. Clone xgboost: `git clone https://github.com/dmlc/xgboost xgboost`
-2. Init xgboost submodule: `cd xgboost; git submodule update --init`
-3. Build and install xgboost-federated following [README](https://github.com/dmlc/xgboost/blob/master/plugin/federated/README.md)
+Switch to this directory and install additional requirements (suggest to do this inside virtual environment):
+```
+python3 -m pip install -r requirements.txt
+```
 
 ### Run federated experiments with simulator locally
 Next, we will use the NVFlare simulator to run FL training automatically.
