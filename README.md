@@ -76,6 +76,14 @@ pip install nvflare
    To migrate from releases prior to 2.2.1, here are few notes that might help
    [migrate to 2.2.1](docs/release_notes/2.2.1/migration_notes.md).
    
+## Publications & talks
+   [publications and talks](docs/publications_talks/publication_talks.md)
+
+## Institutions that leverage NVFLARE for federated learning research or in production
+
+* ![Microsoft Azure](docs/3rd_party_logos/ms_azure.png)  ![Rino Health](docs/3rd_party_logos/rino_health.png) ![Kings College London FLIP project](docs/3rd_party_logos/kcl.png)
+* ![Roche](docs/3rd_party_logos/rouch.png) ![Mount Sinai](docs/3rd_party_logos/mt_saini.png)
+* ![NYU Langone](docs/3rd_party_logos/nyu_langone.png) ![Erasmus](docs/3rd_party_logos/erasmus_mc.png)
 
 ## Third party license
 
