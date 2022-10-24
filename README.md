@@ -75,25 +75,7 @@ pip install nvflare
 
    To migrate from releases prior to 2.2.1, here are few notes that might help
    [migrate to 2.2.1](docs/release_notes/2.2.1/migration_notes.md).
-   
-## Institutions using NVFLARE
-* <a href="https://github.com/Azure/medical-imaging/tree/main/federated-learning"><img src="docs/3rd_party_logos/ms_azure.png" width="100" height="75" />  * **[NVFARE on Azure](https://github.com/Azure/medical-imaging/tree/main/federated-learning)**
 
-* <a href="https://blogs.nvidia.com/blog/2022/08/11/israel-medical-center-ai-startups-radiology/"><img src="docs/3rd_party_logos/rino_health.png" width="100" height="75" /> * **[Rhino Health Fosters Collaboration With Federated Learning](https://blogs.nvidia.com/blog/2022/08/11/israel-medical-center-ai-startups-radiology/)**
- 
-* <a href="https://www.nvidia.com/en-us/on-demand/session/gtcspring21-e32541"><img src="docs/3rd_party_logos/bayer.png" width="100" height="75" />* **[Accelerating Health Care at Bayer with Science@Scale and Federated Learning](https://www.nvidia.com/en-us/on-demand/session/gtcspring21-e32541)**
-
-* <img src="docs/3rd_party_logos/kcl.png" width="100" height="75" /> * NVIDIA, Canon Research, and KCL AI Center collaboration. NVFLARE is used as the basic enabler for this collaboration. * KCL FLIP project
-
-
-* <img src="docs/3rd_party_logos/mt_saini.png" width="100" height="75"/> * Link to be updated
-
-
-* <img src="docs/3rd_party_logos/nyu_langone.png" width="100" height="75" /> * NYU has a joint FL paper with NVIDIA in Neurosurgery, won best data science abstract award (award is one Nvidia GPU) on Congress of Neurological Surgeons.
-
-
-* <img src="docs/3rd_party_logos/erasmus_mc.png" width="100" height="75"/> * Link to be updated
- 
 ## Third party license
 
 See 3rdParty folder for their license files.
