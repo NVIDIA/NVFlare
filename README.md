@@ -78,10 +78,10 @@ pip install nvflare
    
 ## Institutions using NVFLARE
 <a href="https://github.com/Azure/medical-imaging/tree/main/federated-learning" alt="NVFlare on Azure"><img src="docs/3rd_party_logos/ms_azure.png" width="100" height="75" />
-
+<a href="https://blogs.nvidia.com/blog/2022/08/11/israel-medical-center-ai-startups-radiology/"><img src="docs/3rd_party_logos/rino_health.png" width="100" height="75" />
 <img src="docs/3rd_party_logos/rouch.png" width="100" height="75" /> 
 <img src="docs/3rd_party_logos/kcl.png" width="100" height="75" />
-<img src="docs/3rd_party_logos/rino_health.png" width="100" height="75" />
+
 <img src="docs/3rd_party_logos/mt_saini.png" width="100" height="75"/> 
 <img src="docs/3rd_party_logos/nyu_langone.png" width="100" height="75" />
 <img src="docs/3rd_party_logos/erasmus_mc.png" width="100" height="75"/>
