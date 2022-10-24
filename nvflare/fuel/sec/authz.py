@@ -24,9 +24,9 @@ _ANY_RIGHT = "*"
 
 class Person(object):
     def __init__(self, name: str, org: str, role: str):
-        self.name = _normalize_str(name)
-        self.org = _normalize_str(org)
-        self.role = _normalize_str(role)
+        self.name = _normalize_str(name, "User name")
+        self.org = _normalize_str(org, "User org")
+        self.role = _normalize_str(role, "User role")
 
     def __str__(self):
         return f"{self.name}:{self.org}:{self.role}"
@@ -36,9 +36,9 @@ class AuthzContext(object):
     def __init__(self, right: str, user: Person, submitter: Person = None):
         """Base class to contain context data for authorization."""
         if not isinstance(user, Person):
-            raise ValueError(f"user need to be of type Person but got {type(user)}")
+            raise ValueError(f"user needs to be of type Person but got {type(user)}")
         if submitter and not isinstance(submitter, Person):
-            raise ValueError(f"submitter need to be of type Person but got {type(submitter)}")
+            raise ValueError(f"submitter needs to be of type Person but got {type(submitter)}")
         self.right = right
         self.user = user
         self.submitter = submitter
@@ -128,7 +128,7 @@ class _RoleRightConditions(object):
         return True
 
     def _parse_one_expression(self, exp) -> str:
-        v = _normalize_str(exp)
+        v = _normalize_str(exp, "Expression")
         blocked = False
         parts = v.split()
         if len(parts) == 2 and parts[0] == "not":
@@ -142,8 +142,8 @@ class _RoleRightConditions(object):
         else:
             parts = v.split(":")
             if len(parts) == 2:
-                target_type = _normalize_str(parts[0])
-                target_value = _normalize_str(parts[1])
+                target_type = _normalize_str(parts[0], "Target type")
+                target_value = _normalize_str(parts[1], "Target value")
 
                 if target_type in ["o", "org"]:
                     ev = UserOrgEvaluator(target_value)
@@ -225,7 +225,7 @@ class Policy(object):
         Returns:
             A tuple of (result, error)
         """
-        site_org = _normalize_str(site_org)
+        site_org = _normalize_str(site_org, "Site org")
         permitted = self._eval_for_role(role=ctx.user.role, site_org=site_org, ctx=ctx)
         if permitted:
             # permitted if any role is okay
@@ -233,9 +233,9 @@ class Policy(object):
         return False, ""
 
 
-def _normalize_str(s: str) -> str:
+def _normalize_str(s: str, field_name: str) -> str:
     if not isinstance(s, str):
-        raise TypeError(f"{s} must be a str but got {type(s)}")
+        raise TypeError(f"{field_name} must be a str but got {type(s)}")
     return " ".join(s.lower().split())
 
 
@@ -299,7 +299,7 @@ def parse_policy_config(config: dict, right_categories: dict):
         if not isinstance(role_name, str):
             return None, f"bad role name: expect a str but got {type(role_name)}"
 
-        role_name = _normalize_str(role_name)
+        role_name = _normalize_str(role_name, "Role name")
         roles.append(role_name)
         right_conds = {}  # rights of this role
         role_rights[role_name] = right_conds
@@ -320,7 +320,7 @@ def parse_policy_config(config: dict, right_categories: dict):
             if not isinstance(right, str):
                 return None, f"bad right name: expect a str but got {type(right)}"
 
-            right = _normalize_str(right)
+            right = _normalize_str(right, "Right for Category")
 
             # see whether this is a right category
             right_list = cat_to_rights.get(right)
@@ -340,7 +340,7 @@ def parse_policy_config(config: dict, right_categories: dict):
 
         # process regular rights, which may override the rights from categories
         for right, exp in right_conf.items():
-            right = _normalize_str(right)
+            right = _normalize_str(right, "Right")
 
             # see whether this is a right category
             right_list = cat_to_rights.get(right)
@@ -362,7 +362,7 @@ def parse_policy_config(config: dict, right_categories: dict):
 class Authorizer(object):
     def __init__(self, site_org: str, right_categories: dict = None):
         """Base class containing the authorization policy."""
-        self.site_org = _normalize_str(site_org)
+        self.site_org = _normalize_str(site_org, "Site org")
         self.right_categories = right_categories
         self.policy = None
         self.last_load_time = None
