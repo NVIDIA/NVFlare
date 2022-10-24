@@ -77,14 +77,13 @@ pip install nvflare
    [migrate to 2.2.1](docs/release_notes/2.2.1/migration_notes.md).
    
 ## Publications & talks
-   [publications and talks](docs/publications_talks/publication_talks.md)
+   * [publications and talks](docs/publications_talks/publication_talks.md)
 
 ## Institutions using NVFLARE
-
-* ![Microsoft Azure](docs/3rd_party_logos/ms_azure.png)  ![Rino Health](docs/3rd_party_logos/rino_health.png) ![Kings College London FLIP project](docs/3rd_party_logos/kcl.png)
-* ![Roche](docs/3rd_party_logos/rouch.png) ![Mount Sinai](docs/3rd_party_logos/mt_saini.png)
-* ![NYU Langone](docs/3rd_party_logos/nyu_langone.png) ![Erasmus](docs/3rd_party_logos/erasmus_mc.png)
-
+ 
+*<img src="docs/3rd_party_logos/ms_azure.png" width="150" height="100" /> <img src="docs/3rd_party_logos/rouch.png" width="150" height="100" /> <img src="docs/3rd_party_logos/kcl.png" width="150" height="100" /> <img src="docs/3rd_party_logos/rino_health.png" width="150" height="100" />
+*<img src="docs/3rd_party_logos/mt_saini.png" width="150" height="100"/> <img src="docs/3rd_party_logos/nyu_langone.png" width="150" height="100" /><img src="docs/3rd_party_logos/erasmus_mc.png" width="150" height="100"/>
+ 
 ## Third party license
 
 See 3rdParty folder for their license files.
