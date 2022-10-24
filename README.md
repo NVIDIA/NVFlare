@@ -79,7 +79,7 @@ pip install nvflare
 ## Publications & talks
    [publications and talks](docs/publications_talks/publication_talks.md)
 
-## Institutions that leverage NVFLARE for federated learning research or in production
+## Institutions using NVFLARE
 
 * ![Microsoft Azure](docs/3rd_party_logos/ms_azure.png)  ![Rino Health](docs/3rd_party_logos/rino_health.png) ![Kings College London FLIP project](docs/3rd_party_logos/kcl.png)
 * ![Roche](docs/3rd_party_logos/rouch.png) ![Mount Sinai](docs/3rd_party_logos/mt_saini.png)
