@@ -76,13 +76,15 @@ pip install nvflare
    To migrate from releases prior to 2.2.1, here are few notes that might help
    [migrate to 2.2.1](docs/release_notes/2.2.1/migration_notes.md).
    
-## Publications & talks
-   * [publications and talks](docs/publications_talks/publication_talks.md)
-
 ## Institutions using NVFLARE
  
-*<img src="docs/3rd_party_logos/ms_azure.png" width="150" height="100" /> <img src="docs/3rd_party_logos/rouch.png" width="150" height="100" /> <img src="docs/3rd_party_logos/kcl.png" width="150" height="100" /> <img src="docs/3rd_party_logos/rino_health.png" width="150" height="100" />
-*<img src="docs/3rd_party_logos/mt_saini.png" width="150" height="100"/> <img src="docs/3rd_party_logos/nyu_langone.png" width="150" height="100" /><img src="docs/3rd_party_logos/erasmus_mc.png" width="150" height="100"/>
+<img src="docs/3rd_party_logos/ms_azure.png" width="100" height="75" />
+<img src="docs/3rd_party_logos/rouch.png" width="100" height="75" /> 
+<img src="docs/3rd_party_logos/kcl.png" width="100" height="75" />
+<img src="docs/3rd_party_logos/rino_health.png" width="100" height="75" />
+<img src="docs/3rd_party_logos/mt_saini.png" width="100" height="75"/> 
+<img src="docs/3rd_party_logos/nyu_langone.png" width="100" height="75" />
+<img src="docs/3rd_party_logos/erasmus_mc.png" width="100" height="75"/>
  
 ## Third party license
 
