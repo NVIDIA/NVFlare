@@ -77,16 +77,24 @@ pip install nvflare
    [migrate to 2.2.1](docs/release_notes/2.2.1/migration_notes.md).
    
 ## Institutions using NVFLARE
-<a href="https://github.com/Azure/medical-imaging/tree/main/federated-learning" alt="NVFlare on Azure"><img src="docs/3rd_party_logos/ms_azure.png" width="100" height="75" />
+* <a href="https://github.com/Azure/medical-imaging/tree/main/federated-learning" alt="NVFlare on Azure"><img src="docs/3rd_party_logos/ms_azure.png" width="100" height="75" />  *   **[NVFARE on Azure]("https://github.com/Azure/medical-imaging/tree/main/federated-learning)**
 
-<a href="https://blogs.nvidia.com/blog/2022/08/11/israel-medical-center-ai-startups-radiology/"><img src="docs/3rd_party_logos/rino_health.png" width="100" height="75" />
+* <a href="https://blogs.nvidia.com/blog/2022/08/11/israel-medical-center-ai-startups-radiology/"><img src="docs/3rd_party_logos/rino_health.png" width="100" height="75" /> * **[Rhino Health Fosters Collaboration With Federated Learning](https://blogs.nvidia.com/blog/2022/08/11/israel-medical-center-ai-startups-radiology/)**
 
-<img src="docs/3rd_party_logos/rouch.png" width="100" height="75" /> 
-<img src="docs/3rd_party_logos/kcl.png" width="100" height="75" />
+* <img src="docs/3rd_party_logos/rouch.png" width="100" height="75" />
 
-<img src="docs/3rd_party_logos/mt_saini.png" width="100" height="75"/> 
-<img src="docs/3rd_party_logos/nyu_langone.png" width="100" height="75" />
-<img src="docs/3rd_party_logos/erasmus_mc.png" width="100" height="75"/>
+* <a href="https://www.nvidia.com/en-us/on-demand/session/gtcspring21-e32541"><img src="docs/3rd_party_logos/bayer.png" width="100" height="75" />* **[Accelerating Health Care at Bayer with Science@Scale and Federated Learning](https://www.nvidia.com/en-us/on-demand/session/gtcspring21-e32541)**
+
+* <img src="docs/3rd_party_logos/kcl.png" width="100" height="75" /> The collaborators include NVIDIA, Canon Research, and AI Centre for Value-based Healthcare in London. NVFLARE is used as the basic enabler for this collaboration and FLIP projects with two hospitals in production and more to roll out in London
+
+
+* <img src="docs/3rd_party_logos/mt_saini.png" width="100" height="75"/> * Link to be updated
+
+
+* <img src="docs/3rd_party_logos/nyu_langone.png" width="100" height="75" /> * NYU has a joint FL paper with NVIDIA in Neurosurgery. The lab is exploring more FL use cases. They also won best data science abstract award (award is one Nvidia GPU) on Congress of Neurological Surgeons.
+
+
+* <img src="docs/3rd_party_logos/erasmus_mc.png" width="100" height="75"/> * Link to be updated
  
 ## Third party license
 
