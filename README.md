@@ -77,7 +77,7 @@ pip install nvflare
    [migrate to 2.2.1](docs/release_notes/2.2.1/migration_notes.md).
    
 ## Institutions using NVFLARE
-* <a href="https://github.com/Azure/medical-imaging/tree/main/federated-learning"><img src="docs/3rd_party_logos/ms_azure.png" width="100" height="75" />  * **[NVFARE on Azure]("https://github.com/Azure/medical-imaging/tree/main/federated-learning)**
+* <a href="https://github.com/Azure/medical-imaging/tree/main/federated-learning"><img src="docs/3rd_party_logos/ms_azure.png" width="100" height="75" />  * **[NVFARE on Azure](https://github.com/Azure/medical-imaging/tree/main/federated-learning)**
 
 * <a href="https://blogs.nvidia.com/blog/2022/08/11/israel-medical-center-ai-startups-radiology/"><img src="docs/3rd_party_logos/rino_health.png" width="100" height="75" /> * **[Rhino Health Fosters Collaboration With Federated Learning](https://blogs.nvidia.com/blog/2022/08/11/israel-medical-center-ai-startups-radiology/)**
  
