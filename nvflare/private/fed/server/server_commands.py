@@ -19,7 +19,14 @@ import time
 from abc import ABC, abstractmethod
 from typing import List
 
-from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, ReservedKey, ServerCommandKey, ServerCommandNames
+from nvflare.apis.fl_constant import (
+    AdminCommandNames,
+    FLContextKey,
+    MachineStatus,
+    ReservedKey,
+    ServerCommandKey,
+    ServerCommandNames,
+)
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
@@ -81,7 +88,12 @@ class AbortCommand(CommandProcessor):
         if server_runner:
             server_runner.abort(fl_ctx)
             # wait for the runner process gracefully abort the run.
-            time.sleep(3.0)
+            engine = fl_ctx.get_engine()
+            start_time = time.time()
+            while engine.engine_info.status != MachineStatus.STOPPED:
+                time.sleep(1.0)
+                if time.time() - start_time > 30.0:
+                    break
         return "Aborted the run"
 
 
