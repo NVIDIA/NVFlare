@@ -101,6 +101,13 @@ class Store(object):
         return add_ok({"project": _dict_or_empty(project)})
 
     @classmethod
+    def _add_registered_info(cls, project_dict):
+        project_dict["num_clients"] = Client.query.count()
+        project_dict["num_orgs"] = Organization.query.count()
+        project_dict["num_users"] = User.query.count()
+        return project_dict
+
+    @classmethod
     def set_project(cls, req):
         project = Project.query.first()
         if project.frozen:
@@ -117,14 +124,14 @@ class Store(object):
         db.session.commit()
         if project.frozen:
             cls.build_project(project)
-        return add_ok({"project": _dict_or_empty(project)})
+        project_dict = _dict_or_empty(project)
+        project_dict = cls._add_registered_info(project_dict)
+        return add_ok({"project": project_dict})
 
     @classmethod
     def get_project(cls):
         project_dict = _dict_or_empty(Project.query.first())
-        project_dict["num_clients"] = Client.query.count()
-        project_dict["num_orgs"] = Organization.query.count()
-        project_dict["num_users"] = User.query.count()
+        project_dict = cls._add_registered_info(project_dict)
         return add_ok({"project": project_dict})
 
     @classmethod

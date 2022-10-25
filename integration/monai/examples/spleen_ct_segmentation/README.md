@@ -95,7 +95,9 @@ To avoid caching the data for training (which will not be executed during the st
 ```
 nvflare simulator job_stats --workspace /tmp/nvflare/sim_spleen_ct_seg --threads 2 --n_clients 2 --gpu 0,1
 ```
-The results will be placed in the workspace directory under `simulate_job/statistics/image_statistics.json`.
+The histogram results will be placed in the workspace directory under `simulate_job/statistics/image_statistics.json`.
+Additional summary statistics, like average image shapes and spacings, computed by MONAI are placed under `simulate_job/app_server/`.
+See [stats_demo/simulate_job/app_server](./stats_demo/simulate_job/app_server) for examples.
 
 For an end-to-end demo, including visualization of the gathered statistics, start a Jupyter Lab with `stats_demo`
 ```
