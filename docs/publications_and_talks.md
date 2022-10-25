@@ -25,8 +25,24 @@ Segmentation](https://openaccess.thecvf.com/content/CVPR2022/papers/Xu_Closing_t
 #### 2019
 * **2019-10** [Privacy-preserving Federated Brain Tumour Segmentation](https://arxiv.org/abs/1910.00962) ([MLMI @ MICCAI 2019](https://mlmi2019.web.unc.edu/))
 
+### Blogs & Videos
+NVIDIA FLARE related blogs and other media.
+
+#### 2022
+* **2022-10** [Federated Learning from Simulation to Production with NVIDIA FLARE](https://developer.nvidia.com/blog/federated-learning-from-simulation-to-production-with-nvidia-flare/?ncid=so-nvsh-705336#cid=ix11_so-nvsh_en-us) (NVIDIA Technical Blog)
+* **2022-06** [Experimenting with Novel Distributed Applications Using NVIDIA Flare 2.1](https://developer.nvidia.com/blog/experimenting-with-novel-distributed-applications-using-nvidia-flare-2-1/) (NVIDIA Technical Blog)
+
+#### 2021
+* **2021-11** [Creating Robust and Generalizable AI Models with NVIDIA FLARE](https://developer.nvidia.com/blog/creating-robust-and-generalizable-ai-models-with-nvidia-flare/) (NVIDIA Technical Blog)
+* **2021-09** [Federated Learning for Medical AI and Triaging COVID-19 Patients](https://www.youtube.com/watch?v=cOXVrtkv6FE) (NVIDIA video)
+* **2021-06** [Federated Learning with Homomorphic Encryption](https://developer.nvidia.com/blog/federated-learning-with-homomorphic-encryption/) (NVIDIA Technical Blog)
+
+#### 2019
+* **2019-12** [Federated Learning powered by NVIDIA Clara](https://developer.nvidia.com/blog/federated-learning-clara/)
+* **2019-10** [NVIDIA Research: First Privacy-Preserving Federated Learning System for Medical Imaging](https://www.youtube.com/watch?v=Jy7ozgwovgg) (NVIDIA video)
+
 ### Talks
-Recent talks covering federated learning research and NVIDIA FLARE.
+Recent talks and Webinars covering federated learning research and NVIDIA FLARE.
 
 #### 2022
 * **2022-10** [Modern Tools for Collaborative Medical Image Analysis](https://drive.google.com/file/d/1hmlyG7g1SU8vhQ5wdTFhkqFO9Ty8BiYG/view?usp=sharing) ([Keynote - DART @ MICCAI 2022](https://sites.google.com/view/dart2022/home?authuser=0)) 
@@ -40,3 +56,4 @@ Recent talks covering federated learning research and NVIDIA FLARE.
 #### 2021
 * **2021-09** [Federated Learning](https://www.youtube.com/watch?v=YeYO4JGTBb0&amp) ([MONAI MICCAI Bootcamp 2021](https://www.gpuhackathons.org/event/monai-miccai-bootcamp-2021))
 * **2021-03** [NVIDIA FLARE: An Open Federated Learning Platform](https://www.nvidia.com/en-us/on-demand/session/gtcspring22-se1991/) ([GTC Spring 2022](https://www.nvidia.com/gtc/))
+* **2021-03** [Federated Learning for Healthcare – Collaborative AI without Sharing Patient Data ](https://www.youtube.com/watch?v=xr_eJp3ctzw) ([Data Science Seminar](https://www.dkfz.de/en/datascience/seminar/Rieke.html))
