@@ -78,7 +78,7 @@ pip install nvflare
 
 ### Related talks and publications
 
-For a list of talks and publications related to NVIDIA FLARE, see [here](docs/publications_and_talks.md).
+For a list of talks, blogs, and publications related to NVIDIA FLARE, see [here](docs/publications_and_talks.md).
 
 ## Third party license
 

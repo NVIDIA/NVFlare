@@ -1,4 +1,4 @@
-### Publications
+## Publications
 Non-exhaustive list of papers and publications related to NVIDIA FLARE, 
 including papers using NVIDIA FLARE's predecessor libraries included in the [Clara Train SDK](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/clara-train-sdk).
 
@@ -25,7 +25,7 @@ Segmentation](https://openaccess.thecvf.com/content/CVPR2022/papers/Xu_Closing_t
 #### 2019
 * **2019-10** [Privacy-preserving Federated Brain Tumour Segmentation](https://arxiv.org/abs/1910.00962) ([MLMI @ MICCAI 2019](https://mlmi2019.web.unc.edu/))
 
-### Blogs & Videos
+## Blogs & Videos
 NVIDIA FLARE related blogs and other media.
 
 #### 2022
@@ -41,7 +41,7 @@ NVIDIA FLARE related blogs and other media.
 * **2019-12** [Federated Learning powered by NVIDIA Clara](https://developer.nvidia.com/blog/federated-learning-clara/)
 * **2019-10** [NVIDIA Research: First Privacy-Preserving Federated Learning System for Medical Imaging](https://www.youtube.com/watch?v=Jy7ozgwovgg) (NVIDIA video)
 
-### Talks
+## Talks
 Recent talks and Webinars covering federated learning research and NVIDIA FLARE.
 
 #### 2022
