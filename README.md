@@ -76,6 +76,10 @@ pip install nvflare
    To migrate from releases prior to 2.2.1, here are few notes that might help
    [migrate to 2.2.1](docs/release_notes/2.2.1/migration_notes.md).
 
+### Related talks and publications
+
+For a list of talks, blogs, and publications related to NVIDIA FLARE, see [here](docs/publications_and_talks.md).
+
 ## Third party license
 
 See 3rdParty folder for their license files.
