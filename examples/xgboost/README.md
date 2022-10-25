@@ -120,12 +120,105 @@ The script will also generate 2 configs in `histogram-based/job_configs` for his
 - histogram-based training with uniform data split for 2 clients
 - histogram-based training with uniform data split for 5 clients
 
-
-By default, CPU based training is used.
-
-For GPU based training, edit `job_config_gen.sh` to change `TREE_METHOD="hist"` to `TREE_METHOD="gpu_hist"`.
-
 ## Run experiments for tree-based and histogram-based settings
 After you run the two scripts `data_split_gen.sh` and `job_config_gen.sh`,
 please go to sub-folder [tree-based](tree-based) for running tree-based algorithms,
 and sub-folder [histogram-based](histogram-based) for running histogram-based algorithms.
+
+
+## GPU support
+By default, CPU based training is used.
+
+If the CUDA is installed on the site, tree construction and prediction can be
+accelerated using GPUs.
+
+GPUs are enabled by using :code:`gpu_hist` as :code:`tree_method` parameter.
+For example,
+::
+              "xgboost_params": {
+                "max_depth": 8,
+                "eta": 0.1,
+                "objective": "binary:logistic",
+                "eval_metric": "auc",
+                "tree_method": "gpu_hist",
+                "gpu_id": 0,
+                "nthread": 16
+              }
+
+For GPU based training, edit `job_config_gen.sh` to change `TREE_METHOD="hist"` to `TREE_METHOD="gpu_hist"`.
+Then run the `job_config_gen.sh` again to generates new job configs for GPU-based training.
+
+### Multi GPU support
+
+Multiple GPUs can be supported by running one NVFlare client for each GPU. Each client
+runs a different NVFlare app with the corresponding :code:`gpu_id` assigned.
+
+Assuming there are 2 physical client sites, each with 2 GPUs (id 0 and 1).
+We can start 4 NVFlare client processes (site-1a, site-1b, site-2a, site-2b), one for each GPU.
+The job layout looks like this,
+::
+
+    xgb_multi_gpu_job
+    ├── app_server
+    │   └── config
+    │       └── config_fed_server.json
+    ├── app_site1_gpu0
+    │   └── config
+    │       └── config_fed_client.json
+    ├── app_site1_gpu1
+    │   └── config
+    │       └── config_fed_client.json
+    ├── app_site2_gpu0
+    │   └── config
+    │       └── config_fed_client.json
+    ├── app_site2_gpu1
+    │   └── config
+    │       └── config_fed_client.json
+    └── meta.json
+
+Each app is deployed to its own client site. Here is the :code:`meta.json`,
+::
+
+    {
+      "name": "xgb_multi_gpu_job",
+      "resource_spec": {
+        "site-1a": {
+          "num_of_gpus": 1,
+          "mem_per_gpu_in_GiB": 1
+        },
+        "site-1b": {
+          "num_of_gpus": 1,
+          "mem_per_gpu_in_GiB": 1
+        },
+        "site-2a": {
+          "num_of_gpus": 1,
+          "mem_per_gpu_in_GiB": 1
+        },
+        "site-2b": {
+          "num_of_gpus": 1,
+          "mem_per_gpu_in_GiB": 1
+        }
+      },
+      "deploy_map": {
+        "app_server": [
+          "server"
+        ],
+        "app_site1_gpu0": [
+          "site-1a"
+        ],
+        "app_site1_gpu1": [
+          "site-1b"
+        ],
+        "app_site2_gpu0": [
+          "site-2a"
+        ],
+        "app_site2_gpu1": [
+          "site-2b"
+        ]
+      },
+      "min_clients": 4
+    }
+
+For federated XGBoost, all clients must participate in the training. Therefore,
+:code:`min_clients` must equal to the number of clients.
+
