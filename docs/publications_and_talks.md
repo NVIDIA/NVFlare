@@ -30,7 +30,7 @@ Recent talks covering federated learning research and NVIDIA FLARE.
 
 #### 2022
 * **2022-10** [Modern Tools for Collaborative Medical Image Analysis](https://drive.google.com/file/d/1hmlyG7g1SU8vhQ5wdTFhkqFO9Ty8BiYG/view?usp=sharing) ([Keynote - DART @ MICCAI 2022](https://sites.google.com/view/dart2022/home?authuser=0)) 
-* **2022-07** [Application of Federated Learning in Medical Image Processing - in Chinese](https://www.bilibili.com/video/BV1y14y147nc/?spm_id_from=333.337.search-card.all.click) ([VALSE Webinar](http://valser.org/article-572-1.html))
+* **2022-07** [Application of Federated Learning in Medical Image Processing](https://www.bilibili.com/video/BV1y14y147nc/?spm_id_from=333.337.search-card.all.click) ([VALSE Webinar](http://valser.org/article-572-1.html))
 * **2022-04** [Advanced Techniques for Collaborative Development of AI Models for Medical Imaging](https://rensselaer.webex.com/recordingservice/sites/rensselaer/recording/dd67440ba9f2103abaf900505681a58c/playback) ([IEEE EMBS Webinar Series](https://sites.google.com/view/ieee-biip-webinars/webinar-speakers))
 * **2022-03** [NVIDIA FLARE: Federated Learning Application Runtime Environment for Developing Robust AI Models](https://youtu.be/lLeULNI1nT8) ([SFBigAnalytics Meetup](https://www.meetup.com/sf-big-analytics/?_cookie-check=Efm7MGh7mO4YiV8A))
 * **2022-01** [Techniques for Collaborative Development of AI Models in the Age of COVID-19](https://www.youtube.com/watch?v=ymfXmyuTvlA) ([MICCAI Industrial Talk Series](https://www.youtube.com/channel/UCLSO1_i9UtDGfsaKQyqhJTQ))
