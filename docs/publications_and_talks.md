@@ -12,11 +12,11 @@ Segmentation](https://openaccess.thecvf.com/content/CVPR2022/papers/Xu_Closing_t
 * **2022-02** [Do Gradient Inversion Attacks Make Federated Learning Unsafe?](https://arxiv.org/abs/2202.06924) (Preprint)
 
 #### 2021
-* **2021-04** [Federated semi-supervised learning for COVID region segmentation in chest CT using multi-national data from China, Italy, Japan](https://www.sciencedirect.com/science/article/pii/S1361841521000384) ([Medical Image Analysis](https://www.sciencedirect.com/journal/medical-image-analysis))
 * **2021-10** [Federated whole prostate segmentation in mri with personalized neural architectures](https://arxiv.org/abs/2107.08111) ([MICCAI 2021](https://www.miccai2021.org/en/))
 * **2021-10** [Multi-task Federated Learning for Heterogeneous Pancreas Segmentation](https://arxiv.org/abs/2108.08537) ([DCL @ MICCAI 2021](https://dcl-workshop.github.io/))
 * **2021-09** [Federated learning for predicting clinical outcomes in patients with COVID-19](https://www.nature.com/articles/s41591-021-01506-3) ([Nature Medicine](https://www.nature.com/nm/))
 * **2021-06** [Federated learning improves site performance in multicenter deep learning without data sharing](https://academic.oup.com/jamia/article-abstract/28/6/1259/6127556) ([JAMIA](https://academic.oup.com/jamia))
+* **2021-05** [Federated semi-supervised learning for COVID region segmentation in chest CT using multi-national data from China, Italy, Japan](https://www.sciencedirect.com/science/article/pii/S1361841521000384) ([Medical Image Analysis](https://www.sciencedirect.com/journal/medical-image-analysis))
 * **2021-04** [Auto-FedAvg: Learnable Federated Averaging for Multi-Institutional Medical Image Segmentation](https://arxiv.org/abs/2104.10195) (Preprint)
 
 #### 2020
