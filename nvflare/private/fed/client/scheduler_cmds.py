@@ -69,7 +69,7 @@ class CheckResourceProcessor(RequestProcessor):
                 )
             except Exception:
                 result.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
-        result.set_header(ShareableHeader.CHECK_RESOURCE_RESULT, is_resource_enough)
+        result.set_header(ShareableHeader.IS_RESOURCE_ENOUGH, is_resource_enough)
         result.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
 
         return Message(topic="reply_" + req.topic, body=fobs.dumps(result))

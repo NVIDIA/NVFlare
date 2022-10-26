@@ -770,7 +770,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 else:
                     resp = fobs.loads(r.reply.body)
                     result[site_name] = (
-                        resp.get_header(ShareableHeader.CHECK_RESOURCE_RESULT, False),
+                        resp.get_header(ShareableHeader.IS_RESOURCE_ENOUGH, False),
                         resp.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, ""),
                     )
             else:
