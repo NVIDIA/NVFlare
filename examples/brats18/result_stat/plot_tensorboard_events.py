@@ -25,7 +25,7 @@ client_results_root = "../workspace_brats/"
 # All sites used the same validation set for Brats, so only 1 site's record is needed
 site_num = 1
 client_pre = "app_site-"
-sites_fl = [str(site+1) for site in range(site_num)]
+sites_fl = [str(site + 1) for site in range(site_num)]
 
 # Central vs. FedAvg vs. FedAvg_DP
 experiments = {
@@ -98,7 +98,7 @@ def main():
                 record_path = os.path.join(client_results_root + config, "simulate_job", client_pre + site, "events.*")
 
             eventfile = glob.glob(record_path, recursive=True)
-            print(record_path,len(eventfile))
+            print(record_path, len(eventfile))
             assert len(eventfile) == 1, "No unique event file found!"
             eventfile = eventfile[0]
             print("adding", eventfile)
