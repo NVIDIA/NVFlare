@@ -370,12 +370,17 @@ class ServerEngine(ServerEngineInternalSpec):
                 if child_process:
                     child_process.terminate()
         finally:
-            with self.lock:
-                if job_id in self.run_processes:
-                    self.run_processes.pop(job_id)
+            threading.Thread(target=self._remove_run_processes, args=[job_id]).start()
 
         self.engine_info.status = MachineStatus.STOPPED
         return ""
+
+    def _remove_run_processes(self, job_id):
+        # wait for the run process to gracefully terminated, and ensure to remove from run_processes.
+        time.sleep(60.0)
+        if job_id in self.run_processes:
+            with self.lock:
+                self.run_processes.pop(job_id)
 
     def check_app_start_readiness(self, job_id: str) -> str:
         if job_id not in self.run_processes.keys():
