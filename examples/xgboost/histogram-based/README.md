@@ -28,6 +28,7 @@ To run in a federated setting, follow [Real-World FL](https://nvflare.readthedoc
 start the overseer, FL servers and FL clients.
 
 You need to download the HIGGS data on each client site.
+You will also need to install the xgboost on each client site and server site.
 
 You can still generate the data splits and job configs using the scripts provided.
 
@@ -37,3 +38,14 @@ inside the `/tmp/nvflare/xgboost_higgs_dataset` folder,
 since each site might save the HIGGS dataset in different places.
 
 Then you can use admin client to submit the job via `submit_job` command.
+
+## Customization
+
+The provided XGBoost executor can be customized using Boost parameters
+provided in `xgboost_params` argument.
+
+If the parameter change alone is not sufficient and code changes are required,
+a custom executor can be implemented to make calls to xgboost library directly.
+
+The custom executor can inherit the base class `FedXGBHistogramExecutorSpec` and
+implement the `xgb_train()` and `load_data()` method.

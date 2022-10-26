@@ -34,6 +34,10 @@ class XGBFedController(Controller):
     def __init__(self, train_timeout: int = 300, port: int = None):
         """Federated XGBoost training controller for histogram-base collaboration.
 
+        It starts the XGBoost federated server and kicks off all the XGBoost job on
+        each NVFlare client. The configuration is generic for this component and
+        no modification is needed for most training jobs.
+
         Args:
             train_timeout (int, optional): Time to wait for clients to do local training in seconds.
             port (int, optional): the port to open XGBoost FL server
