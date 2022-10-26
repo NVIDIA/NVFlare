@@ -254,36 +254,11 @@ class GetErrorsCommand(CommandProcessor):
         return errors
 
 
-class ByeCommand(CommandProcessor):
-    """To implement the ShutdownCommand."""
-
-    def get_command_name(self) -> str:
-        """To get the command name.
-
-        Returns: AdminCommandNames.SHUTDOWN
-
-        """
-        return AdminCommandNames.SHUTDOWN
-
-    def process(self, data: Shareable, fl_ctx: FLContext):
-        """Called to process the Shutdown command.
-
-        Args:
-            data: process data
-            fl_ctx: FLContext
-
-        Returns: Shutdown command message
-
-        """
-        return None
-
-
 class ServerCommands(object):
     """AdminCommands contains all the commands for processing the commands from the parent process."""
 
     commands: List[CommandProcessor] = [
         AbortCommand(),
-        ByeCommand(),
         GetRunInfoCommand(),
         GetTaskCommand(),
         SubmitUpdateCommand(),
