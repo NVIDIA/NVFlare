@@ -10,7 +10,7 @@ Follow the [Installation](https://nvidia.github.io/NVFlare/installation.html) in
 Install additional requirements:
 
 ```
-pip3 install torch
+pip3 install torch torchvision
 ```
 
 ### 2. Set up your FL workspace

@@ -109,6 +109,7 @@ class AppConstants(object):
 
     TASK_END_RUN = "_end_run_"
     TASK_TRAIN = "train"
+    TASK_GET_WEIGHTS = "get_weights"
 
     DEFAULT_AGGREGATOR_ID = "aggregator"
     DEFAULT_PERSISTOR_ID = "persistor"

@@ -18,6 +18,9 @@ import pickle
 
 
 class Learnable(dict):
+    def is_empty(self):
+        return False
+
     def to_bytes(self) -> bytes:
         """Method to serialize the Learnable object into bytes.
 
