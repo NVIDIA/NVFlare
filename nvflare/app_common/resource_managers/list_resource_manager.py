@@ -55,16 +55,16 @@ class ListResourceManager(AutoCleanResourceManager):
                 self.resources[k].appendleft(i)
 
     def _check_required_resource_available(self, resource_requirement: dict) -> bool:
-        check_result = True
+        is_resource_enough = True
         for k in resource_requirement:
             if k in self.resources:
                 if len(self.resources[k]) < resource_requirement[k]:
-                    check_result = False
+                    is_resource_enough = False
                     break
             else:
-                check_result = False
+                is_resource_enough = False
                 break
-        return check_result
+        return is_resource_enough
 
     def _reserve_resource(self, resource_requirement: dict) -> dict:
         reserved_resources = {}
