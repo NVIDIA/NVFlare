@@ -29,10 +29,7 @@ client_results_root = "/tmp/nvflare/sim_cifar10"
 # download_dir = "./workspaces/poc_workspace/admin/transfer"
 
 # 4.1 Central vs. FedAvg
-experiments = {
-    "central": {"tag": "val_acc_local_model"},
-    "fedavg": {"tag": "val_acc_global_model", "alpha": 1.0}
-}
+experiments = {"central": {"tag": "val_acc_local_model"}, "fedavg": {"tag": "val_acc_global_model", "alpha": 1.0}}
 
 # # 4.2 Impact of client data heterogeneity
 # experiments = {"fedavg (alpha=1.0)": {"tag": "val_acc_global_model", "alpha": 1.0},
@@ -95,14 +92,18 @@ def main():
         alpha = exp.get("alpha", None)
         if alpha:
             config_name = config_name + f"*alpha{alpha}"
-        eventfile = glob.glob(os.path.join(client_results_root, config_name, "**", "app_site-1", "events.*"), recursive=True)
+        eventfile = glob.glob(
+            os.path.join(client_results_root, config_name, "**", "app_site-1", "events.*"), recursive=True
+        )
         assert len(eventfile) == 1, f"No unique event file found in {os.path.join(client_results_root, config_name)}!"
         eventfile = eventfile[0]
         print("adding", eventfile)
         add_eventdata(data, config, eventfile, tag=exp["tag"])
 
         if add_cross_site_val:
-            xsite_file = glob.glob(os.path.join(client_results_root, config_name, "**", "cross_val_results.json"), recursive=True)
+            xsite_file = glob.glob(
+                os.path.join(client_results_root, config_name, "**", "cross_val_results.json"), recursive=True
+            )
             assert len(xsite_file) == 1, "No unique x-site file found!"
             with open(xsite_file[0], "r") as f:
                 xsite_results = json.load(f)
