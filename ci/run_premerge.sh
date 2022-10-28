@@ -72,11 +72,11 @@ integration_test() {
     init_pipenv requirements-dev.txt
     add_dns_entries
     testFolder="tests/integration_test"
-    rm -rf /tmp/snapshot-storage
+    rm -rf /tmp/nvflare*
     pushd ${testFolder}
     pipenv run ./run_integration_tests.sh -m numpy
     popd
-    rm -rf /tmp/snapshot-storage
+    rm -rf /tmp/nvflare*
     remove_dns_entries
     remove_pipenv
 }
