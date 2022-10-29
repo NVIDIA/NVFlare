@@ -13,6 +13,8 @@
 # limitations under the License.
 
 import threading
+import time
+
 from typing import Dict, List, Optional, Tuple
 
 from nvflare.apis.event_type import EventType
@@ -30,17 +32,23 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
     def __init__(
         self,
         max_jobs: int=1,
-        max_schedule_count: int=5
+        max_schedule_count: int=10,
+        min_schedule_interval: float=10.0,
+        max_schedule_interval: float = 600.0,
     ):
         """
         Create a DefaultJobScheduler
         Args:
             max_jobs: max number of concurrent jobs allowed
             max_schedule_count: max number of times to try to schedule a job
+            min_schedule_interval: min interval between two schedules
+            max_schedule_interval: max interval between two schedules
         """
         super().__init__()
         self.max_jobs = max_jobs
         self.max_schedule_count = max_schedule_count
+        self.min_schedule_interval = min_schedule_interval
+        self.max_schedule_interval = max_schedule_interval
         self.scheduled_jobs = []
         self.lock = threading.Lock()
 
@@ -245,9 +253,19 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
                 blocked_jobs.append(job)
                 continue
 
+            if schedule_count < 0:
+                schedule_count = 0
+
+            last_schedule_time = job.meta.get(JobMetaKey.LAST_SCHEDULE_TIME.value, 0.0)
+            time_since_last_schedule = time.time() - last_schedule_time
+            n = 0 if schedule_count == 0 else schedule_count - 1
+            required_interval = min(self.max_schedule_interval, (2 ** n) * self.min_schedule_interval)
+            if time_since_last_schedule < required_interval:
+                # do not schedule again too soon
+                continue
+
             with engine.new_context() as ctx:
                 ok, sites_dispatch_info = self._try_job(job, ctx)
-                job.meta[JobMetaKey.SCHEDULE_COUNT.value] = schedule_count+1
                 self.log_debug(ctx, f"Try to schedule job {job.job_id}, get result: {ok}, {sites_dispatch_info}.")
                 if ok:
                     return job, sites_dispatch_info, failed_jobs, blocked_jobs

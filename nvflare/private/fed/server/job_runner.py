@@ -336,9 +336,11 @@ class JobRunner(FLComponent):
                         # set the try count
                         for job in failed_jobs:
                             schedule_count = job.meta.get(JobMetaKey.SCHEDULE_COUNT.value, 0)
+                            schedule_count += 1
                             job_manager.update_meta(
                                 job.job_id,
-                                {JobMetaKey.SCHEDULE_COUNT.value: schedule_count},
+                                {JobMetaKey.SCHEDULE_COUNT.value: schedule_count,
+                                 JobMetaKey.LAST_SCHEDULE_TIME.value: time.time()},
                                 fl_ctx)
 
                     if blocked_jobs:
@@ -348,12 +350,6 @@ class JobRunner(FLComponent):
                                                    fl_ctx)
 
                     if ready_job:
-                        schedule_count = ready_job.meta.get(JobMetaKey.SCHEDULE_COUNT.value, 0)
-                        job_manager.update_meta(
-                            ready_job.job_id,
-                            {JobMetaKey.SCHEDULE_COUNT.value: schedule_count},
-                            fl_ctx)
-
                         with self.lock:
                             client_sites = {k: v for k, v in sites.items() if k != "server"}
                             job_id = None
