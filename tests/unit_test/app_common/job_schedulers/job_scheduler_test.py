@@ -120,7 +120,10 @@ class MockServerEngine(ServerEngineSpec):
     def start_client_job(self, job_id, client_sites):
         pass
 
-    def check_client_resources(self, resource_reqs: Dict[str, dict]) -> Dict[str, Tuple[bool, Optional[str]]]:
+    def check_client_resources(
+            self,
+            job_id: str,
+            resource_reqs: Dict[str, dict]) -> Dict[str, Tuple[bool, Optional[str]]]:
         result = {}
         with self.new_context() as fl_ctx:
             for site_name, requirements in resource_reqs.items():
@@ -313,7 +316,7 @@ class TestDefaultJobScheduler:
             min_sites=1,
         )
         with servers[0].new_context() as fl_ctx:
-            job, dispatch_info = scheduler.schedule_job(job_candidates=[candidate], fl_ctx=fl_ctx)
+            job, dispatch_info, _, _ = scheduler.schedule_job(job_candidates=[candidate], fl_ctx=fl_ctx)
         assert job is None
 
     def test_missing_deploy_map(self, setup_and_teardown):
@@ -328,7 +331,7 @@ class TestDefaultJobScheduler:
             RuntimeError, match=re.escape("Job (test_job) does not have deploy_map, can't be scheduled.")
         ):
             with servers[0].new_context() as fl_ctx:
-                _, _ = scheduler.schedule_job(job_candidates=[candidate], fl_ctx=fl_ctx)
+                _, _, _, _ = scheduler.schedule_job(job_candidates=[candidate], fl_ctx=fl_ctx)
 
     def test_less_active_than_min(self, setup_and_teardown):
         servers, scheduler, num_sites = setup_and_teardown
@@ -339,7 +342,7 @@ class TestDefaultJobScheduler:
             min_sites=num_sites + 1,
         )
         with servers[0].new_context() as fl_ctx:
-            job, dispatch_info = scheduler.schedule_job(job_candidates=[candidate], fl_ctx=fl_ctx)
+            job, dispatch_info, _, _ = scheduler.schedule_job(job_candidates=[candidate], fl_ctx=fl_ctx)
         assert job is None
 
     def test_require_sites_not_active(self, setup_and_teardown):
@@ -352,7 +355,7 @@ class TestDefaultJobScheduler:
             required_sites=[f"site{num_sites}"],
         )
         with servers[0].new_context() as fl_ctx:
-            job, dispatch_info = scheduler.schedule_job(job_candidates=[candidate], fl_ctx=fl_ctx)
+            job, dispatch_info, _, _ = scheduler.schedule_job(job_candidates=[candidate], fl_ctx=fl_ctx)
         assert job is None
 
     def test_require_sites_not_enough_resource(self, setup_and_teardown):
@@ -365,7 +368,7 @@ class TestDefaultJobScheduler:
             required_sites=["site2"],
         )
         with servers[0].new_context() as fl_ctx:
-            job, dispatch_info = scheduler.schedule_job(job_candidates=[candidate], fl_ctx=fl_ctx)
+            job, dispatch_info, _, _ = scheduler.schedule_job(job_candidates=[candidate], fl_ctx=fl_ctx)
         assert job is None
 
     def test_not_enough_sites_has_enough_resource(self, setup_and_teardown):
@@ -378,7 +381,7 @@ class TestDefaultJobScheduler:
             required_sites=[],
         )
         with servers[0].new_context() as fl_ctx:
-            job, dispatch_info = scheduler.schedule_job(job_candidates=[candidate], fl_ctx=fl_ctx)
+            job, dispatch_info, _, _ = scheduler.schedule_job(job_candidates=[candidate], fl_ctx=fl_ctx)
         assert job is None
 
     @pytest.mark.parametrize("job_candidates,sites,expected_job,expected_dispatch_info", TEST_CASES)
@@ -386,7 +389,7 @@ class TestDefaultJobScheduler:
         servers = create_servers(server_num=1, sites=sites)
         scheduler = DefaultJobScheduler(max_jobs=10)
         with servers[0].new_context() as fl_ctx:
-            job, dispatch_info = scheduler.schedule_job(job_candidates=job_candidates, fl_ctx=fl_ctx)
+            job, dispatch_info, _, _ = scheduler.schedule_job(job_candidates=job_candidates, fl_ctx=fl_ctx)
         assert job == expected_job
         assert dispatch_info == expected_dispatch_info
 
@@ -430,7 +433,7 @@ class TestDefaultJobScheduler:
         results = []
         for i in range(10):
             with servers[0].new_context() as fl_ctx:
-                job, dispatch_infos = scheduler.schedule_job(job_candidates=submitted_jobs, fl_ctx=fl_ctx)
+                job, dispatch_infos, _, _ = scheduler.schedule_job(job_candidates=submitted_jobs, fl_ctx=fl_ctx)
                 if job:
                     submitted_jobs.remove(job)
                     results.append(job)

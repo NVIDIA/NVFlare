@@ -326,9 +326,34 @@ class JobRunner(FLComponent):
             while not self.ask_to_stop:
                 # approved_jobs = job_manager.get_jobs_by_status(RunStatus.APPROVED, fl_ctx)
                 approved_jobs = job_manager.get_jobs_by_status(RunStatus.SUBMITTED, fl_ctx)
+
                 if self.scheduler:
-                    (ready_job, sites) = self.scheduler.schedule_job(job_candidates=approved_jobs, fl_ctx=fl_ctx)
+                    ready_job, sites, failed_jobs, blocked_jobs = self.scheduler.schedule_job(
+                        job_candidates=approved_jobs,
+                        fl_ctx=fl_ctx)
+
+                    if failed_jobs:
+                        # set the try count
+                        for job in failed_jobs:
+                            schedule_count = job.meta.get(JobMetaKey.SCHEDULE_COUNT.value, 0)
+                            job_manager.update_meta(
+                                job.job_id,
+                                {JobMetaKey.SCHEDULE_COUNT.value: schedule_count},
+                                fl_ctx)
+
+                    if blocked_jobs:
+                        for job in blocked_jobs:
+                            job_manager.set_status(job.job_id,
+                                                   RunStatus.FINISHED_CANT_SCHEDULE,
+                                                   fl_ctx)
+
                     if ready_job:
+                        schedule_count = ready_job.meta.get(JobMetaKey.SCHEDULE_COUNT.value, 0)
+                        job_manager.update_meta(
+                            ready_job.job_id,
+                            {JobMetaKey.SCHEDULE_COUNT.value: schedule_count},
+                            fl_ctx)
+
                         with self.lock:
                             client_sites = {k: v for k, v in sites.items() if k != "server"}
                             job_id = None

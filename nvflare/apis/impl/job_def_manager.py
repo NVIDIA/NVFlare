@@ -96,10 +96,11 @@ class SimpleJobDefManager(JobDefManagerSpec):
         # validate meta to make sure it has:
 
         jid = str(uuid.uuid4())
+        now = time.time()
         meta[JobMetaKey.JOB_ID.value] = jid
-        meta[JobMetaKey.SUBMIT_TIME.value] = time.time()
+        meta[JobMetaKey.SUBMIT_TIME.value] = now
         meta[JobMetaKey.SUBMIT_TIME_ISO.value] = (
-            datetime.datetime.fromtimestamp(meta[JobMetaKey.SUBMIT_TIME]).astimezone().isoformat()
+            datetime.datetime.fromtimestamp(now).astimezone().isoformat()
         )
         meta[JobMetaKey.START_TIME.value] = ""
         meta[JobMetaKey.DURATION.value] = "N/A"
@@ -201,10 +202,12 @@ class SimpleJobDefManager(JobDefManagerSpec):
             RunStatus.FINISHED_ABORTED.value,
             RunStatus.FINISHED_COMPLETED.value,
             RunStatus.FINISHED_EXECUTION_EXCEPTION.value,
+            RunStatus.FINISHED_CANT_SCHEDULE.value,
         ]:
             job_meta = store.get_meta(self.job_uri(jid))
             if job_meta[JobMetaKey.START_TIME.value]:
-                start_time = datetime.datetime.strptime(job_meta.get(JobMetaKey.START_TIME), "%Y-%m-%d %H:%M:%S.%f")
+                start_time = datetime.datetime.strptime(
+                    job_meta.get(JobMetaKey.START_TIME.value), "%Y-%m-%d %H:%M:%S.%f")
                 meta[JobMetaKey.DURATION.value] = str(datetime.datetime.now() - start_time)
         store.update_meta(uri=self.job_uri(jid), meta=meta, replace=False)
 

@@ -29,14 +29,26 @@ SERVER_SITE_NAME = "server"
 class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
     def __init__(
         self,
-        max_jobs: int = 1,
+        max_jobs: int=1,
+        max_schedule_count: int=5
     ):
+        """
+        Create a DefaultJobScheduler
+        Args:
+            max_jobs: max number of concurrent jobs allowed
+            max_schedule_count: max number of times to try to schedule a job
+        """
         super().__init__()
         self.max_jobs = max_jobs
+        self.max_schedule_count = max_schedule_count
         self.scheduled_jobs = []
         self.lock = threading.Lock()
 
-    def _check_client_resources(self, resource_reqs: Dict[str, dict], fl_ctx: FLContext) -> Dict[str, Tuple[bool, str]]:
+    def _check_client_resources(
+            self,
+            job_id: str,
+            resource_reqs: Dict[str, dict],
+            fl_ctx: FLContext) -> Dict[str, Tuple[bool, str]]:
         """Checks resources on each site.
 
         Args:
@@ -52,7 +64,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         if not isinstance(engine, ServerEngineSpec):
             raise RuntimeError(f"engine inside fl_ctx should be of type ServerEngineSpec, but got {type(engine)}.")
 
-        result = engine.check_client_resources(resource_reqs)
+        result = engine.check_client_resources(job_id, resource_reqs)
         self.log_debug(fl_ctx, f"check client resources result: {result}")
 
         return result
@@ -76,13 +88,13 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         self.log_debug(fl_ctx, f"cancel client resources using check results: {resource_check_results}")
         return False, None
 
-    def _try_job(self, job: Job, fl_ctx) -> (bool, Optional[Dict[str, DispatchInfo]]):
+    def _try_job(self, job: Job, fl_ctx: FLContext) -> (bool, Optional[Dict[str, DispatchInfo]]):
         engine = fl_ctx.get_engine()
         online_clients = engine.get_clients()
         online_site_names = [x.name for x in online_clients]
 
         if not job.deploy_map:
-            raise RuntimeError(f"Job ({job.job_id}) does not have deploy_map, can't be scheduled.")
+            raise RuntimeError(f"Job '{job.job_id}' does not have deploy_map, can't be scheduled.")
 
         applicable_sites = []
         sites_to_app = {}
@@ -122,7 +134,25 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
                 resource_reqs[site_name] = job.resource_spec[site_name]
             else:
                 resource_reqs[site_name] = {}
-        resource_check_results = self._check_client_resources(resource_reqs=resource_reqs, fl_ctx=fl_ctx)
+
+        job_participants = [fl_ctx.get_identity_name(default="server")]
+        job_participants.extend(applicable_sites)
+
+        fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id, private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.CLIENT_RESOURCE_SPECS, resource_reqs, private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.JOB_PARTICIPANTS, job_participants, private=True, sticky=False)
+        self.fire_event(EventType.BEFORE_CHECK_CLIENT_RESOURCES, fl_ctx)
+
+        block_reason = fl_ctx.get_prop(FLContextKey.JOB_BLOCK_REASON)
+        if block_reason:
+            # cannot schedule this job
+            self.log_info(fl_ctx, f"Job {job.job_id} can't be scheduled: {block_reason}")
+            return False, None
+
+        resource_check_results = self._check_client_resources(
+            job_id=job.job_id,
+            resource_reqs=resource_reqs,
+            fl_ctx=fl_ctx)
 
         if not resource_check_results:
             self.log_debug(fl_ctx, f"Job {job.job_id} can't be scheduled: resource check results is None or empty.")
@@ -192,18 +222,37 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
 
     def schedule_job(
         self, job_candidates: List[Job], fl_ctx: FLContext
-    ) -> (Optional[Job], Optional[Dict[str, DispatchInfo]]):
+    ) -> (Optional[Job], Optional[Dict[str, DispatchInfo]], Optional[List[Job]], Optional[List[Job]]):
         self.log_debug(fl_ctx, f"Current scheduled_jobs is {self.scheduled_jobs}")
         if self._exceed_max_jobs(fl_ctx=fl_ctx):
-            return None, None
+            self.log_debug(
+                fl_ctx,
+                f"skipped scheduling since there are {self.max_jobs} concurrent job(s) already")
+            return None, None, None, None
 
         # sort by submitted time
-        job_candidates.sort(key=lambda j: j.meta.get(JobMetaKey.SUBMIT_TIME, 0.0))
+        job_candidates.sort(key=lambda j: j.meta.get(JobMetaKey.SUBMIT_TIME.value, 0.0))
+        engine = fl_ctx.get_engine()
+        failed_jobs = []
+        blocked_jobs = []
 
         for job in job_candidates:
-            ok, sites_dispatch_info = self._try_job(job, fl_ctx)
-            self.log_debug(fl_ctx, f"Try to schedule job {job.job_id}, get result: {ok}, {sites_dispatch_info}.")
-            if ok:
-                return job, sites_dispatch_info
+            schedule_count = job.meta.get(JobMetaKey.SCHEDULE_COUNT.value, 0)
+            if schedule_count >= self.max_schedule_count:
+                self.log_info(
+                    fl_ctx,
+                    f"skipped job {job.job_id} since it exceeded max schedule count {self.max_schedule_count}")
+                blocked_jobs.append(job)
+                continue
+
+            with engine.new_context() as ctx:
+                ok, sites_dispatch_info = self._try_job(job, ctx)
+                job.meta[JobMetaKey.SCHEDULE_COUNT.value] = schedule_count+1
+                self.log_debug(ctx, f"Try to schedule job {job.job_id}, get result: {ok}, {sites_dispatch_info}.")
+                if ok:
+                    return job, sites_dispatch_info, failed_jobs, blocked_jobs
+                else:
+                    failed_jobs.append(job)
+
         self.log_debug(fl_ctx, "No job is scheduled.")
-        return None, None
+        return None, None, failed_jobs, blocked_jobs
