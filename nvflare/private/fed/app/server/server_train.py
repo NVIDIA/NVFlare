@@ -18,6 +18,7 @@ import argparse
 import logging
 import os
 import sys
+import time
 
 from nvflare.apis.fl_constant import JobConstants, SiteType, WorkspaceConstants
 from nvflare.apis.workspace import Workspace
@@ -31,11 +32,10 @@ from nvflare.private.fed.server.fed_server import FederatedServer
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize, security_init
 from nvflare.private.privacy_manager import PrivacyService
 from nvflare.security.logging import secure_format_exception
+from nvflare.private.fed.server.server_status import ServerStatus
 
 
 def main():
-    if sys.version_info >= (3, 9):
-        raise RuntimeError("Python versions 3.9 and above are not yet supported. Please use Python 3.8 or 3.7.")
     if sys.version_info < (3, 7):
         raise RuntimeError("Python versions 3.6 and below are not supported. Please use Python 3.8 or 3.7.")
     parser = argparse.ArgumentParser()
@@ -125,10 +125,16 @@ def main():
             )
             admin_server.start()
             services.set_admin_server(admin_server)
+
         finally:
             deployer.close()
 
         logger.info("Server started")
+
+        while services.status != ServerStatus.SHUTDOWN:
+            time.sleep(1.0)
+
+        services.engine.executor.shutdown()
 
     except ConfigError as e:
         logger.exception(f"ConfigError: {secure_format_exception(e)}")

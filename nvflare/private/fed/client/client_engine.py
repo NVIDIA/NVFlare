@@ -18,6 +18,7 @@ import re
 import shutil
 import sys
 import time
+import threading
 from concurrent.futures import ThreadPoolExecutor
 
 from nvflare.apis.event_type import EventType
@@ -219,7 +220,9 @@ class ClientEngine(ClientEngineInternalSpec):
         touch_file = os.path.join(self.args.workspace, "shutdown.fl")
         self.fire_event(EventType.SYSTEM_END, self.new_context())
 
-        _ = self.executor.submit(lambda p: _shutdown_client(*p), [self.client, self.admin_agent, touch_file])
+        # _ = self.executor.submit(lambda p: _shutdown_client(*p), [self.client, self.admin_agent, touch_file])
+        thread = threading.Thread(target=_shutdown_client, args=(self.client, self.admin_agent, touch_file))
+        thread.start()
 
         self.executor.shutdown()
         return "Shutdown the client..."
@@ -228,7 +231,9 @@ class ClientEngine(ClientEngineInternalSpec):
         self.logger.info("Client shutdown...")
         touch_file = os.path.join(self.args.workspace, "restart.fl")
         self.fire_event(EventType.SYSTEM_END, self.new_context())
-        _ = self.executor.submit(lambda p: _shutdown_client(*p), [self.client, self.admin_agent, touch_file])
+        # _ = self.executor.submit(lambda p: _shutdown_client(*p), [self.client, self.admin_agent, touch_file])
+        thread = threading.Thread(target=_shutdown_client, args=(self.client, self.admin_agent, touch_file))
+        thread.start()
 
         self.executor.shutdown()
         return "Restart the client..."

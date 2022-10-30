@@ -214,3 +214,7 @@ class LoginModule(CommandModule, CommandFilter):
                 )
             )
             return False
+
+    def close(self):
+        self.session_mgr.shutdown()
+
