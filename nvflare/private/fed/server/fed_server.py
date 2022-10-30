@@ -845,8 +845,6 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         """Shutdown the server."""
         self.logger.info("shutting down server")
         self.shutdown = True
-        if self.engine:
-            self.engine.close()
         if self.overseer_agent:
             self.overseer_agent.end()
         return super().close()

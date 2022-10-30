@@ -823,8 +823,7 @@ class ServerEngine(ServerEngineInternalSpec):
         self.job_runner.stop_all_runs(fl_ctx)
 
     def close(self):
-        # self.executor.shutdown()
-        pass
+        self.executor.shutdown()
 
 
 def server_shutdown(server, touch_file):

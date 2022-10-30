@@ -17,8 +17,8 @@ import os
 import re
 import shutil
 import sys
-import time
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 from nvflare.apis.event_type import EventType
