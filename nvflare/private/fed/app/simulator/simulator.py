@@ -52,7 +52,7 @@ if __name__ == "__main__":
     """
 
     if sys.version_info < (3, 7):
-        raise RuntimeError("Python versions 3.6 and below are not supported. Please use Python 3.8 or 3.7.")
+        raise RuntimeError("Please use Python 3.7 or above.")
 
     parser = argparse.ArgumentParser()
     define_simulator_parser(parser)
