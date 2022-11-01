@@ -80,7 +80,6 @@ class ClientEngine(ClientEngineInternalSpec):
 
         if workers < 1:
             raise ValueError("workers must >= 1")
-        self.executor = ThreadPoolExecutor(max_workers=workers)
         self.logger = logging.getLogger(self.__class__.__name__)
         self.fl_components = [x for x in self.client.components.values() if isinstance(x, FLComponent)]
 
@@ -89,12 +88,6 @@ class ClientEngine(ClientEngineInternalSpec):
 
     def set_agent(self, admin_agent):
         self.admin_agent = admin_agent
-
-    def do_validate(self, req: Message):
-        self.logger.info("starting cross site validation.")
-        _ = self.executor.submit(lambda p: _do_validate(*p), [self.sender, req])
-
-        return "validate process started."
 
     def new_context(self) -> FLContext:
         return self.fl_ctx_mgr.new_context()
@@ -220,22 +213,18 @@ class ClientEngine(ClientEngineInternalSpec):
         touch_file = os.path.join(self.args.workspace, "shutdown.fl")
         self.fire_event(EventType.SYSTEM_END, self.new_context())
 
-        # _ = self.executor.submit(lambda p: _shutdown_client(*p), [self.client, self.admin_agent, touch_file])
         thread = threading.Thread(target=_shutdown_client, args=(self.client, self.admin_agent, touch_file))
         thread.start()
 
-        self.executor.shutdown()
         return "Shutdown the client..."
 
     def restart(self) -> str:
         self.logger.info("Client shutdown...")
         touch_file = os.path.join(self.args.workspace, "restart.fl")
         self.fire_event(EventType.SYSTEM_END, self.new_context())
-        # _ = self.executor.submit(lambda p: _shutdown_client(*p), [self.client, self.admin_agent, touch_file])
         thread = threading.Thread(target=_shutdown_client, args=(self.client, self.admin_agent, touch_file))
         thread.start()
 
-        self.executor.shutdown()
         return "Restart the client..."
 
     def deploy_app(self, app_name: str, job_id: str, job_meta: dict, client_name: str, app_data) -> str:
@@ -270,15 +259,6 @@ class ClientEngine(ClientEngineInternalSpec):
 
     def get_all_job_ids(self):
         return self.client_executor.get_run_processes_keys()
-
-
-def _do_validate(sender, message):
-    print("starting the validate process .....")
-    time.sleep(60)
-    print("Generating processing result ......")
-    reply = Message(topic=message.topic, body="")
-    sender.send_result(reply)
-    pass
 
 
 def _shutdown_client(federated_client, admin_agent, touch_file):
