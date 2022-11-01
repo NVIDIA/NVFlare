@@ -66,6 +66,7 @@ class JobMetaKey(str, Enum):
     SCOPE = "scope"
     CLONED_FROM = "cloned_from"
     LAST_SCHEDULE_TIME = "last_schedule_time"
+    SCHEDULE_HISTORY = "schedule_history"
 
     def __repr__(self):
         return self.value

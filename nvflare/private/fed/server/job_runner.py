@@ -328,26 +328,9 @@ class JobRunner(FLComponent):
                 approved_jobs = job_manager.get_jobs_by_status(RunStatus.SUBMITTED, fl_ctx)
 
                 if self.scheduler:
-                    ready_job, sites, failed_jobs, blocked_jobs = self.scheduler.schedule_job(
+                    ready_job, sites = self.scheduler.schedule_job(
                         job_candidates=approved_jobs,
                         fl_ctx=fl_ctx)
-
-                    if failed_jobs:
-                        # set the try count
-                        for job in failed_jobs:
-                            schedule_count = job.meta.get(JobMetaKey.SCHEDULE_COUNT.value, 0)
-                            schedule_count += 1
-                            job_manager.update_meta(
-                                job.job_id,
-                                {JobMetaKey.SCHEDULE_COUNT.value: schedule_count,
-                                 JobMetaKey.LAST_SCHEDULE_TIME.value: time.time()},
-                                fl_ctx)
-
-                    if blocked_jobs:
-                        for job in blocked_jobs:
-                            job_manager.set_status(job.job_id,
-                                                   RunStatus.FINISHED_CANT_SCHEDULE,
-                                                   fl_ctx)
 
                     if ready_job:
                         with self.lock:

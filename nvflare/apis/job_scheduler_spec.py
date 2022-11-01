@@ -42,7 +42,7 @@ class JobSchedulerSpec(ABC):
     @abstractmethod
     def schedule_job(
         self, job_candidates: List[Job], fl_ctx: FLContext
-    ) -> (Optional[Job], Optional[Dict[str, DispatchInfo]], Optional[List[Job]], Optional[List[Job]]):
+    ) -> (Optional[Job], Optional[Dict[str, DispatchInfo]]):
         """Try to schedule a Job.
 
         Args:
@@ -53,7 +53,5 @@ class JobSchedulerSpec(ABC):
             A tuple of (job, sites_dispatch_info, failed_jobs, blocked_jobs):
             job is the Job that satisfies the criteria of the scheduler.
             sites_dispatch_info is dict of {site name: DispatchInfo} for the job.
-            failed_jobs is the list of jobs that failed to be scheduled.
-            blocked_jobs is the list of jobs to be blocked from further scheduling
         """
         pass
