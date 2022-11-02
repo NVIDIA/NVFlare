@@ -28,7 +28,6 @@ from .training_cmds import (  # StartClientMGpuProcessor,; SetRunNumberProcessor
     ShutdownClientProcessor,
     StartAppProcessor,
 )
-from .validation_cmd import ValidateRequestProcessor
 
 
 class ClientRequestProcessors:
@@ -39,7 +38,6 @@ class ClientRequestProcessors:
         AbortAppProcessor(),
         ShutdownClientProcessor(),
         DeployProcessor(),
-        ValidateRequestProcessor(),
         ShellCommandProcessor(),
         DeleteRunNumberProcessor(),
         SysInfoProcessor(),

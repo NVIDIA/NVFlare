@@ -176,8 +176,12 @@ class ServerEngine(ServerEngineInternalSpec):
             except BaseException:
                 # The parent process can not be reached. Terminate the child process.
                 break
-        # delay some time for the wrap up process before the child process self terminate.
-        time.sleep(30)
+        # wait and delay some time for the wrap up process before the child process self terminate.
+        start_time = time.time()
+        while self.engine_info.status != MachineStatus.STOPPED:
+            time.sleep(1.0)
+            if time.time() - start_time > 30.0:
+                break
         os.killpg(os.getpgid(os.getpid()), 9)
 
     def delete_job_id(self, num):
@@ -396,8 +400,8 @@ class ServerEngine(ServerEngineInternalSpec):
 
         touch_file = os.path.join(self.args.workspace, "shutdown.fl")
         _ = self.executor.submit(lambda p: server_shutdown(*p), [self.server, touch_file])
-        while self.server.status != ServerStatus.SHUTDOWN:
-            time.sleep(1.0)
+        # while self.server.status != ServerStatus.SHUTDOWN:
+        #     time.sleep(1.0)
         return ""
 
     def restart_server(self) -> str:
@@ -409,8 +413,8 @@ class ServerEngine(ServerEngineInternalSpec):
 
         touch_file = os.path.join(self.args.workspace, "restart.fl")
         _ = self.executor.submit(lambda p: server_shutdown(*p), [self.server, touch_file])
-        while self.server.status != ServerStatus.SHUTDOWN:
-            time.sleep(1.0)
+        # while self.server.status != ServerStatus.SHUTDOWN:
+        #     time.sleep(1.0)
         return ""
 
     def get_widget(self, widget_id: str) -> Widget:
@@ -831,6 +835,6 @@ def server_shutdown(server, touch_file):
         server.admin_server.stop()
         time.sleep(3.0)
     finally:
-        server.status = ServerStatus.SHUTDOWN
         security_close()
+        server.status = ServerStatus.SHUTDOWN
         sys.exit(2)
