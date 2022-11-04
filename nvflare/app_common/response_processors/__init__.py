@@ -11,34 +11,3 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-# from __future__ import annotations
-
-import pickle
-
-
-class Learnable(dict):
-    def is_empty(self):
-        return False
-
-    def to_bytes(self) -> bytes:
-        """Method to serialize the Learnable object into bytes.
-
-        Returns:
-            object serialized in bytes.
-
-        """
-        return pickle.dumps(self)
-
-    @classmethod
-    def from_bytes(cls, data: bytes):
-        """Method to convert the object bytes into Learnable object.
-
-        Args:
-            data: a bytes object
-
-        Returns:
-            an object loaded by pickle from data
-
-        """
-        return pickle.loads(data)

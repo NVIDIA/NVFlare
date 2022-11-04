@@ -19,12 +19,20 @@ Model Learnable is a dict that contains two items: weights and meta info
 """
 from nvflare.apis.dxo import DXO, DataKind
 
-from .learnable import Learnable as ModelLearnable
+from .learnable import Learnable
 
 
 class ModelLearnableKey(object):
     WEIGHTS = "weights"
     META = "meta"
+
+
+class ModelLearnable(Learnable):
+    def is_empty(self):
+        if self.get(ModelLearnableKey.WEIGHTS):
+            return False
+        else:
+            return True
 
 
 def validate_model_learnable(model_learnable: ModelLearnable) -> str:
