@@ -43,6 +43,7 @@ class Cifar10Trainer(Executor):
         train_task_name=AppConstants.TASK_TRAIN,
         submit_model_task_name=AppConstants.TASK_SUBMIT_MODEL,
         exclude_vars=None,
+        pre_train_task_name=AppConstants.TASK_GET_WEIGHTS,
     ):
         """Cifar10 Trainer handles train and submit_model tasks. During train_task, it trains a
         simple network on CIFAR10 dataset. For submit_model task, it sends the locally trained model
@@ -54,12 +55,14 @@ class Cifar10Trainer(Executor):
             train_task_name (str, optional): Task name for train task. Defaults to "train".
             submit_model_task_name (str, optional): Task name for submit model. Defaults to "submit_model".
             exclude_vars (list): List of variables to exclude during model loading.
+            pre_train_task_name: Task name for pre train task, i.e., sending initial model weights.
         """
         super().__init__()
 
         self._lr = lr
         self._epochs = epochs
         self._train_task_name = train_task_name
+        self._pre_train_task_name = pre_train_task_name
         self._submit_model_task_name = submit_model_task_name
         self._exclude_vars = exclude_vars
 
@@ -91,7 +94,10 @@ class Cifar10Trainer(Executor):
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         try:
-            if task_name == self._train_task_name:
+            if task_name == self._pre_train_task_name:
+                # Get the new state dict and send as weights
+                return self._get_model_weights()
+            elif task_name == self._train_task_name:
                 # Get model weights
                 try:
                     dxo = from_shareable(shareable)
@@ -117,15 +123,7 @@ class Cifar10Trainer(Executor):
                 self._save_local_model(fl_ctx)
 
                 # Get the new state dict and send as weights
-                new_weights = self.model.state_dict()
-                new_weights = {k: v.cpu().numpy() for k, v in new_weights.items()}
-
-                outgoing_dxo = DXO(
-                    data_kind=DataKind.WEIGHTS,
-                    data=new_weights,
-                    meta={MetaKey.NUM_STEPS_CURRENT_ROUND: self._n_iterations},
-                )
-                return outgoing_dxo.to_shareable()
+                return self._get_model_weights()
             elif task_name == self._submit_model_task_name:
                 # Load local model
                 ml = self._load_local_model(fl_ctx)
@@ -138,6 +136,15 @@ class Cifar10Trainer(Executor):
         except Exception as e:
             self.log_exception(fl_ctx, f"Exception in simple trainer: {e}.")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+
+    def _get_model_weights(self) -> Shareable:
+        # Get the new state dict and send as weights
+        weights = {k: v.cpu().numpy() for k, v in self.model.state_dict().items()}
+
+        outgoing_dxo = DXO(
+            data_kind=DataKind.WEIGHTS, data=weights, meta={MetaKey.NUM_STEPS_CURRENT_ROUND: self._n_iterations}
+        )
+        return outgoing_dxo.to_shareable()
 
     def _local_train(self, fl_ctx, weights, abort_signal):
         # Set the model weights
