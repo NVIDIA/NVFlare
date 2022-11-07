@@ -20,6 +20,7 @@ from typing import Any
 import numpy as np
 
 from nvflare.app_common.abstract.learnable import Learnable
+from nvflare.app_common.abstract.model import ModelLearnable
 from nvflare.app_common.widgets.event_recorder import _CtxPropReq, _EventReq, _EventStats
 from nvflare.fuel.utils import fobs
 
@@ -34,6 +35,21 @@ class LearnableDecomposer(fobs.Decomposer):
 
     def recompose(self, data: Any) -> Learnable:
         obj = Learnable()
+        for k, v in data.items():
+            obj[k] = v
+        return obj
+
+
+class ModelLearnableDecomposer(fobs.Decomposer):
+    @staticmethod
+    def supported_type():
+        return ModelLearnable
+
+    def decompose(self, target: ModelLearnable) -> Any:
+        return target.copy()
+
+    def recompose(self, data: Any) -> ModelLearnable:
+        obj = ModelLearnable()
         for k, v in data.items():
             obj[k] = v
         return obj
