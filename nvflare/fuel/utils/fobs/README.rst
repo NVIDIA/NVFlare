@@ -13,6 +13,9 @@ automatically using introspection. To serialize an object using FOBS, a **Decomp
 must be registered for the class. A few decomposers for commonly used classes are
 pre-registered with the module.
 
+FOBS supports enum types by registering decomposers automatically for all classes that
+are subclasses of :code:`Enum`.
+
 FOBS throws :code:`TypeError` exception when it encounters an object with no decomposer
 registered. For example,
 ::
@@ -132,8 +135,7 @@ by MessagePack, a decomposer is included in `fobs` module so no need to further 
 
     class SimpleDecomposer(fobs.Decomposer):
 
-        @staticmethod
-        def supported_type() -> Type[Any]:
+        def supported_type(self) -> Type[Any]:
             return Simple
 
         def decompose(self, obj) -> Any:
@@ -153,6 +155,23 @@ by MessagePack, a decomposer is included in `fobs` module so no need to further 
 
 The same decomposer can be registered multiple times. Only first one takes effect, the others
 are ignored with a warning message.
+
+Enum Types
+----------
+
+FOBS supports enum types by default. Decomposers for all classes derived from :code:`Enum` are
+automatically registered using the generic decomposer for enum.
+
+In rare case that an enum class is too complicated that the generic decomposer can't
+handle it, a special decomposer can be written and registered. This will prevent FOBS from
+auto-registering the generic decomposer for this enum type.
+
+The auto-registering of enum decomposers can be disabled like this,
+
+::
+
+    fobs.auto_register_enum_types(False)
+
 
 Custom Types
 ------------

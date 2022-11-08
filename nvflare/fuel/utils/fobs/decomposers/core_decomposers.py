@@ -20,8 +20,7 @@ from nvflare.fuel.utils.fobs.decomposer import Decomposer
 
 
 class TupleDecomposer(Decomposer):
-    @staticmethod
-    def supported_type():
+    def supported_type(self):
         return tuple
 
     def decompose(self, target: tuple) -> Any:
@@ -32,8 +31,7 @@ class TupleDecomposer(Decomposer):
 
 
 class SetDecomposer(Decomposer):
-    @staticmethod
-    def supported_type():
+    def supported_type(self):
         return set
 
     def decompose(self, target: set) -> Any:
@@ -44,8 +42,7 @@ class SetDecomposer(Decomposer):
 
 
 class OrderedDictDecomposer(Decomposer):
-    @staticmethod
-    def supported_type():
+    def supported_type(self):
         return OrderedDict
 
     def decompose(self, target: OrderedDict) -> Any:
@@ -56,8 +53,7 @@ class OrderedDictDecomposer(Decomposer):
 
 
 class DatetimeDecomposer(Decomposer):
-    @staticmethod
-    def supported_type():
+    def supported_type(self):
         return datetime
 
     def decompose(self, target: datetime) -> Any:
