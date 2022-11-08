@@ -48,7 +48,7 @@ class IntimeModelSelector(Widget):
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
             self._startup(fl_ctx)
-        elif event_type == EventType.BEFORE_PROCESS_SUBMISSION:
+        elif event_type == AppEventType.BEFORE_CONTRIBUTION_ACCEPT:
             self._before_accept(fl_ctx)
         elif event_type == AppEventType.BEFORE_AGGREGATION:
             self._before_aggregate(fl_ctx)
