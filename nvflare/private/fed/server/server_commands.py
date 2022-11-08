@@ -189,6 +189,33 @@ class SubmitUpdateCommand(CommandProcessor):
         return None
 
 
+class HandleDeadJobCommand(CommandProcessor):
+    """To implement the server HandleDeadJob command."""
+
+    def get_command_name(self) -> str:
+        """To get the command name.
+
+        Returns: ServerCommandNames.SUBMIT_UPDATE
+
+        """
+        return ServerCommandNames.HANDLE_DEAD_JOB
+
+    def process(self, data: Shareable, fl_ctx: FLContext):
+        """Called to process the HandleDeadJob command.
+
+        Args:
+            data: process data
+            fl_ctx: FLContext
+
+        Returns:
+
+        """
+        client_name = data.get_header(ServerCommandKey.FL_CLIENT)
+        server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
+        server_runner.handle_dead_job(client_name, fl_ctx)
+        return ""
+
+
 class AuxCommunicateCommand(CommandProcessor):
     """Server AuxCommunicate command."""
 
@@ -299,6 +326,7 @@ class ServerCommands(object):
         GetRunInfoCommand(),
         GetTaskCommand(),
         SubmitUpdateCommand(),
+        HandleDeadJobCommand(),
         AuxCommunicateCommand(),
         ShowStatsCommand(),
         GetErrorsCommand(),
