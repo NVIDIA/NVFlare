@@ -45,6 +45,7 @@ from nvflare.apis.fl_constant import (
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.fl_snapshot import RunSnapshot
 from nvflare.apis.impl.job_def_manager import JobDefManagerSpec
+from nvflare.apis.job_def import Job
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
@@ -59,7 +60,6 @@ from nvflare.private.scheduler_constants import ShareableHeader
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
-
 from .admin import ClientReply
 from .client_manager import ClientManager
 from .job_runner import JobRunner
@@ -196,7 +196,7 @@ class ServerEngine(ServerEngineInternalSpec):
     def validate_clients(self, client_names: List[str]) -> Tuple[List[Client], List[str]]:
         return self._get_all_clients_from_inputs(client_names)
 
-    def start_app_on_server(self, run_number: str, job_id: str = None, job_clients=None, snapshot=None) -> str:
+    def start_app_on_server(self, run_number: str, job: Job = None, job_clients=None, snapshot=None) -> str:
         if run_number in self.run_processes.keys():
             return f"Server run: {run_number} already started."
         else:
@@ -208,6 +208,9 @@ class ServerEngine(ServerEngineInternalSpec):
             self.engine_info.status = MachineStatus.STARTING
             app_custom_folder = workspace.get_app_custom_dir(run_number)
 
+            job_id = None
+            if job:
+                job_id = job.job_id
             open_ports = get_open_ports(2)
             self._start_runner_process(
                 self.args, app_root, run_number, app_custom_folder, open_ports, job_id, job_clients, snapshot

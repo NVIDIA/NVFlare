@@ -215,20 +215,22 @@ class JobCommandModule(CommandModule, CommandUtil):
         job_id = conn.get_prop(self.JOB_ID)
         target_type = args[2]
         if target_type == self.TARGET_TYPE_SERVER:
-            if not self._start_app_on_server(conn, job_id):
-                return
+            # if not self._start_app_on_server(conn, job_id):
+            #     return
+            conn.append_error("start_app command only supports client app start.")
+            return
         elif target_type == self.TARGET_TYPE_CLIENT:
             if not self._start_app_on_clients(conn, job_id):
                 return
         else:
-            # all
-            success = self._start_app_on_server(conn, job_id)
-
-            if success:
-                client_names = conn.get_prop(self.TARGET_CLIENT_NAMES, None)
-                if client_names:
-                    if not self._start_app_on_clients(conn, job_id):
-                        return
+            # # all
+            # success = self._start_app_on_server(conn, job_id)
+            #
+            # if success:
+            client_names = conn.get_prop(self.TARGET_CLIENT_NAMES, None)
+            if client_names:
+                if not self._start_app_on_clients(conn, job_id):
+                    return
         conn.append_success("")
 
     def delete_job_id(self, conn: Connection, args: List[str]):
