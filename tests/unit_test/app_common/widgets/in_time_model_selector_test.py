@@ -86,6 +86,6 @@ class TestInTimeModelSelector:
             fl_ctx = engine.fl_ctx_mgr.new_context()
             fl_ctx.set_prop(FLContextKey.PEER_CONTEXT, peer_ctx)
 
-            handler.handle_event(EventType.BEFORE_PROCESS_SUBMISSION, fl_ctx)
+            handler.handle_event(AppEventType.BEFORE_CONTRIBUTION_ACCEPT, fl_ctx)
         handler.handle_event(AppEventType.BEFORE_AGGREGATION, fl_ctx)
         assert (engine.last_event == AppEventType.GLOBAL_BEST_MODEL_AVAILABLE) == expected
