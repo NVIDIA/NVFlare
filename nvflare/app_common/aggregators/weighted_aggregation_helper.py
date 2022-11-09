@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import re
+import threading
 from typing import Optional
 
 
@@ -24,6 +25,7 @@ class WeightedAggregationHelper(object):
             exclude_vars (str, optional): regex string to match excluded vars during aggregation. Defaults to None.
         """
         super().__init__()
+        self.lock = threading.Lock()
         self.exclude_vars = re.compile(exclude_vars) if exclude_vars else None
         self.reset_stats()
         self.total = dict()
@@ -37,30 +39,32 @@ class WeightedAggregationHelper(object):
 
     def add(self, data, weight, contributor_name, contribution_round):
         """Compute weighted sum and sum of weights."""
-        for k, v in data.items():
-            if self.exclude_vars is not None and self.exclude_vars.search(k):
-                continue
-            weighted_value = v * weight
-            current_total = self.total.get(k, None)
-            if current_total is None:
-                self.total[k] = weighted_value
-                self.counts[k] = weight
-            else:
-                self.total[k] = current_total + weighted_value
-                self.counts[k] = self.counts[k] + weight
-        self.history.append(
-            {
-                "contributor_name": contributor_name,
-                "round": contribution_round,
-                "weight": weight,
-            }
-        )
+        with self.lock:
+            for k, v in data.items():
+                if self.exclude_vars is not None and self.exclude_vars.search(k):
+                    continue
+                weighted_value = v * weight
+                current_total = self.total.get(k, None)
+                if current_total is None:
+                    self.total[k] = weighted_value
+                    self.counts[k] = weight
+                else:
+                    self.total[k] = current_total + weighted_value
+                    self.counts[k] = self.counts[k] + weight
+            self.history.append(
+                {
+                    "contributor_name": contributor_name,
+                    "round": contribution_round,
+                    "weight": weight,
+                }
+            )
 
     def get_result(self):
         """Divide weighted sum by sum of weights."""
-        aggregated_dict = {k: v / self.counts[k] for k, v in self.total.items()}
-        self.reset_stats()
-        return aggregated_dict
+        with self.lock:
+            aggregated_dict = {k: v / self.counts[k] for k, v in self.total.items()}
+            self.reset_stats()
+            return aggregated_dict
 
     def get_history(self):
         return self.history
