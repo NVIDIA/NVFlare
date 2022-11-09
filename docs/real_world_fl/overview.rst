@@ -43,6 +43,12 @@ Provisioning a federated learning project
 The :ref:`provisioning` page has details on the contents of the provisioning tool and the underlying NVIDIA FLARE Open
 Provision API, which you can use to customize configurations to fit your own requirements.
 
+.. note::
+
+    Starting in NVIDIA FLARE version 2.2.1, the :ref:`nvflare_dashboard_ui` has been introduced for an easier experience for
+    provisioning a project and distributing the startup kits. If you are using the Dashboard UI, see :ref:`dashboard_api` for
+    details on how to set it up, and you can skip the rest of this :ref:`provisioned_setup` section.
+
 Edit the :ref:`programming_guide/provisioning_system:Project yaml file` in the directory with the provisioning tool to meet your
 project requirements (make sure the server, client sites, admin, orgs, enable_byoc settings, and everything else are right
 for your project).
