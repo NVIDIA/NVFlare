@@ -16,9 +16,6 @@
 class AppEventType(object):
     """Defines application events."""
 
-    START_ROUND = "_start_round"
-    END_ROUND = "_end_round"
-
     BEFORE_AGGREGATION = "_before_aggregation"
     END_AGGREGATION = "_end_aggregation"
 
