@@ -25,27 +25,32 @@ from nvflare.widgets.widget import Widget
 
 
 class IntimeModelSelector(Widget):
-    def __init__(self, weigh_by_local_iter=False, aggregation_weights=None):
+    def __init__(
+        self, weigh_by_local_iter=False, aggregation_weights=None, validation_metric_name=MetaKey.INITIAL_METRICS
+    ):
         """Handler to determine if the model is globally best.
 
         Args:
             weigh_by_local_iter (bool, optional): whether the metrics should be weighted by trainer's iteration number.
             aggregation_weights (dict, optional): a mapping of client name to float for aggregation. Defaults to None.
+            validation_metric_name (str, optional): key used to save initial validation metric in the DXO meta properties (defaults to MetaKey.INITIAL_METRICS).
         """
         super().__init__()
 
         self.val_metric = self.best_val_metric = -np.inf
         self.weigh_by_local_iter = weigh_by_local_iter
-        self.validation_metric_name = MetaKey.INITIAL_METRICS
+        self.validation_metric_name = validation_metric_name
         self.aggregation_weights = aggregation_weights or {}
 
-        self.logger.debug(f"model selection weights control: {aggregation_weights}")
+        self.logger.info(f"model selection weights control: {aggregation_weights}")
         self._reset_stats()
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
             self._startup(fl_ctx)
-        elif event_type == EventType.BEFORE_PROCESS_SUBMISSION:
+        elif event_type == AppEventType.ROUND_STARTED:
+            self._reset_stats()
+        elif event_type == AppEventType.BEFORE_CONTRIBUTION_ACCEPT:
             self._before_accept(fl_ctx)
         elif event_type == AppEventType.BEFORE_AGGREGATION:
             self._before_aggregate(fl_ctx)
@@ -84,7 +89,7 @@ class IntimeModelSelector(Widget):
             return False  # There is no aggregated model at round 0
 
         if contribution_round != current_round:
-            self.log_debug(
+            self.log_warning(
                 fl_ctx,
                 f"discarding shareable from {client_name} for round: {contribution_round}. Current round is: {current_round}",
             )
@@ -105,8 +110,9 @@ class IntimeModelSelector(Widget):
         aggregation_weights = self.aggregation_weights.get(client_name, 1.0)
         self.log_debug(fl_ctx, f"aggregation weight: {aggregation_weights}")
 
-        self.validation_metric_weighted_sum += validation_metric * n_iter * aggregation_weights
-        self.validation_metric_sum_of_weights += n_iter
+        weight = n_iter * aggregation_weights
+        self.validation_metric_weighted_sum += validation_metric * weight
+        self.validation_metric_sum_of_weights += weight
         return True
 
     def _before_aggregate(self, fl_ctx):
