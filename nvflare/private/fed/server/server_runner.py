@@ -247,7 +247,8 @@ class ServerRunner(FLComponent):
         try:
             task_name, task_id, task_data = self._try_to_get_task(
                 # client, fl_ctx, self.config.task_request_timeout, self.config.task_retry_interval
-                client, fl_ctx
+                client,
+                fl_ctx,
             )
             if not task_name or task_name == SpecialTaskName.TRY_AGAIN:
                 return self._task_try_again()

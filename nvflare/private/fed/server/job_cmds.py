@@ -21,7 +21,7 @@ import shutil
 from typing import Dict, List
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
-from nvflare.apis.fl_constant import AdminCommandNames
+from nvflare.apis.fl_constant import AdminCommandNames, RunProcessKey
 from nvflare.apis.job_def import Job, JobDataKey, JobMetaKey, TopDir
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.apis.utils.job_utils import convert_legacy_zipped_app_to_job
@@ -196,6 +196,20 @@ class JobCommandModule(CommandModule, CommandUtil):
 
     def _start_app_on_clients(self, conn: Connection, job_id: str) -> bool:
         engine = conn.app_ctx
+        client_names = conn.get_prop(self.TARGET_CLIENT_NAMES, None)
+        participants = engine.run_processes.get(job_id, {}).get(RunProcessKey.PARTICIPANTS, [])
+        wrong_clients = []
+        for client in client_names:
+            for _, p in participants.items():
+                if client == p.name:
+                    break
+                wrong_clients.append(client)
+
+        if wrong_clients:
+            display_clientss = ",".join(wrong_clients)
+            conn.append_error(f"{display_clientss} are not in the job running list.")
+            return
+
         err = engine.check_app_start_readiness(job_id)
         if err:
             conn.append_error(err)
