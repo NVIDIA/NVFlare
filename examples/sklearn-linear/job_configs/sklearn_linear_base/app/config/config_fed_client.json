@@ -1,0 +1,28 @@
+{
+  "format_version": 2,
+  "executors": [
+    {
+      "tasks": [
+        "train"
+      ],
+      "executor": {
+        "id": "Executor",
+        "path": "higgs_sklearn_linear_executor.FedSKLearnLinearHiggsExecutor",
+        "args": {
+          "data_split_filename": "data_split.json",
+          "local_model_path": "model.joblib",
+          "global_model_path": "model_global.joblib",
+          "learning_rate": "constant",
+          "eta0": 1e-4,
+          "loss": "log",
+          "penalty": "l2",
+          "fit_intercept": 1,
+          "eval_metric": "auc"
+        }
+      }
+    }
+  ],
+  "task_result_filters": [],
+  "task_data_filters": [],
+  "components": []
+}
