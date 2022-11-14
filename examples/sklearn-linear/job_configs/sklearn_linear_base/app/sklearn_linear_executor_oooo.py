@@ -20,7 +20,6 @@ from sklearn.metrics import roc_auc_score
 from joblib import dump
 import warnings
 import numpy as np
-import tensorboard
 
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.event_type import EventType
@@ -30,8 +29,10 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
+#from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.security.logging import secure_format_exception
 
+import tensorboard
 
 class FedSKLearnLinearExecutor(Executor, ABC):
     def __init__(
@@ -99,6 +100,8 @@ class FedSKLearnLinearExecutor(Executor, ABC):
         )
 
         # set local tensorboard writer for local training info of current model
+        #tensorboard, flag = optional_import(module="torch.utils.tensorboard")
+        #if flag:
         self.writer = tensorboard.summary.Writer(app_dir)
 
         # load data and lr_scale, this is task/site-specific
