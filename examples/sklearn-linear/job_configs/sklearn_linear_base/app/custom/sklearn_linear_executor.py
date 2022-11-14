@@ -13,15 +13,15 @@
 # limitations under the License.
 import copy
 import os
-import warnings
 from abc import ABC, abstractmethod
 
-import numpy as np
-from joblib import dump
 from sklearn.linear_model import SGDClassifier
 from sklearn.metrics import roc_auc_score
+from joblib import dump
+import warnings
+import numpy as np
 
-from nvflare.apis.dxo import DXO, DataKind, from_shareable
+from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
@@ -35,16 +35,16 @@ from nvflare.security.logging import secure_format_exception
 
 class FedSKLearnLinearExecutor(Executor, ABC):
     def __init__(
-        self,
-        local_model_path: str = "model.joblib",
-        global_model_path: str = "model_global.joblib",
-        learning_rate: str = "constant",
-        eta0: float = 1e-4,
-        loss: str = "log",
-        penalty: str = "l2",
-        fit_intercept: int = 1,
-        eval_metric: str = "auc",
-        train_task_name: str = AppConstants.TASK_TRAIN,
+            self,
+            local_model_path: str = "model.joblib",
+            global_model_path: str = "model_global.joblib",
+            learning_rate: str = "constant",
+            eta0: float = 1e-4,
+            loss: str = "log",
+            penalty: str = "l2",
+            fit_intercept: int = 1,
+            eval_metric: str = "auc",
+            train_task_name: str = AppConstants.TASK_TRAIN,
     ):
         super().__init__()
         self.client_id = None
@@ -107,15 +107,8 @@ class FedSKLearnLinearExecutor(Executor, ABC):
         self.X_train, self.y_train, self.X_valid, self.y_valid, self.sample_size = self.load_data()
 
         # initialize model to all zero
-        self.local_model = SGDClassifier(
-            loss=self.loss,
-            penalty=self.penalty,
-            fit_intercept=bool(self.fit_intercept),
-            learning_rate=self.learning_rate,
-            eta0=self.eta0,
-            max_iter=1,
-            warm_start=True,
-        )
+        self.local_model = SGDClassifier(loss=self.loss, penalty=self.penalty, fit_intercept=bool(self.fit_intercept),
+                                         learning_rate=self.learning_rate, eta0=self.eta0, max_iter=1, warm_start=True)
         n_classes = 2  # Binary classification
         n_features = self.X_train.shape[1]  # Number of features in dataset
         self.local_model.classes_ = np.array([i for i in range(n_classes)])
@@ -152,10 +145,10 @@ class FedSKLearnLinearExecutor(Executor, ABC):
             self.local_model.fit(self.X_train, self.y_train)
 
     def train(
-        self,
-        shareable: Shareable,
-        fl_ctx: FLContext,
-        abort_signal: Signal,
+            self,
+            shareable: Shareable,
+            fl_ctx: FLContext,
+            abort_signal: Signal,
     ) -> Shareable:
 
         if abort_signal.triggered:
@@ -164,6 +157,7 @@ class FedSKLearnLinearExecutor(Executor, ABC):
 
         # retrieve current global model download from server's shareable
         dxo = from_shareable(shareable)
+        current_round = shareable.get_header(AppConstants.CURRENT_ROUND)
         global_param = dxo.data
 
         if not global_param:
@@ -172,15 +166,13 @@ class FedSKLearnLinearExecutor(Executor, ABC):
                 fl_ctx,
                 f"Client {self.client_id} initial training from scratch",
             )
-            current_round = 0
         else:
             # Load global model param
-            self._set_model_params(global_param["model_params"])
+            self._set_model_params(global_param)
             self.log_info(
                 fl_ctx,
                 f"Client {self.client_id} model updates with server model",
             )
-            current_round = global_param["current_round"]
 
         # validate global model
         self._local_validation(fl_ctx, current_round)
@@ -192,7 +184,8 @@ class FedSKLearnLinearExecutor(Executor, ABC):
         dump(self.local_model, self.local_model_path)
         params = self._get_model_parameters()
         # report updated model in shareable
-        dxo = DXO(data_kind=DataKind.SKL_LINEAR_MODEL, data={"model_params": params, "sample_size": self.sample_size})
+        dxo = DXO(data_kind=DataKind.WEIGHTS, data=params)
+        dxo.set_meta_prop(MetaKey.NUM_STEPS_CURRENT_ROUND, self.sample_size)
         self.log_info(fl_ctx, "Local epochs finished. Returning shareable")
 
         if self.writer:

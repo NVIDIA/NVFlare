@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-DATASET_PATH="./HIGGS/HIGGS_UCI.csv"
-OUTPUT_PATH="${PWD}/data_splits"
+DATASET_PATH="$HOME/dataset/HIGGS.csv"
+OUTPUT_PATH="/tmp/nvflare/xgboost_higgs_dataset"
 
 if [ ! -f "${DATASET_PATH}" ]
 then

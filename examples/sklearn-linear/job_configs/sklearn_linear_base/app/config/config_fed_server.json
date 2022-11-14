@@ -16,13 +16,15 @@
     },
     {
       "id": "shareable_generator",
-      "path": "sklearn_linear_shareable_generator.LinearModelShareableGenerator",
+      "name": "FullModelShareableGenerator",
       "args": {}
     },
     {
       "id": "aggregator",
-      "path": "sklearn_linear_model_aggregator.LinearModelAggregator",
-      "args": {}
+      "name": "InTimeAccumulateWeightedAggregator",
+      "args": {
+        "expected_data_kind": "WEIGHTS"
+      }
     }
   ],
   "workflows": [
