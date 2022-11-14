@@ -1,54 +1,54 @@
-class Policy(object):
+class Policy:
     pass
 
 
-class Evidence(object):
+class Evidence:
     pass
 
 
-class AttestationToken(object):
+class AttestationToken:
     pass
 
 
-class PolicyRegistrationRequest(object):
+class PolicyRegistrationRequest:
     pass
 
 
-class PolicyRegistrationResult(object):
+class PolicyRegistrationResult:
     pass
 
 
-class TokenRegistrationRequest(object):
+class TokenRegistrationRequest:
 
     def __init__(self, identity: str, token: AttestationToken):
         self.identity = identity
         self.token = token
 
 
-class TokenRegistrationResult(object):
+class TokenRegistrationResult:
     pass
 
 
-class ClientRegistrationRequest(object):
+class ClientRegistrationRequest:
     pass
 
 
-class ClientRegistrationResult(object):
+class ClientRegistrationResult:
     pass
 
 
-class TokenRetrievalRequest(object):
+class TokenRetrievalRequest:
     pass
 
 
-class TokenRetrievalResult(object):
+class TokenRetrievalResult:
     pass
 
 
-class AttestationServiceAgent(object):
+class AttestationServiceAgent:
 
     """
-    An AttestationServiceAgent is responsible for interacting with Azure Attestation Service
+    An AttestationServiceAgent is responsible for interacting with the Attestation Service (Verifier)
     """
 
     def __init__(self, service_endpoint):
@@ -120,15 +120,19 @@ class AttestationServiceAgent(object):
         pass
 
 
-class AttestationOrchestrator(AttestationServiceAgent):
+class AttestationOrchestrator:
     """
     AttestationOrchestrator implements orchestration service.
     Maybe embedded into FLARE Server, or into a separate server.
     The underlying server must provide communication capability
 
-    Note that the AttestationOrchestrator is also an AttestationServiceAgent since it also
+    Note that the AttestationOrchestrator requires an AttestationServiceAgent since it also
     needs to communicate with the Attestation Service
     """
+
+    def __init__(self,
+                 attestation_service_agent: AttestationServiceAgent):
+        self.attestation_service_agent = attestation_service_agent
 
     def process_policy_registration(
             self,
@@ -245,7 +249,7 @@ class AttestationOrchestrator(AttestationServiceAgent):
         pass
 
 
-class Messenger(object):
+class Messenger:
     """
     This is the spec of a communicator that implements communication capability needed by
     the AttestationOrchestratorAgent.
@@ -266,31 +270,31 @@ class Messenger(object):
         pass
 
 
-class AttestationOrchestratorAgent(AttestationServiceAgent):
+class AttestationOrchestratorAgent:
     """
     AttestationOrchestratorAgent performs as an agent of the AttestationOrchestrator.
     The underlying server must provide communication capability
 
-    Note that the AttestationOrchestratorAgent is also an AttestationServiceAgent since it
+    Note that the AttestationOrchestratorAgent requires an AttestationServiceAgent since it
     needs to communicate with the Attestation Service
     """
 
     def __init__(
             self,
             my_identity: str,
-            attestation_service_endpoint,
+            attestation_service_agent: AttestationServiceAgent,
             messenger: Messenger):
         """
         Constructor of the AttestationOrchestratorAgent
 
         Args:
             my_identity: identity of the client that the agent represents
-            attestation_service_endpoint: endpoint of the Attestation Service
+            attestation_service_agent: the agent for talking to AttestationService
             messenger: the Messenger that is responsible for communication
         """
-        AttestationServiceAgent.__init__(self, attestation_service_endpoint)
         self.my_identity = my_identity
         self.messenger = messenger
+        self.attestation_service_agent = attestation_service_agent
 
     def register_client_policy(
             self,
