@@ -23,21 +23,8 @@ from nvflare.app_common.abstract.learnable import Learnable
 from nvflare.app_common.abstract.model import ModelLearnable
 from nvflare.app_common.widgets.event_recorder import _CtxPropReq, _EventReq, _EventStats
 from nvflare.fuel.utils import fobs
-
-
-class LearnableDecomposer(fobs.Decomposer):
-    @staticmethod
-    def supported_type():
-        return Learnable
-
-    def decompose(self, target: Learnable) -> Any:
-        return target.copy()
-
-    def recompose(self, data: Any) -> Learnable:
-        obj = Learnable()
-        for k, v in data.items():
-            obj[k] = v
-        return obj
+from nvflare.fuel.utils.fobs import Decomposer
+from nvflare.fuel.utils.fobs.decomposer import DictDecomposer
 
 
 class ModelLearnableDecomposer(fobs.Decomposer):
@@ -66,32 +53,27 @@ class NumpyScalarDecomposer(fobs.Decomposer, ABC):
 
 
 class Float64ScalarDecomposer(NumpyScalarDecomposer):
-    @staticmethod
-    def supported_type():
+    def supported_type(self):
         return np.float64
 
 
 class Float32ScalarDecomposer(NumpyScalarDecomposer):
-    @staticmethod
-    def supported_type():
+    def supported_type(self):
         return np.float32
 
 
 class Int64ScalarDecomposer(NumpyScalarDecomposer):
-    @staticmethod
-    def supported_type():
+    def supported_type(self):
         return np.int64
 
 
 class Int32ScalarDecomposer(NumpyScalarDecomposer):
-    @staticmethod
-    def supported_type():
+    def supported_type(self):
         return np.int32
 
 
-class NumpyArrayDecomposer(fobs.Decomposer):
-    @staticmethod
-    def supported_type():
+class NumpyArrayDecomposer(Decomposer):
+    def supported_type(self):
         return np.ndarray
 
     def decompose(self, target: np.ndarray) -> Any:
@@ -104,63 +86,21 @@ class NumpyArrayDecomposer(fobs.Decomposer):
         return np.load(stream, allow_pickle=False)
 
 
-class CtxPropReqDecomposer(fobs.Decomposer):
-    @staticmethod
-    def supported_type():
-        return _CtxPropReq
-
-    def decompose(self, target: _CtxPropReq) -> Any:
-        return [target.dtype, target.is_private, target.is_sticky, target.allow_none]
-
-    def recompose(self, data: Any) -> _CtxPropReq:
-        return _CtxPropReq(data[0], data[1], data[2], data[3])
-
-
-class EventReqDecomposer(fobs.Decomposer):
-    @staticmethod
-    def supported_type():
-        return _EventReq
-
-    def decompose(self, target: _EventReq) -> Any:
-        return [target.ctx_reqs, target.peer_ctx_reqs, target.ctx_block_list, target.peer_ctx_block_List]
-
-    def recompose(self, data: Any) -> _EventReq:
-        return _EventReq(data[0], data[1], data[2], data[3])
-
-
-class EventStatsDecomposer(fobs.Decomposer):
-    @staticmethod
-    def supported_type():
-        return _EventStats
-
-    def decompose(self, target: _EventStats) -> Any:
-        return [
-            target.call_count,
-            target.prop_missing,
-            target.prop_none_value,
-            target.prop_dtype_mismatch,
-            target.prop_attr_mismatch,
-            target.prop_block_list_violation,
-            target.peer_ctx_missing,
-        ]
-
-    def recompose(self, data: Any) -> _EventStats:
-        stats = _EventStats()
-        stats.call_count = data[0]
-        stats.prop_missing = data[1]
-        stats.prop_none_value = data[2]
-        stats.prop_dtype_mismatch = data[3]
-        stats.prop_attr_mismatch = data[4]
-        stats.prop_block_list_violation = data[5]
-        stats.peer_ctx_missing = data[6]
-        return stats
-
-
 def register():
     if register.registered:
         return
 
+    fobs.register(DictDecomposer(Learnable))
+    fobs.register(DictDecomposer(ModelLearnable))
+
+    fobs.register_data_classes(
+        _CtxPropReq,
+        _EventReq,
+        _EventStats,
+    )
+
     fobs.register_folder(os.path.dirname(__file__), __package__)
+
     register.registered = True
 
 
