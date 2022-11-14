@@ -26,5 +26,4 @@ to see the capabilities of the system and how it can be operated.
    real_world_fl/application
    real_world_fl/job
    real_world_fl/workspace
-   real_world_fl/authorization
-
+   user_guide/federated_authorization
