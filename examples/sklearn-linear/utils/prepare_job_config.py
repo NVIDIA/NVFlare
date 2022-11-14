@@ -29,7 +29,7 @@ def job_config_args_parser():
     parser.add_argument(
         "--data_split_root",
         type=str,
-        default="/tmp/nvflare/xgboost_higgs_dataset",
+        default="/tmp/nvflare/higgs_dataset",
         help="Path to dataset config files for each site",
     )
     parser.add_argument("--site_num", type=int, default=5, help="Total number of sites")

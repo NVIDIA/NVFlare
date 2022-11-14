@@ -69,6 +69,6 @@ class LinearModelParamPersistor(ModelPersistor):
         if model_learnable:
             if fl_ctx.get_prop(AppConstants.CURRENT_ROUND) == fl_ctx.get_prop(AppConstants.NUM_ROUNDS) - 1:
                 self.logger.info(f"Saving received model to {os.path.abspath(self.save_path)}")
-                # save 'weights' which is actual model, loadable by xgboost library
+                # save 'weights' which is actual model parameters
                 model = model_learnable[ModelLearnableKey.WEIGHTS]
                 dump(model, self.save_path)
