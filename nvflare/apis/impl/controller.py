@@ -932,14 +932,8 @@ class Controller(Responder, ControllerSpec, ABC):
                     continue
 
                 # is the client that the task is waiting for is dead?
-                # report_time = self._dead_client_reports.get(ct.client.name, None)
-                report_time = self._dead_client_reports.get(target, None)
-                if not report_time:
-                    # this client is still alive
-                    return True
-                elif now - report_time < 60:
-                    # this report is still fresh - consider the client to be still alive
-                    return True
+                if self._client_still_alive(target):
+                    return
 
         # either all client tasks are done or unfinished clients are all dead
         return False
@@ -978,14 +972,8 @@ class Controller(Responder, ControllerSpec, ABC):
     def _check_dead_clients(self):
         if self._engine:
             clients = self._engine.get_clients()
-            now = time.time()
             for client in clients:
-                report_time = self._dead_client_reports.get(client.name, None)
-                if not report_time:
-                    # this client is still alive
-                    return
-                elif now - report_time < 60:
-                    # this report is still fresh - consider the client to be still alive
+                if self._client_still_alive(client):
                     return
 
                 # All the clients are dead, abort the job run.
@@ -993,3 +981,15 @@ class Controller(Responder, ControllerSpec, ABC):
                     server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
                     fl_ctx.set_prop(key=FLContextKey.FATAL_SYSTEM_ERROR, value=True, private=True, sticky=True)
                     server_runner.abort(fl_ctx)
+
+    def _client_still_alive(self, client):
+        now = time.time()
+        report_time = self._dead_client_reports.get(client.name, None)
+        if not report_time:
+            # this client is still alive
+            return True
+        elif now - report_time < 60:
+            # this report is still fresh - consider the client to be still alive
+            return True
+
+        return False

@@ -197,7 +197,12 @@ class JobCommandModule(CommandModule, CommandUtil):
     def _start_app_on_clients(self, conn: Connection, job_id: str) -> bool:
         engine = conn.app_ctx
         client_names = conn.get_prop(self.TARGET_CLIENT_NAMES, None)
-        participants = engine.run_processes.get(job_id, {}).get(RunProcessKey.PARTICIPANTS, [])
+        run_process = engine.run_processes.get(job_id, {})
+        if not run_process:
+            conn.append_error(f"Job: {job_id} is not running.")
+            return
+
+        participants = run_process.get(RunProcessKey.PARTICIPANTS, [])
         wrong_clients = []
         for client in client_names:
             for _, p in participants.items():
@@ -227,6 +232,10 @@ class JobCommandModule(CommandModule, CommandUtil):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
 
         job_id = conn.get_prop(self.JOB_ID)
+        if len(args) < 3:
+            conn.append_error("Please provide the target name (client / all) for start_app command.")
+            return
+
         target_type = args[2]
         if target_type == self.TARGET_TYPE_SERVER:
             # if not self._start_app_on_server(conn, job_id):
