@@ -27,6 +27,21 @@ from nvflare.fuel.utils.fobs import Decomposer
 from nvflare.fuel.utils.fobs.decomposer import DictDecomposer
 
 
+class ModelLearnableDecomposer(fobs.Decomposer):
+    @staticmethod
+    def supported_type():
+        return ModelLearnable
+
+    def decompose(self, target: ModelLearnable) -> Any:
+        return target.copy()
+
+    def recompose(self, data: Any) -> ModelLearnable:
+        obj = ModelLearnable()
+        for k, v in data.items():
+            obj[k] = v
+        return obj
+
+
 class NumpyScalarDecomposer(fobs.Decomposer, ABC):
     """Decomposer base class for all numpy types with item method."""
 

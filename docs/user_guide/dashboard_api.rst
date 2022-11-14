@@ -3,11 +3,11 @@
 #########################
 Dashboard in NVIDIA FLARE
 #########################
-As mentioned in :ref:`provisioning`, NVIDIA FLARE system requires a set of startup kits
-which include the private keys and certificates, signed by the root CA, in order to communicate to one another.
-The new Dashboard in NVIDIA FLARE provides a simple way to collect information of clients and users from different organizations,
+As mentioned in :ref:`provisioning`, the NVIDIA FLARE system requires a set of startup kits
+which include the private keys and certificates (signed by the root CA) in order to communicate to one another.
+The new :ref:`nvflare_dashboard_ui` in NVIDIA FLARE provides a simple way to collect information of clients and users from different organizations,
 as well as to generate those startup kits for users to download.
- 
+
 Most of the details about provisioning can be found in :ref:`provisioning`.  In this section, we focus on the user interaction with Dashboard and its backend API.
 
 *****************************

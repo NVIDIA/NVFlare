@@ -22,6 +22,7 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
+from nvflare.app_common.abstract.model import ModelLearnable
 from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
@@ -171,7 +172,28 @@ class ScatterAndGather(Controller):
         fl_ctx.set_prop(AppConstants.START_ROUND, self._start_round, private=True, sticky=True)
         fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self._num_rounds, private=True, sticky=False)
         self._global_weights = self.persistor.load(fl_ctx)
-        fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._global_weights, private=True, sticky=False)
+        if not isinstance(self._global_weights, ModelLearnable):
+            self.system_panic(
+                reason=f"Expected global weights to be of type `ModelLearnable` but received {type(ModelLearnable)}",
+                fl_ctx=fl_ctx,
+            )
+            return
+
+        if self._global_weights.is_empty():
+            # see whether it is available from fl_ctx
+            self._global_weights = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
+            if not isinstance(self._global_weights, ModelLearnable):
+                self.system_panic(
+                    reason=f"Expected global weights to be of type `ModelLearnable` but received {type(ModelLearnable)}",
+                    fl_ctx=fl_ctx,
+                )
+                return
+
+        if self._global_weights.is_empty():
+            self.system_panic(reason="Missing initial global model weights", fl_ctx=fl_ctx)
+            return
+
+        fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._global_weights, private=True, sticky=True)
         self.fire_event(AppEventType.INITIAL_MODEL_LOADED, fl_ctx)
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext) -> None:
@@ -192,7 +214,7 @@ class ScatterAndGather(Controller):
                     return
 
                 self.log_info(fl_ctx, f"Round {self._current_round} started.")
-                fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._global_weights, private=True, sticky=False)
+                fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._global_weights, private=True, sticky=True)
                 fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=False)
                 self.fire_event(AppEventType.ROUND_STARTED, fl_ctx)
 
@@ -234,7 +256,7 @@ class ScatterAndGather(Controller):
 
                 self.fire_event(AppEventType.BEFORE_SHAREABLE_TO_LEARNABLE, fl_ctx)
                 self._global_weights = self.shareable_gen.shareable_to_learnable(aggr_result, fl_ctx)
-                fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._global_weights, private=True, sticky=False)
+                fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._global_weights, private=True, sticky=True)
                 fl_ctx.sync_sticky()
                 self.fire_event(AppEventType.AFTER_SHAREABLE_TO_LEARNABLE, fl_ctx)
 

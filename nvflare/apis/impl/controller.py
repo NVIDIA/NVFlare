@@ -342,7 +342,6 @@ class Controller(Responder, ControllerSpec, ABC):
             # do client task CB processing outside the lock
             # this is because the CB could schedule another task, which requires the lock
             client_task.result = result
-            client_task.result_received_time = time.time()
 
             manager = task.props[_TASK_KEY_MANAGER]
             manager.check_task_result(result, client_task, fl_ctx)
@@ -361,9 +360,10 @@ class Controller(Responder, ControllerSpec, ABC):
                     )
                     task.completion_status = TaskCompletionStatus.ERROR
                     task.exception = e
-                    return
             else:
                 self.log_info(fl_ctx, "no result_received_cb")
+
+            client_task.result_received_time = time.time()
 
     def _schedule_task(
         self,

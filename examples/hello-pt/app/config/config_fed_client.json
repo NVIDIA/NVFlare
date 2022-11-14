@@ -3,7 +3,7 @@
 
   "executors": [
     {
-      "tasks": ["train", "submit_model"],
+      "tasks": ["train", "submit_model", "get_weights"],
       "executor": {
         "path": "cifar10trainer.Cifar10Trainer",
         "args": {
