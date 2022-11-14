@@ -42,7 +42,7 @@ class LinearModelShareableGenerator(ShareableGenerator):
             # initialization or recovering from previous training
             model = model_learnable[ModelLearnableKey.WEIGHTS]
             if model:
-                dxo = DXO(data_kind=DataKind.XGB_MODEL, data={"model_data": model})
+                dxo = DXO(data_kind=DataKind.SKL_LINEAR_MODEL, data={"model_data": model})
             else:
                 # initial run, starting from empty model
                 dxo = model_learnable_to_dxo(model_learnable)
