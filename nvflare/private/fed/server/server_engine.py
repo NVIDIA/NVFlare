@@ -139,7 +139,7 @@ class ServerEngine(ServerEngineInternalSpec):
         else:
             self.engine_info.status = MachineStatus.STOPPED
 
-        for job_id, _ in self.run_processes.items():
+        for job_id in self.run_processes.keys():
             run_folder = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(job_id))
             app_file = os.path.join(run_folder, "fl_app.txt")
             if os.path.exists(app_file):
