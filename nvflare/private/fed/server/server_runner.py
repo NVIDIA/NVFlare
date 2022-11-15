@@ -20,7 +20,6 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReservedTopic, ReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.fl_exception import WorkflowError
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
@@ -113,10 +112,6 @@ class ServerRunner(FLComponent):
 
                 with self.engine.new_context() as fl_ctx:
                     wf.responder.control_flow(self.abort_signal, fl_ctx)
-            except WorkflowError as e:
-                with self.engine.new_context() as fl_ctx:
-                    self.log_exception(fl_ctx, f"Fatal error occurred in workflow {wf.id}: {e}. Aborting the RUN")
-                self.abort_signal.trigger(True)
             except BaseException as e:
                 with self.engine.new_context() as fl_ctx:
                     self.log_exception(fl_ctx, "Exception in workflow {}: {}".format(wf.id, secure_format_exception(e)))

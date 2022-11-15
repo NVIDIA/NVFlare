@@ -22,7 +22,6 @@ from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, ControllerSpec, SendOrder, Task, TaskCompletionStatus
 from nvflare.apis.fl_constant import FLContextKey, ReservedTopic
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.fl_exception import WorkflowError
 from nvflare.apis.responder import Responder
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import Shareable
@@ -232,16 +231,6 @@ class Controller(Responder, ControllerSpec, ABC):
             if task.before_task_sent_cb is not None:
                 try:
                     task.before_task_sent_cb(client_task=client_task_to_send, fl_ctx=fl_ctx)
-                except WorkflowError as ex:
-                    self._engine.ask_to_stop()
-                    self.log_exception(
-                        fl_ctx,
-                        "processing error in before_task_sent_cb on task {} ({}): {}".format(
-                            client_task_to_send.task.name, client_task_to_send.id, ex
-                        ),
-                    )
-                    task.completion_status = TaskCompletionStatus.ERROR
-                    task.exception = ex
                 except BaseException as e:
                     self.log_exception(
                         fl_ctx,
@@ -267,16 +256,6 @@ class Controller(Responder, ControllerSpec, ABC):
             if task.after_task_sent_cb is not None:
                 try:
                     task.after_task_sent_cb(client_task=client_task_to_send, fl_ctx=fl_ctx)
-                except WorkflowError as ex:
-                    self._engine.ask_to_stop()
-                    self.log_exception(
-                        fl_ctx,
-                        "processing error in after_task_sent_cb on task {} ({}): {}".format(
-                            client_task_to_send.task.name, client_task_to_send.id, ex
-                        ),
-                    )
-                    task.completion_status = TaskCompletionStatus.ERROR
-                    task.exception = ex
                 except BaseException as e:
                     self.log_exception(
                         fl_ctx,
@@ -299,8 +278,6 @@ class Controller(Responder, ControllerSpec, ABC):
             now = time.time()
             client_task_to_send.task_sent_time = now
             client_task_to_send.task_send_count += 1
-            if not client_task_to_send.task.start_time:
-                client_task_to_send.task.start_time = now
             return task_name, client_task_to_send.id, task_data
 
     def handle_exception(self, task_id: str, fl_ctx: FLContext) -> None:
@@ -401,15 +378,6 @@ class Controller(Responder, ControllerSpec, ABC):
                 try:
                     self.log_info(fl_ctx, "invoking result_received_cb ...")
                     task.result_received_cb(client_task=client_task, fl_ctx=fl_ctx)
-                except WorkflowError as ex:
-                    self._engine.ask_to_stop()
-                    self.log_exception(
-                        fl_ctx,
-                        "processing error in result_received_cb on task {}({}): {}".format(task_name, task_id, ex),
-                    )
-                    task.completion_status = TaskCompletionStatus.ERROR
-                    task.exception = ex
-                    return
                 except BaseException as e:
                     # this task cannot proceed anymore
                     self.log_exception(
@@ -832,8 +800,8 @@ class Controller(Responder, ControllerSpec, ABC):
 
     def _monitor_tasks(self):
         while not self._all_done:
-            self._check_tasks()
-            self._check_dead_clients()
+            if not self._check_dead_clients():
+                self._check_tasks()
             time.sleep(self._task_check_period)
 
     def _check_tasks(self):
@@ -895,14 +863,6 @@ class Controller(Responder, ControllerSpec, ABC):
                     if exit_task.task_done_cb is not None:
                         try:
                             exit_task.task_done_cb(task=exit_task, fl_ctx=fl_ctx)
-                        except WorkflowError as ex:
-                            self._engine.ask_to_stop()
-                            self.log_exception(
-                                fl_ctx,
-                                "processing error in task_done_cb error on task {}: {}".format(exit_task.name, ex),
-                            )
-                            task.completion_status = TaskCompletionStatus.ERROR
-                            task.exception = ex
                         except BaseException as e:
                             self.log_exception(
                                 fl_ctx,
@@ -914,12 +874,8 @@ class Controller(Responder, ControllerSpec, ABC):
                             exit_task.exception = e
 
     def _task_has_running_client(self, task: Task):
-        if not task.start_time:
-            # this task hasn't started
-            return True
-
         now = time.time()
-        if now - task.start_time < 60:
+        if now - task.schedule_time < 60:
             # due to potential race conditions, we'll wait for at least 1 minute after the task
             # is started before checking dead clients.
             return True
@@ -933,7 +889,7 @@ class Controller(Responder, ControllerSpec, ABC):
 
                 # is the client that the task is waiting for is dead?
                 if self._client_still_alive(target):
-                    return
+                    return True
 
         # either all client tasks are done or unfinished clients are all dead
         return False
@@ -972,19 +928,21 @@ class Controller(Responder, ControllerSpec, ABC):
     def _check_dead_clients(self):
         if self._engine:
             clients = self._engine.get_clients()
-            for client in clients:
-                if self._client_still_alive(client):
-                    return
+            # now = time.time()
+            with self._dead_clients_lock:
+                for client in clients:
+                    if self._client_still_alive(client.name):
+                        return False
 
-                # All the clients are dead, abort the job run.
-                with self._engine.new_context() as fl_ctx:
-                    server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
-                    fl_ctx.set_prop(key=FLContextKey.FATAL_SYSTEM_ERROR, value=True, private=True, sticky=True)
-                    server_runner.abort(fl_ctx)
+                    # All the clients are dead, abort the job run.
+                    with self._engine.new_context() as fl_ctx:
+                        self.system_panic("All clients are dead", fl_ctx)
+            return True
+        return False
 
-    def _client_still_alive(self, client):
+    def _client_still_alive(self, client_name):
         now = time.time()
-        report_time = self._dead_client_reports.get(client.name, None)
+        report_time = self._dead_client_reports.get(client_name, None)
         if not report_time:
             # this client is still alive
             return True

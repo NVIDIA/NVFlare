@@ -120,7 +120,6 @@ class Task(object):
         self.is_standing = False  # whether the task is still standing
         self.schedule_time = None  # when the task was scheduled
         self.create_time = time.time()
-        self.start_time = None  # when the task was started (1st assignment sent out)
 
     def set_prop(self, key, value):
         if key.startswith("__"):
