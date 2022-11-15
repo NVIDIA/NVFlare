@@ -209,12 +209,12 @@ class ServerEngine(ServerEngineInternalSpec):
             self.engine_info.status = MachineStatus.STARTING
             app_custom_folder = workspace.get_app_custom_dir(run_number)
 
-            job_id = None
-            if job:
-                job_id = job.job_id
+            if not isinstance(job, Job):
+                return "Must provide a job object to start the server app."
+
             open_ports = get_open_ports(2)
             self._start_runner_process(
-                self.args, app_root, run_number, app_custom_folder, open_ports, job_id, job_clients, snapshot
+                self.args, app_root, run_number, app_custom_folder, open_ports, job.job_id, job_clients, snapshot
             )
 
             threading.Thread(target=self._listen_command, args=(open_ports[0], run_number)).start()

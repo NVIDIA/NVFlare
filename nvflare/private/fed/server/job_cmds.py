@@ -183,17 +183,6 @@ class JobCommandModule(CommandModule, CommandUtil):
         replies = self.send_request_to_clients(conn, message)
         return self.process_replies_to_table(conn, replies)
 
-    # Start App
-    def _start_app_on_server(self, conn: Connection, job_id: str) -> bool:
-        engine = conn.app_ctx
-        err = engine.start_app_on_server(job_id)
-        if err:
-            conn.append_error(err)
-            return False
-        else:
-            conn.append_string("Server app is starting....")
-            return True
-
     def _start_app_on_clients(self, conn: Connection, job_id: str) -> bool:
         engine = conn.app_ctx
         client_names = conn.get_prop(self.TARGET_CLIENT_NAMES, None)

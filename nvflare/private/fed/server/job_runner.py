@@ -389,7 +389,9 @@ class JobRunner(FLComponent):
         try:
             job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
             job = job_manager.get_job(jid=job_id, fl_ctx=fl_ctx)
-            engine.start_app_on_server(run_number, job=job, job_clients=job_clients, snapshot=snapshot)
+            err = engine.start_app_on_server(run_number, job=job, job_clients=job_clients, snapshot=snapshot)
+            if err:
+                raise RuntimeError(f"Could not restore the server App for job: {job_id}.")
             with self.lock:
                 self.running_jobs[job_id] = job
         except Exception as e:
