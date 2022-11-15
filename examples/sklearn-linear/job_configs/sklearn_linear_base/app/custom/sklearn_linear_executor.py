@@ -86,7 +86,7 @@ class FedSKLearnLinearExecutor(Executor, ABC):
         # set the paths according to fl_ctx
         engine = fl_ctx.get_engine()
         ws = engine.get_workspace()
-        app_dir = ws.get_app_dir(fl_ctx.get_job_id())
+        app_dir = fl_ctx.get_prop(FLContextKey.APP_ROOT)
         self.local_model_path = os.path.join(app_dir, self.local_model_path)
         self.global_model_path = os.path.join(app_dir, self.global_model_path)
 
