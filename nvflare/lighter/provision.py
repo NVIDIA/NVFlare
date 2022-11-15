@@ -20,6 +20,7 @@ import pathlib
 import shutil
 import sys
 
+from nvflare.fuel.sec import cve_checker
 from nvflare.fuel.utils.class_utils import instantiate_class
 from nvflare.lighter.spec import Participant, Project, Provisioner
 from nvflare.lighter.utils import load_yaml
@@ -59,6 +60,7 @@ def has_no_arguments() -> bool:
 
 
 def handle_provision(args):
+    cve_checker.warn()
     file_path = pathlib.Path(__file__).parent.absolute()
     current_path = os.getcwd()
     custom_folder_path = os.path.join(current_path, args.custom_folder)
