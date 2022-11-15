@@ -799,9 +799,12 @@ class Controller(Responder, ControllerSpec, ABC):
         self._wait_for_task(task, abort_signal)
 
     def _monitor_tasks(self):
+        clients_all_dead = False
         while not self._all_done:
-            if not self._check_dead_clients():
+            if not clients_all_dead and not self._check_dead_clients():
                 self._check_tasks()
+            else:
+                clients_all_dead = True
             time.sleep(self._task_check_period)
 
     def _check_tasks(self):
@@ -934,9 +937,9 @@ class Controller(Responder, ControllerSpec, ABC):
                     if self._client_still_alive(client.name):
                         return False
 
-                    # All the clients are dead, abort the job run.
-                    with self._engine.new_context() as fl_ctx:
-                        self.system_panic("All clients are dead", fl_ctx)
+                # All the clients are dead, abort the job run.
+                with self._engine.new_context() as fl_ctx:
+                    self.system_panic("All clients are dead", fl_ctx)
             return True
         return False
 
