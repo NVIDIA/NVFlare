@@ -807,7 +807,7 @@ class AdminAPI(AdminAPISpec):
 
     def server_execute(self, command, reply_processor=None, cmd_entry=None):
         if self.in_logout:
-            return {_KEY_STATUS: APIStatus.ERROR_INACTIVE_SESSION, _KEY_DETAILS: "session is logging out"}
+            return {_KEY_STATUS: APIStatus.SUCCESS, _KEY_DETAILS: "session is logging out"}
 
         args = split_to_args(command)
         ctx = self._new_command_context(command, args, cmd_entry)

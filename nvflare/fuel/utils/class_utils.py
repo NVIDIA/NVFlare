@@ -91,7 +91,7 @@ class ModuleScanner:
 
                 if modname.startswith(base):
                     if not self.exclude_libs or (".libs" not in modname):
-                        if any(modname.startswith(base + "." + name) for name in self.module_names):
+                        if any(modname.startswith(base + "." + name + ".") for name in self.module_names):
                             try:
                                 module = importlib.import_module(modname)
                                 for name, obj in inspect.getmembers(module):
