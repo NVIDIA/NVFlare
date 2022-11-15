@@ -92,19 +92,12 @@ Open admin for hub. Provide admin username: `admin@nvidia.com`
 ```
 
 Submit job in console. Replace `[HUB_EXAMPLE]` with your local path of this folder
-```
-submit_job [HUB_EXAMPLE]/job
-```
 
 For a simple example, run
 ```
-submit_job [HUB_EXAMPLE]/job-numpy-sag
+submit_job [HUB_EXAMPLE]/numpy-cross-val
 ```
 
-For a MonaiAlgo example, run
-```
-submit_job [HUB_EXAMPLE]/job
-```
 
 ### 4. (Optional) Clean-up
 

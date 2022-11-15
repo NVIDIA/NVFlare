@@ -3,11 +3,20 @@
   "executors": [
     {
       "tasks": [
-        "train"
+        "train",
+        "submit_model"
       ],
       "executor": {
         "path": "nvflare.app_common.np.np_trainer.NPTrainer",
         "args": {}
+      }
+    },
+    {
+      "tasks": [
+        "validate"
+      ],
+      "executor": {
+        "path": "nvflare.app_common.np.np_validator.NPValidator"
       }
     }
   ],
