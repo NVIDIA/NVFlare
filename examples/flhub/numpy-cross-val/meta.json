@@ -1,5 +1,5 @@
 {
-  "name": "numpy-sag",
+  "name": "numpy-cross-val",
   "resource_spec": {},
   "min_clients" : 2,
   "deploy_map": {
