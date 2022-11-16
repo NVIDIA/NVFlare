@@ -50,7 +50,7 @@ Provision API, which you can use to customize configurations to fit your own req
     details on how to set it up, and you can skip the rest of this :ref:`provisioned_setup` section.
 
 Edit the :ref:`programming_guide/provisioning_system:Project yaml file` in the directory with the provisioning tool to meet your
-project requirements (make sure the server, client sites, admin, orgs, enable_byoc settings, and everything else are right
+project requirements (make sure the server, client sites, admin, orgs, and everything else are right
 for your project).
 
 Then run the provision command with (here we assume your project.yml is in current working directory)::
@@ -58,7 +58,8 @@ Then run the provision command with (here we assume your project.yml is in curre
     nvflare provision -p project.yml
 
 The generated startup kits are created by default in a directory prefixed with "prod\_" within a folder of the project
-name in the workspace folder created where provision.py is run.
+name in the workspace folder created where provision.py is run. To create password protected zip archives for the startup
+kits, see :ref:`distribution_builder`.
 
 .. attention::
 
