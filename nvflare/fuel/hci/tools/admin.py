@@ -16,7 +16,6 @@ import argparse
 
 from nvflare.fuel.hci.client.cli import AdminClient, CredentialType
 from nvflare.fuel.hci.client.file_transfer import FileTransferModule
-from nvflare.fuel.sec import cve_checker
 
 
 def main():
@@ -42,8 +41,6 @@ def main():
     parser.add_argument("--cli_history_size", type=int, default=1000)
 
     args = parser.parse_args()
-
-    cve_checker.warn()
 
     modules = []
 

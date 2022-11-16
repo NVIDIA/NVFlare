@@ -21,7 +21,6 @@ import shutil
 import sys
 import webbrowser
 
-from nvflare.fuel.sec import cve_checker
 from nvflare.fuel.utils.class_utils import instantiate_class
 from nvflare.lighter.spec import Participant, Provisioner, Study
 from nvflare.lighter.utils import load_yaml
@@ -40,8 +39,6 @@ def main():
     )
 
     args = parser.parse_args()
-
-    cve_checker.warn()
 
     file_path = pathlib.Path(__file__).parent.absolute()
     current_path = os.getcwd()
