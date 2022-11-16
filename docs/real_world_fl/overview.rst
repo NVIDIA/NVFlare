@@ -7,8 +7,8 @@ Introduction
 ************
 
 NVIDIA FLARE utilizes provisioning and admin clients to reduce the amount of human coordination involved to set up a
-federated learning project. A provisioning tool can be configured to create a startup kit for each site in an encrypted
-package. These packages can then be delivered to each site ready to go, streamlining the process to provision, start,
+federated learning project. A provisioning tool can be configured to create a startup kit for each site.
+These packages can then be delivered to each site ready to go, streamlining the process to provision, start,
 and operate federated learning with a trusted setup.
 
 Provision - Start - Operate
@@ -16,7 +16,7 @@ Provision - Start - Operate
 
 Provision
 ---------
-Lead IT generates the packages for the server / clients / admins, protected with passwords
+Project administrator generates the packages for the server / clients / admins
 
 Start
 -----
@@ -50,15 +50,16 @@ Provision API, which you can use to customize configurations to fit your own req
     details on how to set it up, and you can skip the rest of this :ref:`provisioned_setup` section.
 
 Edit the :ref:`programming_guide/provisioning_system:Project yaml file` in the directory with the provisioning tool to meet your
-project requirements (make sure the server, client sites, admin, orgs, enable_byoc settings, and everything else are right
+project requirements (make sure the server, client sites, admin, orgs, and everything else are right
 for your project).
 
 Then run the provision command with (here we assume your project.yml is in current working directory)::
 
-    provision -p project.yml
+    nvflare provision -p project.yml
 
 The generated startup kits are created by default in a directory prefixed with "prod\_" within a folder of the project
-name in the workspace folder created where provision.py is run.
+name in the workspace folder created where provision.py is run. To create password protected zip archives for the startup
+kits, see :ref:`distribution_builder`.
 
 .. attention::
 
@@ -70,42 +71,9 @@ name in the workspace folder created where provision.py is run.
    signed by :class:`SignatureBuilder<nvflare.lighter.impl.signature.SignatureBuilder>` so the system will detect if any
    of the files have been altered and may not run.
 
-The console displays a list of zip files and their passwords. We suggest you copy the console output
-and "packages" folder to a safe location. The passwords shown below are for demonstration purposes only::
-
-    Project yaml file: /home/nvflare-venv/project.yml.
-    ┏━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━┓
-    ┃ participant           ┃ org    ┃ destination               ┃ password         ┃
-    ┡━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━┩
-    │ localhost             │ nvidia │ localhost.zip             │ Dby2BhwJdLKfStWl │
-    │ org1-a                │ org1   │ org1-a.zip                │ BlLXFKgWp0Qu28cS │
-    │ org1-b                │ org1   │ org1-b.zip                │ Lu6w0aCf1RhAqSlJ │
-    │ org2                  │ org2   │ org2.zip                  │ KdotOafkUl2ziRh5 │
-    │ org3                  │ org3   │ org3.zip                  │ t05cHjnd4WNSo62x │
-    │ admin@nvidia.com      │ nvidia │ admin@nvidia.com.zip      │ eyTrthBudD7noW1s │
-    │ researcher@nvidia.com │ nvidia │ researcher@nvidia.com.zip │ s52b8h9ToIRuALpx │
-    │ researcher@org1.com   │ org1   │ researcher@org1.com.zip   │ dmlt3ySsAeU0V9F7 │
-    │ researcher@org2.com   │ org2   │ researcher@org2.com.zip   │ GJS6eb410q0ijlCZ │
-    │ it@org2.com           │ org2   │ it@org2.com.zip           │ s3lYvaL2tqX0Wrjb │
-    └───────────────────────┴────────┴───────────────────────────┴──────────────────┘
-
-.. tip:: For security reasons, it is recommended to send the password to each participant separately from the package itself.
-
-After generating packages: Distribute and extract
-=================================================
-Please let each participant know that the packages are password protected. In Ubuntu, the following command can be used
-to extract the packages::
-
-    unzip -P $PASSWORD $ZIP_FILE -d $DIRECTORY_TO_EXTRACT_TO
-
-Using ``-d $DIRECTORY_TO_EXTRACT_TO`` is optional, and without it, a "startup" folder will be extracted to the current
-directory the package is in. Either way, the parent folder containing this "startup" folder (*$DIRECTORY_TO_EXTRACT_TO*
-if the ``-d`` option was used) will be the server, client, or admin client workspace root directory, and the party
-running the package will need write access there.
-
 .. note::
 
-   It is important that this "startup" folder is not renamed because the code relies upon this for operation. Please
+   It is important that the "startup" folder in each startup kit is not renamed because the code relies upon this for operation. Please
    note that a "transfer" directory and deployed applications will be created at the level of this "startup" folder. See the
    section on `Internal folder and file structures for NVIDIA FLARE`_ below for more details.
 
@@ -115,24 +83,24 @@ Start: Instructions for each participant to start running FL with their startup 
 
 .. attention:: Please always safeguard .key files! These are the critical keys for secure communication!
 
-Overseer ($OVERSEER_NAME.zip)
+Overseer
 =============================
 One single Overseer will keep track of all the FL servers and communicate to all the participants through their Overseer
 Agents the active FL server or SP.
 
-After unzipping the package for the Overseer, run the start.sh file from the "startup" folder you unzipped to start the Overseer.
+In the package for the Overseer, run the start.sh file from the "startup" folder to start the Overseer.
 
 If clients from other machines cannot connect to the Overseer, make sure that the hostname (name of the server under
 participants in project.yml) specified when generating the startup kits in the provisioning process resolves to the
 correct IP. If the FL server is on an internal network without a DNS hostname, in Ubuntu, an entry may need to be added
 to ``/etc/hosts`` with the internal IP and the hostname.
 
-Federated learning servers ($SERVER_NAME.zip)
+Federated learning servers
 =============================================
 Server will coordinate the federated learning training and be the main hub all clients and admin
 clients connect to.
 
-After unzipping the package server.zip, run the start.sh file from the "startup" folder you unzipped to start the server.
+In the package for each server, run the start.sh file from the "startup" folder to start the server.
 
 The rootCA.pem file is pointed to by "ssl_root_cert" in fed_server.json.  If you plan to move/copy it to a different place,
 you will need to modify fed_server.json.  The same applies to the other two files, server.crt and server.key.
@@ -149,13 +117,13 @@ participants in project.yml) specified when generating the startup kits in the p
 correct IP. If the FL server is on an internal network without a DNS hostname, in Ubuntu, an entry may need to be added
 to ``/etc/hosts`` with the internal IP and the hostname.
 
-Federated learning client ($CLIENT_NAME.zip)
+Federated learning clients
 ============================================
 Each site participating in federated learning training is a client. Each package for a client is named after the client
 name specified when provisioning the project.
 
-After unzipping the package (for details see `After generating packages: Distribute and extract`_), run ``start.sh``
-from the "startup" folder you unzipped to start the client.
+In the package for each client, run ``start.sh``
+from the "startup" folder to start the client.
 
 .. tip::
 

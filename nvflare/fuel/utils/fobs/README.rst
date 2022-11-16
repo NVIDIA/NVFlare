@@ -156,6 +156,8 @@ by MessagePack, a decomposer is included in `fobs` module so no need to further 
 The same decomposer can be registered multiple times. Only first one takes effect, the others
 are ignored with a warning message.
 
+Note that fobs_initialize() may need to be called if decomposers are not registered.
+
 Enum Types
 ----------
 
