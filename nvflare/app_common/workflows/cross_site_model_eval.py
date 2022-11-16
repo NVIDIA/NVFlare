@@ -19,7 +19,7 @@ from typing import Union
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, Task
-from nvflare.apis.dxo import DXO, from_bytes, from_shareable, get_leaf_dxos
+from nvflare.apis.dxo import DXO, from_bytes, from_shareable
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
@@ -319,7 +319,7 @@ class CrossSiteModelEval(Controller):
             unique_name = "SRV_" + name
             unique_names.append(unique_name)
             try:
-                save_path = self._save_dxo_content(unique_name, self._cross_val_models_dir, dxo, fl_ctx)
+                save_path = self._save_validation_content(unique_name, self._cross_val_models_dir, dxo, fl_ctx)
             except:
                 self.log_exception(fl_ctx, f"Unable to save shareable contents of server model {unique_name}")
                 self.system_panic(f"Unable to save shareable contents of server model {unique_name}", fl_ctx)
@@ -335,9 +335,9 @@ class CrossSiteModelEval(Controller):
         return True
 
     def _accept_local_model(self, client_name: str, result: Shareable, fl_ctx: FLContext):
-        fl_ctx.set_prop(AppConstants.RECEIVED_MODEL, result, private=True, sticky=False)
-        fl_ctx.set_prop(AppConstants.RECEIVED_MODEL_OWNER, client_name, private=True, sticky=False)
-        fl_ctx.set_prop(AppConstants.CROSS_VAL_DIR, self._cross_val_dir, private=True, sticky=False)
+        fl_ctx.set_prop(AppConstants.RECEIVED_MODEL, result, private=False, sticky=False)
+        fl_ctx.set_prop(AppConstants.RECEIVED_MODEL_OWNER, client_name, private=False, sticky=False)
+        fl_ctx.set_prop(AppConstants.CROSS_VAL_DIR, self._cross_val_dir, private=False, sticky=False)
         self.fire_event(AppEventType.RECEIVE_BEST_MODEL, fl_ctx)
 
         # get return code
@@ -365,30 +365,23 @@ class CrossSiteModelEval(Controller):
             try:
                 self.log_debug(fl_ctx, "Extracting DXO from shareable.")
                 dxo = from_shareable(result)
+                save_path = self._save_validation_content(client_name, self._cross_val_models_dir, dxo, fl_ctx)
             except ValueError as e:
                 self.log_error(
                     fl_ctx,
-                    f"Ignored bad result from {client_name}: {secure_format_exception(e)}",
+                    f"Unable to save shareable contents of {client_name}'s model. Exception: {secure_format_exception(e)}",
                 )
+                self.log_warning(fl_ctx, f"Ignoring client {client_name}'s model.")
                 return
 
-            # The DXO could contain multiple sub-DXOs (e.g. received from a T2 system)
-            leaf_dxos, errors = get_leaf_dxos(dxo, client_name)
-            if errors:
-                for err in errors:
-                    self.log_error(fl_ctx, f"Bad result from {client_name}: {err}")
-            for k, v in leaf_dxos.items():
-                self._save_client_model(k, v, fl_ctx)
+            self.log_info(fl_ctx, f"Received local model from client {client_name}.")
 
-    def _save_client_model(self, model_name: str, dxo: DXO, fl_ctx: FLContext):
-        save_path = self._save_dxo_content(model_name, self._cross_val_models_dir, dxo, fl_ctx)
-        self.log_info(fl_ctx, f"Saved client model {model_name} to {save_path}")
-        self._client_models[model_name] = save_path
+            self._client_models[client_name] = save_path
 
-        # Send a model to this client to validate
-        self._send_validation_task(model_name, fl_ctx)
+            self._send_validation_task(client_name, fl_ctx)
 
     def _send_validation_task(self, model_name: str, fl_ctx: FLContext):
+        """Sends the model to all participating clients for validation."""
         self.log_info(fl_ctx, f"Sending {model_name} model to all participating clients for validation.")
 
         # Create validation task and broadcast to all participating clients.
@@ -441,38 +434,22 @@ class CrossSiteModelEval(Controller):
 
             self._val_results[client_name][model_owner] = {}
         else:
+            save_file_name = client_name + "_" + model_owner
+
             try:
                 dxo = from_shareable(result)
+                self._save_validation_content(save_file_name, self._cross_val_results_dir, dxo, fl_ctx)
+                self._val_results[client_name][model_owner] = os.path.join(self._cross_val_results_dir, save_file_name)
+
+                self.log_info(fl_ctx, f"Client {client_name} sent results for validating {model_owner} model.")
             except ValueError as e:
                 reason = (
-                    f"Bad validation result from {client_name} on model {model_owner}. "
+                    f"Unable to save validation result from {client_name} of {model_owner}'s model. "
                     f"Exception: {secure_format_exception(e)}"
                 )
                 self.log_exception(fl_ctx, reason)
-                return
 
-            # The DXO could contain multiple sub-DXOs (e.g. received from a T2 system)
-            leaf_dxos, errors = get_leaf_dxos(dxo, client_name)
-            if errors:
-                for err in errors:
-                    self.log_error(fl_ctx, f"Bad result from {client_name}: {err}")
-            for k, v in leaf_dxos.items():
-                self._save_validation_result(k, model_owner, v, fl_ctx)
-
-    def _save_validation_result(self, client_name: str, model_name: str, dxo, fl_ctx):
-        file_name = client_name + "_" + model_name
-        file_path = self._save_dxo_content(file_name, self._cross_val_results_dir, dxo, fl_ctx)
-        models_dict = self._val_results.get(client_name)
-        if models_dict:
-            models_dict.update({model_name: file_path})
-        else:
-            models_dict = {model_name: file_path}
-        self._val_results.update({client_name: models_dict})
-        self.log_info(
-            fl_ctx, f"Saved validation result from client '{client_name}' on model '{model_name}' in {file_path}"
-        )
-
-    def _save_dxo_content(self, name: str, save_dir: str, dxo: DXO, fl_ctx: FLContext) -> str:
+    def _save_validation_content(self, name: str, save_dir: str, dxo: DXO, fl_ctx: FLContext) -> str:
         """Saves shareable to given directory within the app_dir.
 
         Args:
@@ -497,7 +474,9 @@ class CrossSiteModelEval(Controller):
             with open(data_filename, "wb") as f:
                 f.write(bytes_to_save)
         except Exception as e:
-            raise ValueError(f"Unable to save DXO content: {secure_format_exception(e)}")
+            raise ValueError(f"Unable to save shareable contents: {secure_format_exception(e)}")
+
+        self.log_debug(fl_ctx, f"Saved cross validation model with name: {name}.")
 
         return data_filename
 
