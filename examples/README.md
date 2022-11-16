@@ -56,3 +56,7 @@ To get started with these examples, please follow the [Quickstart](https://nvfla
 ## 5. Federated Policies
 * [Federated Policies](./federated-policies/README.rst) 
   * Discuss the federated site policies for authorization, resource and data privacy management
+
+## 6. Federated Learning Hub
+* [FL Hub](./fl_hub/README.md)
+  * Allow hierarchical interaction between several levels of nvflare FL systems, e.g. Tier-1 (hub) and Tier-2 (sub-systems).
