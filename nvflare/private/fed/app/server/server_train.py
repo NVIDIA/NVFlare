@@ -21,6 +21,7 @@ import sys
 
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.server.authz import AuthorizationService
+from nvflare.fuel.sec import cve_checker
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import LoadResult, SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
@@ -43,6 +44,8 @@ def main():
 
     args = parser.parse_args()
     kv_list = parse_vars(args.set)
+
+    cve_checker.warn()
 
     args.train_config = "config/config_train.json"
     config_folder = kv_list.get("config_folder", "")
