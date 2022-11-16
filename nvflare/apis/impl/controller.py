@@ -24,7 +24,7 @@ from nvflare.apis.fl_constant import FLContextKey, ReservedTopic
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.responder import Responder
 from nvflare.apis.server_engine_spec import ServerEngineSpec
-from nvflare.apis.shareable import ReservedHeaderKey, Shareable
+from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
@@ -246,7 +246,6 @@ class Controller(Responder, ControllerSpec, ABC):
             # since task.data could be reset by the after_task_sent_cb
             task_name = task.name
             task_data = task.data
-            operator = task.operator
 
             if task.after_task_sent_cb is not None:
                 try:
@@ -272,11 +271,6 @@ class Controller(Responder, ControllerSpec, ABC):
 
             client_task_to_send.task_sent_time = time.time()
             client_task_to_send.task_send_count += 1
-
-            # add task operator to task_data shareable
-            if operator:
-                task_data.set_header(key=ReservedHeaderKey.TASK_OPERATOR, value=operator)
-
             return task_name, client_task_to_send.id, task_data
 
     def handle_exception(self, task_id: str, fl_ctx: FLContext) -> None:
