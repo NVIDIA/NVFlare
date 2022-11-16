@@ -462,7 +462,12 @@ class CrossSiteModelEval(Controller):
     def _save_validation_result(self, client_name: str, model_name: str, dxo, fl_ctx):
         file_name = client_name + "_" + model_name
         file_path = self._save_dxo_content(file_name, self._cross_val_results_dir, dxo, fl_ctx)
-        self._val_results[client_name][model_name] = file_path
+        models_dict = self._val_results.get(client_name)
+        if models_dict:
+            models_dict.update({model_name: file_path})
+        else:
+            models_dict = {model_name: file_path}
+        self._val_results.update({client_name: models_dict})
         self.log_info(
             fl_ctx, f"Saved validation result from client '{client_name}' on model '{model_name}' in {file_path}"
         )
