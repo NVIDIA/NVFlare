@@ -288,7 +288,7 @@ A new builder to write 'gateway.conf' can be implemented as follows (for referen
 Case 4: adding a builder for enabling the creation of zip archives for the startup kits
 ---------------------------------------------------------------------------------------
 DistributionBuilder was included in NVIDIA FLARE before version 2.2.1 but has been removed from the
-default builders. You can add it as a builder in project.yml if you want to zip the startup kits::
+default builders. You can make this builder available and add it as a builder in project.yml if you want to zip the startup kits::
 
     import os
     import shutil
@@ -338,6 +338,11 @@ default builders. You can add it as a builder in project.yml if you want to zip 
                 else:
                     shutil.make_archive(dest_zip_file, "zip", root_dir=os.path.join(wip_dir, dir), base_dir="startup")
 
+If the above code is made available at ``nvflare.lighter.impl.workspace.DistributionBuilder``, add the following to your project.yml at the bottom of the list of builders::
+
+    path: nvflare.lighter.impl.workspace.DistributionBuilder
+    args:
+      zip_password: true
 
 Takeaways for Custom Builders
 -----------------------------
