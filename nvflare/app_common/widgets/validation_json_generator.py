@@ -64,11 +64,22 @@ class ValidationJsonGenerator(Widget):
                         if data_client not in self._val_results:
                             self._val_results[data_client] = {}
                         self._val_results[data_client][model_owner] = dxo.data
+                    elif dxo.data_kind == DataKind.COLLECTION:
+                        # The DXO could contain multiple sub-DXOs (e.g. received from a T2 system)
+                        _dxos = dxo.data
+                        for _sub_data_client, _dxo in _dxos.items():
+                            _data_client = ".".join([data_client, _sub_data_client])
+                            _dxo.validate()
+                            if _data_client not in self._val_results:
+                                self._val_results[_data_client] = {}
+                            self._val_results[_data_client][model_owner] = _dxo.data
                     else:
                         self.log_error(
-                            fl_ctx, f"Expected dxo of kind METRICS but got {dxo.data_kind} instead.", fire_event=False
+                            fl_ctx,
+                            f"Expected dxo of kind METRICS or COLLECTION but got {dxo.data_kind} instead.",
+                            fire_event=False,
                         )
-                except:
+                except BaseException:
                     self.log_exception(fl_ctx, "Exception in handling validation result.", fire_event=False)
             else:
                 self.log_error(fl_ctx, "Validation result not found.", fire_event=False)
