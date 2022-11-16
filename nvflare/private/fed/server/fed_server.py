@@ -36,6 +36,7 @@ from nvflare.apis.fl_constant import (
     FLContextKey,
     MachineStatus,
     ReservedKey,
+    RunProcessKey,
     ServerCommandKey,
     ServerCommandNames,
     SnapshotKey,
@@ -210,11 +211,23 @@ class BaseServer(ABC):
             self.remove_client_data(token)
             if self.admin_server:
                 self.admin_server.client_dead(token)
+            self.notify_dead_client(client)
             self.logger.info(
                 "Remove the dead Client. Name: {}\t Token: {}.  Total clients: {}".format(
                     client.name, token, len(self.client_manager.get_clients())
                 )
             )
+
+    def notify_dead_client(self, client):
+        """Called to do further processing of the dead client
+
+        Args:
+            client: the dead client
+
+        Returns:
+
+        """
+        pass
 
     def fl_shutdown(self):
         self.shutdown = True
@@ -633,7 +646,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             if self.admin_server:
                 self.admin_server.client_heartbeat(token)
 
-            abort_runs = self._sync_client_jobs(request)
+            abort_runs = self._sync_client_jobs(request, token)
             summary_info = fed_msg.FederatedSummary()
             if abort_runs:
                 del summary_info.abort_jobs[:]
@@ -645,11 +658,60 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                 )
             return summary_info
 
-    def _sync_client_jobs(self, request):
+    def _sync_client_jobs(self, request, client_token):
+        # jobs that are running on client but not on server need to be aborted!
         client_jobs = request.jobs
         server_jobs = self.engine.run_processes.keys()
         jobs_need_abort = list(set(client_jobs).difference(server_jobs))
+
+        # also check jobs that are running on server but not on the client
+        jobs_on_server_but_not_on_client = list(set(server_jobs).difference(client_jobs))
+        if jobs_on_server_but_not_on_client:
+            # should this job be running on the client?
+            for job_id in jobs_on_server_but_not_on_client:
+                job_info = self.engine.run_processes[job_id]
+                participating_clients = job_info.get(RunProcessKey.PARTICIPANTS, None)
+                if participating_clients:
+                    # this is a dict: token => nvflare.apis.client.Client
+                    client = participating_clients.get(client_token, None)
+                    if client:
+                        self._notify_dead_job(client, job_id)
+
         return jobs_need_abort
+
+    def _notify_dead_job(self, client, job_id: str):
+        try:
+            with self.engine.lock:
+                command_conn = self.engine.get_command_conn(job_id)
+                if command_conn:
+                    shareable = Shareable()
+                    shareable.set_header(ServerCommandKey.FL_CLIENT, client.name)
+                    msg = {
+                        ServerCommandKey.COMMAND: ServerCommandNames.HANDLE_DEAD_JOB,
+                        ServerCommandKey.DATA: shareable,
+                    }
+                    command_conn.send(msg)
+        except BaseException:
+            self.logger.info("Could not connect to server runner process")
+
+    def notify_dead_client(self, client):
+        """Called to do further processing of the dead client
+
+        Args:
+            client: the dead client
+
+        Returns:
+
+        """
+        # find all RUNs that this client is participating
+        if not self.engine.run_processes:
+            return
+
+        for job_id, process_info in self.engine.run_processes.items():
+            assert isinstance(process_info, dict)
+            participating_clients = process_info.get(RunProcessKey.PARTICIPANTS, None)
+            if participating_clients and client.token in participating_clients:
+                self._notify_dead_job(client, job_id)
 
     def Retrieve(self, request, context):
         client_name = request.client_name

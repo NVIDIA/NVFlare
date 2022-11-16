@@ -45,6 +45,7 @@ from nvflare.apis.fl_constant import (
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.fl_snapshot import RunSnapshot
 from nvflare.apis.impl.job_def_manager import JobDefManagerSpec
+from nvflare.apis.job_def import Job
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
@@ -138,7 +139,8 @@ class ServerEngine(ServerEngineInternalSpec):
         else:
             self.engine_info.status = MachineStatus.STOPPED
 
-        for job_id, _ in self.run_processes.items():
+        keys = list(self.run_processes.keys())
+        for job_id in keys:
             run_folder = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(job_id))
             app_file = os.path.join(run_folder, "fl_app.txt")
             if os.path.exists(app_file):
@@ -196,7 +198,7 @@ class ServerEngine(ServerEngineInternalSpec):
     def validate_clients(self, client_names: List[str]) -> Tuple[List[Client], List[str]]:
         return self._get_all_clients_from_inputs(client_names)
 
-    def start_app_on_server(self, run_number: str, job_id: str = None, job_clients=None, snapshot=None) -> str:
+    def start_app_on_server(self, run_number: str, job: Job = None, job_clients=None, snapshot=None) -> str:
         if run_number in self.run_processes.keys():
             return f"Server run: {run_number} already started."
         else:
@@ -208,9 +210,12 @@ class ServerEngine(ServerEngineInternalSpec):
             self.engine_info.status = MachineStatus.STARTING
             app_custom_folder = workspace.get_app_custom_dir(run_number)
 
+            if not isinstance(job, Job):
+                return "Must provide a job object to start the server app."
+
             open_ports = get_open_ports(2)
             self._start_runner_process(
-                self.args, app_root, run_number, app_custom_folder, open_ports, job_id, job_clients, snapshot
+                self.args, app_root, run_number, app_custom_folder, open_ports, job.job_id, job_clients, snapshot
             )
 
             threading.Thread(target=self._listen_command, args=(open_ports[0], run_number)).start()

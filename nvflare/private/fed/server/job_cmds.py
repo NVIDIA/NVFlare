@@ -21,7 +21,7 @@ import shutil
 from typing import Dict, List
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
-from nvflare.apis.fl_constant import AdminCommandNames
+from nvflare.apis.fl_constant import AdminCommandNames, RunProcessKey
 from nvflare.apis.job_def import Job, JobDataKey, JobMetaKey, TopDir
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.apis.utils.job_utils import convert_legacy_zipped_app_to_job
@@ -183,19 +183,27 @@ class JobCommandModule(CommandModule, CommandUtil):
         replies = self.send_request_to_clients(conn, message)
         return self.process_replies_to_table(conn, replies)
 
-    # Start App
-    def _start_app_on_server(self, conn: Connection, job_id: str) -> bool:
-        engine = conn.app_ctx
-        err = engine.start_app_on_server(job_id)
-        if err:
-            conn.append_error(err)
-            return False
-        else:
-            conn.append_string("Server app is starting....")
-            return True
-
     def _start_app_on_clients(self, conn: Connection, job_id: str) -> bool:
         engine = conn.app_ctx
+        client_names = conn.get_prop(self.TARGET_CLIENT_NAMES, None)
+        run_process = engine.run_processes.get(job_id, {})
+        if not run_process:
+            conn.append_error(f"Job: {job_id} is not running.")
+            return
+
+        participants = run_process.get(RunProcessKey.PARTICIPANTS, [])
+        wrong_clients = []
+        for client in client_names:
+            for _, p in participants.items():
+                if client == p.name:
+                    break
+                wrong_clients.append(client)
+
+        if wrong_clients:
+            display_clientss = ",".join(wrong_clients)
+            conn.append_error(f"{display_clientss} are not in the job running list.")
+            return
+
         err = engine.check_app_start_readiness(job_id)
         if err:
             conn.append_error(err)
@@ -213,22 +221,28 @@ class JobCommandModule(CommandModule, CommandUtil):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
 
         job_id = conn.get_prop(self.JOB_ID)
+        if len(args) < 3:
+            conn.append_error("Please provide the target name (client / all) for start_app command.")
+            return
+
         target_type = args[2]
         if target_type == self.TARGET_TYPE_SERVER:
-            if not self._start_app_on_server(conn, job_id):
-                return
+            # if not self._start_app_on_server(conn, job_id):
+            #     return
+            conn.append_error("start_app command only supports client app start.")
+            return
         elif target_type == self.TARGET_TYPE_CLIENT:
             if not self._start_app_on_clients(conn, job_id):
                 return
         else:
-            # all
-            success = self._start_app_on_server(conn, job_id)
-
-            if success:
-                client_names = conn.get_prop(self.TARGET_CLIENT_NAMES, None)
-                if client_names:
-                    if not self._start_app_on_clients(conn, job_id):
-                        return
+            # # all
+            # success = self._start_app_on_server(conn, job_id)
+            #
+            # if success:
+            client_names = conn.get_prop(self.TARGET_CLIENT_NAMES, None)
+            if client_names:
+                if not self._start_app_on_clients(conn, job_id):
+                    return
         conn.append_success("")
 
     def delete_job_id(self, conn: Connection, args: List[str]):

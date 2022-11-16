@@ -25,4 +25,3 @@ class FLCommunicationError(Exception):
         super().__init__()
         # Copy all the gRPC exception properties into FLCommunicationError instance.
         self.__dict__.update(exception.__dict__)
-        self.message = message
