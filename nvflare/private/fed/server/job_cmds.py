@@ -475,6 +475,7 @@ class JobCommandModule(CommandModule, CommandUtil):
     def submit_job(self, conn: Connection, args: List[str]):
         folder_name = args[1]
         zip_b64str = args[2]
+
         data_bytes = convert_legacy_zipped_app_to_job(b64str_to_bytes(zip_b64str))
         engine = conn.app_ctx
 
