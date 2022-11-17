@@ -154,6 +154,25 @@ by MessagePack, a decomposer is included in `fobs` module so no need to further 
 The same decomposer can be registered multiple times. Only first one takes effect, the others
 are ignored with a warning message.
 
+Note that fobs_initialize() may need to be called if decomposers are not registered.
+
+Enum Types
+----------
+
+FOBS supports enum types by default. Decomposers for all classes derived from :code:`Enum` are
+automatically registered using the generic decomposer for enum.
+
+In rare case that an enum class is too complicated that the generic decomposer can't
+handle it, a special decomposer can be written and registered. This will prevent FOBS from
+auto-registering the generic decomposer for this enum type.
+
+The auto-registering of enum decomposers can be disabled like this,
+
+::
+
+    fobs.auto_register_enum_types(False)
+
+
 Custom Types
 ------------
 

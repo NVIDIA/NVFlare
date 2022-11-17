@@ -31,17 +31,7 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .constants import XGB_TRAIN_TASK, XGBShareableHeader
-from .executor_spec import FedXGBHistogramExecutorSpec
-
-
-class XGBoostParams:
-    """Container for all XGBoost parameters"""
-
-    def __init__(self, xgb_params: dict, num_rounds=10, early_stopping_rounds=2, verbose_eval=False):
-        self.num_rounds = num_rounds
-        self.early_stopping_rounds = early_stopping_rounds
-        self.verbose_eval = verbose_eval
-        self.xgb_params: dict = xgb_params if xgb_params else {}
+from .executor_spec import FedXGBHistogramExecutorSpec, XGBoostParams
 
 
 class FedXGBHistogramExecutor(FedXGBHistogramExecutorSpec, Executor, ABC):
@@ -50,17 +40,21 @@ class FedXGBHistogramExecutor(FedXGBHistogramExecutorSpec, Executor, ABC):
     This class implements the basic xgb_train logic, the subclass must implement load_data.
     """
 
-    def __init__(self, num_rounds, early_stopping_round, xgboost_params, verbose_eval=False):
-        """Federated XGBoost Executor Spec for histogram-base collaboration.
+    def __init__(self, num_rounds, early_stopping_round, xgboost_params: dict, verbose_eval=False):
+        """Federated XGBoost Executor for histogram-base collaboration.
 
         This class sets up the training environment for Federated XGBoost.
-        This is an abstract class, load_data and xgb_train method must be implemented by a subclass.
+        This is an abstract class, load_data method must be implemented by a subclass.
+        This is the executor running on each NVFlare client, which starts XGBoost training.
 
         Args:
             num_rounds: number of boosting rounds
             early_stopping_round: early stopping round
-            xgboost_params: parameters to passed in xgb
-            verbose_eval: verbose_eval in xgb
+            xgboost_params: This dict is passed to `xgboost.train()` as the first argument `params`.
+                It contains all the Booster parameters.
+                Please refer to XGBoost documentation for details:
+                https://xgboost.readthedocs.io/en/stable/python/python_api.html#module-xgboost.training
+            verbose_eval: verbose_eval in xgboost.train
         """
         super().__init__()
 
@@ -101,6 +95,7 @@ class FedXGBHistogramExecutor(FedXGBHistogramExecutorSpec, Executor, ABC):
             early_stopping_rounds=params.early_stopping_rounds,
             verbose_eval=params.verbose_eval,
             callbacks=[callback.EvaluationMonitor(rank=self.rank)],
+            obj="squared_log",
         )
 
         return bst
