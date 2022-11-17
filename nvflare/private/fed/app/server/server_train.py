@@ -24,7 +24,6 @@ from nvflare.apis.fl_constant import JobConstants, SiteType, WorkspaceConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.security import hash_password
-from nvflare.fuel.sec import cve_checker
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import AppFolderConstants, SSLConstants
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger, create_privacy_manager
@@ -48,8 +47,6 @@ def main():
 
     args = parser.parse_args()
     kv_list = parse_vars(args.set)
-
-    cve_checker.warn()
 
     config_folder = kv_list.get("config_folder", "")
     if config_folder == "":
