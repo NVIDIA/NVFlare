@@ -29,20 +29,23 @@ client_results_root = "/tmp/nvflare/sim_cifar10"
 # download_dir = "./workspaces/poc_workspace/admin/transfer"
 
 # 4.1 Central vs. FedAvg
-experiments = {"central": {"tag": "val_acc_local_model"}, "fedavg": {"tag": "val_acc_global_model", "alpha": 1.0}}
+experiments = {
+    "cifar10_central": {"tag": "val_acc_local_model"},
+    "cifar10_fedavg": {"tag": "val_acc_global_model", "alpha": 1.0},
+}
 
 # # 4.2 Impact of client data heterogeneity
-# experiments = {"fedavg (alpha=1.0)": {"tag": "val_acc_global_model", "alpha": 1.0},
-#               "fedavg (alpha=0.5)": {"tag": "val_acc_global_model", "alpha": 0.5},
-#               "fedavg (alpha=0.3)": {"tag": "val_acc_global_model", "alpha": 0.3},
-#               "fedavg (alpha=0.1)": {"tag": "val_acc_global_model", "alpha": 0.1}
+# experiments = {"cifar10_fedavg (alpha=1.0)": {"tag": "val_acc_global_model", "alpha": 1.0},
+#               "cifar10_fedavg (alpha=0.5)": {"tag": "val_acc_global_model", "alpha": 0.5},
+#               "cifar10_fedavg (alpha=0.3)": {"tag": "val_acc_global_model", "alpha": 0.3},
+#               "cifar10_fedavg (alpha=0.1)": {"tag": "val_acc_global_model", "alpha": 0.1}
 # }
 
 # # 4.3 FedProx vs. FedOpt vs. SCAFFOLD
-# experiments = {"fedavg": {"tag": "val_acc_global_model", "alpha": 0.1},
-#               "fedprox": {"tag": "val_acc_global_model", "alpha": 0.1},
-#               "fedopt": {"tag": "val_acc_global_model", "alpha": 0.1},
-#               "scaffold": {"tag": "val_acc_global_model", "alpha": 0.1}
+# experiments = {"cifar10_fedavg": {"tag": "val_acc_global_model", "alpha": 0.1},
+#               "cifar10_fedprox": {"tag": "val_acc_global_model", "alpha": 0.1},
+#               "cifar10_fedopt": {"tag": "val_acc_global_model", "alpha": 0.1},
+#               "cifar10_scaffold": {"tag": "val_acc_global_model", "alpha": 0.1}
 # }
 
 add_cross_site_val = True
@@ -68,7 +71,7 @@ def add_eventdata(data, config, filepath, tag="val_acc_global_model"):
     # print(event_data)
     for e in event_data[tag]:
         # print(e)
-        data["Config"].append("cifar10_" + config)
+        data["Config"].append(config)
         data["Step"].append(e[0])
         data["Accuracy"].append(e[1])
     print(f"added {len(event_data[tag])} entries for {tag}")
