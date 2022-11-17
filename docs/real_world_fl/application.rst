@@ -107,16 +107,15 @@ the client config should have the following in order to configure it as an Execu
 
     Configuration of Executor Tasks is ignored here.
 
-Please follow :ref:`quickstart:Quickstart` to learn more.
+Please follow :ref:`quickstart` to learn more.
 
 .. _troubleshooting_byoc:
 
 Troubleshooting BYOC
 ====================
-There is an ``enable_byoc`` flag for each participant that can be set at provisioning, and if that is disabled, even if
-you have custom code in your application folder, it will not be loaded. There is also a setting for ``allow_byoc``
-through the authorization rule groups. This controls whether or not apps containing BYOC code will be allowed to be
-uploaded and deployed.
+In 2.2.1, authorization has been redesigned and BYOC is no longer controlled through settings at provisioning, but
+instead by each site's authorization.json (in the local folder of the workspace). BYOC is a right and can be restricted
+to certain roles or even orgs or users. See :ref:`federated_authorization` for details.
 
 *********
 Resources
