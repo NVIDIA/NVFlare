@@ -20,7 +20,6 @@ from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.client.cli import AdminClient, CredentialType
 from nvflare.fuel.hci.client.file_transfer import FileTransferModule
 from nvflare.fuel.hci.client.overseer_service_finder import ServiceFinderByOverseer
-from nvflare.fuel.sec import cve_checker
 from nvflare.private.fed.app.fl_conf import FLAdminClientStarterConfigurator
 from nvflare.security.logging import secure_format_exception
 
@@ -39,8 +38,6 @@ def main():
     parser.add_argument("--with_debug", action="store_true")
 
     args = parser.parse_args()
-
-    cve_checker.warn()
 
     try:
         os.chdir(args.workspace)
