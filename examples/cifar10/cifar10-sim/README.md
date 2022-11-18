@@ -101,11 +101,12 @@ Here SGD with momentum and cosine learning rate decay:
 ### 3.5 Running experiments in parallel
 
 If you have several GPUs available in your system, you can run simulations in parallel by adjusting `CUDA_VISIBLE_DEVICES`.
-
+For example, you can run the following commands in two separate terminals.
 ```
 export CUDA_VISIBLE_DEVICES=0
 ./run_simulator.sh cifar10_fedavg 0.1 8 8
-
+```
+```
 export CUDA_VISIBLE_DEVICES=1
 ./run_simulator.sh cifar10_scaffold 0.1 8 8
 ```
