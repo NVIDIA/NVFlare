@@ -263,7 +263,7 @@ class FederatedClientBase:
         except FLCommunicationError:
             self.communicator.heartbeat_done = True
 
-    def quite_remote(self, project_name, fl_ctx: FLContext):
+    def quit_remote(self, project_name, fl_ctx: FLContext):
         """Sending the last message to the server before leaving.
 
         Args:
@@ -364,7 +364,7 @@ class FederatedClientBase:
         pool = None
         try:
             pool = ThreadPool(len(self.servers))
-            return pool.map(partial(self.quite_remote, fl_ctx=fl_ctx), tuple(self.servers))
+            return pool.map(partial(self.quit_remote, fl_ctx=fl_ctx), tuple(self.servers))
         finally:
             if pool:
                 pool.terminate()
