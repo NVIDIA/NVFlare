@@ -31,7 +31,9 @@ function install_deps {
         echo "pip installing development dependencies"
         python3 -m pip install -r requirements-dev.txt
         echo "dependencies installed" > /tmp/.flare_deps_installed
-    fi;
+    else
+	echo "dependencies installed"
+    fi
 }
 
 function clean {
@@ -98,10 +100,11 @@ function dry_run() {
 }
 
 function check_license() {
-    folders_to_check_license="nvflare tests"
-    grep -q -r --include "*.py" --exclude-dir "*protos*" -L \
-    "\(# Copyright (c) \(2021\|2021-2022\|2022\), NVIDIA CORPORATION.  All rights reserved.\)\|\(This file is released into the public domain.\)" \
-    ${folders_to_check_license} > no_license.lst
+    folders_to_check_license="nvflare tests integration research"
+    echo "checking license header in folder: $folders_to_check_license"
+    (grep -r --include "*.py" --exclude-dir "*protos*" -L \
+    "\(# Copyright (c) \(2021-2022\|2022\), NVIDIA CORPORATION.  All rights reserved.\)\|\(This file is released into the public domain.\)" \
+    ${folders_to_check_license} || true) > no_license.lst
     if [ -s no_license.lst ]; then
         # The file is not-empty.
         cat no_license.lst
@@ -110,9 +113,10 @@ function check_license() {
         rm -f no_license.lst
         exit 1
     else
-        echo "All Python files in folder (${folders_to_check_license}) have license header"
+        echo "All Python files in folder ${folders_to_check_license} have license header"
         rm -f no_license.lst
     fi
+    echo "finished checking license header"
 }
 
 function flake8_check() {
@@ -304,24 +308,30 @@ do
 done
 
 if [[ -z $cmd ]]; then
-    cmd="check_license;
-        check_style_type_import nvflare tests;
-        fix_style_import nvflare;
-        fix_style_import tests;
-        python3 -m pytest --numprocesses=auto --cov=nvflare --cov-report html:cov_html --cov-report xml:cov.xml --junitxml=unit_test.xml tests/unit_test;
-        "
+    cmd_array=(
+	"check_license"
+        "check_style_type_import nvflare tests"
+        "fix_style_import nvflare"
+        "fix_style_import tests"
+        "python3 -m pytest --numprocesses=auto --cov=nvflare --cov-report html:cov_html --cov-report xml:cov.xml --junitxml=unit_test.xml tests/unit_test"
+    )
 else
-    cmd="$cmd $target"
+    cmd_array=("$cmd $target")
 fi
 
 echo "running command: "
-echo "        install_deps;"
-echo "        $cmd"
+echo "        install_deps"
+for i in "${cmd_array[@]}"; do
+    echo "        $i"
+done
 echo "                 "
-if [[ $dry_run_flag = "true" ]]; then
-    dry_run "$cmd"
-else
-    install_deps
-    eval "$cmd"
-fi
+
+for i in "${cmd_array[@]}"; do
+    if [[ $dry_run_flag = "true" ]]; then
+        dry_run "$i"
+    else
+        install_deps
+        ${i}
+    fi
+done
 echo "Done"

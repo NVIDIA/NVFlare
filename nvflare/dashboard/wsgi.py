@@ -17,8 +17,6 @@ import ssl
 
 from application import init_app
 
-from nvflare.fuel.sec import cve_checker
-
 app = init_app()
 
 if __name__ == "__main__":
@@ -31,5 +29,4 @@ if __name__ == "__main__":
         ssl_context.load_cert_chain(web_crt, web_key)
     else:
         ssl_context = None
-    cve_checker.warn()
     app.run(host="0.0.0.0", port=port, ssl_context=ssl_context)
