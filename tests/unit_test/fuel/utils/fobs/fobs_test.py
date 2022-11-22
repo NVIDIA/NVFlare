@@ -68,8 +68,7 @@ class ExampleClass:
 
 
 class ExampleClassDecomposer(Decomposer):
-    @staticmethod
-    def supported_type():
+    def supported_type(self):
         return ExampleClass
 
     def decompose(self, target: ExampleClass) -> Any:

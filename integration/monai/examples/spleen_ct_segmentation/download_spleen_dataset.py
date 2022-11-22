@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import argparse
+
 from monai.apps.utils import download_and_extract
 
 
@@ -23,9 +24,15 @@ def download_spleen_dataset(filepath, output_dir):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--filepath", "-f", type=str, help="the file path of the downloaded compressed file.",
-                        default="./data/Task09_Spleen.tar")
-    parser.add_argument("--output_dir", "-o", type=str, help="target directory to save extracted files.",
-                        default="./data")
+    parser.add_argument(
+        "--filepath",
+        "-f",
+        type=str,
+        help="the file path of the downloaded compressed file.",
+        default="./data/Task09_Spleen.tar",
+    )
+    parser.add_argument(
+        "--output_dir", "-o", type=str, help="target directory to save extracted files.", default="./data"
+    )
     args = parser.parse_args()
     download_spleen_dataset(args.filepath, args.output_dir)

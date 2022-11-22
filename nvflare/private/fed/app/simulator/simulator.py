@@ -51,10 +51,8 @@ if __name__ == "__main__":
     create the SimulatorRunner object, do a setup(), then calls the run().
     """
 
-    if sys.version_info >= (3, 9):
-        raise RuntimeError("Python versions 3.9 and above are not yet supported. Please use Python 3.8 or 3.7.")
     if sys.version_info < (3, 7):
-        raise RuntimeError("Python versions 3.6 and below are not supported. Please use Python 3.8 or 3.7.")
+        raise RuntimeError("Please use Python 3.7 or above.")
 
     parser = argparse.ArgumentParser()
     define_simulator_parser(parser)

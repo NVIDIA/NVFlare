@@ -33,7 +33,7 @@ NVIDIA FLARE is built on a componentized architecture that gives you the flexibi
 
 Getting Started
 ===============
-For first-time users and FL researchers, FLARE provides the FL Simulator that allows you to build, test, and deploy applications locally.  The :ref:`Getting Started guide <getting_started>` covers installation and walks through an example application using the FL Simulator.
+For first-time users and FL researchers, FLARE provides the :ref:`fl_simulator` that allows you to build, test, and deploy applications locally.  The :ref:`Getting Started guide <getting_started>` covers installation and walks through an example application using the FL Simulator.
 
 When you are ready to for a secure, distributed deployment, the :ref:`Real World Federated Learning <real_world_fl>` section covers the tools and process required to deploy and operate a secure, real-world FLARE project.
 

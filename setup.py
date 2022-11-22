@@ -22,8 +22,6 @@ import versioneer
 
 # read the contents of your README file
 this_directory = os.path.abspath(os.path.dirname(__file__))
-with open(os.path.join(this_directory, "README.md"), encoding="utf-8") as f:
-    long_description = f.read()
 
 if os.path.exists(os.path.join(this_directory, "nvflare", "poc.zip")):
     os.remove(os.path.join(this_directory, "nvflare", "poc.zip"))
@@ -50,8 +48,6 @@ setup(
     name=package_name,
     version=version,
     cmdclass=versioneer.get_cmdclass(),
-    description="Federated Learning Application Runtime Environment",
-    url="https://github.com/NVIDIA/NVFlare",
     package_dir={"nvflare": "nvflare"},
     packages=find_packages(
         where=".",
@@ -61,43 +57,6 @@ setup(
         exclude=["tests", "tests.*"],
     ),
     package_data={"": ["*.yml", "*.html", "poc.zip", "*.config"]},
-    zip_safe=True,
-    license_files=("LICENSE",),
-    classifiers=[
-        "Programming Language :: Python :: 3.7",
-        "Programming Language :: Python :: 3.8",
-        "License :: OSI Approved :: Apache Software License",
-        "Operating System :: POSIX :: Linux",
-    ],
-    long_description=long_description,
-    long_description_content_type="text/markdown",
-    python_requires=">=3.7,<3.9",
-    install_requires=[
-        "cryptography>=36.0.0",
-        "Flask==2.1.2",
-        "Flask-JWT-Extended==4.4.3",
-        "Flask-SQLAlchemy==2.5.1",
-        "SQLAlchemy==1.4.31",
-        "google-api-python-client==2.49.0",
-        "grpcio==1.46.3",
-        "gunicorn==20.1.0",
-        "numpy",
-        "protobuf==3.20.2",
-        "psutil==5.9.1",
-        "PyYAML==6.0",
-        "six>=1.15.0",
-        "msgpack==1.0.3",
-        "docker>=6.0",
-    ],
-    extras_require={"HE": ["tenseal==0.3.0"]},
-    entry_points={
-        "console_scripts": [
-            "provision=nvflare.lighter.provision:main",
-            "poc=nvflare.lighter.poc:main",
-            "nvflare=nvflare.cli:main",
-            "authz_preview=nvflare.fuel.hci.tools.authz_preview:main",
-        ],
-    },
 )
 
 os.remove(os.path.join(this_directory, "nvflare", "poc.zip"))

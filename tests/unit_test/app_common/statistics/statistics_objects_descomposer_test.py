@@ -28,10 +28,8 @@ from nvflare.app_common.app_constant import StatisticsConstants
 from nvflare.app_common.statistics.statisitcs_objects_decomposer import (
     BinDecomposer,
     BinRangeDecomposer,
-    DataTypeDecomposer,
     FeatureDecomposer,
     HistogramDecomposer,
-    HistogramTypeDecomposer,
     StatisticConfigDecomposer,
 )
 from nvflare.fuel.utils import fobs
@@ -108,15 +106,12 @@ class TestStatisticConfigDecomposer:
         assert target_configs == target_configs1
 
     def test_datatype_serde(self):
-        fobs.register(DataTypeDecomposer)
-
         dt = DataType.FLOAT
         o = fobs.dumps(dt)
         dt1 = fobs.loads(o)
         assert dt == dt1
 
     def test_histogram_type_serde(self):
-        fobs.register(HistogramTypeDecomposer)
         f = HistogramType.STANDARD
         o = fobs.dumps(f)
         f1 = fobs.loads(o)
@@ -124,7 +119,6 @@ class TestStatisticConfigDecomposer:
 
     def test_feature_serde(self):
         fobs.register(FeatureDecomposer)
-        fobs.register(DataTypeDecomposer)
 
         f = Feature(feature_name="feature1", data_type=DataType.INT)
         o = fobs.dumps(f)
@@ -147,7 +141,6 @@ class TestStatisticConfigDecomposer:
         assert f1 == f
 
     def test_histogram_serde(self):
-        fobs.register(HistogramTypeDecomposer)
         fobs.register(HistogramDecomposer)
         fobs.register(BinDecomposer)
         fobs.register(BinRangeDecomposer)

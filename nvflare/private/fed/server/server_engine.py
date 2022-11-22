@@ -45,6 +45,7 @@ from nvflare.apis.fl_constant import (
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.fl_snapshot import RunSnapshot
 from nvflare.apis.impl.job_def_manager import JobDefManagerSpec
+from nvflare.apis.job_def import Job
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
@@ -138,7 +139,8 @@ class ServerEngine(ServerEngineInternalSpec):
         else:
             self.engine_info.status = MachineStatus.STOPPED
 
-        for job_id, _ in self.run_processes.items():
+        keys = list(self.run_processes.keys())
+        for job_id in keys:
             run_folder = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(job_id))
             app_file = os.path.join(run_folder, "fl_app.txt")
             if os.path.exists(app_file):
@@ -176,8 +178,12 @@ class ServerEngine(ServerEngineInternalSpec):
             except BaseException:
                 # The parent process can not be reached. Terminate the child process.
                 break
-        # delay some time for the wrap up process before the child process self terminate.
-        time.sleep(30)
+        # wait and delay some time for the wrap up process before the child process self terminate.
+        start_time = time.time()
+        while self.engine_info.status != MachineStatus.STOPPED:
+            time.sleep(1.0)
+            if time.time() - start_time > 30.0:
+                break
         os.killpg(os.getpgid(os.getpid()), 9)
 
     def delete_job_id(self, num):
@@ -192,7 +198,7 @@ class ServerEngine(ServerEngineInternalSpec):
     def validate_clients(self, client_names: List[str]) -> Tuple[List[Client], List[str]]:
         return self._get_all_clients_from_inputs(client_names)
 
-    def start_app_on_server(self, run_number: str, job_id: str = None, job_clients=None, snapshot=None) -> str:
+    def start_app_on_server(self, run_number: str, job: Job = None, job_clients=None, snapshot=None) -> str:
         if run_number in self.run_processes.keys():
             return f"Server run: {run_number} already started."
         else:
@@ -204,9 +210,12 @@ class ServerEngine(ServerEngineInternalSpec):
             self.engine_info.status = MachineStatus.STARTING
             app_custom_folder = workspace.get_app_custom_dir(run_number)
 
+            if not isinstance(job, Job):
+                return "Must provide a job object to start the server app."
+
             open_ports = get_open_ports(2)
             self._start_runner_process(
-                self.args, app_root, run_number, app_custom_folder, open_ports, job_id, job_clients, snapshot
+                self.args, app_root, run_number, app_custom_folder, open_ports, job.job_id, job_clients, snapshot
             )
 
             threading.Thread(target=self._listen_command, args=(open_ports[0], run_number)).start()
@@ -370,12 +379,17 @@ class ServerEngine(ServerEngineInternalSpec):
                 if child_process:
                     child_process.terminate()
         finally:
-            with self.lock:
-                if job_id in self.run_processes:
-                    self.run_processes.pop(job_id)
+            threading.Thread(target=self._remove_run_processes, args=[job_id]).start()
 
         self.engine_info.status = MachineStatus.STOPPED
         return ""
+
+    def _remove_run_processes(self, job_id):
+        # wait for the run process to gracefully terminated, and ensure to remove from run_processes.
+        time.sleep(60.0)
+        if job_id in self.run_processes:
+            with self.lock:
+                self.run_processes.pop(job_id)
 
     def check_app_start_readiness(self, job_id: str) -> str:
         if job_id not in self.run_processes.keys():
@@ -391,8 +405,8 @@ class ServerEngine(ServerEngineInternalSpec):
 
         touch_file = os.path.join(self.args.workspace, "shutdown.fl")
         _ = self.executor.submit(lambda p: server_shutdown(*p), [self.server, touch_file])
-        while self.server.status != ServerStatus.SHUTDOWN:
-            time.sleep(1.0)
+        # while self.server.status != ServerStatus.SHUTDOWN:
+        #     time.sleep(1.0)
         return ""
 
     def restart_server(self) -> str:
@@ -404,8 +418,8 @@ class ServerEngine(ServerEngineInternalSpec):
 
         touch_file = os.path.join(self.args.workspace, "restart.fl")
         _ = self.executor.submit(lambda p: server_shutdown(*p), [self.server, touch_file])
-        while self.server.status != ServerStatus.SHUTDOWN:
-            time.sleep(1.0)
+        # while self.server.status != ServerStatus.SHUTDOWN:
+        #     time.sleep(1.0)
         return ""
 
     def get_widget(self, widget_id: str) -> Widget:
@@ -770,7 +784,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 else:
                     resp = fobs.loads(r.reply.body)
                     result[site_name] = (
-                        resp.get_header(ShareableHeader.CHECK_RESOURCE_RESULT, False),
+                        resp.get_header(ShareableHeader.IS_RESOURCE_ENOUGH, False),
                         resp.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, ""),
                     )
             else:
@@ -782,8 +796,8 @@ class ServerEngine(ServerEngineInternalSpec):
     ):
         requests = {}
         for site_name, result in resource_check_results.items():
-            check_result, token = result
-            if check_result and token:
+            is_resource_enough, token = result
+            if is_resource_enough and token:
                 resource_requirements = resource_reqs[site_name]
                 request = Message(topic=TrainingTopic.CANCEL_RESOURCE, body=fobs.dumps(resource_requirements))
                 request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
@@ -826,6 +840,6 @@ def server_shutdown(server, touch_file):
         server.admin_server.stop()
         time.sleep(3.0)
     finally:
-        server.status = ServerStatus.SHUTDOWN
         security_close()
+        server.status = ServerStatus.SHUTDOWN
         sys.exit(2)

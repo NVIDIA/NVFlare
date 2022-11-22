@@ -34,9 +34,9 @@ class ResourceManagerSpec(ABC):
             fl_ctx: the FLContext
 
         Returns:
-            A tuple of (check_result, token).
+            A tuple of (is_resource_enough, token).
 
-            check_result is a bool indicates whether there is enough resources;
+            is_resource_enough is a bool indicates whether there is enough resources;
             token is for resource reservation / cancellation for this check request.
         """
         pass

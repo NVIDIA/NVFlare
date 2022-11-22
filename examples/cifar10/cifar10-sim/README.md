@@ -44,10 +44,7 @@ python3 ../pt/utils/cifar10_download_data.py
 
 We are using NVFlare's [FL simulator](https://nvflare.readthedocs.io/en/latest/user_guide/fl_simulator.html) to run the following experiments. 
 
-First set the output root where to save the results
-```
-export RESULT_ROOT=/tmp/nvflare/sim_cifar10
-```
+The output root of where to save the results is set in [./run_simulator.sh](./run_simulator.sh) as `RESULT_ROOT=/tmp/nvflare/sim_cifar10`.
 
 ### 3.1 Varying data heterogeneity of data splits
 
@@ -62,8 +59,7 @@ We use `set_alpha.sh` to change the alpha value inside the job configurations.
 To simulate a centralized training baseline, we run FL with 1 client for 25 local epochs but only for one round. 
 It takes circa 6 minutes on an NVIDIA TitanX GPU.
 ```
-./set_alpha.sh cifar10_central 0.0
-nvflare simulator job_configs/cifar10_central --workspace ${RESULT_ROOT}/central --threads 1 --n_clients 1
+./run_simulator.sh cifar10_central 0.0 1 1
 ```
 Note, here `alpha=0.0` means that no heterogeneous data splits are being generated.
 
@@ -78,14 +74,10 @@ Each job will take about 35 minutes, depending on your system.
 
 You can copy the whole block into the terminal, and it will execute each experiment one after the other.
 ```
-./set_alpha.sh cifar10_fedavg 1.0
-nvflare simulator job_configs/cifar10_fedavg --workspace ${RESULT_ROOT}/fedavg_alpha1.0 --threads 8 --n_clients 8
-./set_alpha.sh cifar10_fedavg 0.5
-nvflare simulator job_configs/cifar10_fedavg --workspace ${RESULT_ROOT}/fedavg_alpha0.5 --threads 8 --n_clients 8
-./set_alpha.sh cifar10_fedavg 0.3
-nvflare simulator job_configs/cifar10_fedavg --workspace ${RESULT_ROOT}/fedavg_alpha0.3 --threads 8 --n_clients 8
-./set_alpha.sh cifar10_fedavg 0.1
-nvflare simulator job_configs/cifar10_fedavg --workspace ${RESULT_ROOT}/fedavg_alpha0.1 --threads 8 --n_clients 8
+./run_simulator.sh cifar10_fedavg 1.0 8 8
+./run_simulator.sh cifar10_fedavg 0.5 8 8
+./run_simulator.sh cifar10_fedavg 0.3 8 8
+./run_simulator.sh cifar10_fedavg 0.1 8 8
 ```
 
 ### 3.4 Advanced FL algorithms (FedProx, FedOpt, and SCAFFOLD)
@@ -94,33 +86,29 @@ Next, let's try some different FL algorithms on a more heterogeneous split:
 
 [FedProx](https://arxiv.org/abs/1812.06127) adds a regularizer to the loss used in `CIFAR10Learner` (`fedproxloss_mu`)`:
 ```
-./set_alpha.sh cifar10_fedprox 0.1
-nvflare simulator job_configs/cifar10_fedprox --workspace ${RESULT_ROOT}/fedprox_alpha0.1 --threads 8 --n_clients 8
+./run_simulator.sh cifar10_fedprox 0.1 8 8
 ```
 [FedOpt](https://arxiv.org/abs/2003.00295) uses a new ShareableGenerator to update the global model on the server using a PyTorch optimizer. 
 Here SGD with momentum and cosine learning rate decay:
 ```
-./set_alpha.sh cifar10_fedopt 0.1
-nvflare simulator job_configs/cifar10_fedopt --workspace ${RESULT_ROOT}/fedopt_alpha0.1 --threads 8 --n_clients 8
+./run_simulator.sh cifar10_fedopt 0.1 8 8
 ```
 [SCAFFOLD](https://arxiv.org/abs/1910.06378) uses a slightly modified version of the CIFAR-10 Learner implementation, namely the `CIFAR10ScaffoldLearner`, which adds a correction term during local training following the [implementation](https://github.com/Xtra-Computing/NIID-Bench) as described in [Li et al.](https://arxiv.org/abs/2102.02079)
 ```
-./set_alpha.sh cifar10_scaffold 0.1
-nvflare simulator job_configs/cifar10_scaffold --workspace ${RESULT_ROOT}/scaffold_alpha0.1 --threads 8 --n_clients 8
+./run_simulator.sh cifar10_scaffold 0.1 8 8
 ```
 
 ### 3.5 Running experiments in parallel
 
 If you have several GPUs available in your system, you can run simulations in parallel by adjusting `CUDA_VISIBLE_DEVICES`.
-
+For example, you can run the following commands in two separate terminals.
 ```
 export CUDA_VISIBLE_DEVICES=0
-./set_alpha.sh cifar10_fedavg 0.1
-nvflare simulator job_configs/cifar10_fedavg --workspace ${RESULT_ROOT}/fedavg_alpha0.1 --threads 8 --n_clients 8 &
-
+./run_simulator.sh cifar10_fedavg 0.1 8 8
+```
+```
 export CUDA_VISIBLE_DEVICES=1
-./set_alpha.sh cifar10_scaffold 0.1
-nvflare simulator job_configs/cifar10_scaffold --workspace ${RESULT_ROOT}/scaffold_alpha0.1 --threads 8 --n_clients 8
+./run_simulator.sh cifar10_scaffold 0.1 8 8
 ```
 
 > **_NOTE:_** You can run all experiments mentioned in Section 3 using the `run_experiments.sh` script.

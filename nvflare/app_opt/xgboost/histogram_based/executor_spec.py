@@ -22,6 +22,14 @@ class XGBoostParams:
     """Container for all XGBoost parameters"""
 
     def __init__(self, xgb_params: dict, num_rounds=10, early_stopping_rounds=2, verbose_eval=False):
+        """
+
+        Args:
+            xgb_params: This dict is passed to `xgboost.train()` as the first argument `params`.
+                It contains all the Booster parameters.
+                Please refer to XGBoost documentation for details:
+                https://xgboost.readthedocs.io/en/stable/python/python_api.html#module-xgboost.training
+        """
         self.num_rounds = num_rounds
         self.early_stopping_rounds = early_stopping_rounds
         self.verbose_eval = verbose_eval
