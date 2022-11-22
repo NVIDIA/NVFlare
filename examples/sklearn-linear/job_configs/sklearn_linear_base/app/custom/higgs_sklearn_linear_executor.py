@@ -13,10 +13,11 @@
 # limitations under the License.
 
 import json
+
 import pandas as pd
+from sklearn_linear_executor import FedSKLearnLinearExecutor
 
 from nvflare.app_common.app_constant import AppConstants
-from sklearn_linear_executor import FedSKLearnLinearExecutor
 
 
 def _read_HIGGS_with_pandas(data_path, start: int, end: int):
