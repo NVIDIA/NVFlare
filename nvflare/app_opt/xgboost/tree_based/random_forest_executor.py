@@ -177,7 +177,6 @@ class FedXGBTreeExecutor(Executor, ABC):
             )
         return bst
 
-
     def train(
         self,
         shareable: Shareable,
@@ -252,23 +251,8 @@ class FedXGBTreeExecutor(Executor, ABC):
 
         self.local_model = bst.save_raw("json")
 
-
-
-
-
-
-
-
-
-
         print("----------------------------------------")
         bst.save_model("client_model.json")
-
-
-
-
-
-
 
         # report updated model in shareable
         dxo = DXO(data_kind=DataKind.XGB_MODEL, data={"model_data": self.local_model})

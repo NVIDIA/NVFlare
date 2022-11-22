@@ -13,20 +13,24 @@
 # limitations under the License.
 
 import argparse
-import os
 import time
-import pickle
+
 import pandas as pd
 import xgboost as xgb
-from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import roc_auc_score
 
 
 def random_forest_args_parser():
     parser = argparse.ArgumentParser(description="Centralized random forest training")
-    parser.add_argument("--data_path", type=str, default="/media/ziyuexu/Data/HIGGS/HIGGS_UCI.csv",
-                        help="path to dataset file")
-    parser.add_argument("--model_path", type=str, default="/home/ziyuexu/Desktop/Experiment/NVFlare/Exp_RandomForest/workspaces/xgboost_workspace_5_uniform_split_uniform_lr/simulate_job/app_server/xgboost_model.json", help="path to json model")
+    parser.add_argument(
+        "--data_path", type=str, default="/media/ziyuexu/Data/HIGGS/HIGGS_UCI.csv", help="path to dataset file"
+    )
+    parser.add_argument(
+        "--model_path",
+        type=str,
+        default="/home/ziyuexu/Desktop/Experiment/NVFlare/Exp_RandomForest/workspaces/xgboost_workspace_5_uniform_split_uniform_lr/simulate_job/app_server/xgboost_model.json",
+        help="path to json model",
+    )
     return parser
 
 
@@ -83,6 +87,7 @@ def main():
     y_pred = bst.predict(dmat_valid)
     roc = roc_auc_score(y_higgs_valid, y_pred)
     print(f"Model AUC: {roc}")
+
 
 if __name__ == "__main__":
     main()

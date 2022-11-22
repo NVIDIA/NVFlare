@@ -27,20 +27,28 @@ def update_model(prev_model, model_update):
         return model_update
     else:
         # Append all trees
-        pre_num_parallel_tree = int(prev_model["learner"]["gradient_booster"]["model"]["gbtree_model_param"]["num_parallel_tree"])
+        pre_num_parallel_tree = int(
+            prev_model["learner"]["gradient_booster"]["model"]["gbtree_model_param"]["num_parallel_tree"]
+        )
         pre_best_iteration = int(prev_model["learner"]["attributes"]["best_iteration"])
         pre_best_ntree_limit = int(prev_model["learner"]["attributes"]["best_ntree_limit"])
         pre_num_trees = int(prev_model["learner"]["gradient_booster"]["model"]["gbtree_model_param"]["num_trees"])
 
-        add_num_parallel_tree = int(model_update["learner"]["gradient_booster"]["model"]["gbtree_model_param"]["num_parallel_tree"])
+        add_num_parallel_tree = int(
+            model_update["learner"]["gradient_booster"]["model"]["gbtree_model_param"]["num_parallel_tree"]
+        )
         add_best_iteration = int(model_update["learner"]["attributes"]["best_iteration"])
         add_best_ntree_limit = int(model_update["learner"]["attributes"]["best_ntree_limit"])
         add_num_trees = int(model_update["learner"]["gradient_booster"]["model"]["gbtree_model_param"]["num_trees"])
 
-        prev_model["learner"]["gradient_booster"]["model"]["gbtree_model_param"]["num_parallel_tree"] = str(pre_num_parallel_tree + add_num_parallel_tree)
+        prev_model["learner"]["gradient_booster"]["model"]["gbtree_model_param"]["num_parallel_tree"] = str(
+            pre_num_parallel_tree + add_num_parallel_tree
+        )
         prev_model["learner"]["attributes"]["best_iteration"] = str(pre_best_iteration + add_best_iteration)
         prev_model["learner"]["attributes"]["best_ntree_limit"] = str(pre_best_ntree_limit + add_best_ntree_limit)
-        prev_model["learner"]["gradient_booster"]["model"]["gbtree_model_param"]["num_trees"] = str(pre_num_trees + add_num_trees)
+        prev_model["learner"]["gradient_booster"]["model"]["gbtree_model_param"]["num_trees"] = str(
+            pre_num_trees + add_num_trees
+        )
 
         append_info = model_update["learner"]["gradient_booster"]["model"]["trees"]
         for tree_ct in range(add_num_trees):

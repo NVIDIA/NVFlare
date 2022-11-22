@@ -14,8 +14,9 @@
 
 import argparse
 import os
-import time
 import pickle
+import time
+
 import pandas as pd
 import xgboost as xgb
 from sklearn.ensemble import RandomForestClassifier
@@ -24,8 +25,9 @@ from sklearn.metrics import roc_auc_score
 
 def random_forest_args_parser():
     parser = argparse.ArgumentParser(description="Centralized random forest training")
-    parser.add_argument("--data_path", type=str, default="/media/ziyuexu/Data/HIGGS/HIGGS_UCI.csv",
-                        help="path to dataset file")
+    parser.add_argument(
+        "--data_path", type=str, default="/media/ziyuexu/Data/HIGGS/HIGGS_UCI.csv", help="path to dataset file"
+    )
     parser.add_argument("--num_parallel_tree", type=int, default=100, help="number of parallel trees")
     parser.add_argument("--subsample", type=float, default=0.8, help="data subsample rate")
     parser.add_argument("--models_root", type=str, default="./models", help="model ouput folder root")
@@ -63,11 +65,7 @@ def get_training_parameters(args):
         "tree_method": "hist",
     }
     # use same parameter for sklearn random forest
-    param_sklearn = {
-        "n_estimators": args.num_parallel_tree,
-        "max_depth": 8,
-        "max_samples": args.subsample
-    }
+    param_sklearn = {"n_estimators": args.num_parallel_tree, "max_depth": 8, "max_samples": args.subsample}
     return param_xgboost, param_sklearn
 
 
@@ -111,11 +109,14 @@ def main():
             os.makedirs(exp_root)
         model_path = os.path.join(exp_root, "model.pkl")
         # train model with sklearn backend
-        clf = RandomForestClassifier(n_estimators=param_sklearn["n_estimators"],
-                                     max_depth=param_sklearn["max_depth"], bootstrap=True,
-                                     max_samples=param_sklearn["max_samples"])
+        clf = RandomForestClassifier(
+            n_estimators=param_sklearn["n_estimators"],
+            max_depth=param_sklearn["max_depth"],
+            bootstrap=True,
+            max_samples=param_sklearn["max_samples"],
+        )
         clf = clf.fit(X_higgs_train, y_higgs_train)
-        with open(model_path, 'wb') as file:
+        with open(model_path, "wb") as file:
             pickle.dump(clf, file)
 
     end = time.time()
@@ -129,7 +130,7 @@ def main():
         roc = roc_auc_score(y_higgs_valid, y_pred)
         print(f"Model AUC: {roc}")
     elif args.backend_method == "sklearn":
-        with open(model_path, 'rb') as file:
+        with open(model_path, "rb") as file:
             clf = pickle.load(file)
         y_pred = clf.predict(X_higgs_valid)
         roc = roc_auc_score(y_higgs_valid, y_pred)

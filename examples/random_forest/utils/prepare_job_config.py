@@ -23,6 +23,7 @@ from nvflare.apis.fl_constant import JobConstants
 JOB_CONFIGS_ROOT = "job_configs"
 BASE_FOLDER = "random_forest_base"
 
+
 def job_config_args_parser():
     parser = argparse.ArgumentParser(description="generate train configs for HIGGS dataset")
     parser.add_argument(
@@ -39,7 +40,10 @@ def job_config_args_parser():
     parser.add_argument("--lr_mode", type=str, default="uniform", help="Whether to use uniform or scaled shrinkage")
     parser.add_argument("--nthread", type=int, default=16, help="nthread for xgboost")
     parser.add_argument(
-        "--tree_method", type=str, default="hist", help="tree_method for xgboost lib - use hist or gpu_hist for best perf"
+        "--tree_method",
+        type=str,
+        default="hist",
+        help="tree_method for xgboost lib - use hist or gpu_hist for best perf",
     )
     return parser
 
