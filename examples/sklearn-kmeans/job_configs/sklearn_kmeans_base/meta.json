@@ -1,0 +1,9 @@
+{
+  "name": "sklearn_kmeans_clustering",
+  "resource_spec": {},
+  "deploy_map": {
+    "app": [
+      "@ALL"
+    ]
+  }
+}
