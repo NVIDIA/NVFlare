@@ -59,17 +59,17 @@ class CheckResourceProcessor(RequestProcessor):
         engine = app_ctx
         result = Shareable()
         resource_manager = _get_resource_manager(engine)
-        check_result, token = False, ""
+        is_resource_enough, token = False, ""
 
         with engine.new_context() as fl_ctx:
             try:
                 resource_spec = fobs.loads(req.body)
-                check_result, token = resource_manager.check_resources(
+                is_resource_enough, token = resource_manager.check_resources(
                     resource_requirement=resource_spec, fl_ctx=fl_ctx
                 )
             except Exception:
                 result.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
-        result.set_header(ShareableHeader.CHECK_RESOURCE_RESULT, check_result)
+        result.set_header(ShareableHeader.IS_RESOURCE_ENOUGH, is_resource_enough)
         result.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
 
         return Message(topic="reply_" + req.topic, body=fobs.dumps(result))

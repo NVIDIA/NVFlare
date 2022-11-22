@@ -19,7 +19,14 @@ import time
 from abc import ABC, abstractmethod
 from typing import List
 
-from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, ReservedKey, ServerCommandKey, ServerCommandNames
+from nvflare.apis.fl_constant import (
+    AdminCommandNames,
+    FLContextKey,
+    MachineStatus,
+    ReservedKey,
+    ServerCommandKey,
+    ServerCommandNames,
+)
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
@@ -81,7 +88,12 @@ class AbortCommand(CommandProcessor):
         if server_runner:
             server_runner.abort(fl_ctx)
             # wait for the runner process gracefully abort the run.
-            time.sleep(3.0)
+            engine = fl_ctx.get_engine()
+            start_time = time.time()
+            while engine.engine_info.status != MachineStatus.STOPPED:
+                time.sleep(1.0)
+                if time.time() - start_time > 30.0:
+                    break
         return "Aborted the run"
 
 
@@ -175,6 +187,33 @@ class SubmitUpdateCommand(CommandProcessor):
         server_runner.process_submission(client, contribution_task_name, task_id, shareable, fl_ctx)
 
         return None
+
+
+class HandleDeadJobCommand(CommandProcessor):
+    """To implement the server HandleDeadJob command."""
+
+    def get_command_name(self) -> str:
+        """To get the command name.
+
+        Returns: ServerCommandNames.SUBMIT_UPDATE
+
+        """
+        return ServerCommandNames.HANDLE_DEAD_JOB
+
+    def process(self, data: Shareable, fl_ctx: FLContext):
+        """Called to process the HandleDeadJob command.
+
+        Args:
+            data: process data
+            fl_ctx: FLContext
+
+        Returns:
+
+        """
+        client_name = data.get_header(ServerCommandKey.FL_CLIENT)
+        server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
+        server_runner.handle_dead_job(client_name, fl_ctx)
+        return ""
 
 
 class AuxCommunicateCommand(CommandProcessor):
@@ -287,6 +326,7 @@ class ServerCommands(object):
         GetRunInfoCommand(),
         GetTaskCommand(),
         SubmitUpdateCommand(),
+        HandleDeadJobCommand(),
         AuxCommunicateCommand(),
         ShowStatsCommand(),
         GetErrorsCommand(),

@@ -13,6 +13,7 @@
 # limitations under the License.
 import datetime
 import os
+
 from setuptools import find_packages, setup
 
 # read the contents of your README file
@@ -55,5 +56,5 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     python_requires=">=3.7,<3.9",
-    install_requires=["monai==1.0.1rc3", "nvflare>=2.2.1rc8"],
+    install_requires=["monai>=1.0.1", "nvflare>=2.2.1"],
 )

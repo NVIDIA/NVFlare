@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel", "versioneer"]
+build-backend = "setuptools.build_meta"
+
 [tool.isort]
 known_first_party = "nvflare"
 profile = "black"
@@ -8,7 +12,7 @@ skip_glob = [ "*.pyi", "**/*_pb2*" ]
 
 [tool.black]
 line-length = 120
-target-version = ['py38']
+target-version = ["py37", "py38", "py39", "py310"]
 include = '\.pyi?$'
 exclude = '''
 (

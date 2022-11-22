@@ -14,5 +14,5 @@
 
 
 class ShareableHeader:
-    CHECK_RESOURCE_RESULT = "_check_resource_result"
+    IS_RESOURCE_ENOUGH = "_is_resource_enough"
     RESOURCE_RESERVE_TOKEN = "_resource_reserve_token"

@@ -13,7 +13,7 @@
 # limitations under the License.
 import logging
 
-from nvflare.apis.filter import Filter, ContentBlockedException
+from nvflare.apis.filter import ContentBlockedException, Filter
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 

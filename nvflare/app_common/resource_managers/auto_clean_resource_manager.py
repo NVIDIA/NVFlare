@@ -121,11 +121,11 @@ class AutoCleanResourceManager(ResourceManagerSpec, FLComponent, ABC):
             raise TypeError(f"resource_requirement should be of type dict, but got {type(resource_requirement)}.")
 
         with self._lock:
-            check_result = self._check_required_resource_available(resource_requirement)
+            is_resource_enough = self._check_required_resource_available(resource_requirement)
             token = ""
 
-            # reserve resource only when check is True
-            if check_result:
+            # reserve resource only when enough resource
+            if is_resource_enough:
                 token = str(uuid.uuid4())
                 reserved_resources = self._reserve_resource(resource_requirement)
                 self.reserved_resources[token] = (reserved_resources, self.expiration_period)
@@ -135,7 +135,7 @@ class AutoCleanResourceManager(ResourceManagerSpec, FLComponent, ABC):
                 self.log_debug(
                     fl_ctx, f"current resources: {self.resources}, reserved_resources {self.reserved_resources}."
                 )
-        return check_result, token
+        return is_resource_enough, token
 
     def cancel_resources(self, resource_requirement: dict, token: str, fl_ctx: FLContext):
         with self._lock:

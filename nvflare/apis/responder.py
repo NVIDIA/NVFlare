@@ -63,6 +63,17 @@ class Responder(FLComponent, ABC):
         """
         pass
 
+    @abstractmethod
+    def handle_dead_job(self, client_name: str, fl_ctx: FLContext):
+        """Called by the Engine to handle the case that the job on the client is dead.
+
+        Args:
+            client_name: name of the client on which the job is dead
+            fl_ctx: the FLContext
+
+        """
+        pass
+
     def initialize_run(self, fl_ctx: FLContext):
         """Called when a new RUN is about to start.
 

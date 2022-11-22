@@ -43,8 +43,10 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
             resource_reqs (dict): {client_name: resource_requirements}
 
         Returns:
-            A dict of {client_name: client_check_result}
-            where client_check_result is a tuple of (client check OK, resource reserve token if any)
+            A dict of {client_name: client_check_result}.
+                client_check_result is a tuple of (is_resource_enough, token);
+                is_resource_enough is a bool indicates whether there is enough resources;
+                token is for resource reservation / cancellation for this check request.
         """
         engine = fl_ctx.get_engine()
         if not isinstance(engine, ServerEngineSpec):
@@ -63,7 +65,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         Args:
             resource_reqs (dict): {client_name: resource_requirements}
             resource_check_results: A dict of {client_name: client_check_result}
-                where client_check_result is a tuple of {client check OK, resource reserve token if any}
+                where client_check_result is a tuple of {is_resource_enough, resource reserve token if any}
             fl_ctx: FL context
         """
         engine = fl_ctx.get_engine()
@@ -130,11 +132,12 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         num_sites_ok = 0
         sites_dispatch_info = {}
         for site_name, check_result in resource_check_results.items():
-            if check_result[0]:
+            is_resource_enough, token = check_result
+            if is_resource_enough:
                 sites_dispatch_info[site_name] = DispatchInfo(
                     app_name=sites_to_app[site_name],
                     resource_requirements=resource_reqs[site_name],
-                    token=check_result[1],
+                    token=token,
                 )
                 num_sites_ok += 1
                 if site_name in required_sites:

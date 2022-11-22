@@ -72,6 +72,7 @@ To run in a federated setting, follow [Real-World FL](https://nvflare.readthedoc
 start the overseer, FL servers and FL clients.
 
 You need to download the HIGGS data on each client site.
+You will also need to install the xgboost on each client site and server site.
 
 You can still generate the data splits and job configs using the scripts provided.
 

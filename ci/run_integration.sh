@@ -45,11 +45,11 @@ integration_test_pt() {
     echo "Run PT integration test..."
     init_pipenv requirements-dev.txt
     testFolder="tests/integration_test"
-    rm -rf /tmp/snapshot-storage
+    clean_up_snapshot_and_job
     pushd ${testFolder}
     pipenv run ./run_integration_tests.sh -m pytorch
     popd
-    rm -rf /tmp/snapshot-storage
+    clean_up_snapshot_and_job
     remove_pipenv
 }
 
@@ -59,11 +59,11 @@ integration_test_tf() {
     python -m pip install -r requirements-dev.txt
     export PYTHONPATH=$PWD
     testFolder="tests/integration_test"
-    rm -rf /tmp/snapshot-storage
+    clean_up_snapshot_and_job
     pushd ${testFolder}
     ./run_integration_tests.sh -m tensorflow
     popd
-    rm -rf /tmp/snapshot-storage
+    clean_up_snapshot_and_job
 }
 
 add_dns_entries() {
@@ -77,16 +77,20 @@ remove_dns_entries() {
     cp /etc/hosts_bak /etc/hosts
 }
 
+clean_up_snapshot_and_job() {
+    rm -rf /tmp/nvflare*
+}
+
 integration_test() {
     echo "Run integration test..."
     init_pipenv requirements-dev.txt
     add_dns_entries
     testFolder="tests/integration_test"
-    rm -rf /tmp/snapshot-storage
+    clean_up_snapshot_and_job
     pushd ${testFolder}
     pipenv run ./run_integration_tests.sh -m "$1"
     popd
-    rm -rf /tmp/snapshot-storage
+    clean_up_snapshot_and_job
     remove_dns_entries
     remove_pipenv
 }

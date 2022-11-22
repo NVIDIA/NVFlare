@@ -10,11 +10,7 @@
     {
       "id": "persistor",
       "path": "nvflare.app_common.pt.pt_file_model_persistor.PTFileModelPersistor",
-      "args": {
-        "model": {
-          "path": "simple_network.SimpleNetwork"
-        }
-      }
+      "args": {}
     },
     {
       "id": "shareable_generator",
@@ -40,6 +36,13 @@
     }
   ],
   "workflows": [
+      {
+        "id": "pre_train",
+        "name": "InitializeGlobalWeights",
+        "args": {
+          "task_name": "get_weights"
+        }
+      },
       {
         "id": "scatter_and_gather",
         "name": "ScatterAndGather",

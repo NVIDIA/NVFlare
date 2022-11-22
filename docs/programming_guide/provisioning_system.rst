@@ -283,6 +283,67 @@ A new builder to write 'gateway.conf' can be implemented as follows (for referen
                   f.write(f"name = {gw.name}\n")
                   f.write(f"port = {port}\n")
 
+.. _distribution_builder:
+
+Case 4: adding a builder for enabling the creation of zip archives for the startup kits
+---------------------------------------------------------------------------------------
+DistributionBuilder was included in NVIDIA FLARE before version 2.2.1 but has been removed from the
+default builders. You can make this builder available and add it as a builder in project.yml if you want to zip the startup kits::
+
+    import os
+    import shutil
+    import subprocess
+
+    from nvflare.lighter.spec import Builder, Project
+    from nvflare.lighter.utils import generate_password
+
+    class DistributionBuilder(Builder):
+        def __init__(self, zip_password=False):
+            """Build the zip files for each folder.
+            Creates the zip files containing the archives for each startup kit. It will add password protection if the
+            argument (zip_password) is true.
+            Args:
+                zip_password: if true, will create zipped packages with passwords
+            """
+            self.zip_password = zip_password
+
+        def build(self, project: Project, ctx: dict):
+            """Create a zip for each individual folder.
+            Note that if zip_password is True, the zip command will be used to encrypt zip files.  Users have to
+            install this zip utility before provisioning.  In Ubuntu system, use this command to install zip utility:
+            sudo apt-get install zip
+            Args:
+                project (Project): project instance
+                ctx (dict): the provision context
+            """
+            wip_dir = self.get_wip_dir(ctx)
+            dirs = [
+                name
+                for name in os.listdir(wip_dir)
+                if os.path.isdir(os.path.join(wip_dir, name)) and "nvflare_" not in name
+            ]
+            for dir in dirs:
+                dest_zip_file = os.path.join(wip_dir, f"{dir}")
+                if self.zip_password:
+                    pw = generate_password()
+                    run_args = ["zip", "-rq", "-P", pw, dest_zip_file + ".zip", ".", "-i", "startup/*"]
+                    os.chdir(dest_zip_file)
+                    try:
+                        subprocess.run(run_args)
+                        print(f"Password {pw} on {dir}.zip")
+                    except FileNotFoundError:
+                        raise RuntimeError("Unable to zip folders with password.  Maybe the zip utility is not installed.")
+                    finally:
+                        os.chdir(os.path.join(dest_zip_file, ".."))
+                else:
+                    shutil.make_archive(dest_zip_file, "zip", root_dir=os.path.join(wip_dir, dir), base_dir="startup")
+
+If the above code is made available at ``nvflare.lighter.impl.workspace.DistributionBuilder``, add the following to your project.yml at the bottom of the list of builders::
+
+    path: nvflare.lighter.impl.workspace.DistributionBuilder
+    args:
+      zip_password: true
+
 Takeaways for Custom Builders
 -----------------------------
 From the cases shown previously, implementing your own Builders only requires the following steps:
