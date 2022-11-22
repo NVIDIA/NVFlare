@@ -202,7 +202,7 @@ class JobRunner(FLComponent):
         """
         engine = fl_ctx.get_engine()
         job_clients = engine.get_job_clients(client_sites)
-        err = engine.start_app_on_server(job_id, job_id=job.job_id, job_clients=job_clients)
+        err = engine.start_app_on_server(job_id, job=job, job_clients=job_clients)
         if err:
             raise RuntimeError(f"Could not start the server App for job: {job_id}.")
 
@@ -385,11 +385,13 @@ class JobRunner(FLComponent):
 
     def restore_running_job(self, run_number: str, job_id: str, job_clients, snapshot, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
-        engine.start_app_on_server(run_number, job_id=job_id, job_clients=job_clients, snapshot=snapshot)
 
         try:
             job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
             job = job_manager.get_job(jid=job_id, fl_ctx=fl_ctx)
+            err = engine.start_app_on_server(run_number, job=job, job_clients=job_clients, snapshot=snapshot)
+            if err:
+                raise RuntimeError(f"Could not restore the server App for job: {job_id}.")
             with self.lock:
                 self.running_jobs[job_id] = job
         except Exception as e:

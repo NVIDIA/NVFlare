@@ -19,6 +19,7 @@ from typing import Optional
 from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import MachineStatus
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.job_def import Job
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import Shareable
@@ -101,7 +102,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def start_app_on_server(self, run_number: str, job_id: str = None, job_clients=None, snapshot=None) -> str:
+    def start_app_on_server(self, run_number: str, job: Job = None, job_clients=None, snapshot=None) -> str:
         """Start the FL app on Server.
 
         Returns:

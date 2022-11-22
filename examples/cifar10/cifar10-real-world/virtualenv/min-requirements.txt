@@ -1,4 +1,4 @@
-nvflare>=2.2.1rc8
+nvflare>=2.2.1
 torch
 torchvision
 tensorboard

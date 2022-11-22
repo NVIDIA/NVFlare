@@ -15,15 +15,19 @@ import importlib
 import inspect
 import logging
 import os
+from enum import Enum
 from os.path import dirname, join
-from typing import Any, BinaryIO, Dict, Type, Union
+from typing import Any, BinaryIO, Dict, Type, TypeVar, Union
 
 import msgpack
 
-from nvflare.fuel.utils.fobs.decomposer import Decomposer
+from nvflare.fuel.utils.fobs.decomposer import DataClassDecomposer, Decomposer, EnumTypeDecomposer
 
 __all__ = [
     "register",
+    "register_data_classes",
+    "register_enum_types",
+    "auto_register_enum_types",
     "register_folder",
     "num_decomposers",
     "serialize",
@@ -35,10 +39,12 @@ __all__ = [
 FOBS_TYPE = "__fobs_type__"
 FOBS_DATA = "__fobs_data__"
 MSGPACK_TYPES = (None, bool, int, float, str, bytes, bytearray, memoryview, list, dict)
+T = TypeVar("T")
 
 log = logging.getLogger(__name__)
 _decomposers: Dict[str, Decomposer] = {}
 _decomposers_registered = False
+_enum_auto_register = True
 
 
 def _get_type_name(cls: Type) -> str:
@@ -55,20 +61,57 @@ def register(decomposer: Union[Decomposer, Type[Decomposer]]) -> None:
         decomposer: The decomposer type or instance
     """
 
-    name = _get_type_name(decomposer.supported_type())
-    if name in _decomposers:
-        return
-
     if inspect.isclass(decomposer):
         instance = decomposer()
     else:
         instance = decomposer
+
+    name = _get_type_name(instance.supported_type())
+    if name in _decomposers:
+        return
 
     if not isinstance(instance, Decomposer):
         log.error(f"Class {instance.__class__} is not a decomposer")
         return
 
     _decomposers[name] = instance
+
+
+def register_data_classes(*data_classes: Type[T]) -> None:
+    """Register generic decomposers for data classes
+
+    Args:
+        data_classes: The classes to be registered
+    """
+
+    for data_class in data_classes:
+        decomposer = DataClassDecomposer(data_class)
+        register(decomposer)
+
+
+def register_enum_types(*enum_types: Type[Enum]) -> None:
+    """Register generic decomposers for enum classes
+
+    Args:
+        enum_types: The enum classes to be registered
+    """
+
+    for enum_type in enum_types:
+        if not issubclass(enum_type, Enum):
+            raise TypeError(f"Can't register class {enum_type}, which is not a subclass of Enum")
+        decomposer = EnumTypeDecomposer(enum_type)
+        register(decomposer)
+
+
+def auto_register_enum_types(enabled=True) -> None:
+    """Enable or disable auto registering of enum classes
+
+    Args:
+        enabled: Auto-registering of enum classes is enabled if True
+    """
+    global _enum_auto_register
+
+    _enum_auto_register = enabled
 
 
 def register_folder(folder: str, package: str):
@@ -83,7 +126,9 @@ def register_folder(folder: str, package: str):
             decomposers = package + "." + module[:-3]
             imported = importlib.import_module(decomposers, __package__)
             for _, cls_obj in inspect.getmembers(imported, inspect.isclass):
-                if issubclass(cls_obj, Decomposer) and not inspect.isabstract(cls_obj):
+                spec = inspect.getfullargspec(cls_obj.__init__)
+                # classes who are abstract or take extra args in __init__ can't be auto-registered
+                if issubclass(cls_obj, Decomposer) and not inspect.isabstract(cls_obj) and len(spec.args) == 1:
                     register(cls_obj)
 
 
@@ -113,7 +158,10 @@ def _fobs_packer(obj: Any) -> dict:
 
     type_name = _get_type_name(obj.__class__)
     if type_name not in _decomposers:
-        return obj
+        if _enum_auto_register and isinstance(obj, Enum):
+            register_enum_types(type(obj))
+        else:
+            return obj
 
     decomposed = _decomposers[type_name].decompose(obj)
     return {FOBS_TYPE: type_name, FOBS_DATA: decomposed}

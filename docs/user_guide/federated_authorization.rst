@@ -17,15 +17,17 @@ Here are some examples that an org can do:
 
 Centralized vs. Federated Authorization
 ========================================
-In NVFLARE 2.1 and before, authorization policy is centrally enforced by the FL Server. A recent security review determined this to be a weakness. In a true federated environment, each organization should be able to define and enforce their own authorization policy, instead of relying others (such as FL Server that is owned by a separate org) to do so.
+In NVFLARE before version 2.2.1, the authorization policy was centrally enforced by the FL Server.  In a true federated environment, each organization should be able to define and enforce their own authorization policy instead of relying others (such as FL Server that is owned by a separate org) to do so.
 
-NVFLARE 2.2 changes to federated authorization where each organization defines and enforces its own authorization policy:
+NVFLARE 2.2.1 changes the way authorization is implemented to federated authorization where each organization defines and enforces its own authorization policy:
 
-    - Each organization defines its policy in its own authorization.json
+    - Each organization defines its policy in its own authorization.json (in the local folder of the workspace)
     - This locally defined policy is loaded by FL Clients owned by the organization
     - The policy is also enforced by these FL Clients
 
 This decentralized authorization has an added benefit: since each organization takes care of its own authorization, there will be no need to update the policy of any other participants (FL Server or Clients) when a new orgs or clients are added.
+
+See `Federated Policies (Github) <https://github.com/NVIDIA/NVFlare/blob/dev/examples/federated-policies/README.rst>`_ for a working example with federated site policies for authorization.
 
 Simplified Authorization Policy Configuration
 ==============================================
@@ -35,7 +37,7 @@ To answer this question, the role/right combination defines one or more conditio
 
 Roles
 -----
-Users are classified into roles. NVFLARE 2.2 defines four roles:
+Users are classified into roles. NVFLARE defines four roles starting in 2.2.1:
 
     - Project Admin - this role is responsible for the whole FL project;
     - Org Admin - this role is responsible for the administration of all sites in its org. Each org must have one Org Admin;
@@ -44,7 +46,7 @@ Users are classified into roles. NVFLARE 2.2 defines four roles:
 
 Rights
 ------
-NVFLARE 2.2 supports more accurate right definitions to be more flexible:
+NVFLARE 2.2.1 supports more accurate right definitions to be more flexible:
 
     - Each server-side admin command is a right! This makes it possible for an org to control each command explicitly;
     - Admin commands are grouped into categories. For example, commands like abort_job, delete_job, start_app are in manage_job category; all shell commands are put into the shell_commands category. Each category is also a right.
@@ -52,7 +54,7 @@ NVFLARE 2.2 supports more accurate right definitions to be more flexible:
 
 This right system makes it easy to write simple policies that only use command categories. It also makes it possible to write policies to control individual commands. When both categories and commands are used, command-based control takes precedence over category-based control.
 
-See Appendix One for command categories.
+See :ref:`command_categories` for command categories.
 
 Controls and Conditions
 -----------------------
@@ -85,7 +87,7 @@ In addition, two words are used for extreme conditions:
     - Any user is allowed: any
     - No user is allowed: none
 
-See Appendix Two for an example policy.
+See :ref:`sample_auth_policy` for an example policy.
 
 Policy Evaluation
 -----------------
@@ -127,6 +129,7 @@ There are multiple commands (clone_job, delete_job, download_job, etc.) in the "
 
 Job management command authorization often evaluates the relationship between the subject user and the job submitter, as shown in the examples. 
 
+.. _command_categories:
 
 Appendix One - Command Categories
 =================================
@@ -171,8 +174,12 @@ Appendix One - Command Categories
     }
 
 
+.. _sample_auth_policy:
+
 Appendix Two - Sample Policy with Explanations
 ==============================================
+
+This is an example authorization.json (in the local folder of the workspace for a site).
 
 .. code-block:: shell
 
