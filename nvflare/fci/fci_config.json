@@ -1,0 +1,21 @@
+{
+  "timeout_ms" : 5000,
+  "max_buffer_size" : 1073741824,
+  "max_header_size" : 16384,
+  "initiators": [
+    {
+      "name": "site-1",
+      "url" : "https://fl-server:8433/fci?param1=value1&param2=value2"
+    }
+  ],
+  "listeners": [
+    {
+      "name": "server",
+      "url": "https://0:8433/fci"
+    },
+    {
+      "name": "server-internal",
+      "url": "http://localhost:8080/fci"
+    }
+  ]
+}
