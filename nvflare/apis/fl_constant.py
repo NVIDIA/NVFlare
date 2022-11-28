@@ -157,6 +157,7 @@ class AdminCommandNames(object):
 
     SUBMIT_JOB = "submit_job"
     LIST_JOBS = "list_jobs"
+    GET_JOB_META = "get_job_meta"
     DOWNLOAD_JOB = "download_job"
     ABORT_JOB = "abort_job"
     DELETE_JOB = "delete_job"

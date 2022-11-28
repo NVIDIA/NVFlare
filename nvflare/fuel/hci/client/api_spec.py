@@ -31,6 +31,7 @@ class CommandCtxKey(object):
     REPLY_PROCESSOR = "reply_processor"
     RESULT = "result"
     JSON_PROCESSOR = "json_processor"
+    META = "meta"
 
 
 class CommandContext(SimpleContext):
@@ -75,6 +76,12 @@ class CommandContext(SimpleContext):
 
     def get_json_processor(self):
         return self.get_prop(CommandCtxKey.JSON_PROCESSOR)
+
+    def set_meta(self, meta):
+        self.set_prop(CommandCtxKey.META, meta)
+
+    def get_meta(self):
+        return self.get_prop(CommandCtxKey.META)
 
 
 class ApiPocValue(object):
