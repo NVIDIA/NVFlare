@@ -13,9 +13,9 @@
 # limitations under the License.
 
 import json
+from typing import List
 
 import psutil
-from typing import List
 
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
