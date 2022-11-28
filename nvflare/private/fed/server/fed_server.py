@@ -452,7 +452,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
                 return task
 
     def _process_task_request(self, client, fl_ctx, shared_fl_ctx):
-        task_name = SpecialTaskName.END_RUN
+        task_name = SpecialTaskName.TRY_AGAIN
         task_id = ""
         shareable = None
         try:
