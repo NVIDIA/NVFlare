@@ -22,6 +22,7 @@ import uuid
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
+from nvflare.apis.client_engine_spec import ClientEngineSpec
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import Job, JobDataKey, JobMetaKey, job_from_meta
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
@@ -82,8 +83,8 @@ class SimpleJobDefManager(JobDefManagerSpec):
 
     def _get_job_store(self, fl_ctx):
         engine = fl_ctx.get_engine()
-        if not isinstance(engine, ServerEngineSpec):
-            raise TypeError(f"engine should be of type ServerEngineSpec, but got {type(engine)}")
+        if not (isinstance(engine, ServerEngineSpec) or isinstance(engine, ClientEngineSpec)):
+            raise TypeError(f"engine should be of type ServerEngineSpec or ClientEngineSpec, but got {type(engine)}")
         store = engine.get_component(self.job_store_id)
         if not isinstance(store, StorageSpec):
             raise TypeError(f"engine should have a job store component of type StorageSpec, but got {type(store)}")
@@ -94,9 +95,11 @@ class SimpleJobDefManager(JobDefManagerSpec):
 
     def create(self, meta: dict, uploaded_content: bytes, fl_ctx: FLContext) -> Dict[str, Any]:
         # validate meta to make sure it has:
+        jid = meta.get(JobMetaKey.JOB_ID.value, None)
+        if not jid:
+            jid = str(uuid.uuid4())
+            meta[JobMetaKey.JOB_ID.value] = jid
 
-        jid = str(uuid.uuid4())
-        meta[JobMetaKey.JOB_ID.value] = jid
         meta[JobMetaKey.SUBMIT_TIME.value] = time.time()
         meta[JobMetaKey.SUBMIT_TIME_ISO.value] = (
             datetime.datetime.fromtimestamp(meta[JobMetaKey.SUBMIT_TIME]).astimezone().isoformat()
