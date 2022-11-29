@@ -35,6 +35,7 @@ class DockerBuilder(Builder):
         info_dict["volumes"] = [f"./{overseer.name}:/workspace"]
         info_dict["ports"] = [f"{port}:{port}"]
         info_dict["build"] = "nvflare_compose"
+        info_dict["container_name"] = overseer.name
         self.services[overseer.name] = info_dict
 
     def _build_server(self, server, ctx):
@@ -49,6 +50,7 @@ class DockerBuilder(Builder):
                 info_dict["command"][i] = server.name
             if info_dict["command"][i] == "org=__org_name__":
                 info_dict["command"][i] = f"org={server.org}"
+        info_dict["container_name"] = server.name
         self.services[server.name] = info_dict
 
     def _build_client(self, client, ctx):
@@ -61,7 +63,7 @@ class DockerBuilder(Builder):
                 info_dict["command"][i] = f"uid={client.name}"
             if info_dict["command"][i] == "org=__org_name__":
                 info_dict["command"][i] = f"org={client.org}"
-
+        info_dict["container_name"] = client.name
         self.services[client.name] = info_dict
 
     def build(self, project, ctx):
