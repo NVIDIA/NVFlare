@@ -66,6 +66,3 @@ class TestPTLearner:
         dxo = DXO(data_kind=DataKind.WEIGHTS, data=learner.model.state_dict())
         result = learner.train(dxo.to_shareable(), fl_ctx=FLContext(), abort_signal=Signal())
         assert result.get_return_code() == ReturnCode.OK
-
-
-        pass
