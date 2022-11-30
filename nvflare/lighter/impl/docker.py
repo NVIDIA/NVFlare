@@ -32,7 +32,7 @@ class DockerBuilder(Builder):
         default_port = "443" if protocol == "https" else "80"
         port = overseer.props.get("port", default_port)
         info_dict = copy.deepcopy(self.services["__overseer__"])
-        info_dict["volumes"] = [f"./{overseer.name}:/workspace"]
+        info_dict["volumes"] = [f"./{overseer.name}:" + "${WORKSPACE}"]
         info_dict["ports"] = [f"{port}:{port}"]
         info_dict["build"] = "nvflare_compose"
         info_dict["container_name"] = overseer.name
@@ -43,7 +43,7 @@ class DockerBuilder(Builder):
         admin_port = server.props.get("admin_port", 8003)
 
         info_dict = copy.deepcopy(self.services["__flserver__"])
-        info_dict["volumes"][0] = f"./{server.name}:/workspace"
+        info_dict["volumes"][0] = f"./{server.name}:" + "${WORKSPACE}"
         info_dict["ports"] = [f"{fed_learn_port}:{fed_learn_port}", f"{admin_port}:{admin_port}"]
         for i in range(len(info_dict["command"])):
             if info_dict["command"][i] == "flserver":
@@ -55,7 +55,7 @@ class DockerBuilder(Builder):
 
     def _build_client(self, client, ctx):
         info_dict = copy.deepcopy(self.services["__flclient__"])
-        info_dict["volumes"] = [f"./{client.name}:/workspace"]
+        info_dict["volumes"] = [f"./{client.name}:" + "${WORKSPACE}"]
         for i in range(len(info_dict["command"])):
             if info_dict["command"][i] == "flclient":
                 info_dict["command"][i] = client.name
@@ -85,6 +85,11 @@ class DockerBuilder(Builder):
         self.compose["services"] = self.services
         with open(self.compose_file_path, "wt") as f:
             yaml.dump(self.compose, f)
+        env_file_path = os.path.join(self.get_wip_dir(ctx), ".env")
+        with open(env_file_path, "wt") as f:
+            f.write("WORKSPACE=/workspace\n")
+            f.write("PYTHON_EXECUTABLE=/usr/local/bin/python3\n")
+            f.write("IMAGE_NAME=nvflare-service\n")
         compose_build_dir = os.path.join(self.get_wip_dir(ctx), "nvflare_compose")
         os.mkdir(compose_build_dir)
         with open(os.path.join(compose_build_dir, "Dockerfile"), "wt") as f:
