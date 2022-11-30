@@ -60,8 +60,6 @@ class TestDXO:
         result, errors = get_leaf_dxos(dxo, root_name="test")
         assert len(result) == len(expected)
         for _exp_key, _exp_dxo in expected.items():
-            print("_exp_key", _exp_key)
-            print("_exp_dxo", _exp_dxo)
             _leaf_key = "test." + _exp_key
             assert _leaf_key in result
             assert result.get(_leaf_key).data == _exp_dxo.data
