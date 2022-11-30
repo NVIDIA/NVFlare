@@ -25,7 +25,9 @@ from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, RunProcess
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import ALL_SITES, Job, JobMetaKey, RunStatus
 from nvflare.apis.workspace import Workspace
+from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
+from nvflare.lighter.utils import verify_folder_signature
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import check_client_replies
@@ -121,6 +123,15 @@ class JobRunner(FLComponent):
                     if err:
                         deploy_detail.append(f"server: {err}")
                         raise RuntimeError(f"Failed to deploy app '{app_name}': {err}")
+
+                    kv_list = parse_vars(engine.args.set)
+                    secure_train = kv_list.get("secure_train", True)
+                    if secure_train:
+                        app_path = workspace.get_app_dir(job.job_id)
+                        if not verify_folder_signature(app_path):
+                            err = "job signature verification failed"
+                            deploy_detail.append(f"server: {err}")
+                            raise RuntimeError(f"Failed to verify app '{app_name}': {err}")
 
                     self.log_info(
                         fl_ctx, f"Application {app_name} deployed to the server for job: {run_number}", fire_event=False
