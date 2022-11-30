@@ -29,7 +29,7 @@ from nvflare.apis.signal import Signal
 class TestPTLearner:
 
     @patch.object(PTLearner, "save_local_model")
-    def test_train(self, mock_save_local_model):
+    def test_train_empty_input(self, mock_save_local_model):
         fl_ctx = FLContext()
         learner = PTLearner(epochs=1)
         learner.initialize(parts={}, fl_ctx=fl_ctx)
@@ -38,16 +38,38 @@ class TestPTLearner:
         result = learner.train(data, fl_ctx=FLContext(), abort_signal=Signal())
         assert result.get_return_code() == ReturnCode.BAD_TASK_DATA
 
+    @patch.object(PTLearner, "save_local_model")
+    def test_train_with_empty_input(self, mock_save_local_model):
+        fl_ctx = FLContext()
+        learner = PTLearner(epochs=1)
+        learner.initialize(parts={}, fl_ctx=fl_ctx)
+
+        data = Shareable()
+        result = learner.train(data, fl_ctx=FLContext(), abort_signal=Signal())
+        assert result.get_return_code() == ReturnCode.BAD_TASK_DATA
+
+    @patch.object(PTLearner, "save_local_model")
+    def test_train_with_invalid_data_kind(self, mock_save_local_model):
+        fl_ctx = FLContext()
+        learner = PTLearner(epochs=1)
+        learner.initialize(parts={}, fl_ctx=fl_ctx)
+
         dxo = DXO(DataKind.WEIGHT_DIFF, data={"x": numpy.array([1, 2, 3])})
         result = learner.train(dxo.to_shareable(), fl_ctx=FLContext(), abort_signal=Signal())
         assert result.get_return_code() == ReturnCode.BAD_TASK_DATA
+
+    @patch.object(PTLearner, "save_local_model")
+    def test_train(self, mock_save_local_model):
+        fl_ctx = FLContext()
+        learner = PTLearner(epochs=1)
+        learner.initialize(parts={}, fl_ctx=fl_ctx)
 
         dxo = DXO(data_kind=DataKind.WEIGHTS, data=learner.model.state_dict())
         result = learner.train(dxo.to_shareable(), fl_ctx=FLContext(), abort_signal=Signal())
         assert result.get_return_code() == ReturnCode.OK
 
     @patch.object(FLContext, "get_engine")
-    def test_validate(self, mock_get_engine):
+    def test_validate_with_empty_input(self, mock_get_engine):
         mock_get_engine.get_workspace = Mock()
         fl_ctx = FLContext()
         fl_ctx.set_prop(ReservedKey.RUN_NUM, 100)
@@ -59,9 +81,27 @@ class TestPTLearner:
         result = learner.validate(data, fl_ctx=fl_ctx, abort_signal=Signal())
         assert result.get_return_code() == ReturnCode.BAD_TASK_DATA
 
+    @patch.object(FLContext, "get_engine")
+    def test_validate_with_invalid_data_kind(self, mock_get_engine):
+        mock_get_engine.get_workspace = Mock()
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(ReservedKey.RUN_NUM, 100)
+
+        learner = PTLearner(epochs=1)
+        learner.initialize(parts={}, fl_ctx=fl_ctx)
+
         dxo = DXO(DataKind.WEIGHT_DIFF, data={"x": numpy.array([1, 2, 3])})
         result = learner.validate(dxo.to_shareable(), fl_ctx=fl_ctx, abort_signal=Signal())
         assert result.get_return_code() == ReturnCode.BAD_TASK_DATA
+
+    @patch.object(FLContext, "get_engine")
+    def test_validate(self, mock_get_engine):
+        mock_get_engine.get_workspace = Mock()
+        fl_ctx = FLContext()
+        fl_ctx.set_prop(ReservedKey.RUN_NUM, 100)
+
+        learner = PTLearner(epochs=1)
+        learner.initialize(parts={}, fl_ctx=fl_ctx)
 
         dxo = DXO(data_kind=DataKind.WEIGHTS, data=learner.model.state_dict())
         result = learner.train(dxo.to_shareable(), fl_ctx=FLContext(), abort_signal=Signal())
