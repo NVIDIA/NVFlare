@@ -13,10 +13,12 @@
 #  limitations under the License.
 from typing import Optional
 
+from nvflare.fuel.f3.driver import DriverSpec
 from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor
 from nvflare.fuel.f3.receiver import Receiver
 from nvflare.fuel.f3.responder import Responder
 from nvflare.fuel.f3.message import Message
+from nvflare.fuel.f3.sfm.conn_manager import ConnManager
 
 
 class Communicator:
@@ -24,6 +26,7 @@ class Communicator:
     def __init__(self, local_endpoint: Endpoint):
         self.local_endpoint = local_endpoint
         self.monitors = []
+        self.conn_manager = ConnManager(self.local_endpoint)
 
     def start(self):
         """Start the communicator and establishing all the connections
@@ -119,32 +122,30 @@ class Communicator:
 
         pass
 
-    def add_listener(self, url: str, parameters: dict):
+    def add_listener(self, driver: DriverSpec):
         """Add a listener to wait for connections
 
-         This is similar to HTTP server connection
+         This is similar to HTTP server listener
 
          Args:
-             url: The url to listen to in the form of https://0:8080/sfm
-             parameters: Parameters for the listener
+             driver: The driver for the listener
 
          Raises:
              CommError: If any errors
          """
 
-        pass
+        self.conn_manager.add_listeners(driver)
 
-    def add_connector(self, url: str, parameters: dict):
+    def add_connector(self, driver: DriverSpec):
         """Add a connector to initiate connections
 
          This is similar to HTTP client connection
 
          Args:
-             url: The url to make connection to in the form of https://server:8080/sfm
-             parameters: Parameters for the listener
+             driver: The driver for the connector
 
          Raises:
              CommError: If any errors
          """
 
-        pass
+        self.conn_manager.add_connector(driver)

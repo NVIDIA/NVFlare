@@ -18,6 +18,7 @@ class CommError(Exception):
     NOT_READY = "NOT_READY"
     DISCONNECTED = "DISCONNECTED"
     IO_ERROR = "IO_ERROR"
+    BAD_DATA = "BAD_DATA"
     TIMEOUT = "TIMEOUT"
 
     def __init__(self, code: str, message=None):
