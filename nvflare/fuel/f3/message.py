@@ -28,3 +28,11 @@ class Message:
         self.headers = headers
         self.payload = payload
 
+    def set_header(self, key: str, value):
+        self.headers[key] = value
+
+    def add_headers(self, headers: dict):
+        self.headers.update(headers)
+
+    def get_header(self, key: str, default=None):
+        return self.headers.get(key, default)
