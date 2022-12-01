@@ -11,19 +11,23 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from abc import ABC, abstractmethod
-from io import BytesIO
 
-from nvflare.fci.sfm.frame import Frame
+class CommError(Exception):
 
+    # Error codes
+    NOT_READY = "NOT_READY"
+    DISCONNECTED = "DISCONNECTED"
+    IO_ERROR = "IO_ERROR"
+    TIMEOUT = "TIMEOUT"
 
-class SfmDriver(ABC):
+    def __init__(self, code: str, message=None):
+        self.code = code
+        self.message = message
 
-    @abstractmethod
-    def send_frame(self, frame: Frame):
-        pass
+    def __str__(self):
+        if self.message:
+            return f"Code: {self.code} Error: {self.message}"
+        else:
+            return f"Code: {self.code}"
 
-    @abstractmethod
-    def receive_frame(self, stream: BytesIO) -> Frame:
-        return Frame(None, None)
 

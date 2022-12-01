@@ -11,13 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-class Channels:
+class Applications:
 
-    # Reserved channels
+    # Reserved application IDs
     ALL = 0
     DEFAULT = 1
     PUB_SUB = 2
-    TASKS = 3
+    CELL_NET = 3
 
-    # Channels above this are ephemeral
-    EPHEMERAL = 1024

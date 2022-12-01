@@ -12,30 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from abc import ABC, abstractmethod
-from io import BytesIO
-from typing import Any
 
-from nvflare.fci.endpoint import Endpoint
-from nvflare.fci.headers import Headers
+from nvflare.fuel.f3.endpoint import Endpoint
+from nvflare.fuel.f3.message import Message
 
 
-class BytesResponder(ABC):
+class Receiver(ABC):
 
     @abstractmethod
-    def respond(self, endpoint: Endpoint, channel: int, headers: Headers, payload: bytes) -> (Headers, bytes):
-        pass
-
-
-class ObjectResponder(ABC):
-
-    @abstractmethod
-    def respond(self, endpoint: Endpoint, channel: int, headers: Headers, data: Any) -> (Headers, Any):
-        pass
-
-
-class StreamResponder(ABC):
-
-    @abstractmethod
-    def respond(self, endpoint: Endpoint, channel: int, headers: Headers, stream: BytesIO) -> (Headers, BytesIO):
+    def process(self, endpoint: Endpoint, app: int, message: Message):
         pass
 

@@ -1,0 +1,26 @@
+{
+  "endpoint_name": "site-1",
+  "timeout_ms" : 5000,
+  "max_buffer_size" : 1073741824,
+  "max_header_size" : 16384,
+
+  "connectors": [
+    {
+      "url" : "https://fl-server:8433/fci?param1=value1&param2=value2",
+      "driver-param": 123
+    },
+    {
+      "url" : "https://fl-server2:8433/fci?param1=value1&param2=value2"
+    }
+  ],
+
+  "listeners": [
+    {
+      "url": "https://0:8433/fci",
+      "driver-param": "test"
+    },
+    {
+      "url": "http://localhost:8080/fci"
+    }
+  ]
+}

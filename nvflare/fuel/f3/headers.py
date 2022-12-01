@@ -15,10 +15,11 @@ import msgpack
 
 
 class Headers(dict):
+
     # Reserved Keys
     MSG_ID = "_MSG_ID_"
     TOPIC = "_TOPIC_"
-    DESTINATION = "_DESTINATION_"
+    DEST = "_DEST_"
     JOB_ID = "_JOB_ID_"
 
     def to_bytes(self):
