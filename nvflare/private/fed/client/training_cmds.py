@@ -15,6 +15,9 @@
 import json
 from typing import List
 
+from nvflare.apis.workspace import Workspace
+from nvflare.fuel.utils.argument_utils import parse_vars
+from nvflare.lighter.utils import verify_folder_signature
 from nvflare.private.admin_defs import Message, error_reply, ok_reply
 from nvflare.private.defs import RequestHeader, ScopeInfoKey, TrainingTopic
 from nvflare.private.fed.client.admin import RequestProcessor
@@ -118,6 +121,14 @@ class DeployProcessor(RequestProcessor):
         )
         if err:
             return error_reply(err)
+
+        kv_list = parse_vars(engine.args.set)
+        secure_train = kv_list.get("secure_train", True)
+        if secure_train:
+            workspace = Workspace(root_dir=engine.args.workspace, site_name=client_name)
+            app_path = workspace.get_app_dir(job_id)
+            if not verify_folder_signature(app_path):
+                return error_reply(f"app {app_name} does not pass signature verification")
         return ok_reply(body=f"deployed {app_name} to {client_name}")
 
 
