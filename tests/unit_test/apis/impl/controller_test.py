@@ -1149,6 +1149,8 @@ class TestBroadcastBehavior(TestController):
 
     @pytest.mark.parametrize("min_responses", [1, 2, 3, 4])
     @pytest.mark.parametrize("wait_time_after_min_received", [1, 2])
+    # @pytest.mark.parametrize("min_responses", [1])
+    # @pytest.mark.parametrize("wait_time_after_min_received", [1])
     def test_task_only_exit_when_wait_time_after_min_received(
         self, method, min_responses, wait_time_after_min_received
     ):
@@ -1187,14 +1189,16 @@ class TestBroadcastBehavior(TestController):
             )
 
         wait_time = 0
+        expected_standing_tasks = 1
         while wait_time <= wait_time_after_min_received:
-            assert controller.get_num_standing_tasks() == 1
+            assert controller.get_num_standing_tasks() == expected_standing_tasks
             for client in clients:
                 task_name_out, client_task_id, data = controller.process_task_request(client, fl_ctx)
                 assert task_name_out == ""
                 assert client_task_id == ""
             time.sleep(1)
             wait_time += 1
+            expected_standing_tasks = 0
 
         assert controller.get_num_standing_tasks() == 0
         assert task.completion_status == TaskCompletionStatus.OK
