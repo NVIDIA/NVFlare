@@ -1149,8 +1149,6 @@ class TestBroadcastBehavior(TestController):
 
     @pytest.mark.parametrize("min_responses", [1, 2, 3, 4])
     @pytest.mark.parametrize("wait_time_after_min_received", [1, 2])
-    # @pytest.mark.parametrize("min_responses", [1])
-    # @pytest.mark.parametrize("wait_time_after_min_received", [1])
     def test_task_only_exit_when_wait_time_after_min_received(
         self, method, min_responses, wait_time_after_min_received
     ):
