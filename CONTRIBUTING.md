@@ -71,7 +71,12 @@ License information: all source code files should start with this paragraph:
 NVIDIA FLARE tests are located under test/.
 The unit test file names follow the `[module_name]_test.py` pattern.
 
-The bash script `runtest.sh` will run unit tests also.
+The bash script `runtest.sh` will run unit and integration tests.
+
+To only run unit tests, run
+```
+cd tests/unit_test; pytest
+```
 
 #### Building docs
 To build the docs, first make sure you have all requirements
