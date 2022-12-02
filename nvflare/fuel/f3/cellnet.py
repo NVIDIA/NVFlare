@@ -20,10 +20,12 @@ import traceback
 import uuid
 
 from typing import List, Union, Dict
+from .conn_state import ConnState
 from .message import Message
 from .driver import DriverSpec
-from .endpoint import Endpoint
+from .endpoint import Endpoint, EndpointMonitor
 from .communicator import Communicator
+from .headers import Headers
 from .receiver import Receiver
 
 
@@ -40,6 +42,7 @@ class MessageHeaderKey:
     WAIT_UNTIL = "cellnet.wait_until"
     FROM_CELL = "cellnet.from"
     TO_CELL = "cellnet.to"
+    ORIGINAL_DESTINATION = "cellnet.origin_to"
     CHANNEL = "cellnet.channel"
 
 
@@ -47,6 +50,20 @@ class MessageType:
 
     REQ = "req"
     REPLY = "reply"
+    RETURN = "return"   # return to sender due to forward error
+
+
+class CellPropertyKey:
+
+    FQCN = "fqcn"
+    ROLES = "roles"
+
+
+class CellRole:
+
+    SERVER = "server"
+    ROOT = "root"
+    CLIENT = "client"
 
 
 class CellAgent:
@@ -57,7 +74,7 @@ class CellAgent:
     def __init__(
             self,
             fqcn: str,
-            props: dict,
+            roles: List[str],
             endpoint: Endpoint
     ):
         """
@@ -65,9 +82,15 @@ class CellAgent:
         Args:
             fqcn: FQCN of the cell represented
         """
+        if not FQCN.is_valid(fqcn):
+            raise ValueError(f"invalid FQCN '{fqcn}'")
+
         self.fqcn = fqcn
-        self.props = props
+        self.roles = roles
         self.endpoint = endpoint
+
+    def has_role(self, role: str) -> bool:
+        return role in self.roles
 
 
 class _CB:
@@ -135,16 +158,23 @@ class FQCN:
     def join(path: List[str]) -> str:
         return FQCN.SEPARATOR.join(path)
 
+    @staticmethod
+    def is_valid(fqcn: str) -> bool:
+        if not isinstance(fqcn, str):
+            return False
+        if not fqcn:
+            return False
 
-class Cell(Receiver):
+
+class Cell(Receiver, EndpointMonitor):
 
     APP_ID = 1
 
     def __init__(
             self,
             fqcn: str,
+            roles: List[str],
             url: str,
-            props: dict,
             max_timeout=3600,
     ):
         """
@@ -163,16 +193,21 @@ class Cell(Receiver):
 
         """
         self.my_fqcn = fqcn
-        self.props = props
+        self.roles = roles
         self.agents = {}  # cell_fqcn => CellAgent
+        self.agent_lock = threading.Lock()
 
         self.communicator = Communicator(
             local_endpoint=Endpoint(
                 name=fqcn,
                 url=url,
-                properties=props)
+                properties={
+                    CellPropertyKey.FQCN: self.my_fqcn,
+                    CellPropertyKey.ROLES: roles
+                })
         )
         self.communicator.register_receiver(endpoint=None, app=self.APP_ID, receiver=self)
+        self.communicator.register_monitor(monitor=self)
         self.req_reg = _Registry()
         self.in_req_filter_reg = _Registry()  # for request received
         self.out_reply_filter_reg = _Registry()  # for reply going out
@@ -187,7 +222,6 @@ class Cell(Receiver):
         self.cell_disconnected_cb_kwargs = None
 
         self.waiters = {}  # req_id => req
-        self.waiter_lock = threading.Lock()
         self.stats_lock = threading.Lock()
         self.req_hw = 0
         self.num_sar_reqs = 0  # send-and-receive
@@ -385,7 +419,7 @@ class Cell(Receiver):
     def _try_path(self, fqcn_path: List[str]) -> Union[None, Endpoint]:
         target = FQCN.join(fqcn_path)
         agent = self.agents.get(target, None)
-        if agent and agent.endpoint:
+        if agent:
             # there is a direct path to the target call
             return agent.endpoint
 
@@ -401,29 +435,39 @@ class Cell(Receiver):
 
         # can't find endpoint based on the target's FQCN
         # let my parent(s) handle it
+        ep = None
         path = FQCN.split(self.my_fqcn)
         if len(path) > 1:
-            return self._try_path(path[:-1])
-        else:
-            return None
+            ep = self._try_path(path[:-1])
+        if ep:
+            return ep
 
     def find_endpoint(self, target_fqcn: str) -> Union[None, Endpoint]:
         if target_fqcn == self.my_fqcn:
             # sending request to myself? Not allowed!
             return None
 
-        agent = self.agents.get(target_fqcn, None)
-        if agent and agent.endpoint:
-            # there is a direct path to the target call
-            return agent.endpoint
-
         ep = self._find_ep(target_fqcn)
-        if ep:
-            # remember this so we don't need to repeat again
-            if not agent:
-                agent = CellAgent(fqcn=target_fqcn, props={}, endpoint=ep)
-            self.agents[target_fqcn] = agent
-        return ep
+        if not ep:
+            # cannot find endpoint through FQCN path
+            # use the server root agent as last resort
+            # this is the case that a client cell tries to talk to another client cell
+            # and there is no direct link to it.
+            # we assume that all client roots connect to the server root.
+            with self.agent_lock:
+                for _, agent in self.agents.items():
+                    if agent.has_role(CellRole.SERVER) and agent.has_role(CellRole.ROOT):
+                        return agent.endpoint
+        return None
+
+    def _async_send(self, to_endpoint: Endpoint, message: Message) -> str:
+        err = ""
+        try:
+            self.communicator.send(to_endpoint, Cell.APP_ID, message)
+        except:
+            traceback.print_exc()
+            err = "CommError"
+        return err
 
     def _send_to_targets(
             self,
@@ -452,9 +496,8 @@ class Cell(Receiver):
             MessageHeaderKey.CHANNEL: channel,
             MessageHeaderKey.TOPIC: topic,
             MessageHeaderKey.FROM_CELL: self.my_fqcn,
-            MessageHeaderKey.MSG_TYPE: MessageType.REQ,
-            }
-        )
+            MessageHeaderKey.MSG_TYPE: MessageType.REQ
+        })
 
         request.add_headers(headers)
 
@@ -478,6 +521,17 @@ class Cell(Receiver):
             self,
             channel: str,
             topic: str,
+            target: str,
+            request: Message,
+            timeout=None) -> Union[None, Message]:
+        result = self.broadcast(channel, topic, target, request, timeout)
+        assert isinstance(result, dict)
+        return result.get(target)
+
+    def broadcast(
+            self,
+            channel: str,
+            topic: str,
             targets: Union[str, List[str]],
             request: Message,
             timeout=None) -> Dict[str, Union[None, Message]]:
@@ -494,7 +548,9 @@ class Cell(Receiver):
 
         """
         waiter = _Waiter(targets)
-        with self.waiter_lock:
+        self.waiters[waiter.id] = waiter
+
+        try:
             self._send_to_targets(
                 channel, topic, targets, request,
                 {
@@ -504,20 +560,21 @@ class Cell(Receiver):
                 }
             )
 
-            self.waiters[waiter.id] = waiter
             self.num_sar_reqs += 1
             num_reqs = len(self.waiters)
             if self.req_hw < num_reqs:
                 self.req_hw = num_reqs
 
-        # wait for reply
-        if not waiter.wait(timeout=timeout):
-            # timeout
-            with self.stats_lock:
-                self.num_timeout_reqs += 1
+            # wait for reply
+            if not waiter.wait(timeout=timeout):
+                # timeout
+                with self.stats_lock:
+                    self.num_timeout_reqs += 1
+        except BaseException as ex:
+            raise ex
+        finally:
+            self.waiters.pop(waiter.id, None)
 
-            with self.waiter_lock:
-                self.waiters.pop(waiter.id, None)
         return waiter.targets
 
     def fire_and_forget(
@@ -550,6 +607,22 @@ class Cell(Receiver):
             to_cell: str,
             for_req_ids: List[str]
     ):
+        """
+        Send a reply to respond to one or more requests.
+        This is useful if the request receiver needs to delay its reply as follows:
+        - When a request is received, if it's not ready to reply (e.g. waiting for additional requests from
+         other cells), simply remember the REQ_ID and returns None;
+        - The receiver may queue up multiple such requests
+        - When ready, call this method to send the reply for all the queued requests
+
+        Args:
+            reply:
+            to_cell:
+            for_req_ids:
+
+        Returns:
+
+        """
         reply.add_headers(
             {
                 MessageHeaderKey.FROM_CELL: self.my_fqcn,
@@ -572,6 +645,14 @@ class Cell(Receiver):
             traceback.print_exc()
 
     def _process_received_msg(self, endpoint: Endpoint, app: int, message: Message):
+        msg_type = message.get_header(MessageHeaderKey.MSG_TYPE)
+        if not msg_type:
+            raise RuntimeError("Proto Error: missing MSG_TYPE in received message")
+
+        from_cell = message.get_header(MessageHeaderKey.FROM_CELL)
+        if not from_cell:
+            raise RuntimeError("Proto Error: missing FROM_CELL in received message")
+
         # is this msg for me?
         to_cell = message.get_header(MessageHeaderKey.TO_CELL)
         if not to_cell:
@@ -580,20 +661,38 @@ class Cell(Receiver):
         if to_cell != self.my_fqcn:
             # not for me - need to forward it
             ep = self.find_endpoint(to_cell)
-            if not ep:
-                raise TargetCellUnreachable(f"Cannot forward to cell '{to_cell}' - no path")
-            self.communicator.send(endpoint=ep, app=Cell.APP_ID, message=message)
-            return
+            if ep:
+                err = self._async_send(to_endpoint=ep, message=message)
+                if not err:
+                    return
 
-        from_cell = message.get_header(MessageHeaderKey.FROM_CELL)
-        if not from_cell:
-            raise RuntimeError("Proto Error: missing FROM_CELL in received message")
+            # cannot forward
+            self.logger.error(f"Cannot forward {msg_type} to cell '{to_cell}' for {from_cell} - no path")
+            if msg_type == MessageType.REQ:
+                reply_expected = message.get_header(MessageHeaderKey.REPLY_EXPECTED, False)
+                if not reply_expected:
+                    return
+
+                wait_until = message.get_header(MessageHeaderKey.WAIT_UNTIL, None)
+                if isinstance(wait_until, float) and time.time() > wait_until:
+                    # no need to reply since peer already gave up waiting by now
+                    return
+
+                # tell the requester that message couldn't be delivered
+                req_id = message.get_header(MessageHeaderKey.REQ_ID, "")
+                reply = Message(Headers(), None)
+                reply.add_headers(
+                    {
+                        MessageHeaderKey.FROM_CELL: self.my_fqcn,
+                        MessageHeaderKey.TO_CELL: from_cell,
+                        MessageHeaderKey.ORIGINAL_DESTINATION: to_cell,
+                        MessageHeaderKey.REQ_ID: [req_id],
+                        MessageHeaderKey.MSG_TYPE: MessageType.RETURN,
+                    }
+                )
+                self._async_send(endpoint, reply)
 
         # this message is for me
-        msg_type = message.get_header(MessageHeaderKey.MSG_TYPE)
-        if not msg_type:
-            raise RuntimeError("Proto Error: missing MSG_TYPE in received message")
-
         if msg_type == MessageType.REQ:
             # this is a request for me - dispatch to the right CB
             channel = message.get_header(MessageHeaderKey.CHANNEL, "")
@@ -608,18 +707,16 @@ class Cell(Receiver):
             reply = _cb.cb(self, channel, topic, message, *_cb.args, **_cb.kwargs)
             if not reply:
                 # the CB doesn't have anything to reply
-                print("No reply to send")
                 return
 
             reply_expected = message.get_header(MessageHeaderKey.REPLY_EXPECTED, False)
             if not reply_expected:
-                print("do not send reply - reply not expected")
+                # this is fire and forget
                 return
 
             wait_until = message.get_header(MessageHeaderKey.WAIT_UNTIL, None)
             if isinstance(wait_until, float) and time.time() > wait_until:
-                # no need to reply since peer already gave up
-                print("do not send reply - wait timeout")
+                # no need to reply since peer already gave up waiting by now
                 return
 
             # send the reply back
@@ -643,24 +740,75 @@ class Cell(Receiver):
         if not isinstance(req_ids, list):
             raise RuntimeError(f"Proto Error: REQ_ID must be list of ids but got {type(req_ids)}")
 
-        with self.waiter_lock:
-            for rid in req_ids:
-                waiter = self.waiters.pop(rid, None)
-                if waiter:
-                    assert isinstance(waiter, _Waiter)
-                    if from_cell not in waiter.targets:
-                        raise RuntimeError(f"received reply for {rid} from unexpected cell {from_cell}")
-                    waiter.targets[from_cell] = message
+        for rid in req_ids:
+            waiter = self.waiters.get(rid, None)
+            if waiter:
+                assert isinstance(waiter, _Waiter)
+                if from_cell not in waiter.targets:
+                    raise RuntimeError(f"received reply for {rid} from unexpected cell {from_cell}")
+                waiter.targets[from_cell] = message
 
-                    # all targets replied?
-                    all_targets_replied = True
-                    for _, reply in waiter.targets.items():
-                        if not reply:
-                            all_targets_replied = False
-                            break
+                # all targets replied?
+                all_targets_replied = True
+                for _, reply in waiter.targets.items():
+                    if not reply:
+                        all_targets_replied = False
+                        break
 
-                    if all_targets_replied:
-                        waiter.set()  # trigger the waiting requests!
+                if all_targets_replied:
+                    self.logger.debug(f"replies received from all {len(waiter.targets)} targets for req {rid}")
+                    waiter.set()  # trigger the waiting requests!
+                else:
+                    self.logger.debug(f"replies not received from all {len(waiter.targets)} targets for req {rid}")
+            else:
+                self.logger.debug(f"no waiter for req {rid}")
+
+    def state_change(self, endpoint: Endpoint, state: ConnState):
+        fqcn = endpoint.properties.get(CellPropertyKey.FQCN, None)
+        if not fqcn:
+            self.logger.critical(f"missing fqcn in endpoint {endpoint.name}")
+            return
+
+        if state == ConnState.READY:
+            # create the CellAgent for this endpoint
+            roles = endpoint.properties.get(CellPropertyKey.ROLES, None)
+            if not roles:
+                self.logger.critical(f"missing roles in endpoint {endpoint.name}")
+                return
+
+            agent = self.agents.get(fqcn)
+            if not agent:
+                agent = CellAgent(fqcn, roles, endpoint)
+                with self.agent_lock:
+                    self.agents[fqcn] = agent
+            else:
+                agent.endpoint = endpoint
+                agent.roles = roles
+            if self.cell_connected_cb is not None:
+                try:
+                    self.cell_connected_cb(
+                        self, agent,
+                        *self.cell_connected_cb_args,
+                        **self.cell_connected_cb_kwargs
+                    )
+                except:
+                    self.logger.error("exception in cell_connected_cb")
+                    traceback.print_exc()
+
+        elif state in [ConnState.DISCONNECTING, ConnState.IDLE]:
+            # remove this agent
+            with self.agent_lock:
+                agent = self.agents.pop(fqcn, None)
+            if agent and self.cell_disconnected_cb is not None:
+                try:
+                    self.cell_disconnected_cb(
+                        self, agent,
+                        *self.cell_disconnected_cb_args,
+                        **self.cell_disconnected_cb_kwargs
+                    )
+                except:
+                    self.logger.error("exception in cell_disconnected_cb")
+                    traceback.print_exc()
 
 
 def cell_connected_cb_signature(

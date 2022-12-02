@@ -38,7 +38,7 @@ class Endpoint:
         return self.properties.get(key)
 
     def get_certificate(self) -> dict:
-        return self.conn_props(Endpoint.CERTIFICATE)
+        return self.conn_props.get(Endpoint.CERTIFICATE)
 
 
 class EndpointMonitor(ABC):
