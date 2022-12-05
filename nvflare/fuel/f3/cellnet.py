@@ -27,6 +27,7 @@ from .endpoint import Endpoint, EndpointMonitor
 from .communicator import Communicator
 from .headers import Headers
 from .receiver import Receiver
+from .driver_manager import DriverManager, ConnPropKey
 
 
 class TargetCellUnreachable(Exception):
@@ -146,6 +147,13 @@ class _Waiter(threading.Event):
         self.id = str(uuid.uuid4())
 
 
+class _DriverInfo:
+
+    def __init__(self, driver: DriverSpec, conn_props: dict):
+        self.driver = driver
+        self.conn_props = conn_props
+
+
 class FQCN:
 
     SEPARATOR = "."
@@ -175,12 +183,17 @@ class Cell(Receiver, EndpointMonitor):
             fqcn: str,
             roles: List[str],
             url: str,
+            credentials: dict,
             max_timeout=3600,
     ):
         """
 
         Args:
             fqcn: the Cell's FQCN (Fully Qualified Cell Name)
+            roles: roles of the cell
+            credentials: credentials for secure connections
+            url: the URL for backbone external connection
+            max_timeout: default timeout for send_and_receive
 
         FQCN is the name of all ancestor names, concatenated with colons.
 
@@ -194,18 +207,23 @@ class Cell(Receiver, EndpointMonitor):
         """
         self.my_fqcn = fqcn
         self.roles = roles
+        self.url = url
         self.agents = {}  # cell_fqcn => CellAgent
         self.agent_lock = threading.Lock()
 
+        ep = Endpoint(
+            name=fqcn,
+            url=url,
+            properties={
+                CellPropertyKey.FQCN: self.my_fqcn,
+                CellPropertyKey.ROLES: roles
+            })
+        ep.conn_props = credentials
+
         self.communicator = Communicator(
-            local_endpoint=Endpoint(
-                name=fqcn,
-                url=url,
-                properties={
-                    CellPropertyKey.FQCN: self.my_fqcn,
-                    CellPropertyKey.ROLES: roles
-                })
+            local_endpoint=ep
         )
+
         self.communicator.register_receiver(endpoint=None, app=self.APP_ID, receiver=self)
         self.communicator.register_monitor(monitor=self)
         self.req_reg = _Registry()
@@ -239,29 +257,51 @@ class Cell(Receiver, EndpointMonitor):
         self._name = self.__class__.__name__
         self.logger = logging.getLogger(self._name)
 
-    def add_connector(self, connector: DriverSpec):
-        """
-        Add a connector to be used to connect to another cell.
+        # add appropriate drivers based on roles of the cell
+        self.driver_manager = DriverManager()
+        self.bb_ext_listener = None     # backbone external listener - only for Server Root
+        self.bb_ext_connector = None    # backbone external connector - only for Client cells
+        self.bb_int_listener = None     # backbone internal listener - only for Root cells
+        self.bb_int_connector = None    # backbone internal connector - only for non-root cells
 
-        Args:
-            connector: the connector
-
-        Returns:
-
-        """
-        self.communicator.add_connector(connector)
-
-    def add_listener(self, listener: DriverSpec):
-        """
-        Add a listener.
-
-        Args:
-            listener: listener to be added
-
-        Returns:
-
-        """
+    def _set_internal_listener(self):
+        conn_reqs = {
+            ConnPropKey.CONNECTION_TYPE: "internal"
+        }
+        conn_props, listener = self.driver_manager.get_listener(conn_reqs)
         self.communicator.add_listener(listener)
+        return _DriverInfo(listener, conn_props)
+
+    def set_bb_for_server_root(self):
+        conn_reqs = {
+            ConnPropKey.URL: self.url
+        }
+        conn_props, listener = self.driver_manager.get_listener(conn_reqs)
+        self.bb_ext_listener = _DriverInfo(listener, conn_props)
+        self.communicator.add_listener(listener)
+        self.bb_int_listener = self._set_internal_listener()
+
+    def _set_external_connector(self):
+        conn_reqs = {
+            ConnPropKey.URL: self.url
+        }
+        self.bb_ext_connector = self.driver_manager.get_connector(conn_reqs)
+        self.communicator.add_connector(self.bb_ext_connector)
+
+    def set_bb_for_client_root(self):
+        self._set_external_connector()
+        self.bb_int_listener = self._set_internal_listener()
+
+    def _set_internal_connector(self, conn_props: dict):
+        self.bb_int_connector = self.driver_manager.get_connector(conn_props)
+        self.communicator.add_connector(self.bb_int_connector)
+
+    def set_bb_for_server_leaf(self, internal_conn_props: dict):
+        self._set_internal_connector(internal_conn_props)
+
+    def set_bb_for_client_leaf(self, internal_conn_props: dict):
+        self._set_internal_connector(internal_conn_props)
+        self._set_external_connector()
 
     def set_cell_connected_cb(
             self,
