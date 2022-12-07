@@ -337,8 +337,12 @@ class JobRunner(FLComponent):
             while not self.ask_to_stop:
                 # approved_jobs = job_manager.get_jobs_by_status(RunStatus.APPROVED, fl_ctx)
                 approved_jobs = job_manager.get_jobs_by_status(RunStatus.SUBMITTED, fl_ctx)
+
                 if self.scheduler:
-                    (ready_job, sites) = self.scheduler.schedule_job(job_candidates=approved_jobs, fl_ctx=fl_ctx)
+                    ready_job, sites = self.scheduler.schedule_job(
+                        job_candidates=approved_jobs,
+                        fl_ctx=fl_ctx)
+
                     if ready_job:
                         with self.lock:
                             client_sites = {k: v for k, v in sites.items() if k != "server"}

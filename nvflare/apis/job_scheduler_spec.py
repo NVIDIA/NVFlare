@@ -50,8 +50,8 @@ class JobSchedulerSpec(ABC):
             fl_ctx: FLContext.
 
         Returns:
-            A tuple of (job, sites_dispatch_info), if there is a Job that satisfy the criteria of the scheduler.
-            sites_dispatch_info is a dict of {site name: DispatchInfo}.
-            Otherwise, return (None, None).
+            A tuple of (job, sites_dispatch_info, failed_jobs, blocked_jobs):
+            job is the Job that satisfies the criteria of the scheduler.
+            sites_dispatch_info is dict of {site name: DispatchInfo} for the job.
         """
         pass

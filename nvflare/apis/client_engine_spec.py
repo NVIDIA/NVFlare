@@ -16,11 +16,16 @@
 from abc import ABC, abstractmethod
 
 from .fl_context import FLContext
+from .workspace import Workspace
 
 
 class ClientEngineSpec(ABC):
     @abstractmethod
     def fire_event(self, event_type: str, fl_ctx: FLContext):
+        pass
+
+    @abstractmethod
+    def get_workspace(self) -> Workspace:
         pass
 
     @abstractmethod

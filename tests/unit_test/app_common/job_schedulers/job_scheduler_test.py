@@ -120,7 +120,10 @@ class MockServerEngine(ServerEngineSpec):
     def start_client_job(self, job_id, client_sites):
         pass
 
-    def check_client_resources(self, resource_reqs: Dict[str, dict]) -> Dict[str, Tuple[bool, Optional[str]]]:
+    def check_client_resources(
+            self,
+            job_id: str,
+            resource_reqs: Dict[str, dict]) -> Dict[str, Tuple[bool, Optional[str]]]:
         result = {}
         with self.new_context() as fl_ctx:
             for site_name, requirements in resource_reqs.items():

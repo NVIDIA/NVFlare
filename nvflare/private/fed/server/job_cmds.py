@@ -297,7 +297,7 @@ class JobCommandModule(CommandModule, CommandUtil):
                     conn.append_error("No jobs matching the searching criteria")
                     return
 
-                filtered_jobs.sort(key=lambda job: job.meta.get(JobMetaKey.SUBMIT_TIME, 0.0))
+                filtered_jobs.sort(key=lambda job: job.meta.get(JobMetaKey.SUBMIT_TIME.value, 0.0))
 
                 if parsed_args.d:
                     self._send_detail_list(conn, filtered_jobs)
