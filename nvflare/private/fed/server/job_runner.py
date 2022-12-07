@@ -115,7 +115,7 @@ class JobRunner(FLComponent):
             client_sites = []
             for p in participants:
                 if p == "server":
-                    app_deployer = AppDeployer()
+                    app_deployer = self._get_app_deployer(engine)
                     err = app_deployer.deploy(
                         app_name=app_name,
                         workspace=workspace,
@@ -206,6 +206,13 @@ class JobRunner(FLComponent):
 
         self.fire_event(EventType.JOB_DEPLOYED, fl_ctx)
         return run_number, failed_clients
+
+    def _get_app_deployer(self, engine):
+        app_deployer = engine.get_component(SystemComponents.APP_DEPLOYER)
+        if not app_deployer:
+            # use default deployer
+            app_deployer = AppDeployer()
+        return app_deployer
 
     def _start_run(self, job_id: str, job: Job, client_sites: dict, fl_ctx: FLContext):
         """Start the application

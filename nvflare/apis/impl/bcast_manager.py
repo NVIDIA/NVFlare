@@ -24,6 +24,7 @@ from .task_manager import TaskCheckStatus, TaskManager
 _KEY_MIN_RESPS = "__min_responses"
 _KEY_WAIT_TIME_AFTER_MIN_RESPS = "__wait_time_after_min_received"
 _KEY_MIN_RESPS_RCV_TIME = "__min_resps_received_time"
+_KEY_ENGINE = "___engine"
 
 
 class BcastTaskManager(TaskManager):
@@ -54,12 +55,9 @@ class BcastTaskManager(TaskManager):
             # nothing has been sent - continue to wait
             return False, TaskCompletionStatus.IGNORED
 
-        if task.targets:
-            num_expected_clients = len(task.targets)
-        else:
-            engine = task.get_prop("___engine")
-            assert isinstance(engine, ServerEngineSpec)
-            num_expected_clients = len(engine.get_clients())
+        num_expected_clients = self.get_num_expected_clients(task)
+        min_expected_clients = task.props[_KEY_MIN_RESPS]
+        wait_time_after_min_resps = task.props[_KEY_WAIT_TIME_AFTER_MIN_RESPS]
 
         clients_responded = 0
         clients_not_responded = 0
@@ -69,34 +67,49 @@ class BcastTaskManager(TaskManager):
             else:
                 clients_responded += 1
 
-        if clients_responded >= num_expected_clients and clients_not_responded == 0:
+        # if min_responses is 0, need to have all client tasks responded
+        if min_expected_clients == 0 and clients_not_responded > 0:
+            return False, TaskCompletionStatus.IGNORED
+
+        # check if minimum responses are received
+        if clients_responded == 0 or clients_responded < min_expected_clients:
+            # continue to wait
+            return False, TaskCompletionStatus.IGNORED
+
+        if clients_responded == num_expected_clients and clients_not_responded == 0:
             # all clients have responded
             # total_client_count is the number of clients that the job has been deployed to.
             # since NVF 2.1, clients can no longer dynamically join a job.
             return True, TaskCompletionStatus.OK
 
-        # if min_responses is 0, need to have all client tasks responded
-        if task.props[_KEY_MIN_RESPS] == 0 and clients_not_responded:
-            return False, TaskCompletionStatus.IGNORED
+        return self.wait_after_min_resps(task, wait_time_after_min_resps)
 
-        # check if minimum responses are received
-        if clients_responded == 0 or clients_responded < task.props[_KEY_MIN_RESPS]:
-            # continue to wait
-            return False, TaskCompletionStatus.IGNORED
-
+    def wait_after_min_resps(self, task, wait_time_after_min_resps_):
         # minimum responses received
-        min_resps_received_time = task.props[_KEY_MIN_RESPS_RCV_TIME]
-        if min_resps_received_time is None:
-            min_resps_received_time = time.time()
-            task.props[_KEY_MIN_RESPS_RCV_TIME] = min_resps_received_time
-
+        min_resps_received_time = self.get_min_resps_received_time(task)
         # see whether we have waited for long enough
-        if time.time() - min_resps_received_time >= task.props[_KEY_WAIT_TIME_AFTER_MIN_RESPS]:
+        if time.time() - min_resps_received_time >= wait_time_after_min_resps_:
             # yes - exit the task
             return True, TaskCompletionStatus.OK
         else:
             # no - continue to wait
             return False, TaskCompletionStatus.IGNORED
+
+    def get_min_resps_received_time(self, task):
+        min_resps_received_time = task.props[_KEY_MIN_RESPS_RCV_TIME]
+        if min_resps_received_time is None:
+            min_resps_received_time = time.time()
+            task.props[_KEY_MIN_RESPS_RCV_TIME] = min_resps_received_time
+        return min_resps_received_time
+
+    def get_num_expected_clients(self, task):
+        if task.targets:
+            num_expected_clients = len(task.targets)
+        else:
+            engine = task.get_prop(_KEY_ENGINE)
+            assert isinstance(engine, ServerEngineSpec)
+            num_expected_clients = len(engine.get_clients())
+        return num_expected_clients
 
 
 class BcastForeverTaskManager(TaskManager):

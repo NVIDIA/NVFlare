@@ -32,6 +32,7 @@ dxo2 = DXO(DataKind.WEIGHTS, {"data": 2.0})
 dxo11 = DXO(DataKind.WEIGHTS, {"data": 3.0})
 dxo22 = DXO(DataKind.WEIGHTS, {"data": 4.0})
 dxo3 = DXO(DataKind.COLLECTION, {"dxo11": dxo11, "dxo22": dxo22})
+
 TEST_GET_LEAVES_1 = [DataKind.COLLECTION, {"dxo1": dxo1, "dxo2": dxo2}, {"dxo1": dxo1, "dxo2": dxo2}]
 TEST_GET_LEAVES_2 = [
     DataKind.COLLECTION,
@@ -44,12 +45,13 @@ class TestDXO:
     @pytest.mark.parametrize("data_kind, data", [TEST_INIT_1, TEST_INIT_2, TEST_INIT_3, TEST_INIT_4, TEST_INIT_5])
     def test_init(self, data_kind, data):
         dxo = DXO(data_kind=data_kind, data=data)
+        # why return empty string as valid ? should be a boolean
         assert dxo.validate() == ""
 
     @pytest.mark.parametrize("data_kind, data", [TEST_INIT_ERROR_1])
     def test_init_no_dict(self, data_kind, data):
         with pytest.raises(ValueError):
-            DXO(data_kind=data_kind, data=data)
+            dxo = DXO(data_kind=data_kind, data=data)
             dxo.validate()
 
     @pytest.mark.parametrize("data_kind, data, expected", [TEST_GET_LEAVES_2])
