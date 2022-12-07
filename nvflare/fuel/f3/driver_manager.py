@@ -21,25 +21,39 @@ class DriverResource:
 
     def __init__(
             self,
-            class_path: str,
-            properties: dict=None
+            driver_name: str,
+            resources: dict=None
     ):
         """
 
         Args:
-            class_path: class path of the driver
-            properties: additional info to assist creating new listeners or connectors. This info could include
-            - domain, port numbers, and/or URLs allowed for incoming connections
-            - whether listeners of this class could be used for external or internal connections
+            driver_name: name of the driver class
+            resources: additional info to assist creating new listeners or connectors. This info could include
+            - port numbers
+            - base url
         """
-        self.class_path = class_path
-        self.properties = properties
+        self.driver_name = driver_name
+        self.resources = resources
 
 
-class ConnPropKey:
+class DriverRequirementKey:
 
     URL = "url"
-    CONNECTION_TYPE = "conn_type"   # internal (to family) or external
+    SECURE = "secure"           # secure or not
+    USE = "use"                 # backbone or not (ad-hoc)
+    VISIBILITY = "visibility"   # internal or external
+
+
+class DriverUse:
+
+    BACKBONE = "backbone"
+    ADHOC = "adhoc"
+
+
+class Visibility:
+
+    INTERNAL = "internal"
+    EXTERNAL = "external"
 
 
 class DriverManager:
@@ -47,34 +61,74 @@ class DriverManager:
     """
     Manages creation of drivers (listeners and connectors).
 
-    Each Driver class must implement class methods for:
+    Each Driver Class must implement class methods for:
+    - get_name()
     - set_properties() to set additional properties
     - new_listener() to generate a listener object based on connection requirements
     - new_connector() to generate a connector object based on connection properties
     """
 
+    DRIVERS = {
+        "http": "nvflare.fuel.f3.drivers.http.HTTPDriver",
+        "ipc": "nvflare.fuel.f3.drivers.ipc.IPCDriver",
+    }
+
     def __init__(self):
-        self.driver_classes = {}  # path => class
-        # TBD: load default driver classes
+        self.driver_classes = {}  # name => class
+
+        # load default driver classes
+        for name, class_path in self.DRIVERS.items():
+            self.driver_classes[name] = get_class(class_path)
+
+        self.backbone_ext_drivers = ["http"]
+        self.backbone_int_drivers = ["ipc"]
+        self.adhoc_drivers = ["http"]
+        self.adhoc_driver_resources = {}
 
     def add_resources(self, resources: List[DriverResource]):
         for r in resources:
-            clazz = self.driver_classes.get(r.class_path)
-            if not clazz:
-                clazz = get_class(r.class_path)
-                self.driver_classes[r.class_path] = clazz
-            clazz.set_properties(r.properties)
+            self.adhoc_driver_resources[r.driver_name] = r.resources
+
+    def _get_driver(self, active: bool, requirements):
+        use = requirements.get(DriverRequirementKey.USE, DriverUse.BACKBONE)
+        vis = requirements.get(DriverRequirementKey.VISIBILITY, Visibility.EXTERNAL)
+        if use == DriverUse.BACKBONE:
+            is_adhoc = False
+            if vis == Visibility.EXTERNAL:
+                drivers = self.backbone_ext_drivers
+            else:
+                drivers = self.backbone_int_drivers
+        else:
+            is_adhoc = True
+            drivers = self.adhoc_drivers
+
+        for name in drivers:
+            clazz = self.driver_classes.get(name)
+            resources = None
+            if is_adhoc:
+                resources = self.adhoc_driver_resources.get(name)
+            if clazz:
+                try:
+                    driver = clazz(
+                        active=active,
+                        conn_requirements=requirements,
+                        resources=resources
+                    )
+                    return driver
+                except:
+                    pass
+        return None
 
     def get_listener(
             self,
-            conn_requirements: dict) -> (Union[None, Dict], Union[None, DriverSpec]):
+            requirements: dict) -> Union[None, DriverSpec]:
         """
         Try to get a listener that can satisfy the requirements specified in conn_requirements.
         The conn_requirements could specify very precise requirements like secure or not, scheme, domain, port;
         The conn_requirements could also only specify general requirements like connection type (ext or internal)
 
         Args:
-            conn_requirements: required connection properties
+            requirements: required connection properties
 
         Returns: tuple of: dict of conn props, a listener or None.
         The returned conn props dict must contain sufficient info for others to make a connection:
@@ -82,25 +136,26 @@ class DriverManager:
 
         We simply try each driver class to get the required listener, until we get a listener.
         """
-        for _, clazz in self.driver_classes.items():
-            listener = clazz.new_listener(conn_requirements)
-            if listener:
-                return listener
-        return None
+        return self._get_driver(
+            active=False,
+            conn_requirements=requirements,
+        )
 
-    def get_connector(self, conn_props: dict):
+    def get_connector(
+            self,
+            requirements: dict) -> Union[None, DriverSpec]:
         """
-        Try to get a Connector for the specified conn_props, which contains info for making connection.
+        Try to get a Connector for the specified conn_requirements, which contains info for making connection.
 
         Args:
-            conn_props: dict that contains info for making a connection
+            requirements: dict that contains info for making a connection
 
         Returns: a connector or None
 
         We simply try each driver class to get a connector.
         """
-        for _, clazz in self.driver_classes.items():
-            connector = clazz.new_connector(conn_props)
-            if connector:
-                return connector
-        return None
+        return self._get_driver(
+            active=True,
+            conn_requirements=requirements,
+        )
+

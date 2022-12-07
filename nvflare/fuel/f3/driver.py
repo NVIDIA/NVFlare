@@ -71,9 +71,33 @@ class DriverSpec(ABC):
 
     """
 
-    def __init__(self):
+    @classmethod
+    def get_name(cls) -> str:
+        return cls.__name__
+
+    def __init__(self, active: bool, requirements: dict, resources: dict=None):
+        """
+        Construct a driver instance that can satisfy specified connection requirements, with the help of
+        provided resources.
+
+        Args:
+            active: whether the driver is a listener (passive) or a connector (active)
+            requirements: requirements for the driver (e.g. url, secure or not)
+            resources: resources to help creating the driver (e.g. available ports for listener)
+        """
         self.state = ConnState.IDLE
         self.frame_receiver = None
+
+    def start(self, conn_properties: dict):
+        pass
+
+    def get_connection_url(self) -> str:
+        """
+        Get the URL to connect to me (me is a listener), or the URL for me to connect to (me is a connector)
+
+        Returns:
+        """
+        pass
 
     def get_state(self) -> ConnState:
         """Get connection state
@@ -82,12 +106,6 @@ class DriverSpec(ABC):
             CommError: If any errors
         """
         return self.state
-
-    def get_name(self) -> str:
-        """Return the name of the driver, something like 'http'.
-        By default, it returns class name
-        """
-        return self.__class__.__name__
 
     @abstractmethod
     def get_conn_properties(self) -> dict:
