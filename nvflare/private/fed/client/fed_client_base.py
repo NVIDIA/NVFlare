@@ -263,6 +263,17 @@ class FederatedClientBase:
         except FLCommunicationError:
             self.communicator.heartbeat_done = True
 
+    def quit_remote(self, project_name, fl_ctx: FLContext):
+        """Sending the last message to the server before leaving.
+
+        Args:
+            fl_ctx: FLContext
+
+        Returns: N/A
+
+        """
+        return self.communicator.quit_remote(self.servers, project_name, self.token, self.ssid, fl_ctx)
+
     def heartbeat(self):
         """Sends a heartbeat from the client to the server."""
         pool = None
@@ -341,17 +352,22 @@ class FederatedClientBase:
         heartbeat_thread = threading.Thread(target=self.run_heartbeat)
         heartbeat_thread.start()
 
-    def quit_remote(self, task_name, fl_ctx: FLContext):
-        """Sending the last message to the server before leaving.
+    def logout_client(self, fl_ctx: FLContext):
+        """Logout the client from the server.
 
         Args:
-            task_name: task name
             fl_ctx: FLContext
 
         Returns: N/A
 
         """
-        return self.communicator.quit_remote(self.servers, task_name, self.token, self.ssid, fl_ctx)
+        pool = None
+        try:
+            pool = ThreadPool(len(self.servers))
+            return pool.map(partial(self.quit_remote, fl_ctx=fl_ctx), tuple(self.servers))
+        finally:
+            if pool:
+                pool.terminate()
 
     def set_client_engine(self, engine):
         self.engine = engine
@@ -361,5 +377,11 @@ class FederatedClientBase:
         self.logger.info(f"Shutting down client: {self.client_name}")
         if self.overseer_agent:
             self.overseer_agent.end()
+
+        if self.engine:
+            fl_ctx = self.engine.new_context()
+        else:
+            fl_ctx = FLContext()
+        self.logout_client(fl_ctx)
 
         return 0
