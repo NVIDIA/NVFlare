@@ -149,3 +149,6 @@ class Communicator:
          """
 
         self.conn_manager.add_connector(driver)
+
+    def delete_driver(self, driver: DriverSpec):
+        pass

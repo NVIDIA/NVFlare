@@ -39,8 +39,8 @@ class DriverResource:
 class DriverRequirementKey:
 
     URL = "url"
-    SECURE = "secure"           # secure or not
-    USE = "use"                 # backbone or not (ad-hoc)
+    SECURE = "secure"           # bool: secure or not
+    USE = "use"                 # backbone or ad-hoc
     VISIBILITY = "visibility"   # internal or external
 
 
@@ -138,7 +138,7 @@ class DriverManager:
         """
         return self._get_driver(
             active=False,
-            conn_requirements=requirements,
+            requirements=requirements,
         )
 
     def get_connector(
@@ -156,6 +156,6 @@ class DriverManager:
         """
         return self._get_driver(
             active=True,
-            conn_requirements=requirements,
+            requirements=requirements,
         )
 

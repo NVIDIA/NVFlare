@@ -44,8 +44,8 @@ class MessageHeaderKey:
     DESTINATION = "cellnet.destination"
     FROM_CELL = "cellnet.from"
     TO_CELL = "cellnet.to"
+    CONN_URL = "cellnet.conn_url"
     CHANNEL = "cellnet.channel"
-    CONN_PROPS = "cellnet.conn_props"
     RETURN_CODE = "cellnet.return_code"
     ERROR = "cellnet.error"
 
@@ -163,6 +163,7 @@ class _Waiter(threading.Event):
 class FQCN:
 
     SEPARATOR = "."
+    ROOT_SERVER = "server"
 
     @staticmethod
     def split(fqcn: str) -> List[str]:
@@ -186,11 +187,20 @@ class FQCN:
         gen = len(path)
         if gen == 1:
             roles.append(CellRole.ROOT)
-        if path[0] == 'server':
+        if path[0] == FQCN.ROOT_SERVER:
             roles.append(CellRole.SERVER)
         else:
             roles.append(CellRole.CLIENT)
         return gen, roles
+
+    @staticmethod
+    def get_root(fqcn: str) -> str:
+        path = FQCN.split(fqcn)
+        return path[0]
+
+    @staticmethod
+    def same_family(fqcn1: str, fqcn2: str):
+        return FQCN.get_root(fqcn1) == FQCN.get_root(fqcn2)
 
 
 class Cell(Receiver, EndpointMonitor):
@@ -281,11 +291,22 @@ class Cell(Receiver, EndpointMonitor):
         self.logger = logging.getLogger(self._name)
 
         # add appropriate drivers based on roles of the cell
+        # a cell can have at most two listeners: one for external, one for internal
         self.driver_manager = DriverManager()
-        self.bb_ext_listener = None     # backbone external listener - only for Server Root
+        self.ext_listener = None        # external listener
+        self.ext_listener_lock = threading.Lock()
+        self.ext_listener_impossible = False
+
+        self.int_listener = None        # backbone internal listener - only for cells with child cells
+
+        # a cell could have any number of connectors: some for backbone, some for ad-hoc
         self.bb_ext_connector = None    # backbone external connector - only for Client cells
-        self.bb_int_listener = None     # backbone internal listener - only for cells with child cells
         self.bb_int_connector = None    # backbone internal connector - only for non-root cells
+
+        # ad-hoc connectors
+        self.adhoc_connectors = {}              # target cell fqcn => connector
+        self.adhoc_connector_lock = threading.Lock()
+        self.root_change_lock = threading.Lock()
 
         if CellRole.SERVER in self.roles:
             if CellRole.ROOT in self.roles:
@@ -299,6 +320,57 @@ class Cell(Receiver, EndpointMonitor):
             else:
                 self._set_bb_for_client_child(parent_url)
 
+    def change_root(self, to_url: str):
+        """
+        Change to a different server url
+
+        Args:
+            to_url: the new url of the server root
+
+        Returns:
+
+        """
+        with self.root_change_lock:
+            if to_url == self.root_url:
+                # already changed
+                return
+
+            self.root_url = to_url
+
+            if CellRole.CLIENT not in self.roles:
+                # only affect clients
+                return
+
+            # drop connections to all cells on server and their agents
+            # drop the backbone connector
+            if self.bb_ext_connector:
+                self.communicator.delete_driver(self.bb_ext_connector)
+                self.bb_ext_connector = None
+
+            # drop ad-hoc connectors to cells on server
+            with self.adhoc_connector_lock:
+                cells_to_delete = []
+                for to_cell in self.adhoc_connectors.keys():
+                    if FQCN.get_root(to_cell) == FQCN.ROOT_SERVER:
+                        cells_to_delete.append(to_cell)
+                for c in cells_to_delete:
+                    connector = self.adhoc_connectors.pop(c, None)
+                    if connector:
+                        self.communicator.delete_driver(connector)
+
+            # drop agents
+            with self.agent_lock:
+                agents_to_delete = []
+                for cell_fqcn in self.agents.keys():
+                    if FQCN.get_root(cell_fqcn) == FQCN.ROOT_SERVER:
+                        agents_to_delete.append(cell_fqcn)
+                    for a in agents_to_delete:
+                        self.agents.pop(a, None)
+
+            # recreate backbone connector to the root
+            if self.generation <= 2:
+                self._set_bb_external_connector()
+
     def get_internal_listener_url(self) -> Union[None, str]:
         """
         Get the cell's internal listener url.
@@ -307,30 +379,59 @@ class Cell(Receiver, EndpointMonitor):
         Returns:
 
         """
-        if not self.bb_int_listener:
+        if not self.int_listener:
             return None
-        return self.bb_int_listener.get_connection_url()
+        return self.int_listener.get_connection_url()
 
-    def _set_bb_internal_listener(self):
-        reqs = {
-            DriverRequirementKey.VISIBILITY: Visibility.INTERNAL,
-            DriverRequirementKey.USE: DriverUse.BACKBONE,
-            DriverRequirementKey.SECURE: False
-        }
-        self.bb_int_listener = self.driver_manager.get_listener(reqs)
-        self.communicator.add_listener(self.bb_int_listener)
+    def _add_adhoc_connector(self, to_cell: str, url: str):
+        with self.adhoc_connector_lock:
+            if to_cell in self.adhoc_connectors:
+                return self.adhoc_connectors[to_cell]
+
+            reqs = {
+                DriverRequirementKey.URL: url,
+                DriverRequirementKey.VISIBILITY: Visibility.EXTERNAL,
+                DriverRequirementKey.SECURE: self.secure,
+                DriverRequirementKey.USE: DriverUse.ADHOC
+            }
+            connector = self.driver_manager.get_connector(reqs)
+            self.adhoc_connectors[to_cell] = connector
+            if connector:
+                self.communicator.add_connector(connector)
+            return connector
+
+    def _set_internal_listener(self):
+        # internal listener is always backbone
+        if not self.int_listener:
+            reqs = {
+                DriverRequirementKey.VISIBILITY: Visibility.INTERNAL,
+                DriverRequirementKey.USE: DriverUse.BACKBONE,
+                DriverRequirementKey.SECURE: False
+            }
+            self.int_listener = self.driver_manager.get_listener(reqs)
+            self.communicator.add_listener(self.int_listener)
+        return self.int_listener
+
+    def _set_external_listener(self, use: str):
+        with self.ext_listener_lock:
+            if not self.ext_listener and not self.ext_listener_impossible:
+                reqs = {
+                    DriverRequirementKey.USE: use,
+                    DriverRequirementKey.VISIBILITY: Visibility.EXTERNAL,
+                    DriverRequirementKey.SECURE: self.secure
+                }
+                if use == DriverUse.BACKBONE:
+                    reqs[DriverRequirementKey.URL] = self.root_url
+                self.ext_listener = self.driver_manager.get_listener(reqs)
+                if self.ext_listener:
+                    self.communicator.add_listener(self.ext_listener)
+                else:
+                    self.ext_listener_impossible = True
+        return self.ext_listener
 
     def _set_bb_for_server_root(self):
-        reqs = {
-            DriverRequirementKey.URL: self.root_url,
-            DriverRequirementKey.USE: DriverUse.BACKBONE,
-            DriverRequirementKey.VISIBILITY: Visibility.EXTERNAL,
-            DriverRequirementKey.SECURE: self.secure
-        }
-        listener = self.driver_manager.get_listener(reqs)
-        self.bb_ext_listener = listener
-        self.communicator.add_listener(listener)
-        self._set_bb_internal_listener()
+        self._set_external_listener(DriverUse.BACKBONE)
+        self._set_internal_listener()
 
     def _set_bb_external_connector(self):
         reqs = {
@@ -344,7 +445,7 @@ class Cell(Receiver, EndpointMonitor):
 
     def _set_bb_for_client_root(self):
         self._set_bb_external_connector()
-        self._set_bb_internal_listener()
+        self._set_internal_listener()
 
     def _set_bb_internal_connector(self, url: str):
         reqs = {
@@ -361,7 +462,9 @@ class Cell(Receiver, EndpointMonitor):
 
     def _set_bb_for_client_child(self, internal_url: str):
         self._set_bb_internal_connector(internal_url)
-        self._set_bb_external_connector()
+        if self.generation == 2:
+            # we only connect to server root for gen2 child (the job cell)
+            self._set_bb_external_connector()
 
     def set_cell_connected_cb(
             self,
@@ -618,6 +721,15 @@ class Cell(Receiver, EndpointMonitor):
                 MessageHeaderKey.TO_CELL: ep.name
             })
 
+            # is this a direct path?
+            if t != ep.name and not FQCN.same_family(t, self.my_fqcn):
+                # Not a direct path since the destination and the next leg are not the same
+                if CellRole.SERVER in self.roles:
+                    # server side - try to create a listener and let the peer know the endpoint
+                    listener = self._set_external_listener(DriverUse.ADHOC)
+                    if listener:
+                        conn_url = listener.get_connection_url()
+                        req.set_header(MessageHeaderKey.CONN_URL, conn_url)
             try:
                 self.communicator.send(
                     endpoint=ep,
@@ -913,6 +1025,23 @@ class Cell(Receiver, EndpointMonitor):
             return
 
         # this message is for me
+        # handle ad-hoc
+        my_conn_url = None
+        if msg_type in [MessageType.REQ, MessageType.REPLY]:
+            from_cell = message.get_header(MessageHeaderKey.FROM_CELL)
+            if from_cell != origin and not FQCN.same_family(origin, self.my_fqcn):
+                # this is a forwarded message, so no direct path from the origin to me
+                conn_url = message.get_header(MessageHeaderKey.CONN_URL)
+                if conn_url:
+                    # the origin already has a listener
+                    # create an ad-hoc connector to connect to the origin cell
+                    self._add_adhoc_connector(origin, conn_url)
+                elif msg_type == MessageType.REQ:
+                    # see whether we can offer a listener
+                    listener = self._set_external_listener(DriverUse.ADHOC)
+                    if listener:
+                        my_conn_url = listener.get_connection_url()
+
         if msg_type == MessageType.REQ:
             # this is a request for me - dispatch to the right CB
             reply = self._process_request(origin, message)
@@ -928,6 +1057,10 @@ class Cell(Receiver, EndpointMonitor):
                         MessageHeaderKey.MSG_TYPE: MessageType.REPLY,
                     }
                 )
+
+                if my_conn_url:
+                    reply.set_header(MessageHeaderKey.CONN_URL, my_conn_url)
+
                 self.communicator.send(endpoint, Cell.APP_ID, reply)
             return
 
