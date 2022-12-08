@@ -25,10 +25,6 @@ class ClientEngineSpec(ABC):
         pass
 
     @abstractmethod
-    def get_workspace(self) -> Workspace:
-        pass
-
-    @abstractmethod
     def new_context(self) -> FLContext:
         # the engine must use FLContextManager to create a new context!
         pass

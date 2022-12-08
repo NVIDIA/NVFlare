@@ -298,10 +298,10 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         cur_time = now.strftime("%Y-%m-%d %H:%M:%S")
         history.append(f"{cur_time}: {result}")
 
-        schedule_count = job.meta.get(JobMetaKey.SCHEDULE_COUNT, 0)
+        schedule_count = job.meta.get(JobMetaKey.SCHEDULE_COUNT.value, 0)
         schedule_count += 1
-        job.meta[JobMetaKey.SCHEDULE_COUNT] = schedule_count
-        job.meta[JobMetaKey.LAST_SCHEDULE_TIME] = time.time()
+        job.meta[JobMetaKey.SCHEDULE_COUNT.value] = schedule_count
+        job.meta[JobMetaKey.LAST_SCHEDULE_TIME.value] = time.time()
 
     def _do_schedule_job(
             self,
@@ -329,9 +329,6 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
                 self._update_schedule_history(job, f"exceeded max schedule count {self.max_schedule_count}")
                 continue
 
-            if schedule_count < 0:
-                schedule_count = 0
-
             last_schedule_time = job.meta.get(JobMetaKey.LAST_SCHEDULE_TIME.value, 0.0)
             time_since_last_schedule = time.time() - last_schedule_time
             n = 0 if schedule_count == 0 else schedule_count - 1
@@ -347,7 +344,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
                     result = "scheduled"
                 self._update_schedule_history(job, result)
                 if rc == SCHEDULE_RESULT_OK:
-                    return job, sites_dispatch_info, failed_jobs, blocked_jobs
+                    return job, sites_dispatch_info
                 elif rc == SCHEDULE_RESULT_NO_RESOURCE:
                     failed_jobs.append(job)
                 else:
