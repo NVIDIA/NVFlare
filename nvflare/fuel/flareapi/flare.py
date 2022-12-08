@@ -14,6 +14,7 @@
 
 import os
 import time
+from typing import List
 
 from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.apis.job_def import JobMetaKey, RunStatus
@@ -258,6 +259,20 @@ class Session(SessionSpec):
         if not job_meta:
             raise InternalError("server failed to return job meta")
         return job_meta
+
+    def list_jobs(self, detailed=False) -> List[dict]:
+        """Get the job info from the server
+
+        Returns: a dict of job meta data
+
+        """
+        if detailed:
+            result = self._do_command(AdminCommandNames.LIST_JOBS + " -d")
+        else:
+            result = self._do_command(AdminCommandNames.LIST_JOBS)
+        meta = result[ResultKey.META]
+        jobs_list = meta.get(MetaKey.JOBS, None)
+        return jobs_list
 
     def download_job_result(self, job_id: str) -> str:
         """

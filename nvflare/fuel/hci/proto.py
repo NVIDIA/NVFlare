@@ -50,6 +50,9 @@ class MetaKey(object):
     CLIENT_LAST_CONNECT_TIME = "client_last_conn_time"
     CLIENTS = "clients"
     JOBS = "jobs"
+    JOB_NAME = "job_name"
+    SUBMIT_TIME = "submit_time"
+    DURATION = "duration"
 
 
 class MetaStatusValue(object):

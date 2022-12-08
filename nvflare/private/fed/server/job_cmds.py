@@ -482,14 +482,16 @@ class JobCommandModule(CommandModule, CommandUtil):
 
     @staticmethod
     def _send_detail_list(conn: Connection, jobs: List[Job]):
+        list_of_jobs = []
         for job in jobs:
             JobCommandModule._set_duration(job)
             conn.append_string(json.dumps(job.meta, indent=4))
+            list_of_jobs.append(job.meta)
+        conn.append_string("", meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOBS: list_of_jobs}))
 
     @staticmethod
     def _send_summary_list(conn: Connection, jobs: List[Job]):
-
-        table = conn.append_table(["Job ID", "Name", "Status", "Submit Time", "Run Duration"])
+        table = conn.append_table(["Job ID", "Name", "Status", "Submit Time", "Run Duration"], name=MetaKey.JOBS)
         for job in jobs:
             JobCommandModule._set_duration(job)
             table.add_row(
@@ -499,7 +501,14 @@ class JobCommandModule(CommandModule, CommandUtil):
                     job.meta.get(JobMetaKey.STATUS.value, ""),
                     job.meta.get(JobMetaKey.SUBMIT_TIME_ISO.value, ""),
                     str(job.meta.get(JobMetaKey.DURATION.value, "N/A")),
-                ]
+                ],
+                meta={
+                    MetaKey.JOB_ID: job.meta.get(JobMetaKey.JOB_ID.value, ""),
+                    MetaKey.JOB_NAME: CommandUtil.get_job_name(job.meta),
+                    MetaKey.STATUS: job.meta.get(JobMetaKey.STATUS.value, ""),
+                    MetaKey.SUBMIT_TIME: job.meta.get(JobMetaKey.SUBMIT_TIME_ISO.value, ""),
+                    MetaKey.DURATION: str(job.meta.get(JobMetaKey.DURATION.value, "N/A")),
+                },
             )
 
     @staticmethod

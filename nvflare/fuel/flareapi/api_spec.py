@@ -92,7 +92,8 @@ class SystemInfo:
 
     def __str__(self) -> str:
         client_info_str = "\n".join(map(str, self.client_info))
-        return f"SystemInfo\n  server_info: {self.server_info}\n  client_info: \n{client_info_str}\n  job_info: {self.job_info}"
+        job_info_str = "\n".join(map(str, self.job_info))
+        return f"SystemInfo\n  server_info: {self.server_info}\n  client_info: \n{client_info_str}\n  job_info: {job_info_str}"
 
 
 class SessionSpec(ABC):
@@ -134,6 +135,14 @@ class SessionSpec(ABC):
         """
         pass
 
+    @abstractmethod
+    def list_jobs(self) -> List[dict]:
+        """Get the job info from the server
+
+        Returns: a list of of job meta data
+
+        """
+        pass
     @abstractmethod
     def download_job_result(self, job_id: str) -> str:
         """
