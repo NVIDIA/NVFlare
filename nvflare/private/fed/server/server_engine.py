@@ -760,10 +760,7 @@ class ServerEngine(ServerEngineInternalSpec):
     def _send_admin_requests(self, requests, timeout_secs=10) -> List[ClientReply]:
         return self.server.admin_server.send_requests(requests, timeout_secs=timeout_secs)
 
-    def check_client_resources(
-            self,
-            job_id: str,
-            resource_reqs) -> Dict[str, Tuple[bool, str]]:
+    def check_client_resources(self, job_id: str, resource_reqs) -> Dict[str, Tuple[bool, str]]:
         requests = {}
         for site_name, resource_requirements in resource_reqs.items():
             # assume server resource is unlimited

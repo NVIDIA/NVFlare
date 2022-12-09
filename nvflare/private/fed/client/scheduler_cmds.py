@@ -66,14 +66,9 @@ class CheckResourceProcessor(RequestProcessor):
             try:
                 job_id = req.get_header(RequestHeader.JOB_ID, "")
                 resource_spec = fobs.loads(req.body)
-                fl_ctx.set_prop(
-                    key=FLContextKey.CLIENT_RESOURCE_SPECS,
-                    value=resource_spec,
-                    private=True,
-                    sticky=False)
+                fl_ctx.set_prop(key=FLContextKey.CLIENT_RESOURCE_SPECS, value=resource_spec, private=True, sticky=False)
 
-                fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job_id,
-                                private=True, sticky=False)
+                fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job_id, private=True, sticky=False)
 
                 engine.fire_event(EventType.BEFORE_CHECK_RESOURCE_MANAGER, fl_ctx)
                 block_reason = fl_ctx.get_prop(FLContextKey.JOB_BLOCK_REASON)

@@ -165,9 +165,8 @@ class ServerEngineSpec(ABC):
 
     @abstractmethod
     def check_client_resources(
-            self,
-            job_id: str,
-            resource_reqs: Dict[str, dict]) -> Dict[str, Tuple[bool, Optional[str]]]:
+        self, job_id: str, resource_reqs: Dict[str, dict]
+    ) -> Dict[str, Tuple[bool, Optional[str]]]:
         """Sends the check_client_resources requests to the clients.
 
         Args:
