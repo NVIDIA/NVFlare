@@ -14,12 +14,8 @@
 import os
 from abc import ABC, abstractmethod
 
-import numpy as np
 import tensorboard
 from joblib import dump
-from sklearn.svm import SVC
-from sklearn.metrics import roc_auc_score
-
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
@@ -29,6 +25,8 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.security.logging import secure_format_exception
+from sklearn.metrics import roc_auc_score
+from sklearn.svm import SVC
 
 
 class FedSKLearnSVMExecutor(Executor, ABC):
@@ -50,6 +48,7 @@ class FedSKLearnSVMExecutor(Executor, ABC):
         self.y_train = None
         self.X_valid = None
         self.y_valid = None
+        self.n_samples = None
 
         self.local_support_X = None
         self.local_support_y = None
@@ -64,14 +63,12 @@ class FedSKLearnSVMExecutor(Executor, ABC):
         as long as they are made available for training and validation
 
         Return:
-            A tuple of (X_train, y_train, X_valid, y_valid)
+            A tuple of (X_train, y_train, X_valid, y_valid, total_train_data_num)
         """
         raise NotImplementedError
 
     def initialize(self, fl_ctx: FLContext):
         # set the paths according to fl_ctx
-        engine = fl_ctx.get_engine()
-        ws = engine.get_workspace()
         app_dir = fl_ctx.get_prop(FLContextKey.APP_ROOT)
         self.local_model_path = os.path.join(app_dir, self.local_model_path)
         self.global_model_path = os.path.join(app_dir, self.global_model_path)
@@ -88,13 +85,18 @@ class FedSKLearnSVMExecutor(Executor, ABC):
         self.writer = tensorboard.summary.Writer(app_dir)
 
         # load data, this is task/site-specific
-        self.X_train, self.y_train, self.X_valid, self.y_valid = self.load_data()
-
+        (
+            self.X_train,
+            self.y_train,
+            self.X_valid,
+            self.y_valid,
+            self.n_samples,
+        ) = self.load_data()
 
     def _local_validation(self, fl_ctx: FLContext, current_round):
         # local validation with global center
         # fit a standalone SVM with the global support vectors
-        svm_global = SVC(kernel='rbf')
+        svm_global = SVC(kernel="rbf")
         svm_global.fit(self.global_support_X, self.global_support_y)
         # save global model
         dump(svm_global, self.global_model_path)
@@ -110,7 +112,7 @@ class FedSKLearnSVMExecutor(Executor, ABC):
 
     def _local_training(self, fl_ctx: FLContext):
         # local training
-        svm = SVC(kernel='rbf')
+        svm = SVC(kernel="rbf")
         svm.fit(self.X_train, self.y_train)
         # save local model
         dump(svm, self.local_model_path)
@@ -155,7 +157,7 @@ class FedSKLearnSVMExecutor(Executor, ABC):
         # report updated model in shareable
         params = {"support_X": self.local_support_X, "support_y": self.local_support_y}
         dxo = DXO(data_kind=DataKind.WEIGHTS, data=params)
-        self.log_info(fl_ctx, "Local epochs finished. Returning shareable")
+        self.log_info(fl_ctx, f"Local epochs finished. Returning shareable")
 
         if self.writer:
             self.writer.flush()
@@ -169,7 +171,13 @@ class FedSKLearnSVMExecutor(Executor, ABC):
         del self.y_valid
         self.log_info(fl_ctx, "Freed training resources")
 
-    def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
+    def execute(
+        self,
+        task_name: str,
+        shareable: Shareable,
+        fl_ctx: FLContext,
+        abort_signal: Signal,
+    ) -> Shareable:
         self.log_info(fl_ctx, f"Client trainer got task: {task_name}")
 
         try:
@@ -180,7 +188,9 @@ class FedSKLearnSVMExecutor(Executor, ABC):
                 return make_reply(ReturnCode.TASK_UNKNOWN)
         except Exception as e:
             # Task execution error, return EXECUTION_EXCEPTION Shareable
-            self.log_exception(fl_ctx, f"execute exception: {secure_format_exception(e)}")
+            self.log_exception(
+                fl_ctx, f"execute exception: {secure_format_exception(e)}"
+            )
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):

@@ -3,5 +3,5 @@
 n=3
 for study in uniform #linear
 do
-    nvflare simulator job_configs/breast_cancer_${n}_${study} -w /tmp/nvflare/workspaces/sklearn_svm_${n}_${study} -n ${n} -t ${n}
+    nvflare simulator job_configs/sklearn_svm_${n}_${study} -w ${PWD}/workspaces/workspace_${n}_${study} -n ${n} -t ${n}
 done

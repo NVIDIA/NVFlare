@@ -7,7 +7,7 @@
       ],
       "executor": {
         "id": "Executor",
-        "path": "breast_cancer_sklearn_svm_executor.FedSKLearnSVMBreastCencerExecutor",
+        "path": "sklearn_svm_csv_executor.FedSKLearnSVMCSVExecutor",
         "args": {
           "data_split_filename": "data_split.json",
           "local_model_path": "model.joblib",
