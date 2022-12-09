@@ -21,20 +21,24 @@ import shutil
 from nvflare.apis.fl_constant import JobConstants
 
 JOB_CONFIGS_ROOT = "job_configs"
-BASE_FOLDER = "sklearn_kmeans_base"
 
 
 def job_config_args_parser():
-    parser = argparse.ArgumentParser(description="generate train configs for HIGGS dataset")
+    parser = argparse.ArgumentParser(description="generate train configs")
+    parser.add_argument("--task_name", type=str, help="Task name for the config")
     parser.add_argument(
         "--data_split_root",
         type=str,
-        default="/tmp/nvflare/iris_dataset",
+        default="~/dataset",
         help="Path to dataset config files for each site",
     )
     parser.add_argument("--site_num", type=int, default=5, help="Total number of sites")
-    parser.add_argument("--site_name_prefix", type=str, default="site-", help="Site name prefix")
-    parser.add_argument("--split_method", type=str, default="uniform", help="How to split the dataset")
+    parser.add_argument(
+        "--site_name_prefix", type=str, default="site-", help="Site name prefix"
+    )
+    parser.add_argument(
+        "--split_method", type=str, default="uniform", help="How to split the dataset"
+    )
     return parser
 
 
@@ -51,11 +55,15 @@ def _write_json(data, filename):
 
 
 def _get_job_name(args) -> str:
-    return "iris_" + str(args.site_num) + "_" + args.split_method
+    return args.task_name + "_" + str(args.site_num) + "_" + args.split_method
 
 
 def _get_data_split_name(args, site_name: str) -> str:
-    return os.path.join(args.data_split_root, f"{args.site_num}_{args.split_method}", f"data_{site_name}.json")
+    return os.path.join(
+        args.data_split_root,
+        f"{args.site_num}_{args.split_method}",
+        f"data_{site_name}.json",
+    )
 
 
 def _gen_deploy_map(num_sites: int, site_name_prefix: str) -> dict:
@@ -92,7 +100,9 @@ def _copy_custom_files(src_job_path, src_app_name, dst_job_path, dst_app_name):
 
 def create_server_app(src_job_path, src_app_name, dst_job_path, site_name, args):
     dst_app_name = f"app_{site_name}"
-    server_config = _read_json(src_job_path / src_app_name / "config" / JobConstants.SERVER_JOB_CONFIG)
+    server_config = _read_json(
+        src_job_path / src_app_name / "config" / JobConstants.SERVER_JOB_CONFIG
+    )
     dst_config_path = dst_job_path / dst_app_name / "config"
 
     # make target config folders
@@ -109,16 +119,14 @@ def create_server_app(src_job_path, src_app_name, dst_job_path, site_name, args)
 
 def create_client_app(src_job_path, src_app_name, dst_job_path, site_name, args):
     dst_app_name = f"app_{site_name}"
-    client_config = _read_json(src_job_path / src_app_name / "config" / JobConstants.CLIENT_JOB_CONFIG)
+    client_config = _read_json(
+        src_job_path / src_app_name / "config" / JobConstants.CLIENT_JOB_CONFIG
+    )
     dst_config_path = dst_job_path / dst_app_name / "config"
 
     # make target config folders
     if not os.path.exists(dst_config_path):
         os.makedirs(dst_config_path)
-
-    # get lr scale
-    data_split_name = _get_data_split_name(args, site_name)
-    data_split = _read_json(data_split_name)
 
     # adjust file contents according to each job's specs
     _update_client_config(client_config, args, site_name)
@@ -133,7 +141,8 @@ def main():
     parser = job_config_args_parser()
     args = parser.parse_args()
     job_name = _get_job_name(args)
-    src_job_path = pathlib.Path(JOB_CONFIGS_ROOT) / BASE_FOLDER
+    src_name = args.task_name + "_base"
+    src_job_path = pathlib.Path(JOB_CONFIGS_ROOT) / src_name
 
     # create a new job
     dst_job_path = pathlib.Path(JOB_CONFIGS_ROOT) / job_name
@@ -148,7 +157,11 @@ def main():
 
     # create server side app
     create_server_app(
-        src_job_path=src_job_path, src_app_name="app", dst_job_path=dst_job_path, site_name="server", args=args
+        src_job_path=src_job_path,
+        src_app_name="app",
+        dst_job_path=dst_job_path,
+        site_name="server",
+        args=args,
     )
 
     # create client side app

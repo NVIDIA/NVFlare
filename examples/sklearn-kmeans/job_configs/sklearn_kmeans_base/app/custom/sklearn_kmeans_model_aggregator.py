@@ -13,14 +13,13 @@
 # limitations under the License.
 
 import numpy as np
-from sklearn.cluster import KMeans
-
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.fl_constant import ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.app_constant import AppConstants
+from sklearn.cluster import KMeans
 
 
 class _AccuItem(object):
@@ -58,16 +57,24 @@ class SKLearnKMeansModelAggregator(Aggregator):
             self.log_exception(fl_ctx, "shareable data is not a valid DXO")
             return False
 
-        contributor_name = shareable.get_peer_prop(key=ReservedKey.IDENTITY_NAME, default="?")
+        contributor_name = shareable.get_peer_prop(
+            key=ReservedKey.IDENTITY_NAME, default="?"
+        )
         contribution_round = shareable.get_header(AppConstants.CONTRIBUTION_ROUND)
 
         rc = shareable.get_return_code()
         if rc and rc != ReturnCode.OK:
-            self.log_warning(fl_ctx, f"Contributor {contributor_name} returned rc: {rc}. Disregarding contribution.")
+            self.log_warning(
+                fl_ctx,
+                f"Contributor {contributor_name} returned rc: {rc}. Disregarding contribution.",
+            )
             return False
 
         if dxo.data_kind != self.expected_data_kind:
-            self.log_error(fl_ctx, "expected {} but got {}".format(self.expected_data_kind, dxo.data_kind))
+            self.log_error(
+                fl_ctx,
+                "expected {} but got {}".format(self.expected_data_kind, dxo.data_kind),
+            )
             return False
 
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
@@ -86,7 +93,9 @@ class SKLearnKMeansModelAggregator(Aggregator):
             return False
 
         if not self._client_in_accumulator(contributor_name):
-            self.accumulator.append(_AccuItem(contributor_name, data["center"], data["count"]))
+            self.accumulator.append(
+                _AccuItem(contributor_name, data["center"], data["count"])
+            )
             accepted = True
         else:
             self.log_info(
@@ -111,7 +120,9 @@ class SKLearnKMeansModelAggregator(Aggregator):
         self.log_debug(fl_ctx, "Start aggregation")
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
         site_num = len(self.accumulator)
-        self.log_info(fl_ctx, f"aggregating {site_num} update(s) at round {current_round}")
+        self.log_info(
+            fl_ctx, f"aggregating {site_num} update(s) at round {current_round}"
+        )
 
         if current_round == 0:
             # Fist round, collect the information regarding n_feature and n_cluster
@@ -135,10 +146,14 @@ class SKLearnKMeansModelAggregator(Aggregator):
             # Aggregate centers, starting with previous center
             # weight scaling recovered by previous count
             for center_idx in range(self.n_cluster):
-                centers_global_rescale = self.center[center_idx] * self.count[center_idx]
+                centers_global_rescale = (
+                    self.center[center_idx] * self.count[center_idx]
+                )
                 # Aggregate center, add new center to previous estimate, weighted by counts
                 for item in self.accumulator:
-                    centers_global_rescale += item.center[center_idx] * item.count[center_idx]
+                    centers_global_rescale += (
+                        item.center[center_idx] * item.count[center_idx]
+                    )
                     self.count[center_idx] += item.count[center_idx]
                 # Rescale to compute mean of all points (old and new combined)
                 alpha = 1 / self.count[center_idx]

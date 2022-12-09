@@ -20,14 +20,33 @@ import numpy as np
 
 
 def data_split_args_parser():
-    parser = argparse.ArgumentParser(description="Generate data split for dataset")
-    parser.add_argument("--data_size", type=int, help="Total number of samples in the dataset")
+    parser = argparse.ArgumentParser(description="Generate data split")
+    parser.add_argument("--data_path", type=str, help="Path to data file")
     parser.add_argument("--site_num", type=int, help="Total number of sites")
-    parser.add_argument("--site_name_prefix", type=str, default="site-", help="Site name prefix")
     parser.add_argument(
-        "--split_method", type=str, default="uniform", choices=["uniform", "linear"], help="How to split the dataset"
+        "--site_name_prefix", type=str, default="site-", help="Name prefix"
     )
-    parser.add_argument("--out_path", type=str, default="~/dataset", help="Output path for the data split json file")
+    parser.add_argument("--size_total", type=int, help="Total instance number")
+    parser.add_argument(
+        "--size_valid",
+        type=int,
+        help="Validation size, the first N to be treated as validation data. "
+        "We allow size_valid = size_total, where all data will be used"
+        "for both training and validation. Should be used with caution.",
+    )
+    parser.add_argument(
+        "--split_method",
+        type=str,
+        default="uniform",
+        choices=["uniform", "linear", "square", "exponential"],
+        help="How to split the dataset",
+    )
+    parser.add_argument(
+        "--out_path",
+        type=str,
+        default="~/dataset",
+        help="Output path for the data split json file",
+    )
     return parser
 
 
@@ -37,6 +56,10 @@ def split_num_proportion(n, site_num, option: str):
         ratio_vec = np.ones(site_num)
     elif option == "linear":
         ratio_vec = np.linspace(1, site_num, num=site_num)
+    elif option == "square":
+        ratio_vec = np.square(np.linspace(1, site_num, num=site_num))
+    elif option == "exponential":
+        ratio_vec = np.exp(np.linspace(1, site_num, num=site_num))
     else:
         raise ValueError("Split method not implemented!")
 
@@ -53,22 +76,38 @@ def split_num_proportion(n, site_num, option: str):
 def main():
     parser = data_split_args_parser()
     args = parser.parse_args()
-    size_total = args.data_size
 
-    json_data = {"data_index": {"valid": {"start": 0, "end": size_total}}}
+    json_data = {
+        "data_path": args.data_path,
+        "data_index": {"valid": {"start": 0, "end": args.size_valid}},
+    }
 
-    site_size = split_num_proportion(size_total, args.site_num, args.split_method)
+    if args.size_valid == args.size_total:
+        print("Special mode: whole dataset for validation, use with caution!")
+        site_size = split_num_proportion(
+            args.size_total, args.site_num, args.split_method
+        )
+    else:
+        site_size = split_num_proportion(
+            (args.size_total - args.size_valid), args.site_num, args.split_method
+        )
 
     for site in range(args.site_num):
         site_id = args.site_name_prefix + str(site + 1)
-        idx_start = sum(site_size[:site])
-        idx_end = sum(site_size[: site + 1])
+        if args.size_valid == args.size_total:
+            idx_start = sum(site_size[:site])
+            idx_end = sum(site_size[: site + 1])
+        else:
+            idx_start = args.size_valid + sum(site_size[:site])
+            idx_end = args.size_valid + sum(site_size[: site + 1])
         json_data["data_index"][site_id] = {"start": idx_start, "end": idx_end}
 
     if not os.path.exists(args.out_path):
         os.makedirs(args.out_path, exist_ok=True)
     for site in range(args.site_num):
-        output_file = os.path.join(args.out_path, f"data_{args.site_name_prefix}{site + 1}.json")
+        output_file = os.path.join(
+            args.out_path, f"data_{args.site_name_prefix}{site + 1}.json"
+        )
         with open(output_file, "w") as f:
             json.dump(json_data, f, indent=4)
 

@@ -14,35 +14,28 @@
 
 import json
 
-import numpy as np
-from sklearn import datasets
+import pandas as pd
+from nvflare.app_common.app_constant import AppConstants
 from sklearn_kmeans_executor import FedSKLearnKMeansExecutor
 
-from nvflare.app_common.app_constant import AppConstants
+
+def _read_CSV_with_pandas(data_path, start: int, end: int):
+    data_size = end - start
+    data = pd.read_csv(data_path, header=None, skiprows=start, nrows=data_size)
+    data_num = data.shape[0]
+    # split to feature and label
+    X = data.iloc[:, 1:].copy()
+    y = data.iloc[:, 0].copy()
+    return X.to_numpy(), y.to_numpy(), data_num
 
 
-def _load_Iris_with_permutation():
-    # Load data directly
-    iris = datasets.load_iris()
-    X = iris.data
-    y = iris.target
-    # Randomize with fixed seed so that there won't be overlapping across clients
-    total_sample_size = X.shape[0]
-    np.random.seed(0)
-    idx_random = np.random.permutation(total_sample_size)
-    X_random = X[idx_random, :]
-    y_random = y[idx_random]
-    return X_random, y_random
-
-
-class FedSKLearnKMeansIrisExecutor(FedSKLearnKMeansExecutor):
+class FedSKLearnKMeansCSVExecutor(FedSKLearnKMeansExecutor):
     def __init__(
         self,
         data_split_filename,
         local_model_path: str = "model.joblib",
         global_model_path: str = "model_global.joblib",
         n_clusters: int = 2,
-        subsample_rate: float = 0.2,
         train_task_name: str = AppConstants.TASK_TRAIN,
     ):
         super().__init__(
@@ -51,12 +44,12 @@ class FedSKLearnKMeansIrisExecutor(FedSKLearnKMeansExecutor):
             n_clusters=n_clusters,
             train_task_name=train_task_name,
         )
-        self.subsample_rate = subsample_rate
         self.data_split_filename = data_split_filename
 
     def load_data(self):
         with open(self.data_split_filename) as file:
             data_split = json.load(file)
+        data_path = data_split["data_path"]
         data_index = data_split["data_index"]
         # check if site_id and "valid" in the mapping dict
         if self.client_id not in data_index.keys():
@@ -69,18 +62,12 @@ class FedSKLearnKMeansIrisExecutor(FedSKLearnKMeansExecutor):
             )
         site_index = data_index[self.client_id]
         valid_index = data_index["valid"]
-        # Load data
-        X, y = _load_Iris_with_permutation()
-        # Get local training set
-        # With subsampling
-        X_train = X[site_index["start"] : site_index["end"], :]
-        y_train = y[site_index["start"] : site_index["end"]]
-        if self.subsample_rate < 1:
-            idx = np.random.choice(np.arange(len(y_train)), int(len(y_train) * self.subsample_rate), replace=False)
-            X_train = X_train[idx, :]
-            y_train = y_train[idx]
-        # Get local validation set
-        X_valid = X[valid_index["start"] : valid_index["end"], :]
-        y_valid = y[valid_index["start"] : valid_index["end"]]
-
-        return X_train, y_train, X_valid, y_valid
+        # training
+        X_train, y_train, sample_size_train = _read_CSV_with_pandas(
+            data_path=data_path, start=site_index["start"], end=site_index["end"]
+        )
+        # validation
+        X_valid, y_valid, sample_size_valid = _read_CSV_with_pandas(
+            data_path=data_path, start=valid_index["start"], end=valid_index["end"]
+        )
+        return X_train, y_train, X_valid, y_valid, sample_size_train

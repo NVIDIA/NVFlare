@@ -7,13 +7,12 @@
       ],
       "executor": {
         "id": "Executor",
-        "path": "iris_sklearn_kmeans_executor.FedSKLearnKMeansIrisExecutor",
+        "path": "sklearn_kmeans_csv_executor.FedSKLearnKMeansCSVExecutor",
         "args": {
           "data_split_filename": "data_split.json",
           "local_model_path": "model.joblib",
           "global_model_path": "model_global.joblib",
-          "n_clusters": 3,
-          "subsample_rate": 1
+          "n_clusters": 3
         }
       }
     }

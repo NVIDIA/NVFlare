@@ -11,15 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import os
 from abc import ABC, abstractmethod
 
 import numpy as np
 import tensorboard
 from joblib import dump
-from sklearn.cluster import KMeans, MiniBatchKMeans, kmeans_plusplus
-from sklearn.metrics import homogeneity_score
-
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
@@ -29,6 +27,8 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.security.logging import secure_format_exception
+from sklearn.cluster import KMeans, MiniBatchKMeans, kmeans_plusplus
+from sklearn.metrics import homogeneity_score
 
 
 class FedSKLearnKMeansExecutor(Executor, ABC):
@@ -45,15 +45,17 @@ class FedSKLearnKMeansExecutor(Executor, ABC):
 
         self.local_model_path = local_model_path
         self.global_model_path = global_model_path
+
         self.n_clusters = n_clusters
+
         self.train_task_name = train_task_name
 
         self.X_train = None
         self.y_train = None
         self.X_valid = None
         self.y_valid = None
-
         self.n_samples = None
+
         self.center_global = None
         self.center_local = None
         self.count_local = None
@@ -66,14 +68,12 @@ class FedSKLearnKMeansExecutor(Executor, ABC):
         as long as they are made available for training and validation
 
         Return:
-            A tuple of (X_train, y_train, X_valid, y_valid)
+            A tuple of (X_train, y_train, X_valid, y_valid, total_train_data_num)
         """
         raise NotImplementedError
 
     def initialize(self, fl_ctx: FLContext):
         # set the paths according to fl_ctx
-        engine = fl_ctx.get_engine()
-        ws = engine.get_workspace()
         app_dir = fl_ctx.get_prop(FLContextKey.APP_ROOT)
         self.local_model_path = os.path.join(app_dir, self.local_model_path)
         self.global_model_path = os.path.join(app_dir, self.global_model_path)
@@ -90,13 +90,18 @@ class FedSKLearnKMeansExecutor(Executor, ABC):
         self.writer = tensorboard.summary.Writer(app_dir)
 
         # load data, this is task/site-specific
-        self.X_train, self.y_train, self.X_valid, self.y_valid = self.load_data()
+        (
+            self.X_train,
+            self.y_train,
+            self.X_valid,
+            self.y_valid,
+            self.n_samples,
+        ) = self.load_data()
 
         # initialize model record (center and count) to all zero
         # note that the model needs to be created every round
         # due to the available API for center initialization
         # thus there is no self.local_model
-        self.n_samples = self.X_train.shape[0]
         n_features = self.X_train.shape[1]
         self.center_local = np.zeros([self.n_clusters, n_features])
         self.count_local = np.zeros([self.n_clusters])
@@ -105,7 +110,9 @@ class FedSKLearnKMeansExecutor(Executor, ABC):
     def _local_validation(self, fl_ctx: FLContext, current_round):
         # local validation with global center
         # fit a standalone KMeans with just the given center
-        kmeans_global = KMeans(n_clusters=self.n_clusters, init=self.center_global, n_init=1)
+        kmeans_global = KMeans(
+            n_clusters=self.n_clusters, init=self.center_global, n_init=1
+        )
         kmeans_global.fit(self.center_global)
         # save global model
         dump(kmeans_global, self.global_model_path)
@@ -159,7 +166,9 @@ class FedSKLearnKMeansExecutor(Executor, ABC):
                 fl_ctx,
                 f"Client {self.client_id} initialization, use kmeans++ to get center",
             )
-            self.center_local, _ = kmeans_plusplus(self.X_train, n_clusters=self.n_clusters)
+            self.center_local, _ = kmeans_plusplus(
+                self.X_train, n_clusters=self.n_clusters
+            )
         else:
             # receive global center, initialize and train local model
             self.center_global = global_param["center"]
@@ -189,7 +198,13 @@ class FedSKLearnKMeansExecutor(Executor, ABC):
         del self.y_valid
         self.log_info(fl_ctx, "Freed training resources")
 
-    def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
+    def execute(
+        self,
+        task_name: str,
+        shareable: Shareable,
+        fl_ctx: FLContext,
+        abort_signal: Signal,
+    ) -> Shareable:
         self.log_info(fl_ctx, f"Client trainer got task: {task_name}")
 
         try:
@@ -200,7 +215,9 @@ class FedSKLearnKMeansExecutor(Executor, ABC):
                 return make_reply(ReturnCode.TASK_UNKNOWN)
         except Exception as e:
             # Task execution error, return EXECUTION_EXCEPTION Shareable
-            self.log_exception(fl_ctx, f"execute exception: {secure_format_exception(e)}")
+            self.log_exception(
+                fl_ctx, f"execute exception: {secure_format_exception(e)}"
+            )
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):

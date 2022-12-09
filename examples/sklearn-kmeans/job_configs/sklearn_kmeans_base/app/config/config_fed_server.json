@@ -9,10 +9,8 @@
   "components": [
     {
       "id": "persistor",
-      "path": "sklearn_model_persistor.SKLearnModelPersistor",
-      "args": {
-        "save_name": "sklearn_model.joblib"
-      }
+      "path": "joblib_model_param_persistor.JoblibModelParamPersistor",
+      "args": {}
     },
     {
       "id": "shareable_generator",
