@@ -16,7 +16,6 @@
 from abc import ABC, abstractmethod
 
 from .fl_context import FLContext
-from .workspace import Workspace
 
 
 class ClientEngineSpec(ABC):
