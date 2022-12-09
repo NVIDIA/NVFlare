@@ -161,25 +161,24 @@ class Cell(Receiver, EndpointMonitor):
             secure: bool,
             credentials: dict,
             parent_url: str=None,
-            driver_resources: dict=None,
             max_timeout=3600,
     ):
         """
 
         Args:
             fqcn: the Cell's FQCN (Fully Qualified Cell Name)
-            roles: roles of the cell
             credentials: credentials for secure connections
             root_url: the URL for backbone external connection
+            secure: secure mode or not
             max_timeout: default timeout for send_and_receive
             parent_url: url for connecting to parent cell
 
-        FQCN is the name of all ancestor names, concatenated with colons.
+        FQCN is the names of all ancestor, concatenated with dots.
 
         Example:
             server.J12345       (the cell for job J12345 on the server)
             server              (the root cell of server)
-            nih_1.J12345     (the cell for job J12345 on client_1's site)
+            nih_1.J12345        (the cell for job J12345 on client_1's site)
             client_1.J12345.R0  (the cell for rank R0 of J12345 on client_1 site)
             client_1            (he root cell of client_1)
 
@@ -238,7 +237,6 @@ class Cell(Receiver, EndpointMonitor):
         # add appropriate drivers based on roles of the cell
         # a cell can have at most two listeners: one for external, one for internal
         self.driver_manager = DriverManager()
-        self.driver_manager.add_resources(driver_resources)
         self.ext_listener = None        # external listener
         self.ext_listener_lock = threading.Lock()
         self.ext_listener_impossible = False
