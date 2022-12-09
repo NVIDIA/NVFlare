@@ -356,7 +356,20 @@ class JobRunner(FLComponent):
                                 deploy_detail = fl_ctx.get_prop(FLContextKey.JOB_DEPLOY_DETAIL)
                                 if deploy_detail:
                                     job_manager.update_meta(
-                                        ready_job.job_id, {JobMetaKey.JOB_DEPLOY_DETAIL.value: deploy_detail}, fl_ctx
+                                        ready_job.job_id,
+                                        {
+                                            JobMetaKey.JOB_DEPLOY_DETAIL.value: deploy_detail,
+                                            JobMetaKey.SCHEDULE_COUNT.value: ready_job.meta[
+                                                JobMetaKey.SCHEDULE_COUNT.value
+                                            ],
+                                            JobMetaKey.LAST_SCHEDULE_TIME.value: ready_job.meta[
+                                                JobMetaKey.LAST_SCHEDULE_TIME.value
+                                            ],
+                                            JobMetaKey.SCHEDULE_HISTORY.value: ready_job.meta[
+                                                JobMetaKey.SCHEDULE_HISTORY.value
+                                            ],
+                                        },
+                                        fl_ctx,
                                     )
 
                                 if failed_clients:

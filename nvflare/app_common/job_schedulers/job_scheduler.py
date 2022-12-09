@@ -263,32 +263,22 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
             if failed_jobs:
                 # set the try count
                 for job in failed_jobs:
-                    job_manager.refresh_meta(
-                        job,
-                        [
-                            JobMetaKey.SCHEDULE_COUNT.value,
-                            JobMetaKey.LAST_SCHEDULE_TIME.value,
-                            JobMetaKey.SCHEDULE_HISTORY.value,
-                        ],
-                        fl_ctx,
-                    )
+                    job_manager.refresh_meta(job, self._get_update_meta_keys(), fl_ctx)
 
             if blocked_jobs:
                 for job in blocked_jobs:
-                    job_manager.refresh_meta(
-                        job,
-                        [
-                            JobMetaKey.SCHEDULE_COUNT.value,
-                            JobMetaKey.LAST_SCHEDULE_TIME.value,
-                            JobMetaKey.SCHEDULE_HISTORY.value,
-                        ],
-                        fl_ctx,
-                    )
-
+                    job_manager.refresh_meta(job, self._get_update_meta_keys(), fl_ctx)
                     job_manager.set_status(job.job_id, RunStatus.FINISHED_CANT_SCHEDULE, fl_ctx)
         except:
             self.log_exception(fl_ctx, "error updating scheduling info in job store")
         return ready_job, dispatch_info
+
+    def _get_update_meta_keys(self):
+        return [
+            JobMetaKey.SCHEDULE_COUNT.value,
+            JobMetaKey.LAST_SCHEDULE_TIME.value,
+            JobMetaKey.SCHEDULE_HISTORY.value,
+        ]
 
     def _update_schedule_history(self, job: Job, result: str):
         history = job.meta.get(JobMetaKey.SCHEDULE_HISTORY.value, None)
