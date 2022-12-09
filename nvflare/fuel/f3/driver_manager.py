@@ -14,6 +14,7 @@
 
 from typing import List, Union
 from nvflare.fuel.utils.class_utils import get_class
+from .constants import DriverUse, DriverRequirementKey, Visibility
 from .driver import DriverSpec
 
 
@@ -22,7 +23,7 @@ class DriverResource:
     def __init__(
             self,
             driver_name: str,
-            resources: dict=None
+            resources: dict = None
     ):
         """
 
@@ -34,26 +35,6 @@ class DriverResource:
         """
         self.driver_name = driver_name
         self.resources = resources
-
-
-class DriverRequirementKey:
-
-    URL = "url"
-    SECURE = "secure"           # bool: secure or not
-    USE = "use"                 # backbone or ad-hoc
-    VISIBILITY = "visibility"   # internal or external
-
-
-class DriverUse:
-
-    BACKBONE = "backbone"
-    ADHOC = "adhoc"
-
-
-class Visibility:
-
-    INTERNAL = "internal"
-    EXTERNAL = "external"
 
 
 class DriverManager:
@@ -69,7 +50,7 @@ class DriverManager:
     """
 
     DRIVERS = {
-        "http1": "nvflare.fuel.f3.drivers.http.HTTPDriver",
+        "http": "nvflare.fuel.f3.drivers.http.HTTPDriver",
         "ipc": "nvflare.fuel.f3.drivers.ipc.IPCDriver",
     }
 
@@ -80,15 +61,14 @@ class DriverManager:
         for name, class_path in self.DRIVERS.items():
             self.driver_classes[name] = get_class(class_path)
 
-        self.backbone_ext_drivers = ["http"]
-        self.backbone_int_drivers = ["http"]
+        self.ext_drivers = ["http"]
+        self.int_drivers = ["http"]
         self.int_driver_resources = {
             "http": {
                 "url": "http://localhost",
                 "ports": [(24000, 25000)]  # select a port randomly in the range
             }
         }
-        self.adhoc_ext_drivers = ["http"]
         self.adhoc_ext_driver_resources = {}
 
     def add_resources(self, resources: List[DriverResource]):
@@ -101,12 +81,12 @@ class DriverManager:
         resource_config = {}
         if use == DriverUse.BACKBONE:
             if vis == Visibility.EXTERNAL:
-                drivers = self.backbone_ext_drivers
+                drivers = self.ext_drivers
             else:
-                drivers = self.backbone_int_drivers
+                drivers = self.int_drivers
                 resource_config = self.int_driver_resources
         else:
-            drivers = self.adhoc_ext_drivers
+            drivers = self.ext_drivers
             resource_config = self.adhoc_ext_driver_resources
 
         for name in drivers:
@@ -163,4 +143,3 @@ class DriverManager:
             active=True,
             requirements=requirements,
         )
-

@@ -26,48 +26,15 @@ from .endpoint import Endpoint, EndpointMonitor
 from .communicator import Communicator
 from .headers import Headers
 from .receiver import Receiver
-from .driver_manager import DriverManager, DriverRequirementKey, DriverUse, Visibility
+from .driver_manager import DriverManager
+from .constants import (
+    DriverRequirementKey, DriverUse, Visibility, MessageHeaderKey, MessageType,
+    ReturnCode, CellPropertyKey
+)
 
 
 class TargetCellUnreachable(Exception):
     pass
-
-
-class MessageHeaderKey:
-
-    MSG_TYPE = "cellnet.msg_type"
-    REQ_ID = "cellnet.req_id"
-    REPLY_EXPECTED = "cellnet.reply_expected"
-    TOPIC = "cellnet.topic"
-    WAIT_UNTIL = "cellnet.wait_until"
-    ORIGIN = "cellnet.origin"
-    DESTINATION = "cellnet.destination"
-    FROM_CELL = "cellnet.from"
-    TO_CELL = "cellnet.to"
-    CONN_URL = "cellnet.conn_url"
-    CHANNEL = "cellnet.channel"
-    RETURN_CODE = "cellnet.return_code"
-    ERROR = "cellnet.error"
-
-
-class ReturnCode:
-
-    OK = "ok"
-    TIMEOUT = "timeout"
-    COMM_ERROR = "comm_error"
-    PROCESS_EXCEPTION = "process_exception"   # receiver error processing request
-
-
-class MessageType:
-
-    REQ = "req"
-    REPLY = "reply"
-    RETURN = "return"   # return to sender due to forward error
-
-
-class CellPropertyKey:
-
-    FQCN = "fqcn"
 
 
 class CellAgent:
