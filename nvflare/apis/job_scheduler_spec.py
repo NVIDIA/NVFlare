@@ -17,6 +17,7 @@ from typing import Dict, List, Optional
 
 from .fl_context import FLContext
 from .job_def import Job
+from .job_def_manager_spec import JobDefManagerSpec
 
 
 class DispatchInfo:
@@ -41,11 +42,12 @@ class DispatchInfo:
 class JobSchedulerSpec(ABC):
     @abstractmethod
     def schedule_job(
-        self, job_candidates: List[Job], fl_ctx: FLContext
+        self, job_manager: JobDefManagerSpec, job_candidates: List[Job], fl_ctx: FLContext
     ) -> (Optional[Job], Optional[Dict[str, DispatchInfo]]):
         """Try to schedule a Job.
 
         Args:
+            job_manager: JobDefManager
             job_candidates: The candidate to choose from.
             fl_ctx: FLContext.
 

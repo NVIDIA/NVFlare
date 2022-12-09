@@ -340,6 +340,7 @@ class JobRunner(FLComponent):
 
                 if self.scheduler:
                     ready_job, sites = self.scheduler.schedule_job(
+                        job_manager=job_manager,
                         job_candidates=approved_jobs,
                         fl_ctx=fl_ctx)
 

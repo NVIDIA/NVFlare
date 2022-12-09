@@ -15,7 +15,6 @@
 import datetime
 import threading
 import time
-
 from typing import Dict, List, Optional, Tuple
 
 from nvflare.apis.event_type import EventType
@@ -23,6 +22,7 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, SystemComponents
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import ALL_SITES, Job, JobMetaKey, RunStatus
+from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.apis.job_scheduler_spec import DispatchInfo, JobSchedulerSpec
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 
@@ -243,7 +243,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
                     self.scheduled_jobs.remove(job_id)
 
     def schedule_job(
-            self, job_candidates: List[Job], fl_ctx: FLContext
+            self, job_manager: JobDefManagerSpec, job_candidates: List[Job], fl_ctx: FLContext
     ) -> (Optional[Job], Optional[Dict[str, DispatchInfo]]):
         failed_jobs = []
         blocked_jobs = []
@@ -255,13 +255,6 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
             ready_job, dispatch_info = None, None
 
         # process failed and blocked jobs
-        job_manager = None
-        engine = fl_ctx.get_engine()
-        if engine:
-            job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
-        if not job_manager:
-            return ready_job, dispatch_info
-
         try:
             if failed_jobs:
                 # set the try count
