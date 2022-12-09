@@ -15,22 +15,21 @@
 import json
 
 import pandas as pd
+from nvflare.app_common.app_constant import AppConstants
 from sklearn_linear_executor import FedSKLearnLinearExecutor
 
-from nvflare.app_common.app_constant import AppConstants
 
-
-def _read_HIGGS_with_pandas(data_path, start: int, end: int):
+def _read_CSV_with_pandas(data_path, start: int, end: int):
     data_size = end - start
     data = pd.read_csv(data_path, header=None, skiprows=start, nrows=data_size)
     data_num = data.shape[0]
     # split to feature and label
-    x = data.iloc[:, 1:].copy()
+    X = data.iloc[:, 1:].copy()
     y = data.iloc[:, 0].copy()
-    return x, y, data_num
+    return X.to_numpy(), y.to_numpy(), data_num
 
 
-class FedSKLearnLinearHiggsExecutor(FedSKLearnLinearExecutor):
+class FedSKLearnLinearCSVExecutor(FedSKLearnLinearExecutor):
     def __init__(
         self,
         data_split_filename,
@@ -41,7 +40,6 @@ class FedSKLearnLinearHiggsExecutor(FedSKLearnLinearExecutor):
         loss: str = "log",
         penalty: str = "l2",
         fit_intercept: int = 1,
-        eval_metric: str = "auc",
         train_task_name: str = AppConstants.TASK_TRAIN,
     ):
         super().__init__(
@@ -52,7 +50,6 @@ class FedSKLearnLinearHiggsExecutor(FedSKLearnLinearExecutor):
             loss=loss,
             penalty=penalty,
             fit_intercept=fit_intercept,
-            eval_metric=eval_metric,
             train_task_name=train_task_name,
         )
         self.data_split_filename = data_split_filename
@@ -74,11 +71,11 @@ class FedSKLearnLinearHiggsExecutor(FedSKLearnLinearExecutor):
         site_index = data_index[self.client_id]
         valid_index = data_index["valid"]
         # training
-        X_train, y_train, sample_size_train = _read_HIGGS_with_pandas(
+        X_train, y_train, sample_size_train = _read_CSV_with_pandas(
             data_path=data_path, start=site_index["start"], end=site_index["end"]
         )
         # validation
-        X_valid, y_valid, sample_size_valid = _read_HIGGS_with_pandas(
+        X_valid, y_valid, sample_size_valid = _read_CSV_with_pandas(
             data_path=data_path, start=valid_index["start"], end=valid_index["end"]
         )
         return X_train, y_train, X_valid, y_valid, sample_size_train

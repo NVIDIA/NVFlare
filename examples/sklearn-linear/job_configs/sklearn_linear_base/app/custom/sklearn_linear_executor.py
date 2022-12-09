@@ -19,9 +19,6 @@ from abc import ABC, abstractmethod
 import numpy as np
 import tensorboard
 from joblib import dump
-from sklearn.linear_model import SGDClassifier
-from sklearn.metrics import roc_auc_score
-
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
@@ -31,6 +28,8 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.security.logging import secure_format_exception
+from sklearn.linear_model import SGDClassifier
+from sklearn.metrics import roc_auc_score
 
 
 class FedSKLearnLinearExecutor(Executor, ABC):
@@ -43,7 +42,6 @@ class FedSKLearnLinearExecutor(Executor, ABC):
         loss: str = "log",
         penalty: str = "l2",
         fit_intercept: int = 1,
-        eval_metric: str = "auc",
         train_task_name: str = AppConstants.TASK_TRAIN,
     ):
         super().__init__()
@@ -59,7 +57,6 @@ class FedSKLearnLinearExecutor(Executor, ABC):
         self.penalty = penalty
         self.fit_intercept = fit_intercept
 
-        self.eval_metric = eval_metric
         self.train_task_name = train_task_name
 
         self.local_model = None
@@ -68,7 +65,7 @@ class FedSKLearnLinearExecutor(Executor, ABC):
         self.y_train = None
         self.X_valid = None
         self.y_valid = None
-        self.sample_size = None
+        self.n_samples = None
 
     @abstractmethod
     def load_data(self):
@@ -84,8 +81,6 @@ class FedSKLearnLinearExecutor(Executor, ABC):
 
     def initialize(self, fl_ctx: FLContext):
         # set the paths according to fl_ctx
-        engine = fl_ctx.get_engine()
-        ws = engine.get_workspace()
         app_dir = fl_ctx.get_prop(FLContextKey.APP_ROOT)
         self.local_model_path = os.path.join(app_dir, self.local_model_path)
         self.global_model_path = os.path.join(app_dir, self.global_model_path)
@@ -101,8 +96,14 @@ class FedSKLearnLinearExecutor(Executor, ABC):
         # set local tensorboard writer for local training info of current model
         self.writer = tensorboard.summary.Writer(app_dir)
 
-        # load data and lr_scale, this is task/site-specific
-        self.X_train, self.y_train, self.X_valid, self.y_valid, self.sample_size = self.load_data()
+        # load data, this is task/site-specific
+        (
+            self.X_train,
+            self.y_train,
+            self.X_valid,
+            self.y_valid,
+            self.n_samples,
+        ) = self.load_data()
 
         # initialize model to all zero
         self.local_model = SGDClassifier(
@@ -123,7 +124,10 @@ class FedSKLearnLinearExecutor(Executor, ABC):
 
     def _get_model_parameters(self):
         if self.local_model.fit_intercept:
-            params = {"coef": self.local_model.coef_, "intercept": self.local_model.intercept_}
+            params = {
+                "coef": self.local_model.coef_,
+                "intercept": self.local_model.intercept_,
+            }
         else:
             params = {"coef": self.local_model.coef_}
         return copy.deepcopy(params)
@@ -190,7 +194,7 @@ class FedSKLearnLinearExecutor(Executor, ABC):
         params = self._get_model_parameters()
         # report updated model in shareable
         dxo = DXO(data_kind=DataKind.WEIGHTS, data=params)
-        dxo.set_meta_prop(MetaKey.NUM_STEPS_CURRENT_ROUND, self.sample_size)
+        dxo.set_meta_prop(MetaKey.NUM_STEPS_CURRENT_ROUND, self.n_samples)
         self.log_info(fl_ctx, "Local epochs finished. Returning shareable")
 
         if self.writer:
@@ -198,7 +202,7 @@ class FedSKLearnLinearExecutor(Executor, ABC):
         return dxo.to_shareable()
 
     def finalize(self, fl_ctx: FLContext):
-        # freeing resources in finalize avoids seg fault during shutdown of gpu mode
+        # freeing resources in finalize
         del self.local_model
         del self.X_train
         del self.y_train
@@ -206,7 +210,13 @@ class FedSKLearnLinearExecutor(Executor, ABC):
         del self.y_valid
         self.log_info(fl_ctx, "Freed training resources")
 
-    def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
+    def execute(
+        self,
+        task_name: str,
+        shareable: Shareable,
+        fl_ctx: FLContext,
+        abort_signal: Signal,
+    ) -> Shareable:
         self.log_info(fl_ctx, f"Client trainer got task: {task_name}")
 
         try:
@@ -217,7 +227,9 @@ class FedSKLearnLinearExecutor(Executor, ABC):
                 return make_reply(ReturnCode.TASK_UNKNOWN)
         except Exception as e:
             # Task execution error, return EXECUTION_EXCEPTION Shareable
-            self.log_exception(fl_ctx, f"execute exception: {secure_format_exception(e)}")
+            self.log_exception(
+                fl_ctx, f"execute exception: {secure_format_exception(e)}"
+            )
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):

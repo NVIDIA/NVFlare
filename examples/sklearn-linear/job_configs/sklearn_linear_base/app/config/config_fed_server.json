@@ -9,10 +9,8 @@
   "components": [
     {
       "id": "persistor",
-      "path": "sklearn_linear_model_param_persistor.LinearModelParamPersistor",
-      "args": {
-        "save_name": "linear_model_param.joblib"
-      }
+      "path": "joblib_model_param_persistor.JoblibModelParamPersistor",
+      "args": {}
     },
     {
       "id": "shareable_generator",

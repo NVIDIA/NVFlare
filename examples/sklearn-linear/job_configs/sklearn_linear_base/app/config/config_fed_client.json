@@ -7,7 +7,7 @@
       ],
       "executor": {
         "id": "Executor",
-        "path": "higgs_sklearn_linear_executor.FedSKLearnLinearHiggsExecutor",
+        "path": "sklearn_linear_csv_executor.FedSKLearnLinearCSVExecutor",
         "args": {
           "data_split_filename": "data_split.json",
           "local_model_path": "model.joblib",
@@ -16,8 +16,7 @@
           "eta0": 1e-4,
           "loss": "log",
           "penalty": "l2",
-          "fit_intercept": 1,
-          "eval_metric": "auc"
+          "fit_intercept": 1
         }
       }
     }

@@ -15,17 +15,25 @@
 import os
 
 from joblib import dump, load
-
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
+from nvflare.app_common.abstract.model import (
+    ModelLearnable,
+    ModelLearnableKey,
+    make_model_learnable,
+)
 from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.app_constant import AppConstants
 
 
-class LinearModelParamPersistor(ModelPersistor):
-    def __init__(self, save_name="linear_model_param.joblib"):
+class JoblibModelParamPersistor(ModelPersistor):
+    def __init__(self, save_name="model_param.joblib"):
+        """
+        Persist global model parameters from a dict to a joblib file
+        Note that this contains the necessary information to build a certain model
+        but may not be directly loadable
+        """
         super().__init__()
         self.save_name = save_name
 
@@ -69,8 +77,13 @@ class LinearModelParamPersistor(ModelPersistor):
             fl_ctx: FLContext
         """
         if model_learnable:
-            if fl_ctx.get_prop(AppConstants.CURRENT_ROUND) == fl_ctx.get_prop(AppConstants.NUM_ROUNDS) - 1:
-                self.logger.info(f"Saving received model to {os.path.abspath(self.save_path)}")
-                # save 'weights' which is actual model parameters
+            if (
+                fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
+                == fl_ctx.get_prop(AppConstants.NUM_ROUNDS) - 1
+            ):
+                self.logger.info(
+                    f"Saving received model to {os.path.abspath(self.save_path)}"
+                )
+                # save 'weights' which is actual model, loadable by xgboost library
                 model = model_learnable[ModelLearnableKey.WEIGHTS]
                 dump(model, self.save_path)
