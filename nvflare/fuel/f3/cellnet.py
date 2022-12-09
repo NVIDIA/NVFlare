@@ -68,14 +68,6 @@ class MessageType:
 class CellPropertyKey:
 
     FQCN = "fqcn"
-    ROLES = "roles"
-
-
-class CellRole:
-
-    SERVER = "server"
-    ROOT = "root"
-    CLIENT = "client"
 
 
 class CellAgent:
@@ -86,7 +78,6 @@ class CellAgent:
     def __init__(
             self,
             fqcn: str,
-            roles: List[str],
             endpoint: Endpoint
     ):
         """
@@ -97,12 +88,8 @@ class CellAgent:
         if not FQCN.is_valid(fqcn):
             raise ValueError(f"invalid FQCN '{fqcn}'")
 
-        self.fqcn = fqcn
-        self.roles = roles
+        self.info = _FqcnInfo(fqcn)
         self.endpoint = endpoint
-
-    def has_role(self, role: str) -> bool:
-        return role in self.roles
 
 
 class _CB:
@@ -180,27 +167,20 @@ class FQCN:
         if not fqcn:
             return False
 
-    @staticmethod
-    def get_roles(fqcn: str) -> (int, List[str]):
-        roles = []
-        path = FQCN.split(fqcn)
-        gen = len(path)
-        if gen == 1:
-            roles.append(CellRole.ROOT)
-        if path[0] == FQCN.ROOT_SERVER:
-            roles.append(CellRole.SERVER)
-        else:
-            roles.append(CellRole.CLIENT)
-        return gen, roles
 
-    @staticmethod
-    def get_root(fqcn: str) -> str:
-        path = FQCN.split(fqcn)
-        return path[0]
+class _FqcnInfo:
 
-    @staticmethod
-    def same_family(fqcn1: str, fqcn2: str):
-        return FQCN.get_root(fqcn1) == FQCN.get_root(fqcn2)
+    def __init__(self, fqcn: str):
+        self.fqcn = fqcn
+        self.path = FQCN.split(fqcn)
+        self.gen = len(self.path)
+        self.is_root = self.gen == 1
+        self.root = self.path[0]
+        self.is_on_server = self.root == FQCN.ROOT_SERVER
+
+
+def same_family(info1: _FqcnInfo, info2: _FqcnInfo):
+    return info1.root == info2.root
 
 
 class Cell(Receiver, EndpointMonitor):
@@ -214,6 +194,7 @@ class Cell(Receiver, EndpointMonitor):
             secure: bool,
             credentials: dict,
             parent_url: str=None,
+            driver_resources: dict=None,
             max_timeout=3600,
     ):
         """
@@ -236,20 +217,17 @@ class Cell(Receiver, EndpointMonitor):
             client_1            (he root cell of client_1)
 
         """
-        self.my_fqcn = fqcn
+        self.my_info = _FqcnInfo(fqcn)
         self.secure = secure
-        self.roles = FQCN.get_roles(fqcn)
-        self.generation = 0
         self.root_url = root_url
         self.agents = {}  # cell_fqcn => CellAgent
         self.agent_lock = threading.Lock()
-        self.generation, self.roles = FQCN.get_roles(self.my_fqcn)
 
         ep = Endpoint(
             name=fqcn,
             url=root_url,
             properties={
-                CellPropertyKey.FQCN: self.my_fqcn,
+                CellPropertyKey.FQCN: self.my_info.fqcn,
             })
         ep.conn_props = credentials
 
@@ -293,6 +271,7 @@ class Cell(Receiver, EndpointMonitor):
         # add appropriate drivers based on roles of the cell
         # a cell can have at most two listeners: one for external, one for internal
         self.driver_manager = DriverManager()
+        self.driver_manager.add_resources(driver_resources)
         self.ext_listener = None        # external listener
         self.ext_listener_lock = threading.Lock()
         self.ext_listener_impossible = False
@@ -308,19 +287,19 @@ class Cell(Receiver, EndpointMonitor):
         self.adhoc_connector_lock = threading.Lock()
         self.root_change_lock = threading.Lock()
 
-        if CellRole.SERVER in self.roles:
-            if CellRole.ROOT in self.roles:
+        if self.my_info.is_on_server:
+            if self.my_info.is_root:
                 self._set_bb_for_server_root()
             else:
                 self._set_bb_for_server_child(parent_url)
         else:
             # client side
-            if CellRole.ROOT in self.roles:
+            if self.my_info.is_root:
                 self._set_bb_for_client_root()
             else:
                 self._set_bb_for_client_child(parent_url)
 
-    def change_root(self, to_url: str):
+    def change_server_root(self, to_url: str):
         """
         Change to a different server url
 
@@ -337,7 +316,7 @@ class Cell(Receiver, EndpointMonitor):
 
             self.root_url = to_url
 
-            if CellRole.CLIENT not in self.roles:
+            if self.my_info.is_on_server:
                 # only affect clients
                 return
 
@@ -351,7 +330,8 @@ class Cell(Receiver, EndpointMonitor):
             with self.adhoc_connector_lock:
                 cells_to_delete = []
                 for to_cell in self.adhoc_connectors.keys():
-                    if FQCN.get_root(to_cell) == FQCN.ROOT_SERVER:
+                    to_cell_info = _FqcnInfo(to_cell)
+                    if to_cell_info.is_on_server:
                         cells_to_delete.append(to_cell)
                 for c in cells_to_delete:
                     connector = self.adhoc_connectors.pop(c, None)
@@ -361,15 +341,19 @@ class Cell(Receiver, EndpointMonitor):
             # drop agents
             with self.agent_lock:
                 agents_to_delete = []
-                for cell_fqcn in self.agents.keys():
-                    if FQCN.get_root(cell_fqcn) == FQCN.ROOT_SERVER:
-                        agents_to_delete.append(cell_fqcn)
+                for fqcn, agent in self.agents.items():
+                    assert isinstance(agent, CellAgent)
+                    if agent.info.is_on_server:
+                        agents_to_delete.append(fqcn)
                     for a in agents_to_delete:
                         self.agents.pop(a, None)
 
             # recreate backbone connector to the root
-            if self.generation <= 2:
+            if self.my_info.gen <= 2:
                 self._set_bb_external_connector()
+
+    def add_internal_listener(self) -> bool:
+        pass
 
     def get_internal_listener_url(self) -> Union[None, str]:
         """
@@ -462,7 +446,7 @@ class Cell(Receiver, EndpointMonitor):
 
     def _set_bb_for_client_child(self, internal_url: str):
         self._set_bb_internal_connector(internal_url)
-        if self.generation == 2:
+        if self.my_info.gen == 2:
             # we only connect to server root for gen2 child (the job cell)
             self._set_bb_external_connector()
 
@@ -639,14 +623,13 @@ class Cell(Receiver, EndpointMonitor):
         # can't find endpoint based on the target's FQCN
         # let my parent(s) handle it
         ep = None
-        path = FQCN.split(self.my_fqcn)
+        path = self.my_info.path
         if len(path) > 1:
             ep = self._try_path(path[:-1])
-        if ep:
-            return ep
+        return ep
 
     def find_endpoint(self, target_fqcn: str) -> Union[None, Endpoint]:
-        if target_fqcn == self.my_fqcn:
+        if target_fqcn == self.my_info.fqcn:
             # sending request to myself? Not allowed!
             return None
 
@@ -659,7 +642,7 @@ class Cell(Receiver, EndpointMonitor):
             # we assume that all client roots connect to the server root.
             with self.agent_lock:
                 for _, agent in self.agents.items():
-                    if agent.has_role(CellRole.SERVER) and agent.has_role(CellRole.ROOT):
+                    if agent.info.is_on_server and agent.info.is_root:
                         return agent.endpoint
         return None
 
@@ -700,8 +683,8 @@ class Cell(Receiver, EndpointMonitor):
         request.add_headers({
             MessageHeaderKey.CHANNEL: channel,
             MessageHeaderKey.TOPIC: topic,
-            MessageHeaderKey.ORIGIN: self.my_fqcn,
-            MessageHeaderKey.FROM_CELL: self.my_fqcn,
+            MessageHeaderKey.ORIGIN: self.my_info.fqcn,
+            MessageHeaderKey.FROM_CELL: self.my_info.fqcn,
             MessageHeaderKey.MSG_TYPE: MessageType.REQ
         })
 
@@ -722,9 +705,10 @@ class Cell(Receiver, EndpointMonitor):
             })
 
             # is this a direct path?
-            if t != ep.name and not FQCN.same_family(t, self.my_fqcn):
+            ti = _FqcnInfo(t)
+            if t != ep.name and not same_family(ti, self.my_info):
                 # Not a direct path since the destination and the next leg are not the same
-                if CellRole.SERVER in self.roles:
+                if self.my_info.is_on_server:
                     # server side - try to create a listener and let the peer know the endpoint
                     listener = self._set_external_listener(DriverUse.ADHOC)
                     if listener:
@@ -861,8 +845,8 @@ class Cell(Receiver, EndpointMonitor):
         """
         reply.add_headers(
             {
-                MessageHeaderKey.FROM_CELL: self.my_fqcn,
-                MessageHeaderKey.ORIGIN: self.my_fqcn,
+                MessageHeaderKey.FROM_CELL: self.my_info.fqcn,
+                MessageHeaderKey.ORIGIN: self.my_info.fqcn,
                 MessageHeaderKey.DESTINATION: to_cell,
                 MessageHeaderKey.REQ_ID: for_req_ids,
                 MessageHeaderKey.MSG_TYPE: MessageType.REPLY,
@@ -932,7 +916,7 @@ class Cell(Receiver, EndpointMonitor):
         ep = self.find_endpoint(destination)
         if ep:
             message.add_headers({
-                MessageHeaderKey.FROM_CELL: self.my_fqcn,
+                MessageHeaderKey.FROM_CELL: self.my_info.fqcn,
                 MessageHeaderKey.TO_CELL: ep.name
             })
             err = self._async_send(to_endpoint=ep, message=message)
@@ -956,7 +940,7 @@ class Cell(Receiver, EndpointMonitor):
             reply = make_reply(ReturnCode.COMM_ERROR, error="cannot forward")
             reply.add_headers(
                 {
-                    MessageHeaderKey.FROM_CELL: self.my_fqcn,
+                    MessageHeaderKey.FROM_CELL: self.my_info.fqcn,
                     MessageHeaderKey.TO_CELL: endpoint.name,
                     MessageHeaderKey.ORIGIN: destination,
                     MessageHeaderKey.DESTINATION: origin,
@@ -1019,7 +1003,7 @@ class Cell(Receiver, EndpointMonitor):
         if not destination:
             raise RuntimeError("Proto Error: missing DESTINATION header in received message")
 
-        if destination != self.my_fqcn:
+        if destination != self.my_info.fqcn:
             # not for me - need to forward it
             self._forward(endpoint, origin, destination, msg_type, message)
             return
@@ -1029,7 +1013,8 @@ class Cell(Receiver, EndpointMonitor):
         my_conn_url = None
         if msg_type in [MessageType.REQ, MessageType.REPLY]:
             from_cell = message.get_header(MessageHeaderKey.FROM_CELL)
-            if from_cell != origin and not FQCN.same_family(origin, self.my_fqcn):
+            oi = _FqcnInfo(origin)
+            if from_cell != origin and not same_family(oi, self.my_info):
                 # this is a forwarded message, so no direct path from the origin to me
                 conn_url = message.get_header(MessageHeaderKey.CONN_URL)
                 if conn_url:
@@ -1049,8 +1034,8 @@ class Cell(Receiver, EndpointMonitor):
                 req_id = message.get_header(MessageHeaderKey.REQ_ID, "")
                 reply.add_headers(
                     {
-                        MessageHeaderKey.FROM_CELL: self.my_fqcn,
-                        MessageHeaderKey.ORIGIN: self.my_fqcn,
+                        MessageHeaderKey.FROM_CELL: self.my_info.fqcn,
+                        MessageHeaderKey.ORIGIN: self.my_info.fqcn,
                         MessageHeaderKey.DESTINATION: origin,
                         MessageHeaderKey.TO_CELL: endpoint.name,
                         MessageHeaderKey.REQ_ID: req_id,
@@ -1075,19 +1060,14 @@ class Cell(Receiver, EndpointMonitor):
 
         if state == ConnState.READY:
             # create the CellAgent for this endpoint
-            roles = endpoint.properties.get(CellPropertyKey.ROLES, None)
-            if not roles:
-                self.logger.critical(f"missing roles in endpoint {endpoint.name}")
-                return
-
             agent = self.agents.get(fqcn)
             if not agent:
-                agent = CellAgent(fqcn, roles, endpoint)
+                agent = CellAgent(fqcn, endpoint)
                 with self.agent_lock:
                     self.agents[fqcn] = agent
             else:
                 agent.endpoint = endpoint
-                agent.roles = roles
+
             if self.cell_connected_cb is not None:
                 try:
                     self.cell_connected_cb(

@@ -12,7 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-from typing import List, Union, Dict
+from typing import List, Union
 from nvflare.fuel.utils.class_utils import get_class
 from .driver import DriverSpec
 
@@ -69,7 +69,7 @@ class DriverManager:
     """
 
     DRIVERS = {
-        "http": "nvflare.fuel.f3.drivers.http.HTTPDriver",
+        "http1": "nvflare.fuel.f3.drivers.http.HTTPDriver",
         "ipc": "nvflare.fuel.f3.drivers.ipc.IPCDriver",
     }
 
@@ -81,32 +81,37 @@ class DriverManager:
             self.driver_classes[name] = get_class(class_path)
 
         self.backbone_ext_drivers = ["http"]
-        self.backbone_int_drivers = ["ipc"]
-        self.adhoc_drivers = ["http"]
-        self.adhoc_driver_resources = {}
+        self.backbone_int_drivers = ["http"]
+        self.int_driver_resources = {
+            "http": {
+                "url": "http://localhost",
+                "ports": [(24000, 25000)]  # select a port randomly in the range
+            }
+        }
+        self.adhoc_ext_drivers = ["http"]
+        self.adhoc_ext_driver_resources = {}
 
     def add_resources(self, resources: List[DriverResource]):
         for r in resources:
-            self.adhoc_driver_resources[r.driver_name] = r.resources
+            self.adhoc_ext_driver_resources[r.driver_name] = r.resources
 
     def _get_driver(self, active: bool, requirements):
         use = requirements.get(DriverRequirementKey.USE, DriverUse.BACKBONE)
         vis = requirements.get(DriverRequirementKey.VISIBILITY, Visibility.EXTERNAL)
+        resource_config = {}
         if use == DriverUse.BACKBONE:
-            is_adhoc = False
             if vis == Visibility.EXTERNAL:
                 drivers = self.backbone_ext_drivers
             else:
                 drivers = self.backbone_int_drivers
+                resource_config = self.int_driver_resources
         else:
-            is_adhoc = True
-            drivers = self.adhoc_drivers
+            drivers = self.adhoc_ext_drivers
+            resource_config = self.adhoc_ext_driver_resources
 
         for name in drivers:
             clazz = self.driver_classes.get(name)
-            resources = None
-            if is_adhoc:
-                resources = self.adhoc_driver_resources.get(name)
+            resources = resource_config.get(name)
             if clazz:
                 try:
                     driver = clazz(
