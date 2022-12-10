@@ -19,7 +19,7 @@ import pytest
 
 from nvflare.apis.client import Client
 from nvflare.apis.fl_context import FLContext, FLContextManager
-from nvflare.apis.job_def import ALL_SITES, Job, RunStatus
+from nvflare.apis.job_def import ALL_SITES, Job, RunStatus, JobMetaKey
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.apis.job_scheduler_spec import DispatchInfo
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
@@ -448,3 +448,31 @@ class TestDefaultJobScheduler:
                                 dispatch_info.resource_requirements, token=dispatch_info.token, fl_ctx=fl_ctx
                             )
         assert results == [jobs[0], jobs[1]]
+
+    def test_failed_schedule_history(self, setup_and_teardown):
+        servers, scheduler, num_sites, job_manager = setup_and_teardown
+        candidate = create_job(
+            job_id="job",
+            resource_spec={},
+            deploy_map={"app5": [ALL_SITES]},
+            min_sites=num_sites + 1,
+        )
+        with servers[0].new_context() as fl_ctx:
+            _, _ = scheduler.schedule_job(job_manager=job_manager, job_candidates=[candidate], fl_ctx=fl_ctx)
+        assert candidate.meta[JobMetaKey.SCHEDULE_COUNT.value] == 1
+        assert 'connected sites (3) < min_sites (4)' in candidate.meta[JobMetaKey.SCHEDULE_HISTORY.value][0]
+
+    def test_job_cannot_scheduled(self, setup_and_teardown):
+        servers, scheduler, num_sites, job_manager = setup_and_teardown
+        scheduler = DefaultJobScheduler(max_jobs=4, min_schedule_interval=0, max_schedule_count=2)
+        candidate = create_job(
+            job_id="job",
+            resource_spec={},
+            deploy_map={"app5": [ALL_SITES]},
+            min_sites=num_sites + 1,
+        )
+        for i in range(3):
+            with servers[0].new_context() as fl_ctx:
+                _, _ = scheduler.schedule_job(job_manager=job_manager, job_candidates=[candidate], fl_ctx=fl_ctx)
+        assert candidate.meta[JobMetaKey.SCHEDULE_COUNT.value] == 3
+        assert job_manager.set_status.call_args[0][1] == RunStatus.FINISHED_CANT_SCHEDULE
