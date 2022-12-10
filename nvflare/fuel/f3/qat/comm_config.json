@@ -1,0 +1,19 @@
+{
+  "drivers": {
+    "http": "my.http.Driver"
+  },
+  "internal_driver": {
+    "name": "http",
+    "resources": {
+      "url": "localhost",
+      "ports": ["any"]
+    }
+  },
+  "external_driver": {
+    "name": "http",
+    "resources": {
+      "url": "localhost",
+      "ports": [20001, [30000, 30009]]
+    }
+  }
+}

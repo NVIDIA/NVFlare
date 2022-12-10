@@ -160,7 +160,8 @@ class Cell(Receiver, EndpointMonitor):
             root_url: str,
             secure: bool,
             credentials: dict,
-            parent_url: str=None,
+            create_internal_listener: bool = False,
+            parent_url: str = None,
             max_timeout=3600,
     ):
         """
@@ -171,9 +172,11 @@ class Cell(Receiver, EndpointMonitor):
             root_url: the URL for backbone external connection
             secure: secure mode or not
             max_timeout: default timeout for send_and_receive
+            create_internal_listener: whether to create an internal listener for child cells
             parent_url: url for connecting to parent cell
 
         FQCN is the names of all ancestor, concatenated with dots.
+        Note: internal listener is automatically created for root cells.
 
         Example:
             server.J12345       (the cell for job J12345 on the server)
@@ -247,7 +250,7 @@ class Cell(Receiver, EndpointMonitor):
         self.bb_ext_connector = None    # backbone external connector - only for Client cells
         self.bb_int_connector = None    # backbone internal connector - only for non-root cells
 
-        # ad-hoc connectors
+        # ad-hoc connectors: currently only support ad-hoc external connectors
         self.adhoc_connectors = {}              # target cell fqcn => connector
         self.adhoc_connector_lock = threading.Lock()
         self.root_change_lock = threading.Lock()
@@ -256,13 +259,35 @@ class Cell(Receiver, EndpointMonitor):
             if self.my_info.is_root:
                 self._set_bb_for_server_root()
             else:
-                self._set_bb_for_server_child(parent_url)
+                self._set_bb_for_server_child(parent_url, create_internal_listener)
         else:
             # client side
             if self.my_info.is_root:
                 self._set_bb_for_client_root()
             else:
-                self._set_bb_for_client_child(parent_url)
+                self._set_bb_for_client_child(parent_url, create_internal_listener)
+
+    def _set_bb_for_client_root(self):
+        self._create_bb_external_connector()
+        self._create_internal_listener()
+
+    def _set_bb_for_client_child(self, parent_url: str, create_internal_listener: bool):
+        self._create_internal_connector(parent_url)
+        if create_internal_listener:
+            self._create_internal_listener()
+
+        if self.my_info.gen == 2:
+            # we only connect to server root for gen2 child (the job cell)
+            self._create_bb_external_connector()
+
+    def _set_bb_for_server_root(self):
+        self._create_external_listener(DriverUse.BACKBONE)
+        self._create_internal_listener()
+
+    def _set_bb_for_server_child(self, parent_url: str, create_internal_listener: bool):
+        self._create_internal_connector(parent_url)
+        if create_internal_listener:
+            self._create_internal_listener()
 
     def change_server_root(self, to_url: str):
         """
@@ -315,17 +340,24 @@ class Cell(Receiver, EndpointMonitor):
 
             # recreate backbone connector to the root
             if self.my_info.gen <= 2:
-                self._set_bb_external_connector()
+                self._create_bb_external_connector()
 
-    def add_internal_listener(self) -> bool:
-        pass
+    def create_internal_listener(self):
+        """
+        Create the internal listener for child cells of this cell to connect to.
+
+        Returns:
+
+        """
+        self._create_internal_listener()
 
     def get_internal_listener_url(self) -> Union[None, str]:
         """
         Get the cell's internal listener url.
         This method should only be used for cells that need to have child cells.
         The url returned is to be passed to child of this cell to create connection
-        Returns:
+
+        Returns: url for child cells to connect
 
         """
         if not self.int_listener:
@@ -346,10 +378,13 @@ class Cell(Receiver, EndpointMonitor):
             connector = self.driver_manager.get_connector(reqs)
             self.adhoc_connectors[to_cell] = connector
             if connector:
+                self.logger.info(f"{self.my_info.fqcn} created adhoc connector to {url} on {to_cell}")
                 self.communicator.add_connector(connector)
+            else:
+                self.logger.warning(f"cannot create adhoc connector to {url} on {to_cell}")
             return connector
 
-    def _set_internal_listener(self):
+    def _create_internal_listener(self):
         # internal listener is always backbone
         if not self.int_listener:
             reqs = {
@@ -358,10 +393,15 @@ class Cell(Receiver, EndpointMonitor):
                 DriverRequirementKey.SECURE: False
             }
             self.int_listener = self.driver_manager.get_listener(reqs)
-            self.communicator.add_listener(self.int_listener)
+            if self.int_listener:
+                self.logger.info(f"{self.my_info.fqcn} created backbone internal listener "
+                                 f"for {self.int_listener.get_connection_url()}")
+                self.communicator.add_listener(self.int_listener)
+            else:
+                raise RuntimeError(f"{self.my_info.fqcn} cannot create backbone internal listener")
         return self.int_listener
 
-    def _set_external_listener(self, use: str):
+    def _create_external_listener(self, use: str):
         with self.ext_listener_lock:
             if not self.ext_listener and not self.ext_listener_impossible:
                 reqs = {
@@ -371,18 +411,26 @@ class Cell(Receiver, EndpointMonitor):
                 }
                 if use == DriverUse.BACKBONE:
                     reqs[DriverRequirementKey.URL] = self.root_url
+
                 self.ext_listener = self.driver_manager.get_listener(reqs)
                 if self.ext_listener:
+                    if use == DriverUse.BACKBONE:
+                        self.logger.info(f"{self.my_info.fqcn} created backbone external listener for {self.root_url}")
+                    else:
+                        self.logger.info(f"{self.my_info.fqcn} created adhoc external listener "
+                                         f"for {self.ext_listener.get_connection_url()}")
                     self.communicator.add_listener(self.ext_listener)
                 else:
+                    if use == DriverUse.BACKBONE:
+                        raise RuntimeError(
+                            f"{self.my_info.fqcn} cannot create backbone external listener for {self.root_url}")
+                    else:
+                        self.logger.warning(f"{self.my_info.fqcn} cannot create adhoc external listener")
+
                     self.ext_listener_impossible = True
         return self.ext_listener
 
-    def _set_bb_for_server_root(self):
-        self._set_external_listener(DriverUse.BACKBONE)
-        self._set_internal_listener()
-
-    def _set_bb_external_connector(self):
+    def _create_bb_external_connector(self):
         reqs = {
             DriverRequirementKey.URL: self.root_url,
             DriverRequirementKey.VISIBILITY: Visibility.EXTERNAL,
@@ -390,13 +438,13 @@ class Cell(Receiver, EndpointMonitor):
             DriverRequirementKey.USE: DriverUse.BACKBONE
         }
         self.bb_ext_connector = self.driver_manager.get_connector(reqs)
-        self.communicator.add_connector(self.bb_ext_connector)
+        if self.bb_ext_connector:
+            self.logger.info(f"{self.my_info.fqcn} created backbone external connector to {self.root_url}")
+            self.communicator.add_connector(self.bb_ext_connector)
+        else:
+            raise RuntimeError(f"{self.my_info.fqcn} cannot create backbone external connector to {self.root_url}")
 
-    def _set_bb_for_client_root(self):
-        self._set_bb_external_connector()
-        self._set_internal_listener()
-
-    def _set_bb_internal_connector(self, url: str):
+    def _create_internal_connector(self, url: str):
         reqs = {
             DriverRequirementKey.URL: url,
             DriverRequirementKey.VISIBILITY: Visibility.INTERNAL,
@@ -404,16 +452,11 @@ class Cell(Receiver, EndpointMonitor):
             DriverRequirementKey.USE: DriverUse.BACKBONE
         }
         self.bb_int_connector = self.driver_manager.get_connector(reqs)
-        self.communicator.add_connector(self.bb_int_connector)
-
-    def _set_bb_for_server_child(self, internal_url: str):
-        self._set_bb_internal_connector(internal_url)
-
-    def _set_bb_for_client_child(self, internal_url: str):
-        self._set_bb_internal_connector(internal_url)
-        if self.my_info.gen == 2:
-            # we only connect to server root for gen2 child (the job cell)
-            self._set_bb_external_connector()
+        if self.bb_int_connector:
+            self.logger.info(f"{self.my_info.fqcn} created backbone internal connector to {url} on parent")
+            self.communicator.add_connector(self.bb_int_connector)
+        else:
+            raise RuntimeError(f"{self.my_info.fqcn} cannot create backbone internal connector to {url} on parent")
 
     def set_cell_connected_cb(
             self,
@@ -567,6 +610,8 @@ class Cell(Receiver, EndpointMonitor):
                 *_cb.args,
                 **_cb.kwargs
             )
+            if result:
+                return result
 
     def _try_path(self, fqcn_path: List[str]) -> Union[None, Endpoint]:
         target = FQCN.join(fqcn_path)
@@ -675,7 +720,7 @@ class Cell(Receiver, EndpointMonitor):
                 # Not a direct path since the destination and the next leg are not the same
                 if self.my_info.is_on_server:
                     # server side - try to create a listener and let the peer know the endpoint
-                    listener = self._set_external_listener(DriverUse.ADHOC)
+                    listener = self._create_external_listener(DriverUse.ADHOC)
                     if listener:
                         conn_url = listener.get_connection_url()
                         req.set_header(MessageHeaderKey.CONN_URL, conn_url)
@@ -827,7 +872,7 @@ class Cell(Receiver, EndpointMonitor):
     def process(self, endpoint: Endpoint, app: int, message: Message):
         # this is the receiver callback
         try:
-            self._process_received_msg(endpoint, app, message)
+            self._process_received_msg(endpoint, message)
         except:
             traceback.print_exc()
 
@@ -954,7 +999,7 @@ class Cell(Receiver, EndpointMonitor):
             else:
                 self.logger.debug(f"no waiter for req {rid}")
 
-    def _process_received_msg(self, endpoint: Endpoint, app: int, message: Message):
+    def _process_received_msg(self, endpoint: Endpoint, message: Message):
         msg_type = message.get_header(MessageHeaderKey.MSG_TYPE)
         if not msg_type:
             raise RuntimeError("Proto Error: missing MSG_TYPE in received message")
@@ -988,7 +1033,7 @@ class Cell(Receiver, EndpointMonitor):
                     self._add_adhoc_connector(origin, conn_url)
                 elif msg_type == MessageType.REQ:
                     # see whether we can offer a listener
-                    listener = self._set_external_listener(DriverUse.ADHOC)
+                    listener = self._create_external_listener(DriverUse.ADHOC)
                     if listener:
                         my_conn_url = listener.get_connection_url()
 
@@ -1121,7 +1166,7 @@ def error_handler_cb_signature(
 
 
 # Convenience functions
-def make_reply(rc: str, error: str="", body=None) -> Message:
+def make_reply(rc: str, error: str = "", body=None) -> Message:
     headers = Headers()
     headers[MessageHeaderKey.RETURN_CODE] = rc
     if error:
