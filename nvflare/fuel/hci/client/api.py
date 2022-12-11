@@ -371,6 +371,7 @@ class AdminAPI(AdminAPISpec):
         self.new_ssid = None
         self.new_addr_lock = threading.Lock()
 
+        self.poc_key = None
         self.poc = poc
         if self.poc:
             self.poc_key = ApiPocValue.ADMIN
