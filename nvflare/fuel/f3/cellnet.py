@@ -267,6 +267,9 @@ class Cell(Receiver, EndpointMonitor):
             else:
                 self._set_bb_for_client_child(parent_url, create_internal_listener)
 
+    def get_fqcn(self) -> str:
+        return self.my_info.fqcn
+
     def _set_bb_for_client_root(self):
         self._create_bb_external_connector()
         self._create_internal_listener()
