@@ -12,18 +12,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from abc import ABC, abstractmethod
+from enum import Enum
 
-from nvflare.fuel.f3.conn_state import ConnState
+
+class EndpointState(Enum):
+    IDLE = 0            # Initial state
+    READY = 2           # Endpoint is ready
+    CLOSING = 3         # Endpoint is closing, can't send
+    DISCONNECTED = 4    # Endpoint is disconnected
+    ERROR = 5           # Endpoint is in error state
 
 
 class Endpoint:
 
     CERTIFICATE = "certificate"
 
-    def __init__(self, name: str, url: str, properties: dict = None):
+    def __init__(self, name: str, properties: dict = None):
         self.name = name
-        self.url = url
-        self.state = ConnState.IDLE
+        self.state = EndpointState.IDLE
 
         # public properties exchanged while handshake
         self.properties = properties if properties else {}
@@ -34,16 +40,16 @@ class Endpoint:
     def set_prop(self, key, value):
         self.properties[key] = value
 
-    def get_pro(self, key):
+    def get_prop(self, key):
         return self.properties.get(key)
 
     def get_certificate(self) -> dict:
-        return self.conn_props(Endpoint.CERTIFICATE)
+        return self.conn_props.get(Endpoint.CERTIFICATE)
 
 
 class EndpointMonitor(ABC):
     """Monitor for endpoint lifecycle changes"""
 
     @abstractmethod
-    def state_change(self, endpoint: Endpoint, state: ConnState):
+    def state_change(self, endpoint: Endpoint):
         pass
