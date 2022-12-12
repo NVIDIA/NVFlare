@@ -27,18 +27,19 @@ Command Usage
     job_folder
 
     optional arguments:
-    -h, --help            show this help message and exit
+    -h, --help             show this help message and exit
     -w WORKSPACE, --workspace WORKSPACE
-                        WORKSPACE folder
+                           WORKSPACE folder
     -n N_CLIENTS, --n_clients N_CLIENTS
-                        number of clients
+                           number of clients
     -c CLIENTS, --clients CLIENTS
-                        client names list
+                           client names list
     -t THREADS, --threads THREADS
-                        number of parallel running clients
-    -gpu GPU, --gpu GPU   list of GPU Device Ids, comma separated
+                           number of parallel running clients
+    -gpu GPU, --gpu GPU
+                           list of GPU Device Ids, comma separated
     -m MAX_CLIENTS, --max_clients MAX_CLIENTS
-                        max number of clients
+                           maximum number of clients
 
 *****************
 Command examples
@@ -839,6 +840,4 @@ The GPU numbers do not have to be unique. If you use "-gpu 0,0", this will run 2
 *************************
 To change the MAX_CLIENTS
 *************************
-The simulator default to run with maximum number of clients to 100. If you need to simulate larger number of clients, use this "-m MAX_CLIENTS" option to set the number of clients to run. The simulator can support more than 1000 clients with one run. Just need to make sure that the machine hardware have enough resources to support the parallel executing clients at the same time.
-
-
+By default, the simulator runs with a maximum number of 100 clients. If you need to simulate larger number of clients, use the "-m MAX_CLIENTS" option to set the number of clients to run. The simulator can support more than 1000 clients with one run. You just need to make sure that the machine that the simulator is running on has enough resources to support the parallel execution of the number of clients set.
