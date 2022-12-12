@@ -7,6 +7,7 @@ import shlex
 import subprocess
 import sys
 import pickle
+import time
 
 
 class NetConfig:
@@ -31,6 +32,12 @@ class NetConfig:
         if server_config:
             return server_config.get("clients")
 
+    def get_admin(self) -> (str, str):
+        admin_config = self.config.get("admin")
+        if admin_config:
+            return admin_config.get("host"), admin_config.get("port")
+        return "", ""
+
 
 class _RunnerInfo:
 
@@ -44,26 +51,26 @@ class CellRunner:
 
     def __init__(
             self,
+            net_config: NetConfig,
             my_name: str,
-            root_url: str,
-            parent_url: str,
-            parent_fqcn: str
+            parent_url: str = "",
+            parent_fqcn: str = ""
     ):
-        net_config = NetConfig()
+        self.asked_to_stop = False
 
         if not parent_fqcn:
             my_fqcn = my_name
         else:
             my_fqcn = FQCN.join([parent_fqcn, my_name])
 
-        self.root_url = root_url
+        self.root_url = net_config.get_root_url()
         self.children = net_config.get_children(my_name)
         self.clients = net_config.get_clients()
         self.create_internal_listener = len(self.children) > 0
 
         self.cell = Cell(
             fqcn=my_fqcn,
-            root_url=root_url,
+            root_url=self.root_url,
             secure=False,
             credentials={},
             create_internal_listener=self.create_internal_listener,
@@ -138,14 +145,7 @@ class CellRunner:
         self.stop()
         return None
 
-    def _do_report_cells(
-            self,
-            cell: Cell,
-            channel: str,
-            topic: str,
-            request: Message,
-            runner
-    ) -> Union[None, Message]:
+    def request_cells_info(self):
         result = [self.cell.get_fqcn()]
         targets = []
         if self.child_runners:
@@ -174,7 +174,20 @@ class CellRunner:
                     print(f"no reply from {t}: {rc}")
         return Message(Headers(), pickle.dumps(result))
 
+    def _do_report_cells(
+            self,
+            cell: Cell,
+            channel: str,
+            topic: str,
+            request: Message,
+            runner
+    ) -> Union[None, Message]:
+        return self.request_cells_info()
+
     def stop(self):
+        if self.asked_to_stop:
+            return
+
         # ask all children to stop
         sub_runners = []
         for _, r in self.child_runners.items():
@@ -199,3 +212,9 @@ class CellRunner:
                     r.process.terminate()
 
         self.cell.stop()
+        self.asked_to_stop = True
+
+    def run(self):
+        while not self.asked_to_stop:
+            time.sleep(0.5)
+        print(f"{self.cell.get_fqcn()} STOPPED!")

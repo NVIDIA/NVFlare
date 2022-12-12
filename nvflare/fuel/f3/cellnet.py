@@ -29,8 +29,10 @@ from .receiver import Receiver
 from .driver_manager import DriverManager
 from .constants import (
     DriverRequirementKey, DriverUse, Visibility, MessageHeaderKey, MessageType,
-    ReturnCode, CellPropertyKey
+    ReturnCode, CellPropertyKey, ContentType
 )
+
+import nvflare.fuel.utils.fobs as fobs
 
 
 class TargetCellUnreachable(Exception):
@@ -267,6 +269,17 @@ class Cell(Receiver, EndpointMonitor):
             else:
                 self._set_bb_for_client_child(parent_url, create_internal_listener)
 
+    def _message_log(self, message: Message, log: str) -> str:
+        parts = [
+            "[ME=" + self.my_info.fqcn,
+            "O=" + message.get_header(MessageHeaderKey.ORIGIN, "?"),
+            "D=" + message.get_header(MessageHeaderKey.DESTINATION, "?"),
+            "F=" + message.get_header(MessageHeaderKey.FROM_CELL, "?"),
+            "T=" + message.get_header(MessageHeaderKey.TO_CELL, "?") + "]",
+            log
+        ]
+        return " ".join(parts)
+
     def get_fqcn(self) -> str:
         return self.my_info.fqcn
 
@@ -381,10 +394,10 @@ class Cell(Receiver, EndpointMonitor):
             connector = self.driver_manager.get_connector(reqs)
             self.adhoc_connectors[to_cell] = connector
             if connector:
-                self.logger.info(f"{self.my_info.fqcn} created adhoc connector to {url} on {to_cell}")
+                self.logger.info(f"{self.my_info.fqcn}: created adhoc connector to {url} on {to_cell}")
                 self.communicator.add_connector(connector)
             else:
-                self.logger.warning(f"cannot create adhoc connector to {url} on {to_cell}")
+                self.logger.warning(f"{self.my_info.fqcn}: cannot create adhoc connector to {url} on {to_cell}")
             return connector
 
     def _create_internal_listener(self):
@@ -397,11 +410,11 @@ class Cell(Receiver, EndpointMonitor):
             }
             self.int_listener = self.driver_manager.get_listener(reqs)
             if self.int_listener:
-                self.logger.info(f"{self.my_info.fqcn} created backbone internal listener "
+                self.logger.info(f"{self.my_info.fqcn}: created backbone internal listener "
                                  f"for {self.int_listener.get_connection_url()}")
                 self.communicator.add_listener(self.int_listener)
             else:
-                raise RuntimeError(f"{self.my_info.fqcn} cannot create backbone internal listener")
+                raise RuntimeError(f"{self.my_info.fqcn}: cannot create backbone internal listener")
         return self.int_listener
 
     def _create_external_listener(self, use: str):
@@ -418,17 +431,17 @@ class Cell(Receiver, EndpointMonitor):
                 self.ext_listener = self.driver_manager.get_listener(reqs)
                 if self.ext_listener:
                     if use == DriverUse.BACKBONE:
-                        self.logger.info(f"{self.my_info.fqcn} created backbone external listener for {self.root_url}")
+                        self.logger.info(f"{self.my_info.fqcn}: created backbone external listener for {self.root_url}")
                     else:
-                        self.logger.info(f"{self.my_info.fqcn} created adhoc external listener "
+                        self.logger.info(f"{self.my_info.fqcn}: created adhoc external listener "
                                          f"for {self.ext_listener.get_connection_url()}")
                     self.communicator.add_listener(self.ext_listener)
                 else:
                     if use == DriverUse.BACKBONE:
                         raise RuntimeError(
-                            f"{self.my_info.fqcn} cannot create backbone external listener for {self.root_url}")
+                            f"{self.my_info.fqcn}: cannot create backbone external listener for {self.root_url}")
                     else:
-                        self.logger.warning(f"{self.my_info.fqcn} cannot create adhoc external listener")
+                        self.logger.warning(f"{self.my_info.fqcn}: cannot create adhoc external listener")
 
                     self.ext_listener_impossible = True
         return self.ext_listener
@@ -442,10 +455,10 @@ class Cell(Receiver, EndpointMonitor):
         }
         self.bb_ext_connector = self.driver_manager.get_connector(reqs)
         if self.bb_ext_connector:
-            self.logger.info(f"{self.my_info.fqcn} created backbone external connector to {self.root_url}")
+            self.logger.info(f"{self.my_info.fqcn}: created backbone external connector to {self.root_url}")
             self.communicator.add_connector(self.bb_ext_connector)
         else:
-            raise RuntimeError(f"{self.my_info.fqcn} cannot create backbone external connector to {self.root_url}")
+            raise RuntimeError(f"{self.my_info.fqcn}: cannot create backbone external connector to {self.root_url}")
 
     def _create_internal_connector(self, url: str):
         reqs = {
@@ -456,10 +469,10 @@ class Cell(Receiver, EndpointMonitor):
         }
         self.bb_int_connector = self.driver_manager.get_connector(reqs)
         if self.bb_int_connector:
-            self.logger.info(f"{self.my_info.fqcn} created backbone internal connector to {url} on parent")
+            self.logger.info(f"{self.my_info.fqcn}: created backbone internal connector to {url} on parent")
             self.communicator.add_connector(self.bb_int_connector)
         else:
-            raise RuntimeError(f"{self.my_info.fqcn} cannot create backbone internal connector to {url} on parent")
+            raise RuntimeError(f"{self.my_info.fqcn}: cannot create backbone internal connector to {url} on parent")
 
     def set_cell_connected_cb(
             self,
@@ -659,9 +672,19 @@ class Cell(Receiver, EndpointMonitor):
                         return agent.endpoint
         return None
 
-    def _async_send(self, to_endpoint: Endpoint, message: Message) -> str:
+    def _send_to_endpoint(self, to_endpoint: Endpoint, message: Message) -> str:
         err = ""
         try:
+            content_type = message.get_header(MessageHeaderKey.CONTENT_TYPE)
+            if not content_type:
+                if message.payload is None:
+                    content_type = ContentType.NONE
+                elif isinstance(message.payload, bytes):
+                    content_type = ContentType.BYTES
+                else:
+                    content_type = ContentType.FOBS
+                    message.payload = fobs.dumps(message.payload)
+                message.set_header(MessageHeaderKey.CONTENT_TYPE, content_type)
             self.communicator.send(to_endpoint, Cell.APP_ID, message)
         except:
             traceback.print_exc()
@@ -673,13 +696,13 @@ class Cell(Receiver, EndpointMonitor):
             channel: str,
             topic: str,
             targets: Union[str, List[str]],
-            request: Message,
+            message: Message,
             headers: dict
     ) -> Dict[str, bool]:
         if not self.running:
             raise RuntimeError("Messenger is not running")
 
-        result = {}
+        sent = {}
         if isinstance(targets, str):
             # turn it to list
             targets = [targets]
@@ -690,27 +713,28 @@ class Cell(Receiver, EndpointMonitor):
             if ep:
                 reachable_targets[t] = ep
             else:
-                self.logger.error(f"no path to cell '{t}'")
-                result[t] = False
+                self.logger.error(f"{self.my_info.fqcn}: no path to cell '{t}'")
+                sent[t] = False
 
-        request.add_headers({
+        message.add_headers({
             MessageHeaderKey.CHANNEL: channel,
             MessageHeaderKey.TOPIC: topic,
             MessageHeaderKey.ORIGIN: self.my_info.fqcn,
             MessageHeaderKey.FROM_CELL: self.my_info.fqcn,
-            MessageHeaderKey.MSG_TYPE: MessageType.REQ
+            MessageHeaderKey.MSG_TYPE: MessageType.REQ,
+            MessageHeaderKey.ROUTE: [self.my_info.fqcn]
         })
 
-        request.add_headers(headers)
+        message.add_headers(headers)
 
         for t, ep in reachable_targets.items():
             if len(reachable_targets) > 1:
                 req = Message(
-                    headers=copy.deepcopy(request.headers),
-                    payload=request.payload
+                    headers=copy.deepcopy(message.headers),
+                    payload=message.payload
                 )
             else:
-                req = request
+                req = message
 
             req.add_headers({
                 MessageHeaderKey.DESTINATION: t,
@@ -727,16 +751,9 @@ class Cell(Receiver, EndpointMonitor):
                     if listener:
                         conn_url = listener.get_connection_url()
                         req.set_header(MessageHeaderKey.CONN_URL, conn_url)
-            try:
-                self.communicator.send(
-                    endpoint=ep,
-                    app=Cell.APP_ID,
-                    message=req
-                )
-                result[t] = True
-            except:
-                result[t] = False
-        return result
+            err = self._send_to_endpoint(ep, message)
+            sent[t] = not err
+        return sent
 
     def send_request(
             self,
@@ -839,7 +856,7 @@ class Cell(Receiver, EndpointMonitor):
             reply: Message,
             to_cell: str,
             for_req_ids: List[str]
-    ):
+    ) -> str:
         """
         Send a reply to respond to one or more requests.
         This is useful if the request receiver needs to delay its reply as follows:
@@ -853,13 +870,14 @@ class Cell(Receiver, EndpointMonitor):
             to_cell:
             for_req_ids:
 
-        Returns:
+        Returns: an error message if any
 
         """
         reply.add_headers(
             {
                 MessageHeaderKey.FROM_CELL: self.my_info.fqcn,
                 MessageHeaderKey.ORIGIN: self.my_info.fqcn,
+                MessageHeaderKey.ROUTE: [self.my_info.fqcn],
                 MessageHeaderKey.DESTINATION: to_cell,
                 MessageHeaderKey.REQ_ID: for_req_ids,
                 MessageHeaderKey.MSG_TYPE: MessageType.REPLY,
@@ -868,9 +886,9 @@ class Cell(Receiver, EndpointMonitor):
 
         ep = self.find_endpoint(to_cell)
         if not ep:
-            raise TargetCellUnreachable(f"no path to cell {to_cell}")
+            return "CommError"
         reply.set_header(MessageHeaderKey.TO_CELL, ep.name)
-        self.communicator.send(ep, Cell.APP_ID, reply)
+        return self._send_to_endpoint(ep, reply)
 
     def process(self, endpoint: Endpoint, app: int, message: Message):
         # this is the receiver callback
@@ -889,7 +907,7 @@ class Cell(Receiver, EndpointMonitor):
         _cb = self.req_reg.find(channel, topic)
         if not _cb:
             self.logger.error(
-                f"No callback for request ({topic}@{channel}) from cell '{origin}'")
+                f"{self.my_info.fqcn}: no callback for request ({topic}@{channel}) from cell '{origin}'")
             return make_reply(ReturnCode.PROCESS_EXCEPTION, error="no callback")
 
         try:
@@ -901,7 +919,7 @@ class Cell(Receiver, EndpointMonitor):
 
             if not isinstance(reply, Message):
                 self.logger.error(
-                    f"bad result from request CB for topic {topic} on channel {channel}: "
+                    f"{self.my_info.fqcn}: bad result from request CB for topic {topic} on channel {channel}: "
                     f"expect Message but got {type(reply)}"
                 )
                 return make_reply(ReturnCode.PROCESS_EXCEPTION, error="bad cb result")
@@ -924,6 +942,15 @@ class Cell(Receiver, EndpointMonitor):
             reply.set_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
         return reply
 
+    def _add_to_route(self, message: Message):
+        route = message.get_header(MessageHeaderKey.ROUTE, None)
+        if route:
+            if not isinstance(route, list):
+                self.logger.error(
+                    self._message_log(message, "bad route header: expect list but got {type(route)}"))
+            else:
+                route.append(self.my_info.fqcn)
+
     def _forward(self, endpoint: Endpoint, origin: str, destination: str, msg_type: str, message: Message):
         # not for me - need to forward it
         ep = self.find_endpoint(destination)
@@ -932,12 +959,15 @@ class Cell(Receiver, EndpointMonitor):
                 MessageHeaderKey.FROM_CELL: self.my_info.fqcn,
                 MessageHeaderKey.TO_CELL: ep.name
             })
-            err = self._async_send(to_endpoint=ep, message=message)
+            self._add_to_route(message)
+            err = self._send_to_endpoint(to_endpoint=ep, message=message)
             if not err:
                 return
 
         # cannot forward
-        self.logger.error(f"Cannot forward {msg_type} to cell '{destination}' for {origin} - no path")
+        self.logger.error(
+            self._message_log(message, f"cannot forward {msg_type} - no path")
+        )
         if msg_type == MessageType.REQ:
             reply_expected = message.get_header(MessageHeaderKey.REPLY_EXPECTED, False)
             if not reply_expected:
@@ -961,28 +991,28 @@ class Cell(Receiver, EndpointMonitor):
                     MessageHeaderKey.MSG_TYPE: MessageType.RETURN,
                 }
             )
-            self._async_send(endpoint, reply)
+            self._send_to_endpoint(endpoint, reply)
         else:
             # msg_type is either RETURN or REPLY - drop it.
-            pass
+            self.logger.warning(self._message_log(message, "dropped forwarded reply or return"))
 
     def _process_reply(self, origin: str, message: Message):
         req_ids = message.get_header(MessageHeaderKey.REQ_ID)
         if not req_ids:
-            raise RuntimeError("Proto Error: received reply does not have REQ_ID header")
+            raise RuntimeError(self._message_log(message, "reply does not have REQ_ID header"))
 
         if isinstance(req_ids, str):
             req_ids = [req_ids]
 
         if not isinstance(req_ids, list):
-            raise RuntimeError(f"Proto Error: REQ_ID must be list of ids but got {type(req_ids)}")
+            raise RuntimeError(self._message_log(message, f"REQ_ID must be list of ids but got {type(req_ids)}"))
 
         for rid in req_ids:
             waiter = self.waiters.get(rid, None)
             if waiter:
                 assert isinstance(waiter, _Waiter)
                 if origin not in waiter.replies:
-                    self.logger.error(f"received reply for {rid} from unexpected cell {origin}")
+                    self.logger.error(self._message_log(message, f"unexpected REQ_ID {rid} in reply"))
                     return
                 waiter.replies[origin] = message
                 waiter.reply_time[origin] = time.time()
@@ -995,26 +1025,31 @@ class Cell(Receiver, EndpointMonitor):
                         break
 
                 if all_targets_replied:
-                    self.logger.debug(f"replies received from all {len(waiter.replies)} targets for req {rid}")
+                    self.logger.debug(
+                        self._message_log(message,
+                                          "replies received from all {len(waiter.replies)} targets for req {rid}"))
                     waiter.set()  # trigger the waiting requests!
                 else:
-                    self.logger.debug(f"replies not received from all {len(waiter.replies)} targets for req {rid}")
+                    self.logger.debug(
+                        self._message_log(message,
+                                          f"replies not received from all {len(waiter.replies)} targets for req {rid}"))
             else:
-                self.logger.debug(f"no waiter for req {rid}")
+                self.logger.debug(
+                    self._message_log(message, f"no waiter for req {rid}"))
 
     def _process_received_msg(self, endpoint: Endpoint, message: Message):
         msg_type = message.get_header(MessageHeaderKey.MSG_TYPE)
         if not msg_type:
-            raise RuntimeError("Proto Error: missing MSG_TYPE in received message")
+            raise RuntimeError(self._message_log(message, "missing MSG_TYPE in received message"))
 
         origin = message.get_header(MessageHeaderKey.ORIGIN)
         if not origin:
-            raise RuntimeError("Proto Error: missing ORIGIN header in received message")
+            raise RuntimeError(self._message_log(message, "missing ORIGIN header in received message"))
 
         # is this msg for me?
         destination = message.get_header(MessageHeaderKey.DESTINATION)
         if not destination:
-            raise RuntimeError("Proto Error: missing DESTINATION header in received message")
+            raise RuntimeError(self._message_log(message, "missing DESTINATION header in received message"))
 
         if destination != self.my_info.fqcn:
             # not for me - need to forward it
@@ -1022,6 +1057,18 @@ class Cell(Receiver, EndpointMonitor):
             return
 
         # this message is for me
+        self._add_to_route(message)
+
+        # handle content type
+        content_type = message.get_header(MessageHeaderKey.CONTENT_TYPE)
+        if not content_type:
+            self.logger.warning(self._message_log(message, "missing content_type header received message"))
+
+        if content_type == ContentType.FOBS:
+            message.payload = fobs.loads(message.payload)
+        elif content_type == ContentType.NONE:
+            message.payload = None
+
         # handle ad-hoc
         my_conn_url = None
         if msg_type in [MessageType.REQ, MessageType.REPLY]:
@@ -1058,19 +1105,14 @@ class Cell(Receiver, EndpointMonitor):
 
                 if my_conn_url:
                     reply.set_header(MessageHeaderKey.CONN_URL, my_conn_url)
-
-                self.communicator.send(endpoint, Cell.APP_ID, reply)
+                self._send_to_endpoint(endpoint, reply)
             return
 
-        # the message is either a reply or a return: handle replies
+        # the message is either a reply or a return for a previous request: handle replies
         self._process_reply(origin, message)
 
     def state_change(self, endpoint: Endpoint, state: ConnState):
-        fqcn = endpoint.properties.get(CellPropertyKey.FQCN, None)
-        if not fqcn:
-            self.logger.critical(f"missing fqcn in endpoint {endpoint.name}")
-            return
-
+        fqcn = endpoint.name
         if state == ConnState.READY:
             # create the CellAgent for this endpoint
             agent = self.agents.get(fqcn)
@@ -1089,7 +1131,7 @@ class Cell(Receiver, EndpointMonitor):
                         **self.cell_connected_cb_kwargs
                     )
                 except:
-                    self.logger.error("exception in cell_connected_cb")
+                    self.logger.error(f"{self.my_info.fqcn}: exception in cell_connected_cb")
                     traceback.print_exc()
 
         elif state in [ConnState.DISCONNECTING, ConnState.IDLE]:
@@ -1104,7 +1146,7 @@ class Cell(Receiver, EndpointMonitor):
                         **self.cell_disconnected_cb_kwargs
                     )
                 except:
-                    self.logger.error("exception in cell_disconnected_cb")
+                    self.logger.error(f"{self.my_info.fqcn}: exception in cell_disconnected_cb")
                     traceback.print_exc()
 
 

@@ -15,6 +15,8 @@
 class DriverRequirementKey:
 
     URL = "url"
+    DOMAIN = "domain"
+    PORT = "port"
     SECURE = "secure"           # bool: secure or not
     USE = "use"                 # backbone or ad-hoc
     VISIBILITY = "visibility"   # internal or external
@@ -47,6 +49,15 @@ class MessageHeaderKey:
     CHANNEL = "cellnet.channel"
     RETURN_CODE = "cellnet.return_code"
     ERROR = "cellnet.error"
+    CONTENT_TYPE = "cellnet.content_type"
+    ROUTE = "cellnet.route"
+
+
+class ContentType:
+
+    BYTES = "bytes"
+    FOBS = "fobs"       # FOBS coded
+    NONE = "none"
 
 
 class ReturnCode:

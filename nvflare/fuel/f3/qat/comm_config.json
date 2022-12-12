@@ -5,14 +5,14 @@
   "internal_driver": {
     "name": "http",
     "resources": {
-      "url": "localhost",
+      "domain": "localhost",
       "ports": ["any"]
     }
   },
   "external_driver": {
     "name": "http",
     "resources": {
-      "url": "localhost",
+      "domain": "localhost",
       "ports": [20001, [30000, 30009]]
     }
   }
