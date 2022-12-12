@@ -760,13 +760,14 @@ class ServerEngine(ServerEngineInternalSpec):
     def _send_admin_requests(self, requests, timeout_secs=10) -> List[ClientReply]:
         return self.server.admin_server.send_requests(requests, timeout_secs=timeout_secs)
 
-    def check_client_resources(self, resource_reqs) -> Dict[str, Tuple[bool, str]]:
+    def check_client_resources(self, job_id: str, resource_reqs) -> Dict[str, Tuple[bool, str]]:
         requests = {}
         for site_name, resource_requirements in resource_reqs.items():
             # assume server resource is unlimited
             if site_name == "server":
                 continue
             request = Message(topic=TrainingTopic.CHECK_RESOURCE, body=fobs.dumps(resource_requirements))
+            request.set_header(RequestHeader.JOB_ID, job_id)
             client = self.get_client_from_name(site_name)
             if client:
                 requests.update({client.token: request})
