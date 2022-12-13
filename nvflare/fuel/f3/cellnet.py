@@ -39,6 +39,21 @@ class TargetCellUnreachable(Exception):
     pass
 
 
+class TargetMessage:
+
+    def __init__(
+            self,
+            target: str,
+            channel: str,
+            topic: str,
+            message: Message,
+    ):
+        self.target = target
+        self.channel = channel
+        self.topic = topic
+        self.message = message
+
+
 class CellAgent:
     """
     A CellAgent represents a cell in another cell.
@@ -691,24 +706,16 @@ class Cell(Receiver, EndpointMonitor):
             err = "CommError"
         return err
 
-    def _send_to_targets(
+    def _send_target_messages(
             self,
-            channel: str,
-            topic: str,
-            targets: Union[str, List[str]],
-            message: Message,
-            headers: dict
+            target_msgs: Dict[str, TargetMessage],
     ) -> Dict[str, bool]:
         if not self.running:
             raise RuntimeError("Messenger is not running")
 
         sent = {}
-        if isinstance(targets, str):
-            # turn it to list
-            targets = [targets]
-
         reachable_targets = {}  # target fqcn => endpoint
-        for t in targets:
+        for t in target_msgs.keys():
             ep = self.find_endpoint(t)
             if ep:
                 reachable_targets[t] = ep
@@ -716,27 +723,19 @@ class Cell(Receiver, EndpointMonitor):
                 self.logger.error(f"{self.my_info.fqcn}: no path to cell '{t}'")
                 sent[t] = False
 
-        message.add_headers({
-            MessageHeaderKey.CHANNEL: channel,
-            MessageHeaderKey.TOPIC: topic,
-            MessageHeaderKey.ORIGIN: self.my_info.fqcn,
-            MessageHeaderKey.FROM_CELL: self.my_info.fqcn,
-            MessageHeaderKey.MSG_TYPE: MessageType.REQ,
-            MessageHeaderKey.ROUTE: [self.my_info.fqcn]
-        })
-
-        message.add_headers(headers)
-
         for t, ep in reachable_targets.items():
-            if len(reachable_targets) > 1:
-                req = Message(
-                    headers=copy.deepcopy(message.headers),
-                    payload=message.payload
-                )
-            else:
-                req = message
+            tm = target_msgs[t]
+            req = Message(
+                headers=copy.copy(tm.message.headers),
+                payload=tm.message.payload)
 
             req.add_headers({
+                MessageHeaderKey.CHANNEL: tm.channel,
+                MessageHeaderKey.TOPIC: tm.topic,
+                MessageHeaderKey.ORIGIN: self.my_info.fqcn,
+                MessageHeaderKey.FROM_CELL: self.my_info.fqcn,
+                MessageHeaderKey.MSG_TYPE: MessageType.REQ,
+                MessageHeaderKey.ROUTE: [self.my_info.fqcn],
                 MessageHeaderKey.DESTINATION: t,
                 MessageHeaderKey.TO_CELL: ep.name
             })
@@ -751,9 +750,21 @@ class Cell(Receiver, EndpointMonitor):
                     if listener:
                         conn_url = listener.get_connection_url()
                         req.set_header(MessageHeaderKey.CONN_URL, conn_url)
-            err = self._send_to_endpoint(ep, message)
+            err = self._send_to_endpoint(ep, req)
             sent[t] = not err
         return sent
+
+    def _send_to_targets(
+            self,
+            channel: str,
+            topic: str,
+            targets: Union[str, List[str]],
+            message: Message,
+    ) -> Dict[str, bool]:
+        target_msgs = {}
+        for t in targets:
+            target_msgs[t] = TargetMessage(t, channel, topic, message)
+        return self._send_target_messages(target_msgs)
 
     def send_request(
             self,
@@ -766,40 +777,29 @@ class Cell(Receiver, EndpointMonitor):
         assert isinstance(result, dict)
         return result.get(target)
 
-    def broadcast_request(
+    def broadcast_multi_requests(
             self,
-            channel: str,
-            topic: str,
-            targets: Union[str, List[str]],
-            request: Message,
-            timeout=None) -> Dict[str, Message]:
-        """
-        Send a message over a channel to specified destination cell(s), and wait for reply
-
-        Args:
-            channel: channel for the message
-            topic: topic of the message
-            targets: FQCN of the destination cell(s)
-            request: message to be sent
-            timeout: how long to wait for replies
-
-        Returns: a dict of: cell_id => reply message
-
-        """
+            target_msgs: Dict[str, TargetMessage],
+            timeout=None
+    ) -> Dict[str, Message]:
+        targets = [t for t in target_msgs]
         waiter = _Waiter(targets)
         self.waiters[waiter.id] = waiter
         now = time.time()
+        if not timeout:
+            timeout = self.max_timeout
 
         try:
-            status = self._send_to_targets(
-                channel, topic, targets, request,
-                {
-                    MessageHeaderKey.REQ_ID: waiter.id,
-                    MessageHeaderKey.REPLY_EXPECTED: True,
-                    MessageHeaderKey.WAIT_UNTIL: time.time() + timeout
-                }
-            )
-
+            for _, tm in target_msgs.items():
+                request = tm.message
+                request.add_headers(
+                    {
+                        MessageHeaderKey.REQ_ID: waiter.id,
+                        MessageHeaderKey.REPLY_EXPECTED: True,
+                        MessageHeaderKey.WAIT_UNTIL: time.time() + timeout
+                    }
+                )
+            status = self._send_target_messages(target_msgs)
             send_count = 0
             err_reply = make_reply(ReturnCode.COMM_ERROR)
             for t, sent in status.items():
@@ -826,6 +826,31 @@ class Cell(Receiver, EndpointMonitor):
             self.waiters.pop(waiter.id, None)
         return waiter.replies
 
+    def broadcast_request(
+            self,
+            channel: str,
+            topic: str,
+            targets: Union[str, List[str]],
+            request: Message,
+            timeout=None) -> Dict[str, Message]:
+        """
+        Send a message over a channel to specified destination cell(s), and wait for reply
+
+        Args:
+            channel: channel for the message
+            topic: topic of the message
+            targets: FQCN of the destination cell(s)
+            request: message to be sent
+            timeout: how long to wait for replies
+
+        Returns: a dict of: cell_id => reply message
+
+        """
+        target_msgs = {}
+        for t in targets:
+            target_msgs[t] = TargetMessage(t, channel, topic, request)
+        return self.broadcast_multi_requests(target_msgs, timeout)
+
     def fire_and_forget(
             self,
             channel: str,
@@ -844,12 +869,25 @@ class Cell(Receiver, EndpointMonitor):
         Returns: None
 
         """
-        self._send_to_targets(
-            channel, topic, targets, message,
+        message.add_headers(
             {
                 MessageHeaderKey.REPLY_EXPECTED: False
             }
         )
+        self._send_to_targets(channel, topic, targets, message)
+
+    def fire_multi_requests_and_forget(
+            self,
+            target_msgs: Dict[str, TargetMessage]
+    ):
+        for _, tm in target_msgs.items():
+            request = tm.message
+            request.add_headers(
+                {
+                    MessageHeaderKey.REPLY_EXPECTED: False,
+                }
+            )
+        self._send_target_messages(target_msgs)
 
     def send_reply(
             self,

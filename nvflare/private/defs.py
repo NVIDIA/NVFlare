@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from nvflare.fuel.hci.server.constants import ConnProps
+from nvflare.fuel.f3.message import Message, Headers
 
 
 class SpecialTaskName(object):
@@ -131,4 +132,18 @@ class SSLConstants:
     ROOT_CERT = "ssl_root_cert"
 
 
+class CellChannel:
+
+    ADMIN = "admin"
+    AUX = "aux"
+    TASK = "task"
+
+
 ERROR_MSG_PREFIX = "NVFLARE_ERROR"
+
+
+def new_cell_message(headers: dict, payload=None):
+    msg_headers = Headers()
+    if headers:
+        msg_headers.update(headers)
+    return Message(msg_headers, payload)
