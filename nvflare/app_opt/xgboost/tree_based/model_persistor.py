@@ -36,7 +36,6 @@ class XGBModelPersistor(ModelPersistor):
         self.save_path = os.path.join(self.log_dir, self.save_name)
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
-        fl_ctx.sync_sticky()
 
     def load_model(self, fl_ctx: FLContext) -> ModelLearnable:
         """Initialize and load the Model.

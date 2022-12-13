@@ -198,7 +198,6 @@ class ScatterAndGatherScaffold(ScatterAndGather):
                 )
 
                 fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._global_weights, private=True, sticky=True)
-                fl_ctx.sync_sticky()
                 self.fire_event(AppEventType.AFTER_SHAREABLE_TO_LEARNABLE, fl_ctx)
 
                 if self._check_abort_signal(fl_ctx, abort_signal):

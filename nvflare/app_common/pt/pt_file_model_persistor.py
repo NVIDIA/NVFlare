@@ -166,8 +166,6 @@ class PTFileModelPersistor(ModelPersistor):
             )
             return
 
-        fl_ctx.sync_sticky()
-
     def load_model(self, fl_ctx: FLContext) -> ModelLearnable:
         """Convert initialised model into Learnable/Model format.
 

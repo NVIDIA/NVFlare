@@ -90,6 +90,9 @@ class FLContext(object):
                     f"{self._to_string(existing_mask)}, cannot change to {self._to_string(mask)}"
                 )
                 return False
+
+        if sticky:
+            self._sync_sticky()
         return True
 
     def get_prop(self, key, default=None):
@@ -156,7 +159,7 @@ class FLContext(object):
                 new_fl_ctx.props[k] = {"value": v["value"], "mask": v["mask"]}
         return new_fl_ctx
 
-    def sync_sticky(self):
+    def _sync_sticky(self):
         ctx_manager = self.get_prop(key=ReservedKey.MANAGER, default=None)
         if not ctx_manager:
             raise ValueError("FLContextManager does not exist.")
