@@ -193,6 +193,7 @@ class Cell(Receiver, EndpointMonitor):
         self.root_url = root_url
         self.agents = {}  # cell_fqcn => CellAgent
         self.agent_lock = threading.Lock()
+        self.driver_manager = DriverManager()
 
         ep = Endpoint(
             name=fqcn,
@@ -241,7 +242,6 @@ class Cell(Receiver, EndpointMonitor):
 
         # add appropriate drivers based on roles of the cell
         # a cell can have at most two listeners: one for external, one for internal
-        self.driver_manager = DriverManager()
         self.ext_listener = None        # external listener
         self.ext_listener_lock = threading.Lock()
         self.ext_listener_impossible = False
