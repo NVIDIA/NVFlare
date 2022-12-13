@@ -260,16 +260,22 @@ class Session(SessionSpec):
             raise InternalError("server failed to return job meta")
         return job_meta
 
-    def list_jobs(self, detailed=False) -> List[dict]:
+    def list_jobs(self, detailed: bool = False, all: bool = False) -> List[dict]:
         """Get the job info from the server
+
+        Args:
+            detailed: True to get the detailed information for each job, False by default
+            all: True to get jobs submitted by all users (default is to only list jobs submitted by the same user)
 
         Returns: a dict of job meta data
 
         """
+        command = AdminCommandNames.LIST_JOBS
         if detailed:
-            result = self._do_command(AdminCommandNames.LIST_JOBS + " -d")
-        else:
-            result = self._do_command(AdminCommandNames.LIST_JOBS)
+            command = command + " -d"
+        if all:
+            command = command + " -a"
+        result = self._do_command(command)
         meta = result[ResultKey.META]
         jobs_list = meta.get(MetaKey.JOBS, None)
         return jobs_list
@@ -283,8 +289,20 @@ class Session(SessionSpec):
 
         Returns: folder path to the location of the job result
 
+        If the job size is smaller than the maximum size set on the server, the job will download to the download_dir
+        set in Session through the admin config, and the path to the downloaded result will be returned. If the size
+        of the job is larger than the maximum size, the location to download the job will be returned.
+
         """
-        pass
+        self._validate_job_id(job_id)
+        result = self._do_command(AdminCommandNames.DOWNLOAD_JOB + " " + job_id)
+        meta = result[ResultKey.META]
+        download_job_id = meta.get(MetaKey.JOB_ID, None)
+        job_download_url = meta.get(MetaKey.JOB_DOWNLOAD_URL, None)
+        if not job_download_url:
+            return os.path.join(self.download_dir, download_job_id)
+        else:
+            return job_download_url
 
     def abort_job(self, job_id: str):
         """Abort the specified job

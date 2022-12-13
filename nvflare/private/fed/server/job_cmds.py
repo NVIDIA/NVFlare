@@ -86,7 +86,7 @@ class JobCommandModule(CommandModule, CommandUtil):
                 CommandSpec(
                     name=AdminCommandNames.LIST_JOBS,
                     description="list submitted jobs",
-                    usage=f"{AdminCommandNames.LIST_JOBS} [-n name_prefix] [-d] [job_id_prefix]",
+                    usage=f"{AdminCommandNames.LIST_JOBS} [-n name_prefix] [-d] [-a] [job_id_prefix]",
                     handler_func=self.list_jobs,
                     authz_func=self.command_authz_required,
                 ),
@@ -285,6 +285,9 @@ class JobCommandModule(CommandModule, CommandUtil):
             parser = SafeArgumentParser(prog="list_jobs")
             parser.add_argument("job_id", nargs="?", help="Job ID prefix")
             parser.add_argument("-d", action="store_true", help="Show detailed list")
+            parser.add_argument(
+                "-a", action="store_true", help="List all jobs, default is filtered to jobs submitted by the same user"
+            )
             parser.add_argument("-n", help="Filter by job name prefix")
             parsed_args = parser.parse_args(args[1:])
 
@@ -300,8 +303,9 @@ class JobCommandModule(CommandModule, CommandUtil):
             if jobs:
                 id_prefix = parsed_args.job_id
                 name_prefix = parsed_args.n
+                user_name = conn.get_prop(ConnProps.USER_NAME, "")
 
-                filtered_jobs = [job for job in jobs if self._job_match(job.meta, id_prefix, name_prefix)]
+                filtered_jobs = [job for job in jobs if self._job_match(job.meta, id_prefix, name_prefix, user_name)]
                 if not filtered_jobs:
                     conn.append_error("No jobs matching the searching criteria")
                     return
@@ -475,9 +479,11 @@ class JobCommandModule(CommandModule, CommandUtil):
         conn.append_success("")
 
     @staticmethod
-    def _job_match(job_meta: Dict, id_prefix: str, name_prefix: str) -> bool:
-        return ((not id_prefix) or job_meta.get("job_id").lower().startswith(id_prefix.lower())) and (
-            (not name_prefix) or job_meta.get("name").lower().startswith(name_prefix.lower())
+    def _job_match(job_meta: Dict, id_prefix: str, name_prefix: str, user_name: str) -> bool:
+        return (
+            ((not id_prefix) or job_meta.get("job_id").lower().startswith(id_prefix.lower()))
+            and ((not name_prefix) or job_meta.get("name").lower().startswith(name_prefix.lower()))
+            and ((not user_name) or job_meta.get("submitter_name") == user_name)
         )
 
     @staticmethod
@@ -588,7 +594,13 @@ class JobCommandModule(CommandModule, CommandUtil):
                 job_data = job_def_manager.get_job_data(job_id, fl_ctx)
                 size = get_size(job_data, seen=None)
                 if size > MAX_DOWNLOAD_JOB_SIZE:
-                    conn.append_string(ftd.DOWNLOAD_URL_MARKER + download_job_url + job_id)
+                    conn.append_string(
+                        ftd.DOWNLOAD_URL_MARKER + download_job_url + job_id,
+                        meta=make_meta(
+                            MetaStatusValue.OK,
+                            extra={MetaKey.JOB_ID: job_id, MetaKey.JOB_DOWNLOAD_URL: download_job_url + job_id},
+                        ),
+                    )
                     return
 
                 self._unzip_data(download_dir, job_data, job_id)
@@ -598,7 +610,7 @@ class JobCommandModule(CommandModule, CommandUtil):
         try:
             data = zip_directory_to_bytes(download_dir, job_id)
             b64str = bytes_to_b64str(data)
-            conn.append_string(b64str)
+            conn.append_string(b64str, meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOB_ID: job_id}))
         except FileNotFoundError:
             conn.append_error("No record found for job '{}'".format(job_id))
         except BaseException:

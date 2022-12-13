@@ -43,6 +43,7 @@ class MetaKey(object):
     INFO = "info"
     JOB_ID = "job_id"
     JOB_META = "job_meta"
+    JOB_DOWNLOAD_URL = "job_download_url"
     APP_NAME = "app_name"
     SERVER_STATUS = "server_status"
     SERVER_START_TIME = "server_start_time"

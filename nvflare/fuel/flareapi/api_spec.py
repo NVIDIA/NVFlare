@@ -136,13 +136,18 @@ class SessionSpec(ABC):
         pass
 
     @abstractmethod
-    def list_jobs(self) -> List[dict]:
+    def list_jobs(self, detailed: bool = False, all: bool = False) -> List[dict]:
         """Get the job info from the server
+
+        Args:
+            detailed: True to get the detailed information for each job, False by default
+            all: True to get jobs submitted by all users (default is to only list jobs submitted by the same user)
 
         Returns: a list of of job meta data
 
         """
         pass
+
     @abstractmethod
     def download_job_result(self, job_id: str) -> str:
         """
@@ -152,6 +157,10 @@ class SessionSpec(ABC):
             job_id: ID of the job
 
         Returns: folder path to the location of the job result
+
+        If the job size is smaller than the maximum size set on the server, the job will download to the download_dir
+        set in Session through the admin config, and the path to the downloaded result will be returned. If the size
+        of the job is larger than the maximum size, the location to download the job will be returned.
 
         """
         pass
@@ -166,7 +175,7 @@ class SessionSpec(ABC):
         Returns: None
 
         If the job is already done, no effect;
-        If job is not started yet, it will be cancelled and won't be scheduled
+        If job is not started yet, it will be cancelled and won't be scheduled.
         If the job is being executed, it will be aborted
 
         """
