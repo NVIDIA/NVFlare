@@ -69,8 +69,6 @@ class TF2ModelPersistor(ModelPersistor):
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
 
-        fl_ctx.sync_sticky()
-
     def load_model(self, fl_ctx: FLContext) -> ModelLearnable:
         """Initializes and loads the Model.
 
