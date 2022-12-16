@@ -29,7 +29,7 @@ from typing import Union
 
 import uuid as uuid
 
-Bytes = Union[bytes, bytearray, memoryview]
+BytesAlike = Union[bytes, bytearray, memoryview]
 
 
 class ConnState(Enum):
@@ -41,7 +41,7 @@ class ConnState(Enum):
 class FrameReceiver(ABC):
 
     @abstractmethod
-    def process_frame(self, frame: Bytes):
+    def process_frame(self, frame: BytesAlike):
         """Frame received callback
 
          Args:
@@ -81,7 +81,7 @@ class Connection(ABC):
         pass
 
     @abstractmethod
-    def send_frame(self, frame: Bytes):
+    def send_frame(self, frame: BytesAlike):
         """Send a SFM frame through the connection to the remote endpoint.
 
         Args:

@@ -38,14 +38,30 @@
 from abc import ABC, abstractmethod
 from enum import Enum
 from typing import List
+from urllib.parse import urlparse, urlencode, parse_qsl
 
 from nvflare.fuel.f3.drivers.connection import ConnState, Connection
 
 
-class CommonKeys:
+class DriverParams(str, Enum):
+
+    # URL components. Those parameters are part of the URL, no need to be included in query string
+    # URL = SCHEME://HOST:PORT/PATH;PARAMS?QUERY#FRAG
     URL = "url"
+    SCHEME = "scheme"
     HOST = "host"
     PORT = "port"
+    PATH = "path"
+    PARAMS = "params"
+    FRAG = "frag"
+    QUERY = "query"
+
+    # Other parameters
+    CA_CERT = "ca_cert"
+    SERVER_CERT = "server_cert"
+    SERVER_KEY = "server_key"
+    CLIENT_CERT = "client_cert"
+    CLIENT_KEY = "client_key"
 
 
 class Mode(Enum):
@@ -78,10 +94,8 @@ class Driver(ABC):
 
     """
 
-    def __init__(self, conn_props: dict, resource_policy: dict):
+    def __init__(self):
         self.state = ConnState.IDLE
-        self.conn_props = conn_props if conn_props else {}
-        self.resource_policy = resource_policy if resource_policy else {}
         self.conn_monitor = None
 
     def get_name(self) -> str:
@@ -90,19 +104,20 @@ class Driver(ABC):
         """
         return self.__class__.__name__
 
+    @staticmethod
     @abstractmethod
-    def supported_transports(self) -> List[str]:
+    def supported_transports() -> List[str]:
         """Return a list of transports supported by this driver, for example
            ["http", "https", "ws", "wss"]
         """
         pass
 
     @abstractmethod
-    def listen(self, properties: dict):
+    def listen(self, params: dict):
         """Start the driver in passive mode
 
         Args:
-            properties: Properties needed to start the driver
+            params: Parameters needed to start the driver
 
         Raises:
             CommError: If any errors
@@ -110,11 +125,11 @@ class Driver(ABC):
         pass
 
     @abstractmethod
-    def connect(self, properties: dict):
+    def connect(self, params: dict):
         """Start the driver in active mode
 
         Args:
-            properties: Properties needed to start the driver
+            params: Parameters needed to start the driver
 
         Raises:
             CommError: If any errors
@@ -134,3 +149,68 @@ class Driver(ABC):
         """Register a monitor for connection state change, including new connections
         """
         self.conn_monitor = monitor
+
+    @staticmethod
+    def parse_url(url: str) -> dict:
+        if not url:
+            return {}
+
+        params = {DriverParams.URL.value: url}
+        parsed_url = urlparse(url)
+        params[DriverParams.SCHEME.value] = parsed_url.scheme
+        parts = parsed_url.netloc.split(":")
+        if len(parts) >= 1:
+            host = parts[0]
+            # Host is required in URL. 0 is used as the placeholder for empty host
+            if host == "0":
+                host = ""
+            params[DriverParams.HOST.value] = host
+        if len(parts) >= 2:
+            params[DriverParams.PORT.value] = parts[1]
+
+        params[DriverParams.PATH.value] = parsed_url.path
+        params[DriverParams.PARAMS.value] = parsed_url.params
+        params[DriverParams.QUERY.value] = parsed_url.query
+        params[DriverParams.FRAG.value] = parsed_url.fragment
+
+        if parsed_url.query:
+            for k, v in parse_qsl(parsed_url.query):
+                # Only last one is saved if duplicate keys
+                params[k] = v
+
+        return params
+
+    @staticmethod
+    def encode_url(params: dict) -> str:
+
+        # Original URL is not needed
+        params.pop(DriverParams.URL.value, None)
+
+        scheme = params.pop(DriverParams.SCHEME.value, None)
+        host = params.pop(DriverParams.HOST.value, None)
+        if not host:
+            host = "0"
+        port = params.pop(DriverParams.PORT.value, None)
+        path = params.pop(DriverParams.PATH.value, None)
+        parameters = params.pop(DriverParams.PARAMS.value, None)
+        # Encoded query is not needed
+        params.pop(DriverParams.QUERY.value, None)
+        frag = params.pop(DriverParams.FRAG.value, None)
+
+        url = f"{scheme}://{host}"
+        if port:
+            url += ":" + str(port)
+
+        if path:
+            url += path
+
+        if parameters:
+            url += ";" + parameters
+
+        if params:
+            url += urlencode(params)
+
+        if frag:
+            url += '#' + frag
+
+        return url

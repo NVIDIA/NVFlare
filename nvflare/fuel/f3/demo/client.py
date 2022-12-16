@@ -12,37 +12,42 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 import logging
+import os
 import time
 
 from nvflare.fuel.f3.communicator import Communicator
 from nvflare.fuel.f3.demo.callbacks import DemoEndpointMonitor, TimingReceiver, make_message
-from nvflare.fuel.f3.drivers.http_driver import HttpDriver
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.message import AppIds, Headers
 
 logging.basicConfig()
-logging.getLogger().setLevel(logging.INFO)
+logging.getLogger().setLevel(logging.DEBUG)
 log = logging.getLogger(__name__)
 
 endpoints = []
-local_endpoint = Endpoint("demo.client", {"test": 123})
+
+cwd = os.getcwd()
+conn_props = {
+    "ca_cert": cwd + "/certs/ca.crt",
+    "server_cert": cwd + "/certs/server.crt",
+    "server_key": cwd + "/certs/server.key",
+    "client_cert": cwd + "/certs/client.crt",
+    "client_key": cwd + "/certs/client.key",
+}
+local_endpoint = Endpoint("demo.client", {"test": 123}, conn_props)
 
 communicator = Communicator(local_endpoint)
-conn_props = {
-    "host": "localhost",
-    "port": 4567
-}
+handle = communicator.load_connector("https://127.0.0.1:4321")
 
-driver = HttpDriver(conn_props)
-communicator.add_connector(driver)
 communicator.register_monitor(DemoEndpointMonitor(local_endpoint.name, endpoints))
 communicator.register_message_receiver(AppIds.CELL_NET, TimingReceiver())
 communicator.register_message_receiver(AppIds.DEFAULT, TimingReceiver())
+
 communicator.start()
 log.info("Client is started")
 
 count = 0
-while count < 10:
+while count < 60:
 
     if endpoints:
         msg1 = make_message(None, "Fire-forget message")
@@ -59,6 +64,8 @@ while count < 10:
 
     time.sleep(1)
     count += 1
+
+communicator.remove_transport(handle)
 
 time.sleep(10)
 log.info("Client stopped!")

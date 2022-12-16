@@ -17,7 +17,7 @@ from typing import Optional
 
 import msgpack
 
-from nvflare.fuel.f3.drivers.connection import Connection, Bytes
+from nvflare.fuel.f3.drivers.connection import Connection, BytesAlike
 from nvflare.fuel.f3.drivers.driver import Mode
 from nvflare.fuel.f3.drivers.prefix import Prefix, PREFIX_LEN
 from nvflare.fuel.f3.endpoint import Endpoint
@@ -27,7 +27,28 @@ from nvflare.fuel.f3.sfm.constants import Types, HandshakeKeys
 
 class SfmConnection:
     """A wrapper of driver connection. Driver connection deals with frame.
-    This connection handles messages"""
+    This connection handles messages.
+
+    The frame format:
+
+        +--------------------------------------------------------+
+        |                    length (4 bytes)                    |
+        +----------------------------+---------------------------+
+        |        header_len (2)      |   type (1)  |  reserved   |
+        +----------------------------+---------------------------+
+        |          flags (2)         |        app_id (2)         |
+        +----------------------------+---------------------------+
+        |        stream_id (2)       |       sequence (2)        |
+        +--------------------------------------------------------+
+        |                        Headers                         |
+        |                    header_len bytes                    |
+        +--------------------------------------------------------+
+        |                                                        |
+        |                        Payload                         |
+        |              (length-header_len-16) bytes              |
+        |                                                        |
+        +--------------------------------------------------------+
+    """
 
     def __init__(self, conn: Connection, local_endpoint: Endpoint, mode: Mode):
         self.conn = conn
@@ -62,7 +83,7 @@ class SfmConnection:
 
         self.send_dict(frame_type, 1, data)
 
-    def send_data(self, app_id: int, stream_id: int, headers: Headers, payload: Bytes):
+    def send_data(self, app_id: int, stream_id: int, headers: Headers, payload: BytesAlike):
         """Send user data"""
 
         prefix = Prefix(0, 0, Types.DATA, 0, 0, app_id, stream_id, 0)
@@ -76,7 +97,7 @@ class SfmConnection:
         payload = msgpack.packb(data)
         self.send_frame(prefix, None, payload)
 
-    def send_frame(self, prefix: Prefix, headers: Optional[Headers], payload: Optional[Bytes]):
+    def send_frame(self, prefix: Prefix, headers: Optional[Headers], payload: Optional[BytesAlike]):
 
         headers_bytes = self.headers_to_bytes(headers)
         header_len = len(headers_bytes) if headers_bytes else 0
@@ -111,4 +132,3 @@ class SfmConnection:
             return msgpack.packb(headers)
         else:
             return None
-

@@ -39,7 +39,7 @@ import struct
 from dataclasses import dataclass
 
 from nvflare.fuel.f3.comm_error import CommError
-from nvflare.fuel.f3.drivers.connection import ConnState, Connection, Bytes
+from nvflare.fuel.f3.drivers.connection import BytesAlike
 
 PREFIX_STRUCT = struct.Struct(">IHBBHHHH")
 PREFIX_LEN = PREFIX_STRUCT.size
@@ -80,6 +80,6 @@ class Prefix:
 
         return Prefix(*PREFIX_STRUCT.unpack_from(buffer, 0))
 
-    def to_buffer(self, buffer: Bytes, offset: int):
+    def to_buffer(self, buffer: BytesAlike, offset: int):
         PREFIX_STRUCT.pack_into(buffer, offset, self.length, self.header_len, self.type, self.reserved,
                                 self.flags, self.app_id, self.stream_id, self.sequence)

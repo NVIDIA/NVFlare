@@ -17,8 +17,8 @@ class CommError(Exception):
     # Error codes
     ERROR = "ERROR"
     NOT_READY = "NOT_READY"
-    DISCONNECTED = "DISCONNECTED"
     BAD_DATA = "BAD_DATA"
+    BAD_CONFIG = "BAD_CONFIG"
     CLOSED = "CLOSED"
     NOT_SUPPORTED = "NOT_SUPPORTED"
     TIMEOUT = "TIMEOUT"

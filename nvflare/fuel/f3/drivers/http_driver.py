@@ -13,16 +13,16 @@
 # limitations under the License.
 import asyncio
 import logging
-import random
+import ssl
 from concurrent.futures import ThreadPoolExecutor
-from typing import List, Any, Union, Optional
-from urllib.parse import urlparse
+from ssl import SSLContext
+from typing import List, Any, Union
 
 import websockets
 
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers.connection import Connection, ConnState
-from nvflare.fuel.f3.drivers.driver import Driver, CommonKeys
+from nvflare.fuel.f3.drivers.driver import Driver, DriverParams
 from nvflare.fuel.f3.drivers.prefix import Prefix
 from nvflare.fuel.f3.sfm.conn_manager import Mode
 
@@ -34,71 +34,89 @@ THREAD_POOL_SIZE = 8
 
 class WsConnection(Connection):
 
-    def __init__(self, websocket: Any, mode: Mode):
+    def __init__(self, websocket: Any, loop, mode: Mode):
         super().__init__()
         self.websocket = websocket
         self.mode = mode
         self.queue = asyncio.Queue(QUEUE_SIZE)
-        self.loop = asyncio.get_event_loop()
+        self.loop = loop
         self.closing = False
 
     def get_conn_properties(self) -> dict:
-        pass
+        host, port = self.websocket.remote_address
+        return {"peer_host": host, "peer_port": port}
 
     def close(self):
         self.closing = True
 
     def send_frame(self, frame: Union[bytes, bytearray, memoryview]):
         # Can't do asyncio send directly. Append to the queue
-        asyncio.run_coroutine_threadsafe(self.queue.put(frame), self.loop).result()
+        try:
+            asyncio.run_coroutine_threadsafe(self.queue.put(frame), self.loop).result()
+        except BaseException as ex:
+            log.error(f"Error sending frame: {ex}")
 
 
 class HttpDriver(Driver):
 
-    def __init__(self, conn_props: dict, resource_policy: Optional[dict] = None):
-        super().__init__(conn_props, resource_policy)
+    def __init__(self):
+        super().__init__()
         self.connections = {}
-        self.scheme, self.host, self.port = self.find_host_and_port()
         self.executor = ThreadPoolExecutor(THREAD_POOL_SIZE, "http_driver")
-        self.loop = asyncio.get_event_loop()
+        self.loop = None
 
-    def supported_transports(self) -> List[str]:
+    @staticmethod
+    def supported_transports() -> List[str]:
         return ["http", "https", "ws", "wss"]
 
-    def listen(self, properties: Optional[dict] = None):
-        self.start_event_loop(Mode.PASSIVE)
+    def listen(self, params: dict):
+        self.start_event_loop(params, Mode.PASSIVE)
 
-    def connect(self, properties: Optional[dict] = None):
-        self.start_event_loop(Mode.ACTIVE)
+    def connect(self, params: dict):
+        self.start_event_loop(params, Mode.ACTIVE)
 
     def shutdown(self):
         pass
 
-    def start_event_loop(self, mode: Mode):
-        self.executor.submit(self.event_loop, mode)
-        # self.event_loop(mode)
+    def start_event_loop(self, params: dict, mode: Mode):
+        self.executor.submit(self.event_loop, params, mode).result()
 
-    def event_loop(self, mode: Mode):
+    def event_loop(self, params: dict, mode: Mode):
+        self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
+
         if mode == Mode.ACTIVE:
-            coroutine = self.async_connect()
+            coroutine = self.async_connect(params)
         else:
-            coroutine = self.async_listen()
+            coroutine = self.async_listen(params)
 
         self.loop.run_until_complete(coroutine)
         self.loop.run_forever()
 
-    async def async_connect(self):
-        async with websockets.connect(f"ws://{self.host}:{self.port}") as ws:
-            conn = WsConnection(ws, Mode.ACTIVE)
+    async def async_connect(self, params: dict):
+
+        host = params.get(DriverParams.HOST.value)
+        port = params.get(DriverParams.PORT.value)
+
+        ssl_context = self.get_ssl_context(params, False)
+        if ssl_context:
+            scheme = "wss"
+        else:
+            scheme = "ws"
+        async with websockets.connect(f"{scheme}://{host}:{port}", ssl=ssl_context) as ws:
+            conn = WsConnection(ws, self.loop, Mode.ACTIVE)
             self.add_connection(conn)
             await self.read_write_loop(conn)
 
-    async def async_listen(self):
-        async with websockets.serve(self.handler, self.host, self.port):
+    async def async_listen(self, params: dict):
+        host = params.get(DriverParams.HOST.value)
+        port = params.get(DriverParams.PORT.value)
+        ssl_context = self.get_ssl_context(params, True)
+        async with websockets.serve(self.handler, host, port, ssl=ssl_context):
             await asyncio.Future()  # run forever
 
     async def handler(self, websocket):
-        conn = WsConnection(websocket, Mode.PASSIVE)
+        conn = WsConnection(websocket, self.loop, Mode.PASSIVE)
         self.add_connection(conn)
         await self.read_write_loop(conn)
 
@@ -119,7 +137,7 @@ class HttpDriver(Driver):
                 if log.isEnabledFor(logging.DEBUG):
                     prefix = Prefix.from_bytes(frame)
                     log.debug(f"Received frame: {prefix} on {self.get_name()}:{conn.name}")
-                # Do sync call to guarantee the order
+
                 if conn.frame_receiver:
                     self.executor.submit(conn.frame_receiver.process_frame, frame)
                 else:
@@ -148,34 +166,33 @@ class HttpDriver(Driver):
 
         log.debug(f"Connection {self.get_name()}:{conn.name} is closed")
 
-    def find_host_and_port(self) -> (str, int):
+    @staticmethod
+    def get_ssl_context(params: dict, server: bool) -> SSLContext:
+        scheme = params.get(DriverParams.SCHEME.value)
+        if scheme not in ("https", "wss"):
+            return None
 
-        url = self.conn_props.get(CommonKeys.URL)
-
-        if url:
-            parsed_url = urlparse(url)
-            if parsed_url.scheme not in self.supported_transports():
-                raise CommError(CommError.NOT_SUPPORTED, f"scheme is not supported by this driver: {parsed_url.scheme}")
-
-            scheme = parsed_url.scheme
-            parts = parsed_url.netloc.split(":")
-            host = None
-            port = 0
-            if len(parts) >= 1:
-                host = parts[0]
-            if len(parts) >= 2:
-                port = int(parts[1])
+        ca_path = params.get(DriverParams.CA_CERT.value)
+        if server:
+            cert_path = params.get(DriverParams.SERVER_CERT.value)
+            key_path = params.get(DriverParams.SERVER_KEY.value)
         else:
-            scheme = "http"
-            host = self.conn_props.get(CommonKeys.HOST)
-            port_str = self.conn_props.get(CommonKeys.PORT)
-            if port_str:
-                port = int(port_str)
-            else:
-                port = 0
+            cert_path = params.get(DriverParams.CLIENT_CERT.value)
+            key_path = params.get(DriverParams.CLIENT_KEY.value)
 
-        if port == 0:
-            # should check availability of the port
-            port = random.randint(10000, 63000)
+        if not all([ca_path, cert_path, key_path]):
+            raise CommError(CommError.BAD_CONFIG, f"Certificate parameters are required for scheme {scheme}")
 
-        return scheme, host, port
+        if server:
+            ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        else:
+            ctx = ssl.create_default_context()
+
+        # This feature is only supported on 3.7+
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+        ctx.verify_mode = ssl.CERT_REQUIRED
+        ctx.check_hostname = False
+        ctx.load_verify_locations(ca_path)
+        ctx.load_cert_chain(certfile=cert_path, keyfile=key_path)
+
+        return ctx

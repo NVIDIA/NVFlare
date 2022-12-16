@@ -27,15 +27,25 @@ class Endpoint:
 
     CERTIFICATE = "certificate"
 
-    def __init__(self, name: str, properties: dict = None):
+    def __init__(self, name: str, properties: dict = None, conn_props: dict = None):
+        """Construct an endpoint
+
+        Args:
+            name: The endpoint name
+            properties: Public properties exchanged with peer
+            conn_props: Connection related properties
+
+        Raises:
+            CommError: If any error happens while sending the request
+        """
         self.name = name
         self.state = EndpointState.IDLE
 
         # public properties exchanged while handshake
         self.properties = properties if properties else {}
 
-        # Connection properties like peer address, certificate
-        self.conn_props = {}
+        # Connection properties like peer address, certificate location
+        self.conn_props = conn_props if conn_props else {}
 
     def set_prop(self, key, value):
         self.properties[key] = value

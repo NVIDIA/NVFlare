@@ -11,22 +11,29 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License
-
+import os
 from typing import Optional
 
-
+from nvflare.fuel.f3 import drivers
+from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers.driver import Driver
+from nvflare.fuel.f3.drivers.driver_manager import DriverManager
 from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor
 from nvflare.fuel.f3.message import Message, MessageReceiver
 from nvflare.fuel.f3.sfm.conn_manager import ConnManager, Mode
 
 
 class Communicator:
+    """FCI main API"""
 
     def __init__(self, local_endpoint: Endpoint):
         self.local_endpoint = local_endpoint
         self.monitors = []
         self.conn_manager = ConnManager(local_endpoint)
+        self.driver_mgr = DriverManager()
+
+        # Load all the drivers in the drivers module
+        self.driver_mgr.register_folder(os.path.dirname(drivers.__file__), drivers.__package__)
 
     def start(self):
         """Start the communicator and establishing all the connections
@@ -97,26 +104,92 @@ class Communicator:
 
         self.conn_manager.register_message_receiver(app_id, receiver)
 
-    def add_listener(self, driver: Driver):
+    def load_listener(self, url: str) -> str:
+        """Load a listener. The driver is selected based on the URL
+
+        Args:
+            url: The url to listen on, like "https://0:443". Use 0 for empty host
+
+        Returns:
+            A handle that can be used to delete listener
+
+        Raises:
+            CommError: If any errors
+        """
+
+        return self._load_driver(url, Mode.PASSIVE)
+
+    def load_connector(self, url: str) -> str:
+        """Load a connector. The driver is selected based on the URL
+
+        Args:
+            url: The url to connect to, like "https://server:443".
+
+        Returns:
+            A handle that can be used to delete connector
+
+        Raises:
+            CommError: If any errors
+        """
+
+        return self._load_driver(url, Mode.ACTIVE)
+
+    def add_listener(self, driver: Driver, params: dict):
         """Add a connector using the driver
 
-         Args:
-             driver: The driver for the transport
+        Args:
+            driver: The driver for the transport
+            params: Driver parameters
 
-         Raises:
-             CommError: If any errors
-         """
+        Returns:
+            A handle that can be used to delete listener
 
-        self.conn_manager.add_transport(driver, Mode.PASSIVE)
+        Raises:
+            CommError: If any errors
+        """
 
-    def add_connector(self, driver: Driver):
+        return self._add_transport(driver, params, Mode.PASSIVE)
+
+    def add_connector(self, driver: Driver, params: dict) -> str:
         """Add a connector using the driver
 
-         Args:
-             driver: The driver for the transport
+        Args:
+            driver: The driver for the transport
+            params: Driver parameters
 
-         Raises:
-             CommError: If any errors
-         """
+        Returns:
+            A handle that can be used to delete connector
+        Raises:
+            CommError: If any errors
+        """
 
-        self.conn_manager.add_transport(driver, Mode.ACTIVE)
+        return self.conn_manager.add_transport(driver, params, Mode.ACTIVE)
+
+    def remove_transport(self, handle: str):
+        """Remove a listener or connector
+
+        Args:
+            handle: The handle for the listener or the connector
+
+        Raises:
+            CommError: If any errors
+        """
+        self.conn_manager.remove_transport(handle)
+
+    # Internal methods
+
+    def _add_transport(self, driver: Driver, params: dict, mode: Mode):
+
+        if self.local_endpoint.conn_props:
+            params.update(self.local_endpoint.conn_props)
+
+        return self.conn_manager.add_transport(driver, params, mode)
+
+    def _load_driver(self, url: str, mode: Mode) -> str:
+
+        driver = self.driver_mgr.find_driver(url)
+        if not driver:
+            raise CommError(CommError.NOT_SUPPORTED, f"No driver found for URL {url}")
+
+        params = Driver.parse_url(url)
+        return self._add_transport(driver, params, mode)

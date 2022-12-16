@@ -15,7 +15,7 @@ from abc import ABC, abstractmethod
 
 import msgpack
 
-from nvflare.fuel.f3.drivers.connection import Bytes
+from nvflare.fuel.f3.drivers.connection import BytesAlike
 from nvflare.fuel.f3.endpoint import Endpoint
 
 
@@ -39,7 +39,7 @@ class Headers(dict):
 
 class Message:
 
-    def __init__(self, headers: Headers, payload: Bytes):
+    def __init__(self, headers: Headers, payload: BytesAlike):
         """Construct an FCI message
 
          Raises:

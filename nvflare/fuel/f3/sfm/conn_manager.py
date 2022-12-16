@@ -23,7 +23,7 @@ import uuid
 import msgpack
 
 from nvflare.fuel.f3.comm_error import CommError
-from nvflare.fuel.f3.drivers.connection import Connection, ConnState, FrameReceiver, Bytes
+from nvflare.fuel.f3.drivers.connection import Connection, ConnState, FrameReceiver, BytesAlike
 from nvflare.fuel.f3.drivers.driver import Driver, ConnMonitor, Mode
 from nvflare.fuel.f3.drivers.prefix import Prefix, PREFIX_LEN
 from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor, EndpointState
@@ -33,6 +33,7 @@ from nvflare.fuel.f3.sfm.sfm_conn import SfmConnection
 from nvflare.fuel.f3.sfm.sfm_endpoint import SfmEndpoint
 
 THREAD_POOL_SIZE = 16
+MAX_WAIT = 60
 
 log = logging.getLogger(__name__)
 
@@ -40,8 +41,9 @@ log = logging.getLogger(__name__)
 @dataclass
 class Transport:
     """A listener or connector"""
-    name: str
+    handle: str
     driver: Driver
+    params: dict
     mode: Mode
     total_conns: int
     curr_conns: int
@@ -73,28 +75,28 @@ class ConnManager:
         self.started = False
         self.executor = ThreadPoolExecutor(THREAD_POOL_SIZE, "conn_mgr")
 
-    def add_transport(self, driver: Driver, mode: Mode) -> str:
-        name = str(uuid.uuid4())
-        transport = Transport(name, driver, mode, 0, 0)
+    def add_transport(self, driver: Driver, params: dict, mode: Mode) -> str:
+        handle = str(uuid.uuid4())
+        transport = Transport(handle, driver, params, mode, 0, 0)
         driver.register_conn_monitor(SfmConnMonitor(self, transport))
         self.transports.append(transport)
 
-        log.debug(f"Transport {name} with driver {driver.get_name()} is created in {mode.name} mode")
+        log.debug(f"Transport {handle} with driver {driver.get_name()} is created in {mode.name} mode")
 
         if self.started:
             self.start_transport(transport)
 
-        return name
+        return handle
 
-    def remove_transport(self, name: str):
+    def remove_transport(self, handle: str):
         for index, trans in enumerate(self.transports):
-            if name == trans.name:
+            if handle == trans.handle:
                 trans.driver.shutdown()
                 self.transports.pop(index)
-                log.info(f"Transport {name} with driver {trans.driver.get_name()} is removed")
+                log.info(f"Transport {handle} with driver {trans.driver.get_name()} is removed")
                 return
 
-        log.error(f"Unknown transport name: {name}")
+        log.error(f"Unknown transport handle: {handle}")
 
     def start(self):
         for trans in self.transports:
@@ -112,7 +114,7 @@ class ConnManager:
 
         return sfm_endpoint.endpoint
 
-    def send_message(self, endpoint: Endpoint, app_id: int, headers: Headers, payload: Bytes):
+    def send_message(self, endpoint: Endpoint, app_id: int, headers: Headers, payload: BytesAlike):
         """Send a message to endpoint for app
 
         This method is similar to an HTTP request or RPC call.
@@ -169,14 +171,19 @@ class ConnManager:
             starter = transport.driver.listen
 
         connected = False
+        wait = 1
         while not connected:
             try:
-                starter({})
+                starter(transport.params)
                 connected = True
             except Exception as ex:
-                log.error(f"Connection failed: {ex}")
+                log.error(f"Connection failed, retrying in {wait} seconds: {ex}")
                 log.debug(traceback.format_exc())
-                time.sleep(5)
+
+                time.sleep(wait)
+                wait *= 2
+                if wait > MAX_WAIT:
+                    wait = MAX_WAIT
 
         log.info(f"Transport {transport.driver.get_name()}:{transport.name} is started in {transport.mode.name} mode")
 
@@ -193,7 +200,7 @@ class ConnManager:
         else:
             log.error(f"Unknown state: {state}")
 
-    def process_frame(self, sfm_conn: SfmConnection, frame: Bytes):
+    def process_frame(self, sfm_conn: SfmConnection, frame: BytesAlike):
 
         prefix = Prefix.from_bytes(frame)
 
@@ -233,6 +240,9 @@ class ConnManager:
 
         endpoint = Endpoint(endpoint_name, data)
         endpoint.state = EndpointState.READY
+        conn_props = sfm_conn.conn.get_conn_properties()
+        if conn_props:
+            endpoint.conn_props.update(conn_props)
 
         sfm_endpoint = self.endpoints.get(endpoint_name)
         if sfm_endpoint:
@@ -292,5 +302,9 @@ class SfmFrameReceiver(FrameReceiver):
         self.conn_manager = conn_manager
         self.conn = conn
 
-    def process_frame(self, frame: Bytes):
-        self.conn_manager.process_frame(self.conn, frame)
+    def process_frame(self, frame: BytesAlike):
+        try:
+            self.conn_manager.process_frame(self.conn, frame)
+        except BaseException as ex:
+            log.error(f"Error processing frame: {ex}")
+            log.debug(traceback.format_exc())
