@@ -64,6 +64,10 @@ class CommonExecutor(Executor, ABC):
     def get_client_executor(self, fl_ctx: FLContext) -> ClientExecutor:
         pass
 
+    @abstractmethod
+    def get_data_kind(self) -> str:
+        pass
+
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         init_rc = self._check_init_status(fl_ctx)
         if init_rc:
@@ -74,9 +78,9 @@ class CommonExecutor(Executor, ABC):
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
         try:
-            (data_kind, result) = self.client_executor.client_exec(task_name, shareable, fl_ctx)
+            result = self.client_executor.client_exec(task_name, shareable, fl_ctx)
             if result:
-                dxo = DXO(data_kind=data_kind, data=result)
+                dxo = DXO(data_kind=self.get_data_kind(), data=result)
                 return dxo.to_shareable()
             else:
                 return make_reply(ReturnCode.EXECUTION_RESULT_ERROR)

@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+from nvflare.apis.dxo import DataKind
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.executors.client_executor import ClientExecutor
 from nvflare.app_common.executors.common_executor import CommonExecutor
@@ -42,6 +42,9 @@ class StatisticsExecutor(CommonExecutor):
         super().__init__()
         self.generator_id = generator_id
         self.precision = precision
+
+    def get_data_kind(self) -> str:
+        return DataKind.STATISTICS
 
     def get_client_executor(self, fl_ctx: FLContext) -> ClientExecutor:
         client_executor = StatisticsClientExecutor(self.generator_id, self.precision)

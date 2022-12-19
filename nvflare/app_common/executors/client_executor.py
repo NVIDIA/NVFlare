@@ -59,7 +59,7 @@ class ClientExecutor(InitFinalComponent, ABC):
         self.local_comp = local_comp
 
     @abstractmethod
-    def client_exec(self, task_name: str, shareable: Shareable, fl_ctx: FLContext) -> (str, Shareable):
+    def client_exec(self, task_name: str, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
         """
         Args:
             task_name: task name

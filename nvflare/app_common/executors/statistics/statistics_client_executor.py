@@ -14,10 +14,9 @@
 
 from typing import Dict, List, Optional
 
-from nvflare.apis.dxo import DataKind
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable, make_reply
+from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.statistics_spec import Feature, Histogram, HistogramType, StatisticConfig, Statistics
 from nvflare.app_common.app_constant import StatisticsConstants as StC
 from nvflare.app_common.executors.client_executor import ClientExecutor
@@ -50,7 +49,7 @@ class StatisticsClientExecutor(ClientExecutor):
         super().initialize(fl_ctx)
         self.stats_generator = self.local_comp
 
-    def client_exec(self, task_name: str, shareable: Shareable, fl_ctx: FLContext) -> (str, Shareable):
+    def client_exec(self, task_name: str, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
         client_name = fl_ctx.get_identity_name()
         self.log_info(fl_ctx, f"Executing task '{task_name}' for client: '{client_name}'")
         result = Shareable()
@@ -83,10 +82,9 @@ class StatisticsClientExecutor(ClientExecutor):
             if statistics_task == StC.STATS_1st_STATISTICS:
                 result[StC.STATS_FEATURES] = fobs.dumps(ds_features)
             result[statistics_task] = fobs.dumps(statistics_result)
-
-            return DataKind.STATISTICS, result
+            return result
         else:
-            return DataKind.STATISTICS, make_reply(ReturnCode.TASK_UNKNOWN)
+            raise RuntimeError(ReturnCode.TASK_UNKNOWN)
 
     def statistic_functions(self) -> dict:
         return {
