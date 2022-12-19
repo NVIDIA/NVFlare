@@ -11,10 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from enum import IntEnum
 from typing import Any, Type
 
-from nvflare.app_common.abstract.statistics_spec import Bin, BinRange, Feature, Histogram, StatisticConfig
+from nvflare.app_common.abstract.statistics_spec import Bin, BinRange, Feature, Histogram, StatisticConfig, \
+    HistogramType, DataType
 from nvflare.fuel.utils import fobs
+from nvflare.fuel.utils.fobs.decomposer import T
 
 
 class StatisticConfigDecomposer(fobs.Decomposer):
@@ -72,9 +75,35 @@ class HistogramDecomposer(fobs.Decomposer):
         return Histogram(data[0], data[1], data[2])
 
 
+class HistogramTypeDecomposer(fobs.Decomposer):
+
+    def supported_type(self) -> Type[HistogramType]:
+        return HistogramType
+
+    def decompose(self, target: HistogramType) -> Any:
+        return target.value
+
+    def recompose(self, data: Any) -> HistogramType:
+        return HistogramType(data)
+
+
+class DataTypeDecomposer(fobs.Decomposer):
+
+    def supported_type(self) -> Type[DataType]:
+        return DataType
+
+    def decompose(self, target: DataType) -> Any:
+        return target.value
+
+    def recompose(self, data: Any) -> DataType:
+        return DataType(data)
+
+
 def fobs_registration():
     fobs.register(StatisticConfigDecomposer)
     fobs.register(FeatureDecomposer)
     fobs.register(HistogramDecomposer)
     fobs.register(BinDecomposer)
     fobs.register(BinRangeDecomposer)
+    fobs.register(HistogramTypeDecomposer)
+    fobs.register(DataTypeDecomposer)
