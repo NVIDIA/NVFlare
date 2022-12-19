@@ -13,7 +13,15 @@
 # limitations under the License.
 from typing import Any, Type
 
-from nvflare.app_common.abstract.statistics_spec import Bin, BinRange, Feature, Histogram, StatisticConfig
+from nvflare.app_common.abstract.statistics_spec import (
+    Bin,
+    BinRange,
+    DataType,
+    Feature,
+    Histogram,
+    HistogramType,
+    StatisticConfig,
+)
 from nvflare.fuel.utils import fobs
 
 
@@ -72,9 +80,33 @@ class HistogramDecomposer(fobs.Decomposer):
         return Histogram(data[0], data[1], data[2])
 
 
+class HistogramTypeDecomposer(fobs.Decomposer):
+    def supported_type(self) -> Type[HistogramType]:
+        return HistogramType
+
+    def decompose(self, target: HistogramType) -> Any:
+        return target.value
+
+    def recompose(self, data: Any) -> HistogramType:
+        return HistogramType(data)
+
+
+class DataTypeDecomposer(fobs.Decomposer):
+    def supported_type(self) -> Type[DataType]:
+        return DataType
+
+    def decompose(self, target: DataType) -> Any:
+        return target.value
+
+    def recompose(self, data: Any) -> DataType:
+        return DataType(data)
+
+
 def fobs_registration():
     fobs.register(StatisticConfigDecomposer)
     fobs.register(FeatureDecomposer)
     fobs.register(HistogramDecomposer)
     fobs.register(BinDecomposer)
     fobs.register(BinRangeDecomposer)
+    fobs.register(HistogramTypeDecomposer)
+    fobs.register(DataTypeDecomposer)
