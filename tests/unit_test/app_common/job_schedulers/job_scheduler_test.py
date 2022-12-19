@@ -19,7 +19,7 @@ import pytest
 
 from nvflare.apis.client import Client
 from nvflare.apis.fl_context import FLContext, FLContextManager
-from nvflare.apis.job_def import ALL_SITES, Job, RunStatus, JobMetaKey
+from nvflare.apis.job_def import ALL_SITES, Job, JobMetaKey, RunStatus
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.apis.job_scheduler_spec import DispatchInfo
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
@@ -122,9 +122,8 @@ class MockServerEngine(ServerEngineSpec):
         pass
 
     def check_client_resources(
-            self,
-            job_id: str,
-            resource_reqs: Dict[str, dict]) -> Dict[str, Tuple[bool, Optional[str]]]:
+        self, job_id: str, resource_reqs: Dict[str, dict]
+    ) -> Dict[str, Tuple[bool, Optional[str]]]:
         result = {}
         with self.new_context() as fl_ctx:
             for site_name, requirements in resource_reqs.items():
@@ -135,7 +134,7 @@ class MockServerEngine(ServerEngineSpec):
         return self.clients.get(token)
 
     def cancel_client_resources(
-            self, resource_check_results: Dict[str, Tuple[bool, str]], resource_reqs: Dict[str, dict]
+        self, resource_check_results: Dict[str, Tuple[bool, str]], resource_reqs: Dict[str, dict]
     ):
         with self.new_context() as fl_ctx:
             for site_name, result in resource_check_results.items():
@@ -308,7 +307,6 @@ def setup_and_teardown(request):
 
 
 class TestDefaultJobScheduler:
-
     def test_weird_deploy_map(self, setup_and_teardown):
         servers, scheduler, num_sites, job_manager = setup_and_teardown
         candidate = create_job(
@@ -318,7 +316,9 @@ class TestDefaultJobScheduler:
             min_sites=1,
         )
         with servers[0].new_context() as fl_ctx:
-            job, dispatch_info = scheduler.schedule_job(job_manager=job_manager, job_candidates=[candidate], fl_ctx=fl_ctx)
+            job, dispatch_info = scheduler.schedule_job(
+                job_manager=job_manager, job_candidates=[candidate], fl_ctx=fl_ctx
+            )
         assert job is None
 
     def test_missing_deploy_map(self, setup_and_teardown):
@@ -345,7 +345,9 @@ class TestDefaultJobScheduler:
             min_sites=num_sites + 1,
         )
         with servers[0].new_context() as fl_ctx:
-            job, dispatch_info = scheduler.schedule_job(job_manager=job_manager, job_candidates=[candidate], fl_ctx=fl_ctx)
+            job, dispatch_info = scheduler.schedule_job(
+                job_manager=job_manager, job_candidates=[candidate], fl_ctx=fl_ctx
+            )
         assert job is None
 
     def test_require_sites_not_active(self, setup_and_teardown):
@@ -358,7 +360,9 @@ class TestDefaultJobScheduler:
             required_sites=[f"site{num_sites}"],
         )
         with servers[0].new_context() as fl_ctx:
-            job, dispatch_info = scheduler.schedule_job(job_manager=job_manager, job_candidates=[candidate], fl_ctx=fl_ctx)
+            job, dispatch_info = scheduler.schedule_job(
+                job_manager=job_manager, job_candidates=[candidate], fl_ctx=fl_ctx
+            )
         assert job is None
 
     def test_require_sites_not_enough_resource(self, setup_and_teardown):
@@ -371,7 +375,9 @@ class TestDefaultJobScheduler:
             required_sites=["site2"],
         )
         with servers[0].new_context() as fl_ctx:
-            job, dispatch_info = scheduler.schedule_job(job_manager=job_manager, job_candidates=[candidate], fl_ctx=fl_ctx)
+            job, dispatch_info = scheduler.schedule_job(
+                job_manager=job_manager, job_candidates=[candidate], fl_ctx=fl_ctx
+            )
         assert job is None
 
     def test_not_enough_sites_has_enough_resource(self, setup_and_teardown):
@@ -384,7 +390,9 @@ class TestDefaultJobScheduler:
             required_sites=[],
         )
         with servers[0].new_context() as fl_ctx:
-            job, dispatch_info = scheduler.schedule_job(job_manager=job_manager, job_candidates=[candidate], fl_ctx=fl_ctx)
+            job, dispatch_info = scheduler.schedule_job(
+                job_manager=job_manager, job_candidates=[candidate], fl_ctx=fl_ctx
+            )
         assert job is None
 
     @pytest.mark.parametrize("job_candidates,sites,expected_job,expected_dispatch_info", TEST_CASES)
@@ -393,7 +401,9 @@ class TestDefaultJobScheduler:
         scheduler = DefaultJobScheduler(max_jobs=10, min_schedule_interval=0)
         job_manager = Mock(spec=JobDefManagerSpec)
         with servers[0].new_context() as fl_ctx:
-            job, dispatch_info = scheduler.schedule_job(job_manager=job_manager, job_candidates=job_candidates, fl_ctx=fl_ctx)
+            job, dispatch_info = scheduler.schedule_job(
+                job_manager=job_manager, job_candidates=job_candidates, fl_ctx=fl_ctx
+            )
         assert job == expected_job
         assert dispatch_info == expected_dispatch_info
 
@@ -438,7 +448,9 @@ class TestDefaultJobScheduler:
         results = []
         for i in range(10):
             with servers[0].new_context() as fl_ctx:
-                job, dispatch_infos = scheduler.schedule_job(job_manager=job_manager, job_candidates=submitted_jobs, fl_ctx=fl_ctx)
+                job, dispatch_infos = scheduler.schedule_job(
+                    job_manager=job_manager, job_candidates=submitted_jobs, fl_ctx=fl_ctx
+                )
                 if job:
                     submitted_jobs.remove(job)
                     results.append(job)
@@ -460,7 +472,7 @@ class TestDefaultJobScheduler:
         with servers[0].new_context() as fl_ctx:
             _, _ = scheduler.schedule_job(job_manager=job_manager, job_candidates=[candidate], fl_ctx=fl_ctx)
         assert candidate.meta[JobMetaKey.SCHEDULE_COUNT.value] == 1
-        assert 'connected sites (3) < min_sites (4)' in candidate.meta[JobMetaKey.SCHEDULE_HISTORY.value][0]
+        assert "connected sites (3) < min_sites (4)" in candidate.meta[JobMetaKey.SCHEDULE_HISTORY.value][0]
 
     def test_job_cannot_scheduled(self, setup_and_teardown):
         servers, scheduler, num_sites, job_manager = setup_and_teardown

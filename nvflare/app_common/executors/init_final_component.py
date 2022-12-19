@@ -25,4 +25,3 @@ class InitFinalComponent(FLComponent, ABC):
     @abstractmethod
     def finalize(self):
         pass
-

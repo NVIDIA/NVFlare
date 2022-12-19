@@ -11,13 +11,18 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from enum import IntEnum
 from typing import Any, Type
 
-from nvflare.app_common.abstract.statistics_spec import Bin, BinRange, Feature, Histogram, StatisticConfig, \
-    HistogramType, DataType
+from nvflare.app_common.abstract.statistics_spec import (
+    Bin,
+    BinRange,
+    DataType,
+    Feature,
+    Histogram,
+    HistogramType,
+    StatisticConfig,
+)
 from nvflare.fuel.utils import fobs
-from nvflare.fuel.utils.fobs.decomposer import T
 
 
 class StatisticConfigDecomposer(fobs.Decomposer):
@@ -76,7 +81,6 @@ class HistogramDecomposer(fobs.Decomposer):
 
 
 class HistogramTypeDecomposer(fobs.Decomposer):
-
     def supported_type(self) -> Type[HistogramType]:
         return HistogramType
 
@@ -88,7 +92,6 @@ class HistogramTypeDecomposer(fobs.Decomposer):
 
 
 class DataTypeDecomposer(fobs.Decomposer):
-
     def supported_type(self) -> Type[DataType]:
         return DataType
 

@@ -12,18 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import traceback
-from abc import abstractmethod, ABC
-from typing import Optional, TypeVar
+from abc import ABC, abstractmethod
+from typing import Optional
 
-from nvflare.apis.dxo import DXO, DataKind
+from nvflare.apis.dxo import DXO
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import make_reply, Shareable
+from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.executors.client_executor import ClientExecutor
-from nvflare.app_common.executors.init_final_component import InitFinalComponent
 from nvflare.security.logging import is_secure
 
 

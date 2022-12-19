@@ -15,7 +15,6 @@ from abc import ABC, abstractmethod
 from enum import IntEnum
 from typing import Dict, List, NamedTuple, Optional
 
-from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.executors.init_final_component import InitFinalComponent
 

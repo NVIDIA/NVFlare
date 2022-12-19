@@ -26,10 +26,10 @@ def check_component_type(comp, t):
 
 class ClientExecutor(InitFinalComponent, ABC):
     """
-        ClientExecutor is to be used together with CommonExecutor,
-        where most of the error handling, local component initialization exception handling, finalize are implemented.
-        how sharable return to server by converting to DXO is also handled by Common Executor
-        This class is focused on compute and return results only for given task
+    ClientExecutor is to be used together with CommonExecutor,
+    where most of the error handling, local component initialization exception handling, finalize are implemented.
+    how sharable return to server by converting to DXO is also handled by Common Executor
+    This class is focused on compute and return results only for given task
     """
 
     def __init__(self, local_comp_id: str, local_comp_type: type):
@@ -41,12 +41,12 @@ class ClientExecutor(InitFinalComponent, ABC):
 
     def initialize(self, fl_ctx: FLContext):
         """
-          This is called when client is start Run. At this point
-          the server hasn't communicated to the local component yet.
-          Args:
-              fl_ctx: fl_ctx: FLContext of the running environment
-          Returns:
-          """
+        This is called when client is start Run. At this point
+        the server hasn't communicated to the local component yet.
+        Args:
+            fl_ctx: fl_ctx: FLContext of the running environment
+        Returns:
+        """
 
         self.fl_ctx = fl_ctx
         self.load_and_init_local_comp(fl_ctx)

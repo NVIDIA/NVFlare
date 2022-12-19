@@ -11,24 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Dict, List, Optional
 
-from nvflare.apis.dxo import DXO, DataKind
-from nvflare.apis.event_type import EventType
-from nvflare.apis.executor import Executor
-from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable, make_reply
-from nvflare.apis.signal import Signal
-from nvflare.app_common.abstract.statistics_spec import Feature, Histogram, HistogramType, StatisticConfig, Statistics
-from nvflare.app_common.app_constant import StatisticsConstants as StC
 from nvflare.app_common.executors.client_executor import ClientExecutor
 from nvflare.app_common.executors.common_executor import CommonExecutor
 from nvflare.app_common.executors.statistics.statistics_client_executor import StatisticsClientExecutor
-from nvflare.app_common.statistics.numeric_stats import filter_numeric_features
-from nvflare.app_common.statistics.statisitcs_objects_decomposer import fobs_registration
-from nvflare.app_common.statistics.statistics_config_utils import get_feature_bin_range
-from nvflare.fuel.utils import fobs
 
 """
     StatisticsExecutor is client-side executor that perform local statistics generation and communication to
@@ -60,4 +47,3 @@ class StatisticsExecutor(CommonExecutor):
         client_executor = StatisticsClientExecutor(self.generator_id, self.precision)
         client_executor.initialize(fl_ctx)
         return client_executor
-
