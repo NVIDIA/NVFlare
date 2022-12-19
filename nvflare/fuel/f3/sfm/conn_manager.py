@@ -103,7 +103,10 @@ class ConnManager:
             self.start_transport(trans)
 
     def stop(self):
-        pass
+        for trans in self.transports:
+            trans.driver.shutdown()
+
+        self.executor.shutdown(False)
 
     def find_endpoint(self, name: str) -> Optional[Endpoint]:
 

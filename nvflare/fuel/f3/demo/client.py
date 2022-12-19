@@ -47,7 +47,7 @@ communicator.start()
 log.info("Client is started")
 
 count = 0
-while count < 60:
+while count < 10:
 
     if endpoints:
         msg1 = make_message(None, "Fire-forget message")
@@ -66,6 +66,7 @@ while count < 60:
     count += 1
 
 communicator.remove_transport(handle)
+communicator.stop()
 
 time.sleep(10)
 log.info("Client stopped!")

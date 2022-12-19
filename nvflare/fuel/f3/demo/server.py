@@ -37,6 +37,8 @@ conn_props = {
 
 local_endpoint = Endpoint("demo.server", {"test": 456}, conn_props)
 communicator = Communicator(local_endpoint)
+active_url, passive_url = communicator.get_connector_url(resource)
+handle = communicator.load_connector(url, passive)
 communicator.load_listener("https://localhost:4321")
 
 communicator.register_monitor(DemoEndpointMonitor(local_endpoint.name, endpoints))
@@ -46,7 +48,7 @@ communicator.start()
 log.info("Server is started")
 
 count = 0
-while count < 600:
+while count < 20:
     # Wait till one endpoint is available
     if endpoints:
 
@@ -62,6 +64,7 @@ while count < 600:
     time.sleep(1)
     count += 1
 
+communicator.stop()
 time.sleep(10)
 log.info("Server stopped!")
 

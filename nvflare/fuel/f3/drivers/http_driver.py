@@ -48,6 +48,7 @@ class WsConnection(Connection):
 
     def close(self):
         self.closing = True
+        asyncio.run_coroutine_threadsafe(self.websocket.close(), self.loop)
 
     def send_frame(self, frame: Union[bytes, bytearray, memoryview]):
         # Can't do asyncio send directly. Append to the queue
@@ -76,6 +77,9 @@ class HttpDriver(Driver):
         self.start_event_loop(params, Mode.ACTIVE)
 
     def shutdown(self):
+        for _, v in self.connections.items():
+            v.close()
+        self.executor.shutdown(False)
         pass
 
     def start_event_loop(self, params: dict, mode: Mode):
