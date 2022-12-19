@@ -49,10 +49,6 @@ class CommonExecutor(Executor, ABC):
     def initialize(self, fl_ctx: FLContext):
         try:
             self.client_name = fl_ctx.get_identity_name()
-            engine = fl_ctx.get_engine()
-            # client_executor: ClientExecutor = engine.get_component(self.client_executor_id)
-            # check_component_type(client_executor, type(ClientExecutor))
-            # client_executor.initialize(fl_ctx)
             self.client_executor = self.get_client_executor(fl_ctx)
 
         except TypeError as te:

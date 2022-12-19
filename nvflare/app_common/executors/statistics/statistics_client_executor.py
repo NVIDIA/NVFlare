@@ -84,11 +84,9 @@ class StatisticsClientExecutor(ClientExecutor):
                 result[StC.STATS_FEATURES] = fobs.dumps(ds_features)
             result[statistics_task] = fobs.dumps(statistics_result)
 
-            target_statistics: List[StatisticConfig]
+            return DataKind.STATISTICS, result
         else:
-            return make_reply(ReturnCode.TASK_UNKNOWN)
-
-        return DataKind.STATISTICS, result
+            return DataKind.STATISTICS, make_reply(ReturnCode.TASK_UNKNOWN)
 
     def statistic_functions(self) -> dict:
         return {
