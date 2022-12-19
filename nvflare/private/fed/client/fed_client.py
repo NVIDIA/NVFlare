@@ -26,6 +26,7 @@ from nvflare.fuel.utils import fobs
 from nvflare.private.defs import SpecialTaskName
 from nvflare.private.event import fire_event
 from nvflare.private.fed.utils.numproto import proto_to_bytes
+from nvflare.fuel.f3.cellnet import Cell
 
 from .fed_client_base import FederatedClientBase
 
@@ -47,6 +48,7 @@ class FederatedClient(FederatedClientBase):
         overseer_agent=None,
         args=None,
         components=None,
+        cell: Cell=None,
     ):
         """To init FederatedClient.
 
@@ -60,6 +62,7 @@ class FederatedClient(FederatedClientBase):
             handlers: handlers
             executors: executors
             compression: communication compression algorithm
+            cell (object): CellNet communicator
         """
         # We call the base implementation directly.
         super().__init__(
@@ -74,6 +77,7 @@ class FederatedClient(FederatedClientBase):
             overseer_agent=overseer_agent,
             args=args,
             components=components,
+            cell=cell
         )
 
         self.executors = executors

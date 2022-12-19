@@ -139,7 +139,24 @@ class CellChannel:
     TASK = "task"
 
 
+class CellChannelTopic:
+
+    Register = "register"
+    Quit = "quit"
+    GET_TASK = "get_task"
+    SUBMIT_RESULT = "submit_result"
+
+
 ERROR_MSG_PREFIX = "NVFLARE_ERROR"
+
+
+class CellMessageHeaderKeys:
+
+    CLIENT_NAME = "client_name"
+    CLIENT_IP = "client_ip"
+    TOKEN = "token"
+    SSID = "ssid"
+    UNAUTHENTICATED = "unauthenticated"
 
 
 def new_cell_message(headers: dict, payload=None):

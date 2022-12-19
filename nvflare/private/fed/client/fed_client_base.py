@@ -31,6 +31,8 @@ from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import EngineConstant
 from nvflare.security.logging import secure_format_exception
 
+from nvflare.fuel.f3.cellnet import Cell
+
 from .client_status import ClientStatus
 from .communicator import Communicator
 
@@ -61,6 +63,7 @@ class FederatedClientBase:
         overseer_agent=None,
         args=None,
         components=None,
+        cell: Cell=None,
     ):
         """To init FederatedClientBase.
 
@@ -73,6 +76,7 @@ class FederatedClientBase:
             client_state_processors: client state processor filters
             handlers: handlers
             compression: communication compression algorithm
+            cell: CellNet communicator
         """
         self.logger = logging.getLogger(self.__class__.__name__)
 

@@ -56,6 +56,10 @@ from nvflare.private.fed.utils.numproto import proto_to_bytes
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.fed_event import ServerFedEventRunner
 
+from nvflare.fuel.f3.cellnet import Cell, Message, make_reply as make_cellnet_reply
+from nvflare.fuel.f3.constants import MessageHeaderKey, ReturnCode as F3ReturnCode
+from nvflare.private.defs import CellChannel, CellChannelTopic, new_cell_message, CellMessageHeaderKeys, Re
+
 from .client_manager import ClientManager
 from .run_manager import RunManager
 from .server_engine import ServerEngine
@@ -100,7 +104,8 @@ class BaseServer(ABC):
             project_name=self.project_name, min_num_clients=self.min_num_clients, max_num_clients=self.max_num_clients
         )
 
-        self.grpc_server = None
+        # self.grpc_server = None
+        self.cell = None
         self.admin_server = None
         self.lock = Lock()
         self.snapshot_lock = Lock()
@@ -122,6 +127,20 @@ class BaseServer(ABC):
     def remove_client_data(self, token):
         pass
 
+    # def close(self):
+    #     """Shutdown the server."""
+    #     try:
+    #         if self.lock:
+    #             self.lock.release()
+    #     except RuntimeError:
+    #         self.logger.info("canceling sync locks")
+    #     try:
+    #         if self.grpc_server:
+    #             self.grpc_server.stop(0)
+    #     finally:
+    #         self.logger.info("server off")
+    #         return 0
+
     def close(self):
         """Shutdown the server."""
         try:
@@ -130,66 +149,85 @@ class BaseServer(ABC):
         except RuntimeError:
             self.logger.info("canceling sync locks")
         try:
-            if self.grpc_server:
-                self.grpc_server.stop(0)
+            if self.cell:
+                self.cell.stop()
         finally:
             self.logger.info("server off")
             return 0
 
+    # def deploy(self, args, grpc_args=None, secure_train=False):
+    #     """Start a grpc server and listening the designated port."""
+    #     num_server_workers = grpc_args.get("num_server_workers", 1)
+    #     num_server_workers = max(self.client_manager.get_min_clients(), num_server_workers)
+    #     target = grpc_args["service"].get("target", "0.0.0.0:6007")
+    #     grpc_options = grpc_args["service"].get("options", GRPC_DEFAULT_OPTIONS)
+    #
+    #     compression = grpc.Compression.NoCompression
+    #     if "Deflate" == grpc_args.get("compression"):
+    #         compression = grpc.Compression.Deflate
+    #     elif "Gzip" == grpc_args.get("compression"):
+    #         compression = grpc.Compression.Gzip
+    #
+    #     if not self.grpc_server:
+    #         self.executor = futures.ThreadPoolExecutor(max_workers=num_server_workers)
+    #         self.grpc_server = grpc.server(
+    #             self.executor,
+    #             options=grpc_options,
+    #             compression=compression,
+    #         )
+    #         fed_service.add_FederatedTrainingServicer_to_server(self, self.grpc_server)
+    #         admin_service.add_AdminCommunicatingServicer_to_server(self, self.grpc_server)
+    #
+    #     if secure_train:
+    #         with open(grpc_args["ssl_private_key"], "rb") as f:
+    #             private_key = f.read()
+    #         with open(grpc_args["ssl_cert"], "rb") as f:
+    #             certificate_chain = f.read()
+    #         with open(grpc_args["ssl_root_cert"], "rb") as f:
+    #             root_ca = f.read()
+    #
+    #         server_credentials = grpc.ssl_server_credentials(
+    #             (
+    #                 (
+    #                     private_key,
+    #                     certificate_chain,
+    #                 ),
+    #             ),
+    #             root_certificates=root_ca,
+    #             require_client_auth=True,
+    #         )
+    #         port = target.split(":")[1]
+    #         tmp_target = f"0.0.0.0:{port}"
+    #         self.grpc_server.add_secure_port(tmp_target, server_credentials)
+    #         self.logger.info("starting secure server at %s", target)
+    #     else:
+    #         self.grpc_server.add_insecure_port(target)
+    #         self.logger.info("starting insecure server at %s", target)
+    #     self.grpc_server.start()
+    #
+    #     # return self.start()
+    #     cleanup_thread = threading.Thread(target=self.client_cleanup)
+    #     # heartbeat_thread.daemon = True
+    #     cleanup_thread.start()
     def deploy(self, args, grpc_args=None, secure_train=False):
         """Start a grpc server and listening the designated port."""
-        num_server_workers = grpc_args.get("num_server_workers", 1)
-        num_server_workers = max(self.client_manager.get_min_clients(), num_server_workers)
+        # num_server_workers = grpc_args.get("num_server_workers", 1)
+        # num_server_workers = max(self.client_manager.get_min_clients(), num_server_workers)
         target = grpc_args["service"].get("target", "0.0.0.0:6007")
         grpc_options = grpc_args["service"].get("options", GRPC_DEFAULT_OPTIONS)
+        credentials = {}
+        parent_url = None
 
-        compression = grpc.Compression.NoCompression
-        if "Deflate" == grpc_args.get("compression"):
-            compression = grpc.Compression.Deflate
-        elif "Gzip" == grpc_args.get("compression"):
-            compression = grpc.Compression.Gzip
+        self.cell = Cell(
+            fqcn=target,
+            root_url=target,
+            secure=secure_train,
+            credentials=credentials,
+            create_internal_listener=True,
+            parent_url=parent_url,
+        )
 
-        if not self.grpc_server:
-            self.executor = futures.ThreadPoolExecutor(max_workers=num_server_workers)
-            self.grpc_server = grpc.server(
-                self.executor,
-                options=grpc_options,
-                compression=compression,
-            )
-            fed_service.add_FederatedTrainingServicer_to_server(self, self.grpc_server)
-            admin_service.add_AdminCommunicatingServicer_to_server(self, self.grpc_server)
-
-        if secure_train:
-            with open(grpc_args["ssl_private_key"], "rb") as f:
-                private_key = f.read()
-            with open(grpc_args["ssl_cert"], "rb") as f:
-                certificate_chain = f.read()
-            with open(grpc_args["ssl_root_cert"], "rb") as f:
-                root_ca = f.read()
-
-            server_credentials = grpc.ssl_server_credentials(
-                (
-                    (
-                        private_key,
-                        certificate_chain,
-                    ),
-                ),
-                root_certificates=root_ca,
-                require_client_auth=True,
-            )
-            port = target.split(":")[1]
-            tmp_target = f"0.0.0.0:{port}"
-            self.grpc_server.add_secure_port(tmp_target, server_credentials)
-            self.logger.info("starting secure server at %s", target)
-        else:
-            self.grpc_server.add_insecure_port(target)
-            self.logger.info("starting insecure server at %s", target)
-        self.grpc_server.start()
-
-        # return self.start()
-        cleanup_thread = threading.Thread(target=self.client_cleanup)
-        # heartbeat_thread.daemon = True
-        cleanup_thread.start()
+        self.cell.start()
 
     def client_cleanup(self):
         while not self.shutdown:
@@ -236,7 +274,7 @@ class BaseServer(ABC):
             self.executor.shutdown()
 
 
-class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_service.AdminCommunicatingServicer):
+class FederatedServer(BaseServer):
     def __init__(
         self,
         project_name=None,
@@ -299,6 +337,12 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         self.server_state: ServerState = ColdState()
         self.snapshot_persistor = snapshot_persistor
 
+        self.cell.register_request_cb(
+            channel=CellChannel.TASK,
+            topic=CellChannelTopic.Register,
+            cb=self.Register,
+        )
+
     def _create_server_engine(self, args, snapshot_persistor):
         return ServerEngine(
             server=self, args=args, client_manager=self.client_manager, snapshot_persistor=snapshot_persistor
@@ -337,7 +381,9 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         for client in self.get_all_clients().keys():
             self.tokens[client] = self.task_meta_info
 
-    def Register(self, request, context):
+    # def Register(self, request, context):
+    def Register(self, cell: Cell, channel: str, topic: str, request: Message, *args, **kwargs) -> Message:
+
         """Register new clients on the fly.
 
         Each client must get registered before getting the global model.
@@ -349,16 +395,19 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
 
         with self.engine.new_context() as fl_ctx:
             state_check = self.server_state.register(fl_ctx)
-            self._handle_state_check(context, state_check)
 
-            token = self.client_manager.authenticate(request, context)
-            if token:
-                self.tokens[token] = self.task_meta_info
-                if self.admin_server:
-                    self.admin_server.client_heartbeat(token)
+            # self._handle_state_check(context, state_check)
+            if state_check.get(ACTION) in [NIS, ABORT_RUN]:
+                return make_cellnet_reply(rc=F3ReturnCode.COMM_ERROR, error=state_check.get(MESSAGE))
+            else:
+                token = self.client_manager.authenticate(request, context)
+                if token:
+                    self.tokens[token] = self.task_meta_info
+                    if self.admin_server:
+                        self.admin_server.client_heartbeat(token)
 
-                return fed_msg.FederatedSummary(
-                    comment="New client registered", token=token, ssid=self.server_state.ssid
+                    return fed_msg.FederatedSummary(
+                        comment="New client registered", token=token, ssid=self.server_state.ssid
                 )
 
     def _handle_state_check(self, context, state_check):

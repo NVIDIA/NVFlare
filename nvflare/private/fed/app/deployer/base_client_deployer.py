@@ -19,6 +19,9 @@ from nvflare.private.fed.client.admin import RequestProcessor
 from nvflare.private.fed.client.client_req_processors import ClientRequestProcessors
 from nvflare.private.fed.client.fed_client import FederatedClient
 
+from nvflare.fuel.f3.cellnet import Cell, Message
+
+
 
 class BaseClientDeployer:
     def __init__(self):
@@ -67,6 +70,18 @@ class BaseClientDeployer:
         for _, processor in self.components.items():
             if isinstance(processor, RequestProcessor):
                 self.req_processors.append(processor)
+
+        parent_url = None
+        self.cell = Cell(
+            fqcn=self.client_name,
+            root_url=target,
+            secure=self.secure_train,
+            credentials=credentials,
+            create_internal_listener=True,
+            parent_url=parent_url,
+        )
+
+        self.cell.start()
 
         self.federated_client = FederatedClient(
             client_name=str(self.client_name),

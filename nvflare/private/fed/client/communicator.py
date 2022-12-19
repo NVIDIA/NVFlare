@@ -30,6 +30,9 @@ from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineI
 from nvflare.private.fed.utils.fed_utils import make_context_data, make_shareable_data, shareable_to_modeldata
 from nvflare.security.logging import secure_format_exception
 
+from nvflare.fuel.f3.cellnet import Cell, Message, FQCN
+from nvflare.private.defs import new_cell_message, CellChannel, CellChannelTopic, CellMessageHeaderKeys
+
 
 def _get_client_state(project_name, token, ssid, fl_ctx: FLContext):
     """Client's metadata used to authenticate and communicate.
@@ -99,6 +102,7 @@ class Communicator:
         retry_timeout=30,
         client_state_processors: Optional[List[Filter]] = None,
         compression=None,
+        cell: Cell=None
     ):
         """To init the Communicator.
 
@@ -109,6 +113,7 @@ class Communicator:
             client_state_processors: Client state processor filters
             compression: communicate compression algorithm
         """
+        self.cell = cell
         self.ssl_args = ssl_args
         self.secure_train = secure_train
 
@@ -177,35 +182,60 @@ class Communicator:
         """
         local_ip = _get_client_ip()
 
-        login_message = fed_msg.ClientLogin(client_name=client_name, client_ip=local_ip)
-        login_message.meta.project.name = project_name
+        # login_message = fed_msg.ClientLogin(client_name=client_name, client_ip=local_ip)
+        # login_message.meta.project.name = project_name
+        #
+        # with self.set_up_channel(servers[project_name]) as channel:
+        #     stub = fed_service.FederatedTrainingStub(channel)
+        #     while True:
+        #         try:
+        #             result = stub.Register(login_message)
+        #             token = result.token
+        #             ssid = result.ssid
+        #             self.should_stop = False
+        #             break
+        #         except grpc.RpcError as grpc_error:
+        #             self.grpc_error_handler(
+        #                 servers[project_name],
+        #                 grpc_error,
+        #                 "client_registration",
+        #                 verbose=self.verbose,
+        #             )
+        #             excep = FLCommunicationError(grpc_error, "grpc_error:client_registration")
+        #             if isinstance(grpc_error, grpc.Call):
+        #                 status_code = grpc_error.code()
+        #                 if grpc.StatusCode.UNAUTHENTICATED == status_code:
+        #                     raise excep
+        #             time.sleep(5)
+        #     if self.should_stop:
+        #         raise excep
+        #     if result is None:
+        #         return None
 
-        with self.set_up_channel(servers[project_name]) as channel:
-            stub = fed_service.FederatedTrainingStub(channel)
-            while True:
-                try:
-                    result = stub.Register(login_message)
-                    token = result.token
-                    ssid = result.ssid
-                    self.should_stop = False
-                    break
-                except grpc.RpcError as grpc_error:
-                    self.grpc_error_handler(
-                        servers[project_name],
-                        grpc_error,
-                        "client_registration",
-                        verbose=self.verbose,
-                    )
-                    excep = FLCommunicationError(grpc_error, "grpc_error:client_registration")
-                    if isinstance(grpc_error, grpc.Call):
-                        status_code = grpc_error.code()
-                        if grpc.StatusCode.UNAUTHENTICATED == status_code:
-                            raise excep
+        login_message = new_cell_message({CellMessageHeaderKeys.CLIENT_NAME: client_name,
+                                          CellMessageHeaderKeys.CLIENT_IP: local_ip})
+
+        while True:
+            try:
+                result = self.cell.send_request(
+                    target=FQCN.ROOT_SERVER,
+                    channel=CellChannel.TASK,
+                    topic=CellChannelTopic.Register,
+                    request=login_message
+                )
+                token = result.get_header(CellMessageHeaderKeys.TOKEN)
+                ssid = result.get_header(CellMessageHeaderKeys.SSID)
+                unauthenticated = result.get_header(CellMessageHeaderKeys.UNAUTHENTICATED)
+                if unauthenticated:
+                    raise FLCommunicationError({}, "error:client_registration unauthenticated")
+
+                if not token and not self.should_stop:
                     time.sleep(5)
-            if self.should_stop:
-                raise excep
-            if result is None:
-                return None
+                else:
+                    break
+
+            except BaseException as ex:
+               raise FLCommunicationError(ex, "error:client_registration")
 
         return token, ssid
 

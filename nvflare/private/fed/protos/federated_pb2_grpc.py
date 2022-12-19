@@ -117,7 +117,7 @@ def add_FederatedTrainingServicer_to_server(servicer, server):
                     response_serializer=nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2.FederatedSummary.SerializeToString,
             ),
             'Heartbeat': grpc.unary_unary_rpc_method_handler(
-                    servicer.Heartbeat,
+                    servicer.xHeartbeat,
                     request_deserializer=nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2.Token.FromString,
                     response_serializer=nvflare_dot_private_dot_fed_dot_protos_dot_federated__pb2.FederatedSummary.SerializeToString,
             ),
