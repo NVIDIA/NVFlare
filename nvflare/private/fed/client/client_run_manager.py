@@ -155,21 +155,26 @@ class ClientRunManager(ClientEngineExecutorSpec):
             raise RuntimeError("No configurator set up.")
         return self.conf.build_component(config_dict)
 
-    def aux_send(self, topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> Shareable:
-        reply = self.client.aux_send(topic, request, timeout, fl_ctx)
-        if reply:
-            return self.client.extract_shareable(reply, fl_ctx)
-        else:
-            return make_reply(ReturnCode.COMMUNICATION_ERROR)
-
-    def send_aux_request(self, topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> Shareable:
-        return self.aux_runner.send_aux_request(topic, request, timeout, fl_ctx)
+    def send_aux_request(
+            self,
+            targets: list,
+            topic: str,
+            request: Shareable,
+            timeout: float,
+            fl_ctx: FLContext,
+            bulk_send: bool
+    ) -> dict:
+        return self.aux_runner.send_aux_request(
+            targets=targets,
+            topic=topic,
+            request=request,
+            timeout=timeout,
+            fl_ctx=fl_ctx,
+            bulk_send=bulk_send
+        )
 
     def register_aux_message_handler(self, topic: str, message_handle_func):
         self.aux_runner.register_aux_message_handler(topic, message_handle_func)
-
-    def fire_and_forget_aux_request(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
-        return self.send_aux_request(topic, request, 0.0, fl_ctx)
 
     def abort_app(self, job_id: str, fl_ctx: FLContext):
         runner = fl_ctx.get_prop(key=FLContextKey.RUNNER, default=None)

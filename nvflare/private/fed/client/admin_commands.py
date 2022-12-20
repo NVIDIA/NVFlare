@@ -222,33 +222,6 @@ class ResetErrorsCommand(CommandProcessor):
         engine.reset_errors()
 
 
-class AuxCommand(CommandProcessor):
-    """To implement the Aux communication command."""
-
-    def get_command_name(self) -> str:
-        """To get the command name.
-
-        Returns: AdminCommandNames.AUX_COMMAND
-
-        """
-        return AdminCommandNames.AUX_COMMAND
-
-    def process(self, data: Shareable, fl_ctx: FLContext):
-        """Called to process the Aux communication command.
-
-        Args:
-            data: process data
-            fl_ctx: FLContext
-
-        Returns: Aux communication command message
-
-        """
-        engine = fl_ctx.get_engine()
-
-        topic = data.get_header(ReservedHeaderKey.TOPIC)
-        return engine.dispatch(topic=topic, request=data, fl_ctx=fl_ctx)
-
-
 class ByeCommand(CommandProcessor):
     """To implement the ShutdownCommand."""
 
@@ -284,7 +257,6 @@ class AdminCommands(object):
         ShowStatsCommand(),
         ShowErrorsCommand(),
         ResetErrorsCommand(),
-        AuxCommand(),
     ]
 
     @staticmethod

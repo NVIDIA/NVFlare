@@ -552,21 +552,23 @@ class ServerEngine(ServerEngineInternalSpec):
     def register_aux_message_handler(self, topic: str, message_handle_func):
         self.run_manager.aux_runner.register_aux_message_handler(topic, message_handle_func)
 
-    def send_aux_request(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
-        try:
-            if not targets:
-                self.sync_clients_from_main_process()
-                targets = []
-                for t in self.get_clients():
-                    targets.append(t.name)
-            if targets:
-                return self.run_manager.aux_runner.send_aux_request(
-                    targets=targets, topic=topic, request=request, timeout=timeout, fl_ctx=fl_ctx
-                )
-            else:
-                return {}
-        except Exception as e:
-            self.logger.error(f"Failed to send the aux_message: {topic} with exception: {secure_format_exception(e)}.")
+    def send_aux_request(
+            self,
+            targets: [],
+            topic: str,
+            request: Shareable,
+            timeout: float,
+            fl_ctx: FLContext,
+            bulk_send: bool
+    ) -> dict:
+        return self.run_manager.aux_runner.send_aux_request(
+            targets=targets,
+            topic=topic,
+            request=request,
+            timeout=timeout,
+            fl_ctx=fl_ctx,
+            bulk_send=bulk_send
+        )
 
     def sync_clients_from_main_process(self):
         with self.parent_conn_lock:
@@ -575,22 +577,6 @@ class ServerEngine(ServerEngineInternalSpec):
             return_data = self.parent_conn.recv()
             clients = return_data.get(ServerCommandKey.CLIENTS)
             self.client_manager.clients = clients
-
-    def parent_aux_send(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
-        with self.parent_conn_lock:
-            data = {
-                ServerCommandKey.COMMAND: ServerCommandNames.AUX_SEND,
-                ServerCommandKey.DATA: {
-                    "targets": targets,
-                    "topic": topic,
-                    "request": request,
-                    "timeout": timeout,
-                    "fl_ctx": get_serializable_data(fl_ctx),
-                },
-            }
-            self.parent_conn.send(data)
-            return_data = self.parent_conn.recv()
-            return return_data
 
     def update_job_run_status(self):
         with self.parent_conn_lock:
@@ -603,40 +589,6 @@ class ServerEngine(ServerEngineInternalSpec):
                     },
                 }
                 self.parent_conn.send(data)
-
-    def aux_send(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
-        # Send the aux messages through admin_server
-        request.set_peer_props(fl_ctx.get_all_public_props())
-
-        message = Message(topic=ReservedTopic.AUX_COMMAND, body=fobs.dumps(request))
-        message.set_header(RequestHeader.JOB_ID, str(fl_ctx.get_prop(FLContextKey.CURRENT_RUN)))
-        requests = {}
-        for n in targets:
-            requests.update({n: message})
-
-        replies = self.server.admin_server.send_requests(requests, timeout_secs=timeout)
-        results = {}
-        for r in replies:
-            client_name = self.get_client_name_from_token(r.client_token)
-            if r.reply:
-                try:
-                    error_code = r.reply.get_header(MsgHeader.RETURN_CODE, ReturnCode.OK)
-                    if error_code != ReturnCode.OK:
-                        self.logger.error(f"Aux message send error: {error_code} from client: {client_name}")
-                        shareable = make_reply(ReturnCode.ERROR)
-                    else:
-                        shareable = fobs.loads(r.reply.body)
-                    results[client_name] = shareable
-                except BaseException as e:
-                    results[client_name] = make_reply(ReturnCode.COMMUNICATION_ERROR)
-                    self.logger.error(
-                        f"Received unexpected reply from client: {client_name}, "
-                        f"message body:{r.reply.body} processing topic:{topic} Error:{e}"
-                    )
-            else:
-                results[client_name] = None
-
-        return results
 
     def send_command_to_child_runner_process(self, job_id: str, command_name: str, command_data, return_result=True):
         result = None
@@ -724,6 +676,7 @@ class ServerEngine(ServerEngineInternalSpec):
 
         fl_ctx.props.update(snapshot.get_component_snapshot(component_id=SnapshotKey.FL_CONTEXT))
 
+    # YC: This method is no longer needed since cellnet takes care of it.
     def dispatch(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         return self.run_manager.aux_runner.dispatch(topic=topic, request=request, fl_ctx=fl_ctx)
 

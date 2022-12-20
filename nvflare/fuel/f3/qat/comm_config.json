@@ -1,18 +1,20 @@
 {
+  "domain": "localhost",
   "drivers": {
-    "http": "my.http.Driver"
+    "http": "nih.HttpDriver"
   },
-  "internal_driver": {
-    "name": "http",
+  "internal": {
+    "scheme": "http",
     "resources": {
-      "domain": "localhost",
-      "ports": ["any"]
+      "host": "{domain}",
+      "ports": [200334, "20004-20009", "1024-", "-12345"],
+      "secure": false
     }
   },
   "external_driver": {
-    "name": "http",
+    "scheme": "http",
     "resources": {
-      "domain": "localhost",
+      "host": "{domain}",
       "ports": [20001, [30000, 30009]]
     }
   }

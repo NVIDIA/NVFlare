@@ -20,11 +20,11 @@ import sys
 import threading
 import time
 from abc import ABC, abstractmethod
-from multiprocessing.connection import Client
 
 from nvflare.apis.fl_constant import AdminCommandNames, ReturnCode, RunProcessKey
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
-from nvflare.apis.shareable import Shareable, make_reply
+from nvflare.fuel.f3.cellnet import Cell, FQCN
+from nvflare.private.defs import CellChannel, new_cell_message
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .client_status import ClientStatus, get_status_message
@@ -38,7 +38,6 @@ class ClientExecutor(ABC):
         job_id,
         args,
         app_custom_folder,
-        listen_port,
         allocated_resource,
         token,
         resource_manager,
@@ -51,7 +50,6 @@ class ClientExecutor(ABC):
             job_id: the job_id
             args: admin command arguments for starting the FL client training
             app_custom_folder: FL application custom folder
-            listen_port: port to listen the command.
             allocated_resource: allocated resources
             token: token from resource manager
             resource_manager: resource manager
@@ -117,21 +115,11 @@ class ClientExecutor(ABC):
             job_id: the job_id
         """
 
-    @abstractmethod
-    def process_aux_command(self, shareable: Shareable, job_id):
-        """Processes the aux command.
-
-        Args:
-            shareable: aux message Shareable
-            job_id: the job_id
-        """
-        pass
-
 
 class ProcessExecutor(ClientExecutor):
     """Run the Client executor in a child process."""
 
-    def __init__(self, startup):
+    def __init__(self, startup, cell: Cell):
         """To init the ProcessExecutor.
 
         Args:
@@ -139,23 +127,10 @@ class ProcessExecutor(ClientExecutor):
         """
         self.logger = logging.getLogger(self.__class__.__name__)
         self.startup = startup
+        self.cell = cell
         self.run_processes = {}
         self.lock = threading.Lock()
 
-    def get_conn_client(self, job_id):
-        # should be call within self.lock
-        listen_port = self.run_processes.get(job_id, {}).get(RunProcessKey.LISTEN_PORT)
-        conn_client = self.run_processes.get(job_id, {}).get(RunProcessKey.CONNECTION, None)
-
-        if not conn_client:
-            try:
-                address = ("localhost", listen_port)
-                conn_client = Client(address, authkey="client process secret password".encode())
-                self.run_processes[job_id][RunProcessKey.CONNECTION] = conn_client
-            except Exception:
-                pass
-
-        return conn_client
 
     def start_app(
         self,
@@ -163,7 +138,6 @@ class ProcessExecutor(ClientExecutor):
         job_id,
         args,
         app_custom_folder,
-        listen_port,
         allocated_resource,
         token,
         resource_manager: ResourceManagerSpec,
@@ -176,7 +150,6 @@ class ProcessExecutor(ClientExecutor):
             job_id: the job_id
             args: admin command arguments for starting the worker process
             app_custom_folder: FL application custom folder
-            listen_port: port to listen the command.
             allocated_resource: allocated resources
             token: token from resource manager
             resource_manager: resource manager
@@ -202,8 +175,6 @@ class ProcessExecutor(ClientExecutor):
             + job_id
             + " -c "
             + client.client_name
-            + " -p "
-            + str(listen_port)
             + " -g "
             + target
             + " -s fed_client.json "
@@ -218,8 +189,6 @@ class ProcessExecutor(ClientExecutor):
 
         with self.lock:
             self.run_processes[job_id] = {
-                RunProcessKey.LISTEN_PORT: listen_port,
-                RunProcessKey.CONNECTION: None,
                 RunProcessKey.CHILD_PROCESS: process,
                 RunProcessKey.STATUS: ClientStatus.STARTED,
             }
@@ -229,6 +198,29 @@ class ProcessExecutor(ClientExecutor):
             args=(client, job_id, allocated_resource, token, resource_manager),
         )
         thread.start()
+
+    def _get_job_cell_fqcn(self, job_id: str) -> str:
+        return FQCN.join([self.cell.get_fqcn(), job_id])
+
+    def _send_to_job_cell(self, job_cell_fqcn: str, data, fnf=False):
+        cell_msg = new_cell_message({}, data)
+        if fnf:
+            # fire and forget
+            self.cell.fire_and_forget(
+                channel=CellChannel.COMMAND,
+                topic="command",
+                message=cell_msg,
+                targets=[job_cell_fqcn],
+            )
+        else:
+            reply = self.cell.send_request(
+                channel=CellChannel.COMMAND,
+                topic="command",
+                request=cell_msg,
+                target=job_cell_fqcn,
+                timeout=None
+            )
+            return reply.payload
 
     def check_status(self, job_id):
         """Checks the status of the running client.
@@ -240,18 +232,13 @@ class ProcessExecutor(ClientExecutor):
             A client status message
         """
         try:
-            with self.lock:
-                conn_client = self.get_conn_client(job_id)
-
-                if conn_client:
-                    data = {"command": AdminCommandNames.CHECK_STATUS, "data": {}}
-                    conn_client.send(data)
-                    status_message = conn_client.recv()
-                    self.logger.debug("check status from process listener......")
-                    return status_message
-                else:
-                    process_status = ClientStatus.NOT_STARTED
-                    return get_status_message(process_status)
+            job_cell_fqcn = self._get_job_cell_fqcn(job_id)
+            if self.cell.is_cell_reachable(job_cell_fqcn):
+                data = {"command": AdminCommandNames.CHECK_STATUS, "data": {}}
+                return self._send_to_job_cell(job_cell_fqcn, data)
+            else:
+                process_status = ClientStatus.NOT_STARTED
+                return get_status_message(process_status)
         except Exception as e:
             self.logger.error(f"check_status execution exception: {secure_format_exception(e)}.")
             secure_log_traceback()
@@ -266,17 +253,14 @@ class ProcessExecutor(ClientExecutor):
         Returns:
             A dict of run information.
         """
-        try:
-            with self.lock:
-                conn_client = self.get_conn_client(job_id)
 
-                if conn_client:
-                    data = {"command": AdminCommandNames.SHOW_STATS, "data": {}}
-                    conn_client.send(data)
-                    run_info = conn_client.recv()
-                    return run_info
-                else:
-                    return {}
+        try:
+            job_cell_fqcn = self._get_job_cell_fqcn(job_id)
+            if self.cell.is_cell_reachable(job_cell_fqcn):
+                data = {"command": AdminCommandNames.SHOW_STATS, "data": {}}
+                return self._send_to_job_cell(job_cell_fqcn, data)
+            else:
+                return {}
         except Exception as e:
             self.logger.error(f"get_run_info execution exception: {secure_format_exception(e)}.")
             secure_log_traceback()
@@ -292,16 +276,12 @@ class ProcessExecutor(ClientExecutor):
             A dict of error information.
         """
         try:
-            with self.lock:
-                conn_client = self.get_conn_client(job_id)
-
-                if conn_client:
-                    data = {"command": AdminCommandNames.SHOW_ERRORS, "data": {}}
-                    conn_client.send(data)
-                    errors_info = conn_client.recv()
-                    return errors_info
-                else:
-                    return None
+            job_cell_fqcn = self._get_job_cell_fqcn(job_id)
+            if self.cell.is_cell_reachable(job_cell_fqcn):
+                data = {"command": AdminCommandNames.SHOW_ERRORS, "data": {}}
+                return self._send_to_job_cell(job_cell_fqcn, data)
+            else:
+                return None
         except Exception as e:
             self.logger.error(f"get_errors execution exception: {secure_format_exception(e)}.")
             secure_log_traceback()
@@ -314,35 +294,13 @@ class ProcessExecutor(ClientExecutor):
             job_id: the job_id
         """
         try:
-            with self.lock:
-                conn_client = self.get_conn_client(job_id)
-
-                if conn_client:
-                    data = {"command": AdminCommandNames.RESET_ERRORS, "data": {}}
-                    conn_client.send(data)
+            job_cell_fqcn = self._get_job_cell_fqcn(job_id)
+            if self.cell.is_cell_reachable(job_cell_fqcn):
+                data = {"command": AdminCommandNames.RESET_ERRORS, "data": {}}
+                self._send_to_job_cell(job_cell_fqcn, data, fnf=True)
         except Exception as e:
             self.logger.error(f"reset_errors execution exception: {secure_format_exception(e)}.")
             secure_log_traceback()
-
-    def process_aux_command(self, shareable: Shareable, job_id):
-        """Processes the aux command.
-
-        Args:
-            shareable: aux message Shareable
-            job_id: the job_id
-        """
-        try:
-            with self.lock:
-                conn_client = self.get_conn_client(job_id)
-                if conn_client:
-                    data = {"command": AdminCommandNames.AUX_COMMAND, "data": shareable}
-                    conn_client.send(data)
-                    reply = conn_client.recv()
-                    return reply
-                else:
-                    return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-        except Exception:
-            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
     def abort_app(self, job_id):
         """Aborts the running app.
@@ -354,15 +312,15 @@ class ProcessExecutor(ClientExecutor):
             # When the HeartBeat cleanup process try to abort the worker process, the job maybe already terminated,
             # Use retry to avoid print out the error stack trace.
             retry = 1
+            job_cell_fqcn = self._get_job_cell_fqcn(job_id)
             while retry >= 0:
                 process_status = self.run_processes.get(job_id, {}).get(RunProcessKey.STATUS, ClientStatus.NOT_STARTED)
                 if process_status == ClientStatus.STARTED:
                     try:
                         child_process = self.run_processes[job_id][RunProcessKey.CHILD_PROCESS]
-                        conn_client = self.get_conn_client(job_id)
-                        if conn_client:
+                        if self.cell.is_cell_reachable(job_cell_fqcn):
                             data = {"command": AdminCommandNames.ABORT, "data": {}}
-                            conn_client.send(data)
+                            self._send_to_job_cell(job_cell_fqcn, data, fnf=True)
                             self.logger.debug("abort sent")
 
                         threading.Thread(target=self._terminate_process, args=[child_process, job_id]).start()
@@ -376,9 +334,6 @@ class ProcessExecutor(ClientExecutor):
                             secure_log_traceback()
                         retry -= 1
                         time.sleep(5.0)
-                    finally:
-                        if conn_client:
-                            conn_client.close()
                 else:
                     self.logger.info(f"Client worker process for run: {job_id} was already terminated.")
                     break
@@ -406,22 +361,21 @@ class ProcessExecutor(ClientExecutor):
         with self.lock:
             process_status = self.run_processes.get(job_id, {}).get(RunProcessKey.STATUS, ClientStatus.NOT_STARTED)
             if process_status == ClientStatus.STARTED:
-                conn_client = self.get_conn_client(job_id)
-                if conn_client:
+                job_cell_fqcn = self._get_job_cell_fqcn(job_id)
+                if self.cell.is_cell_reachable(job_cell_fqcn):
                     data = {"command": AdminCommandNames.ABORT_TASK, "data": {}}
-                    conn_client.send(data)
+                    self._send_to_job_cell(job_cell_fqcn, data, fnf=True)
                     self.logger.debug("abort_task sent")
 
     def _wait_child_process_finish(self, client, job_id, allocated_resource, token, resource_manager):
         # wait for the listen_command thread to start, and send "start" message to wake up the connection.
         start = time.time()
+        job_cell_fqcn = self._get_job_cell_fqcn(job_id)
         while True:
-            with self.lock:
-                conn_client = self.get_conn_client(job_id)
-                if conn_client:
-                    data = {"command": AdminCommandNames.START_APP, "data": {}}
-                    conn_client.send(data)
-                    break
+            if self.cell.is_cell_reachable(job_cell_fqcn):
+                data = {"command": AdminCommandNames.START_APP, "data": {}}
+                self._send_to_job_cell(job_cell_fqcn, data, True)
+                break
             time.sleep(1.0)
             if time.time() - start > 15:
                 break
@@ -439,12 +393,8 @@ class ProcessExecutor(ClientExecutor):
                 resources=allocated_resource, token=token, fl_ctx=client.engine.new_context()
             )
 
-        with self.lock:
-            conn_client = self.get_conn_client(job_id)
-            if conn_client:
-                conn_client.close()
-            if job_id in self.run_processes.keys():
-                self.run_processes.pop(job_id)
+        if job_id in self.run_processes.keys():
+            self.run_processes.pop(job_id)
 
     def get_status(self, job_id):
         with self.lock:

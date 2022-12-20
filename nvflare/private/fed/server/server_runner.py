@@ -169,7 +169,12 @@ class ServerRunner(FLComponent):
 
             # ask all clients to end run!
             self.engine.send_aux_request(
-                targets=None, topic=ReservedTopic.END_RUN, request=Shareable(), timeout=0.0, fl_ctx=fl_ctx
+                targets=[],
+                topic=ReservedTopic.END_RUN,
+                request=Shareable(),
+                fl_ctx=fl_ctx,
+                timeout=0.0,
+                bulk_send=False
             )
 
             self.log_info(fl_ctx, "Server runner finished.")

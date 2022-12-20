@@ -34,6 +34,7 @@ from .constants import (
 
 import nvflare.fuel.utils.fobs as fobs
 
+_BULK_CHANNEL = "cellnet.bulk"
 
 class TargetCellUnreachable(Exception):
     pass
@@ -151,6 +152,10 @@ class FQCN:
         if not fqcn:
             return False
 
+    @staticmethod
+    def get_root(fqcn: str) -> str:
+        parts = FQCN.split(fqcn)
+        return parts[0]
 
 class _FqcnInfo:
 
@@ -167,6 +172,60 @@ def same_family(info1: _FqcnInfo, info2: _FqcnInfo):
     return info1.root == info2.root
 
 
+class BulkSender:
+
+    def __init__(self, cell, target: str, interval, max_queue_size):
+        self.cell = cell
+        self.target = target
+        self.interval = interval
+        self.max_queue_size = max_queue_size
+        self.messages = []
+        self.last_send_time = 0
+        self.lock = threading.Lock()
+
+    def queue_message(
+            self,
+            channel: str,
+            topic: str,
+            message: Message
+    ):
+        with self.lock:
+            tm = TargetMessage(
+                target=self.target,
+                channel=channel,
+                topic=topic,
+                message=message
+            )
+            self.messages.append(tm)
+
+    def send(self, must_send: bool):
+        num_msgs = len(self.messages)
+        if num_msgs == 0:
+            return
+
+        if not must_send and time.time() - self.last_send_time < self.interval and num_msgs < self.max_queue_size:
+            return
+
+        with self.lock:
+            bulk_msg = new_message(payload=self.messages)
+            sent = self.cell.fire_and_forget(
+                channel=_BULK_CHANNEL,
+                topic="bulk",
+                targets=[self.target],
+                message=bulk_msg
+            )
+            if sent[self.target]:
+                self.messages = []
+                self.last_send_time = time.time()
+            else:
+                self.cell.logger.warning(f"can't send bulk message to {self.target}")
+                if num_msgs > self.max_queue_size:
+                    self.messages.pop(0)
+                    self.cell.logger.warning(
+                        f"bulk sender for {self.target}: "
+                        f"dropped one message (queue size {num_msgs} > limit {self.max_queue_size}")
+
+
 class Cell(Receiver, EndpointMonitor):
 
     APP_ID = 1
@@ -180,6 +239,9 @@ class Cell(Receiver, EndpointMonitor):
             create_internal_listener: bool = False,
             parent_url: str = None,
             max_timeout=3600,
+            bulk_check_interval=0.5,
+            bulk_send_interval=1.0,
+            max_bulk_size=100
     ):
         """
 
@@ -206,6 +268,12 @@ class Cell(Receiver, EndpointMonitor):
         self.my_info = _FqcnInfo(fqcn)
         self.secure = secure
         self.root_url = root_url
+        self.bulk_check_interval = bulk_check_interval
+        self.bulk_send_interval = bulk_send_interval
+        self.max_bulk_size = max_bulk_size
+        self.bulk_senders = {}
+        self.bulk_checker = threading.Thread(target=self._check_bulk)
+        self.bulk_lock = threading.Lock()
         self.agents = {}  # cell_fqcn => CellAgent
         self.agent_lock = threading.Lock()
         self.driver_manager = DriverManager()
@@ -297,6 +365,14 @@ class Cell(Receiver, EndpointMonitor):
 
     def get_fqcn(self) -> str:
         return self.my_info.fqcn
+
+    def is_cell_reachable(self, target_fqcn: str) -> bool:
+        ep = self._find_endpoint(target_fqcn)
+        return ep is not None
+
+    def is_cell_connected(self, target_fqcn: str) -> bool:
+        agent = self.agents.get(target_fqcn)
+        return agent is not None
 
     def _set_bb_for_client_root(self):
         self._create_bb_external_connector()
@@ -538,6 +614,12 @@ class Cell(Receiver, EndpointMonitor):
         Returns:
 
         """
+        self.register_request_cb(
+            channel=_BULK_CHANNEL,
+            topic="*",
+            cb=self._process_bulk_message
+        )
+        self.bulk_checker.start()
         self.communicator.start()
 
     def stop(self):
@@ -548,6 +630,8 @@ class Cell(Receiver, EndpointMonitor):
 
         """
         self.communicator.stop()
+        self.asked_to_stop = True
+        self.bulk_checker.join()
 
     def register_request_cb(
             self,
@@ -669,7 +753,7 @@ class Cell(Receiver, EndpointMonitor):
             ep = self._try_path(path[:-1])
         return ep
 
-    def find_endpoint(self, target_fqcn: str) -> Union[None, Endpoint]:
+    def _find_endpoint(self, target_fqcn: str) -> Union[None, Endpoint]:
         if target_fqcn == self.my_info.fqcn:
             # sending request to myself? Not allowed!
             return None
@@ -716,7 +800,7 @@ class Cell(Receiver, EndpointMonitor):
         sent = {}
         reachable_targets = {}  # target fqcn => endpoint
         for t in target_msgs.keys():
-            ep = self.find_endpoint(t)
+            ep = self._find_endpoint(t)
             if ep:
                 reachable_targets[t] = ep
             else:
@@ -856,7 +940,7 @@ class Cell(Receiver, EndpointMonitor):
             channel: str,
             topic: str,
             targets: Union[str, List[str]],
-            message: Message):
+            message: Message) -> Dict[str, bool]:
         """
         Send a message over a channel to specified destination cell(s), and do not wait for replies.
 
@@ -874,12 +958,59 @@ class Cell(Receiver, EndpointMonitor):
                 MessageHeaderKey.REPLY_EXPECTED: False
             }
         )
-        self._send_to_targets(channel, topic, targets, message)
+        return self._send_to_targets(channel, topic, targets, message)
+
+    def queue_message(
+            self,
+            channel: str,
+            topic: str,
+            targets: Union[str, List[str]],
+            message: Message):
+        if isinstance(targets, str):
+            targets = [targets]
+
+        with self.bulk_lock:
+            for t in targets:
+                sender = self.bulk_senders.get(t)
+                if not sender:
+                    sender = BulkSender(
+                        cell=self,
+                        target=t,
+                        interval=self.bulk_send_interval,
+                        max_queue_size=self.max_bulk_size
+                    )
+                    self.bulk_senders[t] = sender
+                sender.queue_message(
+                    channel=channel,
+                    topic=topic,
+                    message=message
+                )
+
+    def _process_bulk_message(
+            self,
+            cell,
+            channel: str,
+            topic: str,
+            request: Message):
+        target_msgs = request.payload
+        assert isinstance(target_msgs, list)
+        for tm in target_msgs:
+            assert isinstance(tm, TargetMessage)
+            req = tm.message
+            req.add_headers(request.headers)
+            req.add_headers(
+                {
+                    MessageHeaderKey.TOPIC: tm.topic,
+                    MessageHeaderKey.CHANNEL: tm.channel
+                }
+            )
+            origin = request.get_header(MessageHeaderKey.ORIGIN, "")
+            self._process_request(origin=origin, message=req)
 
     def fire_multi_requests_and_forget(
             self,
             target_msgs: Dict[str, TargetMessage]
-    ):
+    ) -> Dict[str, bool]:
         for _, tm in target_msgs.items():
             request = tm.message
             request.add_headers(
@@ -887,7 +1018,7 @@ class Cell(Receiver, EndpointMonitor):
                     MessageHeaderKey.REPLY_EXPECTED: False,
                 }
             )
-        self._send_target_messages(target_msgs)
+        return self._send_target_messages(target_msgs)
 
     def send_reply(
             self,
@@ -922,7 +1053,7 @@ class Cell(Receiver, EndpointMonitor):
             }
         )
 
-        ep = self.find_endpoint(to_cell)
+        ep = self._find_endpoint(to_cell)
         if not ep:
             return "CommError"
         reply.set_header(MessageHeaderKey.TO_CELL, ep.name)
@@ -991,7 +1122,7 @@ class Cell(Receiver, EndpointMonitor):
 
     def _forward(self, endpoint: Endpoint, origin: str, destination: str, msg_type: str, message: Message):
         # not for me - need to forward it
-        ep = self.find_endpoint(destination)
+        ep = self._find_endpoint(destination)
         if ep:
             message.add_headers({
                 MessageHeaderKey.FROM_CELL: self.my_info.fqcn,
@@ -1149,6 +1280,21 @@ class Cell(Receiver, EndpointMonitor):
         # the message is either a reply or a return for a previous request: handle replies
         self._process_reply(origin, message)
 
+    def _check_bulk(self):
+        while True:
+            if self.asked_to_stop:
+                # force flush of all pending messages
+                must_send = True
+
+            with self.bulk_lock:
+                for _, sender in self.bulk_senders.items():
+                    assert isinstance(sender, BulkSender)
+                    sender.send(must_send)
+
+            if self.asked_to_stop:
+                break
+            time.sleep(self.bulk_check_interval)
+
     def state_change(self, endpoint: Endpoint, state: ConnState):
         fqcn = endpoint.name
         if state == ConnState.READY:
@@ -1255,3 +1401,10 @@ def make_reply(rc: str, error: str = "", body=None) -> Message:
     if error:
         headers[MessageHeaderKey.ERROR] = error
     return Message(headers, payload=body)
+
+
+def new_message(headers: dict = None, payload=None):
+    msg_headers = Headers()
+    if headers:
+        msg_headers.update(headers)
+    return Message(msg_headers, payload)

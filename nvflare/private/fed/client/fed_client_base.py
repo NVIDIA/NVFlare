@@ -229,29 +229,6 @@ class FederatedClientBase:
         except FLCommunicationError as e:
             self.logger.info(secure_format_exception(e))
 
-    def send_aux_message(self, project_name, topic: str, shareable: Shareable, timeout: float, fl_ctx: FLContext):
-        """Send auxiliary message to the server.
-
-        Args:
-            project_name: FL study project name
-            topic: aux topic name
-            shareable: Shareable object
-            timeout: communication timeout
-            fl_ctx: FLContext
-
-        Returns:
-            A reply message
-        """
-        try:
-            self.logger.debug("Starting to send aux message.")
-            message = self.communicator.auxCommunicate(
-                self.servers, project_name, self.token, self.ssid, fl_ctx, self.client_name, shareable, topic, timeout
-            )
-
-            return message
-        except FLCommunicationError as e:
-            self.logger.info(secure_format_exception(e))
-
     def send_heartbeat(self, project_name):
         try:
             if self.token:
@@ -292,24 +269,6 @@ class FederatedClientBase:
         try:
             pool = ThreadPool(len(self.servers))
             return pool.map(partial(self.push_execute_result, shareable=shareable, fl_ctx=fl_ctx), tuple(self.servers))
-        finally:
-            if pool:
-                pool.terminate()
-
-    def aux_send(self, topic, shareable: Shareable, timeout: float, fl_ctx: FLContext):
-        """Push the local model to multiple servers."""
-        pool = None
-        try:
-            pool = ThreadPool(len(self.servers))
-            messages = pool.map(
-                partial(self.send_aux_message, topic=topic, shareable=shareable, timeout=timeout, fl_ctx=fl_ctx),
-                tuple(self.servers),
-            )
-            if messages is not None and messages[0] is not None:
-                # Only handle single server communication for now.
-                return messages
-            else:
-                return None
         finally:
             if pool:
                 pool.terminate()

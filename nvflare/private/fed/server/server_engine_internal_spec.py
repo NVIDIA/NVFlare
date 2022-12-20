@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import time
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from typing import Optional
 
 from nvflare.apis.client import Client
@@ -38,7 +38,7 @@ class EngineInfo(object):
         self.app_names = {}
 
 
-class ServerEngineInternalSpec(ServerEngineSpec, ABC):
+class ServerEngineInternalSpec(ServerEngineSpec):
     def get_engine_info(self) -> EngineInfo:
         """Get general info of the engine."""
         pass

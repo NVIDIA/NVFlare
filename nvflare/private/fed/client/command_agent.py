@@ -13,61 +13,53 @@
 # limitations under the License.
 
 import logging
-import threading
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.security.logging import secure_format_exception
-
-from ..utils.fed_utils import listen_command
+from nvflare.fuel.f3.cellnet import Cell, Message as CellMessage
+from nvflare.private.defs import CellChannel, new_cell_message
 from .admin_commands import AdminCommands
 
 
 class CommandAgent(object):
-    def __init__(self, federated_client, listen_port, client_runner) -> None:
+    def __init__(self):
         """To init the CommandAgent.
-
-        Args:
-            federated_client: FL client object
-            listen_port: port to listen the command
-            client_runner: ClientRunner object
         """
-        self.federated_client = federated_client
-        self.listen_port = int(listen_port)
-        self.client_runner = client_runner
-        self.thread = None
-        self.asked_to_stop = False
-
         self.commands = AdminCommands.commands
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def start(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
-        self.thread = threading.Thread(
-            target=listen_command, args=[self.listen_port, engine, self.execute_command, self.logger]
+        cell = engine.get_cell()
+        assert isinstance(cell, Cell)
+        cell.register_request_cb(
+            channel=CellChannel.COMMAND,
+            topic="*",
+            cb=self._execute_command,
+            engine=engine
         )
-        self.thread.start()
 
-    def execute_command(self, conn, engine):
-        while not self.asked_to_stop:
-            try:
-                if conn.poll(1.0):
-                    msg = conn.recv()
-                    command_name = msg.get("command")
-                    data = msg.get("data")
-                    command = AdminCommands.get_command(command_name)
-                    if command:
-                        with engine.new_context() as new_fl_ctx:
-                            reply = command.process(data=data, fl_ctx=new_fl_ctx)
-                            if reply:
-                                conn.send(reply)
-            except EOFError:
-                self.logger.info("listener communication terminated.")
-                break
-            except Exception as e:
-                self.logger.error(f"Process communication error: {self.listen_port}: {secure_format_exception(e)}.")
+    def _execute_command(
+            self,
+            cell: Cell,
+            channel: str,
+            topic: str,
+            request: CellMessage,
+            engine):
+        # this runs in the job cell on the client side
+        msg = request.payload
+        command_name = msg.get("command")
+        data = msg.get("data")
+        command = AdminCommands.get_command(command_name)
+        if command:
+            with engine.new_context() as new_fl_ctx:
+                result = command.process(data=data, fl_ctx=new_fl_ctx)
+                if result:
+                    return new_cell_message({}, result)
+                else:
+                    return None
+        else:
+            self.logger.error(f"unknown command '{command_name}'")
+            return None
 
     def shutdown(self):
-        self.asked_to_stop = True
-
-        if self.thread and self.thread.is_alive():
-            self.thread.join()
+        pass

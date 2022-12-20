@@ -90,7 +90,7 @@ class ClientAppRunner:
 
     def start_command_agent(self, args, client_runner, federated_client, fl_ctx):
         # Start the command agent
-        self.command_agent = CommandAgent(federated_client, int(args.listen_port), client_runner)
+        self.command_agent = CommandAgent()
         self.command_agent.start(fl_ctx)
 
     def close(self):

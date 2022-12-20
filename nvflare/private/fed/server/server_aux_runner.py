@@ -14,7 +14,7 @@
 
 from nvflare.apis.client import Client
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import ReservedHeaderKey, Shareable
+from nvflare.apis.shareable import Shareable
 from nvflare.private.aux_runner import AuxRunner
 
 
@@ -27,7 +27,15 @@ class ServerAuxRunner(AuxRunner):
         """
         AuxRunner.__init__(self)
 
-    def send_aux_request(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
+    def send_aux_request(
+            self,
+            targets: [],
+            topic: str,
+            request: Shareable,
+            timeout: float,
+            fl_ctx: FLContext,
+            bulk_send
+    ) -> dict:
         """Send request through auxiliary channel.
 
         Args:
@@ -36,42 +44,15 @@ class ServerAuxRunner(AuxRunner):
             request (Shareable): request
             timeout (float): how long to wait for result. 0 means fire-and-forget
             fl_ctx (FLContext): the FL context
+            bulk_send: whether to send in bulk
 
         Returns:
             A dict of results
         """
-        if not isinstance(request, Shareable):
-            raise ValueError("invalid request type: expect Shareable but got {}".format(type(request)))
-
-        if not targets:
-            raise ValueError("targets must be specified")
-
-        if targets is not None and not isinstance(targets, list):
-            raise TypeError("targets must be a list of Client or str, but got {}".format(type(targets)))
-
-        if not isinstance(topic, str):
-            raise TypeError("invalid topic: expects str but got {}".format(type(topic)))
-
-        if not topic:
-            raise ValueError("invalid topic: must not be empty")
-
-        if topic == self.TOPIC_BULK:
-            raise ValueError('topic value "{}" is reserved'.format(topic))
-
-        if not isinstance(timeout, float):
-            raise TypeError("invalid timeout: expects float but got {}".format(type(timeout)))
-
-        if timeout < 0:
-            raise ValueError("invalid timeout value {}: must >= 0.0".format(timeout))
-
-        if not isinstance(fl_ctx, FLContext):
-            raise TypeError("invalid fl_ctx: expects FLContext but got {}".format(type(fl_ctx)))
-
-        request.set_peer_props(fl_ctx.get_all_public_props())
-        request.set_header(ReservedHeaderKey.TOPIC, topic)
-
         engine = fl_ctx.get_engine()
-        # assert isinstance(engine, ServerEngineInternalSpec)
+        if not targets:
+            # get all clients
+            targets = engine.get_clients()
 
         target_names = []
         for t in targets:
@@ -80,21 +61,26 @@ class ServerAuxRunner(AuxRunner):
             elif isinstance(t, Client):
                 name = t.name
             else:
-                raise ValueError("invalid target in list: got {}".format(type(t)))
+                raise ValueError(f"invalid target {t} in list: got {type(t)}")
+
+            if name.startswith("server"):
+                raise ValueError(f"invalid target '{t}': cannot send to server itself")
 
             if name not in target_names:
                 target_names.append(t)
 
+        if not target_names:
+            return {}
+
         clients, invalid_names = engine.validate_clients(target_names)
         if invalid_names:
-            raise ValueError("invalid target(s): {}".format(invalid_names))
-        valid_tokens = []
-        for c in clients:
-            if c.token not in valid_tokens:
-                valid_tokens.append(c.token)
+            raise ValueError(f"invalid target(s): {invalid_names}")
 
-        replies = engine.parent_aux_send(
-            targets=valid_tokens, topic=topic, request=request, timeout=timeout, fl_ctx=fl_ctx
+        return self.send_to_job_cell(
+            targets=target_names,
+            timeout=timeout,
+            topic=topic,
+            request=request,
+            fl_ctx=fl_ctx,
+            bulk_send=bulk_send
         )
-
-        return replies

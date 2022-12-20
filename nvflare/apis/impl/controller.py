@@ -637,7 +637,7 @@ class Controller(Responder, ControllerSpec, ABC):
             for t in self._tasks:
                 t.completion_status = completion_status
 
-    def abort_task(self, task, fl_ctx: FLContext):
+    def abort_task(self, task: Task, fl_ctx: FLContext):
         """Ask all clients to abort the execution of the specified task.
 
         Args:
@@ -653,7 +653,14 @@ class Controller(Responder, ControllerSpec, ABC):
             raise TypeError("engine should be an instance of ServerEngineSpec, but got {}".format(type(engine)))
         request = Shareable()
         request["task_names"] = task_names
-        engine.send_aux_request(targets=None, topic=ReservedTopic.ABORT_ASK, request=request, timeout=0, fl_ctx=fl_ctx)
+        engine.send_aux_request(
+            targets=[],
+            topic=ReservedTopic.ABORT_ASK,
+            request=request,
+            fl_ctx=fl_ctx,
+            timeout=0.0,
+            bulk_send=False
+        )
 
     def abort_all_tasks(self, fl_ctx: FLContext):
         """Ask clients to abort the execution of all tasks.

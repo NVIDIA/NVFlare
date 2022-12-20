@@ -19,26 +19,31 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
-from nvflare.apis.signal import Signal
+from nvflare.fuel.f3.cellnet import Cell, Message as CellMessage, FQCN
+from nvflare.private.defs import CellChannel, new_cell_message
 
 
 class AuxRunner(FLComponent):
-
-    DATA_KEY_BULK = "bulk_data"
-    TOPIC_BULK = "__runner.bulk__"
 
     def __init__(self):
         """To init the AuxRunner."""
         FLComponent.__init__(self)
         self.job_id = None
-        self.topic_table = {
-            self.TOPIC_BULK: self._process_bulk_requests,
-        }  # topic => handler
+        self.topic_table = {}  # topic => handler
         self.reg_lock = Lock()
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
             self.job_id = fl_ctx.get_job_id()
+            engine = fl_ctx.get_engine()
+            cell = engine.get_cell
+            assert isinstance(cell, Cell)
+            cell.register_request_cb(
+                channel=CellChannel.AUX,
+                topic="*",
+                cb=self._process_cell_request,
+                engine=engine
+            )
 
     def register_aux_message_handler(self, topic: str, message_handle_func):
         """Register aux message handling function with specified topics.
@@ -57,10 +62,7 @@ class AuxRunner(FLComponent):
             bad message_handle_func - must be callable
         """
         if not isinstance(topic, str):
-            raise TypeError("topic must be str, but got {}".format(type(topic)))
-
-        if topic == self.TOPIC_BULK:
-            raise ValueError('topic value "{}" is reserved'.format(topic))
+            raise TypeError(f"topic must be str, but got {type(topic)}")
 
         if len(topic) <= 0:
             raise ValueError("topic must not be empty")
@@ -73,8 +75,7 @@ class AuxRunner(FLComponent):
 
         with self.reg_lock:
             if topic in self.topic_table:
-                raise ValueError("handler already registered for topic {}".format(topic))
-
+                raise ValueError(f"handler already registered for topic {topic}")
             self.topic_table[topic] = message_handle_func
 
     def _process_request(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
@@ -96,7 +97,8 @@ class AuxRunner(FLComponent):
             return make_reply(ReturnCode.TOPIC_UNKNOWN)
 
         if not isinstance(request, Shareable):
-            self.log_error(fl_ctx, "received invalid aux request: expects a Shareable but got {}".format(type(request)))
+            self.log_error(fl_ctx,
+                           f"received invalid aux request: expects a Shareable but got {type(request)}")
             return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
         peer_props = request.get_peer_props()
@@ -107,7 +109,7 @@ class AuxRunner(FLComponent):
         if not isinstance(peer_props, dict):
             self.log_error(
                 fl_ctx,
-                "bad peer_props from client: expects dict but got {}".format(type(peer_props)),
+                f"bad peer_props from client: expects dict but got {type(peer_props)}",
             )
             return make_reply(ReturnCode.BAD_PEER_CONTEXT)
 
@@ -146,24 +148,129 @@ class AuxRunner(FLComponent):
         valid_reply.set_peer_props(fl_ctx.get_all_public_props())
         return valid_reply
 
-    def _process_bulk_requests(self, topic: str, request: Shareable, fl_ctx: FLContext):
-        reqs = request.get(self.DATA_KEY_BULK, None)
-        if not isinstance(reqs, list):
-            self.log_error(fl_ctx, "invalid bulk request - missing list of requests, got {} instead".format(type(reqs)))
-            return make_reply(ReturnCode.BAD_REQUEST_DATA)
+    def _process_cell_request(
+            self,
+            cell: Cell,
+            channel: str,
+            topic: str,
+            request: CellMessage,
+            engine
+    ) -> CellMessage:
+        aux_msg = request.payload
+        assert isinstance(aux_msg, Shareable)
+        with engine.new_context() as fl_ctx:
+            aux_reply = self.dispatch(
+                topic=topic,
+                request=aux_msg,
+                fl_ctx=fl_ctx
+            )
+            return new_cell_message(payload=aux_reply)
 
-        abort_signal = fl_ctx.get_run_abort_signal()
-        for req in reqs:
-            if isinstance(abort_signal, Signal) and abort_signal.triggered:
-                break
+    def send_to_job_cell(
+            self,
+            targets: [],
+            topic: str,
+            request: Shareable,
+            timeout: float,
+            fl_ctx: FLContext,
+            bulk_send=False
+    ) -> dict:
+        """Send request through auxiliary channel.
 
-            if not isinstance(req, Shareable):
-                self.log_error(fl_ctx, "invalid request in bulk: expect Shareable but got {}".format(type(req)))
-                continue
-            req_topic = req.get_header(ReservedHeaderKey.TOPIC, "")
-            if not req_topic:
-                self.log_error(fl_ctx, "invalid request in bulk: no topic in header")
-                continue
+        Args:
+            targets (list): list of client names that the request will be sent to
+            topic (str): topic of the request
+            request (Shareable): request
+            timeout (float): how long to wait for result. 0 means fire-and-forget
+            fl_ctx (FLContext): the FL context
+            bulk_send: whether to bulk send this request
 
-            self._process_request(req_topic, req, fl_ctx)
-        return make_reply(ReturnCode.OK)
+        Returns:
+            A dict of results
+        """
+        if not isinstance(request, Shareable):
+            raise ValueError(f"invalid request type: expect Shareable but got {type(request)}")
+
+        if not targets:
+            raise ValueError("targets must be specified")
+
+        if targets is not None and not isinstance(targets, list):
+            raise TypeError(f"targets must be a list of str, but got {type(targets)}")
+
+        if not isinstance(topic, str):
+            raise TypeError(f"invalid topic '{topic}': expects str but got {type(topic)}")
+
+        if not topic:
+            raise ValueError("invalid topic: must not be empty")
+
+        if not isinstance(timeout, float):
+            raise TypeError(f"invalid timeout: expects float but got {type(timeout)}")
+
+        if timeout < 0:
+            raise ValueError(f"invalid timeout value {timeout}: must >= 0.0")
+
+        if not isinstance(fl_ctx, FLContext):
+            raise TypeError(f"invalid fl_ctx: expects FLContext but got {type(fl_ctx)}")
+
+        request.set_peer_props(fl_ctx.get_all_public_props())
+        request.set_header(ReservedHeaderKey.TOPIC, topic)
+
+        engine = fl_ctx.get_engine()
+        job_id = fl_ctx.get_job_id()
+        cell = engine.get_cell()
+        assert isinstance(cell, Cell)
+
+        target_names = []
+        for t in targets:
+            if not isinstance(t, str):
+                raise ValueError(f"invalid target name {t}: expect str but got {type(t)}")
+            if t not in target_names:
+                target_names.append(t)
+
+        target_fqcns = []
+        for name in target_names:
+            target_fqcns.append(FQCN.join([name, job_id]))
+
+        cell_msg = new_cell_message(payload=request)
+        if timeout > 0:
+            cell_replies = cell.broadcast_request(
+                channel=CellChannel.AUX,
+                topic=topic,
+                request=cell_msg,
+                targets=target_fqcns,
+                timeout=timeout
+            )
+
+            replies = {}
+            if cell_replies:
+                for k, v in cell_replies.items():
+                    client_name = FQCN.get_root(k)
+                    replies[client_name] = v.payload
+            return replies
+        else:
+            if bulk_send:
+                cell.queue_message(
+                    channel=CellChannel.AUX,
+                    topic=topic,
+                    message=cell_msg,
+                    targets=target_fqcns
+                )
+            else:
+                cell.fire_and_forget(
+                    channel=CellChannel.AUX,
+                    topic=topic,
+                    message=cell_msg,
+                    targets=target_fqcns,
+                )
+            return {}
+
+    def send_aux_request(
+            self,
+            targets: list,
+            topic: str,
+            request: Shareable,
+            timeout: float,
+            fl_ctx: FLContext,
+            bulk_send: bool
+    ) -> dict:
+        pass

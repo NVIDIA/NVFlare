@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from nvflare.fuel.hci.server.constants import ConnProps
-from nvflare.fuel.f3.message import Message, Headers
+from nvflare.fuel.f3.cellnet import new_message
 
 
 class SpecialTaskName(object):
@@ -137,13 +137,11 @@ class CellChannel:
     ADMIN = "admin"
     AUX = "aux"
     TASK = "task"
+    COMMAND = "command"
 
 
 ERROR_MSG_PREFIX = "NVFLARE_ERROR"
 
 
-def new_cell_message(headers: dict, payload=None):
-    msg_headers = Headers()
-    if headers:
-        msg_headers.update(headers)
-    return Message(msg_headers, payload)
+def new_cell_message(headers: dict = None, payload=None):
+    return new_message(headers, payload)

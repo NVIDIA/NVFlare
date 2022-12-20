@@ -13,21 +13,18 @@
 # limitations under the License.
 
 
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 
-from .fl_context import FLContext
+from .engine_spec import EngineSpec
 
 
-class ClientEngineSpec(ABC):
-    @abstractmethod
-    def fire_event(self, event_type: str, fl_ctx: FLContext):
-        pass
+class ClientEngineSpec(EngineSpec):
 
     @abstractmethod
-    def new_context(self) -> FLContext:
-        # the engine must use FLContextManager to create a new context!
-        pass
+    def get_client_name(self) -> str:
+        """Get the ClientEngine client_name.
 
-    @abstractmethod
-    def get_component(self, component_id: str) -> object:
+        Returns: the client_name
+
+        """
         pass

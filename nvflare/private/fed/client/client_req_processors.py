@@ -46,7 +46,6 @@ class ClientRequestProcessors:
         ClientInfoProcessor(),
         AbortTaskProcessor(),
         # SetRunNumberProcessor(),
-        AuxRequestProcessor(),
         StartJobProcessor(),
         CheckResourceProcessor(),
         CancelResourceProcessor(),
