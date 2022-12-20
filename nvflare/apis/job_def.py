@@ -31,6 +31,7 @@ class RunStatus(str, Enum):
     FINISHED_COMPLETED = "FINISHED:COMPLETED"
     FINISHED_ABORTED = "FINISHED:ABORTED"
     FINISHED_EXECUTION_EXCEPTION = "FINISHED:EXECUTION_EXCEPTION"
+    FINISHED_CANT_SCHEDULE = "FINISHED:CAN_NOT_SCHEDULE"
     FAILED_TO_RUN = "FAILED_TO_RUN"
 
 
@@ -61,8 +62,11 @@ class JobMetaKey(str, Enum):
     START_TIME = "start_time"
     DURATION = "duration"
     JOB_DEPLOY_DETAIL = "job_deploy_detail"
+    SCHEDULE_COUNT = "schedule_count"
     SCOPE = "scope"
     CLONED_FROM = "cloned_from"
+    LAST_SCHEDULE_TIME = "last_schedule_time"
+    SCHEDULE_HISTORY = "schedule_history"
 
     def __repr__(self):
         return self.value

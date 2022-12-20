@@ -102,9 +102,6 @@ class SimulatorServer(FederatedServer):
             server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
             server_runner.process_submission(client, contribution_task_name, task_id, shareable, fl_ctx)
 
-    def remove_dead_clients(self):
-        pass
-
     def _aux_communicate(self, fl_ctx, shareable, shared_fl_context, topic):
         try:
             with self.engine.lock:
