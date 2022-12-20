@@ -51,12 +51,12 @@ class TestDecomposers:
         data = DictClass()
         data["A"] = 123
         data["B"] = "xyz"
-        self._check_decomposer(data)
+        self._check_decomposer(data, False)
 
     def test_generic_data_class(self):
         fobs.register_data_classes(DataClass)
         data = DataClass("test", 456)
-        self._check_decomposer(data)
+        self._check_decomposer(data, False)
 
     def test_generic_str_enum_type(self):
         # Decomposers for enum classes are auto-registered by default
@@ -74,15 +74,18 @@ class TestDecomposers:
         test_data = OrderedDict(test_list)
 
         buffer = fobs.dumps(test_data)
+        fobs.reset()
         new_data = fobs.loads(buffer)
         new_list = list(new_data.items())
 
         assert test_list == new_list
 
     @staticmethod
-    def _check_decomposer(data):
+    def _check_decomposer(data, clear_decomposers=True):
 
         buffer = fobs.dumps(data)
+        if clear_decomposers:
+            fobs.reset()
         new_data = fobs.loads(buffer)
         assert type(data) == type(new_data), f"Original type {type(data)} doesn't match new data type {type(new_data)}"
         assert data == new_data, f"Original data {data} doesn't match new data {new_data}"
