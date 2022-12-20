@@ -69,8 +69,8 @@ class DHPsiControlHandler(PsiControlHandler):
             return False
 
         self.abort_signal = abort_signal
-        self.forward_pass(self.ordered_sites)
-        self.backward_pass(self.ordered_sites)
+        self.forward_processed.update(self.forward_pass(self.ordered_sites))
+        self.backward_processed.update(self.backward_pass(self.ordered_sites))
 
     def post_workflow(self, abort_signal: Signal):
         pass
@@ -97,9 +97,10 @@ class DHPsiControlHandler(PsiControlHandler):
 
         return site_sizes
 
-    def forward_pass(self, ordered_sites: List[SiteSize]):
+    def forward_pass(self, ordered_sites: List[SiteSize], reverse=False) -> dict:
+        processed = {}
         if self.abort_signal:
-            return
+            return processed
 
         #   FORWARD PASS
         #   for each client pair selected from sorted clients
@@ -115,21 +116,36 @@ class DHPsiControlHandler(PsiControlHandler):
 
         total_sites = len(ordered_sites)
         if total_sites <= 1:
-            return
-        i = 0
-        while i < total_sites:
+            return processed
+
+        start, end, step = self.get_directional_range(total_sites, reverse)
+        for i in range(start, end, step):
             s = ordered_sites[i]
             c = ordered_sites[i + 1]
             setup_msg = self.prepare_setup_message(s, c)
             request = self.prepare_request(c, setup_msg)
             response = self.process_request(s, c.name, request[c.name])
             status = self.calculate_intersection(c, response)
-            self.forward_processed.update(status)
-            i += i
+            processed.update(status)
 
-    def backward_pass(self, ordered_clients: list):
+        return processed
+
+    def get_directional_range(self, total: int, reverse: bool = False):
+        if reverse:
+            start = total - 1
+            end = -1
+            step = -1
+        else:
+            start = 0
+            end = total
+            step = 1
+
+        return start, end, step
+
+    def backward_pass(self, ordered_clients: list) -> dict:
+        processed = {}
         if self.abort_signal:
-            return
+            return processed
 
         #   BACKWARD STEPS
         #   Once we exhausted all clients, we starts the Backward Path, with the last node as the PsiServer
@@ -142,20 +158,22 @@ class DHPsiControlHandler(PsiControlHandler):
 
         total_clients = len(ordered_clients)
         if total_clients <= 1:
-            return
+            return processed
 
         if len(self.forward_processed) == total_clients:
-            cn = self.ordered_sites[total_clients - 1]
-            others = [x for x in self.ordered_sites if x.name != cn.name]
-            if self.forward_processed[cn.name] == PSIConst.PSI_STATUS_DONE:
-                setup_msg = self.prepare_setup_message(
-                    cn,
-                )
-                requests = self.prepare_requests(others, setup_msg)
-                responses = self.process_request(cn, list(requests.items())[0])
-                intersections = self.calulate_intersections(others, responses)
-            else:
-                raise ValueError("started backward pass before finish the forward pass")
+            # Sequential version
+            return self.forward_pass(ordered_clients, reverse=True)
+
+            # todo parallel version
+            # cn = self.ordered_sites[total_clients - 1]
+            # others = [x for x in self.ordered_sites if x.name != cn.name]
+            # if self.forward_processed[cn.name] == PSIConst.PSI_STATUS_DONE:
+            #     setup_msg = self.prepare_setup_message(cn, )
+            #     requests = self.prepare_requests(others, setup_msg)
+            #     responses = self.process_request(cn, list(requests.items())[0])
+            #     intersections = self.calculate_intersections(others, responses)
+        else:
+            raise ValueError("started backward pass before finish the forward pass")
 
     def prepare_setup_message(self, s: SiteSize, c: SiteSize) -> dict:
         inputs = Shareable()
