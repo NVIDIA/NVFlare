@@ -70,7 +70,7 @@ class DFStatistics(Statistics):
         except BaseException as e:
             raise Exception(f"Load data for client {client_name} failed! {e}")
 
-    def initialize(self, parts: dict, fl_ctx: FLContext):
+    def initialize(self, fl_ctx: FLContext):
         self.data = self.load_data(fl_ctx)
         if self.data is None:
             raise ValueError("data is not loaded. make sure the data is loaded")

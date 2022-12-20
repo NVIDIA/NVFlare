@@ -297,7 +297,7 @@ class JobCommandModule(CommandModule, CommandUtil):
                     conn.append_error("No jobs matching the searching criteria")
                     return
 
-                filtered_jobs.sort(key=lambda job: job.meta.get(JobMetaKey.SUBMIT_TIME, 0.0))
+                filtered_jobs.sort(key=lambda job: job.meta.get(JobMetaKey.SUBMIT_TIME.value, 0.0))
 
                 if parsed_args.d:
                     self._send_detail_list(conn, filtered_jobs)
@@ -475,6 +475,7 @@ class JobCommandModule(CommandModule, CommandUtil):
     def submit_job(self, conn: Connection, args: List[str]):
         folder_name = args[1]
         zip_b64str = args[2]
+
         data_bytes = convert_legacy_zipped_app_to_job(b64str_to_bytes(zip_b64str))
         engine = conn.app_ctx
 
