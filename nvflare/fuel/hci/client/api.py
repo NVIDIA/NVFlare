@@ -29,7 +29,15 @@ from nvflare.fuel.hci.table import Table
 from nvflare.fuel.utils.fsm import FSM, State
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
-from .api_spec import AdminAPISpec, CommandContext, CommandCtxKey, CommandInfo, ReplyProcessor, ServiceFinder
+from .api_spec import (
+    AdminAPISpec,
+    ApiPocValue,
+    CommandContext,
+    CommandCtxKey,
+    CommandInfo,
+    ReplyProcessor,
+    ServiceFinder,
+)
 from .api_status import APIStatus
 
 _CMD_TYPE_UNKNOWN = 0
@@ -363,9 +371,10 @@ class AdminAPI(AdminAPISpec):
         self.new_ssid = None
         self.new_addr_lock = threading.Lock()
 
+        self.poc_key = None
         self.poc = poc
         if self.poc:
-            self.poc_key = "admin"
+            self.poc_key = ApiPocValue.ADMIN
         else:
             if len(ca_cert) <= 0:
                 raise Exception("missing CA Cert file name")
