@@ -15,6 +15,7 @@ import asyncio
 import logging
 import ssl
 from concurrent.futures import ThreadPoolExecutor
+from random import random
 from ssl import SSLContext
 from typing import List, Any, Union
 
@@ -43,8 +44,11 @@ class WsConnection(Connection):
         self.closing = False
 
     def get_conn_properties(self) -> dict:
-        host, port = self.websocket.remote_address
-        return {"peer_host": host, "peer_port": port}
+        addr = self.websocket.remote_address
+        if addr:
+            return {"peer_host": addr[0], "peer_port": addr[1]}
+        else:
+            return {}
 
     def close(self):
         self.closing = True
@@ -53,7 +57,7 @@ class WsConnection(Connection):
     def send_frame(self, frame: Union[bytes, bytearray, memoryview]):
         # Can't do asyncio send directly. Append to the queue
         try:
-            asyncio.run_coroutine_threadsafe(self.queue.put(frame), self.loop).result()
+            asyncio.run_coroutine_threadsafe(self.queue.put(frame), self.loop)
         except BaseException as ex:
             log.error(f"Error sending frame: {ex}")
 
@@ -81,6 +85,26 @@ class HttpDriver(Driver):
             v.close()
         self.executor.shutdown(False)
         pass
+
+    def get_connect_url(self, scheme: str, resources: dict):
+        return self.get_url(Mode.ACTIVE, scheme, resources)
+
+    def get_listening_url(self, scheme: str, resources: dict):
+        return self.get_url(Mode.PASSIVE, scheme, resources)
+
+    # Internal methods
+
+    @staticmethod
+    def get_url(mode: Mode, scheme: str, resources: dict):
+        host = resources.get("host") if resources else None
+        if not host:
+            host = "localhost" if mode == Mode.ACTIVE else "0"
+
+        port = resources.get("port") if resources else None
+        if not port:
+            port = random.randint(12345, 23456)
+
+        return f"{scheme}://{host}:{port}"
 
     def start_event_loop(self, params: dict, mode: Mode):
         self.executor.submit(self.event_loop, params, mode).result()

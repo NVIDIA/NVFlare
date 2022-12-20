@@ -11,6 +11,7 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License
+import logging
 import os
 from typing import Optional
 
@@ -22,9 +23,11 @@ from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor
 from nvflare.fuel.f3.message import Message, MessageReceiver
 from nvflare.fuel.f3.sfm.conn_manager import ConnManager, Mode
 
+log = logging.getLogger(__name__)
+
 
 class Communicator:
-    """FCI main API"""
+    """FCI main communication API"""
 
     def __init__(self, local_endpoint: Endpoint):
         self.local_endpoint = local_endpoint
@@ -42,6 +45,7 @@ class Communicator:
             CommError: If any error encountered while starting up
         """
         self.conn_manager.start()
+        log.info(f"Communicator is started for local endpoint: {self.local_endpoint.name}")
 
     def stop(self):
         """Stop the communicator and shutdown all the connections
@@ -50,6 +54,7 @@ class Communicator:
             CommError: If any error encountered while shutting down
         """
         self.conn_manager.stop()
+        log.info(f"Communicator is stopped for local endpoint: {self.local_endpoint.name}")
 
     def register_monitor(self, monitor: EndpointMonitor):
         """Register a monitor for endpoint lifecycle changes
@@ -58,7 +63,7 @@ class Communicator:
         Multiple monitors can be registered.
 
         Args:
-            monitor: The class that receives the state change notification
+            monitor: The class that receives the endpoint state change notification
 
         Raises:
             CommError: If any error happens while sending the request
@@ -104,26 +109,32 @@ class Communicator:
 
         self.conn_manager.register_message_receiver(app_id, receiver)
 
-    def load_listener(self, url: str) -> str:
-        """Load a listener. The driver is selected based on the URL
+    def get_connector_urls(self, scheme: str, resources: dict) -> (str, str):
+        """Return the URLs can be used for a specific scheme to reach this endpoint
 
         Args:
-            url: The url to listen on, like "https://0:443". Use 0 for empty host
+            scheme: Connection scheme, e.g. http, https
+            resources: User specified resources like host and port ranges
 
         Returns:
-            A handle that can be used to delete listener
+            A tuple with active and passive URLs
 
         Raises:
-            CommError: If any errors
+            CommError: If any errors like invalid host or port not available
         """
 
-        return self._load_driver(url, Mode.PASSIVE)
+        driver = self.driver_mgr.find_driver(scheme)
+        if not driver:
+            raise CommError(CommError.NOT_SUPPORTED, f"No driver found for scheme {scheme}")
 
-    def load_connector(self, url: str) -> str:
+        return driver.get_connect_url(scheme, resources), driver.get_listening_url(scheme, resources)
+
+    def add_connector(self, url: str, mode: Mode) -> str:
         """Load a connector. The driver is selected based on the URL
 
         Args:
-            url: The url to connect to, like "https://server:443".
+            url: The url to listen on or connect to, like "https://0:443". Use 0 for empty host
+            mode: Active for connecting, Passive for listening
 
         Returns:
             A handle that can be used to delete connector
@@ -132,58 +143,44 @@ class Communicator:
             CommError: If any errors
         """
 
-        return self._load_driver(url, Mode.ACTIVE)
+        return self._load_driver(url, mode)
 
-    def add_listener(self, driver: Driver, params: dict):
-        """Add a connector using the driver
+    def add_connector_advanced(self, driver: Driver, mode: Mode, params: dict) -> str:
+        """Add a connector using a specific driver instance.
 
         Args:
-            driver: The driver for the transport
+            driver: A transport driver instance
+            mode: Active or passive
             params: Driver parameters
 
         Returns:
-            A handle that can be used to delete listener
+            A handle that can be used to delete the connector
 
         Raises:
             CommError: If any errors
         """
 
-        return self._add_transport(driver, params, Mode.PASSIVE)
+        return self._update_conn_parameters(driver, params, mode)
 
-    def add_connector(self, driver: Driver, params: dict) -> str:
-        """Add a connector using the driver
+    def remove_connector(self, handle: str):
+        """Remove the connector
 
         Args:
-            driver: The driver for the transport
-            params: Driver parameters
-
-        Returns:
-            A handle that can be used to delete connector
-        Raises:
-            CommError: If any errors
-        """
-
-        return self.conn_manager.add_transport(driver, params, Mode.ACTIVE)
-
-    def remove_transport(self, handle: str):
-        """Remove a listener or connector
-
-        Args:
-            handle: The handle for the listener or the connector
+            handle: The connector handle
 
         Raises:
             CommError: If any errors
         """
-        self.conn_manager.remove_transport(handle)
+        self.conn_manager.remove_connector(handle)
 
     # Internal methods
 
-    def _add_transport(self, driver: Driver, params: dict, mode: Mode):
+    def _update_conn_parameters(self, driver: Driver, params: dict, mode: Mode):
 
         if self.local_endpoint.conn_props:
             params.update(self.local_endpoint.conn_props)
 
-        return self.conn_manager.add_transport(driver, params, mode)
+        return self.conn_manager.add_connector(driver, params, mode)
 
     def _load_driver(self, url: str, mode: Mode) -> str:
 
@@ -192,4 +189,4 @@ class Communicator:
             raise CommError(CommError.NOT_SUPPORTED, f"No driver found for URL {url}")
 
         params = Driver.parse_url(url)
-        return self._add_transport(driver, params, mode)
+        return self._update_conn_parameters(driver, params, mode)

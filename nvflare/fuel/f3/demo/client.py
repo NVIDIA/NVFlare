@@ -17,6 +17,7 @@ import time
 
 from nvflare.fuel.f3.communicator import Communicator
 from nvflare.fuel.f3.demo.callbacks import DemoEndpointMonitor, TimingReceiver, make_message
+from nvflare.fuel.f3.drivers.driver import Mode
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.message import AppIds, Headers
 
@@ -37,7 +38,8 @@ conn_props = {
 local_endpoint = Endpoint("demo.client", {"test": 123}, conn_props)
 
 communicator = Communicator(local_endpoint)
-handle = communicator.load_connector("https://127.0.0.1:4321")
+connect_url, _ = communicator.get_connector_urls("https", {"port": 4567})
+handle = communicator.add_connector(connect_url, Mode.ACTIVE)
 
 communicator.register_monitor(DemoEndpointMonitor(local_endpoint.name, endpoints))
 communicator.register_message_receiver(AppIds.CELL_NET, TimingReceiver())
@@ -65,8 +67,7 @@ while count < 10:
     time.sleep(1)
     count += 1
 
-communicator.remove_transport(handle)
-communicator.stop()
-
 time.sleep(10)
+communicator.remove_connector(handle)
+communicator.stop()
 log.info("Client stopped!")

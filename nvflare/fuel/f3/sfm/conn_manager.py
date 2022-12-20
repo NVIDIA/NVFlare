@@ -39,8 +39,8 @@ log = logging.getLogger(__name__)
 
 
 @dataclass
-class Transport:
-    """A listener or connector"""
+class Connector:
+    """Connector information"""
     handle: str
     driver: Driver
     params: dict
@@ -57,8 +57,8 @@ class ConnManager:
     def __init__(self, local_endpoint: Endpoint):
         self.local_endpoint = local_endpoint
 
-        # List of active transports (listener and connector)
-        self.transports: List[Transport] = []
+        # List of active connectors
+        self.connectors: List[Connector] = []
 
         # A dict of SFM connections, key is connection name
         self.connections: Dict[str, SfmConnection] = {}
@@ -75,36 +75,36 @@ class ConnManager:
         self.started = False
         self.executor = ThreadPoolExecutor(THREAD_POOL_SIZE, "conn_mgr")
 
-    def add_transport(self, driver: Driver, params: dict, mode: Mode) -> str:
+    def add_connector(self, driver: Driver, params: dict, mode: Mode) -> str:
         handle = str(uuid.uuid4())
-        transport = Transport(handle, driver, params, mode, 0, 0)
-        driver.register_conn_monitor(SfmConnMonitor(self, transport))
-        self.transports.append(transport)
+        connector = Connector(handle, driver, params, mode, 0, 0)
+        driver.register_conn_monitor(SfmConnMonitor(self, connector))
+        self.connectors.append(connector)
 
-        log.debug(f"Transport {handle} with driver {driver.get_name()} is created in {mode.name} mode")
+        log.debug(f"Connector {handle} with driver {driver.get_name()} is created in {mode.name} mode")
 
         if self.started:
-            self.start_transport(transport)
+            self.start_connector(connector)
 
         return handle
 
-    def remove_transport(self, handle: str):
-        for index, trans in enumerate(self.transports):
-            if handle == trans.handle:
-                trans.driver.shutdown()
-                self.transports.pop(index)
-                log.info(f"Transport {handle} with driver {trans.driver.get_name()} is removed")
+    def remove_connector(self, handle: str):
+        for index, connector in enumerate(self.connectors):
+            if handle == connector.handle:
+                connector.driver.shutdown()
+                self.connectors.pop(index)
+                log.info(f"Connector {handle} with driver {connector.driver.get_name()} is removed")
                 return
 
-        log.error(f"Unknown transport handle: {handle}")
+        log.error(f"Unknown connector handle: {handle}")
 
     def start(self):
-        for trans in self.transports:
-            self.start_transport(trans)
+        for connector in self.connectors:
+            self.start_connector(connector)
 
     def stop(self):
-        for trans in self.transports:
-            trans.driver.shutdown()
+        for connector in self.connectors:
+            connector.driver.shutdown()
 
         self.executor.shutdown(False)
 
@@ -161,45 +161,47 @@ class ConnManager:
 
     # Internal methods
 
-    def start_transport(self, transport: Transport):
-        """Start transport in a new thread"""
+    def start_connector(self, connector: Connector):
+        """Start connector in a new thread"""
 
-        self.executor.submit(self.start_transport_task, transport)
+        self.executor.submit(self.start_connector_task, connector)
 
-    def start_transport_task(self, transport: Transport):
-        """Start transport in a new thread"""
-        if transport.mode == Mode.ACTIVE:
-            starter = transport.driver.connect
+    def start_connector_task(self, connector: Connector):
+        """Start connector in a new thread"""
+
+        if connector.mode == Mode.ACTIVE:
+            starter = connector.driver.connect
         else:
-            starter = transport.driver.listen
+            starter = connector.driver.listen
 
         connected = False
         wait = 1
         while not connected:
             try:
-                starter(transport.params)
+                starter(connector.params)
                 connected = True
             except Exception as ex:
                 log.error(f"Connection failed, retrying in {wait} seconds: {ex}")
                 log.debug(traceback.format_exc())
 
                 time.sleep(wait)
+                # Exponential backoff
                 wait *= 2
                 if wait > MAX_WAIT:
                     wait = MAX_WAIT
 
-        log.info(f"Transport {transport.driver.get_name()}:{transport.name} is started in {transport.mode.name} mode")
+        log.info(f"Connector {connector.driver.get_name()}:{connector.name} is started in {connector.mode.name} mode")
 
-    def conn_state_change(self, connection: Connection, transport: Transport):
+    def conn_state_change(self, connection: Connection, connector: Connector):
         state = connection.state
 
         if state == ConnState.CONNECTED:
-            self.handle_new_connection(connection, transport)
-            transport.total_conns += 1
-            transport.curr_conns += 1
+            self.handle_new_connection(connection, connector)
+            connector.total_conns += 1
+            connector.curr_conns += 1
         elif state == ConnState.CLOSED:
             self.close_connection(connection)
-            transport.curr_conns -= 1
+            connector.curr_conns -= 1
         else:
             log.error(f"Unknown state: {state}")
 
@@ -276,9 +278,9 @@ class ConnManager:
         mv = memoryview(frame)
         return msgpack.unpackb(mv[(PREFIX_LEN+prefix.header_len):])
 
-    def handle_new_connection(self, connection: Connection, transport: Transport):
+    def handle_new_connection(self, connection: Connection, connector: Connector):
 
-        sfm_conn = SfmConnection(connection, self.local_endpoint, transport.mode)
+        sfm_conn = SfmConnection(connection, self.local_endpoint, connector.mode)
         self.connections[sfm_conn.get_name()] = sfm_conn
         connection.register_frame_receiver(SfmFrameReceiver(self, sfm_conn))
 
@@ -291,12 +293,12 @@ class ConnManager:
 
 class SfmConnMonitor(ConnMonitor):
 
-    def __init__(self, conn_manager: ConnManager, transport: Transport):
+    def __init__(self, conn_manager: ConnManager, connector: Connector):
         self.conn_manager = conn_manager
-        self.transport = transport
+        self.connector = connector
 
     def state_change(self, connection: Connection):
-        self.conn_manager.conn_state_change(connection, self.transport)
+        self.conn_manager.conn_state_change(connection, self.connector)
 
 
 class SfmFrameReceiver(FrameReceiver):

@@ -17,6 +17,7 @@ import time
 
 from nvflare.fuel.f3.communicator import Communicator
 from nvflare.fuel.f3.demo.callbacks import TimingReceiver, DemoEndpointMonitor, make_message, RequestReceiver
+from nvflare.fuel.f3.drivers.driver import Mode
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.message import AppIds, Message
 
@@ -37,9 +38,8 @@ conn_props = {
 
 local_endpoint = Endpoint("demo.server", {"test": 456}, conn_props)
 communicator = Communicator(local_endpoint)
-active_url, passive_url = communicator.get_connector_url(resource)
-handle = communicator.load_connector(url, passive)
-communicator.load_listener("https://localhost:4321")
+_, listening_url = communicator.get_connector_urls("https", {"port": 4567})
+handle = communicator.add_connector(listening_url, Mode.PASSIVE)
 
 communicator.register_monitor(DemoEndpointMonitor(local_endpoint.name, endpoints))
 communicator.register_message_receiver(AppIds.CELL_NET, TimingReceiver())
@@ -48,7 +48,7 @@ communicator.start()
 log.info("Server is started")
 
 count = 0
-while count < 20:
+while count < 60:
     # Wait till one endpoint is available
     if endpoints:
 
@@ -64,7 +64,8 @@ while count < 20:
     time.sleep(1)
     count += 1
 
-communicator.stop()
 time.sleep(10)
+communicator.remove_connector(handle)
+communicator.stop()
 log.info("Server stopped!")
 
