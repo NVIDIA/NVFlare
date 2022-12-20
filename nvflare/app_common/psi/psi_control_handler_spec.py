@@ -13,25 +13,26 @@
 # limitations under the License.
 from abc import ABC, abstractmethod
 
-from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_context import FLContext
+from nvflare.apis.signal import Signal
+from nvflare.app_common.executors.init_final_component import InitFinalArgsComponent
 
 
-class InitFinalComponent(FLComponent, ABC):
+class PsiControlHandler(InitFinalArgsComponent, ABC):
+    """
+    PSI handler is an interface for different PSI algorithms
+    for example, DDH-Based PSI, Homomorphic-based PSI etc.
+    for now, since we don't know the common features, we leave the interface blank for now
+    This class handle the FL Server site (controller)'s logics
+    """
+
     @abstractmethod
-    def initialize(self, fl_ctx: FLContext):
+    def pre_workflow(self, abort_signal: Signal) -> bool:
         pass
 
     @abstractmethod
-    def finalize(self):
-        pass
-
-
-class InitFinalArgsComponent(InitFinalComponent, ABC):
-    @abstractmethod
-    def initialize(self, fl_ctx: FLContext, **kwargs):
+    def workflow(self, abort_signal: Signal) -> bool:
         pass
 
     @abstractmethod
-    def finalize(self):
+    def post_workflow(self, abort_signal: Signal) -> bool:
         pass

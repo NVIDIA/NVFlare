@@ -17,11 +17,7 @@ from typing import Optional
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.executors.init_final_component import InitFinalComponent
-
-
-def check_component_type(comp, t):
-    if not isinstance(comp, t):
-        raise TypeError(f"{type(comp).__name} must implement `{t}` type. Got: {type(comp)}")
+from nvflare.app_common.utils.component_utils import check_component_type
 
 
 class ClientExecutor(InitFinalComponent, ABC):

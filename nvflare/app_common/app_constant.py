@@ -14,7 +14,6 @@
 
 
 class ExecutorTasks:
-
     TRAIN = "train"
     VALIDATE = "validate"
     CROSS_VALIDATION = "__cross_validation"
@@ -23,7 +22,6 @@ class ExecutorTasks:
 
 
 class AppConstants(object):
-
     CONFIG_PATH = "config_path"
     MODEL_NETWORK = "model_network"
     MULTI_GPU = "multi_gpu"
@@ -120,25 +118,21 @@ class AppConstants(object):
 
 
 class EnvironmentKey(object):
-
     CHECKPOINT_DIR = "APP_CKPT_DIR"
     CHECKPOINT_FILE_NAME = "APP_CKPT"
 
 
 class DefaultCheckpointFileName(object):
-
     GLOBAL_MODEL = "FL_global_model.pt"
     BEST_GLOBAL_MODEL = "best_FL_global_model.pt"
 
 
 class ModelName(object):
-
     BEST_MODEL = "best_model"
     FINAL_MODEL = "final_model"
 
 
 class ModelFormat(object):
-
     PT_CHECKPOINT = "pt_checkpoint"
     TORCH_SCRIPT = "torch_script"
     PT_ONNX = "pt_onnx"
@@ -147,13 +141,11 @@ class ModelFormat(object):
 
 
 class ValidateType(object):
-
     BEFORE_TRAIN_VALIDATE = "before_train_validate"
     MODEL_VALIDATE = "model_validate"
 
 
 class AlgorithmConstants(object):
-
     SCAFFOLD_CTRL_DIFF = "scaffold_c_diff"
     SCAFFOLD_CTRL_GLOBAL = "scaffold_c_global"
     SCAFFOLD_CTRL_AGGREGATOR_ID = "scaffold_ctrl_aggregator"
@@ -191,3 +183,29 @@ class StatisticsConstants(AppConstants):
     }
 
     PRE_RUN_RESULT = "fed_stats_pre_run_result"
+
+
+class PSIConst(AppConstants):
+    PSI_TASK_KEY = "PSI_TASK_KEY"
+    PSI_DIRECTION_KEY = "PSI_DIRECTION_KEY"
+
+    PSI_FORWARD = "PSI_FORWARD"
+    PSI_BACKWARD = "PSI_BACKWARD"
+
+    PSI_TASK = "PSI"
+
+    PSI_TASK_PREPARE = "PSI_PREPARE"
+    PSI_TASK_SETUP = "PSI_SETUP"
+    PSI_TASK_REQUEST = "PSI_REQUEST"
+    PSI_TASK_RESPONSE = "PSI_RESPONSE"
+    PSI_TASK_INTERSECT = "PSI_TASK_INTERSECT"
+
+    PSI_ITEM_SIZE = "PSI_ITEM_SIZE"
+
+    PSI_SETUP_MSG = "PSI_SETUP_MSG"
+    PSI_REQUEST_MSG = "PSI_REQUEST_MSG"
+    PSI_RESPONSE_MSG = "PSI_RESPONSE_MSG"
+
+    PSI_STATUS_STARTED = "started"
+    PSI_STATUS_DONE = "done"
+    PSI_STATUS = "status"

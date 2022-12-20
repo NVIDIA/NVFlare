@@ -11,27 +11,3 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from abc import ABC, abstractmethod
-
-from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_context import FLContext
-
-
-class InitFinalComponent(FLComponent, ABC):
-    @abstractmethod
-    def initialize(self, fl_ctx: FLContext):
-        pass
-
-    @abstractmethod
-    def finalize(self):
-        pass
-
-
-class InitFinalArgsComponent(InitFinalComponent, ABC):
-    @abstractmethod
-    def initialize(self, fl_ctx: FLContext, **kwargs):
-        pass
-
-    @abstractmethod
-    def finalize(self):
-        pass

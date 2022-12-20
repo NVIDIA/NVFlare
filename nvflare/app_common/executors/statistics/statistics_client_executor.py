@@ -145,7 +145,6 @@ class StatisticsClientExecutor(ClientExecutor):
         inputs: Shareable,
         fl_ctx: FLContext,
     ) -> int:
-
         result = self.stats_generator.count(dataset_name, feature_name)
         return result
 
