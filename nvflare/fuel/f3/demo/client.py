@@ -17,7 +17,7 @@ import time
 
 from nvflare.fuel.f3.communicator import Communicator
 from nvflare.fuel.f3.demo.callbacks import DemoEndpointMonitor, TimingReceiver, make_message
-from nvflare.fuel.f3.drivers.driver import Mode
+from nvflare.fuel.f3.drivers.driver import Mode, DriverParams
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.message import AppIds, Headers
 
@@ -38,7 +38,11 @@ conn_props = {
 local_endpoint = Endpoint("demo.client", {"test": 123}, conn_props)
 
 communicator = Communicator(local_endpoint)
-connect_url, _ = communicator.get_connector_urls("https", {"port": 4567})
+resources = {
+    DriverParams.SECURE: True,
+    DriverParams.PORT: 4567,
+}
+connect_url, _ = communicator.get_connector_urls("https", resources)
 handle = communicator.add_connector(connect_url, Mode.ACTIVE)
 
 communicator.register_monitor(DemoEndpointMonitor(local_endpoint.name, endpoints))

@@ -13,11 +13,13 @@
 # limitations under the License.
 import asyncio
 import logging
+import random
+import socket
 import ssl
 from concurrent.futures import ThreadPoolExecutor
-from random import random
+from itertools import chain
 from ssl import SSLContext
-from typing import List, Any, Union
+from typing import List, Any, Union, Optional
 
 import websockets
 
@@ -31,6 +33,8 @@ log = logging.getLogger(__name__)
 
 QUEUE_SIZE = 16
 THREAD_POOL_SIZE = 8
+LO_PORT = 1025
+HI_PORT = 65535
 
 
 class WsConnection(Connection):
@@ -84,7 +88,6 @@ class HttpDriver(Driver):
         for _, v in self.connections.items():
             v.close()
         self.executor.shutdown(False)
-        pass
 
     def get_connect_url(self, scheme: str, resources: dict):
         return self.get_url(Mode.ACTIVE, scheme, resources)
@@ -94,15 +97,18 @@ class HttpDriver(Driver):
 
     # Internal methods
 
-    @staticmethod
-    def get_url(mode: Mode, scheme: str, resources: dict):
+    def get_url(self, mode: Mode, scheme: str, resources: dict):
+        secure = resources.get(DriverParams.SECURE)
+        if secure:
+            scheme = "https"
+
         host = resources.get("host") if resources else None
         if not host:
             host = "localhost" if mode == Mode.ACTIVE else "0"
 
-        port = resources.get("port") if resources else None
+        port = self.get_open_port(resources)
         if not port:
-            port = random.randint(12345, 23456)
+            raise CommError(CommError.BAD_CONFIG, "Can't find an open port in the specified range")
 
         return f"{scheme}://{host}:{port}"
 
@@ -195,7 +201,7 @@ class HttpDriver(Driver):
         log.debug(f"Connection {self.get_name()}:{conn.name} is closed")
 
     @staticmethod
-    def get_ssl_context(params: dict, server: bool) -> SSLContext:
+    def get_ssl_context(params: dict, server: bool) -> Optional[SSLContext]:
         scheme = params.get(DriverParams.SCHEME.value)
         if scheme not in ("https", "wss"):
             return None
@@ -224,3 +230,59 @@ class HttpDriver(Driver):
         ctx.load_cert_chain(certfile=cert_path, keyfile=key_path)
 
         return ctx
+
+    @staticmethod
+    def parse_range(entry: Any):
+
+        if isinstance(entry, int):
+            return range(entry, entry + 1)
+
+        parts = entry.split("-")
+        if len(parts) == 1:
+            num = int(parts[0])
+            return range(num, num + 1)
+        lo = int(parts[0]) if parts[0] else LO_PORT
+        hi = int(parts[1]) if parts[1] else HI_PORT
+        return range(lo, hi + 1)
+
+    def parse_ports(self, ranges: Any) -> iter:
+        all_ranges = []
+        if isinstance(ranges, list):
+            for r in ranges:
+                all_ranges.append(self.parse_range(r))
+        else:
+            all_ranges.append(self.parse_range(ranges))
+
+        return chain.from_iterable(all_ranges)
+
+    @staticmethod
+    def check_port(port) -> bool:
+        result = False
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            s.bind(("", port))
+            result = True
+        except Exception as e:
+            log.debug(f"Port {port} binding error: {e}")
+        s.close()
+
+        return result
+
+    def get_open_port(self, resources: dict) -> Optional[int]:
+
+        port = resources.get(DriverParams.PORT)
+        if port:
+            return port
+
+        ports = resources.get(DriverParams.PORTS)
+        if not ports:
+            port = random.randint(LO_PORT, HI_PORT)
+            all_ports = range(port, HI_PORT+1)
+        else:
+            all_ports = self.parse_ports(ports)
+
+        for port in all_ports:
+            if self.check_port(port):
+                return port
+
+        return None

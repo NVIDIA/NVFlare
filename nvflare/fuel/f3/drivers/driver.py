@@ -62,6 +62,8 @@ class DriverParams(str, Enum):
     SERVER_KEY = "server_key"
     CLIENT_CERT = "client_cert"
     CLIENT_KEY = "client_key"
+    SECURE = "secure"
+    PORTS = "ports"
 
 
 class Mode(Enum):
