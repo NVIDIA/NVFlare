@@ -10,23 +10,33 @@
 #  distributed under the License is distributed on an "AS IS" BASIS,
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
-#  limitations under the License.
+#  limitations under the License
+import logging
+import os
 from typing import Optional
 
-from nvflare.fuel.f3.driver import DriverSpec
+from nvflare.fuel.f3 import drivers
+from nvflare.fuel.f3.comm_error import CommError
+from nvflare.fuel.f3.drivers.driver import Driver
+from nvflare.fuel.f3.drivers.driver_manager import DriverManager
 from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor
-from nvflare.fuel.f3.receiver import Receiver
-from nvflare.fuel.f3.responder import Responder
-from nvflare.fuel.f3.message import Message
-from nvflare.fuel.f3.sfm.conn_manager import ConnManager
+from nvflare.fuel.f3.message import Message, MessageReceiver
+from nvflare.fuel.f3.sfm.conn_manager import ConnManager, Mode
+
+log = logging.getLogger(__name__)
 
 
 class Communicator:
+    """FCI main communication API"""
 
     def __init__(self, local_endpoint: Endpoint):
         self.local_endpoint = local_endpoint
         self.monitors = []
-        self.conn_manager = ConnManager(self.local_endpoint)
+        self.conn_manager = ConnManager(local_endpoint)
+        self.driver_mgr = DriverManager()
+
+        # Load all the drivers in the drivers module
+        self.driver_mgr.register_folder(os.path.dirname(drivers.__file__), drivers.__package__)
 
     def start(self):
         """Start the communicator and establishing all the connections
@@ -34,7 +44,8 @@ class Communicator:
         Raises:
             CommError: If any error encountered while starting up
         """
-        pass
+        self.conn_manager.start()
+        log.info(f"Communicator is started for local endpoint: {self.local_endpoint.name}")
 
     def stop(self):
         """Stop the communicator and shutdown all the connections
@@ -42,110 +53,140 @@ class Communicator:
         Raises:
             CommError: If any error encountered while shutting down
         """
-        pass
+        self.conn_manager.stop()
+        log.info(f"Communicator is stopped for local endpoint: {self.local_endpoint.name}")
 
     def register_monitor(self, monitor: EndpointMonitor):
         """Register a monitor for endpoint lifecycle changes
 
-        This monitor is notified for any state changes of all the endpoints
+        This monitor is notified for any state changes of all the endpoints.
+        Multiple monitors can be registered.
 
         Args:
-            monitor: The class that receives the state change notification
+            monitor: The class that receives the endpoint state change notification
 
         Raises:
             CommError: If any error happens while sending the request
         """
-        pass
+        self.conn_manager.add_endpoint_monitor(monitor)
 
-    def send(self, endpoint: Endpoint, app: int, message: Message, reliable=False):
-        """Send a message to endpoint for app
+    def get_endpoint(self, name: str) -> Optional[Endpoint]:
+        """Find endpoint by name
 
-        This method is similar to a HTTP request or RPC call.
+        Args:
+            name: Endpoint name
+
+        Returns:
+            The endpoint if found. None if not found
+
+        """
+        return self.conn_manager.find_endpoint(name)
+
+    def send(self, endpoint: Endpoint, app_id: int, message: Message):
+        """Send a message to endpoint for app_id, no response is expected
 
         Args:
             endpoint: An endpoint to send the request to
-            app: Application ID
+            app_id: Application ID
             message: Message to send
-            reliable: Reliable message, ack requested.
 
         Raises:
-            CommError: If any error happens while sending the request
+            CommError: If any error happens while sending the data
         """
-        pass
 
-    def register_receiver(self, endpoint: Optional[Endpoint], app: int, receiver: Receiver):
-        """Register a receiver to process FCI message
+        self.conn_manager.send_message(endpoint, app_id, message.headers, message.payload)
+
+    def register_message_receiver(self, app_id: int, receiver: MessageReceiver):
+        """Register a receiver to process FCI message for the app
 
          Args:
-             endpoint: Endpoint of the message, None to handle messages from all endpoint
-             app: Application ID
+             app_id: Application ID
              receiver: The class to process the message
 
          Raises:
              CommError: If duplicate endpoint/app or responder is of wrong type
          """
 
-        pass
+        self.conn_manager.register_message_receiver(app_id, receiver)
 
-    def request(self, endpoint: Endpoint, app: int, message: Message, timeout_ms=0) -> Message:
-        """Send request to endpoint/channel and wait for response
-
-        This method is similar to a HTTP or RPC call.
+    def get_connector_urls(self, scheme: str, resources: dict) -> (str, str):
+        """Return the URLs can be used for a specific scheme to reach this endpoint
 
         Args:
-            endpoint: An endpoint to send the request to
-            app: Application ID
-            message: Message to send
-            timeout_ms: Timeout in milliseconds, 0 means system default
+            scheme: Connection scheme, e.g. http, https
+            resources: User specified resources like host and port ranges
 
         Returns:
-            The response message
+            A tuple with active and passive URLs
 
         Raises:
-            CommError: If any error happens while sending the request
+            CommError: If any errors like invalid host or port not available
         """
-        pass
 
-    def register_responder(self, endpoint: Optional[Endpoint], app: int, responder: Responder):
-        """Register a responder to handle FCI request
+        driver = self.driver_mgr.find_driver(scheme)
+        if not driver:
+            raise CommError(CommError.NOT_SUPPORTED, f"No driver found for scheme {scheme}")
 
-         This is similar to HTTP server handler or gRPC servicer method
+        return driver.get_connect_url(scheme, resources), driver.get_listening_url(scheme, resources)
 
-         Args:
-             endpoint: Endpoint of the request, None to handle requests from all endpoints
-             app: Application ID
-             responder: The class to handle the request
+    def add_connector(self, url: str, mode: Mode) -> str:
+        """Load a connector. The driver is selected based on the URL
 
-         Raises:
-             CommError: If duplicate endpoint/app or responder is of wrong type
-         """
+        Args:
+            url: The url to listen on or connect to, like "https://0:443". Use 0 for empty host
+            mode: Active for connecting, Passive for listening
 
-        pass
+        Returns:
+            A handle that can be used to delete connector
 
-    def add_listener(self, driver: DriverSpec):
-        """Add a listener to wait for connections
+        Raises:
+            CommError: If any errors
+        """
 
-         This is similar to HTTP server listener
+        return self._load_driver(url, mode)
 
-         Args:
-             driver: The driver for the listener
+    def add_connector_advanced(self, driver: Driver, mode: Mode, params: dict) -> str:
+        """Add a connector using a specific driver instance.
 
-         Raises:
-             CommError: If any errors
-         """
+        Args:
+            driver: A transport driver instance
+            mode: Active or passive
+            params: Driver parameters
 
-        self.conn_manager.add_listeners(driver)
+        Returns:
+            A handle that can be used to delete the connector
 
-    def add_connector(self, driver: DriverSpec):
-        """Add a connector to initiate connections
+        Raises:
+            CommError: If any errors
+        """
 
-         This is similar to HTTP client connection
+        return self._update_conn_parameters(driver, params, mode)
 
-         Args:
-             driver: The driver for the connector
+    def remove_connector(self, handle: str):
+        """Remove the connector
 
-         Raises:
-             CommError: If any errors
-         """
+        Args:
+            handle: The connector handle
 
-        self.conn_manager.add_connector(driver)
+        Raises:
+            CommError: If any errors
+        """
+        self.conn_manager.remove_connector(handle)
+
+    # Internal methods
+
+    def _update_conn_parameters(self, driver: Driver, params: dict, mode: Mode):
+
+        if self.local_endpoint.conn_props:
+            params.update(self.local_endpoint.conn_props)
+
+        return self.conn_manager.add_connector(driver, params, mode)
+
+    def _load_driver(self, url: str, mode: Mode) -> str:
+
+        driver = self.driver_mgr.find_driver(url)
+        if not driver:
+            raise CommError(CommError.NOT_SUPPORTED, f"No driver found for URL {url}")
+
+        params = Driver.parse_url(url)
+        return self._update_conn_parameters(driver, params, mode)
