@@ -35,6 +35,9 @@ class PsiClient:
         self.request = self.psi_client.CreateRequest(items).SerializeToString()
         self.setup = None
 
+    def get_items_size(self) -> int:
+        return len(self.items)
+
     def receive_setup(self, setup_msg: str):
         """
         Args:

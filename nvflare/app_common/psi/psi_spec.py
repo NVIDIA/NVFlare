@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
-from typing import Dict, List
+from typing import List
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
@@ -34,20 +34,8 @@ class PSI(FLComponent, ABC):
         self.fl_ctx = fl_ctx
 
     @abstractmethod
-    def get_intersects(self, items: Dict[str, List[str]]) -> Dict[str, List[str]]:
-        """
-        Args:
-            items: list of items to send for each dataset
-        Returns: Dict[<dataset_name>, List[str]]
+    def load_items(self) -> List[str]:
+        pass
 
-           return private intersects for each dataset.
-           For example, we have training and test datasets.
-           the method will return
-           { "train": set1, "test": set2}
-           where set1,2 are the list of intersects of all clients
-
-        Raises:
-            NotImplementedError
-        """
-
-        raise NotImplementedError
+    def save(self, intersections: List[str]):
+        pass

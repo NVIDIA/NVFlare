@@ -57,7 +57,7 @@ class DHPsiControlHandler(PsiControlHandler):
 
         inputs = Shareable()
         inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_PREPARE
-        task_props = {PSIConst.PSI_TASK_KEY: PSIConst.PSI_TASK_PREPARE}
+        task_props = {}
         targets = None
         min_responses = len(self.fl_ctx.clients())
         bop = BroadcastAndWait(self.fl_ctx, self.controller)
@@ -180,7 +180,7 @@ class DHPsiControlHandler(PsiControlHandler):
         inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_SETUP
         inputs[PSIConst.PSI_ITEM_SIZE] = c.size
 
-        task_props = {PSIConst.PSI_DIRECTION_KEY: PSIConst.PSI_FORWARD}
+        task_props = {}
         targets = [s.name]
 
         min_responses = 1
@@ -196,7 +196,7 @@ class DHPsiControlHandler(PsiControlHandler):
         inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_REQUEST
         inputs[PSIConst.PSI_SETUP_MSG] = setup_msg[c.name]
 
-        task_props = {PSIConst.PSI_DIRECTION_KEY: PSIConst.PSI_FORWARD}
+        task_props = {}
         targets = [c.name]
 
         min_responses = 1
@@ -211,7 +211,7 @@ class DHPsiControlHandler(PsiControlHandler):
         inputs = Shareable()
         inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_RESPONSE
         inputs[PSIConst.PSI_REQUEST_MSG] = response_msg
-        task_props = {PSIConst.PSI_DIRECTION_KEY: PSIConst.PSI_FORWARD}
+        task_props = {}
         targets = [s.name]
 
         min_responses = 1
@@ -225,7 +225,7 @@ class DHPsiControlHandler(PsiControlHandler):
         inputs = Shareable()
         inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_INTERSECT
         inputs[PSIConst.PSI_RESPONSE_MSG] = response[c.name]
-        task_props = {PSIConst.PSI_DIRECTION_KEY: PSIConst.PSI_FORWARD}
+        task_props = {}
         targets = [c.name]
         min_responses = 1
         bop = BroadcastAndWait(self.fl_ctx, self.controller)
