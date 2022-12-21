@@ -20,6 +20,9 @@ import uuid
 import grpc
 
 from nvflare.apis.client import Client
+from nvflare.apis.fl_constant import FLContextKey
+from nvflare.private.defs import CellMessageHeaderKeys
+from nvflare.apis.fl_context import FLContext
 
 
 class ClientManager:
@@ -45,10 +48,12 @@ class ClientManager:
         if not client:
             return None
 
-        client_ip = context.peer().split(":")[1]
+        # client_ip = context.peer().split(":")[1]
+        client_ip = request.get_prop(CellMessageHeaderKeys.CLIENT_IP)
 
         if len(self.clients) >= self.max_num_clients:
-            context.abort(grpc.StatusCode.RESOURCE_EXHAUSTED, "Maximum number of clients reached")
+            # context.abort(grpc.StatusCode.RESOURCE_EXHAUSTED, "Maximum number of clients reached")
+            context.set_prop(FLContextKey.COMMUNICATION_ERROR, "Maximum number of clients reached")
 
         # new client will join the current round immediately
         with self.lock:
@@ -78,15 +83,16 @@ class ClientManager:
 
     def login_client(self, client_login, context):
         if not self.is_valid_task(client_login.meta.project):
-            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Requested task does not match the current server task")
+            # context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Requested task does not match the current server task")
+            context.set_prop(FLContextKey.UNAUTHENTICATED, "Requested task does not match the current server task")
         return self.authenticated_client(client_login, context)
 
-    def validate_client(self, client_state, context, allow_new=False):
+    def validate_client(self, client_state, fl_ctx: FLContext, allow_new=False):
         """Validate the client state message.
 
         Args:
             client_state: A ClientState message received by server
-            context: gRPC connection context
+            fl_ctx: FLContext
             allow_new: whether to allow new client. Note that its task should still match server's.
 
         Returns:
@@ -94,13 +100,16 @@ class ClientManager:
         """
         token = client_state.token
         if not token:
-            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Could not read client uid from the payload")
+            # context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Could not read client uid from the payload")
+            fl_ctx.set_prop(FLContextKey.UNAUTHENTICATED, "Could not read client uid from the payload")
             client = None
         elif not self.is_valid_task(client_state.meta.project):
-            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Requested task does not match the current server task")
+            # context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Requested task does not match the current server task")
+            fl_ctx.set_prop(FLContextKey.UNAUTHENTICATED, "Requested task does not match the current server task")
             client = None
         elif not (allow_new or self.is_from_authorized_client(token)):
-            context.abort(grpc.StatusCode.UNAUTHENTICATED, "Unknown client identity")
+            # context.abort(grpc.StatusCode.UNAUTHENTICATED, "Unknown client identity")
+            fl_ctx.set_prop(FLContextKey.UNAUTHENTICATED, "Unknown client identity")
             client = None
         else:
             client = self.clients.get(token)
@@ -110,32 +119,38 @@ class ClientManager:
         """Use SSL certificate for authenticate the client.
 
         Args:
-            client_login: client login request
-            context: gRPC connection context
+            client_login: client login request Message
+            context: FL_Context
 
         Returns:
             Client object.
         """
-        client = self.clients.get(client_login.token)
+        client_name = client_login.get_header(CellMessageHeaderKeys.CLIENT_NAME)
+        client = self.clients.get(client_name)
         if not client:
-            cn_names = context.auth_context().get("x509_common_name")
-            if cn_names:
-                client_name = cn_names[0].decode("utf-8")
-                if client_login.client_name:
-                    if not client_login.client_name == client_name:
-                        context.abort(
-                            grpc.StatusCode.UNAUTHENTICATED, "client ID does not match the SSL certificate CN"
-                        )
-                        return None
-            else:
-                client_name = client_login.client_name
+            # cn_names = context.auth_context().get("x509_common_name")
+            # if cn_names:
+            #     client_name = cn_names[0].decode("utf-8")
+            #     if client_login.client_name:
+            #         if not client_login.client_name == client_name:
+            #             # context.abort(
+            #             #     grpc.StatusCode.UNAUTHENTICATED, "client ID does not match the SSL certificate CN"
+            #             # )
+            #             context.set_prop(FLContextKey.COMMUNICATION_ERROR,
+            #                              "client ID does not match the SSL certificate CN")
+            #
+            #             return None
+            # else:
+            #     client_name = client_login.client_name
 
             for token, client in self.clients.items():
                 if client.name == client_name:
-                    context.abort(
-                        grpc.StatusCode.FAILED_PRECONDITION,
-                        "Client ID already registered as a client: {}".format(client_name),
-                    )
+                    # context.abort(
+                    #     grpc.StatusCode.FAILED_PRECONDITION,
+                    #     "Client ID already registered as a client: {}".format(client_name),
+                    # )
+                    context.set_prop(FLContextKey.COMMUNICATION_ERROR,
+                                     "Client ID already registered as a client: {}".format(client_name))
                     return None
 
             client = Client(client_name, str(uuid.uuid4()))

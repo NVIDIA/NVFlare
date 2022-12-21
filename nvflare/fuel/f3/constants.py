@@ -66,6 +66,7 @@ class ReturnCode:
     TIMEOUT = "timeout"
     COMM_ERROR = "comm_error"
     PROCESS_EXCEPTION = "process_exception"   # receiver error processing request
+    UNAUTHENTICATED = "unauthenticated"
 
 
 class MessageType:

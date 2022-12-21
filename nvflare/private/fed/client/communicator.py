@@ -31,6 +31,7 @@ from nvflare.private.fed.utils.fed_utils import make_context_data, make_shareabl
 from nvflare.security.logging import secure_format_exception
 
 from nvflare.fuel.f3.cellnet import Cell, Message, FQCN
+from nvflare.fuel.f3.constants import MessageHeaderKey, ReturnCode
 from nvflare.private.defs import new_cell_message, CellChannel, CellChannelTopic, CellMessageHeaderKeys
 
 
@@ -223,12 +224,13 @@ class Communicator:
                     topic=CellChannelTopic.Register,
                     request=login_message
                 )
+                return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
+                if return_code == ReturnCode.UNAUTHENTICATED:
+                    unauthenticated = result.get_header(MessageHeaderKey.ERROR)
+                    raise FLCommunicationError({}, "error:client_registration " + unauthenticated)
+
                 token = result.get_header(CellMessageHeaderKeys.TOKEN)
                 ssid = result.get_header(CellMessageHeaderKeys.SSID)
-                unauthenticated = result.get_header(CellMessageHeaderKeys.UNAUTHENTICATED)
-                if unauthenticated:
-                    raise FLCommunicationError({}, "error:client_registration unauthenticated")
-
                 if not token and not self.should_stop:
                     time.sleep(5)
                 else:

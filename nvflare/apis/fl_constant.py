@@ -141,6 +141,8 @@ class FLContextKey(object):
     SCOPE_PROPERTIES = "__scope_props__"
     SCOPE_OBJECT = "__scope_object__"
     FATAL_SYSTEM_ERROR = ReservedKey.FATAL_SYSTEM_ERROR
+    COMMUNICATION_ERROR = "__F3_communication_error__"
+    UNAUTHENTICATED = "__F3_authenticated__"
 
 
 class ReservedTopic(object):

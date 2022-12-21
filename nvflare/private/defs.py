@@ -157,6 +157,7 @@ class CellMessageHeaderKeys:
     TOKEN = "token"
     SSID = "ssid"
     UNAUTHENTICATED = "unauthenticated"
+    MESSAGE = "message"
 
 
 def new_cell_message(headers: dict, payload=None):
