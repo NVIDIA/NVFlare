@@ -373,6 +373,11 @@ class FederatedServer(BaseServer):
             topic=CellChannelTopic.Quit,
             cb=self.Quit,
         )
+        self.cell.register_request_cb(
+            channel=CellChannel.TASK,
+            topic=CellChannelTopic.HEART_BEAT,
+            cb=self.Heartbeat,
+        )
 
     def _create_server_engine(self, args, snapshot_persistor):
         return ServerEngine(
@@ -702,39 +707,47 @@ class FederatedServer(BaseServer):
 
         return reply
 
-    def Heartbeat(self, request, context):
+    # def Heartbeat(self, request, context):
+    @request_processing
+    def Heartbeat(self, cell: Cell, channel: str, topic: str, request: Message, fl_ctx: FLContext) -> Message:
 
         with self.engine.new_context() as fl_ctx:
             state_check = self.server_state.heartbeat(fl_ctx)
-            self._handle_state_check(context, state_check)
+            self._handle_state_check(state_check, fl_ctx)
 
-            token = request.token
-            cn_names = context.auth_context().get("x509_common_name")
-            if cn_names:
-                client_name = cn_names[0].decode("utf-8")
-            else:
-                client_name = request.client_name
+            # token = request.token
+            token = request.get_header(CellMessageHeaderKeys.TOKEN)
+            # cn_names = context.auth_context().get("x509_common_name")
+            # if cn_names:
+            #     client_name = cn_names[0].decode("utf-8")
+            # else:
+            #     client_name = request.client_name
+            client_name =  request.get_header(CellMessageHeaderKeys.CLIENT_NAME)
 
-            if self.client_manager.heartbeat(token, client_name, context):
+            if self.client_manager.heartbeat(token, client_name, fl_ctx):
                 self.tokens[token] = self.task_meta_info
             if self.admin_server:
                 self.admin_server.client_heartbeat(token)
 
             abort_runs = self._sync_client_jobs(request, token)
-            summary_info = fed_msg.FederatedSummary()
+            # summary_info = fed_msg.FederatedSummary()
+            reply = Message({CellMessageHeaderKeys.MESSAGE: "Heartbeat response"})
             if abort_runs:
-                del summary_info.abort_jobs[:]
-                summary_info.abort_jobs.extend(abort_runs)
+                # del summary_info.abort_jobs[:]
+                # summary_info.abort_jobs.extend(abort_runs)
+                reply.set_header(CellMessageHeaderKeys.ABORT_JOBS, abort_runs)
+
                 display_runs = ",".join(abort_runs)
                 self.logger.info(
                     f"These jobs: {display_runs} are not running on the server. "
                     f"Ask client: {client_name} to abort these runs."
                 )
-            return summary_info
+            return reply
 
     def _sync_client_jobs(self, request, client_token):
         # jobs that are running on client but not on server need to be aborted!
-        client_jobs = request.jobs
+        # client_jobs = request.jobs
+        client_jobs = request.get_header(CellMessageHeaderKeys.JOB_IDS)
         server_jobs = self.engine.run_processes.keys()
         jobs_need_abort = list(set(client_jobs).difference(server_jobs))
 

@@ -402,61 +402,111 @@ class Communicator:
             server's reply to the last message
 
         """
-        server_message, retry = None, self.retry
-        with self.set_up_channel(servers[task_name]) as channel:
-            stub = fed_service.FederatedTrainingStub(channel)
-            while retry > 0:
-                try:
-                    start_time = time.time()
-                    self.logger.info(f"Quitting server: {task_name}")
-                    server_message = stub.Quit(_get_client_state(task_name, token, ssid, fl_ctx))
-                    # Clear the stopping flag
-                    # if the connection to server recovered.
-                    self.should_stop = False
+        # server_message, retry = None, self.retry
+        # with self.set_up_channel(servers[task_name]) as channel:
+        #     stub = fed_service.FederatedTrainingStub(channel)
+        #     while retry > 0:
+        #         try:
+        #             start_time = time.time()
+        #             self.logger.info(f"Quitting server: {task_name}")
+        #             server_message = stub.Quit(_get_client_state(task_name, token, ssid, fl_ctx))
+        #             # Clear the stopping flag
+        #             # if the connection to server recovered.
+        #             self.should_stop = False
+        #
+        #             end_time = time.time()
+        #             self.logger.info(
+        #                 f"Received comment from server: {server_message.comment}. Quit time: {end_time - start_time} seconds"
+        #             )
+        #             break
+        #         except grpc.RpcError as grpc_error:
+        #             self.grpc_error_handler(servers[task_name], grpc_error, "quit_remote")
+        #             retry -= 1
+        #             time.sleep(3)
+        # return server_message
 
-                    end_time = time.time()
-                    self.logger.info(
-                        f"Received comment from server: {server_message.comment}. Quit time: {end_time - start_time} seconds"
-                    )
-                    break
-                except grpc.RpcError as grpc_error:
-                    self.grpc_error_handler(servers[task_name], grpc_error, "quit_remote")
-                    retry -= 1
-                    time.sleep(3)
+        quit_message = new_cell_message({CellMessageHeaderKeys.TOKEN: token,
+                                        CellMessageHeaderKeys.SSID: ssid,
+                                         CellMessageHeaderKeys.PROJECT_NAME: task_name})
+        try:
+            result = self.cell.send_request(
+                target=FQCN.ROOT_SERVER,
+                channel=CellChannel.TASK,
+                topic=CellChannelTopic.Quit,
+                request=quit_message
+            )
+            return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
+            if return_code == ReturnCode.UNAUTHENTICATED:
+                unauthenticated = result.get_header(MessageHeaderKey.ERROR)
+                raise FLCommunicationError({}, "error:client_quit " + unauthenticated)
+
+            server_message = result.get_header(CellMessageHeaderKeys.MESSAGE)
+
+        except BaseException as ex:
+           raise FLCommunicationError(ex, "error:client_quit")
+
         return server_message
 
     def send_heartbeat(self, servers, task_name, token, ssid, client_name, engine: ClientEngineInternalSpec):
-        message = fed_msg.Token()
-        message.token = token
-        message.ssid = ssid
-        message.client_name = client_name
+        # message = fed_msg.Token()
+        # message.token = token
+        # message.ssid = ssid
+        # message.client_name = client_name
 
         while not self.heartbeat_done:
             try:
-                with self.set_up_channel(servers[task_name]) as channel:
-                    stub = fed_service.FederatedTrainingStub(channel)
-                    # retry the heartbeat call for 10 minutes
-                    retry = 2
-                    while retry > 0:
-                        try:
-                            self.logger.debug(f"Send {task_name} heartbeat {token}")
-                            job_ids = engine.get_all_job_ids()
-                            del message.jobs[:]
-                            message.jobs.extend(job_ids)
-                            response = stub.Heartbeat(message)
-                            self._clean_up_runs(engine, response)
-                            break
-                        except grpc.RpcError:
-                            retry -= 1
-                            time.sleep(5)
+                # with self.set_up_channel(servers[task_name]) as channel:
+                #     stub = fed_service.FederatedTrainingStub(channel)
+                #     # retry the heartbeat call for 10 minutes
+                #     retry = 2
+                #     while retry > 0:
+                #         try:
+                #             self.logger.debug(f"Send {task_name} heartbeat {token}")
+                #             job_ids = engine.get_all_job_ids()
+                #             del message.jobs[:]
+                #             message.jobs.extend(job_ids)
+                #             response = stub.Heartbeat(message)
+                #             self._clean_up_runs(engine, response)
+                #             break
+                #         except grpc.RpcError:
+                #             retry -= 1
+                #             time.sleep(5)
+
+                    job_ids = engine.get_all_job_ids()
+                    heartbeat_message = new_cell_message(
+                        {CellMessageHeaderKeys.TOKEN: token,
+                         CellMessageHeaderKeys.SSID: ssid,
+                         CellMessageHeaderKeys.CLIENT_NAME: client_name,
+                         CellMessageHeaderKeys.PROJECT_NAME: task_name,
+                         CellMessageHeaderKeys.JOB_IDS: job_ids
+                         })
+
+                    try:
+                        result = self.cell.send_request(
+                            target=FQCN.ROOT_SERVER,
+                            channel=CellChannel.TASK,
+                            topic=CellChannelTopic.HEART_BEAT,
+                            request=heartbeat_message
+                        )
+                        return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
+                        if return_code == ReturnCode.UNAUTHENTICATED:
+                            unauthenticated = result.get_header(MessageHeaderKey.ERROR)
+                            raise FLCommunicationError({}, "error:client_quit " + unauthenticated)
+
+                        # server_message = result.get_header(CellMessageHeaderKeys.MESSAGE)
+                        abort_jobs = result.get_header(CellMessageHeaderKeys.ABORT_JOBS)
+                        self._clean_up_runs(engine, abort_jobs)
+
+                    except BaseException as ex:
+                        raise FLCommunicationError(ex, "error:client_quit")
 
                     time.sleep(30)
             except BaseException as e:
                 self.logger.info(f"Failed to send heartbeat. Will try again. Exception: {secure_format_exception(e)}")
                 time.sleep(5)
 
-    def _clean_up_runs(self, engine, response):
-        abort_runs = list(set(response.abort_jobs))
+    def _clean_up_runs(self, engine, abort_runs):
+        # abort_runs = list(set(response.abort_jobs))
         display_runs = ",".join(abort_runs)
         try:
             if abort_runs:

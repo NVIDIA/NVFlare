@@ -87,7 +87,7 @@ class ClientManager:
             context.set_prop(FLContextKey.UNAUTHENTICATED, "Requested task does not match the current server task")
         return self.authenticated_client(client_login, context)
 
-    def validate_client(self, client_state, fl_ctx: FLContext, allow_new=False):
+    def validate_client(self, request, fl_ctx: FLContext, allow_new=False):
         """Validate the client state message.
 
         Args:
@@ -98,12 +98,13 @@ class ClientManager:
         Returns:
              client id if it's a valid client
         """
-        token = client_state.token
+        # token = client_state.token
+        token = request.get_header(CellMessageHeaderKeys.TOKEN)
         if not token:
             # context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Could not read client uid from the payload")
             fl_ctx.set_prop(FLContextKey.UNAUTHENTICATED, "Could not read client uid from the payload")
             client = None
-        elif not self.is_valid_task(client_state.meta.project):
+        elif not self.is_valid_task(request.get_header(CellMessageHeaderKeys.PROJECT_NAME)):
             # context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Requested task does not match the current server task")
             fl_ctx.set_prop(FLContextKey.UNAUTHENTICATED, "Requested task does not match the current server task")
             client = None
@@ -175,13 +176,13 @@ class ClientManager:
         """
         return task.name == self.project_name
 
-    def heartbeat(self, token, client_name, context):
+    def heartbeat(self, token, client_name, fl_ctx):
         """Update the heartbeat of the client.
 
         Args:
             token: client token
             client_name: client name
-            context: grpc context
+            fl_ctx: FLContext
 
         Returns:
             If a new client needs to be created.
@@ -196,10 +197,12 @@ class ClientManager:
             else:
                 for _token, _client in self.clients.items():
                     if _client.name == client_name:
-                        context.abort(
-                            grpc.StatusCode.FAILED_PRECONDITION,
-                            "Client ID already registered as a client: {}".format(client_name),
-                        )
+                        # context.abort(
+                        #     grpc.StatusCode.FAILED_PRECONDITION,
+                        #     "Client ID already registered as a client: {}".format(client_name),
+                        # )
+                        fl_ctx.set_prop(FLContextKey.COMMUNICATION_ERROR,
+                                        "Client ID already registered as a client: {}".format(client_name))
                         self.logger.info(
                             "Failed to re-activate dead client:{} with token: {}. Client already exist.".format(
                                 client_name, _token

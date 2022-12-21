@@ -145,6 +145,7 @@ class CellChannelTopic:
     Quit = "quit"
     GET_TASK = "get_task"
     SUBMIT_RESULT = "submit_result"
+    HEART_BEAT = "hear_beat"
 
 
 ERROR_MSG_PREFIX = "NVFLARE_ERROR"
@@ -154,10 +155,13 @@ class CellMessageHeaderKeys:
 
     CLIENT_NAME = "client_name"
     CLIENT_IP = "client_ip"
+    PROJECT_NAME = "project_name"
     TOKEN = "token"
     SSID = "ssid"
     UNAUTHENTICATED = "unauthenticated"
+    JOB_IDS = "job_ids"
     MESSAGE = "message"
+    ABORT_JOBS = "abort_jobs"
 
 
 def new_cell_message(headers: dict, payload=None):
