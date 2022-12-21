@@ -14,7 +14,7 @@
 from typing import List
 
 from nvflare.app_common.psi.psi_spec import PSI
-
+import random
 
 class SamplePSI(PSI):
 
@@ -22,8 +22,11 @@ class SamplePSI(PSI):
         super().__init__(psi_writer_id)
         self.data = {}
         self.site_nums = 10
+        scale = 20
         for i in range(self.site_nums):
-            self.data[f"site-{i + 1}"] = range(int(2e+3), int(4e+3), i+1)
+            start = random.randrange(1, 2)
+            end = random.randrange(2,4)
+            self.data[f"site-{i + 1}"] = range(int(start * scale), int(end*scale), i+1)
 
     def load_items(self) -> List[str]:
         user_id_range = self.data[self.fl_ctx.get_identity_name()]

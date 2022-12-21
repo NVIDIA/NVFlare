@@ -53,32 +53,21 @@ class DhPSIWorkFlow(PSIWorkflow):
         # so that we can resume were left off. If all clients have intersection calculated, will continue with next step.
         #
         self.log_info(self.fl_ctx, f"pre_workflow on task {self.task_name}")
-        self.log_info(self.fl_ctx, "abort_signal = ", abort_signal)
-        # if abort_signal:
-        #     return False
-        self.log_info(self.fl_ctx, f"pre inputs on task {self.task_name}")
+
+        if abort_signal.triggered:
+            return False
         self.abort_signal = abort_signal
-        inputs = Shareable()
-        inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_PREPARE
-        inputs[PSIConst.PSI_BLOOM_FILTER_FPR] = self.bloom_filter_fpr
-        task_props = {}
-        targets = None
-        engine = self.fl_ctx.get_engine()
-        min_responses = len(engine.get_clients())
-
-        self.log_info(self.fl_ctx, f"{PSIConst.PSI_TASK_PREPARE} BroadcastAndWait() on task {self.task_name}")
-        bop = BroadcastAndWait(self.fl_ctx, self.controller)
-        results = bop.broadcast_and_wait(self.task_name, task_props, inputs, targets, min_responses, abort_signal)
-        self.log_info(self.fl_ctx, f"{PSIConst.PSI_TASK_PREPARE} results = {results}")
-
-        self.ordered_sites = self.get_ordered_sites(results)
+        self.prepare_sites(abort_signal)
 
     def workflow(self, abort_signal: Signal):
-        # if abort_signal:
-        #     return False
+        if abort_signal.triggered:
+            return False
 
         self.abort_signal = abort_signal
         self.forward_processed.update(self.forward_pass(self.ordered_sites))
+
+        self.prepare_sites(abort_signal)
+
         self.backward_processed.update(self.backward_pass(self.ordered_sites))
 
     def post_workflow(self, abort_signal: Signal):
@@ -94,6 +83,7 @@ class DhPSIWorkFlow(PSIWorkflow):
         site_sizes = []
         for site_name in results:
             data = results[site_name].data
+            print("site:", site_name, "data = ", data)
             if PSIConst.PSI_ITEMS_SIZE in data:
                 size = data[PSIConst.PSI_ITEMS_SIZE]
             else:
@@ -104,7 +94,7 @@ class DhPSIWorkFlow(PSIWorkflow):
                 site_sizes.append(c)
 
             site_sizes.sort(key=compare_fn)
-
+        print("site_sizes:", site_sizes)
         return site_sizes
 
     def forward_pass(self, ordered_sites: List[SiteSize], reverse=False) -> dict:
@@ -131,7 +121,7 @@ class DhPSIWorkFlow(PSIWorkflow):
         start, end, step = self.get_directional_range(total_sites, reverse)
         for i in range(start, end, step):
             s = ordered_sites[i]
-            c = ordered_sites[i + 1]
+            c = ordered_sites[i + step]
             setup_msg = self.prepare_setup_message(s, c)
             request = self.prepare_request(c, setup_msg)
             response = self.process_request(s, c.name, request[c.name])
@@ -147,7 +137,7 @@ class DhPSIWorkFlow(PSIWorkflow):
             step = -1
         else:
             start = 0
-            end = total
+            end = total -1
             step = 1
 
         return start, end, step
@@ -170,7 +160,8 @@ class DhPSIWorkFlow(PSIWorkflow):
         if total_clients <= 1:
             return processed
 
-        if len(self.forward_processed) == total_clients:
+        print("forward_processed = ", self.forward_processed)
+        if len(self.forward_processed) == total_clients - 1 :
             # Sequential version
             return self.forward_pass(ordered_clients, reverse=True)
 
@@ -185,12 +176,28 @@ class DhPSIWorkFlow(PSIWorkflow):
         else:
             raise ValueError("started backward pass before finish the forward pass")
 
+
+    def prepare_sites(self, abort_signal):
+        inputs = Shareable()
+        inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_PREPARE
+        inputs[PSIConst.PSI_BLOOM_FILTER_FPR] = self.bloom_filter_fpr
+        task_props = {"sub_task": PSIConst.PSI_TASK_PREPARE}
+        targets = None
+        engine = self.fl_ctx.get_engine()
+        min_responses = len(engine.get_clients())
+        self.log_info(self.fl_ctx, f"{PSIConst.PSI_TASK_PREPARE} BroadcastAndWait() on task {self.task_name}")
+        bop = BroadcastAndWait(self.fl_ctx, self.controller)
+        results = bop.broadcast_and_wait(self.task_name, task_props, inputs, targets, min_responses, abort_signal)
+        self.log_info(self.fl_ctx, f"{PSIConst.PSI_TASK_PREPARE} results = {results}")
+        self.ordered_sites = self.get_ordered_sites(results)
+
+
     def prepare_setup_message(self, s: SiteSize, c: SiteSize) -> dict:
         inputs = Shareable()
         inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_SETUP
         inputs[PSIConst.PSI_ITEMS_SIZE] = c.size
 
-        task_props = {}
+        task_props = {"sub_task": PSIConst.PSI_TASK_SETUP}
         targets = [s.name]
 
         min_responses = 1
@@ -199,6 +206,7 @@ class DhPSIWorkFlow(PSIWorkflow):
 
         dxo = results[s.name]
         setup_msg = dxo.data[PSIConst.PSI_SETUP_MSG]
+        self.log_info(self.fl_ctx, f"received setup message from {s.name} for {c.name}")
         return {c.name: setup_msg}
 
     def prepare_request(self, c: SiteSize, setup_msg: dict) -> dict:
@@ -206,7 +214,7 @@ class DhPSIWorkFlow(PSIWorkflow):
         inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_REQUEST
         inputs[PSIConst.PSI_SETUP_MSG] = setup_msg[c.name]
 
-        task_props = {}
+        task_props = {"sub_task": PSIConst.PSI_TASK_REQUEST}
         targets = [c.name]
 
         min_responses = 1
@@ -215,13 +223,14 @@ class DhPSIWorkFlow(PSIWorkflow):
 
         dxo = results[c.name]
         request_msg = dxo.data[PSIConst.PSI_REQUEST_MSG]
+        self.log_info(self.fl_ctx, f"received request message from {c.name}")
         return {c.name: request_msg}
 
     def process_request(self, s: SiteSize, c_name: str, response_msg: str):
         inputs = Shareable()
         inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_RESPONSE
         inputs[PSIConst.PSI_REQUEST_MSG] = response_msg
-        task_props = {}
+        task_props = {"sub_task": PSIConst.PSI_TASK_RESPONSE}
         targets = [s.name]
 
         min_responses = 1
@@ -229,17 +238,19 @@ class DhPSIWorkFlow(PSIWorkflow):
         results = bop.broadcast_and_wait(self.task_name, task_props, inputs, targets, min_responses, self.abort_signal)
         dxo = results[s.name]
         response_msg = dxo.data[PSIConst.PSI_RESPONSE_MSG]
+        self.log_info(self.fl_ctx, f"received response message from {s.name} for {c_name}")
         return {c_name: response_msg}
 
     def calculate_intersection(self, c: SiteSize, response: dict):
         inputs = Shareable()
         inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_INTERSECT
         inputs[PSIConst.PSI_RESPONSE_MSG] = response[c.name]
-        task_props = {}
+        task_props = {PSIConst.PSI_TASK_KEY: PSIConst.PSI_TASK_INTERSECT}
         targets = [c.name]
         min_responses = 1
         bop = BroadcastAndWait(self.fl_ctx, self.controller)
         results = bop.broadcast_and_wait(self.task_name, task_props, inputs, targets, min_responses, self.abort_signal)
         dxo = results[c.name]
         status = dxo.data[PSIConst.PSI_STATUS]
+        self.log_info(self.fl_ctx, f"received calculate_intersection job status from {c.name}, status is {status}")
         return {c.name: status}

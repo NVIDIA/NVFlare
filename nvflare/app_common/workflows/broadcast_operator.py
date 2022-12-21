@@ -49,13 +49,16 @@ class BroadcastAndWait(FLComponent, ABC):
     def results_cb(self, client_task: ClientTask, fl_ctx: FLContext):
         client_name = client_task.client.name
         task_name = client_task.task.name
-        self.log_info(fl_ctx, f"Processing {task_name} pre_run from client {client_name}")
+        sub_task = client_task.props["sub_task"] if client_task.props and "sub_task" in client_task.props else ""
+        print("sub_task=", sub_task)
+        self.log_info(fl_ctx, f"Processing {task_name} {sub_task} result from client {client_name}")
         result = client_task.result
 
         rc = result.get_return_code()
         if rc == ReturnCode.OK:
-            self.log_info(fl_ctx, f"Received result from client:{client_name} for task {task_name}")
+            self.log_info(fl_ctx, f"Received result from client:{client_name} for task {task_name} {sub_task} ")
             dxo = from_shareable(result)
+            print("dxo=", dxo)
             self.results.update({client_name: dxo})
         else:
             if rc in self.controller.abort_job_in_error.keys():
