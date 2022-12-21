@@ -11,23 +11,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.fuel.utils.fobs.decomposer import Decomposer
-from nvflare.fuel.utils.fobs.fobs import (
-    auto_register_enum_types,
-    deserialize,
-    deserialize_stream,
-    num_decomposers,
-    register,
-    register_data_classes,
-    register_enum_types,
-    register_folder,
-    reset,
-    serialize,
-    serialize_stream,
-)
+from abc import ABC, abstractmethod
 
-# aliases for compatibility to Pickle/json
-load = deserialize_stream
-loads = deserialize
-dump = serialize_stream
-dumps = serialize
+from nvflare.apis.fl_component import FLComponent
+from nvflare.apis.fl_context import FLContext
+
+
+class InitFinalComponent(FLComponent, ABC):
+    @abstractmethod
+    def initialize(self, fl_ctx: FLContext):
+        pass
+
+    @abstractmethod
+    def finalize(self):
+        pass

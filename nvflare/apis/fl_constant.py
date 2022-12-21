@@ -143,6 +143,9 @@ class FLContextKey(object):
     FATAL_SYSTEM_ERROR = ReservedKey.FATAL_SYSTEM_ERROR
     COMMUNICATION_ERROR = "__F3_communication_error__"
     UNAUTHENTICATED = "__F3_authenticated__"
+    CLIENT_RESOURCE_SPECS = "__client_resource_specs"
+    JOB_PARTICIPANTS = "__job_participants"
+    JOB_BLOCK_REASON = "__job_block_reason"  # why the job should be blocked from scheduling
 
 
 class ReservedTopic(object):

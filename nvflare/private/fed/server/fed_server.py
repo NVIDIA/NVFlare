@@ -245,16 +245,20 @@ class BaseServer(ABC):
             if client.last_connect_time < time.time() - self.heart_beat_timeout:
                 delete.append(token)
         for token in delete:
-            client = self.client_manager.remove_client(token)
-            self.remove_client_data(token)
-            if self.admin_server:
-                self.admin_server.client_dead(token)
-            self.notify_dead_client(client)
+            client = self.logout_client(token)
             self.logger.info(
                 "Remove the dead Client. Name: {}\t Token: {}.  Total clients: {}".format(
                     client.name, token, len(self.client_manager.get_clients())
                 )
             )
+
+    def logout_client(self, token):
+        client = self.client_manager.remove_client(token)
+        self.remove_client_data(token)
+        if self.admin_server:
+            self.admin_server.client_dead(token)
+        self.notify_dead_client(client)
+        return client
 
     def notify_dead_client(self, client):
         """Called to do further processing of the dead client
@@ -463,11 +467,7 @@ class FederatedServer(BaseServer):
         client = self.client_manager.validate_client(request, fl_ctx)
         if client:
             token = client.get_token()
-
-            _ = self.client_manager.remove_client(token)
-            self.tokens.pop(token, None)
-            if self.admin_server:
-                self.admin_server.client_dead(token)
+            self.logout_client(token)
 
         # return fed_msg.FederatedSummary(comment="Removed client")
         return Message({CellMessageHeaderKeys.MESSAGE: "Removed client"})
@@ -526,7 +526,7 @@ class FederatedServer(BaseServer):
                 return task
 
     def _process_task_request(self, client, fl_ctx, shared_fl_ctx):
-        task_name = SpecialTaskName.END_RUN
+        task_name = SpecialTaskName.TRY_AGAIN
         task_id = ""
         shareable = None
         try:

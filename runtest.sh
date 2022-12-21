@@ -308,30 +308,24 @@ do
 done
 
 if [[ -z $cmd ]]; then
-    cmd_array=(
-	"check_license"
-        "check_style_type_import nvflare tests"
-        "fix_style_import nvflare"
-        "fix_style_import tests"
-        "python3 -m pytest --numprocesses=auto --cov=nvflare --cov-report html:cov_html --cov-report xml:cov.xml --junitxml=unit_test.xml tests/unit_test"
-    )
+    cmd="check_license;
+        check_style_type_import nvflare tests;
+        fix_style_import nvflare;
+        fix_style_import tests;
+        python3 -m pytest --numprocesses=auto --cov=nvflare --cov-report html:cov_html --cov-report xml:cov.xml --junitxml=unit_test.xml tests/unit_test;
+        "
 else
-    cmd_array=("$cmd $target")
+    cmd="$cmd $target"
 fi
 
 echo "running command: "
-echo "        install_deps"
-for i in "${cmd_array[@]}"; do
-    echo "        $i"
-done
+echo "        install_deps;"
+echo "        $cmd"
 echo "                 "
-
-for i in "${cmd_array[@]}"; do
-    if [[ $dry_run_flag = "true" ]]; then
-        dry_run "$i"
-    else
-        install_deps
-        ${i}
-    fi
-done
+if [[ $dry_run_flag = "true" ]]; then
+    dry_run "$cmd"
+else
+    install_deps
+    eval "$cmd"
+fi
 echo "Done"
