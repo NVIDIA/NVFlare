@@ -22,7 +22,7 @@ class SamplePSI(PSI):
         super().__init__(psi_writer_id)
         self.data = {}
         self.site_nums = 10
-        scale = 20
+        scale = 100
         for i in range(self.site_nums):
             start = random.randrange(1, 2)
             end = random.randrange(2,4)
