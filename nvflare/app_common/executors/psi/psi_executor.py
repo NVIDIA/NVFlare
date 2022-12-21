@@ -11,32 +11,43 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from typing import Optional
+
 from nvflare.apis.dxo import DataKind
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.executors.client_executor import ClientExecutor
 from nvflare.app_common.executors.common_executor import CommonExecutor
 from nvflare.app_common.executors.psi.dh_psi_executor import DhPSIExecutor
+from nvflare.app_common.utils.component_utils import check_component_type
 
 
 class PSIExecutor(CommonExecutor):
-    def __init__(self, local_psi_id: str, psi_algo: str = "open_mined_psi"):
+    def __init__(self, local_psi_id: str, psi_algo: Optional[str] = None):
         super().__init__()
         self.local_psi_id = local_psi_id
         self.psi_algo = psi_algo
-        self.psi_algo_impls = {"open_mined_psi": DhPSIExecutor(self.local_psi_id)}
 
     def get_data_kind(self) -> str:
         return DataKind.PSI
 
     def get_client_executor(self, fl_ctx: FLContext) -> ClientExecutor:
         self.log_info(fl_ctx, "get_client_executor")
-        client_executor = self.psi_algo_impls.get(self.psi_algo, None)
-        self.check_psi_algo(fl_ctx)
-        client_executor.initialize(fl_ctx)
-        self.log_info(fl_ctx, "return client_executor")
-        return client_executor
+        return self.load_client_executor(self.psi_algo, fl_ctx)
 
-    def check_psi_algo(self, fl_ctx):
-        if not ClientExecutor:
+    def load_client_executor(self, psi_algo: str, fl_ctx: FLContext) -> ClientExecutor:
+        engine = fl_ctx.get_engine()
+        psi_client_executor = engine.get_component(psi_algo) if psi_algo else None
+        if not psi_client_executor:
+            # use default
+            psi_client_executor = DhPSIExecutor(self.local_psi_id)
+
+        self.check_psi_algo(psi_client_executor, fl_ctx)
+        psi_client_executor.initialize(fl_ctx)
+        return psi_client_executor
+
+    def check_psi_algo(self, psi_client_exec: ClientExecutor,  fl_ctx):
+        if not psi_client_exec:
             self.log_error(fl_ctx, f"PSI algorithm specified by {self.psi_algo} is not implemented")
             raise NotImplementedError
+
+        check_component_type(psi_client_exec, ClientExecutor)

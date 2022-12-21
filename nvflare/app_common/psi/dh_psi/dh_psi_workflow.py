@@ -46,12 +46,7 @@ class DhPSIWorkFlow(PSIWorkflow):
 
     def pre_workflow(self, abort_signal: Signal) -> bool:
         # ask client send back their item sizes
-        # sort client by ascending order and select the 1st site based on size (smallest size)
-        # todo:
-        # ask client if he already has the intersection,
-        # if it has, it means the FORWARD PATH intersection has already done at this point before failure
-        # so that we can resume were left off. If all clients have intersection calculated, will continue with next step.
-        #
+        # sort client by ascending order
         self.log_info(self.fl_ctx, f"pre_workflow on task {self.task_name}")
 
         if abort_signal.triggered:
@@ -98,8 +93,8 @@ class DhPSIWorkFlow(PSIWorkflow):
 
     def forward_pass(self, ordered_sites: List[SiteSize], reverse=False) -> dict:
         processed = {}
-        # if self.abort_signal:
-        #     return processed
+        if self.abort_signal.triggered:
+            return processed
 
         #   FORWARD PASS
         #   for each client pair selected from sorted clients
@@ -108,10 +103,6 @@ class DhPSIWorkFlow(PSIWorkflow):
         #     step 2:  send C2 C1's setup message and C2 return with it's request
         #     step 3:  send C1 (PsiServer) C2's request, and C1 process the request and send back the response
         #     step 4:  send C2 (PsiClient) C1's response and C2 compute intersect
-        #
-        #   for next two clients: C2, C3
-        #      Step 1: select C2 as PsiServer, and prepare setup message, FL server will receive setup message
-        #      Step 2: repeat the same steps for C2, C3
 
         total_sites = len(ordered_sites)
         if total_sites <= 1:
@@ -143,17 +134,8 @@ class DhPSIWorkFlow(PSIWorkflow):
 
     def backward_pass(self, ordered_clients: list) -> dict:
         processed = {}
-        # if self.abort_signal:
-        #     return processed
-
-        #   BACKWARD STEPS
-        #   Once we exhausted all clients, we starts the Backward Path, with the last node as the PsiServer
-        #   all other nodes as PsiClients
-        #      Step 1: last Cn (PsiServer) prepare setup message, FL server receive setup message
-        #      step 2: broadcast the Cn's setup message to all other clients and all clients will send back requests
-        #      step 3: broadcast other clients' requests to Cn, Cn will process the requests and send response for each
-        #      step 4: broadcast Cn's response to all other clients, and all other clients will compute intersects
-        #      and save the result locally
+        if self.abort_signal.triggered:
+            return processed
 
         total_clients = len(ordered_clients)
         if total_clients <= 1:

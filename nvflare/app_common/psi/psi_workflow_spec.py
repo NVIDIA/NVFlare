@@ -19,9 +19,8 @@ from nvflare.app_common.executors.init_final_component import InitFinalArgsCompo
 
 class PSIWorkflow(InitFinalArgsComponent, ABC):
     """
-    PSI handler is an interface for different PSI algorithms
+    PSIWorkflow is an interface for different PSI algorithms
     for example, DDH-Based PSI, Homomorphic-based PSI etc.
-    This class handle the FL Server site (controller)'s logics
     """
 
     @abstractmethod
