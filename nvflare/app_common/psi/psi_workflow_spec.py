@@ -17,11 +17,10 @@ from nvflare.apis.signal import Signal
 from nvflare.app_common.executors.init_final_component import InitFinalArgsComponent
 
 
-class PsiControlHandler(InitFinalArgsComponent, ABC):
+class PSIWorkflow(InitFinalArgsComponent, ABC):
     """
     PSI handler is an interface for different PSI algorithms
     for example, DDH-Based PSI, Homomorphic-based PSI etc.
-    for now, since we don't know the common features, we leave the interface blank for now
     This class handle the FL Server site (controller)'s logics
     """
 

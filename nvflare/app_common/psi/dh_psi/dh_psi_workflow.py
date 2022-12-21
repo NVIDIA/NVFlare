@@ -18,7 +18,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import PSIConst
-from nvflare.app_common.psi.psi_control_handler_spec import PsiControlHandler
+from nvflare.app_common.psi.psi_workflow_spec import PSIWorkflow
 from nvflare.app_common.workflows.broadcast_operator import BroadcastAndWait
 
 
@@ -27,13 +27,14 @@ class SiteSize(NamedTuple):
     size: int
 
 
-class DHPsiControlHandler(PsiControlHandler):
-    def __init__(self):
+class DhPSIWorkFlow(PSIWorkflow):
+    def __init__(self, bloom_filter_fpr: float = 1e-11):
         super().__init__()
+        self.task_name = PSIConst.PSI_TASK
+        self.bloom_filter_fpr: float = bloom_filter_fpr
+        self.wait_time_after_min_received = 0
         self.abort_signal = None
         self.fl_ctx = None
-        self.task_name = PSIConst.PSI_TASK
-        self.wait_time_after_min_received = 0
         self.controller = None
         self.ordered_sites: List[SiteSize] = []
         self.forward_processed = {}
@@ -51,22 +52,30 @@ class DHPsiControlHandler(PsiControlHandler):
         # if it has, it means the FORWARD PATH intersection has already done at this point before failure
         # so that we can resume were left off. If all clients have intersection calculated, will continue with next step.
         #
-        if abort_signal:
-            return False
+        self.log_info(self.fl_ctx, f"pre_workflow on task {self.task_name}")
+        self.log_info(self.fl_ctx, "abort_signal = ", abort_signal)
+        # if abort_signal:
+        #     return False
+        self.log_info(self.fl_ctx, f"pre inputs on task {self.task_name}")
         self.abort_signal = abort_signal
-
         inputs = Shareable()
         inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_PREPARE
+        inputs[PSIConst.PSI_BLOOM_FILTER_FPR] = self.bloom_filter_fpr
         task_props = {}
         targets = None
-        min_responses = len(self.fl_ctx.clients())
+        engine = self.fl_ctx.get_engine()
+        min_responses = len(engine.get_clients())
+
+        self.log_info(self.fl_ctx, f"{PSIConst.PSI_TASK_PREPARE} BroadcastAndWait() on task {self.task_name}")
         bop = BroadcastAndWait(self.fl_ctx, self.controller)
         results = bop.broadcast_and_wait(self.task_name, task_props, inputs, targets, min_responses, abort_signal)
+        self.log_info(self.fl_ctx, f"{PSIConst.PSI_TASK_PREPARE} results = {results}")
+
         self.ordered_sites = self.get_ordered_sites(results)
 
     def workflow(self, abort_signal: Signal):
-        if abort_signal:
-            return False
+        # if abort_signal:
+        #     return False
 
         self.abort_signal = abort_signal
         self.forward_processed.update(self.forward_pass(self.ordered_sites))
@@ -85,10 +94,11 @@ class DHPsiControlHandler(PsiControlHandler):
         site_sizes = []
         for site_name in results:
             data = results[site_name].data
-            if PSIConst.PSI_ITEM_SIZE in data:
-                size = data[PSIConst.PSI_ITEM_SIZE]
+            if PSIConst.PSI_ITEMS_SIZE in data:
+                size = data[PSIConst.PSI_ITEMS_SIZE]
             else:
                 size = 0
+
             if size > 0:
                 c = SiteSize(site_name, size)
                 site_sizes.append(c)
@@ -99,8 +109,8 @@ class DHPsiControlHandler(PsiControlHandler):
 
     def forward_pass(self, ordered_sites: List[SiteSize], reverse=False) -> dict:
         processed = {}
-        if self.abort_signal:
-            return processed
+        # if self.abort_signal:
+        #     return processed
 
         #   FORWARD PASS
         #   for each client pair selected from sorted clients
@@ -144,8 +154,8 @@ class DHPsiControlHandler(PsiControlHandler):
 
     def backward_pass(self, ordered_clients: list) -> dict:
         processed = {}
-        if self.abort_signal:
-            return processed
+        # if self.abort_signal:
+        #     return processed
 
         #   BACKWARD STEPS
         #   Once we exhausted all clients, we starts the Backward Path, with the last node as the PsiServer
@@ -178,7 +188,7 @@ class DHPsiControlHandler(PsiControlHandler):
     def prepare_setup_message(self, s: SiteSize, c: SiteSize) -> dict:
         inputs = Shareable()
         inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_SETUP
-        inputs[PSIConst.PSI_ITEM_SIZE] = c.size
+        inputs[PSIConst.PSI_ITEMS_SIZE] = c.size
 
         task_props = {}
         targets = [s.name]

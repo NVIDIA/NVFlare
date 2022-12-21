@@ -29,75 +29,76 @@ class DhPSIExecutor(ClientExecutor):
     User will interface local component : PSI to provide client items and  get intersection
     """
 
-    def __init__(self, local_psi_id: str, fpr: float = 1e-11):
+    def __init__(self, local_psi_id: str):
         super().__init__(local_psi_id, PSI)
         self.psi_client = None
         self.psi_server = None
-        self.fpr = fpr
         self.intersects: Optional[List[str]] = None
-
-        # note the local component here is actually PSI instance type
-        # type-checking is already done during init.
-        self.local_psi_handler: PSI = self.local_comp
+        self.local_psi_handler: Optional[PSI] = None
 
     def initialize(self, fl_ctx: FLContext):
         super().initialize(fl_ctx)
+        self.local_psi_handler = self.local_comp
 
     def client_exec(self, task_name: str, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
         client_name = fl_ctx.get_identity_name()
-        self.log_info(fl_ctx, f"Executing task '{task_name}' for client: '{client_name}'")
+        self.log_info(fl_ctx, f"Executing task '{task_name}' for {client_name}")
+
         if PSIConst.PSI_TASK == task_name:
             psi_stage_task = shareable.get(PSIConst.PSI_TASK_KEY)
+            self.log_info(fl_ctx, f"Executing task '{task_name}' psi_stage_task {psi_stage_task} for {client_name}")
+
             if psi_stage_task == PSIConst.PSI_TASK_PREPARE:
+                bloom_filter_fpr = shareable[PSIConst.PSI_BLOOM_FILTER_FPR]
                 self.psi_client = PsiClient(self.get_items())
-                self.psi_server = PsiServer(self.get_items(), self.fpr)
-                return self.get_item_size(client_name)
+                self.psi_server = PsiServer(self.get_items(), bloom_filter_fpr)
+                return self.get_items_size()
             else:
                 if psi_stage_task == PSIConst.PSI_TASK_SETUP:
-                    return self.setup(client_name, shareable)
+                    return self.setup(shareable)
                 elif psi_stage_task == PSIConst.PSI_TASK_REQUEST:
-                    return self.create_request(client_name, shareable)
+                    return self.create_request(shareable)
                 elif psi_stage_task == PSIConst.PSI_TASK_RESPONSE:
-                    return self.process_request(client_name, shareable)
+                    return self.process_request(shareable)
                 elif psi_stage_task == PSIConst.PSI_TASK_INTERSECT:
-                    return self.calculate_intersection(client_name, shareable)
+                    return self.calculate_intersection(shareable)
         else:
             raise RuntimeError(ReturnCode.TASK_UNKNOWN)
 
-    def create_request(self, client_name: str, shareable: Shareable):
+    def create_request(self, shareable: Shareable):
         setup_msg = shareable.get(PSIConst.PSI_SETUP_MSG)
         self.psi_client.receive_setup(setup_msg)
         request = self.psi_client.get_request()
         result = Shareable()
-        result[PSIConst.PSI_REQUEST_MSG] = {client_name: request}
+        result[PSIConst.PSI_REQUEST_MSG] = request
         return result
 
-    def setup(self, client_name: str, shareable: Shareable):
-        target_item_size = shareable.get(PSIConst.PSI_ITEM_SIZE)
+    def setup(self, shareable: Shareable):
+        target_item_size = shareable.get(PSIConst.PSI_ITEMS_SIZE)
         setup_msg = self.psi_server.setup(target_item_size)
         result = Shareable()
-        result[PSIConst.PSI_SETUP_MSG] = {client_name: setup_msg}
+        result[PSIConst.PSI_SETUP_MSG] = setup_msg
         return result
 
-    def get_item_size(self, client_name: str):
-        item_size = self.psi_client.get_item_size()
+    def get_items_size(self):
+        items_size = self.psi_client.get_items_size()
         result = Shareable()
-        result[PSIConst.PSI_ITEM_SIZE] = {client_name: item_size}
+        result[PSIConst.PSI_ITEMS_SIZE] = items_size
         return result
 
-    def process_request(self, client_name: str, shareable: Shareable):
+    def process_request(self, shareable: Shareable):
         request_msg = shareable.get(PSIConst.PSI_REQUEST_MSG)
         response = self.psi_server.process_request(request_msg)
         result = Shareable()
-        result[PSIConst.PSI_RESPONSE_MSG] = {client_name: response}
+        result[PSIConst.PSI_RESPONSE_MSG] = response
         return result
 
-    def calculate_intersection(self, client_name: str, shareable: Shareable):
+    def calculate_intersection(self, shareable: Shareable):
         response_msg = shareable.get(PSIConst.PSI_RESPONSE_MSG)
         intersections = self.psi_client.get_intersection(response_msg)
         self.local_psi_handler.save(intersections)
         result = Shareable()
-        result[PSIConst.PSI_STATUS] = {client_name: PSIConst.PSI_STATUS_DONE}
+        result[PSIConst.PSI_STATUS] = PSIConst.PSI_STATUS_DONE
         return result
 
     def get_items(self):

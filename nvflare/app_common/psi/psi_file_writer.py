@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+from typing import List
 
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
@@ -28,7 +29,7 @@ class FilePsiWriter(PsiPersistor):
 
     def save(
         self,
-        items: list[str],
+        items: List[str],
         overwrite_existing,
         fl_ctx: FLContext,
     ):

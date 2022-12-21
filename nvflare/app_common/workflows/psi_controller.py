@@ -19,15 +19,15 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import PSIConst
 from nvflare.app_common.executors.client_executor import check_component_type
-from nvflare.app_common.psi.psi_control_handler_spec import PsiControlHandler
+from nvflare.app_common.psi.psi_workflow_spec import PSIWorkflow
 from nvflare.app_common.workflows.common_controller import CommonController
 
 
 class PSIController(CommonController):
-    def __init__(self, psi_handler_id: str):
+    def __init__(self, psi_workflow_id: str):
         super().__init__()
-        self.psi_handler_id = psi_handler_id
-        self.psi_handler: Optional[PsiControlHandler] = None
+        self.psi_workflow_id = psi_workflow_id
+        self.psi_workflow: Optional[PSIWorkflow] = None
         self.fl_ctx = None
         self.task_name = PSIConst.PSI_TASK
 
@@ -37,34 +37,38 @@ class PSIController(CommonController):
             return False
 
         self.log_info(fl_ctx, "start pre workflow")
-        self.psi_handler.pre_workflow(abort_signal)
+        self.psi_workflow.pre_workflow(abort_signal)
 
         if abort_signal.triggered:
             return False
 
         self.log_info(fl_ctx, "start workflow")
-        self.psi_handler.workflow()
+        self.psi_workflow.workflow(abort_signal)
 
         if abort_signal.triggered:
             return False
 
         self.log_info(fl_ctx, "start post workflow")
-        self.psi_handler.post_workflow()
+        self.psi_workflow.post_workflow(abort_signal)
 
         self.log_info(fl_ctx, f"task {self.task_name} control flow end.")
 
     def start_controller(self, fl_ctx: FLContext):
         self.fl_ctx = fl_ctx
-        engine = fl_ctx.get_engine()
-        psi_handler: PsiControlHandler = engine.get_component(self.psi_handler_id)
-        psi_handler.initialize(fl_ctx, controller=self)
-        check_component_type(psi_handler, PsiControlHandler)
-        self.psi_handler = psi_handler
+        psi_workflow = self.load_psi_workflow(fl_ctx, self.psi_workflow_id)
+        self.psi_workflow = psi_workflow
 
     def stop_controller(self, fl_ctx: FLContext):
-        self.psi_handler.finalize()
+        self.psi_workflow.finalize()
 
     def process_result_of_unknown_task(
         self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
     ):
         pass
+
+    def load_psi_workflow(self, fl_ctx: FLContext, psi_workflow_id: str) -> PSIWorkflow:
+        engine = fl_ctx.get_engine()
+        psi_workflow: PSIWorkflow = engine.get_component(psi_workflow_id)
+        psi_workflow.initialize(fl_ctx, controller=self)
+        check_component_type(psi_workflow, PSIWorkflow)
+        return psi_workflow

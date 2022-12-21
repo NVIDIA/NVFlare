@@ -11,8 +11,20 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from typing import List
+
+from nvflare.app_common.psi.psi_spec import PSI
 
 
-def check_component_type(comp, t):
-    if not isinstance(comp, t):
-        raise TypeError(f"{type(comp).__name__} must implement `{t}` type. Got: {type(comp)}")
+class SamplePSI(PSI):
+
+    def __init__(self, psi_writer_id: str):
+        super().__init__(psi_writer_id)
+        self.data = {}
+        self.site_nums = 10
+        for i in range(self.site_nums):
+            self.data[f"site-{i + 1}"] = range(int(2e+3), int(4e+3), i+1)
+
+    def load_items(self) -> List[str]:
+        user_id_range = self.data[self.fl_ctx.get_identity_name()]
+        return [f"user_id-{i}" for i in user_id_range]

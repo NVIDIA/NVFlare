@@ -48,15 +48,19 @@ class CommonExecutor(Executor, ABC):
 
     def initialize(self, fl_ctx: FLContext):
         try:
+            self.log_info(fl_ctx, "initialize")
             self.client_name = fl_ctx.get_identity_name()
+            self.log_info(fl_ctx, f"initialize {self.client_name}")
             self.client_executor = self.get_client_executor(fl_ctx)
-
+            self.log_info(fl_ctx, f"client_executor : {self.client_executor}")
         except TypeError as te:
             if not is_secure():
                 self.log_exception(fl_ctx, traceback.format_exc())
             self.init_status_ok = False
             self.init_failure = {"abort_job": te}
         except Exception as e:
+            if not is_secure():
+                self.log_exception(fl_ctx, traceback.format_exc())
             self.init_status_ok = False
             self.init_failure = {"fail_client": e}
 
@@ -69,15 +73,18 @@ class CommonExecutor(Executor, ABC):
         pass
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
+        self.log_info(fl_ctx, f"inside execute() for task {task_name} on client {fl_ctx.get_identity_name()}")
         init_rc = self._check_init_status(fl_ctx)
+        self.log_info(fl_ctx, f"after _check_init_status() for task {task_name} on client {fl_ctx.get_identity_name()}")
         if init_rc:
             return make_reply(init_rc)
-
+        self.log_info(fl_ctx, f"get client_name task {task_name} on client {fl_ctx.get_identity_name()}")
         client_name = fl_ctx.get_identity_name()
         self.log_info(fl_ctx, f"Executing task '{task_name}' for client: '{client_name}'")
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
         try:
+            self.log_info(fl_ctx, f"invoking client_executor.client_exec() '{task_name}' for client: '{client_name}'")
             result = self.client_executor.client_exec(task_name, shareable, fl_ctx)
             if result:
                 dxo = DXO(data_kind=self.get_data_kind(), data=result)
@@ -90,15 +97,20 @@ class CommonExecutor(Executor, ABC):
             return make_reply(ReturnCode.EXECUTION_RESULT_ERROR)
 
     def _check_init_status(self, fl_ctx: FLContext):
+        self.log_info(fl_ctx, "_check_init_status()")
         if not self.init_status_ok:
+            self.log_info(fl_ctx, "_check_init_status() -1")
             for fail_key in self.init_failure:
+                self.log_info(fl_ctx, "_check_init_status() -2")
                 reason = self.init_failure[fail_key]
+                self.log_info(fl_ctx, "_check_init_status() -3")
                 if fail_key == "abort_job":
                     return ReturnCode.EXECUTION_EXCEPTION
                 else:
                     self.system_panic(reason, fl_ctx)
                     # probably never reach here, but just for type consistency
                     return ReturnCode.EXECUTION_RESULT_ERROR
+        self.log_info(fl_ctx, "return _check_init_status()")
         return None
 
     def finalize(self, fl_ctx: FLContext):

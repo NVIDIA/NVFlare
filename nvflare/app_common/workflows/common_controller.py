@@ -37,8 +37,7 @@ class CommonController(Controller, ABC):
         abort = self.abort_job_in_error[rc]
         if abort:
             self.system_panic(
-                f"Failed in client-site for {client_name} during task {task_name}."
-                f"controller {self.__name__} is exiting.",
+                f"Failed in client-site for {client_name} during task {task_name}.controller is exiting.",
                 fl_ctx=fl_ctx,
             )
             self.log_info(fl_ctx, f"Execution failed for {client_name}")

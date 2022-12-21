@@ -1,0 +1,33 @@
+{
+  "format_version": 2,
+  "executors": [
+    {
+      "tasks": [
+        "PSI"
+      ],
+      "executor": {
+        "id": "Executor",
+        "path": "nvflare.app_common.executors.psi.psi_executor.PSIExecutor",
+        "args": {
+          "local_psi_id": "sample_psi"
+        }
+      }
+    }
+  ],
+  "components": [
+    {
+      "id": "sample_psi",
+      "path": "sample_psi.SamplePSI",
+      "args": {
+        "psi_writer_id": "psi_writer"
+      }
+    },
+    {
+      "id": "psi_writer",
+      "path": "nvflare.app_common.psi.psi_file_writer.FilePsiWriter",
+      "args": {
+        "output_path": "psi/intersection.txt"
+      }
+    }
+  ]
+}
