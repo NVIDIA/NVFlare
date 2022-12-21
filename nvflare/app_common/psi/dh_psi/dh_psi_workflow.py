@@ -57,7 +57,7 @@ class DhPSIWorkFlow(PSIWorkflow):
         if abort_signal.triggered:
             return False
         self.abort_signal = abort_signal
-        self.prepare_sites(abort_signal)
+        self.prepare_sites(PSIConst.PSI_FORWARD, abort_signal)
 
     def workflow(self, abort_signal: Signal):
         if abort_signal.triggered:
@@ -66,7 +66,7 @@ class DhPSIWorkFlow(PSIWorkflow):
         self.abort_signal = abort_signal
         self.forward_processed.update(self.forward_pass(self.ordered_sites))
 
-        self.prepare_sites(abort_signal)
+        self.prepare_sites(PSIConst.PSI_BACKWARD, abort_signal)
 
         self.backward_processed.update(self.backward_pass(self.ordered_sites))
 
@@ -137,7 +137,7 @@ class DhPSIWorkFlow(PSIWorkflow):
             step = -1
         else:
             start = 0
-            end = total -1
+            end = total - 1
             step = 1
 
         return start, end, step
@@ -161,7 +161,7 @@ class DhPSIWorkFlow(PSIWorkflow):
             return processed
 
         print("forward_processed = ", self.forward_processed)
-        if len(self.forward_processed) == total_clients - 1 :
+        if len(self.forward_processed) == total_clients - 1:
             # Sequential version
             return self.forward_pass(ordered_clients, reverse=True)
 
@@ -176,10 +176,11 @@ class DhPSIWorkFlow(PSIWorkflow):
         else:
             raise ValueError("started backward pass before finish the forward pass")
 
-
-    def prepare_sites(self, abort_signal):
+    def prepare_sites(self, direction: str, abort_signal):
+        self.log_info(self.fl_ctx, f" start to prepare_sites, stage task : {PSIConst.PSI_TASK_PREPARE}")
         inputs = Shareable()
         inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_PREPARE
+        inputs[PSIConst.PSI_DIRECTION_KEY] = direction
         inputs[PSIConst.PSI_BLOOM_FILTER_FPR] = self.bloom_filter_fpr
         task_props = {"sub_task": PSIConst.PSI_TASK_PREPARE}
         targets = None
@@ -190,7 +191,6 @@ class DhPSIWorkFlow(PSIWorkflow):
         results = bop.broadcast_and_wait(self.task_name, task_props, inputs, targets, min_responses, abort_signal)
         self.log_info(self.fl_ctx, f"{PSIConst.PSI_TASK_PREPARE} results = {results}")
         self.ordered_sites = self.get_ordered_sites(results)
-
 
     def prepare_setup_message(self, s: SiteSize, c: SiteSize) -> dict:
         inputs = Shareable()

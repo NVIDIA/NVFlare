@@ -50,6 +50,8 @@ class DhPSIExecutor(ClientExecutor):
 
             if psi_stage_task == PSIConst.PSI_TASK_PREPARE:
                 bloom_filter_fpr = shareable[PSIConst.PSI_BLOOM_FILTER_FPR]
+                print(f"****** direction : ", shareable[PSIConst.PSI_DIRECTION_KEY])
+                print(f"****** {fl_ctx.get_identity_name()} input items : ", self.get_items())
                 self.psi_client = PsiClient(self.get_items())
                 self.psi_server = PsiServer(self.get_items(), bloom_filter_fpr)
                 return self.get_items_size()
@@ -96,12 +98,19 @@ class DhPSIExecutor(ClientExecutor):
     def calculate_intersection(self, shareable: Shareable):
         response_msg = shareable.get(PSIConst.PSI_RESPONSE_MSG)
         intersections = self.psi_client.get_intersection(response_msg)
+        self.intersects = intersections
         self.local_psi_handler.save(intersections)
         result = Shareable()
         result[PSIConst.PSI_STATUS] = PSIConst.PSI_STATUS_DONE
         return result
 
     def get_items(self):
+        if self.intersects:
+            self.log_info(self.fl_ctx,
+                      f"*******{self.fl_ctx.get_identity_name()} intersects current size is {len(self.intersects)}")
+        else:
+            self.log_info(self.fl_ctx, "********* no intersect ")
+
         if not self.intersects:
             return self.local_psi_handler.load_items()
         else:
