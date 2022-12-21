@@ -12,26 +12,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-class DriverRequirementKey:
+class ConnectorRequirementKey:
 
     URL = "url"
-    DOMAIN = "domain"
-    PORT = "port"
+    HOST = "host"
     SECURE = "secure"           # bool: secure or not
-    USE = "use"                 # backbone or ad-hoc
-    VISIBILITY = "visibility"   # internal or external
-
-
-class DriverUse:
-
-    BACKBONE = "backbone"
-    ADHOC = "adhoc"
-
-
-class Visibility:
-
-    INTERNAL = "internal"
-    EXTERNAL = "external"
 
 
 class MessageHeaderKey:

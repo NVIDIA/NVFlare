@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.fuel.f3.cellnet import Cell, FQCN, Message, Headers, MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet import Cell, FQCN, Message, Headers, MessageHeaderKey, ReturnCode, new_message
 from .net_config import NetConfig
 
 from typing import Union
@@ -20,7 +20,6 @@ import os
 import shlex
 import subprocess
 import sys
-import pickle
 import time
 
 
@@ -37,23 +36,25 @@ class CellRunner:
     def __init__(
             self,
             config_path: str,
+            config_file: str,
             my_name: str,
             parent_url: str = "",
             parent_fqcn: str = ""
     ):
         self.asked_to_stop = False
         self.config_path = config_path
+        self.config_file = config_file
 
         if not parent_fqcn:
             my_fqcn = my_name
         else:
             my_fqcn = FQCN.join([parent_fqcn, my_name])
 
-        net_config = NetConfig()
+        net_config = NetConfig(config_file)
         self.root_url = net_config.get_root_url()
         self.children = net_config.get_children(my_name)
         self.clients = net_config.get_clients()
-        self.create_internal_listener = len(self.children) > 0
+        self.create_internal_listener = self.children and len(self.children) > 0
 
         self.cell = Cell(
             fqcn=my_fqcn,
@@ -85,6 +86,7 @@ class CellRunner:
         parts = [
             f"{sys.executable} -m run_cell",
             f"-c {self.config_path}",
+            f"-f {self.config_file}",
             f"-n {name}",
         ]
         if parent_fqcn:
@@ -155,11 +157,11 @@ class CellRunner:
                 assert isinstance(r, Message)
                 rc = r.get_header(MessageHeaderKey.RETURN_CODE)
                 if rc == ReturnCode.OK:
-                    sub_result = pickle.loads(r.payload)
+                    sub_result = r.payload
                     result.extend(sub_result)
                 else:
                     print(f"no reply from {t}: {rc}")
-        return Message(Headers(), pickle.dumps(result))
+        return result
 
     def _do_report_cells(
             self,
@@ -169,7 +171,8 @@ class CellRunner:
             request: Message,
             runner
     ) -> Union[None, Message]:
-        return self.request_cells_info()
+        results = self.request_cells_info()
+        return new_message(payload=results)
 
     def stop(self):
         if self.asked_to_stop:

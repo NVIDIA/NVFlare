@@ -28,8 +28,9 @@ class Server(CellRunner, CommandModule):
     def __init__(
             self,
             config_path: str,
+            config_file: str
     ):
-        net_config = NetConfig()
+        net_config = NetConfig(config_file)
         admin_host, admin_port = net_config.get_admin()
         if not admin_host or not admin_port:
             raise RuntimeError("missing admin host/port in net config")
@@ -37,6 +38,7 @@ class Server(CellRunner, CommandModule):
         CellRunner.__init__(
             self,
             config_path=config_path,
+            config_file=config_file,
             my_name=FQCN.ROOT_SERVER,
         )
 

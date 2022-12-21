@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import argparse
+import logging
 from nvflare.fuel.f3.qat.cell_runner import CellRunner
 from nvflare.fuel.utils.config_service import ConfigService
 
@@ -21,20 +22,25 @@ def main():
     """
     Script to launch the admin client to issue admin commands to the server.
     """
+    logging.basicConfig()
+    logging.getLogger().setLevel(logging.DEBUG)
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config_dir", "-c", type=str, help="config folder", required=True)
+    parser.add_argument("--config_dir", "-c", type=str, help="config folder", required=False, default=".")
+    parser.add_argument("--config_file", "-f", type=str, help="config file name", required=False, default="net_config.json")
     parser.add_argument("--name", "-n", type=str, help="my cell name", required=True)
     parser.add_argument("--parent_fqcn", "-pn", type=str, help="parent cell name", required=False, default="")
-    parser.add_argument("--parent_url", "-pu", type=str, help="parent cell url", required=True, default="")
+    parser.add_argument("--parent_url", "-pu", type=str, help="parent cell url", required=False, default="")
     args = parser.parse_args()
 
     ConfigService.initialize(section_files={}, config_path=[args.config_dir])
     runner = CellRunner(
         config_path=args.config_dir,
+        config_file=args.config_file,
         my_name=args.name,
         parent_url=args.parent_url,
         parent_fqcn=args.parent_fqcn
     )
+    runner.start()
     runner.run()
 
 

@@ -11,11 +11,3 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-class Applications:
-
-    # Reserved application IDs
-    ALL = 0
-    DEFAULT = 1
-    PUB_SUB = 2
-    CELL_NET = 3
-

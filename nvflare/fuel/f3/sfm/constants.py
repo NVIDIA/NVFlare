@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-class FrameTypes:
+class Types:
     DATA = 1
     FRAG = 2
     ACK = 3
@@ -22,16 +22,19 @@ class FrameTypes:
     PONG = 7
 
 
+class HandshakeKeys:
+    ENDPOINT_NAME = "endpoint_name"
+    TIMESTAMP = "timestamp"
+
+
 class Flags:
-
     # Out of band message
-    OOB = 0x80
+    OOB = 0x8000
     # ACK requested
-    ACK = 0x40
+    ACK = 0x4000
     # Request, message-id in the header
-    REQ = 0x20
+    REQ = 0x2000
     # Response, message-id in the header
-    RESP = 0x10
+    RESP = 0x1000
     # PUB/SUB message, topic is in the header
-    PUB_SUB = 0x08
-
+    PUB_SUB = 0x0800

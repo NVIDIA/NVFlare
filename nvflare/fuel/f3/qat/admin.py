@@ -25,11 +25,12 @@ def main():
     Script to launch the admin client to issue admin commands to the server.
     """
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config_dir", "-c", type=str, help="config folder", required=True)
+    parser.add_argument("--config_dir", "-c", type=str, help="config folder", required=False, default=".")
+    parser.add_argument("--config_file", "-f", type=str, help="config file name", required=False, default="net_config.json")
     args = parser.parse_args()
 
     ConfigService.initialize(section_files={}, config_path=[args.config_dir])
-    net_config = NetConfig()
+    net_config = NetConfig(args.config_file)
     admin_host, admin_port = net_config.get_admin()
     if not admin_host or not admin_port:
         raise ConfigError("missing admin host or port in net_config")

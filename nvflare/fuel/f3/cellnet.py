@@ -20,21 +20,19 @@ import traceback
 import uuid
 
 from typing import List, Union, Dict
-from .conn_state import ConnState
-from .message import Message
-from .endpoint import Endpoint, EndpointMonitor
-from .communicator import Communicator
-from .headers import Headers
-from .receiver import Receiver
-from .driver_manager import DriverManager
+from .message import Message, Headers
+from .endpoint import Endpoint, EndpointMonitor, EndpointState
+from .communicator import Communicator, MessageReceiver
+from .connector_manager import ConnectorManager
 from .constants import (
-    DriverRequirementKey, DriverUse, Visibility, MessageHeaderKey, MessageType,
+    MessageHeaderKey, MessageType,
     ReturnCode, CellPropertyKey, ContentType
 )
 
 import nvflare.fuel.utils.fobs as fobs
 
 _BULK_CHANNEL = "cellnet.bulk"
+
 
 class TargetCellUnreachable(Exception):
     pass
@@ -157,6 +155,7 @@ class FQCN:
         parts = FQCN.split(fqcn)
         return parts[0]
 
+
 class _FqcnInfo:
 
     def __init__(self, fqcn: str):
@@ -226,7 +225,7 @@ class BulkSender:
                         f"dropped one message (queue size {num_msgs} > limit {self.max_queue_size}")
 
 
-class Cell(Receiver, EndpointMonitor):
+class Cell(MessageReceiver, EndpointMonitor):
 
     APP_ID = 1
 
@@ -276,21 +275,23 @@ class Cell(Receiver, EndpointMonitor):
         self.bulk_lock = threading.Lock()
         self.agents = {}  # cell_fqcn => CellAgent
         self.agent_lock = threading.Lock()
-        self.driver_manager = DriverManager()
+
+        print(f"Creating Cell: {self.my_info.fqcn}")
 
         ep = Endpoint(
             name=fqcn,
-            url=root_url,
+            conn_props=credentials,
             properties={
                 CellPropertyKey.FQCN: self.my_info.fqcn,
             })
-        ep.conn_props = credentials
 
         self.communicator = Communicator(
             local_endpoint=ep
         )
 
-        self.communicator.register_receiver(endpoint=None, app=self.APP_ID, receiver=self)
+        self.connector_manager = ConnectorManager(communicator=self.communicator, secure=secure)
+
+        self.communicator.register_message_receiver(app_id=self.APP_ID, receiver=self)
         self.communicator.register_monitor(monitor=self)
         self.req_reg = _Registry()
         self.in_req_filter_reg = _Registry()  # for request received
@@ -388,7 +389,7 @@ class Cell(Receiver, EndpointMonitor):
             self._create_bb_external_connector()
 
     def _set_bb_for_server_root(self):
-        self._create_external_listener(DriverUse.BACKBONE)
+        self._create_external_listener(False)
         self._create_internal_listener()
 
     def _set_bb_for_server_child(self, parent_url: str, create_internal_listener: bool):
@@ -420,7 +421,7 @@ class Cell(Receiver, EndpointMonitor):
             # drop connections to all cells on server and their agents
             # drop the backbone connector
             if self.bb_ext_connector:
-                self.communicator.delete_driver(self.bb_ext_connector)
+                self.communicator.remove_connector(self.bb_ext_connector.handle)
                 self.bb_ext_connector = None
 
             # drop ad-hoc connectors to cells on server
@@ -433,7 +434,7 @@ class Cell(Receiver, EndpointMonitor):
                 for c in cells_to_delete:
                     connector = self.adhoc_connectors.pop(c, None)
                     if connector:
-                        self.communicator.delete_driver(connector)
+                        self.communicator.remove_connector(connector.handle)
 
             # drop agents
             with self.agent_lock:
@@ -476,17 +477,10 @@ class Cell(Receiver, EndpointMonitor):
             if to_cell in self.adhoc_connectors:
                 return self.adhoc_connectors[to_cell]
 
-            reqs = {
-                DriverRequirementKey.URL: url,
-                DriverRequirementKey.VISIBILITY: Visibility.EXTERNAL,
-                DriverRequirementKey.SECURE: self.secure,
-                DriverRequirementKey.USE: DriverUse.ADHOC
-            }
-            connector = self.driver_manager.get_connector(reqs)
+            connector = self.connector_manager.get_external_connector(url, adhoc=True)
             self.adhoc_connectors[to_cell] = connector
             if connector:
                 self.logger.info(f"{self.my_info.fqcn}: created adhoc connector to {url} on {to_cell}")
-                self.communicator.add_connector(connector)
             else:
                 self.logger.warning(f"{self.my_info.fqcn}: cannot create adhoc connector to {url} on {to_cell}")
             return connector
@@ -494,41 +488,31 @@ class Cell(Receiver, EndpointMonitor):
     def _create_internal_listener(self):
         # internal listener is always backbone
         if not self.int_listener:
-            reqs = {
-                DriverRequirementKey.VISIBILITY: Visibility.INTERNAL,
-                DriverRequirementKey.USE: DriverUse.BACKBONE,
-                DriverRequirementKey.SECURE: False
-            }
-            self.int_listener = self.driver_manager.get_listener(reqs)
+            self.int_listener = self.connector_manager.get_internal_listener()
             if self.int_listener:
                 self.logger.info(f"{self.my_info.fqcn}: created backbone internal listener "
                                  f"for {self.int_listener.get_connection_url()}")
-                self.communicator.add_listener(self.int_listener)
             else:
                 raise RuntimeError(f"{self.my_info.fqcn}: cannot create backbone internal listener")
         return self.int_listener
 
-    def _create_external_listener(self, use: str):
+    def _create_external_listener(self, adhoc: bool):
         with self.ext_listener_lock:
             if not self.ext_listener and not self.ext_listener_impossible:
-                reqs = {
-                    DriverRequirementKey.USE: use,
-                    DriverRequirementKey.VISIBILITY: Visibility.EXTERNAL,
-                    DriverRequirementKey.SECURE: self.secure
-                }
-                if use == DriverUse.BACKBONE:
-                    reqs[DriverRequirementKey.URL] = self.root_url
+                if not adhoc:
+                    url = self.root_url
+                else:
+                    url = ""
 
-                self.ext_listener = self.driver_manager.get_listener(reqs)
+                self.ext_listener = self.connector_manager.get_external_listener(url, adhoc)
                 if self.ext_listener:
-                    if use == DriverUse.BACKBONE:
+                    if not adhoc:
                         self.logger.info(f"{self.my_info.fqcn}: created backbone external listener for {self.root_url}")
                     else:
                         self.logger.info(f"{self.my_info.fqcn}: created adhoc external listener "
                                          f"for {self.ext_listener.get_connection_url()}")
-                    self.communicator.add_listener(self.ext_listener)
                 else:
-                    if use == DriverUse.BACKBONE:
+                    if not adhoc:
                         raise RuntimeError(
                             f"{self.my_info.fqcn}: cannot create backbone external listener for {self.root_url}")
                     else:
@@ -538,30 +522,16 @@ class Cell(Receiver, EndpointMonitor):
         return self.ext_listener
 
     def _create_bb_external_connector(self):
-        reqs = {
-            DriverRequirementKey.URL: self.root_url,
-            DriverRequirementKey.VISIBILITY: Visibility.EXTERNAL,
-            DriverRequirementKey.SECURE: self.secure,
-            DriverRequirementKey.USE: DriverUse.BACKBONE
-        }
-        self.bb_ext_connector = self.driver_manager.get_connector(reqs)
+        self.bb_ext_connector = self.connector_manager.get_external_connector(self.root_url, False)
         if self.bb_ext_connector:
             self.logger.info(f"{self.my_info.fqcn}: created backbone external connector to {self.root_url}")
-            self.communicator.add_connector(self.bb_ext_connector)
         else:
             raise RuntimeError(f"{self.my_info.fqcn}: cannot create backbone external connector to {self.root_url}")
 
     def _create_internal_connector(self, url: str):
-        reqs = {
-            DriverRequirementKey.URL: url,
-            DriverRequirementKey.VISIBILITY: Visibility.INTERNAL,
-            DriverRequirementKey.SECURE: False,
-            DriverRequirementKey.USE: DriverUse.BACKBONE
-        }
-        self.bb_int_connector = self.driver_manager.get_connector(reqs)
+        self.bb_int_connector = self.connector_manager.get_internal_connector(url)
         if self.bb_int_connector:
             self.logger.info(f"{self.my_info.fqcn}: created backbone internal connector to {url} on parent")
-            self.communicator.add_connector(self.bb_int_connector)
         else:
             raise RuntimeError(f"{self.my_info.fqcn}: cannot create backbone internal connector to {url} on parent")
 
@@ -621,6 +591,7 @@ class Cell(Receiver, EndpointMonitor):
         )
         self.bulk_checker.start()
         self.communicator.start()
+        self.running = True
 
     def stop(self):
         """
@@ -630,6 +601,7 @@ class Cell(Receiver, EndpointMonitor):
 
         """
         self.communicator.stop()
+        self.running = False
         self.asked_to_stop = True
         self.bulk_checker.join()
 
@@ -756,19 +728,35 @@ class Cell(Receiver, EndpointMonitor):
     def _find_endpoint(self, target_fqcn: str) -> Union[None, Endpoint]:
         if target_fqcn == self.my_info.fqcn:
             # sending request to myself? Not allowed!
+            self.logger.error(f"{self.my_info.fqcn}: sending message to self is not allowed")
             return None
 
-        ep = self._find_ep(target_fqcn)
+        target_info = _FqcnInfo(target_fqcn)
+        if same_family(self.my_info, target_info):
+            ep = self._try_path(target_info.path)
+            if not ep:
+                raise RuntimeError(f"{self.my_info.fqcn}: cannot find path to family member {target_fqcn}")
+            return ep
+
+        # not the same family
+        ep = self._try_path(target_info.path)
         if not ep:
-            # cannot find endpoint through FQCN path
-            # use the server root agent as last resort
-            # this is the case that a client cell tries to talk to another client cell
-            # and there is no direct link to it.
+            # cannot find path to the target
+            # try the server root
             # we assume that all client roots connect to the server root.
             with self.agent_lock:
                 for _, agent in self.agents.items():
                     if agent.info.is_on_server and agent.info.is_root:
                         return agent.endpoint
+
+        # no direct path to the server root
+        # let my parent handle it if I have a parent
+        if self.my_info.gen > 1:
+            ep = self._try_path(self.my_info.path[:-1])
+            if ep:
+                return ep
+
+        self.logger.error(f"{self.my_info.fqcn}: cannot find path to {target_fqcn}")
         return None
 
     def _send_to_endpoint(self, to_endpoint: Endpoint, message: Message) -> str:
@@ -830,7 +818,7 @@ class Cell(Receiver, EndpointMonitor):
                 # Not a direct path since the destination and the next leg are not the same
                 if self.my_info.is_on_server:
                     # server side - try to create a listener and let the peer know the endpoint
-                    listener = self._create_external_listener(DriverUse.ADHOC)
+                    listener = self._create_external_listener(True)
                     if listener:
                         conn_url = listener.get_connection_url()
                         req.set_header(MessageHeaderKey.CONN_URL, conn_url)
@@ -1059,7 +1047,7 @@ class Cell(Receiver, EndpointMonitor):
         reply.set_header(MessageHeaderKey.TO_CELL, ep.name)
         return self._send_to_endpoint(ep, reply)
 
-    def process(self, endpoint: Endpoint, app: int, message: Message):
+    def process_message(self, endpoint: Endpoint, app_id: int, message: Message):
         # this is the receiver callback
         try:
             self._process_received_msg(endpoint, message)
@@ -1132,11 +1120,16 @@ class Cell(Receiver, EndpointMonitor):
             err = self._send_to_endpoint(to_endpoint=ep, message=message)
             if not err:
                 return
+            else:
+                self.logger.error(
+                    self._message_log(message, f"failed to forward {msg_type}: {err}")
+                )
+        else:
+            # cannot find next leg endpoint
+            self.logger.error(
+                self._message_log(message, f"cannot forward {msg_type}: no path")
+            )
 
-        # cannot forward
-        self.logger.error(
-            self._message_log(message, f"cannot forward {msg_type} - no path")
-        )
         if msg_type == MessageType.REQ:
             reply_expected = message.get_header(MessageHeaderKey.REPLY_EXPECTED, False)
             if not reply_expected:
@@ -1252,7 +1245,7 @@ class Cell(Receiver, EndpointMonitor):
                     self._add_adhoc_connector(origin, conn_url)
                 elif msg_type == MessageType.REQ:
                     # see whether we can offer a listener
-                    listener = self._create_external_listener(DriverUse.ADHOC)
+                    listener = self._create_external_listener(True)
                     if listener:
                         my_conn_url = listener.get_connection_url()
 
@@ -1282,6 +1275,7 @@ class Cell(Receiver, EndpointMonitor):
 
     def _check_bulk(self):
         while True:
+            must_send = False
             if self.asked_to_stop:
                 # force flush of all pending messages
                 must_send = True
@@ -1295,9 +1289,10 @@ class Cell(Receiver, EndpointMonitor):
                 break
             time.sleep(self.bulk_check_interval)
 
-    def state_change(self, endpoint: Endpoint, state: ConnState):
+    def state_change(self, endpoint: Endpoint):
+        print(f"========= {self.my_info.fqcn}: EP {endpoint.name} state changed to {endpoint.state}")
         fqcn = endpoint.name
-        if state == ConnState.READY:
+        if endpoint.state == EndpointState.READY:
             # create the CellAgent for this endpoint
             agent = self.agents.get(fqcn)
             if not agent:
@@ -1318,7 +1313,7 @@ class Cell(Receiver, EndpointMonitor):
                     self.logger.error(f"{self.my_info.fqcn}: exception in cell_connected_cb")
                     traceback.print_exc()
 
-        elif state in [ConnState.DISCONNECTING, ConnState.IDLE]:
+        elif endpoint.state in [EndpointState.CLOSING, EndpointState.DISCONNECTED, EndpointState.IDLE]:
             # remove this agent
             with self.agent_lock:
                 agent = self.agents.pop(fqcn, None)

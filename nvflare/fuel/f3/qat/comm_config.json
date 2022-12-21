@@ -1,21 +1,9 @@
 {
-  "domain": "localhost",
-  "drivers": {
-    "http": "nih.HttpDriver"
-  },
   "internal": {
     "scheme": "http",
     "resources": {
-      "host": "{domain}",
-      "ports": [200334, "20004-20009", "1024-", "-12345"],
-      "secure": false
-    }
-  },
-  "external_driver": {
-    "scheme": "http",
-    "resources": {
-      "host": "{domain}",
-      "ports": [20001, [30000, 30009]]
+      "host": "localhost",
+      "ports": ["30000-40000"]
     }
   }
 }
