@@ -31,6 +31,7 @@ class DhPSIExecutor(ClientExecutor):
 
     def __init__(self, local_psi_id: str):
         super().__init__(local_psi_id, PSI)
+        self.bloom_filter_fpr = None
         self.psi_client = None
         self.psi_server = None
         self.intersects: Optional[List[str]] = None
@@ -49,11 +50,9 @@ class DhPSIExecutor(ClientExecutor):
             self.log_info(fl_ctx, f"Executing task '{task_name}' psi_stage_task {psi_stage_task} for {client_name}")
 
             if psi_stage_task == PSIConst.PSI_TASK_PREPARE:
-                bloom_filter_fpr = shareable[PSIConst.PSI_BLOOM_FILTER_FPR]
-                print(f"****** direction : ", shareable[PSIConst.PSI_DIRECTION_KEY])
-                print(f"****** {fl_ctx.get_identity_name()} input items : ", self.get_items())
+                self.bloom_filter_fpr = shareable[PSIConst.PSI_BLOOM_FILTER_FPR]
                 self.psi_client = PsiClient(self.get_items())
-                self.psi_server = PsiServer(self.get_items(), bloom_filter_fpr)
+                self.psi_server = PsiServer(self.get_items(), self.bloom_filter_fpr)
                 return self.get_items_size()
             else:
                 if psi_stage_task == PSIConst.PSI_TASK_SETUP:
@@ -77,15 +76,18 @@ class DhPSIExecutor(ClientExecutor):
 
     def setup(self, shareable: Shareable):
         target_item_size = shareable.get(PSIConst.PSI_ITEMS_SIZE)
+        print(f"****** {self.fl_ctx.get_identity_name()} input items : ", self.get_items())
+        self.psi_client = PsiClient(self.get_items())
+        self.psi_server = PsiServer(self.get_items(), self.bloom_filter_fpr)
+
         setup_msg = self.psi_server.setup(target_item_size)
         result = Shareable()
         result[PSIConst.PSI_SETUP_MSG] = setup_msg
         return result
 
     def get_items_size(self):
-        items_size = self.psi_client.get_items_size()
         result = Shareable()
-        result[PSIConst.PSI_ITEMS_SIZE] = items_size
+        result[PSIConst.PSI_ITEMS_SIZE] = len(self.get_items())
         return result
 
     def process_request(self, shareable: Shareable):
@@ -105,11 +107,6 @@ class DhPSIExecutor(ClientExecutor):
         return result
 
     def get_items(self):
-        if self.intersects:
-            self.log_info(self.fl_ctx,
-                      f"*******{self.fl_ctx.get_identity_name()} intersects current size is {len(self.intersects)}")
-        else:
-            self.log_info(self.fl_ctx, "********* no intersect ")
 
         if not self.intersects:
             return self.local_psi_handler.load_items()

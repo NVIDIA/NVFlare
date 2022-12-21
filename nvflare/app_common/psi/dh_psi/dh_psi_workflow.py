@@ -64,10 +64,9 @@ class DhPSIWorkFlow(PSIWorkflow):
             return False
 
         self.abort_signal = abort_signal
+
+        self.log_info(self.fl_ctx, "order sites = ", self.ordered_sites)
         self.forward_processed.update(self.forward_pass(self.ordered_sites))
-
-        self.prepare_sites(PSIConst.PSI_BACKWARD, abort_signal)
-
         self.backward_processed.update(self.backward_pass(self.ordered_sites))
 
     def post_workflow(self, abort_signal: Signal):

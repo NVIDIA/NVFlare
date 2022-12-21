@@ -30,7 +30,9 @@ class BroadcastAndWait(FLComponent, ABC):
         super().__init__()
         self.fl_ctx = fl_ctx
         self.controller = controller
+        self.task = None
         self.results: Dict[str, DXO] = {}
+
 
     def broadcast_and_wait(
         self,
@@ -43,13 +45,15 @@ class BroadcastAndWait(FLComponent, ABC):
     ) -> Dict[str, DXO]:
 
         task = Task(name=task_name, data=inputs, result_received_cb=self.results_cb, props=task_props)
+        self.task = task
         self.controller.broadcast_and_wait(task, self.fl_ctx, targets, min_responses, 0, abort_signal)
         return self.results
 
     def results_cb(self, client_task: ClientTask, fl_ctx: FLContext):
         client_name = client_task.client.name
         task_name = client_task.task.name
-        self.log_info(fl_ctx, f"Processing {task_name} result from client {client_name}")
+
+        self.log_info(fl_ctx, f"Processing {task_name}, {self.task} result from client {client_name}")
         result = client_task.result
 
         rc = result.get_return_code()
