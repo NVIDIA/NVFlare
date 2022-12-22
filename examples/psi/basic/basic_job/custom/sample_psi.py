@@ -24,10 +24,13 @@ class SamplePSI(PSI):
         self.site_nums = 10
         scale = 100
         for i in range(self.site_nums):
-            start = random.randrange(1, 2)
-            end = random.randrange(2,4)
-            self.data[f"site-{i + 1}"] = range(int(start * scale), int(end*scale), i+1)
+            start = int (random.randrange(1, 2)*scale)
+            end = int(random.randrange(2,4)*scale)
+            step = i+1
+            self.data[f"site-{i+1}"] = range(start, end, step)
 
     def load_items(self) -> List[str]:
-        user_id_range = self.data[self.fl_ctx.get_identity_name()]
+        site = self.fl_ctx.get_identity_name()
+        user_id_range = self.data[site]
+
         return [f"user_id-{i}" for i in user_id_range]
