@@ -72,7 +72,6 @@ sequenceDiagram
 sequenceDiagram
 
     participant FLServer
-    participant PSIExecutor
     participant DhPSIExecutor
     participant PsiServer
     participant PsiClient
