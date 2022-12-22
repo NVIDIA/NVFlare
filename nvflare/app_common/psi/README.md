@@ -31,7 +31,8 @@ sequenceDiagram
     loop over sites:
         PSIWorkflow -->> PSIWorkflow : sort the site according to size 
     end 
-
+    
+    PSIController->>PSIWorkflow: workflow() --> setup, request, response, intersects
     note over PSIWorkflow, PSI : Forward Pass
     loop over sites: 
         
