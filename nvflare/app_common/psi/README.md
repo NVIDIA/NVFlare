@@ -79,8 +79,7 @@ sequenceDiagram
     participant FilePsiWriter
     
     Note over FLServer, PSI : PREPARE 
-    FLServer -->> DhPSIExecutor : PSI Prepare 
-    DhPSIExecutor -->> DhPSIExecutor : save fpr,
+    FLServer -->> DhPSIExecutor : PSI Prepare with fpr
     DhPSIExecutor -->> PSI : load_terms()
     PSI -->> DhPSIExecutor: items
     DhPSIExecutor -->> DhPSIExecutor: load PsiClient(items)
