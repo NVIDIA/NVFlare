@@ -47,12 +47,13 @@ class DhPSIExecutor(ClientExecutor):
 
         if PSIConst.PSI_TASK == task_name:
             psi_stage_task = shareable.get(PSIConst.PSI_TASK_KEY)
-            self.log_info(fl_ctx, f"Executing task '{task_name}' psi_stage_task {psi_stage_task} for {client_name}")
+            self.log_info(fl_ctx, f"Executing psi_stage_task {psi_stage_task} for {client_name}")
 
             if psi_stage_task == PSIConst.PSI_TASK_PREPARE:
                 self.bloom_filter_fpr = shareable[PSIConst.PSI_BLOOM_FILTER_FPR]
-                self.psi_client = PsiClient(self.get_items())
-                self.psi_server = PsiServer(self.get_items(), self.bloom_filter_fpr)
+                items = self.get_items()
+                self.psi_client = PsiClient(items)
+                self.psi_server = PsiServer(items, self.bloom_filter_fpr)
                 return self.get_items_size()
             else:
                 if psi_stage_task == PSIConst.PSI_TASK_SETUP:
@@ -76,9 +77,9 @@ class DhPSIExecutor(ClientExecutor):
 
     def setup(self, shareable: Shareable):
         target_item_size = shareable.get(PSIConst.PSI_ITEMS_SIZE)
-        print(f"****** {self.fl_ctx.get_identity_name()} input items : ", self.get_items())
-        self.psi_client = PsiClient(self.get_items())
-        self.psi_server = PsiServer(self.get_items(), self.bloom_filter_fpr)
+        items = self.get_items()
+        self.psi_client = PsiClient(items)
+        self.psi_server = PsiServer(items, self.bloom_filter_fpr)
 
         setup_msg = self.psi_server.setup(target_item_size)
         result = Shareable()

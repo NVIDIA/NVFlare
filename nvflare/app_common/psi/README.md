@@ -1,12 +1,11 @@
 
 ## PSI Client Server Interaction
-#### The interaction is based on DH-Based PSI algorithm, openmined PSI implementation < Todo Reference>
+### The interaction is based on DH-Based PSI algorithm, openmined PSI implementation < Todo Reference>
 
 ```mermaid
  
 sequenceDiagram
     
-    participant User 
     participant FLServer
     participant PSIController 
     participant PSIWorkflow
@@ -15,9 +14,8 @@ sequenceDiagram
     participant site_3
     participant PSI
     
-    User -->> FLServer : submit_job
-    FLServer->> PSIController: start_control(): load PSIWorkflow, in our case DhPSIWorkflow 
-    PSIController->>PSIController: controll_flow() 
+    FLServer -->> PSIController: start_controller(): load PSIWorkflow, in our case DhPSIWorkflow 
+    FLServer -->> PSIController: control_flow() 
     
     note over PSIWorkflow, PSI: Prepare Sites
     PSIController->>PSIWorkflow: pre_workflow() --> prepare_sites()
@@ -56,9 +54,72 @@ sequenceDiagram
       PSIWorkflow -->> site_3 : setup, request, response, calculate intersection
       site_3 -->> PSIWorkflow : reverse the forward process
     end
+    
+    FLServer -->> PSIController: stop_controller()
+    PSIController --> PSIWorkflow: finalize()
+    
 
 ```
 ## Client Side interactions
+
+* Note each site/client is both a PSI Client and PSI Server. 
+* Initially, the items() is the original data items
+* Once the client has get the intersection from the previous Clients' intersect operation, the items will be
+* the intersection instead of original items.
+
+```mermaid
+ 
+sequenceDiagram
+
+    participant FLServer
+    participant PSIExecutor
+    participant DhPSIExecutor
+    participant PsiServer
+    participant PsiClient
+    participant PSI
+    participant FilePsiWriter
+    
+    Note over FLServer, PSI : PREPARE 
+    FLServer -->> DhPSIExecutor : PSI Prepare 
+    DhPSIExecutor -->> DhPSIExecutor : save fpr,
+    DhPSIExecutor -->> PSI : load_terms()
+    PSI -->> DhPSIExecutor: items
+    DhPSIExecutor -->> DhPSIExecutor: load PsiClient(items)
+    DhPSIExecutor -->> DhPSIExecutor: load PsiServer(items, fpr)
+    DhPSIExecutor -->> FLServer : items size
+    
+    Note over FLServer, PSI : SETUP
+    FLServer -->> DhPSIExecutor : PSI Setup
+    DhPSIExecutor -->> DhPSIExecutor: setup(client_items_size)
+    DhPSIExecutor -->> DhPSIExecutor : get_items(): items = intersection or PSI.load_items() 
+    DhPSIExecutor -->> DhPSIExecutor: load PsiClient(items)
+    DhPSIExecutor -->> DhPSIExecutor: load PsiServer(items, fpr)
+    DhPSIExecutor -->> PsiServer: setup(client_items_size)
+    PsiServer -->> DhPSIExecutor: setup_msg
+    DhPSIExecutor -->> FLServer: setup_msg
+    
+    Note over FLServer, PSI : create Request
+    FLServer -->> DhPSIExecutor : PSI create_request, with setup message
+    DhPSIExecutor -->> PsiClient: save (setup_msg), 
+    DhPSIExecutor -->> PsiClient : get_request()
+    PsiClient -->> DhPSIExecutor : request_msg
+    DhPSIExecutor -->> FLServer:request_msg
+ 
+    Note over FLServer, PSI : process Request
+    FLServer -->> DhPSIExecutor : PSI process_request, with request_msg
+    DhPSIExecutor -->> PsiServer: process_request (request_msg), 
+    PsiServer -->> DhPSIExecutor : response
+    DhPSIExecutor -->> FLServer : response
+ 
+    Note over FLServer, PSI : calculate intersection
+    FLServer -->> DhPSIExecutor : calculate_intersect with response msg
+    DhPSIExecutor -->> PsiClient: get_intersection (response_msg) 
+    PsiClient -->> DhPSIExecutor : intersection
+    DhPSIExecutor -->> PSI : save intersection
+    PSI -->> FilePsiWriter : save intersection
+    DhPSIExecutor -->> FLServer : status
+    
+```
 
 
 
