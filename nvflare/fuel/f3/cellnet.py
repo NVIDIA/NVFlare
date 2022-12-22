@@ -1058,6 +1058,7 @@ class Cell(MessageReceiver, EndpointMonitor):
             self,
             origin: str,
             message: Message) -> Union[None, Message]:
+        self.logger.debug(f"{self.my_info.fqcn}: processing request")
         # this is a request for me - dispatch to the right CB
         channel = message.get_header(MessageHeaderKey.CHANNEL, "")
         topic = message.get_header(MessageHeaderKey.TOPIC, "")
@@ -1069,9 +1070,11 @@ class Cell(MessageReceiver, EndpointMonitor):
 
         try:
             assert isinstance(_cb, _CB)
+            self.logger.debug(f"{self.my_info.fqcn}: calling registered request CB")
             reply = _cb.cb(self, channel, topic, message, *_cb.args, **_cb.kwargs)
             if not reply:
                 # the CB doesn't have anything to reply
+                self.logger.debug("no reply is returned from the CB")
                 return None
 
             if not isinstance(reply, Message):
@@ -1087,15 +1090,18 @@ class Cell(MessageReceiver, EndpointMonitor):
         reply_expected = message.get_header(MessageHeaderKey.REPLY_EXPECTED, False)
         if not reply_expected:
             # this is fire and forget
+            self.logger.debug(f"{self.my_info.fqcn}: don't send response - request expects no reply")
             return None
 
         wait_until = message.get_header(MessageHeaderKey.WAIT_UNTIL, None)
         if isinstance(wait_until, float) and time.time() > wait_until:
             # no need to reply since peer already gave up waiting by now
+            self.logger.debug(f"{self.my_info.fqcn}: don't send response - reply is too late")
             return None
 
         # send the reply back
         if not reply.headers.get(MessageHeaderKey.RETURN_CODE):
+            self.logger.debug(f"{self.my_info.fqcn}: added return code OK")
             reply.set_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
         return reply
 
@@ -1110,8 +1116,10 @@ class Cell(MessageReceiver, EndpointMonitor):
 
     def _forward(self, endpoint: Endpoint, origin: str, destination: str, msg_type: str, message: Message):
         # not for me - need to forward it
+        self.logger.debug(f"{self.my_info.fqcn}: forwarding for {origin} to {destination}")
         ep = self._find_endpoint(destination)
         if ep:
+            self.logger.debug(f"{self.my_info.fqcn}: found next leg {ep.name}")
             message.add_headers({
                 MessageHeaderKey.FROM_CELL: self.my_info.fqcn,
                 MessageHeaderKey.TO_CELL: ep.name
@@ -1119,25 +1127,28 @@ class Cell(MessageReceiver, EndpointMonitor):
             self._add_to_route(message)
             err = self._send_to_endpoint(to_endpoint=ep, message=message)
             if not err:
+                self.logger.debug(f"{self.my_info.fqcn}: forwarded successfully!")
                 return
             else:
                 self.logger.error(
-                    self._message_log(message, f"failed to forward {msg_type}: {err}")
+                    self._message_log(message, f"{self.my_info.fqcn}: failed to forward {msg_type}: {err}")
                 )
         else:
             # cannot find next leg endpoint
             self.logger.error(
-                self._message_log(message, f"cannot forward {msg_type}: no path")
+                self._message_log(message, f"{self.my_info.fqcn}: cannot forward {msg_type}: no path")
             )
 
         if msg_type == MessageType.REQ:
             reply_expected = message.get_header(MessageHeaderKey.REPLY_EXPECTED, False)
             if not reply_expected:
+                self.logger.debug(f"{self.my_info.fqcn}: can't forward: drop the message since reply is not expected")
                 return
 
             wait_until = message.get_header(MessageHeaderKey.WAIT_UNTIL, None)
             if isinstance(wait_until, float) and time.time() > wait_until:
                 # no need to reply since peer already gave up waiting by now
+                self.logger.debug(f"{self.my_info.fqcn}: can't forward: drop the message since too late")
                 return
 
             # tell the requester that message couldn't be delivered
@@ -1154,11 +1165,13 @@ class Cell(MessageReceiver, EndpointMonitor):
                 }
             )
             self._send_to_endpoint(endpoint, reply)
+            self.logger.debug(f"{self.my_info.fqcn}: sent RETURN message back to {endpoint.name}")
         else:
             # msg_type is either RETURN or REPLY - drop it.
             self.logger.warning(self._message_log(message, "dropped forwarded reply or return"))
 
     def _process_reply(self, origin: str, message: Message):
+        self.logger.debug(f"{self.my_info.fqcn}: processing reply from {origin}")
         req_ids = message.get_header(MessageHeaderKey.REQ_ID)
         if not req_ids:
             raise RuntimeError(self._message_log(message, "reply does not have REQ_ID header"))
@@ -1188,18 +1201,21 @@ class Cell(MessageReceiver, EndpointMonitor):
 
                 if all_targets_replied:
                     self.logger.debug(
-                        self._message_log(message,
-                                          "replies received from all {len(waiter.replies)} targets for req {rid}"))
+                        self._message_log(
+                            message,
+                            f"trigger waiter - replies received from all {len(waiter.replies)} targets for req {rid}"))
                     waiter.set()  # trigger the waiting requests!
                 else:
                     self.logger.debug(
-                        self._message_log(message,
-                                          f"replies not received from all {len(waiter.replies)} targets for req {rid}"))
+                        self._message_log(
+                            message,
+                            f"keep waiting - replies not received from all {len(waiter.replies)} targets for req {rid}"))
             else:
                 self.logger.debug(
-                    self._message_log(message, f"no waiter for req {rid}"))
+                    self._message_log(message, f"no waiter for req {rid} - the reply is too late"))
 
     def _process_received_msg(self, endpoint: Endpoint, message: Message):
+        self.logger.debug(f"{self.my_info.fqcn}: received message: {message.headers}")
         msg_type = message.get_header(MessageHeaderKey.MSG_TYPE)
         if not msg_type:
             raise RuntimeError(self._message_log(message, "missing MSG_TYPE in received message"))
@@ -1267,30 +1283,30 @@ class Cell(MessageReceiver, EndpointMonitor):
 
                 if my_conn_url:
                     reply.set_header(MessageHeaderKey.CONN_URL, my_conn_url)
+                self.logger.debug(f"{self.my_info.fqcn}: sending reply back to {endpoint.name}")
+                self.logger.debug(f"Reply message: {reply.headers}")
                 self._send_to_endpoint(endpoint, reply)
+            else:
+                self.logger.debug(f"{self.my_info.fqcn}: no reply to send!")
             return
 
         # the message is either a reply or a return for a previous request: handle replies
         self._process_reply(origin, message)
 
     def _check_bulk(self):
-        while True:
-            must_send = False
-            if self.asked_to_stop:
-                # force flush of all pending messages
-                must_send = True
-
+        while not self.asked_to_stop:
             with self.bulk_lock:
                 for _, sender in self.bulk_senders.items():
-                    assert isinstance(sender, BulkSender)
-                    sender.send(must_send)
-
-            if self.asked_to_stop:
-                break
+                    sender.send(False)
             time.sleep(self.bulk_check_interval)
 
+        # force everything to be flushed
+        with self.bulk_lock:
+            for _, sender in self.bulk_senders.items():
+                sender.send(True)
+
     def state_change(self, endpoint: Endpoint):
-        print(f"========= {self.my_info.fqcn}: EP {endpoint.name} state changed to {endpoint.state}")
+        self.logger.debug(f"========= {self.my_info.fqcn}: EP {endpoint.name} state changed to {endpoint.state}")
         fqcn = endpoint.name
         if endpoint.state == EndpointState.READY:
             # create the CellAgent for this endpoint
@@ -1299,11 +1315,14 @@ class Cell(MessageReceiver, EndpointMonitor):
                 agent = CellAgent(fqcn, endpoint)
                 with self.agent_lock:
                     self.agents[fqcn] = agent
+                self.logger.debug(f"{self.my_info.fqcn}: create CellAgent for {fqcn}")
             else:
+                self.logger.debug(f"{self.my_info.fqcn}: found existing CellAgent for {fqcn} - shouldn't happen")
                 agent.endpoint = endpoint
 
             if self.cell_connected_cb is not None:
                 try:
+                    self.logger.debug(f"{self.my_info.fqcn}: calling cell_connected_cb")
                     self.cell_connected_cb(
                         self, agent,
                         *self.cell_connected_cb_args,
@@ -1317,8 +1336,10 @@ class Cell(MessageReceiver, EndpointMonitor):
             # remove this agent
             with self.agent_lock:
                 agent = self.agents.pop(fqcn, None)
+                self.logger.debug(f"{self.my_info.fqcn}: removed CellAgent {fqcn}")
             if agent and self.cell_disconnected_cb is not None:
                 try:
+                    self.logger.debug(f"{self.my_info.fqcn}: calling cell_disconnected_cb")
                     self.cell_disconnected_cb(
                         self, agent,
                         *self.cell_disconnected_cb_args,
