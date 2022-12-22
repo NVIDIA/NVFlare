@@ -22,7 +22,7 @@ from nvflare.private.fed.client.admin import FedAdminAgent
 from nvflare.private.fed.client.admin_msg_sender import AdminMessageSender
 from nvflare.private.fed.client.client_req_processors import ClientRequestProcessors
 from nvflare.private.fed.client.fed_client import FederatedClient
-from nvflare.private.fed.simulator.simulator_client_engine import SimulatorClientEngine
+from nvflare.private.fed.simulator.simulator_client_engine import SimulatorClientEngine, SimulatorParentClientEngine
 from nvflare.private.fed.simulator.simulator_server import SimulatorServer
 
 from .base_client_deployer import BaseClientDeployer
@@ -69,6 +69,8 @@ class SimulatorDeployer(ServerDeployer):
         deployer.build(build_ctx)
         federated_client = deployer.create_fed_client(args)
 
+        client_engine = SimulatorParentClientEngine()
+        federated_client.set_client_engine(client_engine)
         federated_client.register()
         federated_client.start_heartbeat()
         federated_client.run_manager = None
