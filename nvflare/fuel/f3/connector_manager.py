@@ -132,18 +132,14 @@ class ConnectorManager:
             reqs[ConnectorRequirementKey.URL] = url
 
         reqs.update(resources)
-        if not url:
-            active_url, passive_url = self.communicator.get_connector_urls(scheme, reqs)
-        else:
-            active_url = url
-            passive_url = url
 
         if active:
-            handle = self.communicator.add_connector(active_url, Mode.ACTIVE)
+            handle = self.communicator.add_connector(url, Mode.ACTIVE)
+            connect_url = url
         else:
-            handle = self.communicator.add_connector(passive_url, Mode.PASSIVE)
+            handle, connect_url = self.communicator.start_listener(scheme, reqs)
 
-        return ConnectorInfo(handle, active_url, active)
+        return ConnectorInfo(handle, connect_url, active)
 
     def get_external_listener(
             self,

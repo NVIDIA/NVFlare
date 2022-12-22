@@ -18,7 +18,6 @@ from typing import Optional
 import msgpack
 
 from nvflare.fuel.f3.drivers.connection import Connection, BytesAlike
-from nvflare.fuel.f3.drivers.driver import Mode
 from nvflare.fuel.f3.drivers.prefix import Prefix, PREFIX_LEN
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.message import Headers
@@ -50,11 +49,10 @@ class SfmConnection:
         +--------------------------------------------------------+
     """
 
-    def __init__(self, conn: Connection, local_endpoint: Endpoint, mode: Mode):
+    def __init__(self, conn: Connection, local_endpoint: Endpoint):
         self.conn = conn
         self.local_endpoint = local_endpoint
         self.endpoint = None
-        self.mode = mode
         self.last_activity = 0
         self.sequence = 0
         self.lock = threading.Lock()

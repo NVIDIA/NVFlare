@@ -16,8 +16,6 @@ import logging
 import random
 import socket
 import ssl
-from concurrent.futures import ThreadPoolExecutor
-from itertools import chain
 from ssl import SSLContext
 from typing import List, Any, Union, Optional
 
@@ -25,7 +23,7 @@ import websockets
 
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers.connection import Connection, ConnState
-from nvflare.fuel.f3.drivers.driver import Driver, DriverParams
+from nvflare.fuel.f3.drivers.driver import Driver, DriverParams, Connector
 from nvflare.fuel.f3.drivers.prefix import Prefix
 from nvflare.fuel.f3.sfm.conn_manager import Mode
 
@@ -35,14 +33,15 @@ QUEUE_SIZE = 16
 THREAD_POOL_SIZE = 8
 LO_PORT = 1025
 HI_PORT = 65535
+MAX_ITER_SIZE = 10
+RANDOM_TRIES = 20
 
 
 class WsConnection(Connection):
 
-    def __init__(self, websocket: Any, loop, mode: Mode):
-        super().__init__()
+    def __init__(self, websocket: Any, loop, connector: Connector):
+        super().__init__(connector)
         self.websocket = websocket
-        self.mode = mode
         self.queue = asyncio.Queue(QUEUE_SIZE)
         self.loop = loop
         self.closing = False
@@ -71,63 +70,84 @@ class HttpDriver(Driver):
     def __init__(self):
         super().__init__()
         self.connections = {}
-        self.executor = ThreadPoolExecutor(THREAD_POOL_SIZE, "http_driver")
         self.loop = None
+        self.stop_event = None
+        self.connector = None
 
     @staticmethod
     def supported_transports() -> List[str]:
         return ["http", "https", "ws", "wss"]
 
-    def listen(self, params: dict):
-        self.start_event_loop(params, Mode.PASSIVE)
+    def listen(self, connector: Connector):
+        self.connector = connector
+        self.start_event_loop(Mode.PASSIVE)
 
-    def connect(self, params: dict):
-        self.start_event_loop(params, Mode.ACTIVE)
+    def connect(self, connector: Connector):
+        self.connector = connector
+        self.start_event_loop(Mode.ACTIVE)
 
     def shutdown(self):
+        if not self.loop:
+            return
+
+        self.stop_event.set_result(None)
+
         for _, v in self.connections.items():
             v.close()
-        self.executor.shutdown(False)
 
-    def get_connect_url(self, scheme: str, resources: dict):
-        return self.get_url(Mode.ACTIVE, scheme, resources)
+        self.stop_event.set_result(None)
+        self.loop.stop()
+        self.loop.close()
 
-    def get_listening_url(self, scheme: str, resources: dict):
-        return self.get_url(Mode.PASSIVE, scheme, resources)
+    async def async_shutdown(self):
+        for _, v in self.connections.items():
+            v.close()
 
-    # Internal methods
+        self.stop_event.set_result(None)
+        self.loop.stop()
 
-    def get_url(self, mode: Mode, scheme: str, resources: dict):
+    @staticmethod
+    def get_urls(scheme: str, resources: dict) -> (str, str):
         secure = resources.get(DriverParams.SECURE)
         if secure:
             scheme = "https"
 
         host = resources.get("host") if resources else None
         if not host:
-            host = "localhost" if mode == Mode.ACTIVE else "0"
+            host = "localhost"
 
-        port = self.get_open_port(resources)
+        port = HttpDriver.get_open_port(resources)
         if not port:
             raise CommError(CommError.BAD_CONFIG, "Can't find an open port in the specified range")
 
-        return f"{scheme}://{host}:{port}"
+        # Always listen on all interfaces
+        listening_url = f"{scheme}://0:{port}"
+        connect_url = f"{scheme}://{host}:{port}"
 
-    def start_event_loop(self, params: dict, mode: Mode):
-        self.executor.submit(self.event_loop, params, mode).result()
+        return connect_url, listening_url
 
-    def event_loop(self, params: dict, mode: Mode):
-        self.loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.loop)
+    # Internal methods
+
+    def start_event_loop(self, mode: Mode):
+        if mode != self.connector.mode:
+            raise CommError(CommError.ERROR, f"Connector mode doesn't match driver mode for {self.connector.handle}")
+
+        asyncio.run(self.event_loop(mode))
+
+    async def event_loop(self, mode: Mode):
+        self.loop = asyncio.get_running_loop()
+        self.stop_event = self.loop.create_future()
 
         if mode == Mode.ACTIVE:
-            coroutine = self.async_connect(params)
+            coroutine = self.async_connect()
         else:
-            coroutine = self.async_listen(params)
+            coroutine = self.async_listen()
 
-        self.loop.run_until_complete(coroutine)
-        self.loop.run_forever()
+        await coroutine
 
-    async def async_connect(self, params: dict):
+    async def async_connect(self):
+
+        params = self.connector.params
 
         host = params.get(DriverParams.HOST.value)
         port = params.get(DriverParams.PORT.value)
@@ -138,19 +158,20 @@ class HttpDriver(Driver):
         else:
             scheme = "ws"
         async with websockets.connect(f"{scheme}://{host}:{port}", ssl=ssl_context) as ws:
-            conn = WsConnection(ws, self.loop, Mode.ACTIVE)
+            conn = WsConnection(ws, self.loop, self.connector)
             self.add_connection(conn)
             await self.read_write_loop(conn)
 
-    async def async_listen(self, params: dict):
+    async def async_listen(self):
+        params = self.connector.params
         host = params.get(DriverParams.HOST.value)
         port = params.get(DriverParams.PORT.value)
         ssl_context = self.get_ssl_context(params, True)
         async with websockets.serve(self.handler, host, port, ssl=ssl_context):
-            await asyncio.Future()  # run forever
+            await self.stop_event
 
     async def handler(self, websocket):
-        conn = WsConnection(websocket, self.loop, Mode.PASSIVE)
+        conn = WsConnection(websocket, self.loop, self.connector)
         self.add_connection(conn)
         await self.read_write_loop(conn)
 
@@ -161,21 +182,20 @@ class HttpDriver(Driver):
         else:
             log.debug(f"Connection {self.get_name()}:{conn.name} is open")
             conn.state = ConnState.CONNECTED
-            # Call the monitor in a diff thread to avoid deadlock
-            self.executor.submit(self.conn_monitor.state_change, conn)
+            self.conn_monitor.state_change(conn)
 
     async def reader(self, conn: WsConnection):
         while not conn.closing:
             # Reading from websocket and call receiver CB
-            async for frame in conn.websocket:
-                if log.isEnabledFor(logging.DEBUG):
-                    prefix = Prefix.from_bytes(frame)
-                    log.debug(f"Received frame: {prefix} on {self.get_name()}:{conn.name}")
+            frame = await conn.websocket.recv()
+            if log.isEnabledFor(logging.DEBUG):
+                prefix = Prefix.from_bytes(frame)
+                log.debug(f"Received frame: {prefix} on {self.get_name()}:{conn.name}")
 
-                if conn.frame_receiver:
-                    self.executor.submit(conn.frame_receiver.process_frame, frame)
-                else:
-                    log.error("Frame receiver not registered")
+            if conn.frame_receiver:
+                conn.frame_receiver.process_frame(frame)
+            else:
+                log.error("Frame receiver not registered")
 
     async def writer(self, conn: WsConnection):
         while not conn.closing:
@@ -245,15 +265,16 @@ class HttpDriver(Driver):
         hi = int(parts[1]) if parts[1] else HI_PORT
         return range(lo, hi + 1)
 
-    def parse_ports(self, ranges: Any) -> iter:
+    @staticmethod
+    def parse_ports(ranges: Any) -> list:
         all_ranges = []
         if isinstance(ranges, list):
             for r in ranges:
-                all_ranges.append(self.parse_range(r))
+                all_ranges.append(HttpDriver.parse_range(r))
         else:
-            all_ranges.append(self.parse_range(ranges))
+            all_ranges.append(HttpDriver.parse_range(ranges))
 
-        return chain.from_iterable(all_ranges)
+        return all_ranges
 
     @staticmethod
     def check_port(port) -> bool:
@@ -268,7 +289,8 @@ class HttpDriver(Driver):
 
         return result
 
-    def get_open_port(self, resources: dict) -> Optional[int]:
+    @staticmethod
+    def get_open_port(resources: dict) -> Optional[int]:
 
         port = resources.get(DriverParams.PORT)
         if port:
@@ -277,12 +299,19 @@ class HttpDriver(Driver):
         ports = resources.get(DriverParams.PORTS)
         if not ports:
             port = random.randint(LO_PORT, HI_PORT)
-            all_ports = range(port, HI_PORT+1)
-        else:
-            all_ports = self.parse_ports(ports)
+            return port
 
-        for port in all_ports:
-            if self.check_port(port):
-                return port
+        all_ports = HttpDriver.parse_ports(ports)
+
+        for port_range in all_ports:
+            if len(port_range) <= MAX_ITER_SIZE:
+                for port in port_range:
+                    if HttpDriver.check_port(port):
+                        return port
+            else:
+                for i in range(RANDOM_TRIES):
+                    port = random.randint(port_range.start, port_range.stop)
+                    if HttpDriver.check_port(port):
+                        return port
 
         return None

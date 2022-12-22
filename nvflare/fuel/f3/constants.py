@@ -36,6 +36,7 @@ class MessageHeaderKey:
     ERROR = "cellnet.error"
     CONTENT_TYPE = "cellnet.content_type"
     ROUTE = "cellnet.route"
+    ORIGINAL_HEADERS = "cellnet.original_headers"
 
 
 class ContentType:

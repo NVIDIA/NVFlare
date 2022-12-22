@@ -15,7 +15,6 @@ import logging
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
 from typing import List, Dict, Optional
 
 import uuid
@@ -24,7 +23,8 @@ import msgpack
 
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers.connection import Connection, ConnState, FrameReceiver, BytesAlike
-from nvflare.fuel.f3.drivers.driver import Driver, ConnMonitor, Mode
+from nvflare.fuel.f3.drivers.connnector import Connector, Mode
+from nvflare.fuel.f3.drivers.driver import Driver, ConnMonitor
 from nvflare.fuel.f3.drivers.prefix import Prefix, PREFIX_LEN
 from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor, EndpointState
 from nvflare.fuel.f3.message import MessageReceiver, Headers, Message
@@ -38,24 +38,14 @@ MAX_WAIT = 60
 log = logging.getLogger(__name__)
 
 
-@dataclass
-class Connector:
-    """Connector information"""
-    handle: str
-    driver: Driver
-    params: dict
-    mode: Mode
-    total_conns: int
-    curr_conns: int
-
-
-class ConnManager:
+class ConnManager(ConnMonitor):
     """SFM connection manager
     The class is responsible for maintaining state of SFM connections and pumping data through them
     """
 
     def __init__(self, local_endpoint: Endpoint):
         self.local_endpoint = local_endpoint
+        self.stopping = False
 
         # List of active connectors
         self.connectors: List[Connector] = []
@@ -77,8 +67,8 @@ class ConnManager:
 
     def add_connector(self, driver: Driver, params: dict, mode: Mode) -> str:
         handle = str(uuid.uuid4())
-        connector = Connector(handle, driver, params, mode, 0, 0)
-        driver.register_conn_monitor(SfmConnMonitor(self, connector))
+        connector = Connector(handle, driver, params, mode, 0, 0, False)
+        driver.register_conn_monitor(self)
         self.connectors.append(connector)
 
         log.debug(f"Connector {handle} with driver {driver.get_name()} is created in {mode.name} mode")
@@ -100,13 +90,16 @@ class ConnManager:
 
     def start(self):
         for connector in self.connectors:
-            self.start_connector(connector)
+            if not connector.started:
+                self.start_connector(connector)
+
+        self.started = True
 
     def stop(self):
+        self.stopping = True
+        self.executor.shutdown(True)
         for connector in self.connectors:
             connector.driver.shutdown()
-
-        self.executor.shutdown(False)
 
     def find_endpoint(self, name: str) -> Optional[Endpoint]:
 
@@ -116,6 +109,15 @@ class ConnManager:
             return None
 
         return sfm_endpoint.endpoint
+
+    def get_connections(self, name: str) -> Optional[List[SfmConnection]]:
+
+        sfm_endpoint = self.endpoints.get(name)
+        if not sfm_endpoint:
+            log.debug("Endpoint {name} doesn't exist")
+            return None
+
+        return sfm_endpoint.connections
 
     def send_message(self, endpoint: Endpoint, app_id: int, headers: Headers, payload: BytesAlike):
         """Send a message to endpoint for app
@@ -169,6 +171,7 @@ class ConnManager:
     def start_connector_task(self, connector: Connector):
         """Start connector in a new thread"""
 
+        connector.started = True
         if connector.mode == Mode.ACTIVE:
             starter = connector.driver.connect
         else:
@@ -176,9 +179,9 @@ class ConnManager:
 
         connected = False
         wait = 1
-        while not connected:
+        while not connected and not self.stopping:
             try:
-                starter(connector.params)
+                starter(connector)
                 connected = True
             except Exception as ex:
                 log.error(f"Connection failed, retrying in {wait} seconds: {ex}")
@@ -190,52 +193,65 @@ class ConnManager:
                 if wait > MAX_WAIT:
                     wait = MAX_WAIT
 
-        log.info(f"Connector {connector.driver.get_name()}:{connector.name} is started in {connector.mode.name} mode")
+        log.info(f"Connector {connector.driver.get_name()}:{connector.handle} is started in {connector.mode.name} mode")
 
-    def conn_state_change(self, connection: Connection, connector: Connector):
-        state = connection.state
+    def conn_state_change_task(self, connection: Connection):
+        try:
+            state = connection.state
+            connector = connection.connector
+            if state == ConnState.CONNECTED:
+                self.handle_new_connection(connection)
+                connector.total_conns += 1
+                connector.curr_conns += 1
+            elif state == ConnState.CLOSED:
+                self.close_connection(connection)
+                connector.curr_conns -= 1
+            else:
+                log.error(f"Unknown state: {state}")
+        except BaseException as ex:
+            log.error(f"Error handling state change: {ex}")
+            log.debug(traceback.format_exc())
 
-        if state == ConnState.CONNECTED:
-            self.handle_new_connection(connection, connector)
-            connector.total_conns += 1
-            connector.curr_conns += 1
-        elif state == ConnState.CLOSED:
-            self.close_connection(connection)
-            connector.curr_conns -= 1
-        else:
-            log.error(f"Unknown state: {state}")
+    def state_change(self, connection: Connection):
+        self.executor.submit(self.conn_state_change_task, connection)
+
+    def process_frame_task(self, sfm_conn: SfmConnection, frame: BytesAlike):
+
+        try:
+            prefix = Prefix.from_bytes(frame)
+
+            if prefix.header_len == 0:
+                headers = None
+            else:
+                headers = msgpack.unpackb(frame[PREFIX_LEN:PREFIX_LEN + prefix.header_len])
+
+            if prefix.type in (Types.HELLO, Types.READY):
+                if prefix.type == Types.HELLO:
+                    sfm_conn.send_handshake(Types.READY)
+
+                data = self.get_dict_payload(prefix, frame)
+                self.update_endpoint(sfm_conn, data)
+
+            elif prefix.type == Types.DATA:
+                if prefix.length > PREFIX_LEN+prefix.header_len:
+                    payload = frame[PREFIX_LEN+prefix.header_len:]
+                else:
+                    payload = None
+
+                message = Message(headers, payload)
+                receiver = self.receivers.get(prefix.app_id)
+                if receiver:
+                    receiver.process_message(sfm_conn.endpoint.endpoint, prefix.app_id, message)
+                else:
+                    log.debug(f"No receiver registered for App ID {prefix.app_id}, message ignored")
+
+            else:
+                log.error(f"Received unsupported frame type {prefix.type} on {sfm_conn.get_name()}")
+        except BaseException as ex:
+            log.error(f"Error processing frame: {ex}")
 
     def process_frame(self, sfm_conn: SfmConnection, frame: BytesAlike):
-
-        prefix = Prefix.from_bytes(frame)
-
-        if prefix.header_len == 0:
-            headers = None
-        else:
-            headers = msgpack.unpackb(frame[PREFIX_LEN:PREFIX_LEN + prefix.header_len])
-
-        if prefix.type in (Types.HELLO, Types.READY):
-            if prefix.type == Types.HELLO:
-                sfm_conn.send_handshake(Types.READY)
-
-            data = self.get_dict_payload(prefix, frame)
-            self.update_endpoint(sfm_conn, data)
-
-        elif prefix.type == Types.DATA:
-            if prefix.length > PREFIX_LEN+prefix.header_len:
-                payload = frame[PREFIX_LEN+prefix.header_len:]
-            else:
-                payload = None
-
-            message = Message(headers, payload)
-            receiver = self.receivers.get(prefix.app_id)
-            if receiver:
-                receiver.process_message(sfm_conn.endpoint.endpoint, prefix.app_id, message)
-            else:
-                log.debug(f"No receiver registered for App ID {prefix.app_id}, message ignored")
-
-        else:
-            log.error(f"Received unsupported frame type {prefix.type} on {sfm_conn.get_name()}")
+        self.executor.submit(self.process_frame_task, sfm_conn, frame)
 
     def update_endpoint(self, sfm_conn: SfmConnection, data):
 
@@ -265,13 +281,12 @@ class ConnManager:
             self.notify_monitors(endpoint)
 
     def notify_monitors(self, endpoint: Endpoint):
-        print(f"======== notify endpoint {endpoint.name}")
+
         if not self.monitors:
             log.debug("No endpoint monitor registered")
             return
 
         for monitor in self.monitors:
-            print(f"======== notify monitor {endpoint.name}")
             monitor.state_change(endpoint)
 
     @staticmethod
@@ -279,28 +294,17 @@ class ConnManager:
         mv = memoryview(frame)
         return msgpack.unpackb(mv[(PREFIX_LEN+prefix.header_len):])
 
-    def handle_new_connection(self, connection: Connection, connector: Connector):
-        print(f"====== handle_new_connection mode={connector.mode} handle={connector.handle}")
-        sfm_conn = SfmConnection(connection, self.local_endpoint, connector.mode)
+    def handle_new_connection(self, connection: Connection):
+
+        sfm_conn = SfmConnection(connection, self.local_endpoint)
         self.connections[sfm_conn.get_name()] = sfm_conn
         connection.register_frame_receiver(SfmFrameReceiver(self, sfm_conn))
 
-        print(f"====== mode={sfm_conn.mode}")
-        if sfm_conn.mode == Mode.ACTIVE:
+        if connection.connector.mode == Mode.ACTIVE:
             sfm_conn.send_handshake(Types.HELLO)
 
     def close_connection(self, connection: Connection):
         pass
-
-
-class SfmConnMonitor(ConnMonitor):
-
-    def __init__(self, conn_manager: ConnManager, connector: Connector):
-        self.conn_manager = conn_manager
-        self.connector = connector
-
-    def state_change(self, connection: Connection):
-        self.conn_manager.conn_state_change(connection, self.connector)
 
 
 class SfmFrameReceiver(FrameReceiver):

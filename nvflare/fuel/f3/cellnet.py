@@ -149,11 +149,16 @@ class FQCN:
             return False
         if not fqcn:
             return False
+        return True
 
     @staticmethod
     def get_root(fqcn: str) -> str:
         parts = FQCN.split(fqcn)
         return parts[0]
+
+    @staticmethod
+    def is_parent(fqcn1: str, fqcn2: str) -> bool:
+        return fqcn2.startswith(fqcn1 + FQCN.SEPARATOR)
 
 
 class _FqcnInfo:
@@ -600,10 +605,18 @@ class Cell(MessageReceiver, EndpointMonitor):
         Returns:
 
         """
-        self.communicator.stop()
+        self.logger.debug(f"{self.my_info.fqcn}: Stopping Cell")
+        try:
+            self.communicator.stop()
+        except:
+            self.logger.error(f"{self.my_info.fqcn}: error stopping Communicator")
+            traceback.print_exc()
+
+        self.logger.debug(f"{self.my_info.fqcn}: Communicator Stopped!")
         self.running = False
         self.asked_to_stop = True
         self.bulk_checker.join()
+        self.logger.debug(f"{self.my_info.fqcn}: CELL stopped!")
 
     def register_request_cb(
             self,
@@ -701,31 +714,35 @@ class Cell(MessageReceiver, EndpointMonitor):
                 return result
 
     def _try_path(self, fqcn_path: List[str]) -> Union[None, Endpoint]:
+        self.logger.debug(f"{self.my_info.fqcn}: trying path {fqcn_path} ...")
         target = FQCN.join(fqcn_path)
         agent = self.agents.get(target, None)
         if agent:
             # there is a direct path to the target call
+            self.logger.debug(f"{self.my_info.fqcn}: got cell agent for {target}")
             return agent.endpoint
+        else:
+            self.logger.debug(f"{self.my_info.fqcn}: no CellAgent for {target}")
+
+            if FQCN.is_parent(self.my_info.fqcn, target):
+                raise RuntimeError(f"{self.my_info.fqcn}: backbone broken: no path to child {target}")
+
+            elif FQCN.is_parent(target, self.my_info.fqcn):
+                raise RuntimeError(f"{self.my_info.fqcn}: backbone broken: no path to parent {target}")
 
         if len(fqcn_path) == 1:
             return None
         return self._try_path(fqcn_path[:-1])
 
-    def _find_ep(self, target_fqcn: str) -> Union[None, Endpoint]:
-        path = FQCN.split(target_fqcn)
-        ep = self._try_path(path)
-        if ep:
-            return ep
-
-        # can't find endpoint based on the target's FQCN
-        # let my parent(s) handle it
-        ep = None
-        path = self.my_info.path
-        if len(path) > 1:
-            ep = self._try_path(path[:-1])
-        return ep
-
     def _find_endpoint(self, target_fqcn: str) -> Union[None, Endpoint]:
+        try:
+            return self._try_find_ep(target_fqcn)
+        except:
+            traceback.print_exc()
+            return None
+
+    def _try_find_ep(self, target_fqcn: str) -> Union[None, Endpoint]:
+        self.logger.debug(f"{self.my_info.fqcn}: finding path to {target_fqcn}")
         if target_fqcn == self.my_info.fqcn:
             # sending request to myself? Not allowed!
             self.logger.error(f"{self.my_info.fqcn}: sending message to self is not allowed")
@@ -733,21 +750,21 @@ class Cell(MessageReceiver, EndpointMonitor):
 
         target_info = _FqcnInfo(target_fqcn)
         if same_family(self.my_info, target_info):
-            ep = self._try_path(target_info.path)
-            if not ep:
-                raise RuntimeError(f"{self.my_info.fqcn}: cannot find path to family member {target_fqcn}")
-            return ep
+            self.logger.debug(f"{self.my_info.is_root}: find path in the same family")
+            return self._try_path(target_info.path)
 
         # not the same family
         ep = self._try_path(target_info.path)
-        if not ep:
-            # cannot find path to the target
-            # try the server root
-            # we assume that all client roots connect to the server root.
-            with self.agent_lock:
-                for _, agent in self.agents.items():
-                    if agent.info.is_on_server and agent.info.is_root:
-                        return agent.endpoint
+        if ep:
+            return ep
+
+        # cannot find path to the target
+        # try the server root
+        # we assume that all client roots connect to the server root.
+        with self.agent_lock:
+            for _, agent in self.agents.items():
+                if agent.info.is_on_server and agent.info.is_root:
+                    return agent.endpoint
 
         # no direct path to the server root
         # let my parent handle it if I have a parent
@@ -833,6 +850,8 @@ class Cell(MessageReceiver, EndpointMonitor):
             targets: Union[str, List[str]],
             message: Message,
     ) -> Dict[str, bool]:
+        if isinstance(targets, str):
+            targets = [targets]
         target_msgs = {}
         for t in targets:
             target_msgs[t] = TargetMessage(t, channel, topic, message)
@@ -845,7 +864,8 @@ class Cell(MessageReceiver, EndpointMonitor):
             target: str,
             request: Message,
             timeout=None) -> Message:
-        result = self.broadcast_request(channel, topic, target, request, timeout)
+        self.logger.debug(f"{self.my_info.fqcn}: sending request {channel}:{topic} to {target}")
+        result = self.broadcast_request(channel, topic, [target], request, timeout)
         assert isinstance(result, dict)
         return result.get(target)
 
@@ -888,14 +908,17 @@ class Cell(MessageReceiver, EndpointMonitor):
                     self.req_hw = num_reqs
 
                 # wait for reply
+                self.logger.debug(f"{self.my_info.fqcn}: set up waiter {waiter.id} to wait for {timeout} secs")
                 if not waiter.wait(timeout=timeout):
                     # timeout
+                    self.logger.info(f"{self.my_info.fqcn}: timeout on REQ {waiter.id} after {timeout} secs")
                     with self.stats_lock:
                         self.num_timeout_reqs += 1
         except BaseException as ex:
             raise ex
         finally:
             self.waiters.pop(waiter.id, None)
+            self.logger.debug(f"released waiter on REQ {waiter.id}")
         return waiter.replies
 
     def broadcast_request(
@@ -918,6 +941,8 @@ class Cell(MessageReceiver, EndpointMonitor):
         Returns: a dict of: cell_id => reply message
 
         """
+        if isinstance(targets, str):
+            targets = [targets]
         target_msgs = {}
         for t in targets:
             target_msgs[t] = TargetMessage(t, channel, topic, request)
@@ -1156,12 +1181,14 @@ class Cell(MessageReceiver, EndpointMonitor):
             reply = make_reply(ReturnCode.COMM_ERROR, error="cannot forward")
             reply.add_headers(
                 {
+                    MessageHeaderKey.ORIGINAL_HEADERS: message.headers,
                     MessageHeaderKey.FROM_CELL: self.my_info.fqcn,
                     MessageHeaderKey.TO_CELL: endpoint.name,
-                    MessageHeaderKey.ORIGIN: destination,
+                    MessageHeaderKey.ORIGIN: self.my_info.fqcn,
                     MessageHeaderKey.DESTINATION: origin,
                     MessageHeaderKey.REQ_ID: [req_id],
                     MessageHeaderKey.MSG_TYPE: MessageType.RETURN,
+                    MessageHeaderKey.ROUTE: [self.my_info.fqcn]
                 }
             )
             self._send_to_endpoint(endpoint, reply)
@@ -1170,8 +1197,8 @@ class Cell(MessageReceiver, EndpointMonitor):
             # msg_type is either RETURN or REPLY - drop it.
             self.logger.warning(self._message_log(message, "dropped forwarded reply or return"))
 
-    def _process_reply(self, origin: str, message: Message):
-        self.logger.debug(f"{self.my_info.fqcn}: processing reply from {origin}")
+    def _process_reply(self, origin: str, message: Message, msg_type: str):
+        self.logger.debug(f"{self.my_info.fqcn}: processing reply from {origin} for type {msg_type}")
         req_ids = message.get_header(MessageHeaderKey.REQ_ID)
         if not req_ids:
             raise RuntimeError(self._message_log(message, "reply does not have REQ_ID header"))
@@ -1182,15 +1209,24 @@ class Cell(MessageReceiver, EndpointMonitor):
         if not isinstance(req_ids, list):
             raise RuntimeError(self._message_log(message, f"REQ_ID must be list of ids but got {type(req_ids)}"))
 
+        req_dest = origin
+        if msg_type == MessageType.RETURN:
+            original_headers = message.get_header(MessageHeaderKey.ORIGINAL_HEADERS, None)
+            if not original_headers:
+                raise RuntimeError(self._message_log(message, "missing ORIGINAL_HEADERS in returned message!"))
+            req_dest = original_headers.get(MessageHeaderKey.DESTINATION, None)
+            if not req_dest:
+                raise RuntimeError(self._message_log(message, "missing DESTINATION header in original headers"))
+
         for rid in req_ids:
             waiter = self.waiters.get(rid, None)
             if waiter:
                 assert isinstance(waiter, _Waiter)
-                if origin not in waiter.replies:
-                    self.logger.error(self._message_log(message, f"unexpected REQ_ID {rid} in reply"))
+                if req_dest not in waiter.replies:
+                    self.logger.error(self._message_log(message, f"unexpected reply for {rid} from {req_dest}"))
                     return
-                waiter.replies[origin] = message
-                waiter.reply_time[origin] = time.time()
+                waiter.replies[req_dest] = message
+                waiter.reply_time[req_dest] = time.time()
 
                 # all targets replied?
                 all_targets_replied = True
@@ -1278,6 +1314,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                         MessageHeaderKey.TO_CELL: endpoint.name,
                         MessageHeaderKey.REQ_ID: req_id,
                         MessageHeaderKey.MSG_TYPE: MessageType.REPLY,
+                        MessageHeaderKey.ROUTE: [self.my_info.fqcn]
                     }
                 )
 
@@ -1291,7 +1328,7 @@ class Cell(MessageReceiver, EndpointMonitor):
             return
 
         # the message is either a reply or a return for a previous request: handle replies
-        self._process_reply(origin, message)
+        self._process_reply(origin, message, msg_type)
 
     def _check_bulk(self):
         while not self.asked_to_stop:
@@ -1315,7 +1352,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                 agent = CellAgent(fqcn, endpoint)
                 with self.agent_lock:
                     self.agents[fqcn] = agent
-                self.logger.debug(f"{self.my_info.fqcn}: create CellAgent for {fqcn}")
+                self.logger.debug(f"{self.my_info.fqcn}: created CellAgent for {fqcn}")
             else:
                 self.logger.debug(f"{self.my_info.fqcn}: found existing CellAgent for {fqcn} - shouldn't happen")
                 agent.endpoint = endpoint

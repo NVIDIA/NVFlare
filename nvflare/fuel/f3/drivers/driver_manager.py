@@ -41,6 +41,7 @@ import logging
 import os
 from typing import Union, Type, Optional
 
+from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers.driver import Driver
 
 log = logging.getLogger(__name__)
@@ -53,31 +54,26 @@ class DriverManager:
         # scheme-<
         self.drivers = {}
 
-    def register(self, driver: Union[Driver, Type[Driver]]):
+    def register(self, driver_class: Type[Driver]):
         """Register a driver with Driver Manager
 
         Args:
-            driver: Driver to be registered. Driver can be either type or instance
+            driver_class: Driver to be registered. Driver can be either type or instance
         """
 
-        if inspect.isclass(driver):
-            cls = driver
-            instance = driver()
-        else:
-            cls = driver.__class__
-            instance = driver
+        if not inspect.isclass(driver_class):
+            raise CommError(CommError.ERROR, f"Registrant must be class, not instance")
 
-        if not isinstance(instance, Driver):
-            log.error(f"Class {cls.__name__} is not a transport driver, ignored")
-            return
+        if not issubclass(driver_class, Driver):
+            raise CommError(CommError.ERROR, f"Class {driver_class.__name__} is not a transport driver")
 
-        for scheme in cls.supported_transports():
+        for scheme in driver_class.supported_transports():
             key = scheme.lower()
             if key in self.drivers:
                 log.error(f"Driver for scheme {scheme} is already registered, ignored")
             else:
-                self.drivers[key] = instance
-                log.debug(f"Driver {instance.get_name()} is registered for {scheme}")
+                self.drivers[key] = driver_class
+                log.debug(f"Driver {driver_class.__name__} is registered for {scheme}")
 
     def register_folder(self, folder: str, package: str):
         """Scan the folder and register all drivers
@@ -96,8 +92,8 @@ class DriverManager:
                     if issubclass(cls_obj, Driver) and not inspect.isabstract(cls_obj) and len(spec.args) == 1:
                         self.register(cls_obj)
 
-    def find_driver(self, scheme_or_url: str) -> Optional[Driver]:
-        """Find the driver instance based on scheme or URL
+    def find_driver_class(self, scheme_or_url: str) -> Optional[Type[Driver]]:
+        """Find the driver class based on scheme or URL
 
         Args:
             scheme_or_url: The scheme or the url

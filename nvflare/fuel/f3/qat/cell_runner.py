@@ -77,6 +77,13 @@ class CellRunner:
 
         self.cell.register_request_cb(
             channel='admin',
+            topic='route',
+            cb=self._do_route,
+            runner=self
+        )
+
+        self.cell.register_request_cb(
+            channel='admin',
             topic='stop',
             cb=self._do_stop,
             runner=self
@@ -133,6 +140,17 @@ class CellRunner:
     ) -> Union[None, Message]:
         self.stop()
         return None
+
+    def _do_route(
+            self,
+            cell: Cell,
+            channel: str,
+            topic: str,
+            request: Message,
+            runner
+    ) -> Union[None, Message]:
+        req_headers = request.headers
+        return new_message(payload=req_headers)
 
     def request_cells_info(self):
         result = [self.cell.get_fqcn()]
@@ -197,14 +215,17 @@ class CellRunner:
 
             # wait for sub processes
             for r in sub_runners:
-                if not r.process.wait(timeout=2.0):
+                try:
+                    r.process.wait(timeout=2.0)
+                except:
                     print(f"subprocess {r.fqcn} did not end gracefully")
                     r.process.terminate()
 
-        self.cell.stop()
+        print(f"======= {self.cell.get_fqcn()} is asked to stop!")
         self.asked_to_stop = True
+        self.cell.stop()
 
     def run(self):
         while not self.asked_to_stop:
             time.sleep(0.5)
-        print(f"{self.cell.get_fqcn()} STOPPED!")
+        print(f"====== {self.cell.get_fqcn()} STOPPED!")

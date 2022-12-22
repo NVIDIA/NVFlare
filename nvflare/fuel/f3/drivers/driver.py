@@ -41,6 +41,7 @@ from typing import List
 from urllib.parse import urlparse, urlencode, parse_qsl
 
 from nvflare.fuel.f3.drivers.connection import ConnState, Connection
+from nvflare.fuel.f3.drivers.connnector import Connector
 
 
 class DriverParams(str, Enum):
@@ -64,11 +65,6 @@ class DriverParams(str, Enum):
     CLIENT_KEY = "client_key"
     SECURE = "secure"
     PORTS = "ports"
-
-
-class Mode(Enum):
-    ACTIVE = 0
-    PASSIVE = 1
 
 
 class ConnMonitor(ABC):
@@ -115,11 +111,11 @@ class Driver(ABC):
         pass
 
     @abstractmethod
-    def listen(self, params: dict):
+    def listen(self, connector: Connector):
         """Start the driver in passive mode
 
         Args:
-            params: Parameters needed to start the driver
+            connector: Connector with parameters
 
         Raises:
             CommError: If any errors
@@ -127,37 +123,28 @@ class Driver(ABC):
         pass
 
     @abstractmethod
-    def connect(self, params: dict):
+    def connect(self, connector: Connector):
         """Start the driver in active mode
 
         Args:
-            params: Parameters needed to start the driver
+            connector: Connector with parameters
 
         Raises:
             CommError: If any errors
         """
         pass
 
+    @staticmethod
     @abstractmethod
-    def get_connect_url(self, scheme: str, resources: dict):
-        """Get the URL that can be used to connect to this endpoint
+    def get_urls(scheme: str, resources: dict) -> (str, str):
+        """Get active and passive URLs based on resources
 
         Args:
             scheme: A scheme supported by the driver, like http or https
             resources: User specified resources like host and port ranges.
 
-        Raises:
-            CommError: If no free port can be found
-        """
-        pass
-
-    @abstractmethod
-    def get_listening_url(self, scheme: str, resources: dict):
-        """Get the URL that can be used to listen for connections to this endpoint
-
-        Args:
-            scheme: A scheme supported by the driver, like http or https
-            resources: User specified resources like host and port ranges.
+        Returns:
+            A tuple with active and passive URLs
 
         Raises:
             CommError: If no free port can be found

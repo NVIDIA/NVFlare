@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from nvflare.fuel.hci.server.hci import AdminServer
-from nvflare.fuel.f3.cellnet import FQCN
+from nvflare.fuel.f3.cellnet import FQCN, new_message, MessageHeaderKey, ReturnCode
 from .cell_runner import CellRunner, NetConfig
 
 from nvflare.fuel.hci.conn import Connection
@@ -67,6 +67,7 @@ class Server(CellRunner, CommandModule):
         self.sess_mgr.shutdown()
         self.admin.stop()
         super().stop()
+        print("SERVER STOPPED!")
 
     def get_spec(self) -> CommandModuleSpec:
         return CommandModuleSpec(
@@ -77,6 +78,13 @@ class Server(CellRunner, CommandModule):
                     description="get system cells info",
                     usage="cells",
                     handler_func=self._cmd_cells,
+                    visible=True,
+                ),
+                CommandSpec(
+                    name="send",
+                    description="send message to a cell",
+                    usage="send cell_name msg",
+                    handler_func=self._cmd_route,
                     visible=True,
                 ),
                 CommandSpec(
@@ -91,6 +99,32 @@ class Server(CellRunner, CommandModule):
         cell_fqcns = self.request_cells_info()
         for c in cell_fqcns:
             conn.append_string(c)
+
+    def _cmd_route(self, conn: Connection, args: [str]):
+        if len(args) != 3:
+            conn.append_error("syntax error")
+            return
+        target_fqcn = args[1]
+        msg = args[2]
+        reply = self.cell.send_request(
+            channel="admin",
+            topic="route",
+            target=target_fqcn,
+            timeout=5.0,
+            request=new_message()
+        )
+        conn.append_string("Reply Headers:")
+        conn.append_dict(reply.headers)
+
+        rc = reply.get_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
+        if rc == ReturnCode.OK:
+            if not isinstance(reply.payload, dict):
+                conn.append_error(f"reply payload should be request headers dict but got {type(reply.payload)}")
+            else:
+                conn.append_string("Request Headers:")
+                conn.append_dict(reply.payload)
+        else:
+            conn.append_error(f"Reply ReturnCode: {rc}")
 
     def _cmd_stop(self, conn: Connection, args: [str]):
         conn.append_string("system stopped")
