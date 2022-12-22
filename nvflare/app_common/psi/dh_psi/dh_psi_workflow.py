@@ -60,7 +60,8 @@ class DhPSIWorkFlow(PSIWorkflow):
 
         self.abort_signal = abort_signal
 
-        self.log_info(self.fl_ctx, "order sites = ", self.ordered_sites)
+        self.log_info(self.fl_ctx, f"order sites = {self.ordered_sites}")
+
         self.forward_processed.update(self.forward_pass(self.ordered_sites))
         self.backward_processed.update(self.backward_pass(self.ordered_sites))
 
@@ -141,7 +142,8 @@ class DhPSIWorkFlow(PSIWorkflow):
         if total_clients <= 1:
             return processed
 
-        print("forward_processed = ", self.forward_processed)
+        self.log_info(self.fl_ctx, f"forward_processed = {self.forward_processed}")
+
         if len(self.forward_processed) == total_clients - 1:
             # Sequential version
             return self.forward_pass(ordered_clients, reverse=True)
@@ -177,13 +179,11 @@ class DhPSIWorkFlow(PSIWorkflow):
         inputs = Shareable()
         inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_SETUP
         inputs[PSIConst.PSI_ITEMS_SIZE] = c.size
-
-        task_props = {"sub_task": PSIConst.PSI_TASK_SETUP}
         targets = [s.name]
 
         min_responses = 1
         bop = BroadcastAndWait(self.fl_ctx, self.controller)
-        results = bop.broadcast_and_wait(self.task_name, task_props, inputs, targets, min_responses, self.abort_signal)
+        results = bop.broadcast_and_wait(self.task_name, None, inputs, targets, min_responses, self.abort_signal)
 
         dxo = results[s.name]
         setup_msg = dxo.data[PSIConst.PSI_SETUP_MSG]
@@ -235,3 +235,18 @@ class DhPSIWorkFlow(PSIWorkflow):
         status = dxo.data[PSIConst.PSI_STATUS]
         self.log_info(self.fl_ctx, f"received calculate_intersection job status from {c.name}, status is {status}")
         return {c.name: status}
+    #
+    # def prepare_multi_clients_setup(self, s: SiteSize, clients: List[SiteSize]) -> dict:
+    #     inputs = Shareable()
+    #     inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_SETUP
+    #     inputs[PSIConst.PSI_ITEMS_SIZE] = c.size
+    #     targets = [s.name]
+    #
+    #     min_responses = 1
+    #     bop = BroadcastAndWait(self.fl_ctx, self.controller)
+    #     results = bop.broadcast_and_wait(self.task_name, None, inputs, targets, min_responses, self.abort_signal)
+    #
+    #     dxo = results[s.name]
+    #     setup_msg = dxo.data[PSIConst.PSI_SETUP_MSG]
+    #     self.log_info(self.fl_ctx, f"received setup message from {s.name} for {c.name}")
+    #     return {c.name: setup_msg}
