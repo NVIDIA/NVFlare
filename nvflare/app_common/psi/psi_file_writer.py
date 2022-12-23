@@ -42,8 +42,6 @@ class FilePsiWriter(PsiPersistor):
             raise StorageException("object {} already exists and overwrite_existing is False".format(full_uri))
         self.log_info(fl_ctx, f"trying to save data to {full_uri}")
 
-        self.log_info(fl_ctx, f"****** site {fl_ctx.get_identity_name()} items = {items}")
-
         with open(full_uri, "w") as fp:
             fp.write("\n".join(items))
 
@@ -52,7 +50,7 @@ class FilePsiWriter(PsiPersistor):
     def get_output_path(self, fl_ctx: FLContext) -> str:
         job_dir = os.path.dirname(os.path.abspath(fl_ctx.get_prop(FLContextKey.APP_ROOT)))
         self.log_info(fl_ctx, "job dir = " + job_dir)
-        return os.path.join(job_dir,  fl_ctx.get_identity_name(), self.output_path)
+        return os.path.join(job_dir, fl_ctx.get_identity_name(), self.output_path)
 
     def _validate_directory(self, full_path: str):
         if not os.path.isabs(full_path):

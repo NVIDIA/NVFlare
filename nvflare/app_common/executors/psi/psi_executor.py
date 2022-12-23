@@ -45,7 +45,7 @@ class PSIExecutor(CommonExecutor):
         psi_client_executor.initialize(fl_ctx)
         return psi_client_executor
 
-    def check_psi_algo(self, psi_client_exec: ClientExecutor,  fl_ctx):
+    def check_psi_algo(self, psi_client_exec: ClientExecutor, fl_ctx):
         if not psi_client_exec:
             self.log_error(fl_ctx, f"PSI algorithm specified by {self.psi_algo} is not implemented")
             raise NotImplementedError

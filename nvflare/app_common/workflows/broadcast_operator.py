@@ -33,7 +33,6 @@ class BroadcastAndWait(FLComponent, ABC):
         self.task = None
         self.results: Dict[str, DXO] = {}
 
-
     def broadcast_and_wait(
         self,
         task_name: str,

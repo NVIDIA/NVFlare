@@ -28,6 +28,7 @@ class PSI(FLComponent, ABC):
     1) the details of PSI algorithms
     2) real client's own items to other FL clients and FL Servers
     """
+
     def __init__(self, psi_writer_id: str):
         """
         Args:

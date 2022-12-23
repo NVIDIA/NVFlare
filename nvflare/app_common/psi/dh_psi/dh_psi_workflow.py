@@ -20,6 +20,7 @@ from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import PSIConst
 from nvflare.app_common.psi.psi_workflow_spec import PSIWorkflow
 from nvflare.app_common.workflows.broadcast_operator import BroadcastAndWait
+from nvflare.utils.decorators import collect_time, measure_time
 
 
 class SiteSize(NamedTuple):
@@ -64,6 +65,16 @@ class DhPSIWorkFlow(PSIWorkflow):
 
         self.forward_processed.update(self.forward_pass(self.ordered_sites))
         self.backward_processed.update(self.backward_pass(self.ordered_sites))
+        if len(self.backward_processed) < len(self.ordered_sites) - 1:
+            self.log_error(self.fl_ctx, "incomplete for all sites' intersections")
+            self.log_error(self.fl_ctx, "completed ones are {self.backward_processed}")
+            raise RuntimeError("process failed without completing all sites ")
+
+        self.log_pass_time_taken()
+
+    def log_pass_time_taken(self):
+        self.log_info(self.fl_ctx, f"`forward_pass' took {self.forward_pass.time_taken} ms.")
+        self.log_info(self.fl_ctx, f"'backward_pass' took {self.backward_pass.time_taken} ms.")
 
     def post_workflow(self, abort_signal: Signal):
         pass
@@ -92,22 +103,20 @@ class DhPSIWorkFlow(PSIWorkflow):
         print("site_sizes:", site_sizes)
         return site_sizes
 
+    @measure_time
     def forward_pass(self, ordered_sites: List[SiteSize], reverse=False) -> dict:
         processed = {}
         if self.abort_signal.triggered:
             return processed
 
-        #   FORWARD PASS
-        #   for each client pair selected from sorted clients
-        #   for two clients:
-        #     step 1:  ask  C1 (PsiServer) prepare setup message, FL server receive result
-        #     step 2:  send C2 C1's setup message and C2 return with it's request
-        #     step 3:  send C1 (PsiServer) C2's request, and C1 process the request and send back the response
-        #     step 4:  send C2 (PsiClient) C1's response and C2 compute intersect
-
         total_sites = len(ordered_sites)
         if total_sites <= 1:
             return processed
+        #
+        self.prepare_setup_message(reset=True)
+        self.prepare_request(reset=True)
+        self.process_request(reset=True)
+        self.calculate_intersection(reset=True)
 
         start, end, step = self.get_directional_range(total_sites, reverse)
         for i in range(start, end, step):
@@ -119,7 +128,31 @@ class DhPSIWorkFlow(PSIWorkflow):
             status = self.calculate_intersection(c, response)
             processed.update(status)
 
+        self.report_time_taken(reverse)
         return processed
+
+    def report_time_taken(self, reverse):
+        direction = "backward" if reverse else "forward"
+        self.log_info(
+            self.fl_ctx,
+            f"{direction} pass, prepare_setup_message {self.prepare_setup_message.time_taken} "
+            f"(ms) with {self.prepare_setup_message.count} calls",
+        )
+        self.log_info(
+            self.fl_ctx,
+            f"{direction} pass, prepare_request {self.prepare_request.time_taken} "
+            f"(ms) with {self.prepare_request.count} calls",
+        )
+        self.log_info(
+            self.fl_ctx,
+            f"{direction} pass, process_request {self.process_request.time_taken} "
+            f"(ms) with {self.process_request.count} calls",
+        )
+        self.log_info(
+            self.fl_ctx,
+            f"{direction} pass, calculate_intersection {self.calculate_intersection.time_taken} "
+            f"(ms) with {self.calculate_intersection.count} calls",
+        )
 
     def get_directional_range(self, total: int, reverse: bool = False):
         if reverse:
@@ -133,6 +166,7 @@ class DhPSIWorkFlow(PSIWorkflow):
 
         return start, end, step
 
+    @measure_time
     def backward_pass(self, ordered_clients: list) -> dict:
         processed = {}
         if self.abort_signal.triggered:
@@ -159,6 +193,7 @@ class DhPSIWorkFlow(PSIWorkflow):
         else:
             raise ValueError("started backward pass before finish the forward pass")
 
+    @collect_time
     def prepare_sites(self, direction: str, abort_signal):
         self.log_info(self.fl_ctx, f" start to prepare_sites, stage task : {PSIConst.PSI_TASK_PREPARE}")
         inputs = Shareable()
@@ -175,6 +210,7 @@ class DhPSIWorkFlow(PSIWorkflow):
         self.log_info(self.fl_ctx, f"{PSIConst.PSI_TASK_PREPARE} results = {results}")
         self.ordered_sites = self.get_ordered_sites(results)
 
+    @collect_time
     def prepare_setup_message(self, s: SiteSize, c: SiteSize) -> dict:
         inputs = Shareable()
         inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_SETUP
@@ -190,6 +226,7 @@ class DhPSIWorkFlow(PSIWorkflow):
         self.log_info(self.fl_ctx, f"received setup message from {s.name} for {c.name}")
         return {c.name: setup_msg}
 
+    @collect_time
     def prepare_request(self, c: SiteSize, setup_msg: dict) -> dict:
         inputs = Shareable()
         inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_REQUEST
@@ -207,6 +244,7 @@ class DhPSIWorkFlow(PSIWorkflow):
         self.log_info(self.fl_ctx, f"received request message from {c.name}")
         return {c.name: request_msg}
 
+    @collect_time
     def process_request(self, s: SiteSize, c_name: str, response_msg: str):
         inputs = Shareable()
         inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_RESPONSE
@@ -222,6 +260,7 @@ class DhPSIWorkFlow(PSIWorkflow):
         self.log_info(self.fl_ctx, f"received response message from {s.name} for {c_name}")
         return {c_name: response_msg}
 
+    @collect_time
     def calculate_intersection(self, c: SiteSize, response: dict):
         inputs = Shareable()
         inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_INTERSECT
@@ -235,6 +274,7 @@ class DhPSIWorkFlow(PSIWorkflow):
         status = dxo.data[PSIConst.PSI_STATUS]
         self.log_info(self.fl_ctx, f"received calculate_intersection job status from {c.name}, status is {status}")
         return {c.name: status}
+
     #
     # def prepare_multi_clients_setup(self, s: SiteSize, clients: List[SiteSize]) -> dict:
     #     inputs = Shareable()
