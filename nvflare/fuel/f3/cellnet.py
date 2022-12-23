@@ -14,6 +14,7 @@
 
 import copy
 import logging
+import os
 import threading
 import time
 import traceback
@@ -26,7 +27,7 @@ from .communicator import Communicator, MessageReceiver
 from .connector_manager import ConnectorManager
 from .constants import (
     MessageHeaderKey, MessageType,
-    ReturnCode, CellPropertyKey, ContentType
+    ReturnCode, CellPropertyKey, Encoding
 )
 
 import nvflare.fuel.utils.fobs as fobs
@@ -68,10 +69,11 @@ class CellAgent:
         Args:
             fqcn: FQCN of the cell represented
         """
-        if not FQCN.is_valid(fqcn):
-            raise ValueError(f"invalid FQCN '{fqcn}'")
+        err = FQCN.validate(fqcn)
+        if err:
+            raise ValueError(f"Invalid FQCN '{fqcn}': {err}")
 
-        self.info = _FqcnInfo(fqcn)
+        self.info = _FqcnInfo(FQCN.normalize(fqcn))
         self.endpoint = endpoint
 
 
@@ -136,6 +138,10 @@ class FQCN:
     ROOT_SERVER = "server"
 
     @staticmethod
+    def normalize(fqcn: str) -> str:
+        return fqcn.strip()
+
+    @staticmethod
     def split(fqcn: str) -> List[str]:
         return fqcn.split(FQCN.SEPARATOR)
 
@@ -144,12 +150,21 @@ class FQCN:
         return FQCN.SEPARATOR.join(path)
 
     @staticmethod
-    def is_valid(fqcn: str) -> bool:
+    def validate(fqcn: str) -> str:
         if not isinstance(fqcn, str):
-            return False
+            return f"must be str but got {type(fqcn)}"
+        fqcn = FQCN.normalize(fqcn)
         if not fqcn:
-            return False
-        return True
+            return "empty"
+        parts = FQCN.split(fqcn)
+        info = {}
+        for p in parts:
+            if not p:
+                return "empty part"
+            if info.get(p):
+                return f"dup '{p}'"
+            info[p] = True
+        return ""
 
     @staticmethod
     def get_root(fqcn: str) -> str:
@@ -157,8 +172,15 @@ class FQCN:
         return parts[0]
 
     @staticmethod
+    def get_parent(fqcn: str) -> str:
+        parts = FQCN.split(fqcn)
+        if len(parts) == 1:
+            return ""
+        return FQCN.join(parts[0:-1])
+
+    @staticmethod
     def is_parent(fqcn1: str, fqcn2: str) -> bool:
-        return fqcn2.startswith(fqcn1 + FQCN.SEPARATOR)
+        return fqcn1 == FQCN.get_parent(fqcn2)
 
 
 class _FqcnInfo:
@@ -269,7 +291,11 @@ class Cell(MessageReceiver, EndpointMonitor):
             client_1            (he root cell of client_1)
 
         """
-        self.my_info = _FqcnInfo(fqcn)
+        err = FQCN.validate(fqcn)
+        if err:
+            raise ValueError(f"Invalid FQCN '{fqcn}': {err}")
+
+        self.my_info = _FqcnInfo(FQCN.normalize(fqcn))
         self.secure = secure
         self.root_url = root_url
         self.bulk_check_interval = bulk_check_interval
@@ -487,7 +513,7 @@ class Cell(MessageReceiver, EndpointMonitor):
             if connector:
                 self.logger.info(f"{self.my_info.fqcn}: created adhoc connector to {url} on {to_cell}")
             else:
-                self.logger.warning(f"{self.my_info.fqcn}: cannot create adhoc connector to {url} on {to_cell}")
+                self.logger.info(f"{self.my_info.fqcn}: cannot create adhoc connector to {url} on {to_cell}")
             return connector
 
     def _create_internal_listener(self):
@@ -502,8 +528,11 @@ class Cell(MessageReceiver, EndpointMonitor):
         return self.int_listener
 
     def _create_external_listener(self, adhoc: bool):
+        self.logger.debug(f"##### {os.getpid()}: {self.my_info.fqcn}: current ext_listener: {self.ext_listener}")
+        self.logger.debug(f"##### {os.getpid()}: {self.my_info.fqcn}: ext_listener_impossible: {self.ext_listener_impossible}")
         with self.ext_listener_lock:
             if not self.ext_listener and not self.ext_listener_impossible:
+                self.logger.debug(f"##### {os.getpid()}: {self.my_info.fqcn}: trying create ext listener: adhoc={adhoc}")
                 if not adhoc:
                     url = self.root_url
                 else:
@@ -512,16 +541,16 @@ class Cell(MessageReceiver, EndpointMonitor):
                 self.ext_listener = self.connector_manager.get_external_listener(url, adhoc)
                 if self.ext_listener:
                     if not adhoc:
-                        self.logger.info(f"{self.my_info.fqcn}: created backbone external listener for {self.root_url}")
+                        self.logger.info(f"##### {os.getpid()}: {self.my_info.fqcn}: created backbone external listener for {self.root_url}")
                     else:
-                        self.logger.info(f"{self.my_info.fqcn}: created adhoc external listener "
+                        self.logger.info(f"##### {os.getpid()}: {self.my_info.fqcn}: created adhoc external listener "
                                          f"for {self.ext_listener.get_connection_url()}")
                 else:
                     if not adhoc:
                         raise RuntimeError(
-                            f"{self.my_info.fqcn}: cannot create backbone external listener for {self.root_url}")
+                            f"##### {os.getpid()}: {self.my_info.fqcn}: cannot create backbone external listener for {self.root_url}")
                     else:
-                        self.logger.warning(f"{self.my_info.fqcn}: cannot create adhoc external listener")
+                        self.logger.warning(f"##### {os.getpid()}: {self.my_info.fqcn}: cannot create adhoc external listener")
 
                     self.ext_listener_impossible = True
         return self.ext_listener
@@ -779,16 +808,16 @@ class Cell(MessageReceiver, EndpointMonitor):
     def _send_to_endpoint(self, to_endpoint: Endpoint, message: Message) -> str:
         err = ""
         try:
-            content_type = message.get_header(MessageHeaderKey.CONTENT_TYPE)
+            content_type = message.get_header(MessageHeaderKey.PAYLOAD_ENCODING)
             if not content_type:
                 if message.payload is None:
-                    content_type = ContentType.NONE
+                    content_type = Encoding.NONE
                 elif isinstance(message.payload, bytes):
-                    content_type = ContentType.BYTES
+                    content_type = Encoding.BYTES
                 else:
-                    content_type = ContentType.FOBS
+                    content_type = Encoding.FOBS
                     message.payload = fobs.dumps(message.payload)
-                message.set_header(MessageHeaderKey.CONTENT_TYPE, content_type)
+                message.set_header(MessageHeaderKey.PAYLOAD_ENCODING, content_type)
             self.communicator.send(to_endpoint, Cell.APP_ID, message)
         except:
             traceback.print_exc()
@@ -894,9 +923,11 @@ class Cell(MessageReceiver, EndpointMonitor):
             status = self._send_target_messages(target_msgs)
             send_count = 0
             err_reply = make_reply(ReturnCode.COMM_ERROR)
+            timeout_reply = make_reply(ReturnCode.TIMEOUT)
             for t, sent in status.items():
                 if sent:
                     send_count += 1
+                    waiter.replies[t] = timeout_reply
                 else:
                     waiter.replies[t] = err_reply
                     waiter.reply_time[t] = now
@@ -1239,13 +1270,13 @@ class Cell(MessageReceiver, EndpointMonitor):
                     self.logger.debug(
                         self._message_log(
                             message,
-                            f"trigger waiter - replies received from all {len(waiter.replies)} targets for req {rid}"))
+                            f"trigger waiter - replies received from {len(waiter.replies)} targets for req {rid}"))
                     waiter.set()  # trigger the waiting requests!
                 else:
                     self.logger.debug(
                         self._message_log(
                             message,
-                            f"keep waiting - replies not received from all {len(waiter.replies)} targets for req {rid}"))
+                            f"keep waiting - replies not received from {len(waiter.replies)} targets for req {rid}"))
             else:
                 self.logger.debug(
                     self._message_log(message, f"no waiter for req {rid} - the reply is too late"))
@@ -1274,14 +1305,17 @@ class Cell(MessageReceiver, EndpointMonitor):
         self._add_to_route(message)
 
         # handle content type
-        content_type = message.get_header(MessageHeaderKey.CONTENT_TYPE)
-        if not content_type:
-            self.logger.warning(self._message_log(message, "missing content_type header received message"))
+        payload_encoding = message.get_header(MessageHeaderKey.PAYLOAD_ENCODING)
+        if not payload_encoding:
+            self.logger.warning(self._message_log(message, "missing payload_encoding header received message"))
 
-        if content_type == ContentType.FOBS:
+        if payload_encoding == Encoding.FOBS:
             message.payload = fobs.loads(message.payload)
-        elif content_type == ContentType.NONE:
+        elif payload_encoding == Encoding.NONE:
             message.payload = None
+        else:
+            # assume to be bytes
+            pass
 
         # handle ad-hoc
         my_conn_url = None
@@ -1294,12 +1328,15 @@ class Cell(MessageReceiver, EndpointMonitor):
                 if conn_url:
                     # the origin already has a listener
                     # create an ad-hoc connector to connect to the origin cell
+                    self.logger.debug(f"{self.my_info.fqcn}: creating adhoc connector to {origin} at {conn_url}")
                     self._add_adhoc_connector(origin, conn_url)
                 elif msg_type == MessageType.REQ:
                     # see whether we can offer a listener
-                    listener = self._create_external_listener(True)
-                    if listener:
-                        my_conn_url = listener.get_connection_url()
+                    if not oi.is_on_server:
+                        self.logger.debug(f"{self.my_info.fqcn}: trying to offer ad-hoc listener to {origin}")
+                        listener = self._create_external_listener(True)
+                        if listener:
+                            my_conn_url = listener.get_connection_url()
 
         if msg_type == MessageType.REQ:
             # this is a request for me - dispatch to the right CB

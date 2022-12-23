@@ -19,27 +19,30 @@ class ConnectorRequirementKey:
     SECURE = "secure"           # bool: secure or not
 
 
+CELLNET_PREFIX = "cn."
+
+
 class MessageHeaderKey:
 
-    MSG_TYPE = "cellnet.msg_type"
-    REQ_ID = "cellnet.req_id"
-    REPLY_EXPECTED = "cellnet.reply_expected"
-    TOPIC = "cellnet.topic"
-    WAIT_UNTIL = "cellnet.wait_until"
-    ORIGIN = "cellnet.origin"
-    DESTINATION = "cellnet.destination"
-    FROM_CELL = "cellnet.from"
-    TO_CELL = "cellnet.to"
-    CONN_URL = "cellnet.conn_url"
-    CHANNEL = "cellnet.channel"
-    RETURN_CODE = "cellnet.return_code"
-    ERROR = "cellnet.error"
-    CONTENT_TYPE = "cellnet.content_type"
-    ROUTE = "cellnet.route"
-    ORIGINAL_HEADERS = "cellnet.original_headers"
+    MSG_TYPE = CELLNET_PREFIX + "msg_type"
+    REQ_ID = CELLNET_PREFIX + "req_id"
+    REPLY_EXPECTED = CELLNET_PREFIX + "reply_expected"
+    TOPIC = CELLNET_PREFIX + "topic"
+    WAIT_UNTIL = CELLNET_PREFIX + "wait_until"
+    ORIGIN = CELLNET_PREFIX + "origin"
+    DESTINATION = CELLNET_PREFIX + "destination"
+    FROM_CELL = CELLNET_PREFIX + "from"
+    TO_CELL = CELLNET_PREFIX + "to"
+    CONN_URL = CELLNET_PREFIX + "conn_url"
+    CHANNEL = CELLNET_PREFIX + "channel"
+    RETURN_CODE = CELLNET_PREFIX + "return_code"
+    ERROR = CELLNET_PREFIX + "error"
+    PAYLOAD_ENCODING = CELLNET_PREFIX + "payload_encoding"
+    ROUTE = CELLNET_PREFIX + "route"
+    ORIGINAL_HEADERS = CELLNET_PREFIX + "original_headers"
 
 
-class ContentType:
+class Encoding:
 
     BYTES = "bytes"
     FOBS = "fobs"       # FOBS coded
@@ -51,6 +54,7 @@ class ReturnCode:
     OK = "ok"
     TIMEOUT = "timeout"
     COMM_ERROR = "comm_error"
+    INVALID_REQUEST = "invalid_request"
     PROCESS_EXCEPTION = "process_exception"   # receiver error processing request
 
 

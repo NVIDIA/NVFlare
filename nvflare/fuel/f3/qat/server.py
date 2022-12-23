@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os
+import signal
 
 from nvflare.fuel.hci.server.hci import AdminServer
 from nvflare.fuel.f3.cellnet import FQCN, new_message, MessageHeaderKey, ReturnCode
@@ -19,6 +21,7 @@ from .cell_runner import CellRunner, NetConfig
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.builtin import new_command_register_with_builtin_module
+from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.hci.server.login import LoginModule, SessionManager, SimpleAuthenticator
 from nvflare.fuel.hci.security import hash_password
 
@@ -63,11 +66,12 @@ class Server(CellRunner, CommandModule):
         super().start()
         self.admin.start()
 
-    def stop(self):
+    def clean_up(self):
+        os.kill(os.getpid(), signal.SIGKILL)
         self.sess_mgr.shutdown()
         self.admin.stop()
-        super().stop()
-        print("SERVER STOPPED!")
+        super().clean_up()
+        print("SERVER Cleaned Up!")
 
     def get_spec(self) -> CommandModuleSpec:
         return CommandModuleSpec(
@@ -81,10 +85,31 @@ class Server(CellRunner, CommandModule):
                     visible=True,
                 ),
                 CommandSpec(
-                    name="send",
-                    description="send message to a cell",
-                    usage="send cell_name msg",
+                    name="route",
+                    description="send message to a cell and show route",
+                    usage="route to_cell [from_cell]",
                     handler_func=self._cmd_route,
+                    visible=True,
+                ),
+                CommandSpec(
+                    name="agents",
+                    description="show agents of a cell",
+                    usage="agents target_cell",
+                    handler_func=self._cmd_agents,
+                    visible=True,
+                ),
+                CommandSpec(
+                    name="conns",
+                    description="show connectors of a cell",
+                    usage="conns target_cell",
+                    handler_func=self._cmd_connectors,
+                    visible=True,
+                ),
+                CommandSpec(
+                    name="url_use",
+                    description="show use of a url",
+                    usage="url_use url",
+                    handler_func=self._cmd_url_use,
                     visible=True,
                 ),
                 CommandSpec(
@@ -100,32 +125,124 @@ class Server(CellRunner, CommandModule):
         for c in cell_fqcns:
             conn.append_string(c)
 
+    def _cmd_url_use(self, conn: Connection, args: [str]):
+        if len(args) != 2:
+            cmd_entry = conn.get_prop(ConnProps.CMD_ENTRY)
+            conn.append_string(f"Usage: {cmd_entry.usage}")
+            return
+        url = args[1]
+        results = self.get_url_use(url)
+        conn.append_dict(results)
+
     def _cmd_route(self, conn: Connection, args: [str]):
-        if len(args) != 3:
-            conn.append_error("syntax error")
+        if len(args) < 2:
+            cmd_entry = conn.get_prop(ConnProps.CMD_ENTRY)
+            conn.append_string(f"Usage: {cmd_entry.usage}")
             return
         target_fqcn = args[1]
-        msg = args[2]
+
+        from_fqcn = "server"
+        if len(args) > 2:
+            from_fqcn = args[2]
+
+        if from_fqcn == "server":
+            # from_fqcn not explicitly specified: use server (me)
+            reply_headers, req_headers = self.get_route_info(target_fqcn)
+        else:
+            reply = self.cell.send_request(
+                channel="admin",
+                topic="start_route",
+                target=from_fqcn,
+                timeout=1.0,
+                request=new_message(payload=target_fqcn)
+            )
+            rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
+            if rc == ReturnCode.OK:
+                result = reply.payload
+                if not isinstance(result, dict):
+                    conn.append_error(f"reply payload should be dict but got {type(reply.payload)}")
+                    return
+                reply_headers = result.get("reply")
+                req_headers = result.get("request")
+            else:
+                conn.append_error(f"error in reply")
+                conn.append_dict(reply.headers)
+                return
+
+        conn.append_string(f"Route Info from {from_fqcn} to {target_fqcn}")
+        conn.append_string("Request Headers:")
+        conn.append_dict(req_headers)
+        conn.append_string("Reply Headers:")
+        conn.append_dict(reply_headers)
+
+    def _cmd_agents(self, conn: Connection, args: [str]):
+        if len(args) != 2:
+            cmd_entry = conn.get_prop(ConnProps.CMD_ENTRY)
+            conn.append_string(f"Usage: {cmd_entry.usage}")
+            return
+
+        target_fqcn = args[1]
+        if target_fqcn == "server":
+            agents = self.get_agents()
+            for a in agents:
+                conn.append_string(a)
+        else:
+            reply = self.cell.send_request(
+                channel="admin",
+                topic="agents",
+                target=target_fqcn,
+                timeout=1.0,
+                request=new_message()
+            )
+            rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
+            if rc == ReturnCode.OK:
+                result = reply.payload
+                if not isinstance(result, list):
+                    conn.append_error(f"reply payload should be list but got {type(reply.payload)}")
+                    return
+                if not result:
+                    conn.append_string("not agents")
+                else:
+                    for a in result:
+                        conn.append_string(a)
+            else:
+                conn.append_error("Error processing command")
+                conn.append_dict(reply.headers)
+
+    def _cmd_connectors(self, conn: Connection, args: [str]):
+        if len(args) != 2:
+            cmd_entry = conn.get_prop(ConnProps.CMD_ENTRY)
+            conn.append_string(f"Usage: {cmd_entry.usage}")
+            return
+
+        target_fqcn = args[1]
+        if target_fqcn == "server":
+            result = self.get_connectors()
+            conn.append_dict(result)
+            return
+
         reply = self.cell.send_request(
             channel="admin",
-            topic="route",
+            topic="connectors",
             target=target_fqcn,
-            timeout=5.0,
+            timeout=1.0,
             request=new_message()
         )
-        conn.append_string("Reply Headers:")
-        conn.append_dict(reply.headers)
-
-        rc = reply.get_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
+        rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
         if rc == ReturnCode.OK:
-            if not isinstance(reply.payload, dict):
-                conn.append_error(f"reply payload should be request headers dict but got {type(reply.payload)}")
+            result = reply.payload
+            if not isinstance(result, dict):
+                conn.append_error(f"reply payload should be dict but got {type(reply.payload)}")
+                return
+            if not result:
+                conn.append_string("not connectors")
             else:
-                conn.append_string("Request Headers:")
-                conn.append_dict(reply.payload)
+                conn.append_dict(result)
         else:
-            conn.append_error(f"Reply ReturnCode: {rc}")
+            conn.append_error("Error processing command")
+            conn.append_dict(reply.headers)
 
     def _cmd_stop(self, conn: Connection, args: [str]):
-        conn.append_string("system stopped")
-        self.stop()
+        result = self.stop()
+        conn.append_dict(result)
+        conn.append_shutdown("System Stopped")

@@ -181,6 +181,7 @@ class Communicator:
             return ""
 
         self.conn_manager.start_connector(listener)
+        return handle
 
     def remove_connector(self, handle: str):
         """Remove the connector

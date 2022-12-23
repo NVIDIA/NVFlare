@@ -165,12 +165,13 @@ class ConnManager(ConnMonitor):
 
     def start_connector(self, connector: Connector):
         """Start connector in a new thread"""
+        if connector.started:
+            return
 
         self.executor.submit(self.start_connector_task, connector)
 
     def start_connector_task(self, connector: Connector):
         """Start connector in a new thread"""
-
         connector.started = True
         if connector.mode == Mode.ACTIVE:
             starter = connector.driver.connect

@@ -12,6 +12,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
+import logging
+import os
 from typing import Union
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.f3.communicator import Communicator, Mode
@@ -20,7 +22,7 @@ from nvflare.fuel.utils.config_service import ConfigService
 
 _KEY_RESOURCES = "resources"
 _KEY_INT = "internal"
-_KEY_EXT = "external_driver"
+_KEY_EXT = "external"
 _KEY_SCHEME = "scheme"
 _KEY_HOST = "host"
 _KEY_PORTS = "ports"
@@ -53,6 +55,9 @@ class ConnectorManager:
             communicator: Communicator,
             secure: bool
     ):
+        self._name = self.__class__.__name__
+        self.logger = logging.getLogger(self._name)
+
         self.communicator = communicator
         self.secure = secure
 
@@ -70,7 +75,10 @@ class ConnectorManager:
         for file_name in self.comm_config_files:
             try:
                 config = ConfigService.load_json(file_name)
+                if config:
+                    break
             except FileNotFoundError:
+                self.logger.debug(f"config file {file_name} not found from config path")
                 config = None
 
         if config:
@@ -83,6 +91,9 @@ class ConnectorManager:
             if ext_conf:
                 self.ext_scheme = ext_conf.get(_KEY_SCHEME)
                 self.ext_resources = ext_conf.get(_KEY_RESOURCES)
+
+        self.logger.debug(f"internal scheme={self.int_scheme}, resources={self.int_resources}")
+        self.logger.debug(f"external scheme={self.ext_scheme}, resources={self.ext_resources}")
 
     def _validate_conn_config(self, config: dict, key: str) -> Union[None, dict]:
         conn_config = config.get(key)
@@ -121,8 +132,11 @@ class ConnectorManager:
                 raise RuntimeError("internal ad-hoc connector not supported")
             scheme = self.ext_scheme
             resources = self.ext_resources
-            if not resources:
-                # no resources configured - ad-hoc is not allowed!
+            self.logger.debug(
+                f"{os.getpid()}: creating ad-hoc external listener: "
+                f"active={active} scheme={scheme}, resources={resources}")
+            if not active and not resources:
+                # no resources configured - ad-hoc listener is not allowed!
                 return None
 
         reqs = {
@@ -136,8 +150,13 @@ class ConnectorManager:
         if active:
             handle = self.communicator.add_connector(url, Mode.ACTIVE)
             connect_url = url
+        elif url:
+            handle = self.communicator.add_connector(url, Mode.PASSIVE)
+            connect_url = url
         else:
+            self.logger.debug(f"{os.getpid()}: Listener resources: {reqs}")
             handle, connect_url = self.communicator.start_listener(scheme, reqs)
+            self.logger.debug(f"{os.getpid()}: ############ dynamic listener at {connect_url}")
 
         return ConnectorInfo(handle, connect_url, active)
 
