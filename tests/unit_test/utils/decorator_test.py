@@ -15,14 +15,6 @@
 from nvflare.utils.decorators import collect_time, measure_time
 
 
-def cond(self, duration: float, count: int) -> bool:
-    if duration > 1000:
-        return True
-    if count > 3:
-        return True
-    return False
-
-
 class MyClass:
     def __init__(self):
         super().__init__()
