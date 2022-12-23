@@ -36,13 +36,13 @@ class BroadcastAndWait(FLComponent, ABC):
         self.results: Dict[str, Dict[str, DXO]] = {}
 
     def broadcast_and_wait(
-            self,
-            task_name: str,
-            task_props: dict,
-            task_input: Shareable,
-            targets: Union[List[Client], List[str], None] = None,
-            min_responses: int = 0,
-            abort_signal: Signal = None,
+        self,
+        task_name: str,
+        task_props: dict,
+        task_input: Shareable,
+        targets: Union[List[Client], List[str], None] = None,
+        min_responses: int = 0,
+        abort_signal: Signal = None,
     ) -> Dict[str, DXO]:
         if task_props:
             task_props["input_id"] = task_name
@@ -55,12 +55,12 @@ class BroadcastAndWait(FLComponent, ABC):
         return self.results[task_name]
 
     def multi_broadcasts_and_wait(
-            self,
-            task_name: str,
-            task_inputs: Dict[str, Shareable],
-            targets: Union[List[Client], List[str], None] = None,
-            min_responses: int = 0,
-            abort_signal: Signal = None,
+        self,
+        task_name: str,
+        task_inputs: Dict[str, Shareable],
+        targets: Union[List[Client], List[str], None] = None,
+        min_responses: int = 0,
+        abort_signal: Signal = None,
     ) -> Dict[str, Dict[str, DXO]]:
 
         tasks = self.get_tasks(task_name, task_inputs)
