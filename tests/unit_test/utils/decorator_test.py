@@ -40,11 +40,6 @@ class MyClass:
         self.method1()
         pass
 
-    @collect_time
-    def method3(self, x: dict):
-        self.method1()
-        pass
-
 
 class TestDecorators:
     def test_code_timer_on_fn(self):
@@ -68,6 +63,12 @@ class TestDecorators:
         assert c.method2.time_taken > 0
         c.method2(reset=True)
         assert c.method2.time_taken == 0
+        assert c.method2.count == 0
 
-        c.method3(c.method2())
+        for i in range(100):
+            c.method3(c.method2())
+
+        assert c.method2.time_taken > 0
         assert c.method3.time_taken > 0
+        assert c.method2.count == 100
+        assert c.method3.count == 100
