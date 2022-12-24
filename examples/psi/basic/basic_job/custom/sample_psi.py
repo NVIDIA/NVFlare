@@ -23,7 +23,7 @@ class SamplePSI(PSI):
         super().__init__(psi_writer_id)
         self.data = {}
         self.site_nums = 10
-        scale = 1e+3
+        scale = 10
         for i in range(self.site_nums):
             start = int(random.randrange(1, 2) * scale)
             end = int(random.randrange(2, 4) * scale)
@@ -33,7 +33,6 @@ class SamplePSI(PSI):
     def load_items(self) -> List[str]:
         site = self.fl_ctx.get_identity_name()
         user_id_range = self.data[site]
-
         return [f"user_id-{i}" for i in user_id_range]
 
 

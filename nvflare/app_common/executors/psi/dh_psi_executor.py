@@ -52,6 +52,7 @@ class DhPSIExecutor(ClientExecutor):
             if psi_stage_task == PSIConst.PSI_TASK_PREPARE:
                 self.bloom_filter_fpr = shareable[PSIConst.PSI_BLOOM_FILTER_FPR]
                 items = self.get_items()
+                print("**********************", client_name, items)
                 self.psi_client = PsiClient(items)
                 self.psi_server = PsiServer(items, self.bloom_filter_fpr)
                 return self.get_items_size()
@@ -76,15 +77,27 @@ class DhPSIExecutor(ClientExecutor):
         return result
 
     def setup(self, shareable: Shareable):
-        target_item_size = shareable.get(PSIConst.PSI_ITEMS_SIZE)
         items = self.get_items()
+        print("**********************", items)
         self.psi_client = PsiClient(items)
         self.psi_server = PsiServer(items, self.bloom_filter_fpr)
 
-        setup_msg = self.psi_server.setup(target_item_size)
-        result = Shareable()
-        result[PSIConst.PSI_SETUP_MSG] = setup_msg
-        return result
+        if PSIConst.PSI_ITEMS_SIZE in shareable:
+            target_item_size = shareable.get(PSIConst.PSI_ITEMS_SIZE)
+            setup_msg = self.psi_server.setup(target_item_size)
+            result = Shareable()
+            result[PSIConst.PSI_SETUP_MSG] = setup_msg
+            return result
+        elif PSIConst.PSI_ITEMS_SIZE_SET in shareable:
+            target_item_size_set = shareable.get(PSIConst.PSI_ITEMS_SIZE_SET)
+            result = Shareable()
+            setup_sets = {}
+            for client_iterm_size in target_item_size_set:
+                setup_msg = self.psi_server.setup(client_iterm_size)
+                setup_sets[str(client_iterm_size)] = setup_msg
+
+            result[PSIConst.PSI_SETUP_MSG] = setup_sets
+            return result
 
     def get_items_size(self):
         result = Shareable()
@@ -102,9 +115,11 @@ class DhPSIExecutor(ClientExecutor):
         response_msg = shareable.get(PSIConst.PSI_RESPONSE_MSG)
         intersections = self.psi_client.get_intersection(response_msg)
         self.intersects = intersections
+        client_name = self.fl_ctx.get_identity_name()
+        print(f"******** client {client_name}, intersections = {intersections}")
         self.local_psi_handler.save(intersections)
         result = Shareable()
-        result[PSIConst.PSI_STATUS] = PSIConst.PSI_STATUS_DONE
+        result[PSIConst.PSI_ITEMS_SIZE] = len(intersections)
         return result
 
     def get_items(self):

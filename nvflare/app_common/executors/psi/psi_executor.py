@@ -31,7 +31,6 @@ class PSIExecutor(CommonExecutor):
         return DataKind.PSI
 
     def get_client_executor(self, fl_ctx: FLContext) -> ClientExecutor:
-        self.log_info(fl_ctx, "get_client_executor")
         return self.load_client_executor(self.psi_algo, fl_ctx)
 
     def load_client_executor(self, psi_algo: str, fl_ctx: FLContext) -> ClientExecutor:
