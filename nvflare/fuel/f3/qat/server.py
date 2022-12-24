@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
+
 from nvflare.fuel.hci.server.hci import AdminServer
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.net_manager import NetManager
@@ -29,6 +31,9 @@ class Server(CellRunner):
             config_path: str,
             config_file: str
     ):
+        self._name = self.__class__.__name__
+        self.logger = logging.getLogger(self._name)
+
         net_config = NetConfig(config_file)
         admin_host, admin_port = net_config.get_admin()
         if not admin_host or not admin_port:
@@ -68,5 +73,6 @@ class Server(CellRunner):
 
     def _clean_up(self):
         self.sess_mgr.shutdown()
+        self.logger.debug(f"{self.cell.get_fqcn()}: Closed session manager")
         self.admin.stop()
-        print("SERVER Cleaned Up!")
+        self.logger.debug(f"{self.cell.get_fqcn()}: Stopped Admin Server")
