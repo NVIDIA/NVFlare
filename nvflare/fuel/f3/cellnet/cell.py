@@ -15,43 +15,28 @@
 import copy
 import logging
 import os
+import signal
 import threading
 import time
 import traceback
 import uuid
 
 from typing import List, Union, Dict
-from .message import Message, Headers
-from .endpoint import Endpoint, EndpointMonitor, EndpointState
-from .communicator import Communicator, MessageReceiver
+from nvflare.fuel.f3.message import Message
+from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor, EndpointState
+from nvflare.fuel.f3.communicator import Communicator, MessageReceiver
+
 from .connector_manager import ConnectorManager
-from .constants import (
-    MessageHeaderKey, MessageType,
+from .defs import (
+    MessageHeaderKey, MessageType, TargetMessage,
     ReturnCode, CellPropertyKey, Encoding
 )
+from .utils import make_reply, new_message, format_log_message
+from .fqcn import FQCN, FqcnInfo, same_family
 
 import nvflare.fuel.utils.fobs as fobs
 
 _BULK_CHANNEL = "cellnet.bulk"
-
-
-class TargetCellUnreachable(Exception):
-    pass
-
-
-class TargetMessage:
-
-    def __init__(
-            self,
-            target: str,
-            channel: str,
-            topic: str,
-            message: Message,
-    ):
-        self.target = target
-        self.channel = channel
-        self.topic = topic
-        self.message = message
 
 
 class CellAgent:
@@ -73,7 +58,7 @@ class CellAgent:
         if err:
             raise ValueError(f"Invalid FQCN '{fqcn}': {err}")
 
-        self.info = _FqcnInfo(FQCN.normalize(fqcn))
+        self.info = FqcnInfo(FQCN.normalize(fqcn))
         self.endpoint = endpoint
 
 
@@ -132,73 +117,7 @@ class _Waiter(threading.Event):
         self.id = str(uuid.uuid4())
 
 
-class FQCN:
-
-    SEPARATOR = "."
-    ROOT_SERVER = "server"
-
-    @staticmethod
-    def normalize(fqcn: str) -> str:
-        return fqcn.strip()
-
-    @staticmethod
-    def split(fqcn: str) -> List[str]:
-        return fqcn.split(FQCN.SEPARATOR)
-
-    @staticmethod
-    def join(path: List[str]) -> str:
-        return FQCN.SEPARATOR.join(path)
-
-    @staticmethod
-    def validate(fqcn: str) -> str:
-        if not isinstance(fqcn, str):
-            return f"must be str but got {type(fqcn)}"
-        fqcn = FQCN.normalize(fqcn)
-        if not fqcn:
-            return "empty"
-        parts = FQCN.split(fqcn)
-        info = {}
-        for p in parts:
-            if not p:
-                return "empty part"
-            if info.get(p):
-                return f"dup '{p}'"
-            info[p] = True
-        return ""
-
-    @staticmethod
-    def get_root(fqcn: str) -> str:
-        parts = FQCN.split(fqcn)
-        return parts[0]
-
-    @staticmethod
-    def get_parent(fqcn: str) -> str:
-        parts = FQCN.split(fqcn)
-        if len(parts) == 1:
-            return ""
-        return FQCN.join(parts[0:-1])
-
-    @staticmethod
-    def is_parent(fqcn1: str, fqcn2: str) -> bool:
-        return fqcn1 == FQCN.get_parent(fqcn2)
-
-
-class _FqcnInfo:
-
-    def __init__(self, fqcn: str):
-        self.fqcn = fqcn
-        self.path = FQCN.split(fqcn)
-        self.gen = len(self.path)
-        self.is_root = self.gen == 1
-        self.root = self.path[0]
-        self.is_on_server = self.root == FQCN.ROOT_SERVER
-
-
-def same_family(info1: _FqcnInfo, info2: _FqcnInfo):
-    return info1.root == info2.root
-
-
-class BulkSender:
+class _BulkSender:
 
     def __init__(self, cell, target: str, interval, max_queue_size):
         self.cell = cell
@@ -295,7 +214,7 @@ class Cell(MessageReceiver, EndpointMonitor):
         if err:
             raise ValueError(f"Invalid FQCN '{fqcn}': {err}")
 
-        self.my_info = _FqcnInfo(FQCN.normalize(fqcn))
+        self.my_info = FqcnInfo(FQCN.normalize(fqcn))
         self.secure = secure
         self.root_url = root_url
         self.bulk_check_interval = bulk_check_interval
@@ -330,6 +249,7 @@ class Cell(MessageReceiver, EndpointMonitor):
         self.out_req_filter_reg = _Registry()  # for request sent
         self.in_reply_filter_reg = _Registry()  # for reply received
         self.error_handler_reg = _Registry()
+        self.cleanup_reg = _Registry()
         self.cell_connected_cb = None
         self.cell_connected_cb_args = None
         self.cell_connected_cb_kwargs = None
@@ -384,16 +304,42 @@ class Cell(MessageReceiver, EndpointMonitor):
             else:
                 self._set_bb_for_client_child(parent_url, create_internal_listener)
 
-    def _message_log(self, message: Message, log: str) -> str:
-        parts = [
-            "[ME=" + self.my_info.fqcn,
-            "O=" + message.get_header(MessageHeaderKey.ORIGIN, "?"),
-            "D=" + message.get_header(MessageHeaderKey.DESTINATION, "?"),
-            "F=" + message.get_header(MessageHeaderKey.FROM_CELL, "?"),
-            "T=" + message.get_header(MessageHeaderKey.TO_CELL, "?") + "]",
-            log
-        ]
-        return " ".join(parts)
+        self.stop_waiter = threading.Event()
+        self.stop_waiter_thread = threading.Thread(target=self._wait_to_stop)
+
+        self.add_cleanup_cb(self._close)
+
+    def _wait_to_stop(self):
+        self.logger.debug(f"=========== {self.my_info.fqcn}: Stop Waiter is waiting ==============")
+        self.stop_waiter.wait()
+        self.logger.debug(f"=========== {self.my_info.fqcn}: Stop Waiter is triggered: start cleanup ==============")
+        time.sleep(2.0)  # let pending messages to go out
+        t = threading.Thread(target=self._do_cleanup)
+        t.start()
+
+        # wait for 2 secs to give others time to clean up
+        if not self.stop_waiter.wait(timeout=2.0):
+            self.logger.debug(f"======== {self.my_info.fqcn}: Cleanup did not complete within 2 secs")
+
+        self.logger.info(f"{self.my_info.fqcn}: Good Bye!")
+        os.kill(os.getpid(), signal.SIGKILL)
+
+    def _do_cleanup(self):
+        self.logger.debug(f"{self.my_info.fqcn}: Start system cleanup ...")
+        cb_list = self.cleanup_reg.find("*", "*")
+        if cb_list:
+            for _cb in cb_list:
+                assert isinstance(_cb, _CB)
+                try:
+                    self.logger.debug(f"{self.my_info.fqcn}: calling a cleanup CB ...")
+                    _cb.cb(*_cb.args, **_cb.kwargs)
+                except BaseException as ex:
+                    self.logger.warning(f"{self.my_info.fqcn}: ignored exception {ex} from cleanup CB")
+        else:
+            self.logger.debug(f"{self.my_info.fqcn}: Nothing to cleanup!")
+
+        self.logger.debug(f"{self.my_info.fqcn}: Cleanup Finished!")
+        self.stop_waiter.set()
 
     def get_fqcn(self) -> str:
         return self.my_info.fqcn
@@ -459,7 +405,7 @@ class Cell(MessageReceiver, EndpointMonitor):
             with self.adhoc_connector_lock:
                 cells_to_delete = []
                 for to_cell in self.adhoc_connectors.keys():
-                    to_cell_info = _FqcnInfo(to_cell)
+                    to_cell_info = FqcnInfo(to_cell)
                     if to_cell_info.is_on_server:
                         cells_to_delete.append(to_cell)
                 for c in cells_to_delete:
@@ -528,11 +474,9 @@ class Cell(MessageReceiver, EndpointMonitor):
         return self.int_listener
 
     def _create_external_listener(self, adhoc: bool):
-        self.logger.debug(f"##### {os.getpid()}: {self.my_info.fqcn}: current ext_listener: {self.ext_listener}")
-        self.logger.debug(f"##### {os.getpid()}: {self.my_info.fqcn}: ext_listener_impossible: {self.ext_listener_impossible}")
         with self.ext_listener_lock:
             if not self.ext_listener and not self.ext_listener_impossible:
-                self.logger.debug(f"##### {os.getpid()}: {self.my_info.fqcn}: trying create ext listener: adhoc={adhoc}")
+                self.logger.debug(f"{os.getpid()}: {self.my_info.fqcn}: trying create ext listener: adhoc={adhoc}")
                 if not adhoc:
                     url = self.root_url
                 else:
@@ -541,16 +485,20 @@ class Cell(MessageReceiver, EndpointMonitor):
                 self.ext_listener = self.connector_manager.get_external_listener(url, adhoc)
                 if self.ext_listener:
                     if not adhoc:
-                        self.logger.info(f"##### {os.getpid()}: {self.my_info.fqcn}: created backbone external listener for {self.root_url}")
+                        self.logger.info(
+                            f"{os.getpid()}: {self.my_info.fqcn}: "
+                            f"created backbone external listener for {self.root_url}")
                     else:
-                        self.logger.info(f"##### {os.getpid()}: {self.my_info.fqcn}: created adhoc external listener "
+                        self.logger.info(f"{os.getpid()}: {self.my_info.fqcn}: created adhoc external listener "
                                          f"for {self.ext_listener.get_connection_url()}")
                 else:
                     if not adhoc:
                         raise RuntimeError(
-                            f"##### {os.getpid()}: {self.my_info.fqcn}: cannot create backbone external listener for {self.root_url}")
+                            f"{os.getpid()}: {self.my_info.fqcn}: "
+                            f"cannot create backbone external listener for {self.root_url}")
                     else:
-                        self.logger.warning(f"##### {os.getpid()}: {self.my_info.fqcn}: cannot create adhoc external listener")
+                        self.logger.warning(
+                            f"{os.getpid()}: {self.my_info.fqcn}: cannot create adhoc external listener")
 
                     self.ext_listener_impossible = True
         return self.ext_listener
@@ -625,16 +573,23 @@ class Cell(MessageReceiver, EndpointMonitor):
         )
         self.bulk_checker.start()
         self.communicator.start()
+        self.stop_waiter_thread.start()
         self.running = True
 
     def stop(self):
+        if self.running:
+            self.running = False
+            # trigger stop process
+            self.stop_waiter.set()
+
+    def _close(self):
         """
-        Stop the cell. Once the cell is stopped, it won't be able to send/receive messages.
+        Cleanup the cell. Once the cell is stopped, it won't be able to send/receive messages.
 
         Returns:
 
         """
-        self.logger.debug(f"{self.my_info.fqcn}: Stopping Cell")
+        self.logger.debug(f"{self.my_info.fqcn}: Closing Cell")
         try:
             self.communicator.stop()
         except:
@@ -645,7 +600,7 @@ class Cell(MessageReceiver, EndpointMonitor):
         self.running = False
         self.asked_to_stop = True
         self.bulk_checker.join()
-        self.logger.debug(f"{self.my_info.fqcn}: CELL stopped!")
+        self.logger.debug(f"{self.my_info.fqcn}: CELL closed!")
 
     def register_request_cb(
             self,
@@ -679,6 +634,14 @@ class Cell(MessageReceiver, EndpointMonitor):
             **kwargs
     ):
         self.in_req_filter_reg.append(channel, topic, _CB(cb, args, kwargs))
+
+    def add_cleanup_cb(
+            self,
+            cb,
+            *args,
+            **kwargs
+    ):
+        self.cleanup_reg.append("*", "*", _CB(cb, args, kwargs))
 
     def add_outgoing_reply_filter(
             self,
@@ -777,7 +740,7 @@ class Cell(MessageReceiver, EndpointMonitor):
             self.logger.error(f"{self.my_info.fqcn}: sending message to self is not allowed")
             return None
 
-        target_info = _FqcnInfo(target_fqcn)
+        target_info = FqcnInfo(target_fqcn)
         if same_family(self.my_info, target_info):
             self.logger.debug(f"{self.my_info.is_root}: find path in the same family")
             return self._try_path(target_info.path)
@@ -859,7 +822,7 @@ class Cell(MessageReceiver, EndpointMonitor):
             })
 
             # is this a direct path?
-            ti = _FqcnInfo(t)
+            ti = FqcnInfo(t)
             if t != ep.name and not same_family(ti, self.my_info):
                 # Not a direct path since the destination and the next leg are not the same
                 if self.my_info.is_on_server:
@@ -1017,7 +980,7 @@ class Cell(MessageReceiver, EndpointMonitor):
             for t in targets:
                 sender = self.bulk_senders.get(t)
                 if not sender:
-                    sender = BulkSender(
+                    sender = _BulkSender(
                         cell=self,
                         target=t,
                         interval=self.bulk_send_interval,
@@ -1032,9 +995,6 @@ class Cell(MessageReceiver, EndpointMonitor):
 
     def _process_bulk_message(
             self,
-            cell,
-            channel: str,
-            topic: str,
             request: Message):
         target_msgs = request.payload
         assert isinstance(target_msgs, list)
@@ -1127,7 +1087,7 @@ class Cell(MessageReceiver, EndpointMonitor):
         try:
             assert isinstance(_cb, _CB)
             self.logger.debug(f"{self.my_info.fqcn}: calling registered request CB")
-            reply = _cb.cb(self, channel, topic, message, *_cb.args, **_cb.kwargs)
+            reply = _cb.cb(message, *_cb.args, **_cb.kwargs)
             if not reply:
                 # the CB doesn't have anything to reply
                 self.logger.debug("no reply is returned from the CB")
@@ -1166,7 +1126,8 @@ class Cell(MessageReceiver, EndpointMonitor):
         if route:
             if not isinstance(route, list):
                 self.logger.error(
-                    self._message_log(message, "bad route header: expect list but got {type(route)}"))
+                    format_log_message(self.my_info.fqcn, message,
+                                       "bad route header: expect list but got {type(route)}"))
             else:
                 route.append(self.my_info.fqcn)
 
@@ -1187,12 +1148,12 @@ class Cell(MessageReceiver, EndpointMonitor):
                 return
             else:
                 self.logger.error(
-                    self._message_log(message, f"{self.my_info.fqcn}: failed to forward {msg_type}: {err}")
+                    format_log_message(self.my_info.fqcn, message, f"failed to forward {msg_type}: {err}")
                 )
         else:
             # cannot find next leg endpoint
             self.logger.error(
-                self._message_log(message, f"{self.my_info.fqcn}: cannot forward {msg_type}: no path")
+                format_log_message(self.my_info.fqcn, message, f"cannot forward {msg_type}: no path")
             )
 
         if msg_type == MessageType.REQ:
@@ -1226,35 +1187,39 @@ class Cell(MessageReceiver, EndpointMonitor):
             self.logger.debug(f"{self.my_info.fqcn}: sent RETURN message back to {endpoint.name}")
         else:
             # msg_type is either RETURN or REPLY - drop it.
-            self.logger.warning(self._message_log(message, "dropped forwarded reply or return"))
+            self.logger.warning(format_log_message(self.my_info.fqcn, message, "dropped forwarded message"))
 
     def _process_reply(self, origin: str, message: Message, msg_type: str):
         self.logger.debug(f"{self.my_info.fqcn}: processing reply from {origin} for type {msg_type}")
         req_ids = message.get_header(MessageHeaderKey.REQ_ID)
         if not req_ids:
-            raise RuntimeError(self._message_log(message, "reply does not have REQ_ID header"))
+            raise RuntimeError(format_log_message(self.my_info.fqcn, message, "reply does not have REQ_ID header"))
 
         if isinstance(req_ids, str):
             req_ids = [req_ids]
 
         if not isinstance(req_ids, list):
-            raise RuntimeError(self._message_log(message, f"REQ_ID must be list of ids but got {type(req_ids)}"))
+            raise RuntimeError(format_log_message(self.my_info.fqcn, message,
+                                                  f"REQ_ID must be list of ids but got {type(req_ids)}"))
 
         req_dest = origin
         if msg_type == MessageType.RETURN:
             original_headers = message.get_header(MessageHeaderKey.ORIGINAL_HEADERS, None)
             if not original_headers:
-                raise RuntimeError(self._message_log(message, "missing ORIGINAL_HEADERS in returned message!"))
+                raise RuntimeError(format_log_message(
+                    self.my_info.fqcn, message, "missing ORIGINAL_HEADERS in returned message!"))
             req_dest = original_headers.get(MessageHeaderKey.DESTINATION, None)
             if not req_dest:
-                raise RuntimeError(self._message_log(message, "missing DESTINATION header in original headers"))
+                raise RuntimeError(format_log_message(
+                    self.my_info.fqcn, message, "missing DESTINATION header in original headers"))
 
         for rid in req_ids:
             waiter = self.waiters.get(rid, None)
             if waiter:
                 assert isinstance(waiter, _Waiter)
                 if req_dest not in waiter.replies:
-                    self.logger.error(self._message_log(message, f"unexpected reply for {rid} from {req_dest}"))
+                    self.logger.error(format_log_message(
+                        self.my_info.fqcn, message, f"unexpected reply for {rid} from {req_dest}"))
                     return
                 waiter.replies[req_dest] = message
                 waiter.reply_time[req_dest] = time.time()
@@ -1268,33 +1233,38 @@ class Cell(MessageReceiver, EndpointMonitor):
 
                 if all_targets_replied:
                     self.logger.debug(
-                        self._message_log(
-                            message,
+                        format_log_message(
+                            self.my_info.fqcn, message,
                             f"trigger waiter - replies received from {len(waiter.replies)} targets for req {rid}"))
                     waiter.set()  # trigger the waiting requests!
                 else:
                     self.logger.debug(
-                        self._message_log(
-                            message,
+                        format_log_message(
+                            self.my_info.fqcn, message,
                             f"keep waiting - replies not received from {len(waiter.replies)} targets for req {rid}"))
             else:
                 self.logger.debug(
-                    self._message_log(message, f"no waiter for req {rid} - the reply is too late"))
+                    format_log_message(
+                        self.my_info.fqcn, message,
+                        f"no waiter for req {rid} - the reply is too late"))
 
     def _process_received_msg(self, endpoint: Endpoint, message: Message):
         self.logger.debug(f"{self.my_info.fqcn}: received message: {message.headers}")
         msg_type = message.get_header(MessageHeaderKey.MSG_TYPE)
         if not msg_type:
-            raise RuntimeError(self._message_log(message, "missing MSG_TYPE in received message"))
+            raise RuntimeError(format_log_message(
+                self.my_info.fqcn, message, "missing MSG_TYPE in received message"))
 
         origin = message.get_header(MessageHeaderKey.ORIGIN)
         if not origin:
-            raise RuntimeError(self._message_log(message, "missing ORIGIN header in received message"))
+            raise RuntimeError(format_log_message(
+                self.my_info.fqcn, message, "missing ORIGIN header in received message"))
 
         # is this msg for me?
         destination = message.get_header(MessageHeaderKey.DESTINATION)
         if not destination:
-            raise RuntimeError(self._message_log(message, "missing DESTINATION header in received message"))
+            raise RuntimeError(format_log_message(
+                self.my_info.fqcn, message, "missing DESTINATION header in received message"))
 
         if destination != self.my_info.fqcn:
             # not for me - need to forward it
@@ -1307,7 +1277,8 @@ class Cell(MessageReceiver, EndpointMonitor):
         # handle content type
         payload_encoding = message.get_header(MessageHeaderKey.PAYLOAD_ENCODING)
         if not payload_encoding:
-            self.logger.warning(self._message_log(message, "missing payload_encoding header received message"))
+            self.logger.warning(format_log_message(
+                self.my_info.fqcn, message, "missing payload_encoding header received message"))
 
         if payload_encoding == Encoding.FOBS:
             message.payload = fobs.loads(message.payload)
@@ -1321,7 +1292,7 @@ class Cell(MessageReceiver, EndpointMonitor):
         my_conn_url = None
         if msg_type in [MessageType.REQ, MessageType.REPLY]:
             from_cell = message.get_header(MessageHeaderKey.FROM_CELL)
-            oi = _FqcnInfo(origin)
+            oi = FqcnInfo(origin)
             if from_cell != origin and not same_family(oi, self.my_info):
                 # this is a forwarded message, so no direct path from the origin to me
                 conn_url = message.get_header(MessageHeaderKey.CONN_URL)
@@ -1398,7 +1369,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                 try:
                     self.logger.debug(f"{self.my_info.fqcn}: calling cell_connected_cb")
                     self.cell_connected_cb(
-                        self, agent,
+                        agent,
                         *self.cell_connected_cb_args,
                         **self.cell_connected_cb_kwargs
                     )
@@ -1415,7 +1386,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                 try:
                     self.logger.debug(f"{self.my_info.fqcn}: calling cell_disconnected_cb")
                     self.cell_disconnected_cb(
-                        self, agent,
+                        agent,
                         *self.cell_disconnected_cb_args,
                         **self.cell_disconnected_cb_kwargs
                     )
@@ -1423,78 +1394,20 @@ class Cell(MessageReceiver, EndpointMonitor):
                     self.logger.error(f"{self.my_info.fqcn}: exception in cell_disconnected_cb")
                     traceback.print_exc()
 
+    def get_sub_cell_names(self) -> (List[str], List[str]):
+        """
+        Get call FQCNs of all subs, which are children or top-level client cells (if my cell is server).
 
-def cell_connected_cb_signature(
-        cell: Cell,
-        connected_cell: CellAgent,
-        *args, **kwargs
-):
-    """
-    This is the signature of the cell_connected callback.
-
-    Args:
-        cell: the cell that calls the CB
-        connected_cell: the cell that just got connected
-        *args:
-        **kwargs:
-
-    Returns:
-
-    """
-    pass
-
-
-def cell_disconnected_cb_signature(
-        cell: Cell,
-        disconnected_cell: CellAgent,
-        *args, **kwargs
-):
-    pass
-
-
-def request_cb_signature(
-        cell: Cell,
-        channel: str,
-        topic: str,
-        request: Message,
-        *args, **kwargs
-) -> Message:
-    pass
-
-
-def filter_cb_signature(
-        cell: Cell,
-        channel: str,
-        topic: str,
-        msg: Message,
-        *args, **kwargs
-) -> Message:
-    pass
-
-
-def error_handler_cb_signature(
-        cell: Cell,
-        from_cell: CellAgent,
-        error_type: str,
-        channel: str,
-        topic: str,
-        msg: Message,
-        *args, **kwargs
-) -> Message:
-    pass
-
-
-# Convenience functions
-def make_reply(rc: str, error: str = "", body=None) -> Message:
-    headers = Headers()
-    headers[MessageHeaderKey.RETURN_CODE] = rc
-    if error:
-        headers[MessageHeaderKey.ERROR] = error
-    return Message(headers, payload=body)
-
-
-def new_message(headers: dict = None, payload=None):
-    msg_headers = Headers()
-    if headers:
-        msg_headers.update(headers)
-    return Message(msg_headers, payload)
+        Returns: fqcns of child cells, fqcns of top-level client cells
+        """
+        children = []
+        clients = []
+        with self.agent_lock:
+            for fqcn, agent in self.agents.items():
+                if FQCN.is_parent(self.my_info.fqcn, fqcn):
+                    children.append(fqcn)
+                elif self.my_info.is_root and self.my_info.is_on_server:
+                    # see whether the agent is a client cell
+                    if agent.info.is_root and not agent.info.is_on_server:
+                        clients.append(fqcn)
+            return children, clients

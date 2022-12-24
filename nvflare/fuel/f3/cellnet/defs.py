@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
+from nvflare.fuel.f3.message import Message
+
+
 class ConnectorRequirementKey:
 
     URL = "url"
@@ -68,3 +71,22 @@ class MessageType:
 class CellPropertyKey:
 
     FQCN = "fqcn"
+
+
+class TargetCellUnreachable(Exception):
+    pass
+
+
+class TargetMessage:
+
+    def __init__(
+            self,
+            target: str,
+            channel: str,
+            topic: str,
+            message: Message,
+    ):
+        self.target = target
+        self.channel = channel
+        self.topic = topic
+        self.message = message

@@ -17,8 +17,8 @@ import os
 from typing import Union
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.f3.communicator import Communicator, Mode
-from nvflare.fuel.f3.constants import ConnectorRequirementKey
 from nvflare.fuel.utils.config_service import ConfigService
+from .defs import ConnectorRequirementKey
 
 _KEY_RESOURCES = "resources"
 _KEY_INT = "internal"
@@ -95,7 +95,8 @@ class ConnectorManager:
         self.logger.debug(f"internal scheme={self.int_scheme}, resources={self.int_resources}")
         self.logger.debug(f"external scheme={self.ext_scheme}, resources={self.ext_resources}")
 
-    def _validate_conn_config(self, config: dict, key: str) -> Union[None, dict]:
+    @staticmethod
+    def _validate_conn_config(config: dict, key: str) -> Union[None, dict]:
         conn_config = config.get(key)
         if conn_config:
             if not isinstance(conn_config, dict):
