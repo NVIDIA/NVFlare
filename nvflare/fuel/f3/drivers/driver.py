@@ -65,6 +65,7 @@ class DriverParams(str, Enum):
     CLIENT_KEY = "client_key"
     SECURE = "secure"
     PORTS = "ports"
+    SOCKET = "socket"
 
 
 class ConnMonitor(ABC):
@@ -137,7 +138,7 @@ class Driver(ABC):
     @staticmethod
     @abstractmethod
     def get_urls(scheme: str, resources: dict) -> (str, str):
-        """Get active and passive URLs based on resources
+        """Get active and passive URL pair based on resources
 
         Args:
             scheme: A scheme supported by the driver, like http or https

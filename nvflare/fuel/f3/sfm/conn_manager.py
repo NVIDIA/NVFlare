@@ -71,7 +71,7 @@ class ConnManager(ConnMonitor):
         driver.register_conn_monitor(self)
         self.connectors.append(connector)
 
-        log.debug(f"Connector {handle} with driver {driver.get_name()} is created in {mode.name} mode")
+        log.debug(f"Connector {driver.get_name()}:{handle} Mode: {mode.name} is created")
 
         if self.started:
             self.start_connector(connector)
@@ -83,7 +83,7 @@ class ConnManager(ConnMonitor):
             if handle == connector.handle:
                 connector.driver.shutdown()
                 self.connectors.pop(index)
-                log.info(f"Connector {handle} with driver {connector.driver.get_name()} is removed")
+                log.info(f"Connector {connector.driver.get_name()}:{handle} is removed")
                 return
 
         log.error(f"Unknown connector handle: {handle}")
@@ -97,9 +97,11 @@ class ConnManager(ConnMonitor):
 
     def stop(self):
         self.stopping = True
-        self.executor.shutdown(True)
+
         for connector in self.connectors:
             connector.driver.shutdown()
+
+        self.executor.shutdown(False)
 
     def find_endpoint(self, name: str) -> Optional[Endpoint]:
 
@@ -165,13 +167,18 @@ class ConnManager(ConnMonitor):
 
     def start_connector(self, connector: Connector):
         """Start connector in a new thread"""
+
         if connector.started:
             return
+
+        log.info(f"Connector {connector.driver.get_name()}:{connector.handle} is starting in "
+                 f"{connector.mode.name} mode")
 
         self.executor.submit(self.start_connector_task, connector)
 
     def start_connector_task(self, connector: Connector):
         """Start connector in a new thread"""
+
         connector.started = True
         if connector.mode == Mode.ACTIVE:
             starter = connector.driver.connect
@@ -185,8 +192,11 @@ class ConnManager(ConnMonitor):
                 starter(connector)
                 connected = True
             except Exception as ex:
-                log.error(f"Connection failed, retrying in {wait} seconds: {ex}")
+                log.error(f"Connection failed: {ex}")
                 log.debug(traceback.format_exc())
+
+                if not self.stopping:
+                    log.info(f"Retrying in {wait} seconds")
 
                 time.sleep(wait)
                 # Exponential backoff
@@ -194,9 +204,7 @@ class ConnManager(ConnMonitor):
                 if wait > MAX_WAIT:
                     wait = MAX_WAIT
 
-        log.info(f"Connector {connector.driver.get_name()}:{connector.handle} is started in {connector.mode.name} mode")
-
-    def conn_state_change_task(self, connection: Connection):
+    def state_change(self, connection: Connection):
         try:
             state = connection.state
             connector = connection.connector
@@ -212,9 +220,6 @@ class ConnManager(ConnMonitor):
         except BaseException as ex:
             log.error(f"Error handling state change: {ex}")
             log.debug(traceback.format_exc())
-
-    def state_change(self, connection: Connection):
-        self.executor.submit(self.conn_state_change_task, connection)
 
     def process_frame_task(self, sfm_conn: SfmConnection, frame: BytesAlike):
 
@@ -250,6 +255,7 @@ class ConnManager(ConnMonitor):
                 log.error(f"Received unsupported frame type {prefix.type} on {sfm_conn.get_name()}")
         except BaseException as ex:
             log.error(f"Error processing frame: {ex}")
+            log.debug(traceback.format_exc())
 
     def process_frame(self, sfm_conn: SfmConnection, frame: BytesAlike):
         self.executor.submit(self.process_frame_task, sfm_conn, frame)

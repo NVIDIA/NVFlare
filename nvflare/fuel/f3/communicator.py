@@ -177,10 +177,11 @@ class Communicator:
                 break
 
         if not listener:
-            log.info(f"Connector {handle} with driver {driver.get_name()} is not found")
+            log.info(f"Connector {driver.get_name()}:{handle} is not found")
             return ""
 
         self.conn_manager.start_connector(listener)
+
         return handle
 
     def remove_connector(self, handle: str):

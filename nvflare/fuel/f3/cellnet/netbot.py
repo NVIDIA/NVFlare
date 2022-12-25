@@ -11,6 +11,7 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import time
 
 from .cell import Cell, Message
 from .connector_manager import ConnectorInfo
@@ -28,6 +29,10 @@ _TOPIC_START_ROUTE = "start_route"
 _TOPIC_STOP = "stop"
 _TOPIC_URL_USE = "url_use"
 _TOPIC_CONNS = "conns"
+_TOPIC_SPEED = "speed"
+_TOPIC_ECHO = "echo"
+
+_ONE_K = bytes([1] * 1000)
 
 
 class NetBot:
@@ -75,6 +80,18 @@ class NetBot:
             channel=_CHANNEL,
             topic=_TOPIC_URL_USE,
             cb=self._do_url_use,
+        )
+
+        cell.register_request_cb(
+            channel=_CHANNEL,
+            topic=_TOPIC_SPEED,
+            cb=self._do_speed,
+        )
+
+        cell.register_request_cb(
+            channel=_CHANNEL,
+            topic=_TOPIC_ECHO,
+            cb=self._do_echo,
         )
 
     def _do_stop(
@@ -312,6 +329,120 @@ class NetBot:
         # ask all children to stop
         self._broadcast_to_subs(topic=_TOPIC_STOP, timeout=0.0)
         self.cell.stop()
+
+    def _request_speed_test(self, target_fqcn: str, num, size) -> Message:
+        if size > 1000000:
+            return new_message(payload={"error": f"size {size:,}KB is too big"})
+
+        start = time.perf_counter()
+        payload = bytes(_ONE_K * size)
+        payload_size = len(payload)
+        end = time.perf_counter()
+        payload_prep_time = end - start
+        errs = 0
+        timeouts = 0
+        comm_errs = 0
+        proc_errs = 0
+        start = time.perf_counter()
+        for i in range(num):
+            r = self.cell.send_request(
+                channel=_CHANNEL,
+                topic=_TOPIC_ECHO,
+                target=target_fqcn,
+                request=new_message(payload=payload),
+                timeout=10.0
+            )
+            rc = r.get_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
+            if rc == ReturnCode.OK:
+                if len(r.payload) != payload_size:
+                    self.cell.logger.error(
+                        f"{self.cell.get_fqcn()}: expect {payload_size} bytes but received {len(r.payload)}")
+                    proc_errs += 1
+            elif rc == ReturnCode.TIMEOUT:
+                timeouts += 1
+            elif rc == ReturnCode.COMM_ERROR:
+                comm_errs += 1
+            else:
+                errs += 1
+        end = time.perf_counter()
+        total = end - start
+        avg = total / num
+        return new_message(payload={
+            "test": f"{size:,}KB {num} rounds between {self.cell.get_fqcn()} and {target_fqcn}",
+            "prep": payload_prep_time,
+            "timeouts": timeouts,
+            "comm_errors": comm_errs,
+            "proc_errors": proc_errs,
+            "other_errors": errs,
+            "total": total,
+            "average": avg})
+
+    def _do_speed(
+            self,
+            request: Message
+    ) -> Union[None, Message]:
+        params = request.payload
+        if not isinstance(params, dict):
+            return make_reply(ReturnCode.INVALID_REQUEST, f"request body must be dict but got {type(params)}")
+        to_fqcn = params.get("to")
+        if not to_fqcn:
+            return make_reply(ReturnCode.INVALID_REQUEST, "missing 'to' param in request")
+        err = FQCN.validate(to_fqcn)
+        if err:
+            return make_reply(ReturnCode.INVALID_REQUEST, f"bad target FQCN: {err}")
+        num = params.get("num", 100)
+        size = params.get("size", 1000)
+        if size <= 0:
+            size = 1000
+        if num <= 0:
+            num = 100
+        return self._request_speed_test(to_fqcn, num, size)
+
+    def _do_echo(
+            self,
+            request: Message
+    ) -> Union[None, Message]:
+        return new_message(payload=request.payload)
+
+    def speed_test(
+            self,
+            from_fqcn: str,
+            to_fqcn: str,
+            num_tries,
+            payload_size) -> dict:
+        err = FQCN.validate(from_fqcn)
+        if err:
+            return {"error": f"invalid from_fqcn {from_fqcn}: {err}"}
+
+        err = FQCN.validate(to_fqcn)
+        if err:
+            return {"error": f"invalid to_fqcn {to_fqcn}: {err}"}
+
+        if from_fqcn == to_fqcn:
+            return {"error": f"from and to FQCNs {from_fqcn} must not be the same"}
+
+        result = {}
+        if self.cell.get_fqcn() == from_fqcn:
+            reply = self._request_speed_test(to_fqcn, num_tries, payload_size)
+        else:
+            start = time.perf_counter()
+            reply = self.cell.send_request(
+                channel=_CHANNEL,
+                topic=_TOPIC_SPEED,
+                request=new_message(payload={"to": to_fqcn, "num": num_tries, "size": payload_size}),
+                target=from_fqcn,
+                timeout=100.0
+            )
+            end = time.perf_counter()
+            result['test_time'] = end - start
+        rc = reply.get_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
+        if rc != ReturnCode.OK:
+            result.update({"error": f"return code {rc}"})
+        elif not isinstance(reply.payload, dict):
+            result.update({"error": f"bad reply: expect dict but got {type(reply.payload)}"})
+        else:
+            result.update(reply.payload)
+        return result
 
     def _broadcast_to_subs(
             self,

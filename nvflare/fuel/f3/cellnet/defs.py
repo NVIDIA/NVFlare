@@ -43,6 +43,7 @@ class MessageHeaderKey:
     PAYLOAD_ENCODING = CELLNET_PREFIX + "payload_encoding"
     ROUTE = CELLNET_PREFIX + "route"
     ORIGINAL_HEADERS = CELLNET_PREFIX + "original_headers"
+    SEND_TIME = CELLNET_PREFIX + "send_time"
 
 
 class Encoding:

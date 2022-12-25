@@ -40,19 +40,20 @@ conn_props = {
 local_endpoint = Endpoint("demo.client", {"test": 123}, conn_props)
 
 communicator = Communicator(local_endpoint)
-resources = {
-    DriverParams.SECURE: True,
-    DriverParams.PORTS: "3000-6000",
-}
-connect_url = "http://localhost:1234"
+
+connect_url = "uds://tmp/test.socket"
 handle1 = communicator.add_connector(connect_url, Mode.ACTIVE)
-listen_url = "http://localhost:4321"
+
+listen_url = "tcp://localhost:1234"
 handle2 = communicator.add_connector(listen_url, Mode.PASSIVE)
+
+
 resources = {
     DriverParams.SECURE: False,
     DriverParams.PORTS: "3000-6000",
 }
-handle3, ad_hoc_url = communicator.start_listener("http", resources)
+handle3, ad_hoc_url = communicator.start_listener("uds", resources)
+
 communicator.register_monitor(DemoEndpointMonitor(local_endpoint.name, endpoints))
 communicator.register_message_receiver(AppIds.CELL_NET, TimingReceiver())
 communicator.register_message_receiver(AppIds.DEFAULT, TimingReceiver())
@@ -86,7 +87,7 @@ while count < 60:
 
 time.sleep(10)
 communicator.remove_connector(handle1)
-communicator.remove_connector(handle2)
+# communicator.remove_connector(handle2)
 communicator.stop()
 for thread in threading.enumerate():
     print(thread.name)

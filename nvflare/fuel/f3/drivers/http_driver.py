@@ -13,15 +13,12 @@
 # limitations under the License.
 import asyncio
 import logging
-import random
-import socket
-import ssl
-from ssl import SSLContext
-from typing import List, Any, Union, Optional
+from typing import List, Any, Union
 
 import websockets
 
 from nvflare.fuel.f3.comm_error import CommError
+from nvflare.fuel.f3.drivers import net_utils
 from nvflare.fuel.f3.drivers.connection import Connection, ConnState
 from nvflare.fuel.f3.drivers.driver import Driver, DriverParams, Connector
 from nvflare.fuel.f3.drivers.prefix import Prefix
@@ -31,10 +28,7 @@ log = logging.getLogger(__name__)
 
 QUEUE_SIZE = 16
 THREAD_POOL_SIZE = 8
-LO_PORT = 1025
-HI_PORT = 65535
-MAX_ITER_SIZE = 10
-RANDOM_TRIES = 20
+MAX_MSG_SIZE = 2000000000   # 1GB
 
 
 class WsConnection(Connection):
@@ -116,7 +110,7 @@ class HttpDriver(Driver):
         if not host:
             host = "localhost"
 
-        port = HttpDriver.get_open_port(resources)
+        port = net_utils.get_open_tcp_port(resources)
         if not port:
             raise CommError(CommError.BAD_CONFIG, "Can't find an open port in the specified range")
 
@@ -152,12 +146,12 @@ class HttpDriver(Driver):
         host = params.get(DriverParams.HOST.value)
         port = params.get(DriverParams.PORT.value)
 
-        ssl_context = self.get_ssl_context(params, False)
+        ssl_context = net_utils.get_ssl_context(params, False)
         if ssl_context:
             scheme = "wss"
         else:
             scheme = "ws"
-        async with websockets.connect(f"{scheme}://{host}:{port}", ssl=ssl_context) as ws:
+        async with websockets.connect(f"{scheme}://{host}:{port}", ssl=ssl_context, max_size=MAX_MSG_SIZE) as ws:
             conn = WsConnection(ws, self.loop, self.connector)
             self.add_connection(conn)
             await self.read_write_loop(conn)
@@ -166,8 +160,8 @@ class HttpDriver(Driver):
         params = self.connector.params
         host = params.get(DriverParams.HOST.value)
         port = params.get(DriverParams.PORT.value)
-        ssl_context = self.get_ssl_context(params, True)
-        async with websockets.serve(self.handler, host, port, ssl=ssl_context):
+        ssl_context = net_utils.get_ssl_context(params, True)
+        async with websockets.serve(self.handler, host, port, ssl=ssl_context, max_size=MAX_MSG_SIZE):
             await self.stop_event
 
     async def handler(self, websocket):
@@ -219,99 +213,3 @@ class HttpDriver(Driver):
             self.conn_monitor.state_change(conn)
 
         log.debug(f"Connection {self.get_name()}:{conn.name} is closed")
-
-    @staticmethod
-    def get_ssl_context(params: dict, server: bool) -> Optional[SSLContext]:
-        scheme = params.get(DriverParams.SCHEME.value)
-        if scheme not in ("https", "wss"):
-            return None
-
-        ca_path = params.get(DriverParams.CA_CERT.value)
-        if server:
-            cert_path = params.get(DriverParams.SERVER_CERT.value)
-            key_path = params.get(DriverParams.SERVER_KEY.value)
-        else:
-            cert_path = params.get(DriverParams.CLIENT_CERT.value)
-            key_path = params.get(DriverParams.CLIENT_KEY.value)
-
-        if not all([ca_path, cert_path, key_path]):
-            raise CommError(CommError.BAD_CONFIG, f"Certificate parameters are required for scheme {scheme}")
-
-        if server:
-            ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-        else:
-            ctx = ssl.create_default_context()
-
-        # This feature is only supported on 3.7+
-        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-        ctx.verify_mode = ssl.CERT_REQUIRED
-        ctx.check_hostname = False
-        ctx.load_verify_locations(ca_path)
-        ctx.load_cert_chain(certfile=cert_path, keyfile=key_path)
-
-        return ctx
-
-    @staticmethod
-    def parse_range(entry: Any):
-
-        if isinstance(entry, int):
-            return range(entry, entry + 1)
-
-        parts = entry.split("-")
-        if len(parts) == 1:
-            num = int(parts[0])
-            return range(num, num + 1)
-        lo = int(parts[0]) if parts[0] else LO_PORT
-        hi = int(parts[1]) if parts[1] else HI_PORT
-        return range(lo, hi + 1)
-
-    @staticmethod
-    def parse_ports(ranges: Any) -> list:
-        all_ranges = []
-        if isinstance(ranges, list):
-            for r in ranges:
-                all_ranges.append(HttpDriver.parse_range(r))
-        else:
-            all_ranges.append(HttpDriver.parse_range(ranges))
-
-        return all_ranges
-
-    @staticmethod
-    def check_port(port) -> bool:
-        result = False
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        try:
-            s.bind(("", port))
-            result = True
-        except Exception as e:
-            log.debug(f"Port {port} binding error: {e}")
-        s.close()
-
-        return result
-
-    @staticmethod
-    def get_open_port(resources: dict) -> Optional[int]:
-
-        port = resources.get(DriverParams.PORT)
-        if port:
-            return port
-
-        ports = resources.get(DriverParams.PORTS)
-        if not ports:
-            port = random.randint(LO_PORT, HI_PORT)
-            return port
-
-        all_ports = HttpDriver.parse_ports(ports)
-
-        for port_range in all_ports:
-            if len(port_range) <= MAX_ITER_SIZE:
-                for port in port_range:
-                    if HttpDriver.check_port(port):
-                        return port
-            else:
-                for i in range(RANDOM_TRIES):
-                    port = random.randint(port_range.start, port_range.stop)
-                    if HttpDriver.check_port(port):
-                        return port
-
-        return None

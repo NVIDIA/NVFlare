@@ -67,10 +67,17 @@ class NetManager(CommandModule):
                     visible=True,
                 ),
                 CommandSpec(
-                    name="stop",
-                    description="stop system",
-                    usage="stop",
-                    handler_func=self._cmd_stop,
+                    name="speed",
+                    description="test communication speed between cells",
+                    usage="speed from_fqcn to_fqcn [num_tries] [payload_size]",
+                    handler_func=self._cmd_speed_test,
+                    visible=True,
+                ),
+                CommandSpec(
+                    name="shutdown",
+                    description="shutdown the whole cellnet",
+                    usage="shutdown",
+                    handler_func=self._cmd_shutdown,
                     visible=True,
                 )])
 
@@ -135,6 +142,28 @@ class NetManager(CommandModule):
         if result:
             conn.append_dict(result)
 
-    def _cmd_stop(self, conn: Connection, args: [str]):
+    def _cmd_speed_test(self, conn: Connection, args: [str]):
+        if len(args) < 3:
+            cmd_entry = conn.get_prop(ConnProps.CMD_ENTRY)
+            conn.append_string(f"Usage: {cmd_entry.usage}")
+            return
+        from_fqcn = args[1]
+        to_fqcn = args[2]
+        num_tries = 100
+        payload_size = 1000
+        if len(args) > 3:
+            num_tries = int(args[3])
+        if len(args) > 4:
+            payload_size = int(args[4])
+
+        result = self.bot.speed_test(
+            from_fqcn=from_fqcn,
+            to_fqcn=to_fqcn,
+            num_tries=num_tries,
+            payload_size=payload_size
+        )
+        conn.append_dict(result)
+
+    def _cmd_shutdown(self, conn: Connection, args: [str]):
         self.bot.stop()
         conn.append_shutdown("System Stopped")

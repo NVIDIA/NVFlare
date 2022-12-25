@@ -12,60 +12,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
-from socketserver import ThreadingTCPServer, TCPServer, BaseRequestHandler
-from typing import List, Any, Union, Optional
+import socket
+from socketserver import ThreadingTCPServer, TCPServer
+from typing import List
 
 from nvflare.fuel.f3.comm_error import CommError
-from nvflare.fuel.f3.drivers.connection import Connection
+from nvflare.fuel.f3.drivers import net_utils
 from nvflare.fuel.f3.drivers.driver import Driver, DriverParams, Connector
+from nvflare.fuel.f3.drivers.socket_driver import ConnectionHandler, StreamConnection, SocketDriver
 
 log = logging.getLogger(__name__)
 
-QUEUE_SIZE = 16
-THREAD_POOL_SIZE = 8
-LO_PORT = 1025
-HI_PORT = 65535
 
-
-class StreamConnection(Connection):
-
-    def __init__(self, stream: Any, connector: Connector, peer_address):
-        super().__init__(connector)
-        self.stream = stream
-        self.closing = False
-        self.peer_address = peer_address
-
-    def get_conn_properties(self) -> dict:
-        addr = self.websocket.remote_address
-        if addr:
-            return {"peer_host": addr[0], "peer_port": addr[1]}
-        else:
-            return {}
-
-    def close(self):
-        self.closing = True
-
-    def send_frame(self, frame: Union[bytes, bytearray, memoryview]):
-        try:
-            self.stream.sendall(frame)
-        except BaseException as ex:
-            raise CommError(CommError.ERROR, f"Error sending frame: {ex}")
-
-
-class ConnectionHandler(BaseRequestHandler):
-    pass
-
-
-class StreamServer(ThreadingTCPServer):
+class TcpStreamServer(ThreadingTCPServer):
 
     TCPServer.allow_reuse_address = True
 
-    def __init__(self, connector: Connector):
+    def __init__(self, driver: 'Driver', connector: Connector):
+        self.driver = driver
         self.connector = connector
 
         params = connector.params
         host = params.get(DriverParams.HOST.value)
-        port = params.get(DriverParams.PORT.value)
+        port = int(params.get(DriverParams.PORT.value))
 
         TCPServer.__init__(self, (host, port), ConnectionHandler, False)
 
@@ -74,27 +43,51 @@ class StreamServer(ThreadingTCPServer):
         try:
             self.server_bind()
             self.server_activate()
-        except BaseException:
+        except BaseException as ex:
+            log.error(f"Error binding to  {host}:{port}: {ex}")
             self.server_close()
             raise
 
 
-class TcpDriver(Driver):
-
-    def __init__(self):
-        super().__init__()
-        self.connections = {}
-        self.connector = None
+class TcpDriver(SocketDriver):
 
     @staticmethod
     def supported_transports() -> List[str]:
         return ["tcp", "stcp"]
 
     def listen(self, connector: Connector):
-        pass
+        self.connector = connector
+        self.server = TcpStreamServer(self, connector)
+        self.server.serve_forever()
 
     def connect(self, connector: Connector):
-        pass
+        params = connector.params
+        address = params.get(DriverParams.HOST.value), int(params.get(DriverParams.PORT.value))
 
-    def shutdown(self):
-        pass
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.connect(address)
+
+        connection = StreamConnection(sock, connector, address)
+        self.add_connection(connection)
+        connection.read_loop()
+
+    @staticmethod
+    def get_urls(scheme: str, resources: dict) -> (str, str):
+
+        secure = resources.get(DriverParams.SECURE)
+        if secure:
+            scheme = "stcp"
+
+        host = resources.get("host") if resources else None
+        if not host:
+            host = "localhost"
+
+        port = net_utils.get_open_tcp_port(resources)
+        if not port:
+            raise CommError(CommError.BAD_CONFIG, "Can't find an open port in the specified range")
+
+        # Always listen on all interfaces
+        listening_url = f"{scheme}://0:{port}"
+        connect_url = f"{scheme}://{host}:{port}"
+
+        return connect_url, listening_url

@@ -210,6 +210,9 @@ class Cell(MessageReceiver, EndpointMonitor):
             client_1            (he root cell of client_1)
 
         """
+        self._name = self.__class__.__name__
+        self.logger = logging.getLogger(self._name)
+
         err = FQCN.validate(fqcn)
         if err:
             raise ValueError(f"Invalid FQCN '{fqcn}': {err}")
@@ -226,7 +229,7 @@ class Cell(MessageReceiver, EndpointMonitor):
         self.agents = {}  # cell_fqcn => CellAgent
         self.agent_lock = threading.Lock()
 
-        print(f"Creating Cell: {self.my_info.fqcn}")
+        self.logger.debug(f"Creating Cell: {self.my_info.fqcn}")
 
         ep = Endpoint(
             name=fqcn,
@@ -272,9 +275,6 @@ class Cell(MessageReceiver, EndpointMonitor):
         self.asked_to_stop = False
         self.running = False
 
-        self._name = self.__class__.__name__
-        self.logger = logging.getLogger(self._name)
-
         # add appropriate drivers based on roles of the cell
         # a cell can have at most two listeners: one for external, one for internal
         self.ext_listener = None        # external listener
@@ -307,8 +307,6 @@ class Cell(MessageReceiver, EndpointMonitor):
         self.stop_waiter = threading.Event()
         self.stop_waiter_thread = threading.Thread(target=self._wait_to_stop)
 
-        self.add_cleanup_cb(self._close)
-
     def _wait_to_stop(self):
         self.logger.debug(f"=========== {self.my_info.fqcn}: Stop Waiter is waiting ==============")
         self.stop_waiter.wait()
@@ -316,9 +314,11 @@ class Cell(MessageReceiver, EndpointMonitor):
         time.sleep(2.0)  # let pending messages to go out
         t = threading.Thread(target=self._do_cleanup)
         t.start()
+        # self._do_cleanup()
 
         # wait for 2 secs to give others time to clean up
-        if not self.stop_waiter.wait(timeout=2.0):
+        self.cleanup_waiter = threading.Event()
+        if not self.cleanup_waiter.wait(timeout=2.0):
             self.logger.debug(f"======== {self.my_info.fqcn}: Cleanup did not complete within 2 secs")
 
         self.logger.info(f"{self.my_info.fqcn}: Good Bye!")
@@ -328,18 +328,22 @@ class Cell(MessageReceiver, EndpointMonitor):
         self.logger.debug(f"{self.my_info.fqcn}: Start system cleanup ...")
         cb_list = self.cleanup_reg.find("*", "*")
         if cb_list:
+            self.logger.debug(f"{self.my_info.fqcn}: found {len(cb_list)} cleanup CBs")
             for _cb in cb_list:
                 assert isinstance(_cb, _CB)
                 try:
                     self.logger.debug(f"{self.my_info.fqcn}: calling a cleanup CB ...")
                     _cb.cb(*_cb.args, **_cb.kwargs)
+                    self.logger.debug(f"{self.my_info.fqcn}: called a cleanup CB")
                 except BaseException as ex:
                     self.logger.warning(f"{self.my_info.fqcn}: ignored exception {ex} from cleanup CB")
         else:
             self.logger.debug(f"{self.my_info.fqcn}: Nothing to cleanup!")
 
+        # closing cell finally!
+        self._close()
         self.logger.debug(f"{self.my_info.fqcn}: Cleanup Finished!")
-        self.stop_waiter.set()
+        self.cleanup_waiter.set()
 
     def get_fqcn(self) -> str:
         return self.my_info.fqcn
@@ -771,18 +775,20 @@ class Cell(MessageReceiver, EndpointMonitor):
     def _send_to_endpoint(self, to_endpoint: Endpoint, message: Message) -> str:
         err = ""
         try:
-            content_type = message.get_header(MessageHeaderKey.PAYLOAD_ENCODING)
-            if not content_type:
+            encoding = message.get_header(MessageHeaderKey.PAYLOAD_ENCODING)
+            if not encoding:
                 if message.payload is None:
-                    content_type = Encoding.NONE
-                elif isinstance(message.payload, bytes):
-                    content_type = Encoding.BYTES
+                    encoding = Encoding.NONE
+                elif isinstance(message.payload, bytes) or isinstance(message.payload, bytearray):
+                    encoding = Encoding.BYTES
                 else:
-                    content_type = Encoding.FOBS
+                    encoding = Encoding.FOBS
                     message.payload = fobs.dumps(message.payload)
-                message.set_header(MessageHeaderKey.PAYLOAD_ENCODING, content_type)
+                message.set_header(MessageHeaderKey.PAYLOAD_ENCODING, encoding)
+            message.set_header(MessageHeaderKey.SEND_TIME, time.time())
             self.communicator.send(to_endpoint, Cell.APP_ID, message)
         except:
+            self.logger.error(f"failed to send message to {to_endpoint.name}")
             traceback.print_exc()
             err = "CommError"
         return err

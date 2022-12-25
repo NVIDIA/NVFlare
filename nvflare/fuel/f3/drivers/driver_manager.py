@@ -82,11 +82,18 @@ class DriverManager:
             folder: The folder to scan
             package: The root package for all the drivers
         """
+
+        class_cache = set()
+
         for file_name in os.listdir(folder):
             if file_name != "__init__.py" and file_name[-3:] == ".py":
                 module = package + "." + file_name[:-3]
                 imported = importlib.import_module(module)
                 for _, cls_obj in inspect.getmembers(imported, inspect.isclass):
+                    if cls_obj.__name__ in class_cache:
+                        continue
+                    class_cache.add(cls_obj.__name__)
+
                     spec = inspect.getfullargspec(cls_obj.__init__)
                     # classes who are abstract or take extra args in __init__ can't be auto-registered
                     if issubclass(cls_obj, Driver) and not inspect.isabstract(cls_obj) and len(spec.args) == 1:
