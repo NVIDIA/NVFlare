@@ -116,7 +116,7 @@ class NetBot:
             self,
             request: Message
     ) -> Union[None, Message]:
-        req_headers = request.headers
+        req_headers = dict(request.headers)
         return new_message(payload=req_headers)
 
     def _do_start_route(

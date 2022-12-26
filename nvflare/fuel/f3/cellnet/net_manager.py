@@ -185,7 +185,20 @@ class NetManager(CommandModule):
             num_rounds=num_tries,
             timeout=timeout
         )
+
+        total_errors = 0
+        for t, v in result.items():
+            if not isinstance(v, dict):
+                continue
+            err_dict = v.get("errors")
+            cell_errs = 0
+            for _, c in err_dict.items():
+                cell_errs += c
+            total_errors += cell_errs
+            if cell_errs == 0:
+                v.pop('errors')
         conn.append_dict(result)
+        conn.append_string(f"total errors: {total_errors}")
 
     def _cmd_shutdown(self, conn: Connection, args: [str]):
         self.bot.stop()

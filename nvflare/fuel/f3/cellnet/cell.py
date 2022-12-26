@@ -751,19 +751,27 @@ class Cell(MessageReceiver, EndpointMonitor):
             return None
 
         target_info = FqcnInfo(target_fqcn)
+
+        # is there a direct path to the target?
+        agent = self.agents.get(target_fqcn)
+        if agent:
+            return agent.endpoint
+
         if same_family(self.my_info, target_info):
             self.logger.debug(f"{self.my_info.fqcn}: find path in the same family")
-            if FQCN.is_ancestor(target_fqcn, self.my_info.fqcn):
-                # target is my ancestor - go to my parent!
+            if FQCN.is_ancestor(self.my_info.fqcn, target_fqcn):
+                # I am the ancestor of the target
+                self.logger.debug(f"{self.my_info.fqcn}: I'm ancestor of the target {target_fqcn}")
+                return self._try_path(target_info.path)
+            else:
+                # target is my ancestor or we share the same ancestor - go to my parent!
+                self.logger.debug(f"{self.my_info.fqcn}: target {target_fqcn} is or share my ancestor")
                 my_parent = FQCN.get_parent(self.my_info.fqcn)
                 agent = self.agents.get(my_parent)
                 if not agent:
                     self.logger.error(f"{self.my_info.fqcn}: broken backbone - no path to may parent {my_parent}")
                     return None
                 return agent.endpoint
-            else:
-                # I am the ancestor of the target
-                return self._try_path(target_info.path)
 
         # not the same family
         ep = self._try_path(target_info.path)
@@ -890,7 +898,34 @@ class Cell(MessageReceiver, EndpointMonitor):
             target_msgs: Dict[str, TargetMessage],
             timeout=None
     ) -> Dict[str, Message]:
+        """
+        This is the core of the request/response handling. Be extremely careful when making any changes!
+        To maximize the communication efficiency, we avoid the use of locks.
+        We use a waiter implemented as a Python threading.Event object.
+        We create the waiter, send out messages, set up default responses, and set it up to wait for response.
+        Once the waiter is triggered from a reply-receiving thread, we process received results.
+
+        HOWEVER, if the network is extremely fast, the response may already be received even before we finish setting
+        up the waiter in this thread!
+
+        We had a very mysterious bug that caused a request to be treated as timeout even though the reply is received.
+        It was both threads try to set values to "waiter.replies". In case of extremely fast network, the reply
+        processing thread set the reply to "waiter.replies", and then overwritten by this thread with a default timeout
+        reply.
+
+        To avoid this kind of problems, we now use two sets of values in the waiter object.
+        One set is for this thread: waiter.default_replies
+        Another set is for the reply processing thread: received_replies, reply_time
+
+        Args:
+            target_msgs: messages to be sent
+            timeout: timeout value
+
+        Returns: a dict of: target name => reply message
+
+        """
         targets = [t for t in target_msgs]
+        self.logger.debug(f"{self.my_info.fqcn}: broadcasting to {targets} ...")
         waiter = _Waiter(targets)
         if waiter.id in self.waiters:
             raise RuntimeError("waiter not unique!")
@@ -913,11 +948,17 @@ class Cell(MessageReceiver, EndpointMonitor):
             send_count = 0
             err_reply = make_reply(ReturnCode.COMM_ERROR)
             timeout_reply = make_reply(ReturnCode.TIMEOUT)
+
+            # NOTE: it is possible that reply is already received and the waiter is triggered by now!
+            # if waiter.received_replies:
+            #     self.logger.info(f"{self.my_info.fqcn}: the network is extremely fast - response already received!")
+
             for t, sent in status.items():
                 if sent:
                     send_count += 1
                     waiter.default_replies[t] = timeout_reply
                 else:
+                    self.logger.error(f"{self.my_info.fqcn}: failed to send to {t}")
                     waiter.default_replies[t] = err_reply
                     waiter.reply_time[t] = now
 
