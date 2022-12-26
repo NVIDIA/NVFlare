@@ -74,6 +74,13 @@ class NetManager(CommandModule):
                     visible=True,
                 ),
                 CommandSpec(
+                    name="stress",
+                    description="stress test communication among cells",
+                    usage="stress [num_tries] [timeout]",
+                    handler_func=self._cmd_stress_test,
+                    visible=True,
+                ),
+                CommandSpec(
                     name="shutdown",
                     description="shutdown the whole cellnet",
                     usage="shutdown",
@@ -161,6 +168,22 @@ class NetManager(CommandModule):
             to_fqcn=to_fqcn,
             num_tries=num_tries,
             payload_size=payload_size
+        )
+        conn.append_dict(result)
+
+    def _cmd_stress_test(self, conn: Connection, args: [str]):
+        num_tries = 10
+        timeout = 5.0
+        if len(args) > 1:
+            num_tries = int(args[1])
+        if len(args) > 2:
+            timeout = int(args[2])
+        targets = self.bot.request_cells_info()
+        conn.append_string(f"starting stress test on {targets}", flush=True)
+        result = self.bot.start_stress_test(
+            targets=targets,
+            num_rounds=num_tries,
+            timeout=timeout
         )
         conn.append_dict(result)
 

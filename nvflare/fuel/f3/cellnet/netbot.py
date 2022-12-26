@@ -11,6 +11,9 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import hashlib
+import os
+import random
 import time
 
 from .cell import Cell, Message
@@ -31,6 +34,7 @@ _TOPIC_URL_USE = "url_use"
 _TOPIC_CONNS = "conns"
 _TOPIC_SPEED = "speed"
 _TOPIC_ECHO = "echo"
+_TOPIC_STRESS = "stress"
 
 _ONE_K = bytes([1] * 1000)
 
@@ -92,6 +96,12 @@ class NetBot:
             channel=_CHANNEL,
             topic=_TOPIC_ECHO,
             cb=self._do_echo,
+        )
+
+        cell.register_request_cb(
+            channel=_CHANNEL,
+            topic=_TOPIC_STRESS,
+            cb=self._do_stress,
         )
 
     def _do_stop(
@@ -337,6 +347,8 @@ class NetBot:
         start = time.perf_counter()
         payload = bytes(_ONE_K * size)
         payload_size = len(payload)
+        h = hashlib.md5(payload)
+        dig1 = h.digest()
         end = time.perf_counter()
         payload_prep_time = end - start
         errs = 0
@@ -358,6 +370,13 @@ class NetBot:
                     self.cell.logger.error(
                         f"{self.cell.get_fqcn()}: expect {payload_size} bytes but received {len(r.payload)}")
                     proc_errs += 1
+                else:
+                    h = hashlib.md5(r.payload)
+                    dig2 = h.digest()
+                    if dig1 != dig2:
+                        self.cell.logger.error(
+                            f"{self.cell.get_fqcn()}: digest mismatch!")
+                        proc_errs += 1
             elif rc == ReturnCode.TIMEOUT:
                 timeouts += 1
             elif rc == ReturnCode.COMM_ERROR:
@@ -403,6 +422,90 @@ class NetBot:
             request: Message
     ) -> Union[None, Message]:
         return new_message(payload=request.payload)
+
+    def _do_stress_test(self, params):
+        if not isinstance(params, dict):
+            return {"error": f"bad params - expect dict but got {type(params)}"}
+        targets = params.get('targets')
+        if not targets:
+            return {"error": "no targets specified"}
+        num_rounds = params.get('num')
+        if not num_rounds:
+            return {"error": "missing num of rounds"}
+        my_fqcn = self.cell.get_fqcn()
+        if my_fqcn in targets:
+            targets.remove(my_fqcn)
+
+        if not targets:
+            return {"error": "no targets to try"}
+
+        counts = {}
+        errors = {}
+        for t in targets:
+            counts[t] = 0
+            errors[t] = 0
+
+        start = time.perf_counter()
+        for i in range(num_rounds):
+            payload = os.urandom(100)
+            h = hashlib.md5(payload)
+            d1 = h.digest()
+            target = targets[random.randrange(len(targets))]
+            req = new_message(payload=payload)
+            reply = self.cell.send_request(
+                channel=_CHANNEL,
+                topic=_TOPIC_ECHO,
+                target=target,
+                request=req,
+                timeout=1.0
+            )
+            counts[target] += 1
+            rc = reply.get_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
+            if rc != ReturnCode.OK:
+                self.cell.logger.error(f"{self.cell.get_fqcn()}: return code from {target}: {rc}")
+                errors[target] += 1
+            else:
+                h = hashlib.md5(reply.payload)
+                d2 = h.digest()
+                if d1 != d2:
+                    self.cell.logger.error(f"{self.cell.get_fqcn()}: digest mismatch from {target}")
+                    errors[target] = errors[target] + 1
+        end = time.perf_counter()
+        return {"counts": counts, "errors": errors, "time": end - start}
+
+    def _do_stress(
+            self,
+            request: Message
+    ) -> Union[None, Message]:
+        params = request.payload
+        result = self._do_stress_test(params)
+        return new_message(payload=result)
+
+    def start_stress_test(self, targets: list, num_rounds=10, timeout=5.0):
+        self.cell.logger.info(f"{self.cell.get_fqcn()}: starting stress test on {targets}")
+        result = {}
+        payload = {"targets": targets, "num": num_rounds}
+        msg_targets = [x for x in targets]
+        my_fqcn = self.cell.get_fqcn()
+        if my_fqcn in msg_targets:
+            msg_targets.remove(my_fqcn)
+        if not msg_targets:
+            return {"error": "no targets for stress test"}
+
+        replies = self.cell.broadcast_request(
+            channel=_CHANNEL,
+            topic=_TOPIC_STRESS,
+            targets=msg_targets,
+            request=new_message(payload=payload),
+            timeout=timeout
+        )
+        for t, r in replies.items():
+            rc = r.get_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
+            if rc != ReturnCode.OK:
+                result[t] = f"RC={rc}"
+            else:
+                result[t] = r.payload
+        return result
 
     def speed_test(
             self,

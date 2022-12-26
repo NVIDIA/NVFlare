@@ -65,6 +65,10 @@ class FQCN:
     def is_parent(fqcn1: str, fqcn2: str) -> bool:
         return fqcn1 == FQCN.get_parent(fqcn2)
 
+    @staticmethod
+    def is_ancestor(fqcn1: str, fqcn2: str) -> bool:
+        return fqcn2.startswith(fqcn1 + FQCN.SEPARATOR)
+
 
 class FqcnInfo:
 

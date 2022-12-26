@@ -106,15 +106,21 @@ class _Registry:
 
 class _Waiter(threading.Event):
 
+    """
+    Note: A waiter is an Event type. The timing to access the same attribute from DIFFERENT threads is not guaranteed.
+    For example, thread A sets the value of "default_replies" at time T1, thread B sets value at time T2, even if
+    T2 > T1, it is not guaranteed that thread B's value is the final value of "default_replies".
+    """
+
     def __init__(self, targets: List[str]):
         super().__init__()
-        self.replies = {}        # target_id => reply
-        self.reply_time = {}     # target_id => reply recv timestamp
-        timeout_msg = make_reply(ReturnCode.TIMEOUT)
+        self.default_replies = {}        # target_id => reply
         for t in targets:
-            self.replies[t] = timeout_msg
+            self.default_replies[t] = make_reply(ReturnCode.TIMEOUT)
+        self.reply_time = {}     # target_id => reply recv timestamp
         self.send_time = time.time()
         self.id = str(uuid.uuid4())
+        self.received_replies = {}
 
 
 class _BulkSender:
@@ -565,7 +571,7 @@ class Cell(MessageReceiver, EndpointMonitor):
 
     def start(self):
         """
-        Start the cell after it is fully set up (connectors and listeners are added, CBs are setup)
+        Start the cell after it is fully set up (connectors and listeners are added, CBs are set up)
 
         Returns:
 
@@ -746,8 +752,18 @@ class Cell(MessageReceiver, EndpointMonitor):
 
         target_info = FqcnInfo(target_fqcn)
         if same_family(self.my_info, target_info):
-            self.logger.debug(f"{self.my_info.is_root}: find path in the same family")
-            return self._try_path(target_info.path)
+            self.logger.debug(f"{self.my_info.fqcn}: find path in the same family")
+            if FQCN.is_ancestor(target_fqcn, self.my_info.fqcn):
+                # target is my ancestor - go to my parent!
+                my_parent = FQCN.get_parent(self.my_info.fqcn)
+                agent = self.agents.get(my_parent)
+                if not agent:
+                    self.logger.error(f"{self.my_info.fqcn}: broken backbone - no path to may parent {my_parent}")
+                    return None
+                return agent.endpoint
+            else:
+                # I am the ancestor of the target
+                return self._try_path(target_info.path)
 
         # not the same family
         ep = self._try_path(target_info.path)
@@ -838,6 +854,8 @@ class Cell(MessageReceiver, EndpointMonitor):
                         conn_url = listener.get_connection_url()
                         req.set_header(MessageHeaderKey.CONN_URL, conn_url)
             err = self._send_to_endpoint(ep, req)
+            if err:
+                self.logger.error(f"{self.my_info.fqcn}: failed to send to endpoint {ep.name}: {err}")
             sent[t] = not err
         return sent
 
@@ -874,6 +892,8 @@ class Cell(MessageReceiver, EndpointMonitor):
     ) -> Dict[str, Message]:
         targets = [t for t in target_msgs]
         waiter = _Waiter(targets)
+        if waiter.id in self.waiters:
+            raise RuntimeError("waiter not unique!")
         self.waiters[waiter.id] = waiter
         now = time.time()
         if not timeout:
@@ -896,9 +916,9 @@ class Cell(MessageReceiver, EndpointMonitor):
             for t, sent in status.items():
                 if sent:
                     send_count += 1
-                    waiter.replies[t] = timeout_reply
+                    waiter.default_replies[t] = timeout_reply
                 else:
-                    waiter.replies[t] = err_reply
+                    waiter.default_replies[t] = err_reply
                     waiter.reply_time[t] = now
 
             if send_count > 0:
@@ -911,15 +931,20 @@ class Cell(MessageReceiver, EndpointMonitor):
                 self.logger.debug(f"{self.my_info.fqcn}: set up waiter {waiter.id} to wait for {timeout} secs")
                 if not waiter.wait(timeout=timeout):
                     # timeout
-                    self.logger.info(f"{self.my_info.fqcn}: timeout on REQ {waiter.id} after {timeout} secs")
+                    self.logger.error(f"{self.my_info.fqcn}: timeout on REQ {waiter.id} after {timeout} secs")
                     with self.stats_lock:
                         self.num_timeout_reqs += 1
+            else:
+                self.logger.error(f"{self.my_info.fqcn}: cannot send to {targets}")
         except BaseException as ex:
             raise ex
         finally:
             self.waiters.pop(waiter.id, None)
             self.logger.debug(f"released waiter on REQ {waiter.id}")
-        return waiter.replies
+        result = waiter.default_replies
+        if waiter.received_replies:
+            result.update(waiter.received_replies)
+        return result
 
     def broadcast_request(
             self,
@@ -1210,6 +1235,7 @@ class Cell(MessageReceiver, EndpointMonitor):
 
         req_dest = origin
         if msg_type == MessageType.RETURN:
+            self.logger.error(f"{self.my_info.fqcn}: got a RETURN!")
             original_headers = message.get_header(MessageHeaderKey.ORIGINAL_HEADERS, None)
             if not original_headers:
                 raise RuntimeError(format_log_message(
@@ -1223,16 +1249,17 @@ class Cell(MessageReceiver, EndpointMonitor):
             waiter = self.waiters.get(rid, None)
             if waiter:
                 assert isinstance(waiter, _Waiter)
-                if req_dest not in waiter.replies:
+                if req_dest not in waiter.default_replies.keys():
                     self.logger.error(format_log_message(
                         self.my_info.fqcn, message, f"unexpected reply for {rid} from {req_dest}"))
+                    self.logger.error(f"req_dest='{req_dest}', expecting={waiter.default_replies.keys()}")
                     return
-                waiter.replies[req_dest] = message
+                waiter.received_replies[req_dest] = message
                 waiter.reply_time[req_dest] = time.time()
 
                 # all targets replied?
                 all_targets_replied = True
-                for t, _ in waiter.replies.items():
+                for t, _ in waiter.default_replies.items():
                     if not waiter.reply_time.get(t):
                         all_targets_replied = False
                         break
@@ -1241,15 +1268,15 @@ class Cell(MessageReceiver, EndpointMonitor):
                     self.logger.debug(
                         format_log_message(
                             self.my_info.fqcn, message,
-                            f"trigger waiter - replies received from {len(waiter.replies)} targets for req {rid}"))
+                            f"trigger waiter - replies received from {len(waiter.default_replies)} targets for {rid}"))
                     waiter.set()  # trigger the waiting requests!
                 else:
                     self.logger.debug(
                         format_log_message(
                             self.my_info.fqcn, message,
-                            f"keep waiting - replies not received from {len(waiter.replies)} targets for req {rid}"))
+                            f"waiting - replies not received from {len(waiter.default_replies)} targets for req {rid}"))
             else:
-                self.logger.debug(
+                self.logger.error(
                     format_log_message(
                         self.my_info.fqcn, message,
                         f"no waiter for req {rid} - the reply is too late"))
