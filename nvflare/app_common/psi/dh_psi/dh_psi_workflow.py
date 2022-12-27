@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Dict, List, NamedTuple
+from typing import Dict, List, NamedTuple, Set
 
 from nvflare.apis.dxo import DXO
 from nvflare.apis.fl_context import FLContext
@@ -73,8 +73,8 @@ class DhPSIWorkFlow(PSIWorkflow):
         self.log_pass_time_taken()
 
     def log_pass_time_taken(self):
-        self.log_info(self.fl_ctx, f"`forward_pass' took {self.forward_pass.time_taken} ms.")
-        self.log_info(self.fl_ctx, f"'backward_pass' took {self.backward_pass.time_taken} ms.")
+        self.log_info(self.fl_ctx, f"'********* forward_pass' took {self.forward_pass.time_taken} ms.")
+        self.log_info(self.fl_ctx, f"'********* backward_pass' took {self.backward_pass.time_taken} ms.")
 
     def post_workflow(self, abort_signal: Signal):
         pass
@@ -179,10 +179,10 @@ class DhPSIWorkFlow(PSIWorkflow):
 
         if len(self.forward_processed) == total_clients - 1:
             # status = self.sequential_back_pass(ordered_clients)
-            # self.log_info(self.fl_ctx, f"sequential_back_pass took {self.sequential_back_pass.time_taken} (ms)")
+            # self.log_info(self.fl_ctx, f"*********** sequential_back_pass took {self.sequential_back_pass.time_taken} (ms)")
 
             status = self.parallel_back_pass(ordered_clients)
-            self.log_info(self.fl_ctx, f"parallel_back_pass took {self.parallel_back_pass.time_taken} (ms)")
+            self.log_info(self.fl_ctx, f"********************* parallel_back_pass took {self.parallel_back_pass.time_taken} (ms)")
             return status
         else:
             raise ValueError("started backward pass before finish the forward pass")
@@ -196,56 +196,53 @@ class DhPSIWorkFlow(PSIWorkflow):
     def parallel_back_pass(self, ordered_clients: list):
         # parallel version
         updated_sites = self.get_updated_site_sizes(ordered_clients)
-        setup_msgs: Dict[str, str] = self.prepare_setup_messages(updated_sites)
-        request_msgs: Dict[str, str] = self.create_requests(setup_msgs, updated_sites)
-        response_msg: Dict[str, str] = self.process_requests(request_msgs)
+        total_clients = len(updated_sites)
+        s = updated_sites[total_clients - 1]
+
+        other_site_sizes = set([site.size for site in updated_sites if site.name != s.name])
+        setup_msgs: Dict[str, str] = self.prepare_setup_messages(s, other_site_sizes)
+
+        site_setup_msgs = {site.name: setup_msgs[str(site.size)] for site in updated_sites if site.name != s.name}
+        request_msgs: Dict[str, str] = self.create_requests(site_setup_msgs)
+        response_msg: Dict[str, str] = self.process_requests(s, request_msgs)
         return self.calculate_intersections(response_msg)
 
-    def calculate_intersections(self, request_msgs) -> Dict[str, int]:
+    def calculate_intersections(self, response_msg) -> Dict[str, int]:
         task_inputs = {}
-        for client_name in request_msgs:
+        for client_name in response_msg:
             inputs = Shareable()
             inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_INTERSECT
-            inputs[PSIConst.PSI_RESPONSE_MSG] = request_msgs[client_name]
+            inputs[PSIConst.PSI_RESPONSE_MSG] = response_msg[client_name]
             task_inputs[client_name] = inputs
         bop = BroadcastAndWait(self.fl_ctx, self.controller)
         results = bop.multicasts_and_wait(task_name=self.task_name,
                                           task_inputs=task_inputs,
                                           abort_signal=self.abort_signal)
+
         intersects = {client_name: results[client_name].data[PSIConst.PSI_ITEMS_SIZE] for client_name in results}
         self.log_info(self.fl_ctx, f"received intersections : {intersects} ")
         return intersects
 
-    def process_requests(self, request_msgs) -> Dict[str, str]:
-        task_inputs = {}
-        for client_name in request_msgs:
-            inputs = Shareable()
-            inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_RESPONSE
-            inputs[PSIConst.PSI_REQUEST_MSG] = request_msgs[client_name]
-            task_inputs[client_name] = inputs
+    def process_requests(self, s: SiteSize, request_msgs: Dict[str, str]) -> Dict[str, str]:
+        task_inputs = Shareable()
+        task_inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_RESPONSE
+        task_inputs[PSIConst.PSI_REQUEST_MSG_SET] = request_msgs
         bop = BroadcastAndWait(self.fl_ctx, self.controller)
-        results = bop.multicasts_and_wait(task_name=self.task_name,
-                                          task_inputs=task_inputs,
-                                          abort_signal=self.abort_signal)
-        response_msgs = {client_name: results[client_name].data[PSIConst.PSI_RESPONSE_MSG] for client_name in results}
+        results = bop.broadcast_and_wait(task_name=self.task_name,
+                                         task_input=task_inputs,
+                                         targets=[s.name],
+                                         abort_signal=self.abort_signal)
+
+        dxo = results[s.name]
+        response_msgs = dxo.data[PSIConst.PSI_RESPONSE_MSG]
         return response_msgs
 
-    def create_requests(self, setup_msgs, updated_sites) -> Dict[str, str]:
-        total_clients = len(updated_sites)
-        xs = {site.name: setup_msgs[str(site.size)] for site in updated_sites
-              if site.name != updated_sites[total_clients - 1].name}
-
-        print("***************", xs.keys())
-        print("***************", setup_msgs.keys())
-        print("***************", self.ordered_sites)
-        print("***************", updated_sites)
-        print("***************", self.forward_processed)
-
+    def create_requests(self, site_setup_msgs) -> Dict[str, str]:
         task_inputs = {}
-        for client_name in xs:
+        for client_name in site_setup_msgs:
             inputs = Shareable()
             inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_REQUEST
-            inputs[PSIConst.PSI_SETUP_MSG] = xs[client_name]
+            inputs[PSIConst.PSI_SETUP_MSG] = site_setup_msgs[client_name]
             task_inputs[client_name] = inputs
 
         bop = BroadcastAndWait(self.fl_ctx, self.controller)
@@ -301,17 +298,14 @@ class DhPSIWorkFlow(PSIWorkflow):
         self.log_info(self.fl_ctx, f"received setup message from {s.name} for {c.name}")
         return {c.name: setup_msg}
 
-    def prepare_setup_messages(self, updated_sites) -> Dict[str, str]:
-        total_clients = len(updated_sites)
-        s = updated_sites[total_clients - 1]
+    def prepare_setup_messages(self, s: SiteSize, other_site_sizes: Set[int]) -> Dict[str, str]:
         inputs = Shareable()
         inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_SETUP
-        inputs[PSIConst.PSI_ITEMS_SIZE_SET] = set([site.size for site in updated_sites if site.name != s.name])
-        targets = [s.name]
+        inputs[PSIConst.PSI_ITEMS_SIZE_SET] = other_site_sizes
         bop = BroadcastAndWait(self.fl_ctx, self.controller)
         results = bop.broadcast_and_wait(task_name=self.task_name,
                                          task_input=inputs,
-                                         targets=targets,
+                                         targets=[s.name],
                                          abort_signal=self.abort_signal)
         dxo = results[s.name]
         return dxo.data[PSIConst.PSI_SETUP_MSG]

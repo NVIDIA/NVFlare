@@ -52,7 +52,6 @@ class DhPSIExecutor(ClientExecutor):
             if psi_stage_task == PSIConst.PSI_TASK_PREPARE:
                 self.bloom_filter_fpr = shareable[PSIConst.PSI_BLOOM_FILTER_FPR]
                 items = self.get_items()
-                print("**********************", client_name, items)
                 self.psi_client = PsiClient(items)
                 self.psi_server = PsiServer(items, self.bloom_filter_fpr)
                 return self.get_items_size()
@@ -78,7 +77,6 @@ class DhPSIExecutor(ClientExecutor):
 
     def setup(self, shareable: Shareable):
         items = self.get_items()
-        print("**********************", items)
         self.psi_client = PsiClient(items)
         self.psi_server = PsiServer(items, self.bloom_filter_fpr)
 
@@ -105,18 +103,30 @@ class DhPSIExecutor(ClientExecutor):
         return result
 
     def process_request(self, shareable: Shareable):
-        request_msg = shareable.get(PSIConst.PSI_REQUEST_MSG)
-        response = self.psi_server.process_request(request_msg)
-        result = Shareable()
-        result[PSIConst.PSI_RESPONSE_MSG] = response
+        if PSIConst.PSI_REQUEST_MSG in shareable:
+            request_msg = shareable.get(PSIConst.PSI_REQUEST_MSG)
+            response = self.psi_server.process_request(request_msg)
+            result = Shareable()
+            result[PSIConst.PSI_RESPONSE_MSG] = response
+            return result
+        elif PSIConst.PSI_REQUEST_MSG_SET in shareable:
+            request_msgs = shareable.get(PSIConst.PSI_REQUEST_MSG_SET)
+            result = Shareable()
+            client_responses = {}
+            for client_name in request_msgs:
+                response = self.psi_server.process_request(request_msgs[client_name])
+                client_responses[client_name] = response
+            result[PSIConst.PSI_RESPONSE_MSG] = client_responses
+        else:
+            raise ValueError(
+                "Required PSI Message PSIConst.PSI_REQUEST_MSG or PSIConst.PSI_REQUEST_MSG_SET is not provided")
+
         return result
 
     def calculate_intersection(self, shareable: Shareable):
         response_msg = shareable.get(PSIConst.PSI_RESPONSE_MSG)
         intersections = self.psi_client.get_intersection(response_msg)
         self.intersects = intersections
-        client_name = self.fl_ctx.get_identity_name()
-        print(f"******** client {client_name}, intersections = {intersections}")
         self.local_psi_handler.save(intersections)
         result = Shareable()
         result[PSIConst.PSI_ITEMS_SIZE] = len(intersections)
