@@ -63,13 +63,8 @@ class DhPSIWorkFlow(PSIWorkflow):
 
         self.log_info(self.fl_ctx, f"order sites = {self.ordered_sites}")
 
-        self.forward_processed.update(self.forward_pass(self.ordered_sites))
+        self.forward_pass(self.ordered_sites, self.forward_processed)
         self.backward_processed.update(self.backward_pass(self.ordered_sites))
-        if len(self.backward_processed) < len(self.ordered_sites) - 1:
-            self.log_error(self.fl_ctx, "incomplete for all sites' intersections")
-            self.log_error(self.fl_ctx, "completed ones are {self.backward_processed}")
-            raise RuntimeError("process failed without completing all sites ")
-
         self.log_pass_time_taken()
 
     def log_pass_time_taken(self):
@@ -90,11 +85,12 @@ class DhPSIWorkFlow(PSIWorkflow):
         site_sizes = []
         for site_name in results:
             data = results[site_name].data
-            print("****** site:", site_name, "data = ", data)
             if PSIConst.PSI_ITEMS_SIZE in data:
                 size = data[PSIConst.PSI_ITEMS_SIZE]
             else:
                 size = 0
+
+            self.log_info(self.fl_ctx, f"****** site:{site_name}, size = {size}")
 
             if size > 0:
                 c = SiteSize(site_name, size)
@@ -103,67 +99,107 @@ class DhPSIWorkFlow(PSIWorkflow):
         return site_sizes
 
     @measure_time
-    def forward_pass(self, ordered_sites: List[SiteSize], reverse=False) -> dict:
-        processed = {}
+    def forward_pass(self, ordered_sites: List[SiteSize], processed: Dict[str, int]) -> dict:
         if self.abort_signal.triggered:
-            return processed
+            return {}
 
         total_sites = len(ordered_sites)
         if total_sites <= 1:
-            return processed
-        #
-        self.prepare_setup_message(reset=True)
-        self.prepare_request(reset=True)
-        self.process_request(reset=True)
-        self.calculate_intersection(reset=True)
+            return {}
 
-        start, end, step = self.get_directional_range(total_sites, reverse)
-        for i in range(start, end, step):
-            s = ordered_sites[i]
-            c = ordered_sites[i + step]
-            setup_msg = self.prepare_setup_message(s, c)
-            request = self.prepare_request(c, setup_msg)
-            response = self.process_request(s, c.name, request[c.name])
-            client_intersect = self.calculate_intersection(c, response)
-            processed.update(client_intersect)
+        # reset time measurements
+        self.parallel_forward_pass(ordered_sites, processed)
 
-        self.report_time_taken(reverse)
-        return processed
+    def pairwise_setup(self, ordered_sites: List[SiteSize]):
+        total_sites = len(ordered_sites)
+        n = int(total_sites / 2)
+        task_inputs = {}
+        for i in range(n):
+            k = 2 * i
+            s = ordered_sites[k]
+            c = ordered_sites[k + 1]
+            inputs = Shareable()
+            inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_SETUP
+            inputs[PSIConst.PSI_ITEMS_SIZE] = c.size
+            task_inputs[s.name] = inputs
 
-    def report_time_taken(self, reverse):
-        direction = "backward" if reverse else "forward"
-        self.log_info(
-            self.fl_ctx,
-            f"{direction} pass, prepare_setup_message {self.prepare_setup_message.time_taken} "
-            f"(ms) with {self.prepare_setup_message.count} calls",
-        )
-        self.log_info(
-            self.fl_ctx,
-            f"{direction} pass, prepare_request {self.prepare_request.time_taken} "
-            f"(ms) with {self.prepare_request.count} calls",
-        )
-        self.log_info(
-            self.fl_ctx,
-            f"{direction} pass, process_request {self.process_request.time_taken} "
-            f"(ms) with {self.process_request.count} calls",
-        )
-        self.log_info(
-            self.fl_ctx,
-            f"{direction} pass, calculate_intersection {self.calculate_intersection.time_taken} "
-            f"(ms) with {self.calculate_intersection.count} calls",
-        )
+        bop = BroadcastAndWait(self.fl_ctx, self.controller)
+        results = bop.multicasts_and_wait(task_name=self.task_name,
+                                          task_inputs=task_inputs,
+                                          abort_signal=self.abort_signal)
+        return {site_name: results[site_name].data[PSIConst.PSI_SETUP_MSG] for site_name in results}
 
-    def get_directional_range(self, total: int, reverse: bool = False):
-        if reverse:
-            start = total - 1
-            end = -1
-            step = -1
+    def pairwise_requests(self, ordered_sites: List[SiteSize], setup_msgs: Dict[str, str]):
+        total_sites = len(ordered_sites)
+        n = int(total_sites / 2)
+        task_inputs = {}
+        for i in range(n):
+            k = 2 * i
+            s = ordered_sites[k]
+            c = ordered_sites[k + 1]
+            inputs = Shareable()
+            inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_REQUEST
+            inputs[PSIConst.PSI_SETUP_MSG] = setup_msgs[s.name]
+            task_inputs[c.name] = inputs
+        bop = BroadcastAndWait(self.fl_ctx, self.controller)
+        results = bop.multicasts_and_wait(task_name=self.task_name,
+                                          task_inputs=task_inputs,
+                                          abort_signal=self.abort_signal)
+        return {site_name: results[site_name].data[PSIConst.PSI_REQUEST_MSG] for site_name in results}
+
+    def pairwise_responses(self, ordered_sites: List[SiteSize], request_msgs: Dict[str, str]):
+        total_sites = len(ordered_sites)
+        n = int(total_sites / 2)
+        task_inputs = {}
+        for i in range(n):
+            k = 2 * i
+            s = ordered_sites[k]
+            c = ordered_sites[k + 1]
+            inputs = Shareable()
+            inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_RESPONSE
+            inputs[PSIConst.PSI_REQUEST_MSG] = request_msgs[c.name]
+            task_inputs[s.name] = inputs
+
+        bop = BroadcastAndWait(self.fl_ctx, self.controller)
+        results = bop.multicasts_and_wait(task_name=self.task_name,
+                                          task_inputs=task_inputs,
+                                          abort_signal=self.abort_signal)
+        return {site_name: results[site_name].data[PSIConst.PSI_RESPONSE_MSG] for site_name in results}
+
+    def pairwise_intersect(self, ordered_sites: List[SiteSize], response_msg: Dict[str, str]):
+        total_sites = len(ordered_sites)
+        n = int(total_sites / 2)
+        task_inputs = {}
+        for i in range(n):
+            k = 2 * i
+            s = ordered_sites[k]
+            c = ordered_sites[k + 1]
+            inputs = Shareable()
+            inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_INTERSECT
+            inputs[PSIConst.PSI_RESPONSE_MSG] = response_msg[s.name]
+            task_inputs[c.name] = inputs
+        bop = BroadcastAndWait(self.fl_ctx, self.controller)
+        results = bop.multicasts_and_wait(task_name=self.task_name,
+                                          task_inputs=task_inputs,
+                                          abort_signal=self.abort_signal)
+        return {site_name: results[site_name].data[PSIConst.PSI_ITEMS_SIZE] for site_name in results}
+
+    def parallel_forward_pass(self, target_sites, processed: dict):
+        total_sites = len(target_sites)
+        if total_sites < 2:
+            final_site = target_sites[0]
+            processed.update({final_site.name: final_site.size})
         else:
-            start = 0
-            end = total - 1
-            step = 1
+            setup_msgs = self.pairwise_setup(target_sites)
+            request_msgs = self.pairwise_requests(target_sites, setup_msgs)
+            response_msg = self.pairwise_responses(target_sites, request_msgs)
+            it_sites = self.pairwise_intersect(target_sites, response_msg)
+            processed.update(it_sites)
+            new_targets = [SiteSize(site.name, it_sites[site.name]) for site in target_sites if site.name in it_sites]
+            if total_sites % 2 == 1:
+                new_targets.append(target_sites[int(total_sites / 2) + 1])
 
-        return start, end, step
+            return self.parallel_forward_pass(new_targets, processed)
 
     @measure_time
     def backward_pass(self, ordered_clients: list) -> dict:
@@ -174,23 +210,12 @@ class DhPSIWorkFlow(PSIWorkflow):
         total_clients = len(ordered_clients)
         if total_clients <= 1:
             return processed
-
         self.log_info(self.fl_ctx, f"forward_processed = {self.forward_processed}")
+        status = self.parallel_back_pass(ordered_clients)
 
-        if len(self.forward_processed) == total_clients - 1:
-            # status = self.sequential_back_pass(ordered_clients)
-            # self.log_info(self.fl_ctx, f"*********** sequential_back_pass took {self.sequential_back_pass.time_taken} (ms)")
-
-            status = self.parallel_back_pass(ordered_clients)
-            self.log_info(self.fl_ctx, f"********************* parallel_back_pass took {self.parallel_back_pass.time_taken} (ms)")
-            return status
-        else:
-            raise ValueError("started backward pass before finish the forward pass")
-
-    @measure_time
-    def sequential_back_pass(self, ordered_clients: list):
-        # Sequential version
-        return self.forward_pass(ordered_clients, reverse=True)
+        time_taken = self.parallel_back_pass.time_taken
+        self.log_info(self.fl_ctx, f"parallel_back_pass took {time_taken} (ms)")
+        return status
 
     @measure_time
     def parallel_back_pass(self, ordered_clients: list):
@@ -260,7 +285,6 @@ class DhPSIWorkFlow(PSIWorkflow):
 
         return updated_sites
 
-    @collect_time
     def prepare_sites(self, direction: str, abort_signal):
         self.log_info(self.fl_ctx, f" start to prepare_sites, stage task : {PSIConst.PSI_TASK_PREPARE}")
         inputs = Shareable()
@@ -280,24 +304,6 @@ class DhPSIWorkFlow(PSIWorkflow):
         self.log_info(self.fl_ctx, f"{PSIConst.PSI_TASK_PREPARE} results = {results}")
         self.ordered_sites = self.get_ordered_sites(results)
 
-    @collect_time
-    def prepare_setup_message(self, s: SiteSize, c: SiteSize) -> dict:
-        inputs = Shareable()
-        inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_SETUP
-        inputs[PSIConst.PSI_ITEMS_SIZE] = c.size
-        targets = [s.name]
-
-        bop = BroadcastAndWait(self.fl_ctx, self.controller)
-        results = bop.broadcast_and_wait(task_name=self.task_name,
-                                         task_input=inputs,
-                                         targets=targets,
-                                         abort_signal=self.abort_signal)
-
-        dxo = results[s.name]
-        setup_msg = dxo.data[PSIConst.PSI_SETUP_MSG]
-        self.log_info(self.fl_ctx, f"received setup message from {s.name} for {c.name}")
-        return {c.name: setup_msg}
-
     def prepare_setup_messages(self, s: SiteSize, other_site_sizes: Set[int]) -> Dict[str, str]:
         inputs = Shareable()
         inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_SETUP
@@ -310,54 +316,3 @@ class DhPSIWorkFlow(PSIWorkflow):
         dxo = results[s.name]
         return dxo.data[PSIConst.PSI_SETUP_MSG]
 
-    @collect_time
-    def prepare_request(self, c: SiteSize, setup_msg: dict) -> dict:
-        inputs = Shareable()
-        inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_REQUEST
-        inputs[PSIConst.PSI_SETUP_MSG] = setup_msg[c.name]
-        targets = [c.name]
-        bop = BroadcastAndWait(self.fl_ctx, self.controller)
-        results = bop.broadcast_and_wait(task_name=self.task_name,
-                                         task_input=inputs,
-                                         targets=targets,
-                                         abort_signal=self.abort_signal)
-
-        dxo = results[c.name]
-        request_msg = dxo.data[PSIConst.PSI_REQUEST_MSG]
-        self.log_info(self.fl_ctx, f"received request message from {c.name}")
-        return {c.name: request_msg}
-
-    @collect_time
-    def process_request(self, s: SiteSize, c_name: str, response_msg: str):
-        inputs = Shareable()
-        inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_RESPONSE
-        inputs[PSIConst.PSI_REQUEST_MSG] = response_msg
-        targets = [s.name]
-
-        bop = BroadcastAndWait(self.fl_ctx, self.controller)
-        results = bop.broadcast_and_wait(task_name=self.task_name,
-                                         task_input=inputs,
-                                         targets=targets,
-                                         abort_signal=self.abort_signal)
-        dxo = results[s.name]
-        response_msg = dxo.data[PSIConst.PSI_RESPONSE_MSG]
-        self.log_info(self.fl_ctx, f"received response message from {s.name} for {c_name}")
-        return {c_name: response_msg}
-
-    @collect_time
-    def calculate_intersection(self, c: SiteSize, response: dict):
-        inputs = Shareable()
-        inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_INTERSECT
-        inputs[PSIConst.PSI_RESPONSE_MSG] = response[c.name]
-        targets = [c.name]
-
-        bop = BroadcastAndWait(self.fl_ctx, self.controller)
-        results = bop.broadcast_and_wait(task_name=self.task_name,
-                                         task_input=inputs,
-                                         targets=targets,
-                                         abort_signal=self.abort_signal)
-
-        dxo = results[c.name]
-        intersect_size = dxo.data[PSIConst.PSI_ITEMS_SIZE]
-        self.log_info(self.fl_ctx, f"received intersection size from {c.name}: {intersect_size}")
-        return {c.name: intersect_size}
