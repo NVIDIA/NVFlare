@@ -106,17 +106,9 @@ class _Registry:
 
 class _Waiter(threading.Event):
 
-    """
-    Note: A waiter is an Event type. The timing to access the same attribute from DIFFERENT threads is not guaranteed.
-    For example, thread A sets the value of "default_replies" at time T1, thread B sets value at time T2, even if
-    T2 > T1, it is not guaranteed that thread B's value is the final value of "default_replies".
-    """
-
     def __init__(self, targets: List[str]):
         super().__init__()
-        self.default_replies = {}        # target_id => reply
-        for t in targets:
-            self.default_replies[t] = make_reply(ReturnCode.TIMEOUT)
+        self.targets = [x for x in targets]
         self.reply_time = {}     # target_id => reply recv timestamp
         self.send_time = time.time()
         self.id = str(uuid.uuid4())
@@ -726,12 +718,6 @@ class Cell(MessageReceiver, EndpointMonitor):
         else:
             self.logger.debug(f"{self.my_info.fqcn}: no CellAgent for {target}")
 
-            if FQCN.is_parent(self.my_info.fqcn, target):
-                raise RuntimeError(f"{self.my_info.fqcn}: backbone broken: no path to child {target}")
-
-            elif FQCN.is_parent(target, self.my_info.fqcn):
-                raise RuntimeError(f"{self.my_info.fqcn}: backbone broken: no path to parent {target}")
-
         if len(fqcn_path) == 1:
             return None
         return self._try_path(fqcn_path[:-1])
@@ -758,18 +744,24 @@ class Cell(MessageReceiver, EndpointMonitor):
             return agent.endpoint
 
         if same_family(self.my_info, target_info):
+            if FQCN.is_parent(self.my_info.fqcn, target_fqcn):
+                self.logger.error(f"{self.my_info.fqcn}: backbone broken: no path to child {target_fqcn}")
+                return None
+            elif FQCN.is_parent(target_fqcn, self.my_info.fqcn):
+                self.logger.error(f"{self.my_info.fqcn}: backbone broken: no path to parent {target_fqcn}")
+
             self.logger.debug(f"{self.my_info.fqcn}: find path in the same family")
             if FQCN.is_ancestor(self.my_info.fqcn, target_fqcn):
                 # I am the ancestor of the target
                 self.logger.debug(f"{self.my_info.fqcn}: I'm ancestor of the target {target_fqcn}")
                 return self._try_path(target_info.path)
             else:
-                # target is my ancestor or we share the same ancestor - go to my parent!
+                # target is my ancestor, or we share the same ancestor - go to my parent!
                 self.logger.debug(f"{self.my_info.fqcn}: target {target_fqcn} is or share my ancestor")
-                my_parent = FQCN.get_parent(self.my_info.fqcn)
-                agent = self.agents.get(my_parent)
+                parent_fqcn = FQCN.get_parent(self.my_info.fqcn)
+                agent = self.agents.get(parent_fqcn)
                 if not agent:
-                    self.logger.error(f"{self.my_info.fqcn}: broken backbone - no path to may parent {my_parent}")
+                    self.logger.error(f"{self.my_info.fqcn}: broken backbone - no path to parent {parent_fqcn}")
                     return None
                 return agent.endpoint
 
@@ -781,17 +773,19 @@ class Cell(MessageReceiver, EndpointMonitor):
         # cannot find path to the target
         # try the server root
         # we assume that all client roots connect to the server root.
-        with self.agent_lock:
-            for _, agent in self.agents.items():
-                if agent.info.is_on_server and agent.info.is_root:
-                    return agent.endpoint
+        root_agent = self.agents.get(FQCN.ROOT_SERVER)
+        if root_agent:
+            return root_agent.endpoint
 
         # no direct path to the server root
         # let my parent handle it if I have a parent
         if self.my_info.gen > 1:
-            ep = self._try_path(self.my_info.path[:-1])
-            if ep:
-                return ep
+            parent_fqcn = FQCN.get_parent(self.my_info.fqcn)
+            agent = self.agents.get(parent_fqcn)
+            if not agent:
+                self.logger.error(f"{self.my_info.fqcn}: broken backbone - no path to parent {parent_fqcn}")
+                return None
+            return agent.endpoint
 
         self.logger.error(f"{self.my_info.fqcn}: cannot find path to {target_fqcn}")
         return None
@@ -914,7 +908,7 @@ class Cell(MessageReceiver, EndpointMonitor):
         reply.
 
         To avoid this kind of problems, we now use two sets of values in the waiter object.
-        One set is for this thread: waiter.default_replies
+        One set is for this thread: targets
         Another set is for the reply processing thread: received_replies, reply_time
 
         Args:
@@ -933,7 +927,7 @@ class Cell(MessageReceiver, EndpointMonitor):
         now = time.time()
         if not timeout:
             timeout = self.max_timeout
-
+        result = {}
         try:
             for _, tm in target_msgs.items():
                 request = tm.message
@@ -956,10 +950,10 @@ class Cell(MessageReceiver, EndpointMonitor):
             for t, sent in status.items():
                 if sent:
                     send_count += 1
-                    waiter.default_replies[t] = timeout_reply
+                    result[t] = timeout_reply
                 else:
                     self.logger.error(f"{self.my_info.fqcn}: failed to send to {t}")
-                    waiter.default_replies[t] = err_reply
+                    result[t] = err_reply
                     waiter.reply_time[t] = now
 
             if send_count > 0:
@@ -982,7 +976,6 @@ class Cell(MessageReceiver, EndpointMonitor):
         finally:
             self.waiters.pop(waiter.id, None)
             self.logger.debug(f"released waiter on REQ {waiter.id}")
-        result = waiter.default_replies
         if waiter.received_replies:
             result.update(waiter.received_replies)
         return result
@@ -1290,17 +1283,18 @@ class Cell(MessageReceiver, EndpointMonitor):
             waiter = self.waiters.get(rid, None)
             if waiter:
                 assert isinstance(waiter, _Waiter)
-                if req_dest not in waiter.default_replies.keys():
-                    self.logger.error(format_log_message(
-                        self.my_info.fqcn, message, f"unexpected reply for {rid} from {req_dest}"))
-                    self.logger.error(f"req_dest='{req_dest}', expecting={waiter.default_replies.keys()}")
+                if req_dest not in waiter.targets:
+                    self.logger.error(
+                        format_log_message(
+                            self.my_info.fqcn, message, f"unexpected reply for {rid} from {req_dest}"))
+                    self.logger.error(f"req_dest='{req_dest}', expecting={waiter.targets}")
                     return
                 waiter.received_replies[req_dest] = message
                 waiter.reply_time[req_dest] = time.time()
 
                 # all targets replied?
                 all_targets_replied = True
-                for t, _ in waiter.default_replies.items():
+                for t in waiter.targets:
                     if not waiter.reply_time.get(t):
                         all_targets_replied = False
                         break
@@ -1309,13 +1303,13 @@ class Cell(MessageReceiver, EndpointMonitor):
                     self.logger.debug(
                         format_log_message(
                             self.my_info.fqcn, message,
-                            f"trigger waiter - replies received from {len(waiter.default_replies)} targets for {rid}"))
+                            f"trigger waiter - replies received from {len(waiter.targets)} targets for {rid}"))
                     waiter.set()  # trigger the waiting requests!
                 else:
                     self.logger.debug(
                         format_log_message(
                             self.my_info.fqcn, message,
-                            f"waiting - replies not received from {len(waiter.default_replies)} targets for req {rid}"))
+                            f"waiting - replies not received from {len(waiter.targets)} targets for req {rid}"))
             else:
                 self.logger.error(
                     format_log_message(

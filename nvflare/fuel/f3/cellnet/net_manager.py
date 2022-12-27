@@ -89,7 +89,10 @@ class NetManager(CommandModule):
                 )])
 
     def _cmd_cells(self, conn: Connection, args: [str]):
-        cell_fqcns = self.bot.request_cells_info()
+        err, cell_fqcns = self.bot.request_cells_info()
+        if err:
+            conn.append_error(err)
+
         for c in cell_fqcns:
             conn.append_string(c)
 
@@ -178,7 +181,13 @@ class NetManager(CommandModule):
             num_tries = int(args[1])
         if len(args) > 2:
             timeout = int(args[2])
-        targets = self.bot.request_cells_info()
+        err, targets = self.bot.request_cells_info()
+        if err:
+            conn.append_error(err)
+
+        if not targets:
+            conn.append_error("no targets to test")
+
         conn.append_string(f"starting stress test on {targets}", flush=True)
         result = self.bot.start_stress_test(
             targets=targets,

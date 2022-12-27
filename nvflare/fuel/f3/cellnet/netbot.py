@@ -116,8 +116,7 @@ class NetBot:
             self,
             request: Message
     ) -> Union[None, Message]:
-        req_headers = dict(request.headers)
-        return new_message(payload=req_headers)
+        return new_message(payload=dict(request.headers))
 
     def _do_start_route(
             self,
@@ -129,7 +128,7 @@ class NetBot:
             return make_reply(ReturnCode.PROCESS_EXCEPTION, f"bad target fqcn {err}")
         assert isinstance(target_fqcn, str)
         reply_headers, req_headers = self.get_route_info(target_fqcn)
-        return new_message(payload={"request": req_headers, "reply": reply_headers})
+        return new_message(payload={"request": dict(req_headers), "reply": dict(reply_headers)})
 
     def _get_agents(self) -> List[str]:
         return list(self.cell.agents.keys())
@@ -229,8 +228,9 @@ class NetBot:
                 "reply": reply.headers
             }, {}
 
-    def request_cells_info(self) -> List[str]:
+    def request_cells_info(self) -> (str, List[str]):
         result = [self.cell.get_fqcn()]
+        err = ""
         replies = self._broadcast_to_subs(topic=_TOPIC_CELLS)
         for t, r in replies.items():
             assert isinstance(r, Message)
@@ -239,8 +239,8 @@ class NetBot:
                 sub_result = r.payload
                 result.extend(sub_result)
             else:
-                result.append(f"no reply from {t}: {rc}")
-        return result
+                err = f"no reply from {t}: {rc}"
+        return err, result
 
     def _get_url_use_of_cell(self, url: str):
         cell = self.cell
@@ -332,7 +332,7 @@ class NetBot:
             self,
             request: Message
     ) -> Union[None, Message]:
-        results = self.request_cells_info()
+        _, results = self.request_cells_info()
         return new_message(payload=results)
 
     def stop(self):
