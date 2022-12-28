@@ -61,7 +61,6 @@ class BroadcastAndWait(FLComponent, ABC):
         for client_name in tasks:
             self.controller.broadcast(task=tasks[client_name], fl_ctx=self.fl_ctx, targets=[client_name])
 
-        # todo: multi-thread wait( do we need it ?)
         for client_name in tasks:
             self.log_info(self.fl_ctx, f"wait for client {client_name} task")
             self.controller.wait_for_task(tasks[client_name], abort_signal)
