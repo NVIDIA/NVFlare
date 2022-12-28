@@ -36,21 +36,6 @@ class SamplePSI(PSI):
         return [f"user_id-{i}" for i in user_id_range]
 
 
-#
-# site: site-9 data =  { 'PSI_ITEM_SIZE': 111112}
-# site: site-8 data =  { 'PSI_ITEM_SIZE': 125000}
-# site: site-6 data =  { 'PSI_ITEM_SIZE': 166667}
-# site: site-10 data = { 'PSI_ITEM_SIZE': 200000}
-# site: site-7 data =  { 'PSI_ITEM_SIZE': 285715}
-# site: site-3 data =  { 'PSI_ITEM_SIZE': 333334}
-# site: site-5 data =  { 'PSI_ITEM_SIZE': 400000}
-# site: site-4 data =  { 'PSI_ITEM_SIZE': 500000}
-# site: site-2 data =  { 'PSI_ITEM_SIZE': 1000000}
-# site: site-1 data =  { 'PSI_ITEM_SIZE': 2000000}
-
-
-# site: site-7 data =  { 'PSI_ITEM_SIZE': 285715}
-# site: site-3 data =  { 'PSI_ITEM_SIZE': 333334}
 # The following combo will cause openmined PSI to fail during setup
 # client_items_size = 333334
 # server_items_size = 397
