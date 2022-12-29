@@ -36,6 +36,7 @@ class DhPSIExecutor(ClientExecutor):
         self.psi_server = None
         self.intersects: Optional[List[str]] = None
         self.local_psi_handler: Optional[PSI] = None
+        self.client_name = None
 
     def initialize(self, fl_ctx: FLContext):
         super().initialize(fl_ctx)
@@ -43,6 +44,7 @@ class DhPSIExecutor(ClientExecutor):
 
     def client_exec(self, task_name: str, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
         client_name = fl_ctx.get_identity_name()
+        self.client_name = client_name
         self.log_info(fl_ctx, f"Executing task '{task_name}' for {client_name}")
 
         if PSIConst.PSI_TASK == task_name:
@@ -70,7 +72,7 @@ class DhPSIExecutor(ClientExecutor):
     def create_request(self, shareable: Shareable):
         setup_msg = shareable.get(PSIConst.PSI_SETUP_MSG)
         self.psi_client.receive_setup(setup_msg)
-        request = self.psi_client.get_request()
+        request = self.psi_client.get_request(self.get_items())
         result = Shareable()
         result[PSIConst.PSI_REQUEST_MSG] = request
         return result

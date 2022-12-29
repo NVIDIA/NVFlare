@@ -32,7 +32,6 @@ class PsiClient:
         self.reveal_intersection = True
         self.psi_client = psi.client.CreateWithNewKey(self.reveal_intersection)
         self.items = items
-        self.request = self.psi_client.CreateRequest(items).SerializeToString()
         self.setup = None
 
     def get_items_size(self) -> int:
@@ -48,8 +47,10 @@ class PsiClient:
         s_setup_sub.ParseFromString(setup_msg)
         self.setup = s_setup_sub
 
-    def get_request(self):
-        return self.request
+    def get_request(self, items):
+        self.items = items
+        request = self.psi_client.CreateRequest(items).SerializeToString()
+        return request
 
     def get_intersection(self, server_response_msg: str) -> List[str]:
         """

@@ -60,16 +60,28 @@ class DhPSIWorkFlow(PSIWorkflow):
             return False
 
         self.abort_signal = abort_signal
-
         self.log_info(self.fl_ctx, f"order sites = {self.ordered_sites}")
 
-        self.forward_pass(self.ordered_sites, self.forward_processed)
-        self.backward_processed.update(self.backward_pass(self.ordered_sites))
+        intersect_site = self.forward_pass(self.ordered_sites, self.forward_processed)
+        self.backward_processed.update(self.backward_pass(self.ordered_sites, intersect_site))
+
+        self.log_info(self.fl_ctx, f"intersection sizes {self.backward_processed}, intersect_site ={intersect_site} ")
+
+        self.check_final_intersection_sizes(intersect_site)
+
         self.log_pass_time_taken()
 
+    def check_final_intersection_sizes(self, intersect_site: SiteSize):
+        all_equal = all(value == intersect_site.size for value in self.backward_processed.values())
+        if not all_equal:
+            raise RuntimeError(
+                f"Intersection calculation failed: {self.backward_processed}, intersect_site ={intersect_site} ")
+        else:
+            self.log_info(self.fl_ctx, f"Intersection calculation succeed")
+
     def log_pass_time_taken(self):
-        self.log_info(self.fl_ctx, f"'********* forward_pass' took {self.forward_pass.time_taken} ms.")
-        self.log_info(self.fl_ctx, f"'********* backward_pass' took {self.backward_pass.time_taken} ms.")
+        self.log_info(self.fl_ctx, f"'forward_pass' took {self.forward_pass.time_taken} ms.")
+        self.log_info(self.fl_ctx, f"'backward_pass' took {self.backward_pass.time_taken} ms.")
 
     def post_workflow(self, abort_signal: Signal):
         pass
@@ -90,8 +102,6 @@ class DhPSIWorkFlow(PSIWorkflow):
             else:
                 size = 0
 
-            self.log_info(self.fl_ctx, f"****** site:{site_name}, size = {size}")
-
             if size > 0:
                 c = SiteSize(site_name, size)
                 site_sizes.append(c)
@@ -99,25 +109,23 @@ class DhPSIWorkFlow(PSIWorkflow):
         return site_sizes
 
     @measure_time
-    def forward_pass(self, ordered_sites: List[SiteSize], processed: Dict[str, int]) -> dict:
+    def forward_pass(self, ordered_sites: List[SiteSize], processed: Dict[str, int]) -> SiteSize:
         if self.abort_signal.triggered:
-            return {}
+            return ordered_sites[0]
 
         total_sites = len(ordered_sites)
         if total_sites <= 1:
-            return {}
+            return ordered_sites[0]
 
-        # reset time measurements
-        self.parallel_forward_pass(ordered_sites, processed)
+        return self.parallel_forward_pass(ordered_sites, processed)
 
     def pairwise_setup(self, ordered_sites: List[SiteSize]):
         total_sites = len(ordered_sites)
         n = int(total_sites / 2)
         task_inputs = {}
         for i in range(n):
-            k = 2 * i
-            s = ordered_sites[k]
-            c = ordered_sites[k + 1]
+            s = ordered_sites[i]
+            c = ordered_sites[i + n]
             inputs = Shareable()
             inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_SETUP
             inputs[PSIConst.PSI_ITEMS_SIZE] = c.size
@@ -134,13 +142,13 @@ class DhPSIWorkFlow(PSIWorkflow):
         n = int(total_sites / 2)
         task_inputs = {}
         for i in range(n):
-            k = 2 * i
-            s = ordered_sites[k]
-            c = ordered_sites[k + 1]
+            s = ordered_sites[i]
+            c = ordered_sites[i + n]
             inputs = Shareable()
             inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_REQUEST
             inputs[PSIConst.PSI_SETUP_MSG] = setup_msgs[s.name]
             task_inputs[c.name] = inputs
+
         bop = BroadcastAndWait(self.fl_ctx, self.controller)
         results = bop.multicasts_and_wait(task_name=self.task_name,
                                           task_inputs=task_inputs,
@@ -152,9 +160,8 @@ class DhPSIWorkFlow(PSIWorkflow):
         n = int(total_sites / 2)
         task_inputs = {}
         for i in range(n):
-            k = 2 * i
-            s = ordered_sites[k]
-            c = ordered_sites[k + 1]
+            s = ordered_sites[i]
+            c = ordered_sites[i + n]
             inputs = Shareable()
             inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_RESPONSE
             inputs[PSIConst.PSI_REQUEST_MSG] = request_msgs[c.name]
@@ -171,13 +178,13 @@ class DhPSIWorkFlow(PSIWorkflow):
         n = int(total_sites / 2)
         task_inputs = {}
         for i in range(n):
-            k = 2 * i
-            s = ordered_sites[k]
-            c = ordered_sites[k + 1]
+            s = ordered_sites[i]
+            c = ordered_sites[i + n]
             inputs = Shareable()
             inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_INTERSECT
             inputs[PSIConst.PSI_RESPONSE_MSG] = response_msg[s.name]
             task_inputs[c.name] = inputs
+
         bop = BroadcastAndWait(self.fl_ctx, self.controller)
         results = bop.multicasts_and_wait(task_name=self.task_name,
                                           task_inputs=task_inputs,
@@ -185,10 +192,13 @@ class DhPSIWorkFlow(PSIWorkflow):
         return {site_name: results[site_name].data[PSIConst.PSI_ITEMS_SIZE] for site_name in results}
 
     def parallel_forward_pass(self, target_sites, processed: dict):
+        self.log_info(self.fl_ctx, f"setup sites -1 {target_sites}")
+
         total_sites = len(target_sites)
         if total_sites < 2:
             final_site = target_sites[0]
             processed.update({final_site.name: final_site.size})
+            return final_site
         else:
             setup_msgs = self.pairwise_setup(target_sites)
             request_msgs = self.pairwise_requests(target_sites, setup_msgs)
@@ -197,12 +207,12 @@ class DhPSIWorkFlow(PSIWorkflow):
             processed.update(it_sites)
             new_targets = [SiteSize(site.name, it_sites[site.name]) for site in target_sites if site.name in it_sites]
             if total_sites % 2 == 1:
-                new_targets.append(target_sites[int(total_sites / 2) + 1])
+                new_targets.append(target_sites[total_sites - 1])
 
             return self.parallel_forward_pass(new_targets, processed)
 
     @measure_time
-    def backward_pass(self, ordered_clients: list) -> dict:
+    def backward_pass(self, ordered_clients: list, intersect_site: SiteSize) -> dict:
         processed = {}
         if self.abort_signal.triggered:
             return processed
@@ -210,24 +220,23 @@ class DhPSIWorkFlow(PSIWorkflow):
         total_clients = len(ordered_clients)
         if total_clients <= 1:
             return processed
-        self.log_info(self.fl_ctx, f"forward_processed = {self.forward_processed}")
-        status = self.parallel_back_pass(ordered_clients)
+        status = self.parallel_back_pass(ordered_clients, intersect_site)
 
         time_taken = self.parallel_back_pass.time_taken
         self.log_info(self.fl_ctx, f"parallel_back_pass took {time_taken} (ms)")
         return status
 
     @measure_time
-    def parallel_back_pass(self, ordered_clients: list):
+    def parallel_back_pass(self, ordered_clients: list, intersect_site: SiteSize):
         # parallel version
-        updated_sites = self.get_updated_site_sizes(ordered_clients)
-        total_clients = len(updated_sites)
-        s = updated_sites[total_clients - 1]
+        other_sites = [site for site in ordered_clients if site.name != intersect_site.name]
+        other_sites = self.get_updated_site_sizes(other_sites)
 
-        other_site_sizes = set([site.size for site in updated_sites if site.name != s.name])
+        s = intersect_site
+        other_site_sizes = set([site.size for site in other_sites])
         setup_msgs: Dict[str, str] = self.prepare_setup_messages(s, other_site_sizes)
 
-        site_setup_msgs = {site.name: setup_msgs[str(site.size)] for site in updated_sites if site.name != s.name}
+        site_setup_msgs = {site.name: setup_msgs[str(site.size)] for site in other_sites}
         request_msgs: Dict[str, str] = self.create_requests(site_setup_msgs)
         response_msg: Dict[str, str] = self.process_requests(s, request_msgs)
         return self.calculate_intersections(response_msg)
@@ -315,4 +324,3 @@ class DhPSIWorkFlow(PSIWorkflow):
                                          abort_signal=self.abort_signal)
         dxo = results[s.name]
         return dxo.data[PSIConst.PSI_SETUP_MSG]
-
