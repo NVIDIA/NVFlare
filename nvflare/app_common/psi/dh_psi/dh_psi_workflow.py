@@ -53,7 +53,7 @@ class DhPSIWorkFlow(PSIWorkflow):
         if abort_signal.triggered:
             return False
         self.abort_signal = abort_signal
-        self.prepare_sites(PSIConst.PSI_FORWARD, abort_signal)
+        self.prepare_sites(abort_signal)
 
     def workflow(self, abort_signal: Signal):
         if abort_signal.triggered:
@@ -293,7 +293,7 @@ class DhPSIWorkFlow(PSIWorkflow):
 
         return updated_sites
 
-    def prepare_sites(self, direction: str, abort_signal):
+    def prepare_sites(self,abort_signal):
 
         inputs = Shareable()
         inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_PREPARE
