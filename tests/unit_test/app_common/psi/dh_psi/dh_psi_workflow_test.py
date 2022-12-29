@@ -19,7 +19,6 @@ from nvflare.utils.decorators import collect_time, measure_time
 
 
 class TestDhPSIWorkflow:
-
     def test_get_ordered_sites(self):
         wf = DhPSIWorkFlow()
         data_1 = {PSIConst.PSI_ITEMS_SIZE: 1000}

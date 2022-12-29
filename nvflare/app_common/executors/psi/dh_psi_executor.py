@@ -121,7 +121,8 @@ class DhPSIExecutor(ClientExecutor):
             result[PSIConst.PSI_RESPONSE_MSG] = client_responses
         else:
             raise ValueError(
-                "Required PSI Message PSIConst.PSI_REQUEST_MSG or PSIConst.PSI_REQUEST_MSG_SET is not provided")
+                "Required PSI Message PSIConst.PSI_REQUEST_MSG or PSIConst.PSI_REQUEST_MSG_SET is not provided"
+            )
 
         return result
 

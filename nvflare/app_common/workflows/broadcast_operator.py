@@ -11,19 +11,18 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from abc import ABC
-from typing import Dict, List, Union, Optional
 import threading
+from abc import ABC
+from typing import Dict, List, Optional, Union
 
 from nvflare.apis.client import Client
 from nvflare.apis.dxo import DXO, from_shareable
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.impl.controller import ClientTask, Task, _TASK_KEY_DONE
+from nvflare.apis.impl.controller import ClientTask, Task
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
-from nvflare.app_common.app_constant import PSIConst
 from nvflare.app_common.workflows.common_controller import CommonController
 
 
@@ -39,31 +38,31 @@ class BroadcastAndWait(FLComponent, ABC):
         self.results: Dict[str, DXO] = {}
 
     def broadcast_and_wait(
-            self,
-            task_name: str,
-            task_input: Shareable,
-            targets: Union[List[Client], List[str], None] = None,
-            task_props: Optional[Dict] = None,
-            min_responses: int = 1,
-            abort_signal: Signal = None,
+        self,
+        task_name: str,
+        task_input: Shareable,
+        targets: Union[List[Client], List[str], None] = None,
+        task_props: Optional[Dict] = None,
+        min_responses: int = 1,
+        abort_signal: Signal = None,
     ) -> Dict[str, DXO]:
         task = Task(name=task_name, data=task_input, result_received_cb=self.results_cb, props=task_props)
         self.controller.broadcast_and_wait(task, self.fl_ctx, targets, min_responses, 0, abort_signal)
         return self.results
 
-    def multicasts_and_wait(self,
-                            task_name: str,
-                            task_inputs: Dict[str, Shareable],
-                            abort_signal: Signal = None,
-                            ) -> Dict[str, DXO]:
+    def multicasts_and_wait(
+        self,
+        task_name: str,
+        task_inputs: Dict[str, Shareable],
+        abort_signal: Signal = None,
+    ) -> Dict[str, DXO]:
 
         tasks: Dict[str, Task] = self.get_tasks(task_name, task_inputs)
         for client_name in tasks:
             self.controller.broadcast(task=tasks[client_name], fl_ctx=self.fl_ctx, targets=[client_name])
 
-        # todo: multi-thread wait( do we need it ?)
         for client_name in tasks:
-            self.log_info(self.fl_ctx, f"wait for client {client_name} task")
+            self.log_info(self.fl_ctx, f"wait for client {client_name} task {task_name}")
             self.controller.wait_for_task(tasks[client_name], abort_signal)
 
         return self.results
@@ -78,10 +77,10 @@ class BroadcastAndWait(FLComponent, ABC):
     def update_result(self, client_name: str, dxo: DXO):
         self.lock.acquire()
         try:
-            self.log_debug(self.fl_ctx, 'Acquired a lock')
+            self.log_debug(self.fl_ctx, "Acquired a lock")
             self.results.update({client_name: dxo})
         finally:
-            self.log_debug(self.fl_ctx, 'Released a lock')
+            self.log_debug(self.fl_ctx, "Released a lock")
             self.lock.release()
 
     def results_cb(self, client_task: ClientTask, fl_ctx: FLContext):

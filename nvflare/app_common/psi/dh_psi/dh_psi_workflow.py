@@ -20,7 +20,7 @@ from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import PSIConst
 from nvflare.app_common.psi.psi_workflow_spec import PSIWorkflow
 from nvflare.app_common.workflows.broadcast_operator import BroadcastAndWait
-from nvflare.utils.decorators import collect_time, measure_time
+from nvflare.utils.decorators import measure_time
 
 
 class SiteSize(NamedTuple):
@@ -75,9 +75,10 @@ class DhPSIWorkFlow(PSIWorkflow):
         all_equal = all(value == intersect_site.size for value in self.backward_processed.values())
         if not all_equal:
             raise RuntimeError(
-                f"Intersection calculation failed: {self.backward_processed}, intersect_site ={intersect_site} ")
+                f"Intersection calculation failed: {self.backward_processed}, intersect_site ={intersect_site} "
+            )
         else:
-            self.log_info(self.fl_ctx, f"Intersection calculation succeed")
+            self.log_info(self.fl_ctx, "Intersection calculation succeed")
 
     def log_pass_time_taken(self):
         self.log_info(self.fl_ctx, f"'forward_pass' took {self.forward_pass.time_taken} ms.")
@@ -90,7 +91,6 @@ class DhPSIWorkFlow(PSIWorkflow):
         pass
 
     def get_ordered_sites(self, results: Dict[str, DXO]):
-
         def compare_fn(e):
             return e.size
 
@@ -132,9 +132,9 @@ class DhPSIWorkFlow(PSIWorkflow):
             task_inputs[s.name] = inputs
 
         bop = BroadcastAndWait(self.fl_ctx, self.controller)
-        results = bop.multicasts_and_wait(task_name=self.task_name,
-                                          task_inputs=task_inputs,
-                                          abort_signal=self.abort_signal)
+        results = bop.multicasts_and_wait(
+            task_name=self.task_name, task_inputs=task_inputs, abort_signal=self.abort_signal
+        )
         return {site_name: results[site_name].data[PSIConst.PSI_SETUP_MSG] for site_name in results}
 
     def pairwise_requests(self, ordered_sites: List[SiteSize], setup_msgs: Dict[str, str]):
@@ -150,9 +150,9 @@ class DhPSIWorkFlow(PSIWorkflow):
             task_inputs[c.name] = inputs
 
         bop = BroadcastAndWait(self.fl_ctx, self.controller)
-        results = bop.multicasts_and_wait(task_name=self.task_name,
-                                          task_inputs=task_inputs,
-                                          abort_signal=self.abort_signal)
+        results = bop.multicasts_and_wait(
+            task_name=self.task_name, task_inputs=task_inputs, abort_signal=self.abort_signal
+        )
         return {site_name: results[site_name].data[PSIConst.PSI_REQUEST_MSG] for site_name in results}
 
     def pairwise_responses(self, ordered_sites: List[SiteSize], request_msgs: Dict[str, str]):
@@ -168,9 +168,9 @@ class DhPSIWorkFlow(PSIWorkflow):
             task_inputs[s.name] = inputs
 
         bop = BroadcastAndWait(self.fl_ctx, self.controller)
-        results = bop.multicasts_and_wait(task_name=self.task_name,
-                                          task_inputs=task_inputs,
-                                          abort_signal=self.abort_signal)
+        results = bop.multicasts_and_wait(
+            task_name=self.task_name, task_inputs=task_inputs, abort_signal=self.abort_signal
+        )
         return {site_name: results[site_name].data[PSIConst.PSI_RESPONSE_MSG] for site_name in results}
 
     def pairwise_intersect(self, ordered_sites: List[SiteSize], response_msg: Dict[str, str]):
@@ -186,9 +186,9 @@ class DhPSIWorkFlow(PSIWorkflow):
             task_inputs[c.name] = inputs
 
         bop = BroadcastAndWait(self.fl_ctx, self.controller)
-        results = bop.multicasts_and_wait(task_name=self.task_name,
-                                          task_inputs=task_inputs,
-                                          abort_signal=self.abort_signal)
+        results = bop.multicasts_and_wait(
+            task_name=self.task_name, task_inputs=task_inputs, abort_signal=self.abort_signal
+        )
         return {site_name: results[site_name].data[PSIConst.PSI_ITEMS_SIZE] for site_name in results}
 
     def parallel_forward_pass(self, target_sites, processed: dict):
@@ -249,9 +249,9 @@ class DhPSIWorkFlow(PSIWorkflow):
             inputs[PSIConst.PSI_RESPONSE_MSG] = response_msg[client_name]
             task_inputs[client_name] = inputs
         bop = BroadcastAndWait(self.fl_ctx, self.controller)
-        results = bop.multicasts_and_wait(task_name=self.task_name,
-                                          task_inputs=task_inputs,
-                                          abort_signal=self.abort_signal)
+        results = bop.multicasts_and_wait(
+            task_name=self.task_name, task_inputs=task_inputs, abort_signal=self.abort_signal
+        )
 
         intersects = {client_name: results[client_name].data[PSIConst.PSI_ITEMS_SIZE] for client_name in results}
         self.log_info(self.fl_ctx, f"received intersections : {intersects} ")
@@ -262,10 +262,9 @@ class DhPSIWorkFlow(PSIWorkflow):
         task_inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_RESPONSE
         task_inputs[PSIConst.PSI_REQUEST_MSG_SET] = request_msgs
         bop = BroadcastAndWait(self.fl_ctx, self.controller)
-        results = bop.broadcast_and_wait(task_name=self.task_name,
-                                         task_input=task_inputs,
-                                         targets=[s.name],
-                                         abort_signal=self.abort_signal)
+        results = bop.broadcast_and_wait(
+            task_name=self.task_name, task_input=task_inputs, targets=[s.name], abort_signal=self.abort_signal
+        )
 
         dxo = results[s.name]
         response_msgs = dxo.data[PSIConst.PSI_RESPONSE_MSG]
@@ -280,9 +279,9 @@ class DhPSIWorkFlow(PSIWorkflow):
             task_inputs[client_name] = inputs
 
         bop = BroadcastAndWait(self.fl_ctx, self.controller)
-        results = bop.multicasts_and_wait(task_name=self.task_name,
-                                          task_inputs=task_inputs,
-                                          abort_signal=self.abort_signal)
+        results = bop.multicasts_and_wait(
+            task_name=self.task_name, task_inputs=task_inputs, abort_signal=self.abort_signal
+        )
         request_msgs = {client_name: results[client_name].data[PSIConst.PSI_REQUEST_MSG] for client_name in results}
         return request_msgs
 
@@ -305,11 +304,13 @@ class DhPSIWorkFlow(PSIWorkflow):
         min_responses = len(engine.get_clients())
         self.log_info(self.fl_ctx, f"{PSIConst.PSI_TASK_PREPARE} BroadcastAndWait() on task {self.task_name}")
         bop = BroadcastAndWait(self.fl_ctx, self.controller)
-        results = bop.broadcast_and_wait(task_name=self.task_name,
-                                         task_input=inputs,
-                                         targets=targets,
-                                         min_responses=min_responses,
-                                         abort_signal=abort_signal)
+        results = bop.broadcast_and_wait(
+            task_name=self.task_name,
+            task_input=inputs,
+            targets=targets,
+            min_responses=min_responses,
+            abort_signal=abort_signal,
+        )
         self.log_info(self.fl_ctx, f"{PSIConst.PSI_TASK_PREPARE} results = {results}")
         self.ordered_sites = self.get_ordered_sites(results)
 
@@ -318,9 +319,8 @@ class DhPSIWorkFlow(PSIWorkflow):
         inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_SETUP
         inputs[PSIConst.PSI_ITEMS_SIZE_SET] = other_site_sizes
         bop = BroadcastAndWait(self.fl_ctx, self.controller)
-        results = bop.broadcast_and_wait(task_name=self.task_name,
-                                         task_input=inputs,
-                                         targets=[s.name],
-                                         abort_signal=self.abort_signal)
+        results = bop.broadcast_and_wait(
+            task_name=self.task_name, task_input=inputs, targets=[s.name], abort_signal=self.abort_signal
+        )
         dxo = results[s.name]
         return dxo.data[PSIConst.PSI_SETUP_MSG]
