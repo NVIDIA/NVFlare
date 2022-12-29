@@ -202,8 +202,8 @@ class DhPSIWorkFlow(PSIWorkflow):
         else:
             setup_msgs = self.pairwise_setup(target_sites)
             request_msgs = self.pairwise_requests(target_sites, setup_msgs)
-            response_msg = self.pairwise_responses(target_sites, request_msgs)
-            it_sites = self.pairwise_intersect(target_sites, response_msg)
+            response_msgs = self.pairwise_responses(target_sites, request_msgs)
+            it_sites = self.pairwise_intersect(target_sites, response_msgs)
             processed.update(it_sites)
             new_targets = [SiteSize(site.name, it_sites[site.name]) for site in target_sites if site.name in it_sites]
             if total_sites % 2 == 1:
@@ -220,14 +220,14 @@ class DhPSIWorkFlow(PSIWorkflow):
         total_clients = len(ordered_clients)
         if total_clients <= 1:
             return processed
-        status = self.parallel_back_pass(ordered_clients, intersect_site)
+        status = self.parallel_backward_pass(ordered_clients, intersect_site)
 
-        time_taken = self.parallel_back_pass.time_taken
+        time_taken = self.parallel_backward_pass.time_taken
         self.log_info(self.fl_ctx, f"parallel_back_pass took {time_taken} (ms)")
         return status
 
     @measure_time
-    def parallel_back_pass(self, ordered_clients: list, intersect_site: SiteSize):
+    def parallel_backward_pass(self, ordered_clients: list, intersect_site: SiteSize):
         # parallel version
         other_sites = [site for site in ordered_clients if site.name != intersect_site.name]
         other_sites = self.get_updated_site_sizes(other_sites)
@@ -238,8 +238,8 @@ class DhPSIWorkFlow(PSIWorkflow):
 
         site_setup_msgs = {site.name: setup_msgs[str(site.size)] for site in other_sites}
         request_msgs: Dict[str, str] = self.create_requests(site_setup_msgs)
-        response_msg: Dict[str, str] = self.process_requests(s, request_msgs)
-        return self.calculate_intersections(response_msg)
+        response_msgs: Dict[str, str] = self.process_requests(s, request_msgs)
+        return self.calculate_intersections(response_msgs)
 
     def calculate_intersections(self, response_msg) -> Dict[str, int]:
         task_inputs = {}
