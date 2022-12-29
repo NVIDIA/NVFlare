@@ -192,7 +192,7 @@ class DhPSIWorkFlow(PSIWorkflow):
         return {site_name: results[site_name].data[PSIConst.PSI_ITEMS_SIZE] for site_name in results}
 
     def parallel_forward_pass(self, target_sites, processed: dict):
-        self.log_info(self.fl_ctx, f"setup sites -1 {target_sites}")
+        self.log_info(self.fl_ctx, f"target_sites: {target_sites}")
 
         total_sites = len(target_sites)
         if total_sites < 2:
@@ -294,15 +294,14 @@ class DhPSIWorkFlow(PSIWorkflow):
         return updated_sites
 
     def prepare_sites(self, direction: str, abort_signal):
-        self.log_info(self.fl_ctx, f" start to prepare_sites, stage task : {PSIConst.PSI_TASK_PREPARE}")
+
         inputs = Shareable()
         inputs[PSIConst.PSI_TASK_KEY] = PSIConst.PSI_TASK_PREPARE
-        inputs[PSIConst.PSI_DIRECTION_KEY] = direction
         inputs[PSIConst.PSI_BLOOM_FILTER_FPR] = self.bloom_filter_fpr
         targets = None
         engine = self.fl_ctx.get_engine()
         min_responses = len(engine.get_clients())
-        self.log_info(self.fl_ctx, f"{PSIConst.PSI_TASK_PREPARE} BroadcastAndWait() on task {self.task_name}")
+
         bop = BroadcastAndWait(self.fl_ctx, self.controller)
         results = bop.broadcast_and_wait(
             task_name=self.task_name,

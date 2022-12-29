@@ -42,10 +42,7 @@ class PsiServer:
         Returns:
             setup (ServerSetup): The server setup protobuf serialize string
         """
-        print("client_items_size = ", client_items_size)
-        print("server_items_size = ", len(self.items))
         setup = self.psi_server.CreateSetupMessage(self.fpr, client_items_size, self.items)
-        # return setup
         return setup.SerializeToString()
 
     def process_request(self, client_request_msg) -> str:
