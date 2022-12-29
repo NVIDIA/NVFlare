@@ -99,7 +99,8 @@ sequenceDiagram
     Note over FLServer, PSI : create Request
     FLServer -->> DhPSIExecutor : PSI create_request, with setup message
     DhPSIExecutor -->> PsiClient: save (setup_msg), 
-    DhPSIExecutor -->> PsiClient : get_request()
+    DhPSIExecutor -->> DhPSIExecutor : items = get_items() : intersection or PSI.load_items()
+    DhPSIExecutor -->> PsiClient : get_request(items )
     PsiClient -->> DhPSIExecutor : request_msg
     DhPSIExecutor -->> FLServer:request_msg
  
