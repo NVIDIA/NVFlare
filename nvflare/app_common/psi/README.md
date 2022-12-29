@@ -72,6 +72,7 @@ sequenceDiagram
 sequenceDiagram
 
     participant FLServer
+    participant PSIExecutor
     participant DhPSIExecutor
     participant PsiServer
     participant PsiClient
@@ -79,44 +80,60 @@ sequenceDiagram
     participant FilePsiWriter
     
     Note over FLServer, PSI : PREPARE 
-    FLServer -->> DhPSIExecutor : PSI Prepare with fpr
+    FLServer -->>PSIExecutor: initialize()
+    PSIExecutor -->> PSIExecutor: get_client_executor()
+    PSIExecutor -->> PSIExecutor: psi_client_executor = DhPSIExecutor(local_psi_id)
+    FLServer -->> PSIExecutor: execute()
+        
+    Note over FLServer, PSI : PREPRAE
+    PSIExecutor -->> DhPSIExecutor: client_exec() : PSIConst.PSI_TASK_PREPARE
+    DhPSIExecutor -->> DhPSIExecutor : PSI Prepare with fpr
     DhPSIExecutor -->> PSI : load_terms()
     PSI -->> DhPSIExecutor: items
     DhPSIExecutor -->> DhPSIExecutor: load PsiClient(items)
     DhPSIExecutor -->> DhPSIExecutor: load PsiServer(items, fpr)
-    DhPSIExecutor -->> FLServer : items size
+    DhPSIExecutor -->> PSIExecutor: result
+    PSIExecutor -->> FLServer : items size
     
     Note over FLServer, PSI : SETUP
-    FLServer -->> DhPSIExecutor : PSI Setup
+    FLServer -->> PSIExecutor : PSI Setup
+    PSIExecutor -->> DhPSIExecutor:   PSI Setup
     DhPSIExecutor -->> DhPSIExecutor: setup(client_items_size)
     DhPSIExecutor -->> DhPSIExecutor : get_items(): items = intersection or PSI.load_items() 
     DhPSIExecutor -->> DhPSIExecutor: load PsiClient(items)
     DhPSIExecutor -->> DhPSIExecutor: load PsiServer(items, fpr)
     DhPSIExecutor -->> PsiServer: setup(client_items_size)
     PsiServer -->> DhPSIExecutor: setup_msg
-    DhPSIExecutor -->> FLServer: setup_msg
+    DhPSIExecutor -->> PSIExecutor: result
+    PSIExecutor -->> FLServer: setup_msg
     
     Note over FLServer, PSI : create Request
-    FLServer -->> DhPSIExecutor : PSI create_request, with setup message
+    FLServer -->> PSIExecutor :  PSI create_request, with setup message
+    PSIExecutor -->> DhPSIExecutor:  PSI create_request, with setup message
     DhPSIExecutor -->> PsiClient: save (setup_msg), 
     DhPSIExecutor -->> DhPSIExecutor : items = get_items() : intersection or PSI.load_items()
     DhPSIExecutor -->> PsiClient : get_request(items )
     PsiClient -->> DhPSIExecutor : request_msg
-    DhPSIExecutor -->> FLServer:request_msg
+    DhPSIExecutor -->> PSIExecutor: result
+    PSIExecutor -->> FLServer:request_msg
  
     Note over FLServer, PSI : process Request
-    FLServer -->> DhPSIExecutor : PSI process_request, with request_msg
+    FLServer -->> PSIExecutor : PSI process_request, with request_msg
+    PSIExecutor -->> DhPSIExecutor : PSI process_request, with request_msg
     DhPSIExecutor -->> PsiServer: process_request (request_msg), 
     PsiServer -->> DhPSIExecutor : response
-    DhPSIExecutor -->> FLServer : response
+    DhPSIExecutor -->> PSIExecutor: result
+    PSIExecutor -->> FLServer : response
  
     Note over FLServer, PSI : calculate intersection
-    FLServer -->> DhPSIExecutor : calculate_intersect with response msg
+    FLServer -->> PSIExecutor : calculate_intersect with response msg
+    PSIExecutor -->> DhPSIExecutor : calculate_intersect with response msg
     DhPSIExecutor -->> PsiClient: get_intersection (response_msg) 
     PsiClient -->> DhPSIExecutor : intersection
     DhPSIExecutor -->> PSI : save intersection
     PSI -->> FilePsiWriter : save intersection
-    DhPSIExecutor -->> FLServer : status
+    DhPSIExecutor -->> PSIExecutor: result
+    PSIExecutor -->> FLServer : status
     
 ```
 
