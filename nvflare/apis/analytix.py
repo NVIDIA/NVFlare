@@ -13,9 +13,10 @@
 # limitations under the License.
 
 from enum import Enum
-from typing import Optional
+from typing import Optional, Dict
 
 from nvflare.apis.dxo import DXO, DataKind
+from nvflare.app_common.tracking.tracker_types import TrackConst
 
 _DATA_TYPE_KEY = "analytics_data_type"
 _KWARGS_KEY = "analytics_kwargs"
@@ -28,9 +29,28 @@ class AnalyticsDataType(Enum):
     TEXT = "TEXT"
     LOG_RECORD = "LOG_RECORD"
 
+    PARAMETER = "PARAMETER"
+    PARAMETERS = "PARAMETERS"
+    METRIC = "METRIC"
+    METRICS = "METRICS"
+    MODEL = "MODEL"
+
+#     # MLFLOW ONLY
+    TAG = "TAG"
+    TAGS = "TAGS"
+    INIT_DATA = "INIT_DATA"
+
 
 class AnalyticsData:
-    def __init__(self, tag: str, value, data_type: AnalyticsDataType, kwargs: Optional[dict] = None):
+    def __init__(
+        self,
+        tag: str,
+        value,
+        data_type: AnalyticsDataType,
+        kwargs: Optional[dict] = None,
+        step: Optional[int] = None,
+        path: Optional[str] = None,
+    ):
         """This class defines AnalyticsData format.
 
         It is a wrapper to provide to/from DXO conversion.
@@ -41,24 +61,13 @@ class AnalyticsData:
             data_type (AnalyticDataType): type of the analytic data.
             kwargs (optional, dict): additional arguments to be passed.
         """
-        if not isinstance(tag, str):
-            raise TypeError("expect tag to be an instance of str, but got {}.".format(type(tag)))
-        if not isinstance(data_type, AnalyticsDataType):
-            raise TypeError(
-                "expect data_type to be an instance of AnalyticsDataType, but got {}.".format(type(data_type))
-            )
-        if kwargs and not isinstance(kwargs, dict):
-            raise TypeError("expect kwargs to be an instance of dict, but got {}.".format(type(kwargs)))
-        if data_type == AnalyticsDataType.SCALAR and not isinstance(value, float):
-            raise TypeError("expect value to be an instance of float, but got {}.".format(type(value)))
-        elif data_type == AnalyticsDataType.SCALARS and not isinstance(value, dict):
-            raise TypeError("expect value to be an instance of dict, but got {}.".format(type(value)))
-        elif data_type == AnalyticsDataType.TEXT and not isinstance(value, str):
-            raise TypeError("expect value to be an instance of str, but got {}.".format(type(value)))
+        self._validate_data_types(data_type, kwargs, tag, value, step, path)
         self.tag = tag
         self.value = value
         self.data_type = data_type
         self.kwargs = kwargs
+        self.step = step
+        self.path = path
 
     def to_dxo(self):
         """Converts the AnalyticsData to DXO object.
@@ -66,9 +75,16 @@ class AnalyticsData:
         Returns:
             DXO object
         """
-        dxo = DXO(data_kind=DataKind.ANALYTIC, data={self.tag: self.value})
-        dxo.set_meta_prop(_DATA_TYPE_KEY, self.data_type)
-        dxo.set_meta_prop(_KWARGS_KEY, self.kwargs)
+
+        data = {TrackConst.TRACK_KEY: self.tag, TrackConst.TRACK_VALUE: self.value}
+        if self.step:
+            data[TrackConst.GLOBAL_STEP_KEY] = self.step
+        if self.path:
+            data[TrackConst.PATH_KEY] = self.path
+        if self.kwargs:
+            data[TrackConst.KWARGS_KEY] = self.kwargs
+        dxo = DXO(data_kind=DataKind.ANALYTIC, data=data)
+        dxo.set_meta_prop(TrackConst.DATA_TYPE_KEY, self.data_type)
         return dxo
 
     @classmethod
@@ -84,16 +100,52 @@ class AnalyticsData:
         if not isinstance(dxo, DXO):
             raise TypeError("expect dxo to be an instance of DXO, but got {}.".format(type(dxo)))
 
-        if len(dxo.data) != 1:
+        if len(dxo.data) == 0:
             raise ValueError(
-                "dxo does not have the correct format for AnalyticsData; expected dxo.data to be length 1, but got {}".format(
-                    len(dxo.data)
-                )
+                "dxo does not have the correct format for AnalyticsData; expected dxo.data to be length > 0, but got 0"
             )
+        data = dxo.data
+        key = data[TrackConst.TRACK_KEY]
+        value = data[TrackConst.TRACK_VALUE]
+        step = data[TrackConst.GLOBAL_STEP_KEY] if TrackConst.GLOBAL_STEP_KEY in data else None
+        path = data[TrackConst.PATH_KEY] if TrackConst.PATH_KEY in data else None
+        kwargs = data[TrackConst.KWARGS_KEY] if TrackConst.KWARGS_KEY in data else None
+        data_type = dxo.get_meta_prop(TrackConst.DATA_TYPE_KEY)
+        return cls(key, value, data_type, kwargs, step, path)
 
-        tag, value = list(dxo.data.items())[0]
+    def _validate_data_types(
+            self,
+            data_type: AnalyticsDataType,
+            kwargs: Optional[Dict],
+            key: str,
+            value: any,
+            step: Optional[int] = None,
+            path: Optional[str] = None,
+    ):
+        if not isinstance(key, str):
+            raise TypeError("expect tag to be an instance of str, but got {}.".format(type(key)))
+        if not isinstance(data_type, AnalyticsDataType):
+            raise TypeError("expect data_type to be an instance of TrackDataType, but got {}.".format(type(data_type)))
+        if kwargs and not isinstance(kwargs, dict):
+            raise TypeError("expect kwargs to be an instance of dict, but got {}.".format(type(kwargs)))
+        if step:
+            if not isinstance(step, int):
+                raise TypeError("expect step to be an instance of int, but got {}.".format(type(step)))
+            if step < 0:
+                raise ValueError("expect step to be non-negative int, but got {}.".format(step))
+        if path and not isinstance(path, str):
+            raise TypeError("expect path to be an instance of str, but got {}.".format(type(step)))
+        if data_type == AnalyticsDataType.PARAMETER and not isinstance(value, float):
+            raise TypeError(f"expect '{key}' value to be an instance of float, but got '{type(value)}'.")
+        if data_type == AnalyticsDataType.METRIC and not isinstance(value, float):
+            raise TypeError(f"expect '{key}' value to be an instance of float, but got '{type(value)}'.")
+        elif data_type == AnalyticsDataType.PARAMETERS and not isinstance(value, dict):
+            raise TypeError(f"expect '{key}' value to be an instance of dict, but got '{type(value)}'.")
+        elif data_type == AnalyticsDataType.METRICS and not isinstance(value, dict):
+            raise TypeError(f"expect '{key}' value to be an instance of dict, but got '{type(value)}'.")
+        elif data_type == AnalyticsDataType.TEXT and not isinstance(value, str):
+            raise TypeError(f"expect '{key}' value to be an instance of str, but got '{type(value)}'.")
+        elif data_type == AnalyticsDataType.TAGS and not isinstance(value, dict):
+            raise TypeError(
+                f"expect '{key}' data type expects value to be an instance of dict, but got '{type(value)}'")
 
-        data_type = dxo.get_meta_prop(_DATA_TYPE_KEY)
-        kwargs = dxo.get_meta_prop(_KWARGS_KEY)
-
-        return cls(tag, value, data_type, kwargs)

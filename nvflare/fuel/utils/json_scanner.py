@@ -13,10 +13,11 @@
 # limitations under the License.
 
 import copy
+import traceback
 from abc import ABC, abstractmethod
 
 from nvflare.fuel.common.excepts import ConfigError
-from nvflare.security.logging import secure_format_exception
+from nvflare.security.logging import secure_format_exception, is_secure
 
 
 class Node(object):
@@ -95,6 +96,9 @@ class JsonScanner(object):
         try:
             node.processor.process_element(node)
         except BaseException as e:
+            if not is_secure():
+                print(traceback.format_exc())
+
             if self.location:
                 raise ConfigError(
                     "Error processing {} in JSON element {}: path: {}, exception: {}".format(
