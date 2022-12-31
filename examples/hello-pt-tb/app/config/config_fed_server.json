@@ -44,6 +44,14 @@
       "id": "tb_analytics_receiver",
       "name": "TBAnalyticsReceiver",
       "args": {"events": ["fed.analytix_log_stats"]}
+    },
+    {
+      "id": "mlflow_receiver",
+      "path": "nvflare.app_opt.tracking.mlflow.mlflow_receiver.MLFlowReceiver",
+      "args": {
+        "kwargs": {"experiment_name": "hello-pt-experiments"},
+        "artifact_location": "artifacts"
+      }
     }
   ],
   "workflows": [

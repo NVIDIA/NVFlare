@@ -17,7 +17,7 @@ import traceback
 from abc import ABC, abstractmethod
 
 from nvflare.fuel.common.excepts import ConfigError
-from nvflare.security.logging import secure_format_exception, is_secure
+from nvflare.security.logging import is_secure, secure_format_exception
 
 
 class Node(object):

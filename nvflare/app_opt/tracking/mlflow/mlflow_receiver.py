@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
-from typing import List, Optional
+from typing import Dict, Optional
 
 import mlflow
 from mlflow.entities import Metric, Param, RunTag
@@ -20,11 +20,11 @@ from mlflow.tracking.client import MlflowClient
 from mlflow.utils.time_utils import get_current_time_millis
 
 from nvflare.apis.analytix import AnalyticsData, AnalyticsDataType
-from nvflare.apis.dxo import from_shareable, DXO
+from nvflare.apis.dxo import from_shareable
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.tracking.track_exception import ExpTrackingException
-from nvflare.app_common.tracking.tracker_types import TrackConst
+from nvflare.app_common.tracking.tracker_types import TrackConst, Tracker
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 
 
@@ -38,36 +38,46 @@ class MLFlowReceiver(AnalyticsReceiver):
     def __init__(
         self,
         tracking_uri: Optional[str] = None,
-        backend_store_uri: Optional[str] = None,
-        log_path: Optional[str] = None,
         kwargs: Optional[dict] = None,
-        events: Optional[List[str]] = None,
+        artifact_location: Optional[str] = None,
+        events=None,
     ):
-
+        if events is None:
+            events = ["fed.analytix_log_stats"]
         super().__init__(events=events)
-        self.root_log_dir = self.get_artifact_location(log_path)
-        self.log_path = log_path
+        self.artifact_location = artifact_location
         self.fl_ctx = None
-        self.root_log_dir = None
 
         self.kwargs = kwargs if kwargs else {}
         self.tracking_uri = tracking_uri
-        self.backend_store_uri = backend_store_uri
         self.mlflow = mlflow
-        self.client = MlflowClient()
+        self.mlflow_clients: Dict[str, MlflowClient] = {}
         self.experiment_id = None
         self.runs = {}
+        self.run_ids = {}
 
         if self.tracking_uri:
             mlflow.set_tracking_uri(uri=self.tracking_uri)
 
     def initialize(self, fl_ctx: FLContext):
         self.fl_ctx = fl_ctx
+        art_full_path = self.get_artifact_location(self.artifact_location)
         experiment_name = self.get_experiment_name(self.kwargs, "FLARE FL Experiment")
         experiment_tags = self.get_experiment_tags(self.kwargs)
-        self.experiment_id = self._create_experiment(
-            self.client, experiment_name, self.backend_store_uri, experiment_tags
-        )
+
+        sites = fl_ctx.get_engine().get_clients()
+        for site in sites:
+            mlflow_client = self.mlflow_clients.get(site.name, None)
+            if not mlflow_client:
+                mlflow_client = MlflowClient()
+                self.mlflow_clients[site.name] = mlflow_client
+                self.experiment_id = self._create_experiment(
+                    mlflow_client, f"{experiment_name}", art_full_path, experiment_tags
+                )
+                run = mlflow_client.create_run(
+                    experiment_id=self.experiment_id, run_name=site.name, tags={"site": site.name}
+                )
+                self.run_ids[site.name] = run.info.run_id
 
     def get_experiment_name(self, kwargs: dict, default_name: str):
         experiment_name = kwargs.get(TrackConst.EXPERIMENT_NAME, default_name)
@@ -87,70 +97,73 @@ class MLFlowReceiver(AnalyticsReceiver):
                 raise ValueError(f"argument error: value for key:'{tag_key}' is expecting type of dict")
         return tags if tags else {}
 
-    def get_artifact_location(self, relative_path: Optional[str]):
-        if relative_path is None:
-            relative_path = "mlrun"
+    def get_artifact_location(self, relative_path: str):
         workspace = self.fl_ctx.get_engine().get_workspace()
         run_dir = workspace.get_run_dir(self.fl_ctx.get_job_id())
         root_log_dir = os.path.join(run_dir, relative_path)
         return root_log_dir
 
     def _create_experiment(
-        self, client: MlflowClient, experiment_name: str, artifact_location: str, experiment_tags: Optional[dict] = None
+        self,
+        mlflow_client: MlflowClient,
+        experiment_name: str,
+        artifact_location: str,
+        experiment_tags: Optional[dict] = None,
     ) -> Optional[str]:
-
         experiment_id = None
         if experiment_name:
-            experiment = client.get_experiment_by_name(name=experiment_name)
+            experiment = mlflow_client.get_experiment_by_name(name=experiment_name)
             if not experiment:
-                self.logger.info(
-                    "Experiment with name '%s' does not exist. Creating a new experiment.", experiment_name
-                )
+                self.logger.info(f"Experiment with name '{experiment_name}' does not exist. Creating a new experiment.")
                 try:
-                    experiment_id = client.create_experiment(
-                        name=experiment_name, artifact_location=artifact_location, tags=experiment_tags
+                    import pathlib
+
+                    artifact_location_uri = pathlib.Path(artifact_location).as_uri()
+                    experiment_id = mlflow_client.create_experiment(
+                        name=experiment_name, artifact_location=artifact_location_uri, tags=experiment_tags
                     )
                 except Exception as e:
                     raise ExpTrackingException(
                         f"Could not create an MLflow Experiment with name {experiment_name}. {e}"
                     )
+                experiment = mlflow_client.get_experiment_by_name(name=experiment_name)
+            else:
+                experiment_id = experiment.experiment_id
 
+            self.logger.info(f"Experiment={experiment}")
         return experiment_id
 
     def save(self, fl_ctx: FLContext, shareable: Shareable, record_origin: str):
         dxo = from_shareable(shareable)
-        data = AnalyticsData.from_dxo(dxo)
-        if data.data_type == AnalyticsDataType.INIT_DATA:
-            self.start(data, record_origin)
-
-        curr_run = self.runs[record_origin]
-        run_id = curr_run.info.run_id
+        data = AnalyticsData.from_dxo(dxo, receiver=Tracker.MLFLOW)
+        mlflow_client = self.get_mlflow_client(record_origin)
+        run_id = self.get_run_id(record_origin)
+        key = data.tag
 
         if data.data_type == AnalyticsDataType.PARAMETER:
-            self.client.log_param(run_id, data.key, data.value)
+            mlflow_client.log_param(run_id, key, data.value)
 
         elif data.data_type == AnalyticsDataType.PARAMETERS:
-            params_arr = [Param(key, str(value)) for key, value in data.value.items()]
-            self.client.log_batch(run_id=run_id, metrics=[], params=params_arr, tags=[])
-
+            params_arr = [Param(k, str(v)) for k, v in data.value.items()]
+            mlflow_client.log_batch(run_id=run_id, metrics=[], params=params_arr, tags=[])
         elif data.data_type == AnalyticsDataType.METRIC:
-            self.client.log_metric(run_id, data.key, data.value, get_current_time_millis(), data.step or 0)
+            mlflow_client.log_metric(run_id, key, data.value, get_current_time_millis(), data.step or 0)
 
         elif data.data_type == AnalyticsDataType.METRICS:
             timestamp = get_current_time_millis()
-            metrics_arr = [Metric(key, value, timestamp, data.step or 0) for key, value in data.value.items()]
-            self.client.log_batch(run_id=run_id, metrics=metrics_arr, params=[], tags=[])
+            metrics_arr = [Metric(k, v, timestamp, data.step or 0) for k, v in data.value.items()]
+            mlflow_client.log_batch(run_id=run_id, metrics=metrics_arr, params=[], tags=["site", record_origin])
 
         elif data.data_type == AnalyticsDataType.TAG:
-            self.client.set_tag(run_id, data.key, data.value)
+            mlflow_client.set_tag(run_id, key, data.value)
 
         elif data.data_type == AnalyticsDataType.TAGS:
             tags_arr = [RunTag(key, str(value)) for key, value in tags.items()]
-            self.client.log_batch(run_id=run_id, metrics=[], params=[], tags=tags_arr)
+            mlflow_client.log_batch(run_id=run_id, metrics=[], params=[], tags=tags_arr)
 
         elif data.data_type == AnalyticsDataType.TEXT:
             if data.value and data.path:
-                self.client.log_text(run_id, data.value, data.path)
+                mlflow_client.log_text(run_id, data.value, data.path)
 
         elif data.data_type == AnalyticsDataType.MODEL:
             pass
@@ -158,40 +171,8 @@ class MLFlowReceiver(AnalyticsReceiver):
     def finalize(self, fl_ctx: FLContext):
         self.mlflow.end_run()
 
-    def log(self, dxo: DXO, track_type: AnalyticsDataType):
-        if dxo is not None:
-            dxo_meta = dxo.meta
-            dxo_data = dxo.data
-            dxo_data_kind = dxo.data_kind
-            print("track_type = ", track_type)
-            self.mlflow.log_metric("test", "100")
-            if track_type == AnalyticsDataType.METRICS:
-                print("dxo_data 1 =", dxo_data)
-                self.mlflow.log_metrics(dxo_data)
+    def get_run_id(self, site_id: str) -> str:
+        return self.run_ids.get(site_id, None)
 
-            elif track_type == AnalyticsDataType.PARAMETERS:
-                print("dxo_data 2 =", dxo_data)
-                self.mlflow.log_params(dxo_meta)
-                self.mlflow.log_params("data_kind", dxo_data_kind)
-
-            # elif track_type == AnalyticsDataType.ARTIFACTS:
-            #     pass
-            elif track_type == AnalyticsDataType.MODEL:
-                pass
-
-    def get_client_run(self, client_id: str):
-        return self.runs.get(client_id, None)
-
-    def start(self, analytics_data: AnalyticsData, client_id):
-        if analytics_data.data_type == AnalyticsDataType.INIT_DATA:
-            run = self.get_client_run(client_id)
-            if run is None:
-                run_name = f"${client_id}_{self.fl_ctx.get_job_id}"
-                run_tags = self.get_run_tags(self.kwargs)
-                run = self.mlflow.start_run(experiment_id=self.experiment_id, run_name=run_name, tags=run_tags)
-                self.runs[client_id] = run
-
-            if analytics_data.kwargs:
-                init_config = analytics_data.kwargs.get(TrackConst.INIT_CONFIG, None)
-                if init_config:
-                    self.mlflow.log_params(init_config, 0)
+    def get_mlflow_client(self, site_id: str) -> MlflowClient:
+        return self.mlflow_clients.get(site_id, None)
