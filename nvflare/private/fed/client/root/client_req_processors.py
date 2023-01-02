@@ -12,12 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .info_coll_cmd import ClientInfoProcessor
-from .process_aux_cmd import AuxRequestProcessor
-from .scheduler_cmds import CancelResourceProcessor, CheckResourceProcessor, ReportResourcesProcessor, StartJobProcessor
-from .shell_cmd import ShellCommandProcessor
-from .sys_cmd import SysInfoProcessor
-from .training_cmds import (  # StartClientMGpuProcessor,; SetRunNumberProcessor,
+from nvflare.private.fed.client.root.info_coll_cmd import ClientInfoProcessor
+from nvflare.private.fed.client.root.scheduler_cmds import CancelResourceProcessor, CheckResourceProcessor, ReportResourcesProcessor, StartJobProcessor
+from nvflare.private.fed.client.root.shell_cmd import ShellCommandProcessor
+from nvflare.private.fed.client.root.sys_cmd import SysInfoProcessor
+from nvflare.private.fed.client.root.training_cmds import (  # StartClientMGpuProcessor,; SetRunNumberProcessor,
     AbortAppProcessor,
     AbortTaskProcessor,
     ClientStatusProcessor,
@@ -54,7 +53,7 @@ class ClientRequestProcessors:
 
     @staticmethod
     def register_cmd_module(request_processor):
-        from .admin import RequestProcessor
+        from nvflare.private.fed.client.root.admin import RequestProcessor
 
         if not isinstance(request_processor, RequestProcessor):
             raise TypeError("request_processor must be RequestProcessor, but got {}".format(type(request_processor)))

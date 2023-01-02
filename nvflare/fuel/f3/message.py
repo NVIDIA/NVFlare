@@ -60,6 +60,15 @@ class Message:
 
         return self.headers.get(key, default)
 
+    def set_prop(self, key: str, value):
+        setattr(self, key, value)
+
+    def get_prop(self, key: str, default=None):
+        try:
+            return getattr(self, key)
+        except AttributeError:
+            return default
+
 
 class MessageReceiver(ABC):
 

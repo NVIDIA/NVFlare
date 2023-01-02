@@ -16,41 +16,18 @@
 
 from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import ReservedHeaderKey, Shareable
+from nvflare.apis.shareable import Shareable
 from nvflare.private.fed.client.client_status import get_status_message
+from nvflare.private.fed.cmd_agent import CommandProcessor
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import WidgetID
-
-
-class CommandProcessor(object):
-    """The CommandProcessor is responsible for processing a command from parent process."""
-
-    def get_command_name(self) -> str:
-        """Get command name that this processor will handle.
-
-        Returns: name of the command
-
-        """
-        pass
-
-    def process(self, data: Shareable, fl_ctx: FLContext):
-        """Called to process the specified command.
-
-        Args:
-            data: process data
-            fl_ctx: FLContext
-
-        Return: reply message
-
-        """
-        pass
 
 
 class CheckStatusCommand(CommandProcessor):
     """To implement the check_status command."""
 
     def get_command_name(self) -> str:
-        """To get thee command name.
+        """To get the command name.
 
         Returns: AdminCommandNames.CHECK_STATUSv
 
@@ -220,71 +197,3 @@ class ResetErrorsCommand(CommandProcessor):
         """
         engine = fl_ctx.get_engine()
         engine.reset_errors()
-
-
-class ByeCommand(CommandProcessor):
-    """To implement the ShutdownCommand."""
-
-    def get_command_name(self) -> str:
-        """To get the command name.
-
-        Returns: AdminCommandNames.SHUTDOWN
-
-        """
-        return AdminCommandNames.SHUTDOWN
-
-    def process(self, data: Shareable, fl_ctx: FLContext):
-        """Called to process the Shutdown command.
-
-        Args:
-            data: process data
-            fl_ctx: FLContext
-
-        Returns: Shutdown command message
-
-        """
-        return None
-
-
-class AdminCommands(object):
-    """AdminCommands contains all the commands for processing the commands from the parent process."""
-
-    commands = [
-        CheckStatusCommand(),
-        AbortCommand(),
-        AbortTaskCommand(),
-        ByeCommand(),
-        ShowStatsCommand(),
-        ShowErrorsCommand(),
-        ResetErrorsCommand(),
-    ]
-
-    @staticmethod
-    def get_command(command_name):
-        """Call to return the AdminCommand object.
-
-        Args:
-            command_name: AdminCommand name
-
-        Returns: AdminCommand object
-
-        """
-        for command in AdminCommands.commands:
-            if command_name == command.get_command_name():
-                return command
-        return None
-
-    @staticmethod
-    def register_command(command_processor: CommandProcessor):
-        """Call to register the AdminCommand processor.
-
-        Args:
-            command_processor: AdminCommand processor
-
-        """
-        if not isinstance(command_processor, CommandProcessor):
-            raise TypeError(
-                "command_processor must be an instance of CommandProcessor, but got {}".format(type(command_processor))
-            )
-
-        AdminCommands.commands.append(command_processor)

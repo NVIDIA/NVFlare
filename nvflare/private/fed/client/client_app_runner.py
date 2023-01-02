@@ -21,9 +21,9 @@ from nvflare.private.defs import EngineConstant
 from nvflare.private.fed.app.fl_conf import create_privacy_manager
 from nvflare.private.fed.client.client_json_config import ClientJsonConfigurator
 from nvflare.private.fed.client.client_run_manager import ClientRunManager
-from nvflare.private.fed.client.client_runner import ClientRunner
+from nvflare.private.fed.client.job.client_runner import ClientRunner
 from nvflare.private.fed.client.client_status import ClientStatus
-from nvflare.private.fed.client.command_agent import CommandAgent
+from nvflare.private.fed.client.job.command_agent import CommandAgent
 from nvflare.private.privacy_manager import PrivacyService
 
 

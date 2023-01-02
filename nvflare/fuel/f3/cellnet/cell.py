@@ -28,8 +28,9 @@ from nvflare.fuel.f3.communicator import Communicator, MessageReceiver
 
 from .connector_manager import ConnectorManager
 from .defs import (
-    MessageHeaderKey, MessageType, TargetMessage,
-    ReturnCode, CellPropertyKey, Encoding
+    MessageHeaderKey, MessageType, TargetMessage, ReturnReason,
+    ReturnCode, CellPropertyKey, Encoding, MessagePropKey,
+    InvalidRequest, InvalidSession, ServiceUnavailable, AuthenticationError, AbortRun
 )
 from .utils import make_reply, new_message, format_log_message
 from .fqcn import FQCN, FqcnInfo, same_family
@@ -60,6 +61,9 @@ class CellAgent:
 
         self.info = FqcnInfo(FQCN.normalize(fqcn))
         self.endpoint = endpoint
+
+    def get_fqcn(self):
+        return self.info.fqcn
 
 
 class _CB:
@@ -218,6 +222,8 @@ class Cell(MessageReceiver, EndpointMonitor):
         self.my_info = FqcnInfo(FQCN.normalize(fqcn))
         self.secure = secure
         self.root_url = root_url
+        self.create_internal_listener = create_internal_listener
+        self.parent_url = parent_url
         self.bulk_check_interval = bulk_check_interval
         self.bulk_send_interval = bulk_send_interval
         self.max_bulk_size = max_bulk_size
@@ -257,6 +263,9 @@ class Cell(MessageReceiver, EndpointMonitor):
         self.cell_disconnected_cb = None
         self.cell_disconnected_cb_args = None
         self.cell_disconnected_cb_kwargs = None
+        self.message_interceptor = None
+        self.message_interceptor_args = None
+        self.message_interceptor_kwargs = None
 
         self.waiters = {}  # req_id => req
         self.stats_lock = threading.Lock()
@@ -290,17 +299,11 @@ class Cell(MessageReceiver, EndpointMonitor):
         self.adhoc_connector_lock = threading.Lock()
         self.root_change_lock = threading.Lock()
 
-        if self.my_info.is_on_server:
-            if self.my_info.is_root:
-                self._set_bb_for_server_root()
-            else:
-                self._set_bb_for_server_child(parent_url, create_internal_listener)
-        else:
-            # client side
-            if self.my_info.is_root:
-                self._set_bb_for_client_root()
-            else:
-                self._set_bb_for_client_child(parent_url, create_internal_listener)
+        self.register_request_cb(
+            channel=_BULK_CHANNEL,
+            topic="*",
+            cb=self._process_bulk_message
+        )
 
         self.stop_waiter = threading.Event()
         self.stop_waiter_thread = threading.Thread(target=self._wait_to_stop)
@@ -330,13 +333,13 @@ class Cell(MessageReceiver, EndpointMonitor):
             for _cb in cb_list:
                 assert isinstance(_cb, _CB)
                 try:
-                    self.logger.debug(f"{self.my_info.fqcn}: calling a cleanup CB ...")
+                    self.logger.info(f"{self.my_info.fqcn}: calling cleanup CB {_cb.cb.__name__}")
                     _cb.cb(*_cb.args, **_cb.kwargs)
-                    self.logger.debug(f"{self.my_info.fqcn}: called a cleanup CB")
+                    self.logger.debug(f"{self.my_info.fqcn}: finished cleanup CB {_cb.cb.__name__}")
                 except BaseException as ex:
-                    self.logger.warning(f"{self.my_info.fqcn}: ignored exception {ex} from cleanup CB")
+                    self.logger.warning(f"{self.my_info.fqcn}: exception {ex} from cleanup CB {_cb.cb.__name__}")
         else:
-            self.logger.debug(f"{self.my_info.fqcn}: Nothing to cleanup!")
+            self.logger.debug(f"{self.my_info.fqcn}: nothing to cleanup!")
 
         # closing cell finally!
         self._close()
@@ -353,6 +356,22 @@ class Cell(MessageReceiver, EndpointMonitor):
     def is_cell_connected(self, target_fqcn: str) -> bool:
         agent = self.agents.get(target_fqcn)
         return agent is not None
+
+    def is_backbone_ready(self):
+        if not self.running:
+            return False
+
+        if self.my_info.is_root:
+            if self.my_info.is_on_server:
+                # server root - make sure listener is created
+                return self.ext_listener is not None
+            else:
+                # client root - must be connected to server root
+                return self.agents.get(FQCN.ROOT_SERVER) is not None
+        else:
+            # child cell - must be connected to parent
+            parent_fqcn = FQCN.get_parent(self.my_info.fqcn)
+            return self.agents.get(parent_fqcn) is not None
 
     def _set_bb_for_client_root(self):
         self._create_bb_external_connector()
@@ -536,6 +555,8 @@ class Cell(MessageReceiver, EndpointMonitor):
         Returns: None
 
         """
+        if not callable(cb):
+            raise ValueError(f"specified cell_connected_cb {type(cb)} is not callable")
         self.cell_connected_cb = cb
         self.cell_connected_cb_args = args
         self.cell_connected_cb_kwargs = kwargs
@@ -557,9 +578,35 @@ class Cell(MessageReceiver, EndpointMonitor):
         Returns: None
 
         """
+        if not callable(cb):
+            raise ValueError(f"specified cell_disconnected_cb {type(cb)} is not callable")
         self.cell_disconnected_cb = cb
         self.cell_disconnected_cb_args = args
         self.cell_disconnected_cb_kwargs = kwargs
+
+    def set_message_interceptor(
+            self,
+            cb,
+            *args,
+            **kwargs
+    ):
+        """
+        Set a callback that is called when a message is received or forwarded.
+
+        Args:
+            cb: the callback function. It must follow the signature of message_interceptor_signature.
+            *args: args to be passed to the cb.
+            **kwargs: kwargs to be passed to the cb
+
+        Returns: None
+
+        """
+        if not callable(cb):
+            raise ValueError(f"specified message_interceptor {type(cb)} is not callable")
+
+        self.message_interceptor = cb
+        self.message_interceptor_args = args
+        self.message_interceptor_kwargs = kwargs
 
     def start(self):
         """
@@ -568,11 +615,18 @@ class Cell(MessageReceiver, EndpointMonitor):
         Returns:
 
         """
-        self.register_request_cb(
-            channel=_BULK_CHANNEL,
-            topic="*",
-            cb=self._process_bulk_message
-        )
+        if self.my_info.is_on_server:
+            if self.my_info.is_root:
+                self._set_bb_for_server_root()
+            else:
+                self._set_bb_for_server_child(self.parent_url, self.create_internal_listener)
+        else:
+            # client side
+            if self.my_info.is_root:
+                self._set_bb_for_client_root()
+            else:
+                self._set_bb_for_client_child(self.parent_url, self.create_internal_listener)
+
         self.bulk_checker.start()
         self.communicator.start()
         self.stop_waiter_thread.start()
@@ -625,6 +679,8 @@ class Cell(MessageReceiver, EndpointMonitor):
         Returns:
 
         """
+        if not callable(cb):
+            raise ValueError(f"specified request_cb {type(cb)} is not callable")
         self.req_reg.set(channel, topic, _CB(cb, args, kwargs))
 
     def add_incoming_request_filter(
@@ -635,6 +691,8 @@ class Cell(MessageReceiver, EndpointMonitor):
             *args,
             **kwargs
     ):
+        if not callable(cb):
+            raise ValueError(f"specified incoming_request_filter {type(cb)} is not callable")
         self.in_req_filter_reg.append(channel, topic, _CB(cb, args, kwargs))
 
     def add_cleanup_cb(
@@ -643,6 +701,8 @@ class Cell(MessageReceiver, EndpointMonitor):
             *args,
             **kwargs
     ):
+        if not callable(cb):
+            raise ValueError(f"specified cleanup_cb {type(cb)} is not callable")
         self.cleanup_reg.append("*", "*", _CB(cb, args, kwargs))
 
     def add_outgoing_reply_filter(
@@ -653,6 +713,8 @@ class Cell(MessageReceiver, EndpointMonitor):
             *args,
             **kwargs
     ):
+        if not callable(cb):
+            raise ValueError(f"specified outgoing_reply_filter {type(cb)} is not callable")
         self.out_reply_filter_reg.append(channel, topic, _CB(cb, args, kwargs))
 
     def add_outgoing_request_filter(
@@ -663,6 +725,8 @@ class Cell(MessageReceiver, EndpointMonitor):
             *args,
             **kwargs
     ):
+        if not callable(cb):
+            raise ValueError(f"specified outgoing_request_filter {type(cb)} is not callable")
         self.out_req_filter_reg.append(channel, topic, _CB(cb, args, kwargs))
 
     def add_incoming_reply_filter(
@@ -673,6 +737,8 @@ class Cell(MessageReceiver, EndpointMonitor):
             *args,
             **kwargs
     ):
+        if not callable(cb):
+            raise ValueError(f"specified incoming_reply_filter {type(cb)} is not callable")
         self.in_reply_filter_reg.append(channel, topic, _CB(cb, args, kwargs))
 
     def add_error_handler(
@@ -683,6 +749,8 @@ class Cell(MessageReceiver, EndpointMonitor):
             *args,
             **kwargs
     ):
+        if not callable(cb):
+            raise ValueError(f"specified error_handler {type(cb)} is not callable")
         self.error_handler_reg.set(channel, topic, _CB(cb, args, kwargs))
 
     def _filter_outgoing_request(
@@ -696,16 +764,9 @@ class Cell(MessageReceiver, EndpointMonitor):
             return None
         for _cb in cbs:
             assert isinstance(_cb, _CB)
-            result = _cb.cb(
-                cell=self,
-                channel=channel,
-                topic=topic,
-                msg=request,
-                *_cb.args,
-                **_cb.kwargs
-            )
-            if result:
-                return result
+            reply = self._try_cb(request, _cb.cb, *_cb.args, **_cb.kwargs)
+            if reply:
+                return reply
 
     def _try_path(self, fqcn_path: List[str]) -> Union[None, Endpoint]:
         self.logger.debug(f"{self.my_info.fqcn}: trying path {fqcn_path} ...")
@@ -814,11 +875,11 @@ class Cell(MessageReceiver, EndpointMonitor):
     def _send_target_messages(
             self,
             target_msgs: Dict[str, TargetMessage],
-    ) -> Dict[str, bool]:
+    ) -> Dict[str, str]:
         if not self.running:
             raise RuntimeError("Messenger is not running")
 
-        sent = {}
+        send_errs = {}
         reachable_targets = {}  # target fqcn => endpoint
         for t in target_msgs.keys():
             ep = self._find_endpoint(t)
@@ -826,7 +887,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                 reachable_targets[t] = ep
             else:
                 self.logger.error(f"{self.my_info.fqcn}: no path to cell '{t}'")
-                sent[t] = False
+                send_errs[t] = "no path"
 
         for t, ep in reachable_targets.items():
             tm = target_msgs[t]
@@ -845,6 +906,20 @@ class Cell(MessageReceiver, EndpointMonitor):
                 MessageHeaderKey.TO_CELL: ep.name
             })
 
+            # invoke outgoing req filters
+            req_filters = self.out_req_filter_reg.find(tm.channel, tm.topic)
+            if req_filters:
+                self.logger.debug(f"{self.my_info.fqcn}: invoking outgoing request filters")
+                assert isinstance(req_filters, list)
+                for f in req_filters:
+                    assert isinstance(f, _CB)
+                    try:
+                        f.cb(req, *f.args, **f.kwargs)
+                    except:
+                        traceback.print_exc()
+                        send_errs[t] = "filter exception"
+                        continue
+
             # is this a direct path?
             ti = FqcnInfo(t)
             if t != ep.name and not same_family(ti, self.my_info):
@@ -858,8 +933,8 @@ class Cell(MessageReceiver, EndpointMonitor):
             err = self._send_to_endpoint(ep, req)
             if err:
                 self.logger.error(f"{self.my_info.fqcn}: failed to send to endpoint {ep.name}: {err}")
-            sent[t] = not err
-        return sent
+            send_errs[t] = err
+        return send_errs
 
     def _send_to_targets(
             self,
@@ -867,7 +942,7 @@ class Cell(MessageReceiver, EndpointMonitor):
             topic: str,
             targets: Union[str, List[str]],
             message: Message,
-    ) -> Dict[str, bool]:
+    ) -> Dict[str, str]:
         if isinstance(targets, str):
             targets = [targets]
         target_msgs = {}
@@ -938,7 +1013,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                         MessageHeaderKey.WAIT_UNTIL: time.time() + timeout
                     }
                 )
-            status = self._send_target_messages(target_msgs)
+            send_errs = self._send_target_messages(target_msgs)
             send_count = 0
             err_reply = make_reply(ReturnCode.COMM_ERROR)
             timeout_reply = make_reply(ReturnCode.TIMEOUT)
@@ -947,12 +1022,12 @@ class Cell(MessageReceiver, EndpointMonitor):
             # if waiter.received_replies:
             #     self.logger.info(f"{self.my_info.fqcn}: the network is extremely fast - response already received!")
 
-            for t, sent in status.items():
-                if sent:
+            for t, err in send_errs.items():
+                if not err:
                     send_count += 1
                     result[t] = timeout_reply
                 else:
-                    self.logger.error(f"{self.my_info.fqcn}: failed to send to {t}")
+                    self.logger.error(f"{self.my_info.fqcn}: failed to send to {t}: {err}")
                     result[t] = err_reply
                     waiter.reply_time[t] = now
 
@@ -1012,7 +1087,7 @@ class Cell(MessageReceiver, EndpointMonitor):
             channel: str,
             topic: str,
             targets: Union[str, List[str]],
-            message: Message) -> Dict[str, bool]:
+            message: Message) -> Dict[str, str]:
         """
         Send a message over a channel to specified destination cell(s), and do not wait for replies.
 
@@ -1079,7 +1154,7 @@ class Cell(MessageReceiver, EndpointMonitor):
     def fire_multi_requests_and_forget(
             self,
             target_msgs: Dict[str, TargetMessage]
-    ) -> Dict[str, bool]:
+    ) -> Dict[str, str]:
         for _, tm in target_msgs.items():
             request = tm.message
             request.add_headers(
@@ -1128,6 +1203,27 @@ class Cell(MessageReceiver, EndpointMonitor):
         reply.set_header(MessageHeaderKey.TO_CELL, ep.name)
         return self._send_to_endpoint(ep, reply)
 
+    def _try_cb(self, message, cb, *args, **kwargs):
+        try:
+            self.logger.debug(f"{self.my_info.fqcn}: calling CB {cb.__name__}")
+            return cb(
+                message,
+                *args,
+                **kwargs
+            )
+        except ServiceUnavailable as ex:
+            return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
+        except InvalidSession:
+            return make_reply(ReturnCode.INVALID_SESSION)
+        except InvalidRequest:
+            return make_reply(ReturnCode.INVALID_REQUEST)
+        except AuthenticationError:
+            return make_reply(ReturnCode.AUTHENTICATION_ERROR)
+        except AbortRun:
+            return make_reply(ReturnCode.ABORT_RUN)
+        except:
+            return make_reply(ReturnCode.PROCESS_EXCEPTION)
+
     def process_message(self, endpoint: Endpoint, app_id: int, message: Message):
         # this is the receiver callback
         try:
@@ -1139,7 +1235,7 @@ class Cell(MessageReceiver, EndpointMonitor):
             self,
             origin: str,
             message: Message) -> Union[None, Message]:
-        self.logger.debug(f"{self.my_info.fqcn}: processing request")
+        self.logger.debug(f"{self.my_info.fqcn}: processing incoming request")
         # this is a request for me - dispatch to the right CB
         channel = message.get_header(MessageHeaderKey.CHANNEL, "")
         topic = message.get_header(MessageHeaderKey.TOPIC, "")
@@ -1149,41 +1245,31 @@ class Cell(MessageReceiver, EndpointMonitor):
                 f"{self.my_info.fqcn}: no callback for request ({topic}@{channel}) from cell '{origin}'")
             return make_reply(ReturnCode.PROCESS_EXCEPTION, error="no callback")
 
-        try:
-            assert isinstance(_cb, _CB)
-            self.logger.debug(f"{self.my_info.fqcn}: calling registered request CB")
-            reply = _cb.cb(message, *_cb.args, **_cb.kwargs)
-            if not reply:
-                # the CB doesn't have anything to reply
-                self.logger.debug("no reply is returned from the CB")
-                return None
+        # invoke incoming request filters
+        req_filters = self.in_req_filter_reg.find(channel, topic)
+        if req_filters:
+            self.logger.debug(f"{self.my_info.fqcn}: invoking incoming request filters")
+            assert isinstance(req_filters, list)
+            for f in req_filters:
+                assert isinstance(f, _CB)
+                reply = self._try_cb(message, f.cb, *f.args, **f.kwargs)
+                if reply:
+                    return reply
 
-            if not isinstance(reply, Message):
-                self.logger.error(
-                    f"{self.my_info.fqcn}: bad result from request CB for topic {topic} on channel {channel}: "
-                    f"expect Message but got {type(reply)}"
-                )
-                return make_reply(ReturnCode.PROCESS_EXCEPTION, error="bad cb result")
-        except:
-            traceback.print_exc()
-            return make_reply(ReturnCode.PROCESS_EXCEPTION, error="cb exception")
-
-        reply_expected = message.get_header(MessageHeaderKey.REPLY_EXPECTED, False)
-        if not reply_expected:
-            # this is fire and forget
-            self.logger.debug(f"{self.my_info.fqcn}: don't send response - request expects no reply")
+        assert isinstance(_cb, _CB)
+        self.logger.debug(f"{self.my_info.fqcn}: calling registered request CB")
+        reply = self._try_cb(message, _cb.cb, *_cb.args, **_cb.kwargs)
+        if not reply:
+            # the CB doesn't have anything to reply
+            self.logger.debug("no reply is returned from the CB")
             return None
 
-        wait_until = message.get_header(MessageHeaderKey.WAIT_UNTIL, None)
-        if isinstance(wait_until, float) and time.time() > wait_until:
-            # no need to reply since peer already gave up waiting by now
-            self.logger.debug(f"{self.my_info.fqcn}: don't send response - reply is too late")
-            return None
-
-        # send the reply back
-        if not reply.headers.get(MessageHeaderKey.RETURN_CODE):
-            self.logger.debug(f"{self.my_info.fqcn}: added return code OK")
-            reply.set_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
+        if not isinstance(reply, Message):
+            self.logger.error(
+                f"{self.my_info.fqcn}: bad result from request CB for topic {topic} on channel {channel}: "
+                f"expect Message but got {type(reply)}"
+            )
+            reply = make_reply(ReturnCode.PROCESS_EXCEPTION, error="bad cb result")
         return reply
 
     def _add_to_route(self, message: Message):
@@ -1245,7 +1331,8 @@ class Cell(MessageReceiver, EndpointMonitor):
                     MessageHeaderKey.DESTINATION: origin,
                     MessageHeaderKey.REQ_ID: [req_id],
                     MessageHeaderKey.MSG_TYPE: MessageType.RETURN,
-                    MessageHeaderKey.ROUTE: [self.my_info.fqcn]
+                    MessageHeaderKey.ROUTE: [self.my_info.fqcn],
+                    MessageHeaderKey.RETURN_REASON: ReturnReason.CANT_FORWARD
                 }
             )
             self._send_to_endpoint(endpoint, reply)
@@ -1278,6 +1365,17 @@ class Cell(MessageReceiver, EndpointMonitor):
             if not req_dest:
                 raise RuntimeError(format_log_message(
                     self.my_info.fqcn, message, "missing DESTINATION header in original headers"))
+        else:
+            # invoking incoming reply filter
+            channel = message.get_header(MessageHeaderKey.CHANNEL, "")
+            topic = message.get_header(MessageHeaderKey.TOPIC, "")
+            reply_filters = self.in_reply_filter_reg.find(channel, topic)
+            if reply_filters:
+                self.logger.debug(f"{self.my_info.fqcn}: invoking incoming reply filters")
+                assert isinstance(reply_filters, list)
+                for f in reply_filters:
+                    assert isinstance(f, _CB)
+                    self._try_cb(message, f.cb, *f.args, **f.kwargs)
 
         for rid in req_ids:
             waiter = self.waiters.get(rid, None)
@@ -1318,6 +1416,8 @@ class Cell(MessageReceiver, EndpointMonitor):
 
     def _process_received_msg(self, endpoint: Endpoint, message: Message):
         self.logger.debug(f"{self.my_info.fqcn}: received message: {message.headers}")
+        message.set_prop(MessagePropKey.ENDPOINT, endpoint)
+        message.set_prop(MessagePropKey.SSL_CERT, endpoint.get_certificate())
         msg_type = message.get_header(MessageHeaderKey.MSG_TYPE)
         if not msg_type:
             raise RuntimeError(format_log_message(
@@ -1333,6 +1433,36 @@ class Cell(MessageReceiver, EndpointMonitor):
         if not destination:
             raise RuntimeError(format_log_message(
                 self.my_info.fqcn, message, "missing DESTINATION header in received message"))
+
+        if msg_type == MessageType.REQ and self.message_interceptor is not None:
+            reply = self._try_cb(
+                message, self.message_interceptor,
+                *self.message_interceptor_args,
+                **self.message_interceptor_kwargs)
+
+            if reply:
+                self.logger.debug(f"{self.my_info.fqcn}: interceptor stopped message!")
+                reply_expected = message.get_header(MessageHeaderKey.REPLY_EXPECTED)
+                if not reply_expected:
+                    return
+
+                req_id = message.get_header(MessageHeaderKey.REQ_ID, "")
+                reply.add_headers(
+                    {
+                        MessageHeaderKey.ORIGINAL_HEADERS: message.headers,
+                        MessageHeaderKey.FROM_CELL: self.my_info.fqcn,
+                        MessageHeaderKey.TO_CELL: endpoint.name,
+                        MessageHeaderKey.ORIGIN: self.my_info.fqcn,
+                        MessageHeaderKey.DESTINATION: origin,
+                        MessageHeaderKey.REQ_ID: [req_id],
+                        MessageHeaderKey.MSG_TYPE: MessageType.RETURN,
+                        MessageHeaderKey.ROUTE: [self.my_info.fqcn],
+                        MessageHeaderKey.RETURN_REASON: ReturnReason.INTERCEPT
+                    }
+                )
+                self._send_to_endpoint(endpoint, reply)
+                self.logger.debug(f"{self.my_info.fqcn}: returned intercepted message")
+                return
 
         if destination != self.my_info.fqcn:
             # not for me - need to forward it
@@ -1379,32 +1509,67 @@ class Cell(MessageReceiver, EndpointMonitor):
 
         if msg_type == MessageType.REQ:
             # this is a request for me - dispatch to the right CB
+            channel = message.get_header(MessageHeaderKey.CHANNEL, "")
+            topic = message.get_header(MessageHeaderKey.TOPIC, "")
             reply = self._process_request(origin, message)
-            if reply:
-                req_id = message.get_header(MessageHeaderKey.REQ_ID, "")
-                reply.add_headers(
-                    {
-                        MessageHeaderKey.FROM_CELL: self.my_info.fqcn,
-                        MessageHeaderKey.ORIGIN: self.my_info.fqcn,
-                        MessageHeaderKey.DESTINATION: origin,
-                        MessageHeaderKey.TO_CELL: endpoint.name,
-                        MessageHeaderKey.REQ_ID: req_id,
-                        MessageHeaderKey.MSG_TYPE: MessageType.REPLY,
-                        MessageHeaderKey.ROUTE: [self.my_info.fqcn]
-                    }
-                )
 
-                if my_conn_url:
-                    reply.set_header(MessageHeaderKey.CONN_URL, my_conn_url)
-                self.logger.debug(f"{self.my_info.fqcn}: sending reply back to {endpoint.name}")
-                self.logger.debug(f"Reply message: {reply.headers}")
-                self._send_to_endpoint(endpoint, reply)
-            else:
-                self.logger.debug(f"{self.my_info.fqcn}: no reply to send!")
-            return
+            if not reply:
+                self.logger.debug(f"{self.my_info.fqcn}: don't send response - nothing to send")
+                return
 
-        # the message is either a reply or a return for a previous request: handle replies
-        self._process_reply(origin, message, msg_type)
+            reply_expected = message.get_header(MessageHeaderKey.REPLY_EXPECTED, False)
+            if not reply_expected:
+                # this is fire and forget
+                self.logger.debug(f"{self.my_info.fqcn}: don't send response - request expects no reply")
+                return
+
+            wait_until = message.get_header(MessageHeaderKey.WAIT_UNTIL, None)
+            if isinstance(wait_until, float) and time.time() > wait_until:
+                # no need to reply since peer already gave up waiting by now
+                self.logger.debug(f"{self.my_info.fqcn}: don't send response - reply is too late")
+                return
+
+            # send the reply back
+            if not reply.headers.get(MessageHeaderKey.RETURN_CODE):
+                self.logger.debug(f"{self.my_info.fqcn}: added return code OK")
+                reply.set_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
+
+            req_id = message.get_header(MessageHeaderKey.REQ_ID, "")
+            reply.add_headers(
+                {
+                    MessageHeaderKey.CHANNEL: channel,
+                    MessageHeaderKey.TOPIC: topic,
+                    MessageHeaderKey.FROM_CELL: self.my_info.fqcn,
+                    MessageHeaderKey.ORIGIN: self.my_info.fqcn,
+                    MessageHeaderKey.DESTINATION: origin,
+                    MessageHeaderKey.TO_CELL: endpoint.name,
+                    MessageHeaderKey.REQ_ID: req_id,
+                    MessageHeaderKey.MSG_TYPE: MessageType.REPLY,
+                    MessageHeaderKey.ROUTE: [self.my_info.fqcn]
+                }
+            )
+
+            if my_conn_url:
+                reply.set_header(MessageHeaderKey.CONN_URL, my_conn_url)
+
+            # invoke outgoing reply filters
+            reply_filters = self.out_reply_filter_reg.find(channel, topic)
+            if reply_filters:
+                self.logger.debug(f"{self.my_info.fqcn}: invoking outgoing reply filters")
+                assert isinstance(reply_filters, list)
+                for f in reply_filters:
+                    assert isinstance(f, _CB)
+                    r = self._try_cb(reply, f.cb, *f.args, **f.kwargs)
+                    if r:
+                        reply = r
+                        break
+
+            self.logger.debug(f"{self.my_info.fqcn}: sending reply back to {endpoint.name}")
+            self.logger.debug(f"Reply message: {reply.headers}")
+            self._send_to_endpoint(endpoint, reply)
+        else:
+            # the message is either a reply or a return for a previous request: handle replies
+            self._process_reply(origin, message, msg_type)
 
     def _check_bulk(self):
         while not self.asked_to_stop:

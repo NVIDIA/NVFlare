@@ -18,9 +18,9 @@ from typing import List
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.lighter.utils import verify_folder_signature
-from nvflare.private.admin_defs import Message, error_reply, ok_reply
+from nvflare.private.admin_defs import AdminMessage, error_reply, ok_reply
 from nvflare.private.defs import RequestHeader, ScopeInfoKey, TrainingTopic
-from nvflare.private.fed.client.admin import RequestProcessor
+from nvflare.private.fed.client.root.admin import RequestProcessor
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
 from nvflare.private.fed.utils.fed_utils import get_scope_info
 
@@ -29,7 +29,7 @@ class StartAppProcessor(RequestProcessor):
     def get_topics(self) -> List[str]:
         return [TrainingTopic.START]
 
-    def process(self, req: Message, app_ctx) -> Message:
+    def process(self, req: AdminMessage, app_ctx) -> AdminMessage:
         engine = app_ctx
         if not isinstance(engine, ClientEngineInternalSpec):
             raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
@@ -45,7 +45,7 @@ class AbortAppProcessor(RequestProcessor):
     def get_topics(self) -> List[str]:
         return [TrainingTopic.ABORT]
 
-    def process(self, req: Message, app_ctx) -> Message:
+    def process(self, req: AdminMessage, app_ctx) -> AdminMessage:
         engine = app_ctx
         if not isinstance(engine, ClientEngineInternalSpec):
             raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
@@ -60,7 +60,7 @@ class AbortTaskProcessor(RequestProcessor):
     def get_topics(self) -> List[str]:
         return [TrainingTopic.ABORT_TASK]
 
-    def process(self, req: Message, app_ctx) -> Message:
+    def process(self, req: AdminMessage, app_ctx) -> AdminMessage:
         engine = app_ctx
         if not isinstance(engine, ClientEngineInternalSpec):
             raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
@@ -75,7 +75,7 @@ class ShutdownClientProcessor(RequestProcessor):
     def get_topics(self) -> List[str]:
         return [TrainingTopic.SHUTDOWN]
 
-    def process(self, req: Message, app_ctx) -> Message:
+    def process(self, req: AdminMessage, app_ctx) -> AdminMessage:
         engine = app_ctx
         if not isinstance(engine, ClientEngineInternalSpec):
             raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
@@ -89,7 +89,7 @@ class RestartClientProcessor(RequestProcessor):
     def get_topics(self) -> List[str]:
         return [TrainingTopic.RESTART]
 
-    def process(self, req: Message, app_ctx) -> Message:
+    def process(self, req: AdminMessage, app_ctx) -> AdminMessage:
         engine = app_ctx
         if not isinstance(engine, ClientEngineInternalSpec):
             raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
@@ -103,7 +103,7 @@ class DeployProcessor(RequestProcessor):
     def get_topics(self) -> List[str]:
         return [TrainingTopic.DEPLOY]
 
-    def process(self, req: Message, app_ctx) -> Message:
+    def process(self, req: AdminMessage, app_ctx) -> AdminMessage:
         # Note: this method executes in the Main process of the client
         engine = app_ctx
         if not isinstance(engine, ClientEngineInternalSpec):
@@ -136,7 +136,7 @@ class DeleteRunNumberProcessor(RequestProcessor):
     def get_topics(self) -> List[str]:
         return [TrainingTopic.DELETE_RUN]
 
-    def process(self, req: Message, app_ctx) -> Message:
+    def process(self, req: AdminMessage, app_ctx) -> AdminMessage:
         engine = app_ctx
         if not isinstance(engine, ClientEngineInternalSpec):
             raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
@@ -151,7 +151,7 @@ class ClientStatusProcessor(RequestProcessor):
     def get_topics(self) -> List[str]:
         return [TrainingTopic.CHECK_STATUS]
 
-    def process(self, req: Message, app_ctx) -> Message:
+    def process(self, req: AdminMessage, app_ctx) -> AdminMessage:
         engine = app_ctx
         if not isinstance(engine, ClientEngineInternalSpec):
             raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
@@ -164,7 +164,7 @@ class ScopeInfoProcessor(RequestProcessor):
     def get_topics(self) -> List[str]:
         return [TrainingTopic.GET_SCOPES]
 
-    def process(self, req: Message, app_ctx) -> Message:
+    def process(self, req: AdminMessage, app_ctx) -> AdminMessage:
         scope_names, default_scope_name = get_scope_info()
         result = {ScopeInfoKey.SCOPE_NAMES: scope_names, ScopeInfoKey.DEFAULT_SCOPE: default_scope_name}
         result = json.dumps(result)

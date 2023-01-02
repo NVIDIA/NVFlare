@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from nvflare.fuel.hci.server.constants import ConnProps
-from nvflare.fuel.f3.cellnet import new_message
+from nvflare.fuel.f3.cellnet.utils import new_message
 
 
 class SpecialTaskName(object):
@@ -138,6 +138,38 @@ class CellChannel:
     AUX = "aux"
     TASK = "task"
     COMMAND = "command"
+    SESSION = "session"
+
+
+class SessionTopic:
+
+    REGISTER = "register"
+    HEARTBEAT = "heartbeat"
+    LOGOUT = "logout"
+
+
+class AdminTopic:
+
+    ADMIN = "admin"
+    CHILD_REPORT = "child_report"
+
+
+class TaskTopic:
+
+    GET_TASK = "get_task"
+    SUBMIT_RESULT = "submit_result"
+
+
+class ParentReplyKey:
+    # response to CHILD_REPORT is a dict of following keys
+    JOB_PARTICIPANTS = "job_participants"
+    JOB_ID = "job_id"
+
+
+class MessagePayloadKey:
+
+    JOBS = "jobs"
+    ABORT_JOBS = "abort_jobs"
 
 
 ERROR_MSG_PREFIX = "NVFLARE_ERROR"

@@ -13,11 +13,11 @@
 # limitations under the License.
 
 from nvflare.fuel.hci.reg import CommandModule
-from nvflare.private.fed.server.info_coll_cmd import InfoCollectorCommandModule
-from nvflare.private.fed.server.job_cmds import JobCommandModule
-from nvflare.private.fed.server.shell_cmd import ShellCommandModule
-from nvflare.private.fed.server.sys_cmd import SystemCommandModule
-from nvflare.private.fed.server.training_cmds import TrainingCommandModule
+from nvflare.private.fed.server.root.info_coll_cmd import InfoCollectorCommandModule
+from nvflare.private.fed.server.root.job_cmds import JobCommandModule
+from nvflare.private.fed.server.root.shell_cmd import ShellCommandModule
+from nvflare.private.fed.server.root.sys_cmd import SystemCommandModule
+from nvflare.private.fed.server.root.training_cmds import TrainingCommandModule
 
 
 class ServerCommandModules:

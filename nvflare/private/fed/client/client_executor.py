@@ -21,10 +21,10 @@ import threading
 import time
 from abc import ABC, abstractmethod
 
-from nvflare.apis.fl_constant import AdminCommandNames, ReturnCode, RunProcessKey
+from nvflare.apis.fl_constant import AdminCommandNames, RunProcessKey
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
-from nvflare.fuel.f3.cellnet import Cell, FQCN
-from nvflare.private.defs import CellChannel, new_cell_message
+from nvflare.private.defs import CellChannel
+from nvflare.private.fed.rcmi import RootCellMessageInterface
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .client_status import ClientStatus, get_status_message
@@ -119,7 +119,7 @@ class ClientExecutor(ABC):
 class ProcessExecutor(ClientExecutor):
     """Run the Client executor in a child process."""
 
-    def __init__(self, startup, cell: Cell):
+    def __init__(self, startup, engine):
         """To init the ProcessExecutor.
 
         Args:
@@ -127,10 +127,9 @@ class ProcessExecutor(ClientExecutor):
         """
         self.logger = logging.getLogger(self.__class__.__name__)
         self.startup = startup
-        self.cell = cell
+        self.engine = engine
         self.run_processes = {}
         self.lock = threading.Lock()
-
 
     def start_app(
         self,
@@ -199,28 +198,23 @@ class ProcessExecutor(ClientExecutor):
         )
         thread.start()
 
-    def _get_job_cell_fqcn(self, job_id: str) -> str:
-        return FQCN.join([self.cell.get_fqcn(), job_id])
-
-    def _send_to_job_cell(self, job_cell_fqcn: str, data, fnf=False):
-        cell_msg = new_cell_message({}, data)
+    def _send_command_to_job_cell(self, job_id: str, cmd_name: str, data, fnf=False):
+        cmi = self.engine.get_cmi()
+        assert isinstance(cmi, RootCellMessageInterface)
         if fnf:
-            # fire and forget
-            self.cell.fire_and_forget(
-                channel=CellChannel.COMMAND,
-                topic="command",
-                message=cell_msg,
-                targets=[job_cell_fqcn],
-            )
+            timeout = 0
         else:
-            reply = self.cell.send_request(
-                channel=CellChannel.COMMAND,
-                topic="command",
-                request=cell_msg,
-                target=job_cell_fqcn,
-                timeout=None
-            )
-            return reply.payload
+            timeout = 1.0
+
+        return cmi.send_to_job_cell(
+            fl_ctx=None,
+            channel=CellChannel.COMMAND,
+            topic=cmd_name,
+            job_id=job_id,
+            headers=None,
+            payload=data,
+            timeout=timeout
+        )
 
     def check_status(self, job_id):
         """Checks the status of the running client.
@@ -232,10 +226,14 @@ class ProcessExecutor(ClientExecutor):
             A client status message
         """
         try:
-            job_cell_fqcn = self._get_job_cell_fqcn(job_id)
-            if self.cell.is_cell_reachable(job_cell_fqcn):
-                data = {"command": AdminCommandNames.CHECK_STATUS, "data": {}}
-                return self._send_to_job_cell(job_cell_fqcn, data)
+            cmi = self.engine.get_cmi()
+            assert isinstance(cmi, RootCellMessageInterface)
+            if cmi.is_job_cell_reachable(job_id):
+                return self._send_command_to_job_cell(
+                    job_id=job_id,
+                    cmd_name=AdminCommandNames.CHECK_STATUS,
+                    data=None
+                )
             else:
                 process_status = ClientStatus.NOT_STARTED
                 return get_status_message(process_status)
@@ -255,10 +253,14 @@ class ProcessExecutor(ClientExecutor):
         """
 
         try:
-            job_cell_fqcn = self._get_job_cell_fqcn(job_id)
-            if self.cell.is_cell_reachable(job_cell_fqcn):
-                data = {"command": AdminCommandNames.SHOW_STATS, "data": {}}
-                return self._send_to_job_cell(job_cell_fqcn, data)
+            cmi = self.engine.get_cmi()
+            assert isinstance(cmi, RootCellMessageInterface)
+            if cmi.is_job_cell_reachable(job_id):
+                return self._send_command_to_job_cell(
+                    job_id=job_id,
+                    cmd_name=AdminCommandNames.SHOW_STATS,
+                    data=None
+                )
             else:
                 return {}
         except Exception as e:
@@ -276,10 +278,14 @@ class ProcessExecutor(ClientExecutor):
             A dict of error information.
         """
         try:
-            job_cell_fqcn = self._get_job_cell_fqcn(job_id)
-            if self.cell.is_cell_reachable(job_cell_fqcn):
-                data = {"command": AdminCommandNames.SHOW_ERRORS, "data": {}}
-                return self._send_to_job_cell(job_cell_fqcn, data)
+            cmi = self.engine.get_cmi()
+            assert isinstance(cmi, RootCellMessageInterface)
+            if cmi.is_job_cell_reachable(job_id):
+                return self._send_command_to_job_cell(
+                    job_id=job_id,
+                    cmd_name=AdminCommandNames.SHOW_ERRORS,
+                    data=None
+                )
             else:
                 return None
         except Exception as e:
@@ -294,10 +300,15 @@ class ProcessExecutor(ClientExecutor):
             job_id: the job_id
         """
         try:
-            job_cell_fqcn = self._get_job_cell_fqcn(job_id)
-            if self.cell.is_cell_reachable(job_cell_fqcn):
-                data = {"command": AdminCommandNames.RESET_ERRORS, "data": {}}
-                self._send_to_job_cell(job_cell_fqcn, data, fnf=True)
+            cmi = self.engine.get_cmi()
+            assert isinstance(cmi, RootCellMessageInterface)
+            if cmi.is_job_cell_reachable(job_id):
+                self._send_command_to_job_cell(
+                    job_id=job_id,
+                    cmd_name=AdminCommandNames.RESET_ERRORS,
+                    data=None,
+                    fnf=True
+                )
         except Exception as e:
             self.logger.error(f"reset_errors execution exception: {secure_format_exception(e)}.")
             secure_log_traceback()
@@ -312,15 +323,20 @@ class ProcessExecutor(ClientExecutor):
             # When the HeartBeat cleanup process try to abort the worker process, the job maybe already terminated,
             # Use retry to avoid print out the error stack trace.
             retry = 1
-            job_cell_fqcn = self._get_job_cell_fqcn(job_id)
+            cmi = self.engine.get_cmi()
+            assert isinstance(cmi, RootCellMessageInterface)
             while retry >= 0:
                 process_status = self.run_processes.get(job_id, {}).get(RunProcessKey.STATUS, ClientStatus.NOT_STARTED)
                 if process_status == ClientStatus.STARTED:
                     try:
                         child_process = self.run_processes[job_id][RunProcessKey.CHILD_PROCESS]
-                        if self.cell.is_cell_reachable(job_cell_fqcn):
-                            data = {"command": AdminCommandNames.ABORT, "data": {}}
-                            self._send_to_job_cell(job_cell_fqcn, data, fnf=True)
+                        if cmi.is_job_cell_reachable(job_id):
+                            self._send_command_to_job_cell(
+                                job_id=job_id,
+                                cmd_name=AdminCommandNames.ABORT,
+                                data=None,
+                                fnf=True
+                            )
                             self.logger.debug("abort sent")
 
                         threading.Thread(target=self._terminate_process, args=[child_process, job_id]).start()
@@ -329,7 +345,7 @@ class ProcessExecutor(ClientExecutor):
                     except Exception as e:
                         if retry == 0:
                             self.logger.error(
-                                f"abort_worker_process execution exception: {secure_format_exception(e)} for run: {job_id}."
+                                f"abort_worker_process exception: {secure_format_exception(e)} for run: {job_id}."
                             )
                             secure_log_traceback()
                         retry -= 1
@@ -361,20 +377,30 @@ class ProcessExecutor(ClientExecutor):
         with self.lock:
             process_status = self.run_processes.get(job_id, {}).get(RunProcessKey.STATUS, ClientStatus.NOT_STARTED)
             if process_status == ClientStatus.STARTED:
-                job_cell_fqcn = self._get_job_cell_fqcn(job_id)
-                if self.cell.is_cell_reachable(job_cell_fqcn):
-                    data = {"command": AdminCommandNames.ABORT_TASK, "data": {}}
-                    self._send_to_job_cell(job_cell_fqcn, data, fnf=True)
+                cmi = self.engine.get_cmi()
+                assert isinstance(cmi, RootCellMessageInterface)
+                if cmi.is_job_cell_reachable(job_id):
+                    self._send_command_to_job_cell(
+                        job_id=job_id,
+                        cmd_name=AdminCommandNames.ABORT_TASK,
+                        data=None,
+                        fnf=True
+                    )
                     self.logger.debug("abort_task sent")
 
     def _wait_child_process_finish(self, client, job_id, allocated_resource, token, resource_manager):
         # wait for the listen_command thread to start, and send "start" message to wake up the connection.
         start = time.time()
-        job_cell_fqcn = self._get_job_cell_fqcn(job_id)
+        cmi = self.engine.get_cmi()
+        assert isinstance(cmi, RootCellMessageInterface)
         while True:
-            if self.cell.is_cell_reachable(job_cell_fqcn):
-                data = {"command": AdminCommandNames.START_APP, "data": {}}
-                self._send_to_job_cell(job_cell_fqcn, data, True)
+            if cmi.is_job_cell_reachable(job_id):
+                self._send_command_to_job_cell(
+                    job_id=job_id,
+                    cmd_name=AdminCommandNames.START_APP,
+                    data=None,
+                    fnf=True
+                )
                 break
             time.sleep(1.0)
             if time.time() - start > 15:

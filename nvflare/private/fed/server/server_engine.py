@@ -34,7 +34,6 @@ from nvflare.apis.fl_constant import (
     AdminCommandNames,
     FLContextKey,
     MachineStatus,
-    ReservedTopic,
     ReturnCode,
     RunProcessKey,
     ServerCommandKey,
@@ -46,13 +45,13 @@ from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.fl_snapshot import RunSnapshot
 from nvflare.apis.impl.job_def_manager import JobDefManagerSpec
 from nvflare.apis.job_def import Job
-from nvflare.apis.shareable import Shareable, make_reply
+from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
-from nvflare.private.admin_defs import Message, MsgHeader
+from nvflare.private.admin_defs import AdminMessage, MsgHeader
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.private.fed.utils.fed_utils import security_close
@@ -61,14 +60,14 @@ from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
 
-from .admin import ClientReply
+from nvflare.private.fed.server.root.admin import ClientReply
 from .client_manager import ClientManager
-from .job_runner import JobRunner
+from nvflare.private.fed.server.root.job_runner import JobRunner
 from .run_manager import RunInfo, RunManager
-from .server_commands import NO_OP_REPLY
+from nvflare.private.fed.server.job.server_commands import NO_OP_REPLY
 from .server_engine_internal_spec import EngineInfo, ServerEngineInternalSpec
 from .server_status import ServerStatus
-
+from .root.root_commander import RootCommander
 
 class ClientConnection:
     def __init__(self, client):
@@ -122,6 +121,7 @@ class ServerEngine(ServerEngineInternalSpec):
         self.parent_conn_lock = Lock()
         self.job_runner = None
         self.job_def_manager = None
+        self.commander = RootCommander(self)
 
     def _get_server_app_folder(self):
         return WorkspaceConstants.APP_PREFIX + "server"
@@ -367,11 +367,7 @@ class ServerEngine(ServerEngineInternalSpec):
         self.logger.info("Abort the server app run.")
 
         try:
-            status_message = self.send_command_to_child_runner_process(
-                job_id=job_id,
-                command_name=AdminCommandNames.ABORT,
-                command_data={},
-            )
+            status_message = self.commander.abort(job_id)
             self.logger.info(f"Abort server status: {status_message}")
         except BaseException:
             with self.lock:
@@ -468,11 +464,7 @@ class ServerEngine(ServerEngineInternalSpec):
     def get_app_run_info(self, job_id) -> Optional[RunInfo]:
         run_info = None
         try:
-            run_info = self.send_command_to_child_runner_process(
-                job_id=job_id,
-                command_name=ServerCommandNames.GET_RUN_INFO,
-                command_data={},
-            )
+            run_info = self.commander.get_app_run_info(job_id)
         except BaseException:
             self.logger.error(f"Failed to get_app_run_info for run: {job_id}")
         return run_info
@@ -683,14 +675,9 @@ class ServerEngine(ServerEngineInternalSpec):
     def show_stats(self, job_id) -> dict:
         stats = None
         try:
-            stats = self.send_command_to_child_runner_process(
-                job_id=job_id,
-                command_name=ServerCommandNames.SHOW_STATS,
-                command_data={},
-            )
+            stats = self.commander.show_stats(job_id)
         except BaseException:
             self.logger.error(f"Failed to show_stats for JOB: {job_id}")
-
         if stats is None:
             stats = {}
         return stats
@@ -698,11 +685,7 @@ class ServerEngine(ServerEngineInternalSpec):
     def get_errors(self, job_id) -> dict:
         errors = None
         try:
-            errors = self.send_command_to_child_runner_process(
-                job_id=job_id,
-                command_name=ServerCommandNames.GET_ERRORS,
-                command_data={},
-            )
+            errors = self.commander.get_errors(job_id)
         except BaseException:
             self.logger.error(f"Failed to get_errors for JOB: {job_id}")
 
@@ -719,7 +702,7 @@ class ServerEngine(ServerEngineInternalSpec):
             # assume server resource is unlimited
             if site_name == "server":
                 continue
-            request = Message(topic=TrainingTopic.CHECK_RESOURCE, body=fobs.dumps(resource_requirements))
+            request = AdminMessage(topic=TrainingTopic.CHECK_RESOURCE, body=fobs.dumps(resource_requirements))
             request.set_header(RequestHeader.JOB_ID, job_id)
             client = self.get_client_from_name(site_name)
             if client:
@@ -753,7 +736,7 @@ class ServerEngine(ServerEngineInternalSpec):
             is_resource_enough, token = result
             if is_resource_enough and token:
                 resource_requirements = resource_reqs[site_name]
-                request = Message(topic=TrainingTopic.CANCEL_RESOURCE, body=fobs.dumps(resource_requirements))
+                request = AdminMessage(topic=TrainingTopic.CANCEL_RESOURCE, body=fobs.dumps(resource_requirements))
                 request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
                 client = self.get_client_from_name(site_name)
                 if client:
@@ -766,7 +749,7 @@ class ServerEngine(ServerEngineInternalSpec):
         for site, dispatch_info in client_sites.items():
             resource_requirement = dispatch_info.resource_requirements
             token = dispatch_info.token
-            request = Message(topic=TrainingTopic.START_JOB, body=fobs.dumps(resource_requirement))
+            request = AdminMessage(topic=TrainingTopic.START_JOB, body=fobs.dumps(resource_requirement))
             request.set_header(RequestHeader.JOB_ID, job_id)
             request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
             client = self.get_client_from_name(site)

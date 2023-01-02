@@ -29,9 +29,9 @@ from nvflare.fuel.hci.shell_cmd_val import (
     ShellCommandValidator,
     TailValidator,
 )
-from nvflare.private.admin_defs import Message
+from nvflare.private.admin_defs import AdminMessage
 from nvflare.private.defs import SysCommandTopic
-from nvflare.private.fed.server.admin import ClientReply, new_message
+from nvflare.private.fed.server.root.admin import ClientReply, new_admin_message
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
 
 
@@ -102,7 +102,7 @@ class _CommandExecutor(object):
         for c in clients:
             valid_tokens.append(c.token)
 
-        req = new_message(conn=conn, topic=SysCommandTopic.SHELL, body=shell_cmd, require_authz=True)
+        req = new_admin_message(conn=conn, topic=SysCommandTopic.SHELL, body=shell_cmd, require_authz=True)
         server = conn.server
         reply = server.send_request_to_client(req, valid_tokens[0], timeout_secs=server.timeout)
         if reply is None:
@@ -114,7 +114,7 @@ class _CommandExecutor(object):
         if reply.reply is None:
             conn.append_error("no reply from client - timed out")
             return
-        if not isinstance(reply.reply, Message):
+        if not isinstance(reply.reply, AdminMessage):
             raise TypeError("reply in ClientReply must be Message but got {}".format(type(reply.reply)))
         conn.append_string(reply.reply.body)
 

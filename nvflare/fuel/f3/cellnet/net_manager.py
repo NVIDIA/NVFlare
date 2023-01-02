@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .netbot import NetBot
+from .net_agent import NetAgent
 
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
@@ -23,9 +23,9 @@ class NetManager(CommandModule):
 
     def __init__(
             self,
-            bot: NetBot
+            agent: NetAgent
     ):
-        self.bot = bot
+        self.agent = agent
 
     def get_spec(self) -> CommandModuleSpec:
         return CommandModuleSpec(
@@ -89,7 +89,7 @@ class NetManager(CommandModule):
                 )])
 
     def _cmd_cells(self, conn: Connection, args: [str]):
-        err, cell_fqcns = self.bot.request_cells_info()
+        err, cell_fqcns = self.agent.request_cells_info()
         if err:
             conn.append_error(err)
 
@@ -102,7 +102,7 @@ class NetManager(CommandModule):
             conn.append_string(f"Usage: {cmd_entry.usage}")
             return
         url = args[1]
-        results = self.bot.get_url_use(url)
+        results = self.agent.get_url_use(url)
         conn.append_dict(results)
 
     def _cmd_route(self, conn: Connection, args: [str]):
@@ -115,7 +115,7 @@ class NetManager(CommandModule):
         if len(args) > 2:
             from_fqcn = args[2]
 
-        err, reply_headers, req_headers = self.bot.start_route(from_fqcn, target_fqcn)
+        err, reply_headers, req_headers = self.agent.start_route(from_fqcn, target_fqcn)
         conn.append_string(f"Route Info from {from_fqcn} to {target_fqcn}")
         if err:
             conn.append_error(err)
@@ -133,7 +133,7 @@ class NetManager(CommandModule):
             return
 
         target_fqcn = args[1]
-        err_dict, agents = self.bot.get_agents(target_fqcn)
+        err_dict, agents = self.agent.get_agents(target_fqcn)
         if err_dict:
             conn.append_dict(err_dict)
         if agents:
@@ -146,7 +146,7 @@ class NetManager(CommandModule):
             conn.append_string(f"Usage: {cmd_entry.usage}")
             return
         target_fqcn = args[1]
-        err_dict, result = self.bot.get_connectors(target_fqcn)
+        err_dict, result = self.agent.get_connectors(target_fqcn)
         if err_dict:
             conn.append_dict(err_dict)
         if result:
@@ -166,7 +166,7 @@ class NetManager(CommandModule):
         if len(args) > 4:
             payload_size = int(args[4])
 
-        result = self.bot.speed_test(
+        result = self.agent.speed_test(
             from_fqcn=from_fqcn,
             to_fqcn=to_fqcn,
             num_tries=num_tries,
@@ -181,7 +181,7 @@ class NetManager(CommandModule):
             num_tries = int(args[1])
         if len(args) > 2:
             timeout = int(args[2])
-        err, targets = self.bot.request_cells_info()
+        err, targets = self.agent.request_cells_info()
         if err:
             conn.append_error(err)
 
@@ -189,7 +189,7 @@ class NetManager(CommandModule):
             conn.append_error("no targets to test")
 
         conn.append_string(f"starting stress test on {targets}", flush=True)
-        result = self.bot.start_stress_test(
+        result = self.agent.start_stress_test(
             targets=targets,
             num_rounds=num_tries,
             timeout=timeout
@@ -210,5 +210,5 @@ class NetManager(CommandModule):
         conn.append_string(f"total errors: {total_errors}")
 
     def _cmd_shutdown(self, conn: Connection, args: [str]):
-        self.bot.stop()
+        self.agent.stop()
         conn.append_shutdown("System Stopped")

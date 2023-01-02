@@ -24,7 +24,9 @@ from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import add_job_audit_event
-from nvflare.private.defs import SpecialTaskName, TaskConstant
+from nvflare.fuel.f3.cellnet.cell import Message
+from nvflare.private.defs import SpecialTaskName, TaskConstant, CellChannel, TaskTopic
+from nvflare.private.fed.jcmi import JobCellMessageInterface
 from nvflare.private.privacy_manager import Scope
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
@@ -90,6 +92,19 @@ class ServerRunner(FLComponent):
         self.current_wf = None
         self.current_wf_index = 0
         self.status = "init"
+
+        cell = engine.get_cell()
+        cell.register_request_cb(
+            channel=CellChannel.TASK,
+            topic=TaskTopic.GET_TASK,
+            cb=self._process_cell_msg_get_task
+        )
+
+        cell.register_request_cb(
+            channel=CellChannel.TASK,
+            topic=TaskTopic.SUBMIT_RESULT,
+            cb=self._process_cell_msg_submit_result
+        )
 
     def _execute_run(self):
         while self.current_wf_index < len(self.config.workflows):
@@ -198,12 +213,33 @@ class ServerRunner(FLComponent):
             self.log_error(fl_ctx, "Aborting current RUN due to FATAL_SYSTEM_ERROR received: {}".format(reason))
             self.abort(fl_ctx)
 
-    def _task_try_again(self) -> (str, str, Shareable):
-        task_data = Shareable()
+    def _make_task(self, name: str, task_id="", data=None) -> Shareable:
+        if data:
+            task_data = data
+        else:
+            task_data = Shareable()
         task_data.set_header(TaskConstant.WAIT_TIME, self.config.task_request_interval)
-        return SpecialTaskName.TRY_AGAIN, "", task_data
+        task_data.set_header(ReservedHeaderKey.TASK_ID, task_id)
+        task_data.set_header(ReservedHeaderKey.TASK_NAME, name)
+        return task_data
 
-    def process_task_request(self, client: Client, fl_ctx: FLContext) -> (str, str, Shareable):
+    def _task_try_again(self):
+        return self._make_task(SpecialTaskName.TRY_AGAIN)
+
+    def _process_cell_msg_get_task(
+            self,
+            request: Message):
+        fl_ctx = request.get_prop(JobCellMessageInterface.PROP_KEY_FL_CTX)
+        jcmi = self.engine.get_cmi()
+        assert isinstance(jcmi, JobCellMessageInterface)
+        client = request.get_prop(jcmi.PROP_KEY_CLIENT)
+        reply = self._process_task_request(client, fl_ctx)
+        return jcmi.new_cmi_message(
+            fl_ctx=fl_ctx,
+            payload=reply
+        )
+
+    def _process_task_request(self, client: Client, fl_ctx: FLContext) -> Shareable:
         """Process task request from a client.
 
         NOTE: the Engine will create a new fl_ctx and call this method:
@@ -231,7 +267,7 @@ class ServerRunner(FLComponent):
 
         if self.status == "done":
             self.log_info(fl_ctx, "server runner is finalizing - asked client to end the run")
-            return SpecialTaskName.END_RUN, "", None
+            return self._make_task(SpecialTaskName.END_RUN)
 
         peer_ctx = fl_ctx.get_peer_context()
         if not isinstance(peer_ctx, FLContext):
@@ -242,7 +278,7 @@ class ServerRunner(FLComponent):
         if not peer_job_id or peer_job_id != self.job_id:
             # the client is in a different RUN
             self.log_info(fl_ctx, "invalid task request: not the same job_id - asked client to end the run")
-            return SpecialTaskName.END_RUN, "", None
+            return self._make_task(SpecialTaskName.END_RUN)
 
         try:
             task_name, task_id, task_data = self._try_to_get_task(
@@ -292,7 +328,7 @@ class ServerRunner(FLComponent):
             audit_event_id = add_job_audit_event(fl_ctx=fl_ctx, msg=f'sent task to client "{client.name}"')
             task_data.set_header(ReservedHeaderKey.AUDIT_EVENT_ID, audit_event_id)
             task_data.set_header(TaskConstant.WAIT_TIME, self.config.task_request_interval)
-            return task_name, task_id, task_data
+            return self._make_task(task_name, task_id, task_data)
         except BaseException as e:
             self.log_exception(
                 fl_ctx,
@@ -353,7 +389,22 @@ class ServerRunner(FLComponent):
             except BaseException as e:
                 self.log_exception(fl_ctx, f"Error processing dead job by workflow {self.current_wf.id}: {e}")
 
-    def process_submission(self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext):
+    def _process_cell_msg_submit_result(
+            self,
+            request: Message):
+        fl_ctx = request.get_prop(JobCellMessageInterface.PROP_KEY_FL_CTX)
+        jcmi = self.engine.get_cmi()
+        assert isinstance(jcmi, JobCellMessageInterface)
+        client = request.get_prop(jcmi.PROP_KEY_CLIENT)
+        shareable = request.payload
+        assert isinstance(shareable, Shareable)
+        peer_ctx = request.get_prop(jcmi.PROP_KEY_FL_CTX)
+        if peer_ctx:
+            fl_ctx.set_peer_context(peer_ctx)
+        self._process_submission(client, shareable, fl_ctx)
+        return jcmi.new_cmi_message(fl_ctx)
+
+    def _process_submission(self, client: Client, result: Shareable, fl_ctx: FLContext):
         """Process task result submitted from a client.
 
         NOTE: the Engine will create a new fl_ctx and call this method:
@@ -363,11 +414,11 @@ class ServerRunner(FLComponent):
 
         Args:
             client: Client object
-            task_name: task name
-            task_id: task id
             result: task result
             fl_ctx: FLContext
         """
+        task_name = result.get_header(ReservedHeaderKey.TASK_NAME)
+        task_id = result.get_header(ReservedHeaderKey.TASK_ID)
         self.log_info(fl_ctx, f"got result from client {client.name} for task: name={task_name}, id={task_id}")
 
         if not isinstance(result, Shareable):

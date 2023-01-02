@@ -18,7 +18,7 @@ from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
-from nvflare.private.fed.server.admin import FedAdminServer
+from nvflare.private.fed.server.root.admin import FedAdminServer
 
 
 class CommandUtil(object):

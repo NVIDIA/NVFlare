@@ -22,16 +22,16 @@ try:
 except ImportError:
     pynvml = None
 
-from nvflare.private.admin_defs import Message
+from nvflare.private.admin_defs import AdminMessage
 from nvflare.private.defs import SysCommandTopic
-from nvflare.private.fed.client.admin import RequestProcessor
+from nvflare.private.fed.client.root.admin import RequestProcessor
 
 
 class SysInfoProcessor(RequestProcessor):
     def get_topics(self) -> List[str]:
         return [SysCommandTopic.SYS_INFO]
 
-    def process(self, req: Message, app_ctx) -> Message:
+    def process(self, req: AdminMessage, app_ctx) -> AdminMessage:
         infos = dict(psutil.virtual_memory()._asdict())
         if pynvml:
             try:
@@ -48,7 +48,7 @@ class SysInfoProcessor(RequestProcessor):
 
         # docker_image_tag = os.environ.get('DOCKER_IMAGE_TAG', 'N/A')
         # infos.update({'docker_image_tag':docker_image_tag})
-        message = Message(topic="reply_" + req.topic, body=json.dumps(infos))
+        message = AdminMessage(topic="reply_" + req.topic, body=json.dumps(infos))
         print("return sys_info")
         print(infos)
         return message

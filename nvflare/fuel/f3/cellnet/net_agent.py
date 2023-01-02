@@ -39,7 +39,7 @@ _TOPIC_STRESS = "stress"
 _ONE_K = bytes([1] * 1000)
 
 
-class NetBot:
+class NetAgent:
 
     def __init__(self, cell: Cell):
         self.cell = cell

@@ -29,7 +29,8 @@ class Server(CellRunner):
     def __init__(
             self,
             config_path: str,
-            config_file: str
+            config_file: str,
+            log_level: str
     ):
         self._name = self.__class__.__name__
         self.logger = logging.getLogger(self._name)
@@ -44,9 +45,10 @@ class Server(CellRunner):
             config_path=config_path,
             config_file=config_file,
             my_name=FQCN.ROOT_SERVER,
+            log_level=log_level
         )
 
-        net_mgr = NetManager(self.bot)
+        net_mgr = NetManager(self.agent)
 
         # set up admin server
         users = {"admin": hash_password("admin")}

@@ -20,8 +20,8 @@ from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.private.admin_defs import MsgHeader, ReturnCode
 from nvflare.private.defs import SysCommandTopic
-from nvflare.private.fed.server.admin import new_message
-from nvflare.private.fed.server.cmd_utils import CommandUtil
+from nvflare.private.fed.server.root.admin import new_admin_message
+from nvflare.private.fed.server.root.cmd_utils import CommandUtil
 from nvflare.security.logging import secure_format_exception
 
 
@@ -92,7 +92,7 @@ class SystemCommandModule(CommandModule, CommandUtil):
             return
 
         if target_type == self.TARGET_TYPE_CLIENT:
-            message = new_message(conn, topic=SysCommandTopic.SYS_INFO, body="", require_authz=True)
+            message = new_admin_message(conn, topic=SysCommandTopic.SYS_INFO, body="", require_authz=True)
             replies = self.send_request_to_clients(conn, message)
             self._process_replies(conn, replies)
             return
@@ -145,7 +145,7 @@ class SystemCommandModule(CommandModule, CommandUtil):
         site_resources = {"server": "unlimited"}
 
         if target_type == self.TARGET_TYPE_CLIENT:
-            message = new_message(conn, topic=SysCommandTopic.REPORT_RESOURCES, body="", require_authz=True)
+            message = new_admin_message(conn, topic=SysCommandTopic.REPORT_RESOURCES, body="", require_authz=True)
             replies = self.send_request_to_clients(conn, message)
             if not replies:
                 conn.append_error("no responses from clients")

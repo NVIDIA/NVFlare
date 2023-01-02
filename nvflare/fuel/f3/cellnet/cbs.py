@@ -48,6 +48,13 @@ def request_cb_signature(
     pass
 
 
+def message_interceptor_signature(
+        message: Message,
+        *args, **kwargs
+) -> Message:
+    pass
+
+
 def filter_cb_signature(
         message: Message,
         *args, **kwargs

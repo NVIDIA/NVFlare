@@ -22,7 +22,12 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import add_job_audit_event
-from nvflare.private.defs import SpecialTaskName, TaskConstant
+from nvflare.fuel.f3.cellnet.cell import (
+    Message as CellMessage, MessageHeaderKey, ReturnCode as CellReturnCode
+)
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.private.defs import SpecialTaskName, TaskConstant, CellChannel, TaskTopic
+from nvflare.private.fed.jcmi import JobCellMessageInterface
 from nvflare.private.fed.client.client_engine_executor_spec import ClientEngineExecutorSpec, TaskAssignment
 from nvflare.private.privacy_manager import Scope
 from nvflare.security.logging import secure_format_exception
@@ -361,6 +366,41 @@ class ClientRunner(FLComponent):
 
                 time.sleep(task_fetch_interval)
 
+    def _send_to_server(self, topic, payload, fl_ctx: FLContext) -> CellMessage:
+        if not payload:
+            payload = Shareable()
+        jcmi = self.engine.get_cmi()
+        assert isinstance(jcmi, JobCellMessageInterface)
+        replies = jcmi.send_to_job_cell(
+            channel=CellChannel.TASK,
+            topic=topic,
+            request=payload,
+            timeout=1.0,
+            fl_ctx=fl_ctx,
+            targets=[FQCN.ROOT_SERVER]
+        )
+        return replies[FQCN.ROOT_SERVER]
+
+    def _get_task_assignment(self, fl_ctx):
+        reply = self._send_to_server(topic=TaskTopic.GET_TASK, payload=None, fl_ctx=fl_ctx)
+        rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
+        if rc != CellReturnCode.OK:
+            self.log_error(fl_ctx, f"error getting task assignment: rc={rc}")
+            return None
+        shareable = reply.payload
+        assert isinstance(shareable, Shareable)
+        task_id = shareable.get_header(key=ReservedKey.TASK_ID)
+        task_name = shareable.get_header(key=ReservedKey.TASK_NAME)
+        return TaskAssignment(name=task_name, task_id=task_id, data=shareable)
+
+    def _submit_result(self, result: Shareable, fl_ctx: FLContext) -> bool:
+        reply = self._send_to_server(topic=TaskTopic.SUBMIT_RESULT, payload=result, fl_ctx=fl_ctx)
+        rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
+        if rc != CellReturnCode.OK:
+            self.log_error(fl_ctx, f"error getting task assignment: rc={rc}")
+            return False
+        return True
+
     def fetch_and_run_one_task(self, fl_ctx) -> (float, bool):
         """Fetches and runs a task.
 
@@ -369,7 +409,7 @@ class ClientRunner(FLComponent):
         """
         default_task_fetch_interval = self.default_task_fetch_interval
         self.log_debug(fl_ctx, "fetching task from server ...")
-        task = self.engine.get_task_assignment(fl_ctx)
+        task = self._get_task_assignment(fl_ctx)
 
         if not task:
             self.log_debug(fl_ctx, "no task received - will try in {} secs".format(default_task_fetch_interval))

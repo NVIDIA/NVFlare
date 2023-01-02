@@ -15,6 +15,7 @@
 from abc import ABC, abstractmethod
 
 from nvflare.apis.shareable import Shareable
+from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.widgets.widget import Widget
 
 from .fl_context import FLContext
@@ -22,6 +23,11 @@ from .workspace import Workspace
 
 
 class EngineSpec(ABC):
+
+    @abstractmethod
+    def get_cell(self) -> Cell:
+        pass
+
     @abstractmethod
     def fire_event(self, event_type: str, fl_ctx: FLContext):
         pass

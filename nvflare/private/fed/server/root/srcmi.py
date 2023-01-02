@@ -12,19 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import subprocess
-from typing import List
-
-from nvflare.private.admin_defs import Message
-from nvflare.private.defs import SysCommandTopic
-from nvflare.private.fed.client.admin import RequestProcessor
+from nvflare.private.fed.rcmi import RootCellMessageInterface
 
 
-class ShellCommandProcessor(RequestProcessor):
-    def get_topics(self) -> List[str]:
-        return [SysCommandTopic.SHELL]
+class ServerRootCellMessageInterface(RootCellMessageInterface):
 
-    def process(self, req: Message, app_ctx) -> Message:
-        shell_cmd = req.body
-        output = subprocess.getoutput(shell_cmd)
-        return Message(topic="reply_" + req.topic, body=output)
+    def __init__(self, engine):
+        RootCellMessageInterface.__init__(self, engine)

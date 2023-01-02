@@ -12,22 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import uuid
+from nvflare.apis.shareable import Shareable, ReturnCode
 
 
-class MsgHeader(object):
-
-    REF_MSG_ID = "_refMsgId"
-    RETURN_CODE = "_rtnCode"
-
-
-class ReturnCode(object):
-
-    OK = "_ok"
-    ERROR = "_error"
-
-
-class Message(object):
+class AdminMessage(Shareable):
     def __init__(self, topic: str, body):
         """To init a Message.
 
@@ -35,13 +23,9 @@ class Message(object):
             topic: message topic
             body: message body.
         """
-        self.id = str(uuid.uuid4())
-        self.topic = topic
-        self.body = body
-        self.headers = {}
-
-    def set_header(self, key, value):
-        self.headers[key] = value
+        Shareable.__init__(self)
+        self['body'] = body
+        self.set_header('topic', topic)
 
     def set_headers(self, headers: dict):
         if not headers:
@@ -49,31 +33,31 @@ class Message(object):
         if not isinstance(headers, dict):
             raise TypeError("headers must be dict but got {}".format(type(headers)))
         if len(headers) > 0:
-            self.headers.update(headers)
+            for k, v in headers:
+                self.set_header(k, v)
 
-    def get_header(self, key, default=None):
-        return self.headers.get(key, default)
+    @property
+    def body(self):
+        return self.get('body')
 
-    def get_ref_id(self, default=None):
-        return self.get_header(MsgHeader.REF_MSG_ID, default)
-
-    def set_ref_id(self, msg_id):
-        self.set_header(MsgHeader.REF_MSG_ID, msg_id)
+    @property
+    def topic(self):
+        return self.get_header('topic')
 
 
-def error_reply(err: str) -> Message:
-    msg = Message(topic="reply", body=err)
-    msg.set_header(MsgHeader.RETURN_CODE, ReturnCode.ERROR)
+def error_reply(err: str) -> AdminMessage:
+    msg = AdminMessage(topic="reply", body=err)
+    msg.set_return_code(ReturnCode.ERROR)
     return msg
 
 
-def ok_reply(topic=None, body=None) -> Message:
+def ok_reply(topic=None, body=None) -> AdminMessage:
     if body is None:
         body = "ok"
 
     if topic is None:
         topic = "reply"
 
-    msg = Message(topic=topic, body=body)
-    msg.set_header(MsgHeader.RETURN_CODE, ReturnCode.OK)
+    msg = AdminMessage(topic=topic, body=body)
+    msg.set_return_code(ReturnCode.OK)
     return msg

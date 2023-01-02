@@ -36,13 +36,13 @@ from nvflare.fuel.utils.argument_utils import SafeArgumentParser
 from nvflare.fuel.utils.obj_utils import get_size
 from nvflare.fuel.utils.zip_utils import ls_zip_from_bytes, unzip_all_from_bytes, zip_directory_to_bytes
 from nvflare.private.defs import RequestHeader, TrainingTopic
-from nvflare.private.fed.server.admin import new_message
-from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
+from nvflare.private.fed.server.root.admin import new_admin_message
+from nvflare.private.fed.server.root.job_meta_validator import JobMetaValidator
 from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
-from .cmd_utils import CommandUtil
+from nvflare.private.fed.server.root.cmd_utils import CommandUtil
 
 MAX_DOWNLOAD_JOB_SIZE = 50 * 1024 * 1024 * 1204
 CLONED_META_KEYS = {
@@ -178,7 +178,7 @@ class JobCommandModule(CommandModule, CommandUtil):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
 
         job_id = conn.get_prop(self.JOB_ID)
-        message = new_message(conn, topic=TrainingTopic.ABORT_TASK, body="", require_authz=False)
+        message = new_admin_message(conn, topic=TrainingTopic.ABORT_TASK, body="", require_authz=False)
         message.set_header(RequestHeader.JOB_ID, str(job_id))
         replies = self.send_request_to_clients(conn, message)
         return self.process_replies_to_table(conn, replies)
@@ -209,7 +209,7 @@ class JobCommandModule(CommandModule, CommandUtil):
             conn.append_error(err)
             return False
 
-        message = new_message(conn, topic=TrainingTopic.START, body="", require_authz=False)
+        message = new_admin_message(conn, topic=TrainingTopic.START, body="", require_authz=False)
         message.set_header(RequestHeader.JOB_ID, job_id)
         replies = self.send_request_to_clients(conn, message)
         self.process_replies_to_table(conn, replies)
@@ -261,7 +261,7 @@ class JobCommandModule(CommandModule, CommandUtil):
             return
 
         # ask clients to delete this RUN
-        message = new_message(conn, topic=TrainingTopic.DELETE_RUN, body="", require_authz=False)
+        message = new_admin_message(conn, topic=TrainingTopic.DELETE_RUN, body="", require_authz=False)
         message.set_header(RequestHeader.JOB_ID, str(job_id))
         clients = engine.get_clients()
         if clients:
@@ -513,7 +513,7 @@ class JobCommandModule(CommandModule, CommandUtil):
         os.mkdir(job_id_dir)
 
         data_bytes = job_data[JobDataKey.JOB_DATA.value]
-        job_dir = os.path.join(job_id_dir, "job")
+        job_dir = os.path.join(job_id_dir, "../job")
         os.mkdir(job_dir)
         unzip_all_from_bytes(data_bytes, job_dir)
 

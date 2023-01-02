@@ -23,7 +23,7 @@ import pytest
 from nvflare.apis.fl_constant import JobConstants
 from nvflare.apis.utils.job_utils import convert_legacy_zipped_app_to_job
 from nvflare.fuel.utils.zip_utils import get_all_file_paths, normpath_for_zip, split_path
-from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
+from nvflare.private.fed.server.root.job_meta_validator import JobMetaValidator
 
 
 def _zip_directory_with_meta(root_dir: str, folder_name: str, meta: str, writer: io.BytesIO):

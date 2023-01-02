@@ -20,7 +20,7 @@ from nvflare.fuel.utils.json_scanner import Node
 from nvflare.private.fed_json_config import FedJsonConfigurator
 from nvflare.private.json_configer import ConfigContext, ConfigError
 
-from .server_runner import ServerRunnerConfig
+from nvflare.private.fed.server.job.server_runner import ServerRunnerConfig
 
 FL_PACKAGES = ["nvflare"]
 FL_MODULES = ["apis", "app_common", "widgets"]

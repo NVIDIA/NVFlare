@@ -19,7 +19,7 @@ from nvflare.apis.fl_constant import FLContextKey, ReservedKey, RunProcessKey, S
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.private.fed.server.run_manager import RunManager
-from nvflare.private.fed.server.server_state import HotState
+from nvflare.private.fed.server.root.server_state import HotState
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 
 from ..server.fed_server import FederatedServer

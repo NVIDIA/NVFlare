@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.fuel.f3.cellnet.cell import Cell
+from nvflare.fuel.f3.cellnet.cell import Cell, CellAgent, Message, MessageHeaderKey, MessageType
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
-from nvflare.fuel.f3.cellnet.netbot import NetBot
+from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from .net_config import NetConfig
 
 import os
@@ -40,11 +40,13 @@ class CellRunner:
             config_file: str,
             my_name: str,
             parent_url: str = "",
-            parent_fqcn: str = ""
+            parent_fqcn: str = "",
+            log_level: str = "info"
     ):
         self.asked_to_stop = False
         self.config_path = config_path
         self.config_file = config_file
+        self.log_level = log_level
 
         if not parent_fqcn:
             my_fqcn = my_name
@@ -65,10 +67,94 @@ class CellRunner:
             create_internal_listener=self.create_internal_listener,
             parent_url=parent_url,
         )
-        self.bot = NetBot(self.cell)
+        self.agent = NetAgent(self.cell)
 
         self.child_runners = {}
         self.client_runners = {}
+
+        self.cell.set_cell_connected_cb(cb=self._cell_connected)
+        self.cell.set_cell_disconnected_cb(cb=self._cell_disconnected)
+        self.cell.add_incoming_reply_filter(
+            channel="*",
+            topic="*",
+            cb=self._filter_incoming_reply
+        )
+        self.cell.add_incoming_request_filter(
+            channel="*",
+            topic="*",
+            cb=self._filter_incoming_request
+        )
+        self.cell.add_outgoing_reply_filter(
+            channel="*",
+            topic="*",
+            cb=self._filter_outgoing_reply
+        )
+        self.cell.add_outgoing_request_filter(
+            channel="*",
+            topic="*",
+            cb=self._filter_outgoing_request
+        )
+        self.cell.set_message_interceptor(
+            cb=self._inspect_message
+        )
+
+    def _inspect_message(self, message: Message):
+        header_name = "inspected_by"
+        inspectors = message.get_header(header_name)
+        if not inspectors:
+            inspectors = []
+            message.set_header(header_name, inspectors)
+        inspectors.append(self.cell.get_fqcn())
+
+    def _cell_connected(self, connected_cell: CellAgent):
+        self.cell.logger.info(f"{self.cell.get_fqcn()}: Cell {connected_cell.get_fqcn()} connected")
+
+    def _cell_disconnected(self, disconnected_cell: CellAgent):
+        self.cell.logger.info(f"{self.cell.get_fqcn()}: Cell {disconnected_cell.get_fqcn()} disconnected")
+
+    def _filter_incoming_reply(self, message: Message):
+        channel = message.get_header(MessageHeaderKey.CHANNEL, "")
+        topic = message.get_header(MessageHeaderKey.TOPIC, "")
+        msg_type = message.get_header(MessageHeaderKey.MSG_TYPE)
+        destination = message.get_header(MessageHeaderKey.DESTINATION, "")
+        assert len(channel) > 0
+        assert len(topic) > 0
+        assert msg_type == MessageType.REPLY
+        assert destination == self.cell.get_fqcn()
+        self.cell.logger.debug(f"{self.cell.get_fqcn()}: _filter_incoming_reply called")
+
+    def _filter_incoming_request(self, message: Message):
+        channel = message.get_header(MessageHeaderKey.CHANNEL, "")
+        topic = message.get_header(MessageHeaderKey.TOPIC, "")
+        msg_type = message.get_header(MessageHeaderKey.MSG_TYPE)
+        destination = message.get_header(MessageHeaderKey.DESTINATION, "")
+        assert len(channel) > 0
+        assert len(topic) > 0
+        assert msg_type == MessageType.REQ
+        assert destination == self.cell.get_fqcn()
+        self.cell.logger.debug(f"{self.cell.get_fqcn()}: _filter_incoming_request called")
+
+    def _filter_outgoing_reply(self, message: Message):
+        channel = message.get_header(MessageHeaderKey.CHANNEL, "")
+        topic = message.get_header(MessageHeaderKey.TOPIC, "")
+        msg_type = message.get_header(MessageHeaderKey.MSG_TYPE)
+        origin = message.get_header(MessageHeaderKey.ORIGIN, "")
+        assert len(channel) > 0
+        assert len(topic) > 0
+        assert msg_type == MessageType.REPLY
+        assert origin == self.cell.get_fqcn()
+        self.cell.logger.debug(f"{self.cell.get_fqcn()}: _filter_outgoing_reply called")
+
+    def _filter_outgoing_request(self, message: Message):
+        channel = message.get_header(MessageHeaderKey.CHANNEL, "")
+        topic = message.get_header(MessageHeaderKey.TOPIC, "")
+        msg_type = message.get_header(MessageHeaderKey.MSG_TYPE)
+        origin = message.get_header(MessageHeaderKey.ORIGIN, "")
+        assert len(channel) > 0
+        assert len(topic) > 0
+        assert msg_type == MessageType.REQ
+        assert origin == self.cell.get_fqcn()
+        self.cell.logger.debug(f"{self.cell.get_fqcn()}: _filter_outgoing_request called")
 
     def _create_subprocess(self, name: str, parent_fqcn: str, parent_url: str):
         parts = [
@@ -76,6 +162,7 @@ class CellRunner:
             f"-c {self.config_path}",
             f"-f {self.config_file}",
             f"-n {name}",
+            f"-l {self.log_level}"
         ]
         if parent_fqcn:
             parts.append(f"-pn {parent_fqcn}")
@@ -113,7 +200,7 @@ class CellRunner:
 
     def stop(self):
         self.asked_to_stop = True
-        self.bot.stop()
+        self.agent.stop()
 
     def run(self):
         while not self.asked_to_stop:

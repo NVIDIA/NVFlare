@@ -14,9 +14,9 @@
 
 import json
 
-from nvflare.private.admin_defs import Message
+from nvflare.private.admin_defs import AdminMessage
 from nvflare.private.defs import InfoCollectorTopic, RequestHeader
-from nvflare.private.fed.client.admin import RequestProcessor
+from nvflare.private.fed.client.root.admin import RequestProcessor
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
 
 
@@ -28,7 +28,7 @@ class ClientInfoProcessor(RequestProcessor):
             InfoCollectorTopic.RESET_ERRORS,
         ]
 
-    def process(self, req: Message, app_ctx) -> Message:
+    def process(self, req: AdminMessage, app_ctx) -> AdminMessage:
         engine = app_ctx
         if not isinstance(engine, ClientEngineInternalSpec):
             raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
@@ -48,4 +48,4 @@ class ClientInfoProcessor(RequestProcessor):
             result = {}
 
         result = json.dumps(result)
-        return Message(topic="reply_" + req.topic, body=result)
+        return AdminMessage(topic="reply_" + req.topic, body=result)

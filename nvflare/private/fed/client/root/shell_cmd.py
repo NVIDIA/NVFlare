@@ -12,14 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import subprocess
+from typing import List
+
 from nvflare.private.admin_defs import AdminMessage
-from nvflare.private.fed.utils.messageproto import message_to_proto, proto_to_message
+from nvflare.private.defs import SysCommandTopic
+from nvflare.private.fed.client.root.admin import RequestProcessor
 
 
-class TestMessageProto:
-    def test_message_proto_convert(self):
-        message = AdminMessage(topic="topic", body="{'id': 100}")
-        message.set_header("Content-Type", "application/json")
-        message_proto = message_to_proto(message)
-        new_message = proto_to_message(message_proto)
-        assert new_message.__dict__ == message.__dict__
+class ShellCommandProcessor(RequestProcessor):
+    def get_topics(self) -> List[str]:
+        return [SysCommandTopic.SHELL]
+
+    def process(self, req: AdminMessage, app_ctx) -> AdminMessage:
+        shell_cmd = req.body
+        output = subprocess.getoutput(shell_cmd)
+        return AdminMessage(topic="reply_" + req.topic, body=output)

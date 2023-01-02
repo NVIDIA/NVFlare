@@ -16,7 +16,6 @@ import threading
 import time
 from typing import List, Optional
 
-from nvflare.fuel.f3.cellnet import Cell, TargetMessage, Message as CellMessage
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule
 from nvflare.fuel.hci.server.audit import CommandAudit
@@ -26,12 +25,13 @@ from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.hci.server.hci import AdminServer
 from nvflare.fuel.hci.server.login import LoginModule, SessionManager, SimpleAuthenticator
 from nvflare.fuel.sec.audit import Auditor, AuditService
-from nvflare.private.admin_defs import Message
-from nvflare.private.defs import ERROR_MSG_PREFIX, RequestHeader, CellChannel, new_cell_message
+from nvflare.private.admin_defs import AdminMessage
+from nvflare.private.defs import ERROR_MSG_PREFIX, RequestHeader, CellChannel
+from nvflare.private.fed.rcmi import RootCellMessageInterface
 
 
-def new_message(conn: Connection, topic, body, require_authz: bool) -> Message:
-    msg = Message(topic=topic, body=body)
+def new_admin_message(conn: Connection, topic, body, require_authz: bool) -> AdminMessage:
+    msg = AdminMessage(topic=topic, body=body)
 
     cmd_entry = conn.get_prop(ConnProps.CMD_ENTRY)
     if cmd_entry:
@@ -64,13 +64,13 @@ class _Client(object):
 
 
 class ClientReply(object):
-    def __init__(self, client_token: str, req: Message, reply: Message):
+    def __init__(self, client_token: str, req: AdminMessage, reply: AdminMessage):
         """Client reply.
 
         Args:
             client_token (str): client token
-            req (Message): request
-            reply (Message): reply
+            req (AdminMessage): request
+            reply (AdminMessage): reply
         """
         self.client_token = client_token
         self.request = req
@@ -78,7 +78,7 @@ class ClientReply(object):
 
 
 class _ClientReq(object):
-    def __init__(self, client, req: Message):
+    def __init__(self, client, req: AdminMessage):
         self.client = client
         self.req = req
 
@@ -101,8 +101,7 @@ def check_client_replies(replies: List[ClientReply], client_sites: List[str], co
 class FedAdminServer(AdminServer):
     def __init__(
             self,
-            cell: Cell,
-            fed_admin_interface,
+            engine,
             users,
             cmd_modules,
             file_upload_dir,
@@ -118,7 +117,6 @@ class FedAdminServer(AdminServer):
         """The FedAdminServer is the framework for developing admin commands.
 
         Args:
-            fed_admin_interface: the server's federated admin interface
             users: a dict of {username: pwd hash}
             cmd_modules: a list of CommandModules
             file_upload_dir: the directory for uploaded files
@@ -132,8 +130,7 @@ class FedAdminServer(AdminServer):
             download_job_url: download job url
         """
         cmd_reg = new_command_register_with_builtin_module(app_ctx=fed_admin_interface)
-        self.sai = fed_admin_interface
-        self.cell = cell
+        self.engine = engine
         self.client_lock = threading.Lock()
 
         authenticator = SimpleAuthenticator(users)
@@ -234,8 +231,8 @@ class FedAdminServer(AdminServer):
                 result.append(token)
         return result
 
-    def send_request_to_client(self, req: Message, client_token: str, timeout_secs=2.0) -> Optional[ClientReply]:
-        if not isinstance(req, Message):
+    def send_request_to_client(self, req: AdminMessage, client_token: str, timeout_secs=2.0) -> Optional[ClientReply]:
+        if not isinstance(req, AdminMessage):
             raise TypeError("request must be Message but got {}".format(type(req)))
         reqs = {client_token: req}
         replies = self.send_requests(reqs, timeout_secs)
@@ -287,7 +284,7 @@ class FedAdminServer(AdminServer):
         if len(requests) == 0:
             return []
 
-        target_msgs = {}
+        client_msgs = {}
         name_to_token = {}
         name_to_req = {}
         for token, req in requests.items():
@@ -295,34 +292,34 @@ class FedAdminServer(AdminServer):
             if not client:
                 continue
 
-            target_msgs[client.name] = TargetMessage(
-                target=client.name,
-                channel=CellChannel.ADMIN,
-                topic="admin",
-                message=new_cell_message({}, req)
-            )
-
+            client_msgs[client.name] = req
             name_to_token[client.name] = token
             name_to_req[client.name] = req
 
-        if not target_msgs:
+        if not client_msgs:
             return []
 
-        if timeout_secs <= 0.0:
+        cmi = self.engine.get_cmi()
+        assert isinstance(cmi, RootCellMessageInterface)
+        replies = cmi.send_client_messages(
+            channel=CellChannel.ADMIN,
+            topic="admin",
+            client_messages=client_msgs,
+            timeout=timeout_secs,
+            fl_ctx=None,
+        )
+
+        if not replies:
             # this is fire-and-forget!
-            self.cell.fire_multi_requests_and_forget(target_msgs)
             return []
-        else:
-            result = []
-            replies = self.cell.broadcast_multi_requests(target_msgs, timeout_secs)
-            for name, reply in replies:
-                assert isinstance(reply, CellMessage)
-                result.append(ClientReply(
-                    client_token=name_to_token[name],
-                    req=name_to_req[name],
-                    reply=reply.payload))
-            return result
+
+        result = []
+        for name, reply in replies:
+            result.append(ClientReply(
+                client_token=name_to_token[name],
+                req=name_to_req[name],
+                reply=reply))
+        return result
 
     def stop(self):
         super().stop()
-        self.sai.close()

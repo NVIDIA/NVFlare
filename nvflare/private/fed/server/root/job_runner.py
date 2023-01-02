@@ -28,9 +28,9 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
 from nvflare.lighter.utils import verify_folder_signature
-from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
+from nvflare.private.admin_defs import AdminMessage, MsgHeader, ReturnCode
 from nvflare.private.defs import RequestHeader, TrainingTopic
-from nvflare.private.fed.server.admin import check_client_replies
+from nvflare.private.fed.server.root.admin import check_client_replies
 from nvflare.private.fed.utils.app_deployer import AppDeployer
 from nvflare.security.logging import secure_format_exception
 
@@ -63,7 +63,7 @@ class JobRunner(FLComponent):
             self._save_workspace(fl_ctx)
 
     def _make_deploy_message(self, job: Job, app_data, app_name):
-        message = Message(topic=TrainingTopic.DEPLOY, body=app_data)
+        message = AdminMessage(topic=TrainingTopic.DEPLOY, body=app_data)
         message.set_header(RequestHeader.REQUIRE_AUTHZ, "true")
 
         message.set_header(RequestHeader.ADMIN_COMMAND, AdminCommandNames.SUBMIT_JOB)
@@ -175,7 +175,7 @@ class JobRunner(FLComponent):
             for client_token, reply in client_token_to_reply.items():
                 client_name = client_token_to_name[client_token]
                 if reply:
-                    assert isinstance(reply, Message)
+                    assert isinstance(reply, AdminMessage)
                     rc = reply.get_header(MsgHeader.RETURN_CODE, ReturnCode.OK)
                     if rc != ReturnCode.OK:
                         failed_clients.append(client_name)
@@ -252,7 +252,7 @@ class JobRunner(FLComponent):
         """
         engine = fl_ctx.get_engine()
         admin_server = engine.server.admin_server
-        message = Message(topic=TrainingTopic.ABORT, body="")
+        message = AdminMessage(topic=TrainingTopic.ABORT, body="")
         message.set_header(RequestHeader.JOB_ID, str(job_id))
         self.log_debug(fl_ctx, f"Send abort command to the clients for run: {job_id}")
         try:
@@ -272,7 +272,7 @@ class JobRunner(FLComponent):
         engine = fl_ctx.get_engine()
 
         admin_server = engine.server.admin_server
-        message = Message(topic=TrainingTopic.DELETE_RUN, body="")
+        message = AdminMessage(topic=TrainingTopic.DELETE_RUN, body="")
         message.set_header(RequestHeader.JOB_ID, str(job_id))
         self.log_debug(fl_ctx, f"Send delete_run command to the clients for run: {job_id}")
         try:

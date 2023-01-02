@@ -23,7 +23,7 @@ from nvflare.apis.impl.job_def_manager import SimpleJobDefManager
 from nvflare.apis.job_def import JobDataKey, JobMetaKey
 from nvflare.app_common.storages.filesystem_storage import FilesystemStorage
 from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
-from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
+from nvflare.private.fed.server.root.job_meta_validator import JobMetaValidator
 
 
 class TestJobManager(unittest.TestCase):

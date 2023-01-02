@@ -41,7 +41,7 @@ from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.client.worker_process import kill_child_processes
 from nvflare.private.fed.app.deployer.simulator_deployer import SimulatorDeployer
 from nvflare.private.fed.client.client_status import ClientStatus
-from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
+from nvflare.private.fed.server.root.job_meta_validator import JobMetaValidator
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorServerAppRunner
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize

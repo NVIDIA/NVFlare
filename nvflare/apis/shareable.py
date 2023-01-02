@@ -38,10 +38,15 @@ class Shareable(dict):
     It is recommended that keys are strings. Values must be serializable.
     """
 
-    def __init__(self):
+    def __init__(self, data=None):
         """Init the Shareable."""
         super().__init__()
         self[ReservedHeaderKey.HEADERS] = {}
+        if data:
+            if isinstance(data, dict):
+                self.update(data)
+            else:
+                self['data'] = data
 
     def set_header(self, key: str, value):
         header = self.get(ReservedHeaderKey.HEADERS, None)
@@ -130,10 +135,25 @@ class Shareable(dict):
 
 
 # some convenience functions
-def make_reply(rc, headers=None) -> Shareable:
+def make_reply(rc=ReturnCode.OK, headers=None, data=None) -> Shareable:
     reply = Shareable()
     reply.set_return_code(rc)
     if headers and isinstance(headers, dict):
         for k, v in headers.items():
             reply.set_header(k, v)
+    if data:
+        reply['data'] = data
     return reply
+
+
+def simple_shareable(data=None, key='data', headers=None) -> Shareable:
+    s = Shareable()
+    s[key] = data
+    if headers and isinstance(headers, dict):
+        for k, v in headers.items():
+            s.set_header(k, v)
+    return s
+
+
+def get_shareable_data(s: Shareable, key='data', default=None):
+    return s.get(key, default)

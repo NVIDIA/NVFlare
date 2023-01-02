@@ -14,36 +14,34 @@
 
 from multiprocessing import Lock
 
-from nvflare.apis.event_type import EventType
+from nvflare.apis.client import Client
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import ReservedKey, ReturnCode
+from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
-from nvflare.fuel.f3.cellnet import Cell, Message as CellMessage, FQCN
-from nvflare.private.defs import CellChannel, new_cell_message
+from nvflare.apis.shareable import Shareable, make_reply
+from nvflare.fuel.f3.cellnet.cell import Cell, Message as CellMessage
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.private.defs import CellChannel
+from nvflare.private.fed.jcmi import JobCellMessageInterface
 
 
 class AuxRunner(FLComponent):
 
-    def __init__(self):
+    def __init__(self, engine):
         """To init the AuxRunner."""
         FLComponent.__init__(self)
-        self.job_id = None
+        self.engine = engine
         self.topic_table = {}  # topic => handler
         self.reg_lock = Lock()
 
-    def handle_event(self, event_type: str, fl_ctx: FLContext):
-        if event_type == EventType.START_RUN:
-            self.job_id = fl_ctx.get_job_id()
-            engine = fl_ctx.get_engine()
-            cell = engine.get_cell
-            assert isinstance(cell, Cell)
-            cell.register_request_cb(
-                channel=CellChannel.AUX,
-                topic="*",
-                cb=self._process_cell_request,
-                engine=engine
-            )
+        cell = engine.get_cell()
+        assert isinstance(cell, Cell)
+        cell.register_request_cb(
+            channel=CellChannel.AUX,
+            topic="*",
+            cb=self._process_cell_request,
+        )
 
     def register_aux_message_handler(self, topic: str, message_handle_func):
         """Register aux message handling function with specified topics.
@@ -112,12 +110,6 @@ class AuxRunner(FLComponent):
                 f"bad peer_props from client: expects dict but got {type(peer_props)}",
             )
             return make_reply(ReturnCode.BAD_PEER_CONTEXT)
-
-        peer_job_id = peer_props.get(ReservedKey.RUN_NUM)
-        if peer_job_id != self.job_id:
-            self.log_error(fl_ctx, "invalid aux msg: not for the same job_id")
-            return make_reply(ReturnCode.RUN_MISMATCH)
-
         try:
             reply = handler_f(topic=topic, request=request, fl_ctx=fl_ctx)
         except BaseException:
@@ -144,125 +136,28 @@ class AuxRunner(FLComponent):
             cookie_jar = request.get_cookie_jar()
             if cookie_jar:
                 valid_reply.set_cookie_jar(cookie_jar)
-
-        valid_reply.set_peer_props(fl_ctx.get_all_public_props())
         return valid_reply
 
     def _process_cell_request(
             self,
-            cell: Cell,
-            channel: str,
-            topic: str,
             request: CellMessage,
-            engine
     ) -> CellMessage:
         aux_msg = request.payload
         assert isinstance(aux_msg, Shareable)
-        with engine.new_context() as fl_ctx:
-            aux_reply = self.dispatch(
-                topic=topic,
-                request=aux_msg,
-                fl_ctx=fl_ctx
-            )
-            return new_cell_message(payload=aux_reply)
-
-    def send_to_job_cell(
-            self,
-            targets: [],
-            topic: str,
-            request: Shareable,
-            timeout: float,
-            fl_ctx: FLContext,
-            bulk_send=False
-    ) -> dict:
-        """Send request through auxiliary channel.
-
-        Args:
-            targets (list): list of client names that the request will be sent to
-            topic (str): topic of the request
-            request (Shareable): request
-            timeout (float): how long to wait for result. 0 means fire-and-forget
-            fl_ctx (FLContext): the FL context
-            bulk_send: whether to bulk send this request
-
-        Returns:
-            A dict of results
-        """
-        if not isinstance(request, Shareable):
-            raise ValueError(f"invalid request type: expect Shareable but got {type(request)}")
-
-        if not targets:
-            raise ValueError("targets must be specified")
-
-        if targets is not None and not isinstance(targets, list):
-            raise TypeError(f"targets must be a list of str, but got {type(targets)}")
-
-        if not isinstance(topic, str):
-            raise TypeError(f"invalid topic '{topic}': expects str but got {type(topic)}")
-
-        if not topic:
-            raise ValueError("invalid topic: must not be empty")
-
-        if not isinstance(timeout, float):
-            raise TypeError(f"invalid timeout: expects float but got {type(timeout)}")
-
-        if timeout < 0:
-            raise ValueError(f"invalid timeout value {timeout}: must >= 0.0")
-
-        if not isinstance(fl_ctx, FLContext):
-            raise TypeError(f"invalid fl_ctx: expects FLContext but got {type(fl_ctx)}")
-
-        request.set_peer_props(fl_ctx.get_all_public_props())
-        request.set_header(ReservedHeaderKey.TOPIC, topic)
-
-        engine = fl_ctx.get_engine()
-        job_id = fl_ctx.get_job_id()
-        cell = engine.get_cell()
-        assert isinstance(cell, Cell)
-
-        target_names = []
-        for t in targets:
-            if not isinstance(t, str):
-                raise ValueError(f"invalid target name {t}: expect str but got {type(t)}")
-            if t not in target_names:
-                target_names.append(t)
-
-        target_fqcns = []
-        for name in target_names:
-            target_fqcns.append(FQCN.join([name, job_id]))
-
-        cell_msg = new_cell_message(payload=request)
-        if timeout > 0:
-            cell_replies = cell.broadcast_request(
-                channel=CellChannel.AUX,
-                topic=topic,
-                request=cell_msg,
-                targets=target_fqcns,
-                timeout=timeout
-            )
-
-            replies = {}
-            if cell_replies:
-                for k, v in cell_replies.items():
-                    client_name = FQCN.get_root(k)
-                    replies[client_name] = v.payload
-            return replies
-        else:
-            if bulk_send:
-                cell.queue_message(
-                    channel=CellChannel.AUX,
-                    topic=topic,
-                    message=cell_msg,
-                    targets=target_fqcns
-                )
-            else:
-                cell.fire_and_forget(
-                    channel=CellChannel.AUX,
-                    topic=topic,
-                    message=cell_msg,
-                    targets=target_fqcns,
-                )
-            return {}
+        topic = request.get_header(MessageHeaderKey.TOPIC)
+        fl_ctx = request.get_prop(JobCellMessageInterface.PROP_KEY_FL_CTX)
+        assert isinstance(fl_ctx, FLContext)
+        cmi = self.engine.get_cmi()
+        assert isinstance(cmi, JobCellMessageInterface)
+        peer_ctx = request.get_prop(cmi.PROP_KEY_PEER_CTX)
+        if peer_ctx:
+            fl_ctx.set_peer_context(peer_ctx)
+        aux_reply = self.dispatch(
+            topic=topic,
+            request=aux_msg,
+            fl_ctx=fl_ctx
+        )
+        return cmi.new_cmi_message(fl_ctx, payload=aux_reply)
 
     def send_aux_request(
             self,
@@ -271,6 +166,49 @@ class AuxRunner(FLComponent):
             request: Shareable,
             timeout: float,
             fl_ctx: FLContext,
-            bulk_send: bool
+            bulk_send: bool = False
     ) -> dict:
-        pass
+        cmi = self.engine.get_cmi()
+        assert isinstance(cmi, JobCellMessageInterface)
+        if not targets:
+            if cmi.cell.my_info.is_on_server:
+                targets = cmi.get_client_names()
+            else:
+                targets = [FQCN.ROOT_SERVER]
+
+        # validate targets
+        target_names = []
+        for t in targets:
+            if isinstance(t, str):
+                name = t
+            elif isinstance(t, Client):
+                name = t.name
+            else:
+                raise ValueError(f"invalid target in list: got {type(t)}")
+
+            if not name:
+                # ignore empty name
+                continue
+
+            if FQCN.is_ancestor(name, cmi.cell.get_fqcn()):
+                raise ValueError(f"invalid target '{name}': cannot send to myself")
+
+            if name not in target_names:
+                target_names.append(t)
+
+        if not target_names:
+            return {}
+
+        clients, invalid_names = cmi.validate_clients(target_names)
+        if invalid_names:
+            raise ValueError(f"invalid target(s): {invalid_names}")
+
+        return cmi.send_to_job_cell(
+            targets=targets,
+            channel=CellChannel.AUX,
+            topic=topic,
+            request=request,
+            timeout=timeout,
+            fl_ctx=fl_ctx,
+            bulk_send=bulk_send
+        )

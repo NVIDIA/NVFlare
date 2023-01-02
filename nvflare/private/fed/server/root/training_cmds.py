@@ -24,13 +24,13 @@ from nvflare.fuel.hci.proto import ConfirmMethod
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.private.admin_defs import MsgHeader, ReturnCode
 from nvflare.private.defs import ClientStatusKey, ScopeInfoKey, TrainingTopic
-from nvflare.private.fed.server.admin import new_message
+from nvflare.private.fed.server.root.admin import new_admin_message
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
 from nvflare.private.fed.utils.fed_utils import get_scope_info
 from nvflare.security.logging import secure_format_exception
 
-from .cmd_utils import CommandUtil
-from .server_engine import ServerEngine
+from nvflare.private.fed.server.root.cmd_utils import CommandUtil
+from nvflare.private.fed.server.server_engine import ServerEngine
 
 
 class TrainingCommandModule(CommandModule, CommandUtil):
@@ -111,7 +111,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
 
     def _shutdown_app_on_clients(self, conn: Connection) -> bool:
         engine = conn.app_ctx
-        message = new_message(conn, topic=TrainingTopic.SHUTDOWN, body="", require_authz=True)
+        message = new_admin_message(conn, topic=TrainingTopic.SHUTDOWN, body="", require_authz=True)
         clients = conn.get_prop(self.TARGET_CLIENT_TOKENS, None)
         if not clients:
             conn.append_error("no clients to shutdown")
@@ -187,7 +187,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         engine = conn.app_ctx
         if not isinstance(engine, ServerEngineInternalSpec):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
-        message = new_message(conn, topic=TrainingTopic.RESTART, body="", require_authz=True)
+        message = new_admin_message(conn, topic=TrainingTopic.RESTART, body="", require_authz=True)
         replies = self.send_request_to_clients(conn, message)
         engine.remove_clients(clients)
         return self._process_replies_to_string(conn, replies)
@@ -263,7 +263,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                         raise TypeError("c must be Client but got {}".format(type(c)))
                     table.add_row([c.name, str(c.token), time.asctime(time.localtime(c.last_connect_time))])
         elif dst == self.TARGET_TYPE_CLIENT:
-            message = new_message(conn, topic=TrainingTopic.CHECK_STATUS, body="", require_authz=True)
+            message = new_admin_message(conn, topic=TrainingTopic.CHECK_STATUS, body="", require_authz=True)
             replies = self.send_request_to_clients(conn, message)
             self._process_client_status_replies(conn, replies)
         else:
@@ -352,6 +352,6 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             self._add_scope_info(table, "server", scope_names, default_scope_name)
 
         if dst in [self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_ALL]:
-            message = new_message(conn, topic=TrainingTopic.GET_SCOPES, body="", require_authz=True)
+            message = new_admin_message(conn, topic=TrainingTopic.GET_SCOPES, body="", require_authz=True)
             replies = self.send_request_to_clients(conn, message)
             self._process_scope_replies(table, conn, replies)

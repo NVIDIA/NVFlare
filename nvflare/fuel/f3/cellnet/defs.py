@@ -22,7 +22,7 @@ class ConnectorRequirementKey:
     SECURE = "secure"           # bool: secure or not
 
 
-CELLNET_PREFIX = "cn."
+CELLNET_PREFIX = "cn__"
 
 
 class MessageHeaderKey:
@@ -44,6 +44,19 @@ class MessageHeaderKey:
     ROUTE = CELLNET_PREFIX + "route"
     ORIGINAL_HEADERS = CELLNET_PREFIX + "original_headers"
     SEND_TIME = CELLNET_PREFIX + "send_time"
+    RETURN_REASON = CELLNET_PREFIX + "return_reason"
+
+
+class ReturnReason:
+
+    CANT_FORWARD = "cant_forward"
+    INTERCEPT = "intercept"
+
+
+class MessagePropKey:
+
+    ENDPOINT = CELLNET_PREFIX + "endpoint"
+    SSL_CERT = CELLNET_PREFIX + "ssl_cert"
 
 
 class Encoding:
@@ -60,6 +73,10 @@ class ReturnCode:
     COMM_ERROR = "comm_error"
     INVALID_REQUEST = "invalid_request"
     PROCESS_EXCEPTION = "process_exception"   # receiver error processing request
+    AUTHENTICATION_ERROR = "authentication_error"
+    SERVICE_UNAVAILABLE = "service_unavailable"
+    INVALID_SESSION = "invalid_session"
+    ABORT_RUN = "abort_run"
 
 
 class MessageType:
@@ -75,6 +92,26 @@ class CellPropertyKey:
 
 
 class TargetCellUnreachable(Exception):
+    pass
+
+
+class AuthenticationError(Exception):
+    pass
+
+
+class ServiceUnavailable(Exception):
+    pass
+
+
+class InvalidSession(Exception):
+    pass
+
+
+class AbortRun(Exception):
+    pass
+
+
+class InvalidRequest(Exception):
     pass
 
 

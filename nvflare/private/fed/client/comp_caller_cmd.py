@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.private.admin_defs import Message
+from nvflare.private.admin_defs import AdminMessage
 from nvflare.private.defs import ComponentCallerTopic, RequestHeader
-from nvflare.private.fed.client.admin import RequestProcessor
+from nvflare.private.fed.client.root.admin import RequestProcessor
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
 from nvflare.widgets.comp_caller import ComponentCaller
 from nvflare.widgets.widget import WidgetID
@@ -24,7 +24,7 @@ class ComponentCallerProcessor(RequestProcessor):
     def get_topics(self) -> [str]:
         return [ComponentCallerTopic.CALL_COMPONENT]
 
-    def process(self, req: Message, app_ctx) -> Message:
+    def process(self, req: AdminMessage, app_ctx) -> AdminMessage:
         engine = app_ctx
         if not isinstance(engine, ClientEngineInternalSpec):
             raise TypeError("engine must be ClientEngineInternalSpec, but got {}".format(type(engine)))
@@ -45,4 +45,4 @@ class ComponentCallerProcessor(RequestProcessor):
         if not isinstance(result, dict):
             result = {}
 
-        return Message(topic=req.topic, body=result)
+        return AdminMessage(topic=req.topic, body=result)
