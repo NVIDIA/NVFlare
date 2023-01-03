@@ -18,6 +18,7 @@ from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
+from nvflare.app_common.tracking.tracker_types import Tracker
 from nvflare.app_common.widgets.streaming import create_analytic_dxo, send_analytic_dxo
 
 INVALID_TEST_CASES = [
@@ -33,19 +34,55 @@ INVALID_TEST_CASES = [
 ]
 
 INVALID_WRITE_TEST_CASES = [
-    (list(), 1.0, AnalyticsDataType.SCALAR, TypeError, f"expect tag to be an instance of str, but got {type(list())}"),
+    (
+        list(),
+        1.0,
+        1,
+        AnalyticsDataType.SCALAR,
+        TypeError,
+        f"expect tag to be an instance of str, but got {type(list())}",
+    ),
     (
         "tag",
         list(),
+        2,
         AnalyticsDataType.SCALAR,
         TypeError,
-        f"expect value to be an instance of float, but got {type(list())}",
+        f"expect 'tag' value to be an instance of float, but got '{type(list())}'",
     ),
-    (list(), 1.0, AnalyticsDataType.SCALARS, TypeError, f"expect tag to be an instance of str, but got {type(list())}"),
-    ("tag", 1.0, AnalyticsDataType.SCALARS, TypeError, f"expect value to be an instance of dict, but got {type(1.0)}"),
-    (list(), 1.0, AnalyticsDataType.TEXT, TypeError, f"expect tag to be an instance of str, but got {type(list())}"),
-    ("tag", 1.0, AnalyticsDataType.TEXT, TypeError, f"expect value to be an instance of str, but got {type(1.0)}"),
-    (list(), 1.0, AnalyticsDataType.IMAGE, TypeError, f"expect tag to be an instance of str, but got {type(list())}"),
+    (
+        list(),
+        1.0,
+        2,
+        AnalyticsDataType.SCALARS,
+        TypeError,
+        f"expect tag to be an instance of str, but got {type(list())}",
+    ),
+    (
+        "tag",
+        1.0,
+        3,
+        AnalyticsDataType.SCALARS,
+        TypeError,
+        f"expect 'tag' value to be an instance of dict, but got '{type(1.0)}'",
+    ),
+    (list(), 1.0, 4, AnalyticsDataType.TEXT, TypeError, f"expect tag to be an instance of str, but got {type(list())}"),
+    (
+        "tag",
+        1.0,
+        5,
+        AnalyticsDataType.TEXT,
+        TypeError,
+        f"expect 'tag' value to be an instance of str, but got '{type(1.0)}'",
+    ),
+    (
+        list(),
+        1.0,
+        6,
+        AnalyticsDataType.IMAGE,
+        TypeError,
+        f"expect tag to be an instance of str, but got {type(list())}",
+    ),
 ]
 
 
@@ -55,7 +92,7 @@ class TestStreaming:
         with pytest.raises(expected_error, match=expected_msg):
             send_analytic_dxo(comp=comp, dxo=dxo, fl_ctx=fl_ctx)
 
-    @pytest.mark.parametrize("tag,value,data_type,expected_error,expected_msg", INVALID_WRITE_TEST_CASES)
-    def test_invalid_write_func(self, tag, value, data_type, expected_error, expected_msg):
+    @pytest.mark.parametrize("tag,value,step, data_type,expected_error,expected_msg", INVALID_WRITE_TEST_CASES)
+    def test_invalid_write_func(self, tag, value, step, data_type, expected_error, expected_msg):
         with pytest.raises(expected_error, match=expected_msg):
-            create_analytic_dxo(tag, value, data_type)
+            create_analytic_dxo(tag=tag, value=value, data_type=data_type, step=step, sender=Tracker.TORCH_TB)
