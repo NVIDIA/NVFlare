@@ -501,7 +501,7 @@ class Controller(Responder, ControllerSpec, ABC):
             min_responses=min_responses,
             wait_time_after_min_received=wait_time_after_min_received,
         )
-        self._wait_for_task(task, abort_signal)
+        self.wait_for_task(task, abort_signal)
 
     def broadcast_forever(self, task: Task, fl_ctx: FLContext, targets: Union[List[Client], List[str], None] = None):
         """Schedule a broadcast task.  This is a non-blocking call.
@@ -600,7 +600,7 @@ class Controller(Responder, ControllerSpec, ABC):
             send_order=send_order,
             task_assignment_timeout=task_assignment_timeout,
         )
-        self._wait_for_task(task, abort_signal)
+        self.wait_for_task(task, abort_signal)
 
     def get_num_standing_tasks(self) -> int:
         """Get the number of tasks that are currently standing.
@@ -796,7 +796,7 @@ class Controller(Responder, ControllerSpec, ABC):
             task_result_timeout=task_result_timeout,
             dynamic_targets=dynamic_targets,
         )
-        self._wait_for_task(task, abort_signal)
+        self.wait_for_task(task, abort_signal)
 
     def _monitor_tasks(self):
         clients_all_dead = False
@@ -906,7 +906,7 @@ class Controller(Responder, ControllerSpec, ABC):
 
         return wrap
 
-    def _wait_for_task(self, task: Task, abort_signal: Signal):
+    def wait_for_task(self, task: Task, abort_signal: Signal):
         task.props[_TASK_KEY_DONE] = False
         task.task_done_cb = self._process_finished_task(task=task, func=task.task_done_cb)
         while True:
