@@ -34,7 +34,6 @@ class ClientExecutor(InitFinalComponent, ABC):
         self.local_comp_id = local_comp_id
         self.local_comp: Optional[InitFinalComponent] = None
         self.target_local_comp_type: type = local_comp_type
-        print("ClientExecutor init ")
 
     def initialize(self, fl_ctx: FLContext):
         """
@@ -51,7 +50,6 @@ class ClientExecutor(InitFinalComponent, ABC):
     def load_and_init_local_comp(self, fl_ctx):
         engine = fl_ctx.get_engine()
         local_comp: InitFinalComponent = engine.get_component(self.local_comp_id)
-        print("local_comp_id = ", self.local_comp_id)
         check_component_type(local_comp, self.target_local_comp_type)
         local_comp.initialize(fl_ctx)
         self.local_comp = local_comp
