@@ -169,9 +169,6 @@ class AnalyticsSender(Widget):
         if self.engine:
             self.engine = None
 
-    def get_initial_kwargs(self):
-        return {}
-
 
 class AnalyticsReceiver(Widget, ABC):
     def __init__(self, events: Optional[List[str]] = None):
