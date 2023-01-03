@@ -38,7 +38,6 @@ class ClientExecutor(InitFinalComponent, ABC):
         self.local_comp_id = local_comp_id
         self.local_comp: Optional[InitFinalComponent] = None
         self.target_local_comp_type: type = local_comp_type
-        print("ClientExecutor init ")
 
     def initialize(self, fl_ctx: FLContext):
         """
