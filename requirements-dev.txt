@@ -9,3 +9,6 @@ pytest-cov==4.0.0
 pandas==1.5.1
 # wait for approval
 # pylint!=2.13  # https://github.com/PyCQA/pylint/issues/5969
+
+# optional requirements
+openmined.psi==1.0.3
