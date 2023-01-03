@@ -17,7 +17,11 @@ from typing import Optional
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.executors.init_final_component import InitFinalComponent
-from nvflare.app_common.utils.component_utils import check_component_type
+
+
+def check_component_type(comp, t):
+    if not isinstance(comp, t):
+        raise TypeError(f"{type(comp).__name} must implement `{t}` type. Got: {type(comp)}")
 
 
 class ClientExecutor(InitFinalComponent, ABC):
@@ -51,9 +55,8 @@ class ClientExecutor(InitFinalComponent, ABC):
     def load_and_init_local_comp(self, fl_ctx):
         engine = fl_ctx.get_engine()
         local_comp: InitFinalComponent = engine.get_component(self.local_comp_id)
-        print("local_comp_id = ", self.local_comp_id)
-        check_component_type(local_comp, self.target_local_comp_type)
         local_comp.initialize(fl_ctx)
+        check_component_type(local_comp, self.target_local_comp_type)
         self.local_comp = local_comp
 
     @abstractmethod

@@ -50,6 +50,7 @@ class CommonExecutor(Executor, ABC):
         try:
             self.client_name = fl_ctx.get_identity_name()
             self.client_executor = self.get_client_executor(fl_ctx)
+
         except TypeError as te:
             if not is_secure():
                 self.log_exception(fl_ctx, traceback.format_exc())
@@ -73,6 +74,9 @@ class CommonExecutor(Executor, ABC):
         init_rc = self._check_init_status(fl_ctx)
         if init_rc:
             return make_reply(init_rc)
+
+        client_name = fl_ctx.get_identity_name()
+        self.log_info(fl_ctx, f"Executing task '{task_name}' for client: '{client_name}'")
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
         try:
@@ -88,7 +92,6 @@ class CommonExecutor(Executor, ABC):
             return make_reply(ReturnCode.EXECUTION_RESULT_ERROR)
 
     def _check_init_status(self, fl_ctx: FLContext):
-
         if not self.init_status_ok:
             for fail_key in self.init_failure:
                 reason = self.init_failure[fail_key]
