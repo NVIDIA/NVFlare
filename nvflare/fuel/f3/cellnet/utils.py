@@ -13,7 +13,9 @@
 #  limitations under the License.
 
 from nvflare.fuel.f3.message import Message, Headers
-from .defs import MessageHeaderKey
+import nvflare.fuel.utils.fobs as fobs
+
+from .defs import MessageHeaderKey, Encoding
 
 
 def make_reply(rc: str, error: str = "", body=None) -> Message:
@@ -41,3 +43,31 @@ def format_log_message(fqcn: str, message: Message, log: str) -> str:
         log
     ]
     return " ".join(parts)
+
+
+def encode_payload(message: Message):
+    encoding = message.get_header(MessageHeaderKey.PAYLOAD_ENCODING)
+    if not encoding:
+        if message.payload is None:
+            encoding = Encoding.NONE
+        elif isinstance(message.payload, bytes) or isinstance(message.payload, bytearray):
+            encoding = Encoding.BYTES
+        else:
+            encoding = Encoding.FOBS
+            message.payload = fobs.dumps(message.payload)
+        message.set_header(MessageHeaderKey.PAYLOAD_ENCODING, encoding)
+
+
+def decode_payload(message: Message):
+    encoding = message.get_header(MessageHeaderKey.PAYLOAD_ENCODING)
+    if not encoding:
+        return
+
+    if encoding == Encoding.FOBS:
+        message.payload = fobs.loads(message.payload)
+    elif encoding == Encoding.NONE:
+        message.payload = None
+    else:
+        # assume to be bytes
+        pass
+    message.remove_header(MessageHeaderKey.PAYLOAD_ENCODING)

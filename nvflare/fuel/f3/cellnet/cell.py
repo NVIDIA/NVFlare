@@ -28,16 +28,52 @@ from nvflare.fuel.f3.communicator import Communicator, MessageReceiver
 
 from .connector_manager import ConnectorManager
 from .defs import (
-    MessageHeaderKey, MessageType, TargetMessage, ReturnReason,
-    ReturnCode, CellPropertyKey, Encoding, MessagePropKey,
+    MessageHeaderKey, MessageType, ReturnReason,
+    ReturnCode, CellPropertyKey, MessagePropKey,
     InvalidRequest, InvalidSession, ServiceUnavailable, AuthenticationError, AbortRun
 )
-from .utils import make_reply, new_message, format_log_message
+from .utils import make_reply, new_message, format_log_message, encode_payload, decode_payload
 from .fqcn import FQCN, FqcnInfo, same_family
 
-import nvflare.fuel.utils.fobs as fobs
 
 _BULK_CHANNEL = "cellnet.bulk"
+
+
+class TargetMessage:
+
+    def __init__(
+            self,
+            target: str,
+            channel: str,
+            topic: str,
+            message: Message,
+    ):
+        self.target = target
+        self.channel = channel
+        self.topic = topic
+        self.message = message
+
+    def to_dict(self):
+        return {
+            "target": self.target,
+            "channel": self.channel,
+            "topic": self.topic,
+            "message": {"headers": dict(self.message.headers), "payload": self.message.payload}
+        }
+
+    @staticmethod
+    def from_dict(d: dict):
+        msg_dict = d.get('message')
+        msg = new_message(
+            headers=msg_dict.get('headers'),
+            payload=msg_dict.get('payload')
+        )
+        return TargetMessage(
+            target=d.get('target'),
+            channel=d.get('channel'),
+            topic=d.get('topic'),
+            message=msg
+        )
 
 
 class CellAgent:
@@ -121,10 +157,9 @@ class _Waiter(threading.Event):
 
 class _BulkSender:
 
-    def __init__(self, cell, target: str, interval, max_queue_size):
+    def __init__(self, cell, target: str, max_queue_size):
         self.cell = cell
         self.target = target
-        self.interval = interval
         self.max_queue_size = max_queue_size
         self.messages = []
         self.last_send_time = 0
@@ -136,6 +171,7 @@ class _BulkSender:
             topic: str,
             message: Message
     ):
+        encode_payload(message)
         with self.lock:
             tm = TargetMessage(
                 target=self.target,
@@ -144,33 +180,39 @@ class _BulkSender:
                 message=message
             )
             self.messages.append(tm)
+            self.cell.logger.debug(f"{self.cell.get_fqcn()}: bulk sender {self.target} queue size {len(self.messages)}")
 
-    def send(self, must_send: bool):
-        num_msgs = len(self.messages)
-        if num_msgs == 0:
-            return
-
-        if not must_send and time.time() - self.last_send_time < self.interval and num_msgs < self.max_queue_size:
-            return
-
+    def send(self):
         with self.lock:
-            bulk_msg = new_message(payload=self.messages)
-            sent = self.cell.fire_and_forget(
-                channel=_BULK_CHANNEL,
-                topic="bulk",
-                targets=[self.target],
-                message=bulk_msg
-            )
-            if sent[self.target]:
+            num_msgs = len(self.messages)
+            if num_msgs == 0:
+                return
+
+            if num_msgs <= self.max_queue_size:
+                messages_to_send = self.messages
                 self.messages = []
-                self.last_send_time = time.time()
             else:
-                self.cell.logger.warning(f"can't send bulk message to {self.target}")
-                if num_msgs > self.max_queue_size:
-                    self.messages.pop(0)
-                    self.cell.logger.warning(
-                        f"bulk sender for {self.target}: "
-                        f"dropped one message (queue size {num_msgs} > limit {self.max_queue_size}")
+                messages_to_send = self.messages[:self.max_queue_size]
+                self.messages = self.messages[self.max_queue_size:]
+
+        self.cell.logger.debug(
+            f"{self.cell.get_fqcn()}: bulk sender {self.target} sending bulk size {len(messages_to_send)}")
+        tms = [m.to_dict() for m in messages_to_send]
+        bulk_msg = new_message(payload=tms)
+        send_errs = self.cell.fire_and_forget(
+            channel=_BULK_CHANNEL,
+            topic="bulk",
+            targets=[self.target],
+            message=bulk_msg
+        )
+        if send_errs[self.target]:
+            self.cell.logger.warning(
+                f"{self.cell.get_fqcn()}: can't send bulk message ({len(messages_to_send)}) to {self.target}: "
+                f"{send_errs[self.target]}")
+        else:
+            self.cell.logger.debug(
+                f"{self.cell.get_fqcn()}: sent bulk messages ({len(messages_to_send)}) to {self.target}")
+        self.last_send_time = time.time()
 
 
 class Cell(MessageReceiver, EndpointMonitor):
@@ -187,7 +229,7 @@ class Cell(MessageReceiver, EndpointMonitor):
             parent_url: str = None,
             max_timeout=3600,
             bulk_check_interval=0.5,
-            bulk_send_interval=1.0,
+            bulk_process_interval=0.5,
             max_bulk_size=100
     ):
         """
@@ -225,11 +267,16 @@ class Cell(MessageReceiver, EndpointMonitor):
         self.create_internal_listener = create_internal_listener
         self.parent_url = parent_url
         self.bulk_check_interval = bulk_check_interval
-        self.bulk_send_interval = bulk_send_interval
         self.max_bulk_size = max_bulk_size
         self.bulk_senders = {}
         self.bulk_checker = threading.Thread(target=self._check_bulk)
         self.bulk_lock = threading.Lock()
+
+        self.bulk_process_interval = bulk_process_interval
+        self.bulk_messages = []
+        self.bulk_msg_lock = threading.Lock()
+        self.bulk_processor = threading.Thread(target=self._process_bulk_messages)
+
         self.agents = {}  # cell_fqcn => CellAgent
         self.agent_lock = threading.Lock()
 
@@ -302,7 +349,7 @@ class Cell(MessageReceiver, EndpointMonitor):
         self.register_request_cb(
             channel=_BULK_CHANNEL,
             topic="*",
-            cb=self._process_bulk_message
+            cb=self._receive_bulk_message
         )
 
         self.stop_waiter = threading.Event()
@@ -405,20 +452,24 @@ class Cell(MessageReceiver, EndpointMonitor):
         Returns:
 
         """
+        self.logger.debug(f"{self.my_info.fqcn}: changing server root to {to_url}")
         with self.root_change_lock:
+            if self.my_info.is_on_server:
+                # only affect clients
+                self.logger.debug(f"{self.my_info.fqcn}: no change - on server side")
+                return
+
             if to_url == self.root_url:
                 # already changed
+                self.logger.debug(f"{self.my_info.fqcn}: no change - same url")
                 return
 
             self.root_url = to_url
 
-            if self.my_info.is_on_server:
-                # only affect clients
-                return
-
             # drop connections to all cells on server and their agents
             # drop the backbone connector
             if self.bb_ext_connector:
+                self.logger.debug(f"{self.my_info.fqcn}: removing bb_ext_connector ...")
                 self.communicator.remove_connector(self.bb_ext_connector.handle)
                 self.bb_ext_connector = None
 
@@ -430,6 +481,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                     if to_cell_info.is_on_server:
                         cells_to_delete.append(to_cell)
                 for c in cells_to_delete:
+                    self.logger.debug(f"{self.my_info.fqcn}: removing adhoc connector to {c}")
                     connector = self.adhoc_connectors.pop(c, None)
                     if connector:
                         self.communicator.remove_connector(connector.handle)
@@ -442,10 +494,12 @@ class Cell(MessageReceiver, EndpointMonitor):
                     if agent.info.is_on_server:
                         agents_to_delete.append(fqcn)
                     for a in agents_to_delete:
+                        self.logger.debug(f"{self.my_info.fqcn}: removing agent {a}")
                         self.agents.pop(a, None)
 
             # recreate backbone connector to the root
             if self.my_info.gen <= 2:
+                self.logger.debug(f"{self.my_info.fqcn}: recreating bb_external_connector ...")
                 self._create_bb_external_connector()
 
     def create_internal_listener(self):
@@ -525,6 +579,7 @@ class Cell(MessageReceiver, EndpointMonitor):
         return self.ext_listener
 
     def _create_bb_external_connector(self):
+        self.logger.debug(f"{self.my_info.fqcn}: creating connector to {self.root_url}")
         self.bb_ext_connector = self.connector_manager.get_external_connector(self.root_url, False)
         if self.bb_ext_connector:
             self.logger.info(f"{self.my_info.fqcn}: created backbone external connector to {self.root_url}")
@@ -628,6 +683,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                 self._set_bb_for_client_child(self.parent_url, self.create_internal_listener)
 
         self.bulk_checker.start()
+        self.bulk_processor.start()
         self.communicator.start()
         self.stop_waiter_thread.start()
         self.running = True
@@ -656,6 +712,7 @@ class Cell(MessageReceiver, EndpointMonitor):
         self.running = False
         self.asked_to_stop = True
         self.bulk_checker.join()
+        self.bulk_processor.join()
         self.logger.debug(f"{self.my_info.fqcn}: CELL closed!")
 
     def register_request_cb(
@@ -854,16 +911,7 @@ class Cell(MessageReceiver, EndpointMonitor):
     def _send_to_endpoint(self, to_endpoint: Endpoint, message: Message) -> str:
         err = ""
         try:
-            encoding = message.get_header(MessageHeaderKey.PAYLOAD_ENCODING)
-            if not encoding:
-                if message.payload is None:
-                    encoding = Encoding.NONE
-                elif isinstance(message.payload, bytes) or isinstance(message.payload, bytearray):
-                    encoding = Encoding.BYTES
-                else:
-                    encoding = Encoding.FOBS
-                    message.payload = fobs.dumps(message.payload)
-                message.set_header(MessageHeaderKey.PAYLOAD_ENCODING, encoding)
+            encode_payload(message)
             message.set_header(MessageHeaderKey.SEND_TIME, time.time())
             self.communicator.send(to_endpoint, Cell.APP_ID, message)
         except:
@@ -1123,7 +1171,6 @@ class Cell(MessageReceiver, EndpointMonitor):
                     sender = _BulkSender(
                         cell=self,
                         target=t,
-                        interval=self.bulk_send_interval,
                         max_queue_size=self.max_bulk_size
                     )
                     self.bulk_senders[t] = sender
@@ -1132,23 +1179,52 @@ class Cell(MessageReceiver, EndpointMonitor):
                     topic=topic,
                     message=message
                 )
+                self.logger.debug(f"{self.get_fqcn()}: queued msg for {t}")
 
-    def _process_bulk_message(
+    def _receive_bulk_message(
             self,
             request: Message):
         target_msgs = request.payload
         assert isinstance(target_msgs, list)
-        for tm in target_msgs:
+        with self.bulk_msg_lock:
+            self.bulk_messages.append(request)
+            self.logger.debug(f"{self.get_fqcn()}: received bulk msg. Pending size {len(self.bulk_messages)}")
+
+    def _process_bulk_messages(self):
+        self.logger.debug(f"{self.get_fqcn()}: processing bulks ...")
+        while not self.asked_to_stop:
+            self._process_pending_bulks()
+            time.sleep(self.bulk_process_interval)
+
+        # process remaining messages if any
+        self._process_pending_bulks()
+
+    def _process_pending_bulks(self):
+        while True:
+            with self.bulk_msg_lock:
+                if not self.bulk_messages:
+                    return
+                bulk = self.bulk_messages.pop(0)
+            self._process_one_bulk(bulk)
+
+    def _process_one_bulk(self, bulk_request: Message):
+        target_msgs = bulk_request.payload
+        assert isinstance(target_msgs, list)
+        self.logger.debug(f"{self.get_fqcn()}: processing one bulk size {len(target_msgs)}")
+        for tmd in target_msgs:
+            assert isinstance(tmd, dict)
+            tm = TargetMessage.from_dict(tmd)
             assert isinstance(tm, TargetMessage)
             req = tm.message
-            req.add_headers(request.headers)
+            req.add_headers(bulk_request.headers)
             req.add_headers(
                 {
                     MessageHeaderKey.TOPIC: tm.topic,
                     MessageHeaderKey.CHANNEL: tm.channel
                 }
             )
-            origin = request.get_header(MessageHeaderKey.ORIGIN, "")
+            origin = bulk_request.get_header(MessageHeaderKey.ORIGIN, "")
+            self.logger.debug(f"{self.get_fqcn()}: bulk item: {req.headers}")
             self._process_request(origin=origin, message=req)
 
     def fire_multi_requests_and_forget(
@@ -1211,7 +1287,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                 *args,
                 **kwargs
             )
-        except ServiceUnavailable as ex:
+        except ServiceUnavailable:
             return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
         except InvalidSession:
             return make_reply(ReturnCode.INVALID_SESSION)
@@ -1236,6 +1312,7 @@ class Cell(MessageReceiver, EndpointMonitor):
             origin: str,
             message: Message) -> Union[None, Message]:
         self.logger.debug(f"{self.my_info.fqcn}: processing incoming request")
+        decode_payload(message)
         # this is a request for me - dispatch to the right CB
         channel = message.get_header(MessageHeaderKey.CHANNEL, "")
         topic = message.get_header(MessageHeaderKey.TOPIC, "")
@@ -1343,6 +1420,8 @@ class Cell(MessageReceiver, EndpointMonitor):
 
     def _process_reply(self, origin: str, message: Message, msg_type: str):
         self.logger.debug(f"{self.my_info.fqcn}: processing reply from {origin} for type {msg_type}")
+        decode_payload(message)
+
         req_ids = message.get_header(MessageHeaderKey.REQ_ID)
         if not req_ids:
             raise RuntimeError(format_log_message(self.my_info.fqcn, message, "reply does not have REQ_ID header"))
@@ -1460,7 +1539,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                         MessageHeaderKey.RETURN_REASON: ReturnReason.INTERCEPT
                     }
                 )
-                self._send_to_endpoint(endpoint, reply)
+                self._send_reply(reply, endpoint)
                 self.logger.debug(f"{self.my_info.fqcn}: returned intercepted message")
                 return
 
@@ -1471,20 +1550,6 @@ class Cell(MessageReceiver, EndpointMonitor):
 
         # this message is for me
         self._add_to_route(message)
-
-        # handle content type
-        payload_encoding = message.get_header(MessageHeaderKey.PAYLOAD_ENCODING)
-        if not payload_encoding:
-            self.logger.warning(format_log_message(
-                self.my_info.fqcn, message, "missing payload_encoding header received message"))
-
-        if payload_encoding == Encoding.FOBS:
-            message.payload = fobs.loads(message.payload)
-        elif payload_encoding == Encoding.NONE:
-            message.payload = None
-        else:
-            # assume to be bytes
-            pass
 
         # handle ad-hoc
         my_conn_url = None
@@ -1563,25 +1628,27 @@ class Cell(MessageReceiver, EndpointMonitor):
                     if r:
                         reply = r
                         break
-
-            self.logger.debug(f"{self.my_info.fqcn}: sending reply back to {endpoint.name}")
-            self.logger.debug(f"Reply message: {reply.headers}")
-            self._send_to_endpoint(endpoint, reply)
+            self._send_reply(reply, endpoint)
         else:
             # the message is either a reply or a return for a previous request: handle replies
             self._process_reply(origin, message, msg_type)
+
+    def _send_reply(self, reply: Message, endpoint: Endpoint):
+        self.logger.debug(f"{self.my_info.fqcn}: sending reply back to {endpoint.name}")
+        self.logger.debug(f"Reply message: {reply.headers}")
+        self._send_to_endpoint(endpoint, reply)
 
     def _check_bulk(self):
         while not self.asked_to_stop:
             with self.bulk_lock:
                 for _, sender in self.bulk_senders.items():
-                    sender.send(False)
+                    sender.send()
             time.sleep(self.bulk_check_interval)
 
         # force everything to be flushed
         with self.bulk_lock:
             for _, sender in self.bulk_senders.items():
-                sender.send(True)
+                sender.send()
 
     def state_change(self, endpoint: Endpoint):
         self.logger.debug(f"========= {self.my_info.fqcn}: EP {endpoint.name} state changed to {endpoint.state}")

@@ -44,6 +44,7 @@ class CellRunner:
             log_level: str = "info"
     ):
         self.asked_to_stop = False
+        self.new_root_url = None
         self.config_path = config_path
         self.config_file = config_file
         self.log_level = log_level
@@ -67,7 +68,7 @@ class CellRunner:
             create_internal_listener=self.create_internal_listener,
             parent_url=parent_url,
         )
-        self.agent = NetAgent(self.cell)
+        self.agent = NetAgent(self.cell, self._change_root)
 
         self.child_runners = {}
         self.client_runners = {}
@@ -202,6 +203,12 @@ class CellRunner:
         self.asked_to_stop = True
         self.agent.stop()
 
+    def _change_root(self, url: str):
+        self.new_root_url = url
+
     def run(self):
         while not self.asked_to_stop:
+            if self.new_root_url:
+                self.cell.change_server_root(self.new_root_url)
+                self.new_root_url = None
             time.sleep(0.5)

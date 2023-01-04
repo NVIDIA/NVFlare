@@ -35,14 +35,22 @@ _TOPIC_CONNS = "conns"
 _TOPIC_SPEED = "speed"
 _TOPIC_ECHO = "echo"
 _TOPIC_STRESS = "stress"
+_TOPIC_CHANGE_ROOT = "change_root"
+_TOPIC_BULK_TEST = "bulk_test"
+_TOPIC_BULK_ITEM = "bulk_item"
 
 _ONE_K = bytes([1] * 1000)
 
 
 class NetAgent:
 
-    def __init__(self, cell: Cell):
+    def __init__(
+            self,
+            cell: Cell,
+            change_root_cb
+    ):
         self.cell = cell
+        self.change_root_cb = change_root_cb
 
         cell.register_request_cb(
             channel=_CHANNEL,
@@ -102,6 +110,24 @@ class NetAgent:
             channel=_CHANNEL,
             topic=_TOPIC_STRESS,
             cb=self._do_stress,
+        )
+
+        cell.register_request_cb(
+            channel=_CHANNEL,
+            topic=_TOPIC_CHANGE_ROOT,
+            cb=self._do_change_root,
+        )
+
+        cell.register_request_cb(
+            channel=_CHANNEL,
+            topic=_TOPIC_BULK_TEST,
+            cb=self._do_bulk_test,
+        )
+
+        cell.register_request_cb(
+            channel=_CHANNEL,
+            topic=_TOPIC_BULK_ITEM,
+            cb=self._do_bulk_item,
         )
 
     def _do_stop(
@@ -546,6 +572,76 @@ class NetAgent:
         else:
             result.update(reply.payload)
         return result
+
+    def change_root(self, new_root_url: str):
+        self._broadcast_to_subs(
+            topic=_TOPIC_CHANGE_ROOT,
+            message=new_message(payload=new_root_url),
+            timeout=0.0
+        )
+
+    def _do_change_root(
+            self,
+            request: Message
+    ) -> Union[None, Message]:
+        new_root_url = request.payload
+        assert isinstance(new_root_url, str)
+        if self.change_root_cb is not None:
+            self.change_root_cb(new_root_url)
+        return None
+
+    def start_bulk_test(self, targets: list, size: int):
+        self.cell.logger.info(f"{self.cell.get_fqcn()}: starting bulk test on {targets}")
+        msg_targets = [x for x in targets]
+        my_fqcn = self.cell.get_fqcn()
+        if my_fqcn in msg_targets:
+            msg_targets.remove(my_fqcn)
+        if not msg_targets:
+            return {"error": "no targets for bulk test"}
+
+        result = {}
+        replies = self.cell.broadcast_request(
+            channel=_CHANNEL,
+            topic=_TOPIC_BULK_TEST,
+            targets=msg_targets,
+            request=new_message(payload=size),
+            timeout=1.0
+        )
+        for t, r in replies.items():
+            rc = r.get_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
+            if rc != ReturnCode.OK:
+                result[t] = f"RC={rc}"
+            else:
+                result[t] = r.payload
+        return result
+
+    def _do_bulk_test(
+            self,
+            request: Message
+    ) -> Union[None, Message]:
+        size = request.payload
+        assert isinstance(size, int)
+        nums = []
+        for _ in range(size):
+            num = random.randint(0, 100)
+            nums.append(num)
+            msg = new_message(payload=num)
+            self.cell.queue_message(
+                channel=_CHANNEL,
+                topic=_TOPIC_BULK_ITEM,
+                targets=FQCN.ROOT_SERVER,
+                message=msg,
+            )
+        return new_message(payload=f"queued: {nums}")
+
+    def _do_bulk_item(
+            self,
+            request: Message
+    ) -> Union[None, Message]:
+        num = request.payload
+        origin = request.get_header(MessageHeaderKey.ORIGIN)
+        self.cell.logger.info(f"{self.cell.get_fqcn()}: got {num} from {origin}")
+        return None
 
     def _broadcast_to_subs(
             self,

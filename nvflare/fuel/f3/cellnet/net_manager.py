@@ -81,6 +81,20 @@ class NetManager(CommandModule):
                     visible=True,
                 ),
                 CommandSpec(
+                    name="bulk",
+                    description="test bulk message processing",
+                    usage="bulk",
+                    handler_func=self._cmd_bulk_test,
+                    visible=True,
+                ),
+                CommandSpec(
+                    name="change_root",
+                    description="change to a new root server",
+                    usage="change_root url",
+                    handler_func=self._cmd_change_root,
+                    visible=True,
+                ),
+                CommandSpec(
                     name="shutdown",
                     description="shutdown the whole cellnet",
                     usage="shutdown",
@@ -208,6 +222,36 @@ class NetManager(CommandModule):
                 v.pop('errors')
         conn.append_dict(result)
         conn.append_string(f"total errors: {total_errors}")
+
+    def _cmd_bulk_test(self, conn: Connection, args: [str]):
+        bulk_size = 1
+        if len(args) > 1:
+            try:
+                bulk_size = int(args[1])
+            except:
+                conn.append_error(f"invalid bulk_size {args[1]} - must be int")
+                return
+
+        err, targets = self.agent.request_cells_info()
+        if err:
+            conn.append_error(err)
+
+        if not targets:
+            conn.append_error("no targets to test")
+
+        conn.append_string(f"starting bulk test on {targets}", flush=True)
+        result = self.agent.start_bulk_test(targets, bulk_size)
+        conn.append_dict(result)
+
+    def _cmd_change_root(self, conn: Connection, args: [str]):
+        if len(args) < 2:
+            cmd_entry = conn.get_prop(ConnProps.CMD_ENTRY)
+            conn.append_string(f"Usage: {cmd_entry.usage}")
+            return
+
+        url = args[1]
+        self.agent.change_root(url)
+        conn.append_shutdown("Root Changed. Good Bye!")
 
     def _cmd_shutdown(self, conn: Connection, args: [str]):
         self.agent.stop()
