@@ -15,10 +15,12 @@
 class CommError(Exception):
 
     # Error codes
+    ERROR = "ERROR"
     NOT_READY = "NOT_READY"
-    DISCONNECTED = "DISCONNECTED"
-    IO_ERROR = "IO_ERROR"
     BAD_DATA = "BAD_DATA"
+    BAD_CONFIG = "BAD_CONFIG"
+    CLOSED = "CLOSED"
+    NOT_SUPPORTED = "NOT_SUPPORTED"
     TIMEOUT = "TIMEOUT"
 
     def __init__(self, code: str, message=None):
@@ -30,5 +32,3 @@ class CommError(Exception):
             return f"Code: {self.code} Error: {self.message}"
         else:
             return f"Code: {self.code}"
-
-

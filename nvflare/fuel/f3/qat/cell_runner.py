@@ -12,15 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.fuel.f3.cellnet import Cell, FQCN, Message, Headers, MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.cell import Cell, CellAgent, Message, MessageHeaderKey, MessageType
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from .net_config import NetConfig
 
-from typing import Union
 import os
 import shlex
 import subprocess
 import sys
-import pickle
 import time
 
 
@@ -37,23 +37,27 @@ class CellRunner:
     def __init__(
             self,
             config_path: str,
+            config_file: str,
             my_name: str,
             parent_url: str = "",
-            parent_fqcn: str = ""
+            parent_fqcn: str = "",
+            log_level: str = "info"
     ):
         self.asked_to_stop = False
         self.config_path = config_path
+        self.config_file = config_file
+        self.log_level = log_level
 
         if not parent_fqcn:
             my_fqcn = my_name
         else:
             my_fqcn = FQCN.join([parent_fqcn, my_name])
 
-        net_config = NetConfig()
+        net_config = NetConfig(config_file)
         self.root_url = net_config.get_root_url()
         self.children = net_config.get_children(my_name)
         self.clients = net_config.get_clients()
-        self.create_internal_listener = len(self.children) > 0
+        self.create_internal_listener = self.children and len(self.children) > 0
 
         self.cell = Cell(
             fqcn=my_fqcn,
@@ -63,29 +67,102 @@ class CellRunner:
             create_internal_listener=self.create_internal_listener,
             parent_url=parent_url,
         )
+        self.agent = NetAgent(self.cell)
 
         self.child_runners = {}
         self.client_runners = {}
 
-        self.cell.register_request_cb(
-            channel='admin',
-            topic='cells',
-            cb=self._do_report_cells,
-            runner=self
+        self.cell.set_cell_connected_cb(cb=self._cell_connected)
+        self.cell.set_cell_disconnected_cb(cb=self._cell_disconnected)
+        self.cell.add_incoming_reply_filter(
+            channel="*",
+            topic="*",
+            cb=self._filter_incoming_reply
+        )
+        self.cell.add_incoming_request_filter(
+            channel="*",
+            topic="*",
+            cb=self._filter_incoming_request
+        )
+        self.cell.add_outgoing_reply_filter(
+            channel="*",
+            topic="*",
+            cb=self._filter_outgoing_reply
+        )
+        self.cell.add_outgoing_request_filter(
+            channel="*",
+            topic="*",
+            cb=self._filter_outgoing_request
+        )
+        self.cell.set_message_interceptor(
+            cb=self._inspect_message
         )
 
-        self.cell.register_request_cb(
-            channel='admin',
-            topic='stop',
-            cb=self._do_stop,
-            runner=self
-        )
+    def _inspect_message(self, message: Message):
+        header_name = "inspected_by"
+        inspectors = message.get_header(header_name)
+        if not inspectors:
+            inspectors = []
+            message.set_header(header_name, inspectors)
+        inspectors.append(self.cell.get_fqcn())
+
+    def _cell_connected(self, connected_cell: CellAgent):
+        self.cell.logger.info(f"{self.cell.get_fqcn()}: Cell {connected_cell.get_fqcn()} connected")
+
+    def _cell_disconnected(self, disconnected_cell: CellAgent):
+        self.cell.logger.info(f"{self.cell.get_fqcn()}: Cell {disconnected_cell.get_fqcn()} disconnected")
+
+    def _filter_incoming_reply(self, message: Message):
+        channel = message.get_header(MessageHeaderKey.CHANNEL, "")
+        topic = message.get_header(MessageHeaderKey.TOPIC, "")
+        msg_type = message.get_header(MessageHeaderKey.MSG_TYPE)
+        destination = message.get_header(MessageHeaderKey.DESTINATION, "")
+        assert len(channel) > 0
+        assert len(topic) > 0
+        assert msg_type == MessageType.REPLY
+        assert destination == self.cell.get_fqcn()
+        self.cell.logger.debug(f"{self.cell.get_fqcn()}: _filter_incoming_reply called")
+
+    def _filter_incoming_request(self, message: Message):
+        channel = message.get_header(MessageHeaderKey.CHANNEL, "")
+        topic = message.get_header(MessageHeaderKey.TOPIC, "")
+        msg_type = message.get_header(MessageHeaderKey.MSG_TYPE)
+        destination = message.get_header(MessageHeaderKey.DESTINATION, "")
+        assert len(channel) > 0
+        assert len(topic) > 0
+        assert msg_type == MessageType.REQ
+        assert destination == self.cell.get_fqcn()
+        self.cell.logger.debug(f"{self.cell.get_fqcn()}: _filter_incoming_request called")
+
+    def _filter_outgoing_reply(self, message: Message):
+        channel = message.get_header(MessageHeaderKey.CHANNEL, "")
+        topic = message.get_header(MessageHeaderKey.TOPIC, "")
+        msg_type = message.get_header(MessageHeaderKey.MSG_TYPE)
+        origin = message.get_header(MessageHeaderKey.ORIGIN, "")
+        assert len(channel) > 0
+        assert len(topic) > 0
+        assert msg_type == MessageType.REPLY
+        assert origin == self.cell.get_fqcn()
+        self.cell.logger.debug(f"{self.cell.get_fqcn()}: _filter_outgoing_reply called")
+
+    def _filter_outgoing_request(self, message: Message):
+        channel = message.get_header(MessageHeaderKey.CHANNEL, "")
+        topic = message.get_header(MessageHeaderKey.TOPIC, "")
+        msg_type = message.get_header(MessageHeaderKey.MSG_TYPE)
+        origin = message.get_header(MessageHeaderKey.ORIGIN, "")
+        assert len(channel) > 0
+        assert len(topic) > 0
+        assert msg_type == MessageType.REQ
+        assert origin == self.cell.get_fqcn()
+        self.cell.logger.debug(f"{self.cell.get_fqcn()}: _filter_outgoing_request called")
 
     def _create_subprocess(self, name: str, parent_fqcn: str, parent_url: str):
         parts = [
             f"{sys.executable} -m run_cell",
             f"-c {self.config_path}",
+            f"-f {self.config_file}",
             f"-n {name}",
+            f"-l {self.log_level}"
         ]
         if parent_fqcn:
             parts.append(f"-pn {parent_fqcn}")
@@ -121,87 +198,10 @@ class CellRunner:
                 )
                 self.client_runners[client_name] = _RunnerInfo(client_name, client_name, p)
 
-    def _do_stop(
-            self,
-            cell: Cell,
-            channel: str,
-            topic: str,
-            request: Message,
-            runner
-    ) -> Union[None, Message]:
-        self.stop()
-        return None
-
-    def request_cells_info(self):
-        result = [self.cell.get_fqcn()]
-        targets = []
-        if self.child_runners:
-            for _, r in self.child_runners.items():
-                targets.append(r.fqcn)
-
-        if self.client_runners:
-            for _, r in self.client_runners.items():
-                targets.append(r.fqcn)
-
-        if targets:
-            replies = self.cell.broadcast_request(
-                channel='admin',
-                topic='cells',
-                targets=targets,
-                request=Message(Headers(), None),
-                timeout=2.0
-            )
-            for t, r in replies.items():
-                assert isinstance(r, Message)
-                rc = r.get_header(MessageHeaderKey.RETURN_CODE)
-                if rc == ReturnCode.OK:
-                    sub_result = pickle.loads(r.payload)
-                    result.extend(sub_result)
-                else:
-                    print(f"no reply from {t}: {rc}")
-        return Message(Headers(), pickle.dumps(result))
-
-    def _do_report_cells(
-            self,
-            cell: Cell,
-            channel: str,
-            topic: str,
-            request: Message,
-            runner
-    ) -> Union[None, Message]:
-        return self.request_cells_info()
-
     def stop(self):
-        if self.asked_to_stop:
-            return
-
-        # ask all children to stop
-        sub_runners = []
-        for _, r in self.child_runners.items():
-            sub_runners.append(r)
-
-        for _, r in self.client_runners.items():
-            sub_runners.append(r)
-
-        if sub_runners:
-            targets = [x.fqcn for x in sub_runners]
-            self.cell.fire_and_forget(
-                channel='admin',
-                topic='stop',
-                message=Message(Headers(), payload=None),
-                targets=targets
-            )
-
-            # wait for sub processes
-            for r in sub_runners:
-                if not r.process.wait(timeout=2.0):
-                    print(f"subprocess {r.fqcn} did not end gracefully")
-                    r.process.terminate()
-
-        self.cell.stop()
         self.asked_to_stop = True
+        self.agent.stop()
 
     def run(self):
         while not self.asked_to_stop:
             time.sleep(0.5)
-        print(f"{self.cell.get_fqcn()} STOPPED!")

@@ -1,0 +1,26 @@
+{
+    "root_url": "http://localhost:8002",
+    "admin": {
+        "host": "localhost",
+        "port": "8003"
+    },
+    "server": {
+        "children": [
+            "s_j1"
+        ],
+        "clients": [
+            "c1",
+            "c2"
+        ]
+    },
+    "c1": {
+        "children": [
+            "c1_j1"
+        ]
+    },
+    "c2": {
+        "children": [
+            "c2_j1"
+        ]
+    }
+}

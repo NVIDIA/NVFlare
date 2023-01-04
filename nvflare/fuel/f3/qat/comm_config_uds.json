@@ -1,0 +1,14 @@
+{
+  "internal": {
+    "scheme": "uds",
+    "resources": {
+      "host": "localhost"
+    }
+  },
+  "external": {
+    "scheme": "uds",
+    "resources": {
+      "host": "localhost"
+    }
+  }
+}

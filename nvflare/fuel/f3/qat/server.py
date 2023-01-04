@@ -12,24 +12,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
+
 from nvflare.fuel.hci.server.hci import AdminServer
-from nvflare.fuel.f3.cellnet import FQCN
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.cellnet.net_manager import NetManager
 from .cell_runner import CellRunner, NetConfig
 
-from nvflare.fuel.hci.conn import Connection
-from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.builtin import new_command_register_with_builtin_module
 from nvflare.fuel.hci.server.login import LoginModule, SessionManager, SimpleAuthenticator
 from nvflare.fuel.hci.security import hash_password
 
 
-class Server(CellRunner, CommandModule):
+class Server(CellRunner):
 
     def __init__(
             self,
             config_path: str,
+            config_file: str,
+            log_level: str
     ):
-        net_config = NetConfig()
+        self._name = self.__class__.__name__
+        self.logger = logging.getLogger(self._name)
+
+        net_config = NetConfig(config_file)
         admin_host, admin_port = net_config.get_admin()
         if not admin_host or not admin_port:
             raise RuntimeError("missing admin host/port in net config")
@@ -37,8 +43,12 @@ class Server(CellRunner, CommandModule):
         CellRunner.__init__(
             self,
             config_path=config_path,
+            config_file=config_file,
             my_name=FQCN.ROOT_SERVER,
+            log_level=log_level
         )
+
+        net_mgr = NetManager(self.agent)
 
         # set up admin server
         users = {"admin": hash_password("admin")}
@@ -48,7 +58,7 @@ class Server(CellRunner, CommandModule):
         login_module = LoginModule(authenticator, sess_mgr)
         cmd_reg.register_module(login_module)
         cmd_reg.register_module(sess_mgr)
-        cmd_reg.register_module(self)
+        cmd_reg.register_module(net_mgr)
         self.sess_mgr = sess_mgr
 
         self.admin = AdminServer(
@@ -57,39 +67,14 @@ class Server(CellRunner, CommandModule):
             port=int(admin_port)
         )
 
+        self.cell.add_cleanup_cb(self._clean_up)
+
     def start(self):
         super().start()
         self.admin.start()
 
-    def stop(self):
+    def _clean_up(self):
         self.sess_mgr.shutdown()
+        self.logger.debug(f"{self.cell.get_fqcn()}: Closed session manager")
         self.admin.stop()
-        super().stop()
-
-    def get_spec(self) -> CommandModuleSpec:
-        return CommandModuleSpec(
-            name="sys",
-            cmd_specs=[
-                CommandSpec(
-                    name="cells",
-                    description="get system cells info",
-                    usage="cells",
-                    handler_func=self._cmd_cells,
-                    visible=True,
-                ),
-                CommandSpec(
-                    name="stop",
-                    description="stop system",
-                    usage="stop",
-                    handler_func=self._cmd_stop,
-                    visible=True,
-                )])
-
-    def _cmd_cells(self, conn: Connection, args: [str]):
-        cell_fqcns = self.request_cells_info()
-        for c in cell_fqcns:
-            conn.append_string(c)
-
-    def _cmd_stop(self, conn: Connection, args: [str]):
-        conn.append_string("system stopped")
-        self.stop()
+        self.logger.debug(f"{self.cell.get_fqcn()}: Stopped Admin Server")
