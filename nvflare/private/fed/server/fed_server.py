@@ -563,7 +563,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             self._handle_state_check(context, state_check)
             self._ssid_check(request.client, context)
 
-            self.logger.info("getting AuxCommunicate request")
+            self.logger.debug("getting AuxCommunicate request")
 
             contribution = request
 

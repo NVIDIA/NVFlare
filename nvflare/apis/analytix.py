@@ -13,10 +13,10 @@
 # limitations under the License.
 
 from enum import Enum
-from typing import Dict, Optional
+from typing import Optional
 
 from nvflare.apis.dxo import DXO, DataKind
-from nvflare.app_common.tracking.tracker_types import TrackConst, Tracker
+from nvflare.app_common.tracking.tracker_types import LogWriterName, TrackConst
 
 _DATA_TYPE_KEY = "analytics_data_type"
 _KWARGS_KEY = "analytics_kwargs"
@@ -35,22 +35,15 @@ class AnalyticsDataType(Enum):
     METRICS = "METRICS"
     MODEL = "MODEL"
 
-    #     # MLFLOW ONLY
     TAG = "TAG"
     TAGS = "TAGS"
-    INIT_DATA = "INIT_DATA"
+
+    INIT = "INIT"
 
 
 class AnalyticsData:
     def __init__(
-        self,
-        key: str,
-        value,
-        data_type: AnalyticsDataType,
-        sender: Tracker = Tracker.TORCH_TB,
-        kwargs: Optional[dict] = None,
-        step: Optional[int] = None,
-        path: Optional[str] = None,
+        self, key: str, value, data_type: AnalyticsDataType, writer: LogWriterName = LogWriterName.TORCH_TB, **kwargs
     ):
         """This class defines AnalyticsData format.
 
@@ -60,17 +53,17 @@ class AnalyticsData:
             key (str): tag name
             value: value
             data_type (AnalyticDataType): type of the analytic data.
-            sender (Tracker): Syntax of Tracker such as Tensorboard or MLFLow
+            writer (LogWriterName): Syntax of Tracker such as Tensorboard or MLFLow
             kwargs (optional, dict): additional arguments to be passed.
         """
-        self._validate_data_types(data_type, kwargs, key, value, step, path)
+        self._validate_data_types(data_type, key, value, **kwargs)
         self.tag = key
         self.value = value
         self.data_type = data_type
         self.kwargs = kwargs
-        self.step = step
-        self.path = path
-        self.sender = sender
+        self.writer = writer
+        self.step = kwargs.get(TrackConst.GLOBAL_STEP_KEY, None)
+        self.path = kwargs.get(TrackConst.PATH_KEY, None)
 
     def to_dxo(self):
         """Converts the AnalyticsData to DXO object.
@@ -88,16 +81,15 @@ class AnalyticsData:
             data[TrackConst.KWARGS_KEY] = self.kwargs
         dxo = DXO(data_kind=DataKind.ANALYTIC, data=data)
         dxo.set_meta_prop(TrackConst.DATA_TYPE_KEY, self.data_type)
-        dxo.set_meta_prop(TrackConst.TRACKER_KEY, self.sender)
+        dxo.set_meta_prop(TrackConst.WRITER_KEY, self.writer)
         return dxo
 
     @classmethod
-    def from_dxo(cls, dxo: DXO, receiver: Tracker = Tracker.TORCH_TB):
+    def from_dxo(cls, dxo: DXO, receiver: LogWriterName = LogWriterName.TORCH_TB):
         """Generates the AnalyticsData from DXO object.
 
         Args:
             receiver: type experiment tacker, default to Tensorboard. TrackerType.TORCH_TB
-            sender: type experiment tacker, default to Tensorboard. TrackerType.TORCH_TB
             dxo (DXO): The DXO object to convert.
 
         Returns:
@@ -113,23 +105,26 @@ class AnalyticsData:
         data = dxo.data
         key = data[TrackConst.TRACK_KEY]
         value = data[TrackConst.TRACK_VALUE]
-        step = data[TrackConst.GLOBAL_STEP_KEY] if TrackConst.GLOBAL_STEP_KEY in data else None
-        path = data[TrackConst.PATH_KEY] if TrackConst.PATH_KEY in data else None
         kwargs = data[TrackConst.KWARGS_KEY] if TrackConst.KWARGS_KEY in data else None
         data_type = dxo.get_meta_prop(TrackConst.DATA_TYPE_KEY)
-        sender = dxo.get_meta_prop(TrackConst.TRACKER_KEY)
-        if sender is not None and sender != receiver:
-            data_type = cls.convert_data_type(data_type, sender, receiver)
-        return cls(key, value, data_type, sender, kwargs, step, path)
+        writer = dxo.get_meta_prop(TrackConst.WRITER_KEY)
+        if writer is not None and writer != receiver:
+            data_type = cls.convert_data_type(data_type, writer, receiver)
+
+        if not data_type:
+            return None
+
+        if not kwargs:
+            return cls(key, value, data_type, writer)
+        else:
+            return cls(key, value, data_type, writer, **kwargs)
 
     def _validate_data_types(
         self,
         data_type: AnalyticsDataType,
-        kwargs: Optional[Dict],
         key: str,
         value: any,
-        step: Optional[int] = None,
-        path: Optional[str] = None,
+        **kwargs,
     ):
         if not isinstance(key, str):
             raise TypeError("expect tag to be an instance of str, but got {}.".format(type(key)))
@@ -139,11 +134,14 @@ class AnalyticsData:
             )
         if kwargs and not isinstance(kwargs, dict):
             raise TypeError("expect kwargs to be an instance of dict, but got {}.".format(type(kwargs)))
+        step = kwargs.get(TrackConst.GLOBAL_STEP_KEY, None)
         if step:
             if not isinstance(step, int):
                 raise TypeError("expect step to be an instance of int, but got {}.".format(type(step)))
             if step < 0:
                 raise ValueError("expect step to be non-negative int, but got {}.".format(step))
+
+        path = kwargs.get(TrackConst.PATH_KEY, None)
         if path and not isinstance(path, str):
             raise TypeError("expect path to be an instance of str, but got {}.".format(type(step)))
         if data_type in [AnalyticsDataType.SCALAR, AnalyticsDataType.METRIC] and not isinstance(value, float):
@@ -163,25 +161,74 @@ class AnalyticsData:
 
     @classmethod
     def convert_data_type(
-        cls, sender_data_type: AnalyticsDataType, sender: Tracker, receiver: Tracker
-    ) -> AnalyticsDataType:
+        cls, writer_data_type: AnalyticsDataType, writer: LogWriterName, receiver: LogWriterName
+    ) -> Optional[AnalyticsDataType]:
 
-        if sender == Tracker.TORCH_TB and receiver == Tracker.MLFLOW:
-            if AnalyticsDataType.SCALAR == sender_data_type:
+        # todo: better way to do this
+        if writer == LogWriterName.TORCH_TB and receiver == LogWriterName.MLFLOW:
+            if AnalyticsDataType.SCALAR == writer_data_type:
                 return AnalyticsDataType.METRIC
-            elif AnalyticsDataType.SCALARS == sender_data_type:
+            elif AnalyticsDataType.SCALARS == writer_data_type:
                 return AnalyticsDataType.METRICS
             else:
-                return sender_data_type
+                return writer_data_type
 
-        if sender == Tracker.MLFLOW and receiver == Tracker.TORCH_TB:
-            if AnalyticsDataType.PARAMETER == sender_data_type:
+        elif writer == LogWriterName.TORCH_TB and receiver == LogWriterName.WANDB:
+            if AnalyticsDataType.SCALAR == writer_data_type:
+                return AnalyticsDataType.METRIC
+            elif AnalyticsDataType.SCALARS == writer_data_type:
+                return AnalyticsDataType.METRICS
+            else:
+                return writer_data_type
+
+        if writer == LogWriterName.MLFLOW and receiver == LogWriterName.TORCH_TB:
+            if AnalyticsDataType.TAG == writer_data_type:
+                return None
+            elif AnalyticsDataType.TAGS == writer_data_type:
+                return None
+            elif AnalyticsDataType.PARAMETER == writer_data_type:
+                return None
+            elif AnalyticsDataType.PARAMETERS == writer_data_type:
+                return None
+            elif AnalyticsDataType.METRIC == writer_data_type:
                 return AnalyticsDataType.SCALAR
-            elif AnalyticsDataType.PARAMETERS == sender_data_type:
-                return AnalyticsDataType.SCALARS
-            elif AnalyticsDataType.METRIC == sender_data_type:
-                return AnalyticsDataType.SCALAR
-            elif AnalyticsDataType.METRICS == sender_data_type:
+            elif AnalyticsDataType.METRICS == writer_data_type:
                 return AnalyticsDataType.SCALARS
             else:
-                return sender_data_type
+                return writer_data_type
+        elif writer == LogWriterName.MLFLOW and receiver == LogWriterName.WANDB:
+            if AnalyticsDataType.TAG == writer_data_type:
+                return None
+            elif AnalyticsDataType.TAGS == writer_data_type:
+                return None
+            else:
+                return writer_data_type
+
+        elif writer == LogWriterName.WANDB and receiver == LogWriterName.TORCH_TB:
+            if AnalyticsDataType.INIT == writer_data_type:
+                return None
+            if AnalyticsDataType.METRICS == writer_data_type:
+                return AnalyticsDataType.SCALARS
+            else:
+                return writer_data_type
+
+        elif writer == LogWriterName.WANDB and receiver == LogWriterName.MLFLOW:
+            if AnalyticsDataType.INIT == writer_data_type:
+                return None
+            else:
+                return writer_data_type
+
+    @classmethod
+    def convert_kwargs(cls, kwargs, sender: LogWriterName, receiver: LogWriterName) -> dict:
+        if not kwargs:
+            return kwargs
+
+        filtered_kwargs = {}
+        if sender == LogWriterName.MLFLOW and receiver == LogWriterName.TORCH_TB:
+            for k in kwargs:
+                if k == TrackConst.GLOBAL_STEP_KEY:
+                    filtered_kwargs[k] = kwargs[k]
+        else:
+            filtered_kwargs = kwargs
+
+        return filtered_kwargs

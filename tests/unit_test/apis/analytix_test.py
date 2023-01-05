@@ -11,12 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from typing import re
 
 import pytest
 
 from nvflare.apis.analytix import _DATA_TYPE_KEY, _KWARGS_KEY, AnalyticsData, AnalyticsDataType
 from nvflare.apis.dxo import DXO, DataKind
-from nvflare.app_common.tracking.tracker_types import TrackConst, Tracker
+from nvflare.app_common.tracking.tracker_types import LogWriterName, TrackConst
 from nvflare.app_common.widgets.streaming import create_analytic_dxo
 
 FROM_DXO_TEST_CASES = [
@@ -32,7 +33,7 @@ TO_DXO_TEST_CASES = [
         key="dict",
         value={"key": 1.0},
         step=3,
-        sender=Tracker.MLFLOW,
+        writer=LogWriterName.MLFLOW,
         kwargs={"experiment_name": "test"},
         data_type=AnalyticsDataType.SCALARS,
     ),
@@ -64,14 +65,14 @@ INVALID_TEST_CASES = [
         TypeError,
         f"expect data_type to be an instance of AnalyticsDataType, but got {type('')}.",
     ),
-    (
-        "tag",
-        1.0,
-        AnalyticsDataType.SCALAR,
-        [1],
-        TypeError,
-        f"expect kwargs to be an instance of dict, but got {type(list())}.",
-    ),
+    # (
+    #     "tag",
+    #     1.0,
+    #     AnalyticsDataType.SCALAR,
+    #     [1],
+    #     TypeError,
+    #     "type object argument after ** must be a mapping, not list",
+    # ),
 ]
 
 
@@ -79,17 +80,20 @@ class TestAnalytix:
     @pytest.mark.parametrize("tag,value,data_type,kwargs,expected_error,expected_msg", INVALID_TEST_CASES)
     def test_invalid(self, tag, value, data_type, kwargs, expected_error, expected_msg):
         with pytest.raises(expected_error, match=expected_msg):
-            _ = AnalyticsData(key=tag, value=value, data_type=data_type, kwargs=kwargs)
+            if not kwargs:
+                _ = AnalyticsData(key=tag, value=value, data_type=data_type)
+            else:
+                _ = AnalyticsData(key=tag, value=value, data_type=data_type, **kwargs)
 
     @pytest.mark.parametrize("tag,value,step, data_type", FROM_DXO_TEST_CASES)
     def test_from_dxo(self, tag, value, step, data_type):
-        dxo = create_analytic_dxo(tag=tag, value=value, data_type=data_type, step=step)
+        dxo = create_analytic_dxo(tag=tag, value=value, data_type=data_type, global_step=step)
         assert dxo.get_meta_prop(_DATA_TYPE_KEY) == data_type
         result = AnalyticsData.from_dxo(dxo)
         assert result.tag == tag
         assert result.value == value
         assert result.step == step
-        assert result.sender == Tracker.TORCH_TB
+        assert result.writer == LogWriterName.TORCH_TB
 
     @pytest.mark.parametrize("data", TO_DXO_TEST_CASES)
     def test_to_dxo(self, data: AnalyticsData):
@@ -105,7 +109,7 @@ class TestAnalytix:
             assert result.data[TrackConst.KWARGS_KEY] == data.kwargs
 
         assert result.get_meta_prop(_DATA_TYPE_KEY) == data.data_type
-        assert result.get_meta_prop(TrackConst.TRACKER_KEY) == data.sender
+        assert result.get_meta_prop(TrackConst.WRITER_KEY) == data.writer
 
     @pytest.mark.parametrize("dxo,expected_error,expected_msg", FROM_DXO_INVALID_TEST_CASES)
     def test_from_dxo_invalid(self, dxo, expected_error, expected_msg):
