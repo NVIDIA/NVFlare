@@ -14,7 +14,7 @@
 
 """The FedAdmin to communicate with the Admin server."""
 
-from nvflare.fuel.f3.cellnet import Cell, Message as CellMessage
+from nvflare.fuel.f3.cellnet.cell import Cell, Message as CellMessage
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.sec.audit import Auditor, AuditService
 from nvflare.fuel.sec.authz import AuthorizationService, AuthzContext, Person

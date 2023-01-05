@@ -19,7 +19,7 @@ from nvflare.private.fed.client.admin import RequestProcessor
 from nvflare.private.fed.client.client_req_processors import ClientRequestProcessors
 from nvflare.private.fed.client.fed_client import FederatedClient
 
-from nvflare.fuel.f3.cellnet import Cell, Message
+from nvflare.fuel.f3.cellnet.cell import Cell, Message
 
 
 
@@ -71,7 +71,10 @@ class BaseClientDeployer:
             if isinstance(processor, RequestProcessor):
                 self.req_processors.append(processor)
 
+        target = "http://localhost:8002"
         parent_url = None
+        credentials = {}
+
         self.cell = Cell(
             fqcn=self.client_name,
             root_url=target,
@@ -96,6 +99,7 @@ class BaseClientDeployer:
             args=args,
             components=self.components,
             handlers=self.handlers,
+            cell=self.cell
         )
         return self.federated_client
 

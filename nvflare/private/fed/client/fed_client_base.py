@@ -31,7 +31,7 @@ from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import EngineConstant
 from nvflare.security.logging import secure_format_exception
 
-from nvflare.fuel.f3.cellnet import Cell
+from nvflare.fuel.f3.cellnet.cell import Cell
 
 from .client_status import ClientStatus
 from .communicator import Communicator
@@ -92,6 +92,7 @@ class FederatedClientBase:
             retry_timeout=retry_timeout,
             client_state_processors=client_state_processors,
             compression=compression,
+            cell=cell
         )
 
         self.secure_train = secure_train

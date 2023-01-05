@@ -56,9 +56,11 @@ from nvflare.private.fed.utils.numproto import proto_to_bytes
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.fed_event import ServerFedEventRunner
 
-from nvflare.fuel.f3.cellnet import Cell, Message, make_reply as make_cellnet_reply
-from nvflare.fuel.f3.constants import MessageHeaderKey, ReturnCode as F3ReturnCode
-from nvflare.private.defs import CellChannel, CellChannelTopic, new_cell_message, CellMessageHeaderKeys, Re
+from nvflare.fuel.f3.cellnet.cell import Cell, Message, make_reply as make_cellnet_reply
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode as F3ReturnCode
+from nvflare.private.defs import CellChannel, CellChannelTopic, new_cell_message, CellMessageHeaderKeys, RequestHeader
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
+
 
 from .client_manager import ClientManager
 from .run_manager import RunManager
@@ -214,12 +216,15 @@ class BaseServer(ABC):
         # num_server_workers = grpc_args.get("num_server_workers", 1)
         # num_server_workers = max(self.client_manager.get_min_clients(), num_server_workers)
         target = grpc_args["service"].get("target", "0.0.0.0:6007")
-        grpc_options = grpc_args["service"].get("options", GRPC_DEFAULT_OPTIONS)
+        target = "http://localhost:8002"
+
+        # grpc_options = grpc_args["service"].get("options", GRPC_DEFAULT_OPTIONS)
         credentials = {}
         parent_url = None
 
+        my_fqcn = FQCN.ROOT_SERVER
         self.cell = Cell(
-            fqcn=target,
+            fqcn=my_fqcn,
             root_url=target,
             secure=secure_train,
             credentials=credentials,
@@ -363,6 +368,9 @@ class FederatedServer(BaseServer):
         self.server_state: ServerState = ColdState()
         self.snapshot_persistor = snapshot_persistor
 
+        # self._register_cellnet_cbs()
+
+    def _register_cellnet_cbs(self):
         self.cell.register_request_cb(
             channel=CellChannel.TASK,
             topic=CellChannelTopic.Register,
@@ -911,6 +919,8 @@ class FederatedServer(BaseServer):
                     cert_path=grpc_args["ssl_cert"],
                     prv_key_path=grpc_args["ssl_private_key"],
                 )
+
+        self._register_cellnet_cbs()
 
         self.overseer_agent.start(self.overseer_callback)
 

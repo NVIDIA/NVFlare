@@ -30,8 +30,8 @@ from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineI
 from nvflare.private.fed.utils.fed_utils import make_context_data, make_shareable_data, shareable_to_modeldata
 from nvflare.security.logging import secure_format_exception
 
-from nvflare.fuel.f3.cellnet import Cell, Message, FQCN
-from nvflare.fuel.f3.constants import MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.cell import Cell, Message, FQCN
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.private.defs import new_cell_message, CellChannel, CellChannelTopic, CellMessageHeaderKeys
 
 

@@ -28,7 +28,7 @@ from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.private.fed.app.client.worker_process import check_parent_alive
 from nvflare.private.fed.client.admin import FedAdminAgent
-from nvflare.private.fed.client.admin_msg_sender import AdminMessageSender
+# from nvflare.private.fed.client.admin_msg_sender import AdminMessageSender
 from nvflare.private.fed.client.client_req_processors import ClientRequestProcessors
 from nvflare.private.fed.client.fed_client import FederatedClient
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorClientAppRunner
@@ -41,15 +41,15 @@ from nvflare.security.security import EmptyAuthorizer
 
 class ClientTaskWorker(FLComponent):
     def create_admin_agent(self, server_args, federated_client: FederatedClient, args, rank=0):
-        sender = AdminMessageSender(
-            client_name=federated_client.token,
-            server_args=server_args,
-            secure=False,
-        )
+        # sender = AdminMessageSender(
+        #     client_name=federated_client.token,
+        #     server_args=server_args,
+        #     secure=False,
+        # )
         client_engine = SimulatorClientEngine(federated_client, federated_client.token, sender, args, rank)
         admin_agent = FedAdminAgent(
             client_name="admin_agent",
-            sender=sender,
+            # sender=sender,
             app_ctx=client_engine,
         )
         admin_agent.app_ctx.set_agent(admin_agent)

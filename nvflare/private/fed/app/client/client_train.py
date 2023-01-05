@@ -27,7 +27,7 @@ from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import AppFolderConstants, SSLConstants
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger, create_privacy_manager
 from nvflare.private.fed.client.admin import FedAdminAgent
-from nvflare.private.fed.client.admin_msg_sender import AdminMessageSender
+# from nvflare.private.fed.client.admin_msg_sender import AdminMessageSender
 from nvflare.private.fed.client.client_engine import ClientEngine
 from nvflare.private.fed.client.fed_client import FederatedClient
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize, security_init
@@ -165,20 +165,20 @@ def create_admin_agent(
     root_cert = client_args[SSLConstants.ROOT_CERT] if secure_train else None
     ssl_cert = client_args[SSLConstants.CERT] if secure_train else None
     private_key = client_args[SSLConstants.PRIVATE_KEY] if secure_train else None
-    sender = AdminMessageSender(
-        client_name=federated_client.token,
-        root_cert=root_cert,
-        ssl_cert=ssl_cert,
-        private_key=private_key,
-        server_args=server_args,
-        secure=secure_train,
-        is_multi_gpu=is_multi_gpu,
-        rank=rank,
-    )
+    # sender = AdminMessageSender(
+    #     client_name=federated_client.token,
+    #     root_cert=root_cert,
+    #     ssl_cert=ssl_cert,
+    #     private_key=private_key,
+    #     server_args=server_args,
+    #     secure=secure_train,
+    #     is_multi_gpu=is_multi_gpu,
+    #     rank=rank,
+    # )
     client_engine = ClientEngine(federated_client, federated_client.token, sender, args, rank)
     admin_agent = FedAdminAgent(
         client_name="admin_agent",
-        sender=sender,
+        # sender=sender,
         app_ctx=client_engine,
     )
     client_engine.set_agent(admin_agent)

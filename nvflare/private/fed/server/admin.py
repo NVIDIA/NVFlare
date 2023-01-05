@@ -16,7 +16,7 @@ import threading
 import time
 from typing import List, Optional
 
-from nvflare.fuel.f3.cellnet import Cell, TargetMessage, Message as CellMessage
+from nvflare.fuel.f3.cellnet.cell import Cell, TargetMessage, Message as CellMessage
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule
 from nvflare.fuel.hci.server.audit import CommandAudit
