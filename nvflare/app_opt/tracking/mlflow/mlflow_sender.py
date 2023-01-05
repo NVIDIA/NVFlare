@@ -76,16 +76,8 @@ class MLFlowSender(AnalyticsSender):
     def set_tag(self, key: str, tag: any) -> None:
         self._add(tag=key, value=tag, data_type=AnalyticsDataType.TAG)
 
-    def set_tags(self, key: str, tags: dict) -> None:
-        self._add(tag="tags", value=tags, data_type=AnalyticsDataType.TAG)
-
-    #
-    # def register_model(model_uri,
-    #                    name,
-    #                    await_registration_for=300,
-    #                    *,
-    #                    tags: Optional[Dict[str, Any]] = None) -> ModelVersion:
-    #     pass
+    def set_tags(self, tags: dict) -> None:
+        self._add(tag="tags", value=tags, data_type=AnalyticsDataType.TAGS)
 
     def flush(self):
         """Flushes out the message.

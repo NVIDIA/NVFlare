@@ -136,6 +136,9 @@ class MLFlowReceiver(AnalyticsReceiver):
     def save(self, fl_ctx: FLContext, shareable: Shareable, record_origin: str):
         dxo = from_shareable(shareable)
         data = AnalyticsData.from_dxo(dxo, receiver=TrackerName.MLFLOW)
+        if not data:
+            return
+
         mlflow_client = self.get_mlflow_client(record_origin)
         run_id = self.get_run_id(record_origin)
         key = data.tag
@@ -152,13 +155,13 @@ class MLFlowReceiver(AnalyticsReceiver):
         elif data.data_type == AnalyticsDataType.METRICS:
             timestamp = get_current_time_millis()
             metrics_arr = [Metric(k, v, timestamp, data.step or 0) for k, v in data.value.items()]
-            mlflow_client.log_batch(run_id=run_id, metrics=metrics_arr, params=[], tags=["site", record_origin])
+            mlflow_client.log_batch(run_id=run_id, metrics=metrics_arr, params=[])
 
         elif data.data_type == AnalyticsDataType.TAG:
             mlflow_client.set_tag(run_id, key, data.value)
 
         elif data.data_type == AnalyticsDataType.TAGS:
-            tags_arr = [RunTag(key, str(value)) for key, value in tags.items()]
+            tags_arr = [RunTag(key, str(value)) for key, value in data.value.items()]
             mlflow_client.log_batch(run_id=run_id, metrics=[], params=[], tags=tags_arr)
 
         elif data.data_type == AnalyticsDataType.TEXT:

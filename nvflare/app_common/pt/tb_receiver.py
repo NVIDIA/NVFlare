@@ -69,6 +69,8 @@ class TBAnalyticsReceiver(AnalyticsReceiver):
     def save(self, fl_ctx: FLContext, shareable: Shareable, record_origin):
         dxo = from_shareable(shareable)
         analytic_data = AnalyticsData.from_dxo(dxo)
+        if not analytic_data:
+            return
 
         writer = self.writers_table.get(record_origin)
         if writer is None:
@@ -91,7 +93,7 @@ class TBAnalyticsReceiver(AnalyticsReceiver):
             return
 
         func = getattr(writer, func_name)
-        if isinstance(analytic_data.kwargs, dict):
+        if isinstance(analytic_data.kwargs, dict) and len(analytic_data.kwargs) > 0:
             func(tag_name, v, **analytic_data.kwargs)
         else:
             func(tag_name, v)

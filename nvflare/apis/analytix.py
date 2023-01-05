@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from enum import Enum
+from typing import Optional
 
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.app_common.tracking.tracker_types import TrackConst, TrackerName
@@ -37,7 +38,6 @@ class AnalyticsDataType(Enum):
     #     # MLFLOW ONLY
     TAG = "TAG"
     TAGS = "TAGS"
-    INIT_DATA = "INIT_DATA"
 
 
 class AnalyticsData:
@@ -89,7 +89,6 @@ class AnalyticsData:
 
         Args:
             receiver: type experiment tacker, default to Tensorboard. TrackerType.TORCH_TB
-            sender: type experiment tacker, default to Tensorboard. TrackerType.TORCH_TB
             dxo (DXO): The DXO object to convert.
 
         Returns:
@@ -110,6 +109,12 @@ class AnalyticsData:
         sender = dxo.get_meta_prop(TrackConst.TRACKER_KEY)
         if sender is not None and sender != receiver:
             data_type = cls.convert_data_type(data_type, sender, receiver)
+
+        if not data_type:
+            return None
+
+        if sender is not None and sender != receiver:
+            kwargs = cls.convert_kwargs(kwargs, sender, receiver)
 
         if not kwargs:
             return cls(key, value, data_type, sender)
@@ -159,7 +164,7 @@ class AnalyticsData:
     @classmethod
     def convert_data_type(
         cls, sender_data_type: AnalyticsDataType, sender: TrackerName, receiver: TrackerName
-    ) -> AnalyticsDataType:
+    ) -> Optional[AnalyticsDataType]:
 
         if sender == TrackerName.TORCH_TB and receiver == TrackerName.MLFLOW:
             if AnalyticsDataType.SCALAR == sender_data_type:
@@ -170,13 +175,30 @@ class AnalyticsData:
                 return sender_data_type
 
         if sender == TrackerName.MLFLOW and receiver == TrackerName.TORCH_TB:
-            if AnalyticsDataType.PARAMETER == sender_data_type:
-                return AnalyticsDataType.SCALAR
+            if AnalyticsDataType.TAG == sender_data_type:
+                return None
+            elif AnalyticsDataType.TAGS == sender_data_type:
+                return None
+            elif AnalyticsDataType.PARAMETER == sender_data_type:
+                return None
             elif AnalyticsDataType.PARAMETERS == sender_data_type:
-                return AnalyticsDataType.SCALARS
+                return None
             elif AnalyticsDataType.METRIC == sender_data_type:
                 return AnalyticsDataType.SCALAR
             elif AnalyticsDataType.METRICS == sender_data_type:
                 return AnalyticsDataType.SCALARS
             else:
                 return sender_data_type
+
+    @classmethod
+    def convert_kwargs(cls, kwargs, sender: TrackerName, receiver: TrackerName) -> dict:
+        if not kwargs:
+            return kwargs
+
+        filtered_kwargs = {}
+        if sender == TrackerName.MLFLOW and receiver == TrackerName.TORCH_TB:
+            for k in kwargs:
+                if k == TrackConst.GLOBAL_STEP_KEY:
+                    filtered_kwargs[k] = kwargs[k]
+
+        return filtered_kwargs
