@@ -16,7 +16,7 @@ import pytest
 
 from nvflare.apis.analytix import _DATA_TYPE_KEY, _KWARGS_KEY, AnalyticsData, AnalyticsDataType
 from nvflare.apis.dxo import DXO, DataKind
-from nvflare.app_common.tracking.tracker_types import TrackConst, Tracker
+from nvflare.app_common.tracking.tracker_types import TrackConst, TrackerName
 from nvflare.app_common.widgets.streaming import create_analytic_dxo
 
 FROM_DXO_TEST_CASES = [
@@ -32,7 +32,7 @@ TO_DXO_TEST_CASES = [
         key="dict",
         value={"key": 1.0},
         step=3,
-        sender=Tracker.MLFLOW,
+        sender=TrackerName.MLFLOW,
         kwargs={"experiment_name": "test"},
         data_type=AnalyticsDataType.SCALARS,
     ),
@@ -89,7 +89,7 @@ class TestAnalytix:
         assert result.tag == tag
         assert result.value == value
         assert result.step == step
-        assert result.sender == Tracker.TORCH_TB
+        assert result.sender == TrackerName.TORCH_TB
 
     @pytest.mark.parametrize("data", TO_DXO_TEST_CASES)
     def test_to_dxo(self, data: AnalyticsData):

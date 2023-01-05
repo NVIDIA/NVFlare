@@ -24,7 +24,7 @@ from nvflare.apis.dxo import from_shareable
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.tracking.track_exception import ExpTrackingException
-from nvflare.app_common.tracking.tracker_types import TrackConst, Tracker
+from nvflare.app_common.tracking.tracker_types import TrackConst, TrackerName
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 
 
@@ -135,7 +135,7 @@ class MLFlowReceiver(AnalyticsReceiver):
 
     def save(self, fl_ctx: FLContext, shareable: Shareable, record_origin: str):
         dxo = from_shareable(shareable)
-        data = AnalyticsData.from_dxo(dxo, receiver=Tracker.MLFLOW)
+        data = AnalyticsData.from_dxo(dxo, receiver=TrackerName.MLFLOW)
         mlflow_client = self.get_mlflow_client(record_origin)
         run_id = self.get_run_id(record_origin)
         key = data.tag

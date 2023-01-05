@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import time
 from abc import ABC, abstractmethod
 from threading import Lock
 from typing import List, Optional
@@ -23,7 +23,7 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import EventScope, FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-from nvflare.app_common.tracking.tracker_types import Tracker
+from nvflare.app_common.tracking.tracker_types import TrackerName
 from nvflare.widgets.widget import Widget
 
 ANALYTIC_EVENT_TYPE = "analytix_log_stats"
@@ -50,7 +50,7 @@ def send_analytic_dxo(comp: FLComponent, dxo: DXO, fl_ctx: FLContext, event_type
 
 
 def create_analytic_dxo(
-    tag: str, value, data_type: AnalyticsDataType, step: int, sender: Tracker = Tracker.TORCH_TB, **kwargs
+    tag: str, value, data_type: AnalyticsDataType, sender: TrackerName = TrackerName.TORCH_TB, **kwargs
 ) -> DXO:
     """Creates the analytic DXO.
 
@@ -58,15 +58,13 @@ def create_analytic_dxo(
         tag (str): the tag associated with this value.
         value: the analytic data.
         data_type: (AnalyticsDataType): analytic data type.
-        step (int) : global step
         sender: (Tracker), syntax of the sender: such TensorBoard or MLFLow
         kwargs: additional arguments to be passed into the receiver side's function.
 
     Returns:
         A DXO object that contains the analytic data.
     """
-    step = step if step else kwargs.get("global_step", None)
-    data = AnalyticsData(key=tag, value=value, data_type=data_type, step=step, sender=sender, kwargs=kwargs)
+    data = AnalyticsData(key=tag, value=value, data_type=data_type, sender=sender, **kwargs)
     dxo = data.to_dxo()
     return dxo
 
@@ -87,10 +85,11 @@ class AnalyticsSender(Widget):
         self.engine = None
         self.event_type = event_type
 
-    def get_tracker_name(self) -> Tracker:
-        return Tracker.TORCH_TB
+    def get_tracker_name(self) -> TrackerName:
+        return TrackerName.TORCH_TB
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
+        self.fl_ctx = fl_ctx
         if event_type == EventType.START_RUN:
             self.engine = fl_ctx.get_engine()
 
@@ -99,16 +98,21 @@ class AnalyticsSender(Widget):
         tag: str,
         value,
         data_type: AnalyticsDataType,
-        global_step: Optional[int] = None,
-        kwargs: Optional[dict] = None,
+        **kwargs,
     ):
+        # need to wait for self.engine initialized
+        # this could due to race condition
+        while not self.fl_ctx or not self.engine:
+            print("sleep for 1 seconds")
+            time.sleep(1.0)
+
         kwargs = kwargs if kwargs else {}
+        global_step = kwargs["global_step"] if "global_step" in kwargs else None
         if global_step:
             if not isinstance(global_step, int):
                 raise TypeError(f"Expect global step to be an instance of int, but got {type(global_step)}")
-            kwargs["global_step"] = global_step
         dxo = create_analytic_dxo(
-            tag=tag, value=value, data_type=data_type, step=global_step, sender=self.get_tracker_name(), **kwargs
+            tag=tag, value=value, data_type=data_type, sender=self.get_tracker_name(), **kwargs
         )
         with self.engine.new_context() as fl_ctx:
             send_analytic_dxo(self, dxo=dxo, fl_ctx=fl_ctx, event_type=self.event_type)
@@ -122,7 +126,7 @@ class AnalyticsSender(Widget):
             global_step (optional, int): Global step value.
             **kwargs: Additional arguments to pass to the receiver side.
         """
-        self._add(tag=tag, value=scalar, data_type=AnalyticsDataType.SCALAR, global_step=global_step, kwargs=kwargs)
+        self._add(tag=tag, value=scalar, data_type=AnalyticsDataType.SCALAR, global_step=global_step, **kwargs)
 
     def add_scalars(self, tag: str, scalars: dict, global_step: Optional[int] = None, **kwargs):
         """Sends scalars.
@@ -133,7 +137,7 @@ class AnalyticsSender(Widget):
             global_step (optional, int): Global step value.
             **kwargs: Additional arguments to pass to the receiver side.
         """
-        self._add(tag=tag, value=scalars, data_type=AnalyticsDataType.SCALARS, global_step=global_step, kwargs=kwargs)
+        self._add(tag=tag, value=scalars, data_type=AnalyticsDataType.SCALARS, global_step=global_step, **kwargs)
 
     def add_text(self, tag: str, text: str, global_step: Optional[int] = None, **kwargs):
         """Sends a text.
@@ -144,7 +148,7 @@ class AnalyticsSender(Widget):
             global_step (optional, int): Global step value.
             **kwargs: Additional arguments to pass to the receiver side.
         """
-        self._add(tag=tag, value=text, data_type=AnalyticsDataType.TEXT, global_step=global_step, kwargs=kwargs)
+        self._add(tag=tag, value=text, data_type=AnalyticsDataType.TEXT, global_step=global_step, **kwargs)
 
     def add_image(self, tag: str, image, global_step: Optional[int] = None, **kwargs):
         """Sends an image.
@@ -155,7 +159,7 @@ class AnalyticsSender(Widget):
             global_step (optional, int): Global step value.
             **kwargs: Additional arguments to pass to the receiver side.
         """
-        self._add(tag=tag, value=image, data_type=AnalyticsDataType.IMAGE, global_step=global_step, kwargs=kwargs)
+        self._add(tag=tag, value=image, data_type=AnalyticsDataType.IMAGE, global_step=global_step, **kwargs)
 
     def flush(self):
         """Flushes out the message.

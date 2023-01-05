@@ -43,7 +43,7 @@ from enum import Enum
 ANALYTIC_EVENT_TYPE = "analytix_log_stats"
 
 
-class Tracker(Enum):
+class TrackerName(Enum):
     TORCH_TB = "TORCH_TENSORBOARD"
     MLFLOW = "MLFLOW"
     WANDB = "WEIGHTS_AND_BIASES"
