@@ -13,15 +13,10 @@
 # limitations under the License.
 
 
-from typing import Dict, Optional, Union
-
-import PIL
-import numpy
+from typing import Dict, Optional
 
 from nvflare.apis.analytix import AnalyticsDataType
-from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.tracking.tracker_types import TrackConst, TrackerName
+from nvflare.app_common.tracking.tracker_types import TrackerName
 from nvflare.app_common.widgets.streaming import ANALYTIC_EVENT_TYPE, AnalyticsSender
 
 

@@ -13,7 +13,6 @@
 # limitations under the License.
 
 from enum import Enum
-from typing import Dict, Optional
 
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.app_common.tracking.tracker_types import TrackConst, TrackerName
@@ -43,12 +42,7 @@ class AnalyticsDataType(Enum):
 
 class AnalyticsData:
     def __init__(
-            self,
-            key: str,
-            value,
-            data_type: AnalyticsDataType,
-            sender: TrackerName = TrackerName.TORCH_TB,
-            **kwargs
+        self, key: str, value, data_type: AnalyticsDataType, sender: TrackerName = TrackerName.TORCH_TB, **kwargs
     ):
         """This class defines AnalyticsData format.
 
@@ -123,11 +117,11 @@ class AnalyticsData:
             return cls(key, value, data_type, sender, **kwargs)
 
     def _validate_data_types(
-            self,
-            data_type: AnalyticsDataType,
-            key: str,
-            value: any,
-            **kwargs,
+        self,
+        data_type: AnalyticsDataType,
+        key: str,
+        value: any,
+        **kwargs,
     ):
         if not isinstance(key, str):
             raise TypeError("expect tag to be an instance of str, but got {}.".format(type(key)))
@@ -164,7 +158,7 @@ class AnalyticsData:
 
     @classmethod
     def convert_data_type(
-            cls, sender_data_type: AnalyticsDataType, sender: TrackerName, receiver: TrackerName
+        cls, sender_data_type: AnalyticsDataType, sender: TrackerName, receiver: TrackerName
     ) -> AnalyticsDataType:
 
         if sender == TrackerName.TORCH_TB and receiver == TrackerName.MLFLOW:

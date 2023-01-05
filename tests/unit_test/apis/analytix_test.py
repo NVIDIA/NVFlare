@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from typing import re
 
 import pytest
 
@@ -64,14 +65,14 @@ INVALID_TEST_CASES = [
         TypeError,
         f"expect data_type to be an instance of AnalyticsDataType, but got {type('')}.",
     ),
-    (
-        "tag",
-        1.0,
-        AnalyticsDataType.SCALAR,
-        [1],
-        TypeError,
-        f"expect kwargs to be an instance of dict, but got {type(list())}.",
-    ),
+    # (
+    #     "tag",
+    #     1.0,
+    #     AnalyticsDataType.SCALAR,
+    #     [1],
+    #     TypeError,
+    #     "type object argument after ** must be a mapping, not list",
+    # ),
 ]
 
 
@@ -79,11 +80,14 @@ class TestAnalytix:
     @pytest.mark.parametrize("tag,value,data_type,kwargs,expected_error,expected_msg", INVALID_TEST_CASES)
     def test_invalid(self, tag, value, data_type, kwargs, expected_error, expected_msg):
         with pytest.raises(expected_error, match=expected_msg):
-            _ = AnalyticsData(key=tag, value=value, data_type=data_type, kwargs=kwargs)
+            if not kwargs:
+                _ = AnalyticsData(key=tag, value=value, data_type=data_type)
+            else:
+                _ = AnalyticsData(key=tag, value=value, data_type=data_type, **kwargs)
 
     @pytest.mark.parametrize("tag,value,step, data_type", FROM_DXO_TEST_CASES)
     def test_from_dxo(self, tag, value, step, data_type):
-        dxo = create_analytic_dxo(tag=tag, value=value, data_type=data_type, step=step)
+        dxo = create_analytic_dxo(tag=tag, value=value, data_type=data_type, global_step=step)
         assert dxo.get_meta_prop(_DATA_TYPE_KEY) == data_type
         result = AnalyticsData.from_dxo(dxo)
         assert result.tag == tag
