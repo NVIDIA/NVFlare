@@ -6,3 +6,6 @@ monai>=1.0.1
 nvflare>=2.2.1
 monai_nvflare>=0.2.1
 tensorboard
+scikit-image
+pandas
+matplotlib
