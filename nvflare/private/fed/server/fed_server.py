@@ -22,9 +22,6 @@ from concurrent import futures
 from threading import Lock
 from typing import List, Optional
 
-# import grpc
-# from google.protobuf.struct_pb2 import Struct
-from google.protobuf.timestamp_pb2 import Timestamp
 
 import nvflare.private.fed.protos.admin_pb2 as admin_msg
 import nvflare.private.fed.protos.admin_pb2_grpc as admin_service
@@ -337,7 +334,7 @@ class FederatedServer(BaseServer):
 
         self.contributed_clients = {}
         self.tokens = None
-        self.round_started = Timestamp()
+        self.round_started = time.time()
 
         with self.lock:
             self.reset_tokens()
@@ -394,16 +391,18 @@ class FederatedServer(BaseServer):
             s.update({k: v})
         return s
 
-    @property
-    def task_meta_info(self):
+    # @property
+    def task_meta_info(self, client_name):
         """Task meta information.
 
         The model_meta_info uniquely defines the current model,
         it is used to reject outdated client's update.
         """
-        meta_info = fed_msg.MetaData()
-        meta_info.created.CopyFrom(self.round_started)
-        meta_info.project.name = self.project_name
+        # meta_info = fed_msg.MetaData()
+        # meta_info.created.CopyFrom(self.round_started)
+        # meta_info.project.name = self.project_name
+        meta_info = {CellMessageHeaderKeys.PROJECT_NAME: self.project_name,
+                     CellMessageHeaderKeys.CLIENT_NAME: client_name}
         return meta_info
 
     def remove_client_data(self, token):
@@ -418,7 +417,7 @@ class FederatedServer(BaseServer):
         """
         self.tokens = dict()
         for client in self.get_all_clients().keys():
-            self.tokens[client] = self.task_meta_info
+            self.tokens[client] = self.task_meta_info(client.name)
 
     def _before_service(self, fl_ctx: FLContext):
         # before the service processing
@@ -464,7 +463,7 @@ class FederatedServer(BaseServer):
             # else:
             client = self.client_manager.authenticate(request, fl_ctx)
             if client and client.token:
-                self.tokens[client.token] = self.task_meta_info
+                self.tokens[client.token] = self.task_meta_info(client.name)
                 if self.admin_server:
                     self.admin_server.client_heartbeat(client.token, client.name)
 
@@ -621,9 +620,9 @@ class FederatedServer(BaseServer):
                     )
                     contribution_task_name = contribution.task_name
 
-                    timenow = Timestamp()
-                    timenow.GetCurrentTime()
-                    time_seconds = timenow.seconds - self.round_started.seconds
+                    timenow = time.time()
+                    # timenow.GetCurrentTime()
+                    time_seconds = timenow - self.round_started
                     self.logger.info(
                         "received update from %s (%s Bytes, %s seconds)",
                         client_contrib_id,
@@ -753,7 +752,7 @@ class FederatedServer(BaseServer):
             client_name =  request.get_header(CellMessageHeaderKeys.CLIENT_NAME)
 
             if self.client_manager.heartbeat(token, client_name, fl_ctx):
-                self.tokens[token] = self.task_meta_info
+                self.tokens[token] = self.task_meta_info(client_name)
             if self.admin_server:
                 self.admin_server.client_heartbeat(token, client_name)
 
