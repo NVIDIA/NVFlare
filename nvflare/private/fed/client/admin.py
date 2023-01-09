@@ -96,11 +96,8 @@ class FedAdminAgent(object):
 
     def _dispatch_request(
             self,
-            cell: Cell,
-            channel: str,
-            topic: str,
             request: CellMessage,
-            *args, **kwargs
+            # *args, **kwargs
     ) -> CellMessage:
             assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
             req = request.payload

@@ -49,7 +49,7 @@ class ClientManager:
             return None
 
         # client_ip = context.peer().split(":")[1]
-        client_ip = request.get_prop(CellMessageHeaderKeys.CLIENT_IP)
+        client_ip = request.get_header(CellMessageHeaderKeys.CLIENT_IP)
 
         if len(self.clients) >= self.max_num_clients:
             # context.abort(grpc.StatusCode.RESOURCE_EXHAUSTED, "Maximum number of clients reached")
@@ -60,10 +60,10 @@ class ClientManager:
             self.clients.update({client.token: client})
             self.logger.info(
                 "Client: New client {} joined. Sent token: {}.  Total clients: {}".format(
-                    request.client_name + "@" + client_ip, client.token, len(self.clients)
+                    client.name + "@" + client_ip, client.token, len(self.clients)
                 )
             )
-        return client.token
+        return client
 
     def remove_client(self, token):
         """Remove a registered client.
@@ -82,7 +82,7 @@ class ClientManager:
             return client
 
     def login_client(self, client_login, context):
-        if not self.is_valid_task(client_login.meta.project):
+        if not self.is_valid_task(client_login.get_header(CellMessageHeaderKeys.PROJECT_NAME)):
             # context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Requested task does not match the current server task")
             context.set_prop(FLContextKey.UNAUTHENTICATED, "Requested task does not match the current server task")
         return self.authenticated_client(client_login, context)
@@ -174,7 +174,7 @@ class ClientManager:
         Returns:
             True if task name is the same as server's project name.
         """
-        return task.name == self.project_name
+        return task == self.project_name
 
     def heartbeat(self, token, client_name, fl_ctx):
         """Update the heartbeat of the client.

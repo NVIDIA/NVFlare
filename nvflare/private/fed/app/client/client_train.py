@@ -125,7 +125,10 @@ def main():
             deployer.multi_gpu,
             rank,
         )
-        admin_agent.start()
+        # admin_agent.start()
+
+        while True:
+            time.sleep(1.0)
 
         deployer.close()
 
@@ -175,10 +178,12 @@ def create_admin_agent(
     #     is_multi_gpu=is_multi_gpu,
     #     rank=rank,
     # )
+    sender = None
     client_engine = ClientEngine(federated_client, federated_client.token, sender, args, rank)
     admin_agent = FedAdminAgent(
         client_name="admin_agent",
         # sender=sender,
+        cell=federated_client.cell,
         app_ctx=client_engine,
     )
     client_engine.set_agent(admin_agent)

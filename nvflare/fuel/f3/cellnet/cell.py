@@ -627,6 +627,9 @@ class Cell(MessageReceiver, EndpointMonitor):
             else:
                 self._set_bb_for_client_child(self.parent_url, self.create_internal_listener)
 
+        # There's a race condition caused repeat creating listener error. Have a sleep a little for now.
+        time.sleep(0.1)
+
         self.bulk_checker.start()
         self.communicator.start()
         self.stop_waiter_thread.start()

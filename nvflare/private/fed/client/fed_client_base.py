@@ -85,6 +85,7 @@ class FederatedClientBase:
         self.ssid = None
         self.client_args = client_args
         self.servers = server_args
+        self.cell = cell
 
         self.communicator = Communicator(
             ssl_args=client_args,

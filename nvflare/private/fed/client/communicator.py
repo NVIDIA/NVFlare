@@ -214,7 +214,8 @@ class Communicator:
         #         return None
 
         login_message = new_cell_message({CellMessageHeaderKeys.CLIENT_NAME: client_name,
-                                          CellMessageHeaderKeys.CLIENT_IP: local_ip})
+                                          CellMessageHeaderKeys.CLIENT_IP: local_ip,
+                                          CellMessageHeaderKeys.PROJECT_NAME: project_name})
 
         while True:
             try:
@@ -494,7 +495,7 @@ class Communicator:
                             raise FLCommunicationError({}, "error:client_quit " + unauthenticated)
 
                         # server_message = result.get_header(CellMessageHeaderKeys.MESSAGE)
-                        abort_jobs = result.get_header(CellMessageHeaderKeys.ABORT_JOBS)
+                        abort_jobs = result.get_header(CellMessageHeaderKeys.ABORT_JOBS, [])
                         self._clean_up_runs(engine, abort_jobs)
 
                     except BaseException as ex:

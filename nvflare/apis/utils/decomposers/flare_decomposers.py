@@ -30,6 +30,7 @@ from nvflare.apis.signal import Signal
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs.decomposer import Decomposer, DictDecomposer
+from nvflare.private.admin_defs import Message
 
 
 # The __init__ initializes logger so generic decomposers can't be used
@@ -71,6 +72,7 @@ def register():
         RunSnapshot,
         Signal,
         Namespace,
+        Message
     )
 
     fobs.register_folder(os.path.dirname(__file__), __package__)

@@ -77,6 +77,7 @@ class ReturnCode:
     SERVICE_UNAVAILABLE = "service_unavailable"
     INVALID_SESSION = "invalid_session"
     ABORT_RUN = "abort_run"
+    UNAUTHENTICATED = "unauthenticated"
 
 
 class MessageType:

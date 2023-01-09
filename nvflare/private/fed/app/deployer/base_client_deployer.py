@@ -20,7 +20,7 @@ from nvflare.private.fed.client.client_req_processors import ClientRequestProces
 from nvflare.private.fed.client.fed_client import FederatedClient
 
 from nvflare.fuel.f3.cellnet.cell import Cell, Message
-
+from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 
 
 class BaseClientDeployer:
@@ -85,6 +85,7 @@ class BaseClientDeployer:
         )
 
         self.cell.start()
+        self.agent = NetAgent(self.cell)
 
         self.federated_client = FederatedClient(
             client_name=str(self.client_name),

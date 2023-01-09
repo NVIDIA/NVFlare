@@ -28,6 +28,8 @@ from nvflare.fuel.hci.server.login import LoginModule, SessionManager, SimpleAut
 from nvflare.fuel.sec.audit import Auditor, AuditService
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import ERROR_MSG_PREFIX, RequestHeader, CellChannel, new_cell_message
+from nvflare.fuel.f3.cellnet.net_agent import NetAgent
+from nvflare.fuel.f3.cellnet.net_manager import NetManager
 
 
 def new_message(conn: Connection, topic, body, require_authz: bool) -> Message:
@@ -170,6 +172,10 @@ class FedAdminServer(AdminServer):
         # )
 
         cmd_reg.register_module(sess_mgr)
+
+        agent = NetAgent(self.cell)
+        net_mgr = NetManager(agent)
+        cmd_reg.register_module(net_mgr)
 
         if cmd_modules:
             if not isinstance(cmd_modules, list):
@@ -315,7 +321,7 @@ class FedAdminServer(AdminServer):
         else:
             result = []
             replies = self.cell.broadcast_multi_requests(target_msgs, timeout_secs)
-            for name, reply in replies:
+            for name, reply in replies.items():
                 assert isinstance(reply, CellMessage)
                 result.append(ClientReply(
                     client_token=name_to_token[name],

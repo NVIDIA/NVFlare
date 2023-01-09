@@ -22,8 +22,8 @@ from concurrent import futures
 from threading import Lock
 from typing import List, Optional
 
-import grpc
-from google.protobuf.struct_pb2 import Struct
+# import grpc
+# from google.protobuf.struct_pb2 import Struct
 from google.protobuf.timestamp_pb2 import Timestamp
 
 import nvflare.private.fed.protos.admin_pb2 as admin_msg
@@ -77,11 +77,6 @@ from .server_state import (
     ServerState,
 )
 from .server_status import ServerStatus
-
-GRPC_DEFAULT_OPTIONS = [
-    ("grpc.max_send_message_length", 1024 * 1024 * 1024),
-    ("grpc.max_receive_message_length", 1024 * 1024 * 1024),
-]
 
 
 class BaseServer(ABC):
@@ -284,7 +279,7 @@ class BaseServer(ABC):
 
 
 def request_processing(f):
-    def wrap(fl_ctx: FLContext, *args, **kwargs):
+    def wrap(request: Message, fl_ctx: FLContext, *args, **kwargs):
         # before the service processing
         fl_ctx.remove_prop(FLContextKey.COMMUNICATION_ERROR)
         fl_ctx.remove_prop(FLContextKey.UNAUTHENTICATED)
@@ -425,9 +420,29 @@ class FederatedServer(BaseServer):
         for client in self.get_all_clients().keys():
             self.tokens[client] = self.task_meta_info
 
+    def _before_service(self, fl_ctx: FLContext):
+        # before the service processing
+        fl_ctx.remove_prop(FLContextKey.COMMUNICATION_ERROR)
+        fl_ctx.remove_prop(FLContextKey.UNAUTHENTICATED)
+
+    def _generate_reply(self, headers, payload, fl_ctx: FLContext):
+        # process after the service processing
+        unauthenticated = fl_ctx.get_prop(FLContextKey.UNAUTHENTICATED)
+        if unauthenticated:
+            return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED, error=unauthenticated)
+
+        error = fl_ctx.get_prop(FLContextKey.COMMUNICATION_ERROR)
+        if error:
+            return make_cellnet_reply(rc=F3ReturnCode.COMM_ERROR, error=error)
+        else:
+            return_message = new_cell_message(headers, payload)
+            return_message.set_header(MessageHeaderKey.RETURN_CODE, F3ReturnCode.OK)
+            return return_message
+
     # def Register(self, request, context):
-    @request_processing
-    def Register(self, cell: Cell, channel: str, topic: str, request: Message, fl_ctx: FLContext) -> Message:
+    # @request_processing
+    # def Register(self, cell: Cell, channel: str, topic: str, request: Message, fl_ctx: FLContext) -> Message:
+    def Register(self, request: Message) -> Message:
 
         """Register new clients on the fly.
 
@@ -438,24 +453,26 @@ class FederatedServer(BaseServer):
         This function does not change min_num_clients and max_num_clients.
         """
 
-        # with self.engine.new_context() as fl_ctx:
-        state_check = self.server_state.register(fl_ctx)
+        with self.engine.new_context() as fl_ctx:
+            self._before_service(fl_ctx)
 
-        self._handle_state_check(state_check, fl_ctx)
-        # if state_check.get(ACTION) in [NIS, ABORT_RUN]:
-        #     return make_cellnet_reply(rc=F3ReturnCode.COMM_ERROR, error=state_check.get(MESSAGE))
-        # else:
-        token = self.client_manager.authenticate(request, fl_ctx)
-        if token:
-            self.tokens[token] = self.task_meta_info
-            if self.admin_server:
-                self.admin_server.client_heartbeat(token)
+            state_check = self.server_state.register(fl_ctx)
 
-            # return fed_msg.FederatedSummary(
-            #     comment="New client registered", token=token, ssid=self.server_state.ssid
-            # )
-            return Message({CellMessageHeaderKeys.TOKEN: token,
-                            CellMessageHeaderKeys.SSID: self.server_state.ssid})
+            self._handle_state_check(state_check, fl_ctx)
+            # if state_check.get(ACTION) in [NIS, ABORT_RUN]:
+            #     return make_cellnet_reply(rc=F3ReturnCode.COMM_ERROR, error=state_check.get(MESSAGE))
+            # else:
+            client = self.client_manager.authenticate(request, fl_ctx)
+            if client and client.token:
+                self.tokens[client.token] = self.task_meta_info
+                if self.admin_server:
+                    self.admin_server.client_heartbeat(client.token, client.name)
+
+                headers = {CellMessageHeaderKeys.TOKEN: client.token,
+                           CellMessageHeaderKeys.SSID: self.server_state.ssid}
+            else:
+                headers = {}
+            return self._generate_reply(headers=headers, payload=None, fl_ctx=fl_ctx)
 
     def _handle_state_check(self, state_check, fl_ctx: FLContext):
         if state_check.get(ACTION) in [NIS, ABORT_RUN]:
@@ -466,8 +483,8 @@ class FederatedServer(BaseServer):
             context.abort(grpc.StatusCode.UNAUTHENTICATED, "Invalid Service session ID")
 
     # def Quit(self, request, context):
-    @request_processing
-    def Quit(self, cell: Cell, channel: str, topic: str, request: Message, fl_ctx: FLContext) -> Message:
+    # @request_processing
+    def Quit(self, request: Message) -> Message:
         """Existing client quits the federated training process.
 
         Server will stop sharing the global model with the client,
@@ -477,13 +494,14 @@ class FederatedServer(BaseServer):
         """
         # fire_event(EventType.CLIENT_QUIT, self.handlers, self.fl_ctx)
 
-        client = self.client_manager.validate_client(request, fl_ctx)
-        if client:
-            token = client.get_token()
-            self.logout_client(token)
+        with self.engine.new_context() as fl_ctx:
+            client = self.client_manager.validate_client(request, fl_ctx)
+            if client:
+                token = client.get_token()
+                self.logout_client(token)
 
-        # return fed_msg.FederatedSummary(comment="Removed client")
-        return Message({CellMessageHeaderKeys.MESSAGE: "Removed client"})
+            headers = {CellMessageHeaderKeys.MESSAGE: "Removed client"}
+            return self._generate_reply(headers=headers, payload=None, fl_ctx=fl_ctx)
 
     def GetTask(self, request, context):
         """Process client's get task request."""
@@ -716,10 +734,12 @@ class FederatedServer(BaseServer):
         return reply
 
     # def Heartbeat(self, request, context):
-    @request_processing
-    def Heartbeat(self, cell: Cell, channel: str, topic: str, request: Message, fl_ctx: FLContext) -> Message:
+    # @request_processing
+    def Heartbeat(self, request: Message) -> Message:
 
         with self.engine.new_context() as fl_ctx:
+            self._before_service(fl_ctx)
+
             state_check = self.server_state.heartbeat(fl_ctx)
             self._handle_state_check(state_check, fl_ctx)
 
@@ -735,11 +755,12 @@ class FederatedServer(BaseServer):
             if self.client_manager.heartbeat(token, client_name, fl_ctx):
                 self.tokens[token] = self.task_meta_info
             if self.admin_server:
-                self.admin_server.client_heartbeat(token)
+                self.admin_server.client_heartbeat(token, client_name)
 
             abort_runs = self._sync_client_jobs(request, token)
             # summary_info = fed_msg.FederatedSummary()
-            reply = Message({CellMessageHeaderKeys.MESSAGE: "Heartbeat response"})
+            reply = self._generate_reply(headers={CellMessageHeaderKeys.MESSAGE: "Heartbeat response"},
+                                         payload=None, fl_ctx=fl_ctx)
             if abort_runs:
                 # del summary_info.abort_jobs[:]
                 # summary_info.abort_jobs.extend(abort_runs)
@@ -808,33 +829,33 @@ class FederatedServer(BaseServer):
             if participating_clients and client.token in participating_clients:
                 self._notify_dead_job(client, job_id)
 
-    def Retrieve(self, request, context):
-        client_name = request.client_name
-        messages = self.admin_server.get_outgoing_requests(client_token=client_name) if self.admin_server else []
-
-        response = admin_msg.Messages()
-        for m in messages:
-            response.message.append(message_to_proto(m))
-        return response
-
-    def SendReply(self, request, context):
-        client_name = request.client_name
-        message = proto_to_message(request.message)
-        if self.admin_server:
-            self.admin_server.accept_reply(client_token=client_name, reply=message)
-
-        response = admin_msg.Empty()
-        return response
-
-    def SendResult(self, request, context):
-        client_name = request.client_name
-        message = proto_to_message(request.message)
-
-        processor = self.processors.get(message.topic)
-        processor.process(client_name, message)
-
-        response = admin_msg.Empty()
-        return response
+    # def Retrieve(self, request, context):
+    #     client_name = request.client_name
+    #     messages = self.admin_server.get_outgoing_requests(client_token=client_name) if self.admin_server else []
+    #
+    #     response = admin_msg.Messages()
+    #     for m in messages:
+    #         response.message.append(message_to_proto(m))
+    #     return response
+    #
+    # def SendReply(self, request, context):
+    #     client_name = request.client_name
+    #     message = proto_to_message(request.message)
+    #     if self.admin_server:
+    #         self.admin_server.accept_reply(client_token=client_name, reply=message)
+    #
+    #     response = admin_msg.Empty()
+    #     return response
+    #
+    # def SendResult(self, request, context):
+    #     client_name = request.client_name
+    #     message = proto_to_message(request.message)
+    #
+    #     processor = self.processors.get(message.topic)
+    #     processor.process(client_name, message)
+    #
+    #     response = admin_msg.Empty()
+    #     return response
 
     def start_run(self, job_id, run_root, conf, args, snapshot):
         # Create the FL Engine
