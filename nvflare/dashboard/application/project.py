@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# DOCS https://docs.python.org/3/library/concurrent.futures.html#concurrent.futures.ThreadPoolExecutor
+
+from concurrent.futures import ThreadPoolExecutor
 
 from flask import current_app as app
 from flask import jsonify, make_response, request
@@ -19,6 +22,8 @@ from flask_jwt_extended import create_access_token, get_jwt, jwt_required
 
 from . import jwt
 from .store import Store
+
+executor = ThreadPoolExecutor(1)
 
 
 @jwt.expired_token_loader
@@ -124,6 +129,28 @@ def server_blob(id):
         return response
     else:
         return jsonify({"status": "unauthorized"}), 403
+
+
+# @app.route("/api/v1/start/server", methods=["POST"])
+# @jwt_required()
+# def start_cloud_server():
+#     claims = get_jwt()
+#     if claims.get("role") == "project_admin":
+#         executor.submit(start_server)
+#         return jsonify({"status": "ok"})
+#     else:
+#         return jsonify({"status": "unauthorized"}), 403
+
+
+# @app.route("/api/v1/start/clients", methods=["POST"])
+# @jwt_required()
+# def start_cloud_client():
+#     claims = get_jwt()
+#     if claims.get("role") == "project_admin":
+#         executor.submit(start_client)
+#         return jsonify({"status": "ok"})
+#     else:
+#         return jsonify({"status": "unauthorized"}), 403
 
 
 @app.route("/api/v1/project", methods=["PATCH"])

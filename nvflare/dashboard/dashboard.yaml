@@ -609,6 +609,12 @@ components:
           type: string
         overseer:
           type: "string"
+        cloud_enabled:
+          type: boolean
+        cloud_location:
+          type: "string"
+        requirements:
+          type: "string"
         server1:
           type: "string"
         server2:
@@ -671,7 +677,7 @@ components:
         capacity:
           type: "object"
           properties:
-            num_gpus:
+            num_of_gpus:
               type: "integer"
               format: "uint8"
             mem_per_gpu_in_GiB:
