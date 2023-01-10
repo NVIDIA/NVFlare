@@ -32,6 +32,7 @@ from nvflare.private.defs import EngineConstant
 from nvflare.security.logging import secure_format_exception
 
 from nvflare.fuel.f3.cellnet.cell import Cell
+from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 
 from .client_status import ClientStatus
 from .communicator import Communicator
@@ -86,6 +87,7 @@ class FederatedClientBase:
         self.client_args = client_args
         self.servers = server_args
         self.cell = cell
+        self.net_agent = None
 
         self.communicator = Communicator(
             ssl_args=client_args,
@@ -147,10 +149,29 @@ class FederatedClientBase:
     def set_sp(self, project_name, sp: SP):
         if sp and sp.primary is True:
             server = self.servers[project_name].get("target")
-            location = sp.name + ":" + sp.fl_port
+            location = "http://" + sp.name + ":" + sp.fl_port
             if server != location:
+                if self.cell:
+                    self.cell.stop()
+
                 self.servers[project_name]["target"] = location
                 self.sp_established = True
+
+                parent_url = None
+                credentials = {}
+                self.cell = Cell(
+                    fqcn=self.client_name,
+                    root_url=location,
+                    secure=self.secure_train,
+                    credentials=credentials,
+                    create_internal_listener=True,
+                    parent_url=parent_url,
+                )
+
+                self.cell.start()
+                self.communicator.cell = self.cell
+                self.net_agent = NetAgent(self.cell)
+
                 self.logger.info(f"Got the new primary SP: {location}")
 
             if self.ssid and self.ssid != sp.service_session_id:

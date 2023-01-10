@@ -71,22 +71,6 @@ class BaseClientDeployer:
             if isinstance(processor, RequestProcessor):
                 self.req_processors.append(processor)
 
-        target = "http://localhost:8002"
-        parent_url = None
-        credentials = {}
-
-        self.cell = Cell(
-            fqcn=self.client_name,
-            root_url=target,
-            secure=self.secure_train,
-            credentials=credentials,
-            create_internal_listener=True,
-            parent_url=parent_url,
-        )
-
-        self.cell.start()
-        self.agent = NetAgent(self.cell)
-
         self.federated_client = FederatedClient(
             client_name=str(self.client_name),
             # We only deploy the first server right now .....
@@ -100,7 +84,6 @@ class BaseClientDeployer:
             args=args,
             components=self.components,
             handlers=self.handlers,
-            cell=self.cell
         )
         return self.federated_client
 
