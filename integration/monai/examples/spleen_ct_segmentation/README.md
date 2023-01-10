@@ -138,4 +138,4 @@ To shut down the clients and server, run the following Admin commands:
 nvflare poc --stop
 ```
 
-> **_NOTE:_** For more information about the Admin client, see [here](https://nvflare.readthedocs.io/en/main/user_guide/operation.html).
+> **_NOTE:_** For more information about the Admin client, see [here](https://nvflare.readthedocs.io/en/main/real_world_fl/operation.html).
