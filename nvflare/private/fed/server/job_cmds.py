@@ -507,12 +507,12 @@ class JobCommandModule(CommandModule, CommandUtil):
         for job in jobs:
             JobCommandModule._set_duration(job)
             table_row = [
-                    job.meta.get(JobMetaKey.JOB_ID.value, ""),
-                    CommandUtil.get_job_name(job.meta),
-                    job.meta.get(JobMetaKey.STATUS.value, ""),
-                    job.meta.get(JobMetaKey.SUBMIT_TIME_ISO.value, ""),
-                    str(job.meta.get(JobMetaKey.DURATION.value, "N/A")),
-                ]
+                job.meta.get(JobMetaKey.JOB_ID.value, ""),
+                CommandUtil.get_job_name(job.meta),
+                job.meta.get(JobMetaKey.STATUS.value, ""),
+                job.meta.get(JobMetaKey.SUBMIT_TIME_ISO.value, ""),
+                str(job.meta.get(JobMetaKey.DURATION.value, "N/A")),
+            ]
             table.add_row(
                 table_row,
                 meta={
