@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import datetime
+import io
 import json
 import logging
 import os
@@ -30,6 +31,7 @@ from nvflare.fuel.hci.proto import ConfirmMethod, MetaKey, MetaStatusValue, make
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
+from nvflare.fuel.hci.table import Table
 from nvflare.fuel.utils.argument_utils import SafeArgumentParser
 from nvflare.fuel.utils.obj_utils import get_size
 from nvflare.fuel.utils.zip_utils import ls_zip_from_bytes, unzip_all_from_bytes, zip_directory_to_bytes
@@ -303,7 +305,10 @@ class JobCommandModule(CommandModule, CommandUtil):
             if jobs:
                 id_prefix = parsed_args.job_id
                 name_prefix = parsed_args.n
-                user_name = conn.get_prop(ConnProps.USER_NAME, "")
+                if parsed_args.a:
+                    user_name = None
+                else:
+                    user_name = conn.get_prop(ConnProps.USER_NAME, "")
 
                 filtered_jobs = [job for job in jobs if self._job_match(job.meta, id_prefix, name_prefix, user_name)]
                 if not filtered_jobs:
@@ -498,16 +503,18 @@ class JobCommandModule(CommandModule, CommandUtil):
     @staticmethod
     def _send_summary_list(conn: Connection, jobs: List[Job]):
         table = conn.append_table(["Job ID", "Name", "Status", "Submit Time", "Run Duration"], name=MetaKey.JOBS)
+        legacy_string_table = Table(["Job ID", "Name", "Status", "Submit Time", "Run Duration"])
         for job in jobs:
             JobCommandModule._set_duration(job)
-            table.add_row(
-                [
+            table_row = [
                     job.meta.get(JobMetaKey.JOB_ID.value, ""),
                     CommandUtil.get_job_name(job.meta),
                     job.meta.get(JobMetaKey.STATUS.value, ""),
                     job.meta.get(JobMetaKey.SUBMIT_TIME_ISO.value, ""),
                     str(job.meta.get(JobMetaKey.DURATION.value, "N/A")),
-                ],
+                ]
+            table.add_row(
+                table_row,
                 meta={
                     MetaKey.JOB_ID: job.meta.get(JobMetaKey.JOB_ID.value, ""),
                     MetaKey.JOB_NAME: CommandUtil.get_job_name(job.meta),
@@ -516,6 +523,11 @@ class JobCommandModule(CommandModule, CommandUtil):
                     MetaKey.DURATION: str(job.meta.get(JobMetaKey.DURATION.value, "N/A")),
                 },
             )
+            legacy_string_table.add_row(table_row)
+
+        writer = io.StringIO()
+        legacy_string_table.write(writer)
+        conn.append_string(writer.getvalue())
 
     @staticmethod
     def _set_duration(job):

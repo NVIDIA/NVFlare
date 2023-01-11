@@ -371,9 +371,9 @@ class Session(SessionSpec):
             poll_interval: how often to poll job status
             cb: if provided, callback to be called after each status poll
 
-        Returns: None
+        Returns: a MonitorReturnCode
 
-        Every time the status_cb is called, it must return a bool indicating whether the monitor
+        Every time the cb is called, it must return a bool indicating whether the monitor
         should continue. If False, this method ends.
 
         """
