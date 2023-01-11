@@ -73,7 +73,10 @@ class FedAdminAgent(object):
         self.app_ctx = app_ctx
         self.processors = {}
         self.asked_to_stop = False
-        cell.register_request_cb(
+        self.register_cell_cb()
+
+    def register_cell_cb(self):
+        self.cell.register_request_cb(
             channel=CellChannel.ADMIN,
             topic="*",
             cb=self._dispatch_request,

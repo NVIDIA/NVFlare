@@ -93,7 +93,8 @@ class ServerAuxRunner(AuxRunner):
             if c.token not in valid_tokens:
                 valid_tokens.append(c.token)
 
-        replies = engine.parent_aux_send(
+        # replies = engine.parent_aux_send(
+        replies = engine.aux_send(
             targets=valid_tokens, topic=topic, request=request, timeout=timeout, fl_ctx=fl_ctx
         )
 

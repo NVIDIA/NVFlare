@@ -275,28 +275,6 @@ class BaseServer(ABC):
             self.executor.shutdown()
 
 
-def request_processing(f):
-    def wrap(request: Message, fl_ctx: FLContext, *args, **kwargs):
-        # before the service processing
-        fl_ctx.remove_prop(FLContextKey.COMMUNICATION_ERROR)
-        fl_ctx.remove_prop(FLContextKey.UNAUTHENTICATED)
-
-        result = f(fl_ctx=fl_ctx, *args, **kwargs)
-
-        # process after the service processing
-        unauthenticated = fl_ctx.get_prop(FLContextKey.UNAUTHENTICATED)
-        if unauthenticated:
-            return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED, error=unauthenticated)
-
-        error = fl_ctx.get_prop(FLContextKey.COMMUNICATION_ERROR)
-        if error:
-            return make_cellnet_reply(rc=F3ReturnCode.COMM_ERROR, error=error)
-        else:
-            return result
-
-    return wrap
-
-
 class FederatedServer(BaseServer):
     def __init__(
         self,
@@ -378,6 +356,62 @@ class FederatedServer(BaseServer):
             topic=CellChannelTopic.HEART_BEAT,
             cb=self.Heartbeat,
         )
+
+        self.cell.register_request_cb(
+            channel=CellChannel.SERVER_PARENT_LISTENER,
+            topic="*",
+            cb=self._listen_command,
+        )
+
+    def _listen_command(self, request: Message) -> Message:
+
+        # while job_id in self.run_processes.keys():
+        #     clients = self.run_processes.get(job_id).get(RunProcessKey.PARTICIPANTS)
+        #     job_id = self.run_processes.get(job_id).get(RunProcessKey.JOB_ID)
+        #     try:
+        #         if conn.poll(0.1):
+        assert isinstance(request, Message), "request must be CellMessage but got {}".format(
+            type(request))
+        req = request.payload
+
+        # assert isinstance(req, Message), "request payload must be Message but got {}".format(type(req))
+        # topic = req.topic
+
+        msg = fobs.loads(req)
+
+        job_id = msg.get("job_id")
+        command = msg.get(ServerCommandKey.COMMAND)
+        data = msg.get(ServerCommandKey.DATA)
+
+        if command == ServerCommandNames.GET_CLIENTS:
+            clients = self.engine.run_processes.get(job_id).get(RunProcessKey.PARTICIPANTS)
+            job_id = self.engine.run_processes.get(job_id).get(RunProcessKey.JOB_ID)
+            return_data = {ServerCommandKey.CLIENTS: clients, ServerCommandKey.JOB_ID: job_id}
+
+            # conn.send(return_data)
+            return make_cellnet_reply(F3ReturnCode.OK, "", fobs.dumps(return_data))
+        # elif command == ServerCommandNames.AUX_SEND:
+        #     targets = data.get("targets")
+        #     topic = data.get("topic")
+        #     request = data.get("request")
+        #     timeout = data.get("timeout")
+        #     fl_ctx = data.get("fl_ctx")
+        #     replies = self.aux_send(
+        #         targets=targets, topic=topic, request=request, timeout=timeout, fl_ctx=fl_ctx
+        #     )
+        #     conn.send(replies)
+        elif command == ServerCommandNames.UPDATE_RUN_STATUS:
+            execution_error = data.get("execution_error")
+            if execution_error:
+                with self.lock:
+                    run_process_info = self.engine.run_processes.get(job_id)
+                    self.engine.exception_run_processes[job_id] = run_process_info
+                    reply = make_cellnet_reply(F3ReturnCode.OK, "", None)
+                    return reply
+        elif command == ServerCommandNames.HEARTBEAT:
+            return make_cellnet_reply(F3ReturnCode.OK, "", None)
+        else:
+            return make_cellnet_reply(F3ReturnCode.INVALID_REQUEST, "", None)
 
     def _create_server_engine(self, args, snapshot_persistor):
         return ServerEngine(
@@ -797,15 +831,26 @@ class FederatedServer(BaseServer):
     def _notify_dead_job(self, client, job_id: str):
         try:
             with self.engine.lock:
-                command_conn = self.engine.get_command_conn(job_id)
-                if command_conn:
-                    shareable = Shareable()
-                    shareable.set_header(ServerCommandKey.FL_CLIENT, client.name)
-                    msg = {
-                        ServerCommandKey.COMMAND: ServerCommandNames.HANDLE_DEAD_JOB,
-                        ServerCommandKey.DATA: shareable,
-                    }
-                    command_conn.send(msg)
+                # command_conn = self.engine.get_command_conn(job_id)
+                # if command_conn:
+                #     shareable = Shareable()
+                #     shareable.set_header(ServerCommandKey.FL_CLIENT, client.name)
+                #     msg = {
+                #         ServerCommandKey.COMMAND: ServerCommandNames.HANDLE_DEAD_JOB,
+                #         ServerCommandKey.DATA: shareable,
+                #     }
+                #     command_conn.send(msg)
+
+                data = {ServerCommandKey.COMMAND: ServerCommandNames.HANDLE_DEAD_JOB, ServerCommandKey.DATA: Shareable()}
+                fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
+                request = new_cell_message({}, fobs.dumps(data))
+                return_data = self.cell.fire_and_forget(
+                    target=fqcn,
+                    channel=CellChannel.SERVER_COMMAND,
+                    topic=ServerCommandNames.HANDLE_DEAD_JOB,
+                    request=request
+                )
+
         except BaseException:
             self.logger.info("Could not connect to server runner process")
 

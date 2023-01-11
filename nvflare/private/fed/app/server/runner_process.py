@@ -31,6 +31,9 @@ from nvflare.private.fed.server.server_app_runner import ServerAppRunner
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.cellnet.cell import Cell, CellAgent, Message, MessageHeaderKey, MessageType
+from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 
 
 def main():
@@ -42,8 +45,10 @@ def main():
     )
     parser.add_argument("--app_root", "-r", type=str, help="App Root", required=True)
     parser.add_argument("--job_id", "-n", type=str, help="job id", required=True)
-    parser.add_argument("--port", "-p", type=str, help="listen port", required=True)
-    parser.add_argument("--conn", "-c", type=str, help="connection port", required=True)
+    # parser.add_argument("--port", "-p", type=str, help="listen port", required=True)
+    # parser.add_argument("--conn", "-c", type=str, help="connection port", required=True)
+    parser.add_argument("--root_url", "-u", type=str, help="root_url", required=True)
+    parser.add_argument("--parent_url", "-p", type=str, help="parent_url", required=True)
 
     parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
 
@@ -106,8 +111,22 @@ def main():
             # create the FL server
             _, server = deployer.create_fl_server(args, secure_train=secure_train)
 
-            command_agent = ServerCommandAgent(int(args.port))
-            command_agent.start(server.engine)
+            my_fqcn = FQCN.join([FQCN.ROOT_SERVER, args.job_id])
+            credentials = {}
+            cell = Cell(
+                fqcn=my_fqcn,
+                root_url=args.root_url,
+                secure=secure_train,
+                credentials=credentials,
+                create_internal_listener=True,
+                parent_url=args.parent_url,
+            )
+
+            cell.start()
+            net_agent = NetAgent(cell)
+
+            command_agent = ServerCommandAgent(server.engine, cell)
+            command_agent.start()
 
             snapshot = None
             if args.snapshot:
@@ -116,6 +135,8 @@ def main():
             server_app_runner = ServerAppRunner()
             server_app_runner.start_server_app(workspace, server, args, args.app_root, args.job_id, snapshot, logger)
         finally:
+            if cell:
+                cell.stop()
             if command_agent:
                 command_agent.shutdown()
             if deployer:

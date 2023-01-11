@@ -19,53 +19,83 @@ from nvflare.apis.fl_constant import ServerCommandKey
 from nvflare.fuel.utils import fobs
 from nvflare.private.fed.utils.fed_utils import listen_command
 from nvflare.security.logging import secure_format_exception
+from nvflare.fuel.f3.cellnet.cell import Cell, CellAgent, Message as CellMessage, MessageHeaderKey, ReturnCode
+from nvflare.private.defs import RequestHeader, CellChannel, new_cell_message
+from nvflare.private.admin_defs import Message, error_reply, ok_reply
 
 from .server_commands import ServerCommands
 
 
 class ServerCommandAgent(object):
-    def __init__(self, listen_port) -> None:
+    def __init__(self, engine, cell: Cell) -> None:
         """To init the CommandAgent.
 
         Args:
             listen_port: port to listen the command
         """
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.listen_port = int(listen_port)
-        self.thread = None
+        # self.listen_port = int(listen_port)
+        # self.thread = None
         self.asked_to_stop = False
+        self.engine = engine
+        self.cell = cell
 
-    def start(self, engine):
-        self.thread = threading.Thread(
-            target=listen_command, args=[self.listen_port, engine, self.execute_command, self.logger]
+    def start(self):
+        # self.thread = threading.Thread(
+        #     target=listen_command, args=[self.listen_port, engine, self.execute_command, self.logger]
+        # )
+        # self.thread.start()
+        self.cell.register_request_cb(
+            channel=CellChannel.SERVER_COMMAND,
+            topic="*",
+            cb=self.execute_command,
         )
-        self.thread.start()
-        self.logger.info(f"ServerCommandAgent listening on port: {self.listen_port}")
+        self.logger.info(f"ServerCommandAgent cell start: {self.cell.get_fqcn()}")
 
-    def execute_command(self, conn, engine):
-        while not self.asked_to_stop:
-            try:
-                if conn.poll(1.0):
-                    msg = conn.recv()
-                    msg = fobs.loads(msg)
-                    command_name = msg.get(ServerCommandKey.COMMAND)
-                    data = msg.get(ServerCommandKey.DATA)
-                    command = ServerCommands.get_command(command_name)
-                    if command:
-                        with engine.new_context() as new_fl_ctx:
-                            reply = command.process(data=data, fl_ctx=new_fl_ctx)
-                            if reply is not None:
-                                conn.send(reply)
-            except EOFError:
-                self.logger.info("listener communication terminated.")
-                break
-            except Exception as e:
-                self.logger.error(
-                    f"IPC Communication error on the port: {self.listen_port}: {secure_format_exception(e)}."
-                )
+    def execute_command(self, request: CellMessage) -> CellMessage:
+
+        # while not self.asked_to_stop:
+        #     try:
+        #         if conn.poll(1.0):
+        #             msg = conn.recv()
+        #             msg = fobs.loads(msg)
+        #             command_name = msg.get(ServerCommandKey.COMMAND)
+        #             data = msg.get(ServerCommandKey.DATA)
+        #             command = ServerCommands.get_command(command_name)
+        #             if command:
+        #                 with engine.new_context() as new_fl_ctx:
+        #                     reply = command.process(data=data, fl_ctx=new_fl_ctx)
+        #                     if reply is not None:
+        #                         conn.send(reply)
+        #     except EOFError:
+        #         self.logger.info("listener communication terminated.")
+        #         break
+        #     except Exception as e:
+        #         self.logger.error(
+        #             f"IPC Communication error on the port: {self.listen_port}: {secure_format_exception(e)}."
+        #         )
+        assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
+        req = request.payload
+
+        # assert isinstance(req, Message), "request payload must be Message but got {}".format(type(req))
+        # topic = req.topic
+
+        msg = fobs.loads(req)
+        command_name = msg.get(ServerCommandKey.COMMAND)
+        data = msg.get(ServerCommandKey.DATA)
+        command = ServerCommands.get_command(command_name)
+        if command:
+            with self.engine.new_context() as new_fl_ctx:
+                reply = command.process(data=data, fl_ctx=new_fl_ctx)
+                if reply is not None:
+                    return_message = new_cell_message({}, fobs.dumps(reply))
+                    return_message.set_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
+                else:
+                    return_message = new_cell_message({}, None)
+                return return_message
 
     def shutdown(self):
         self.asked_to_stop = True
 
-        if self.thread and self.thread.is_alive():
-            self.thread.join()
+        # if self.thread and self.thread.is_alive():
+        #     self.thread.join()

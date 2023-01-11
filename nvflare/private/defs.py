@@ -137,6 +137,8 @@ class CellChannel:
     ADMIN = "admin"
     AUX = "aux"
     TASK = "task"
+    SERVER_COMMAND = "server_command"
+    SERVER_PARENT_LISTENER = "server_parent_listener"
 
 
 class CellChannelTopic:
