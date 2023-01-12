@@ -14,6 +14,8 @@
 
 import json
 import logging
+import random
+import string
 
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -120,9 +122,15 @@ class Store(object):
             project.short_name = short_name
         for k, v in req.items():
             setattr(project, k, v)
+        if project.frozen and project.cloud_enabled and project.ha_mode:
+            return {"status": "Unable to enable HA mode and Cloud simultaneously."}
         db.session.add(project)
         db.session.commit()
         if project.frozen:
+            if project.cloud_enabled:
+                random_string = "".join(random.choice(string.ascii_lowercase) for _ in range(8))
+                dns_tag = f"nvflareserver-{random_string}"
+                project.server1 = f"{dns_tag}.{project.cloud_location}.cloudapp.azure.com"
             cls.build_project(project)
         project_dict = _dict_or_empty(project)
         project_dict = cls._add_registered_info(project_dict)
