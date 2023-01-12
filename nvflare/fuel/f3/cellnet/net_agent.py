@@ -38,6 +38,7 @@ _TOPIC_STRESS = "stress"
 _TOPIC_CHANGE_ROOT = "change_root"
 _TOPIC_BULK_TEST = "bulk_test"
 _TOPIC_BULK_ITEM = "bulk_item"
+_TOPIC_MSG_STATS = "msg_stats"
 
 _ONE_K = bytes([1] * 1000)
 
@@ -130,6 +131,12 @@ class NetAgent:
             cb=self._do_bulk_item,
         )
 
+        cell.register_request_cb(
+            channel=_CHANNEL,
+            topic=_TOPIC_MSG_STATS,
+            cb=self._do_msg_stats,
+        )
+
     def _do_stop(
             self,
             request: Message
@@ -206,8 +213,9 @@ class NetAgent:
         result = {}
         if cell.int_listener:
             result["int_listener"] = self._connector_info(cell.int_listener)
-        if cell.ext_listener:
-            result["ext_listener"] = self._connector_info(cell.ext_listener)
+        if cell.ext_listeners:
+            listeners = [self._connector_info(x) for _, x in cell.ext_listeners.items()]
+            result["ext_listeners"] = listeners
         if cell.bb_ext_connector:
             result["bb_ext_connector"] = self._connector_info(cell.bb_ext_connector)
         if cell.bb_int_connector:
@@ -272,8 +280,10 @@ class NetAgent:
         cell = self.cell
         if cell.int_listener and cell.int_listener.connect_url == url:
             return "int_listen"
-        if cell.ext_listener and cell.ext_listener.connect_url == url:
-            return "ext_listen"
+        if cell.ext_listeners:
+            for k in cell.ext_listeners.keys():
+                if k == url:
+                    return "ext_listen"
         if cell.bb_ext_connector and cell.bb_ext_connector.connect_url == url:
             return "bb_ext_connect"
         if cell.bb_int_connector and cell.bb_int_connector.connect_url == url:
@@ -642,6 +652,39 @@ class NetAgent:
         origin = request.get_header(MessageHeaderKey.ORIGIN)
         self.cell.logger.info(f"{self.cell.get_fqcn()}: got {num} from {origin}")
         return None
+
+    def get_msg_stats_table(self, target: str, mode: str):
+        if target == self.cell.get_fqcn():
+            headers, rows = self.cell.msg_stats_pool.get_table(mode)
+            return {
+                "headers": headers,
+                "rows": rows
+            }
+        reply = self.cell.send_request(
+            channel=_CHANNEL,
+            topic=_TOPIC_MSG_STATS,
+            request=new_message(payload={"mode": mode}),
+            timeout=1.0,
+            target=target
+        )
+        rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
+        if rc != ReturnCode.OK:
+            return f"error: {rc}"
+        return reply.payload
+
+    def _do_msg_stats(
+            self,
+            request: Message
+    ) -> Union[None, Message]:
+        p = request.payload
+        assert isinstance(p, dict)
+        mode = p.get('mode')
+        headers, rows = self.cell.msg_stats_pool.get_table(mode)
+        reply = {
+            "headers": headers,
+            "rows": rows
+        }
+        return new_message(payload=reply)
 
     def _broadcast_to_subs(
             self,

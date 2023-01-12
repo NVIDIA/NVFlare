@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+option objc_class_prefix = "RTG";
+
+package streamer;
+
+// Interface exported by the server.
+service Streamer {
+
+  // A Bidirectional streaming RPC.
+  rpc Stream(stream Frame) returns (stream Frame) {}
+}
+
+message Frame {
+  int32 seq = 1;
+  bytes data = 2;
+}

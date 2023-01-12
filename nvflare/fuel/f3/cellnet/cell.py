@@ -15,6 +15,7 @@
 import copy
 import logging
 import os
+import random
 import signal
 import threading
 import time
@@ -22,9 +23,12 @@ import traceback
 import uuid
 
 from typing import List, Union, Dict
+from urllib.parse import urlparse
+
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor, EndpointState
 from nvflare.fuel.f3.communicator import Communicator, MessageReceiver
+from nvflare.fuel.utils.stats_utils import new_time_pool
 
 from .connector_manager import ConnectorManager
 from .defs import (
@@ -215,6 +219,15 @@ class _BulkSender:
         self.last_send_time = time.time()
 
 
+def _validate_url(url: str) -> bool:
+    if not isinstance(url, str) or not url:
+        return False
+    result = urlparse(url)
+    if not result.scheme or not result.netloc:
+        return False
+    return True
+
+
 class Cell(MessageReceiver, EndpointMonitor):
 
     APP_ID = 1
@@ -263,6 +276,27 @@ class Cell(MessageReceiver, EndpointMonitor):
 
         self.my_info = FqcnInfo(FQCN.normalize(fqcn))
         self.secure = secure
+
+        if not root_url:
+            raise ValueError(f"{self.my_info.fqcn}: root_url not provided")
+
+        if self.my_info.is_root and self.my_info.is_on_server:
+            if isinstance(root_url, list):
+                for url in root_url:
+                    if not _validate_url(url):
+                        raise ValueError(f"{self.my_info.fqcn}: invalid Root URL '{url}'")
+            else:
+                if not _validate_url(root_url):
+                    raise ValueError(f"{self.my_info.fqcn}: invalid Root URL '{root_url}'")
+                root_url = [root_url]
+        else:
+            if isinstance(root_url, list):
+                # multiple urls are available - randomly pick one
+                root_url = random.choice(root_url)
+                self.logger.info(f"{self.my_info.fqcn}: use Root URL {root_url}")
+            if not _validate_url(root_url):
+                raise ValueError(f"{self.my_info.fqcn}: invalid Root URL '{root_url}'")
+
         self.root_url = root_url
         self.create_internal_listener = create_internal_listener
         self.parent_url = parent_url
@@ -313,6 +347,9 @@ class Cell(MessageReceiver, EndpointMonitor):
         self.message_interceptor = None
         self.message_interceptor_args = None
         self.message_interceptor_kwargs = None
+        self.run_monitor_cb = None
+        self.run_monitor_args = None
+        self.run_monitor_kwargs = None
 
         self.waiters = {}  # req_id => req
         self.stats_lock = threading.Lock()
@@ -331,7 +368,7 @@ class Cell(MessageReceiver, EndpointMonitor):
 
         # add appropriate drivers based on roles of the cell
         # a cell can have at most two listeners: one for external, one for internal
-        self.ext_listener = None        # external listener
+        self.ext_listeners = {}        # external listeners: url => connector object
         self.ext_listener_lock = threading.Lock()
         self.ext_listener_impossible = False
 
@@ -352,25 +389,71 @@ class Cell(MessageReceiver, EndpointMonitor):
             cb=self._receive_bulk_message
         )
 
-        self.stop_waiter = threading.Event()
-        self.stop_waiter_thread = threading.Thread(target=self._wait_to_stop)
+        self.cleanup_waiter = None
+        self.msg_stats_pool = new_time_pool("Message Stats")
 
-    def _wait_to_stop(self):
-        self.logger.debug(f"=========== {self.my_info.fqcn}: Stop Waiter is waiting ==============")
-        self.stop_waiter.wait()
-        self.logger.debug(f"=========== {self.my_info.fqcn}: Stop Waiter is triggered: start cleanup ==============")
+    def set_run_monitor(
+            self,
+            cb,
+            *args,
+            **kwargs
+    ):
+        """
+        Set a callback that is called periodically during the running of the cell.
+
+        Args:
+            cb: the callback function. It must follow the signature of message_interceptor_signature.
+            *args: args to be passed to the cb.
+            **kwargs: kwargs to be passed to the cb
+
+        Returns: None
+
+        """
+        if not callable(cb):
+            raise ValueError(f"specified run_monitor {type(cb)} is not callable")
+
+        self.run_monitor_cb = cb
+        self.run_monitor_args = args
+        self.run_monitor_kwargs = kwargs
+
+    def run(self):
+        # this method must be called from main method
+        t = threading.current_thread()
+        if t.name != "MainThread":
+            raise RuntimeError(
+                f"{self.my_info.fqcn}: the cell.run() method is called from {t.name}: "
+                "it must be called from MainThread")
+
+        self.logger.info(f"=========== {self.my_info.fqcn}: started to run forever")
+        while not self.asked_to_stop:
+            if self.run_monitor_cb is not None:
+                should_stop = self.run_monitor_cb(*self.run_monitor_args, **self.run_monitor_kwargs)
+                if should_stop:
+                    self.logger.info(f"{self.my_info.fqcn}: CB {self.run_monitor_cb.__name__} asked to stop!")
+                    break
+            time.sleep(0.5)
+
+        self.logger.info(f"=========== {self.my_info.fqcn}: cell is shutting down. Start cleanup ...")
         time.sleep(2.0)  # let pending messages to go out
         t = threading.Thread(target=self._do_cleanup)
         t.start()
-        # self._do_cleanup()
 
         # wait for 2 secs to give others time to clean up
         self.cleanup_waiter = threading.Event()
+        #graceful_stop = True
         if not self.cleanup_waiter.wait(timeout=2.0):
-            self.logger.debug(f"======== {self.my_info.fqcn}: Cleanup did not complete within 2 secs")
+            self.logger.warning(f"======== {self.my_info.fqcn}: Cleanup did not complete within 2 secs")
+            #graceful_stop = False
+
+        num_active_threads = 0
+        for thread in threading.enumerate():
+            if thread.name != "MainThread":
+                self.logger.warning(f"#### {self.my_info.fqcn}: still running thread {thread.name}")
+                num_active_threads += 1
 
         self.logger.info(f"{self.my_info.fqcn}: Good Bye!")
-        os.kill(os.getpid(), signal.SIGKILL)
+        if num_active_threads > 0:
+            os.kill(os.getpid(), signal.SIGKILL)
 
     def _do_cleanup(self):
         self.logger.debug(f"{self.my_info.fqcn}: Start system cleanup ...")
@@ -411,7 +494,7 @@ class Cell(MessageReceiver, EndpointMonitor):
         if self.my_info.is_root:
             if self.my_info.is_on_server:
                 # server root - make sure listener is created
-                return self.ext_listener is not None
+                return len(self.ext_listeners) > 0
             else:
                 # client root - must be connected to server root
                 return self.agents.get(FQCN.ROOT_SERVER) is not None
@@ -434,7 +517,13 @@ class Cell(MessageReceiver, EndpointMonitor):
             self._create_bb_external_connector()
 
     def _set_bb_for_server_root(self):
-        self._create_external_listener(False)
+        if isinstance(self.root_url, list):
+            for url in self.root_url:
+                self.logger.info(f"{self.my_info.fqcn}: creating listener on {url}")
+                self._create_external_listener(url)
+        else:
+            self.logger.info(f"{self.my_info.fqcn}: creating listener on {self.root_url}")
+            self._create_external_listener(self.root_url)
         self._create_internal_listener()
 
     def _set_bb_for_server_child(self, parent_url: str, create_internal_listener: bool):
@@ -470,7 +559,10 @@ class Cell(MessageReceiver, EndpointMonitor):
             # drop the backbone connector
             if self.bb_ext_connector:
                 self.logger.debug(f"{self.my_info.fqcn}: removing bb_ext_connector ...")
-                self.communicator.remove_connector(self.bb_ext_connector.handle)
+                try:
+                    self.communicator.remove_connector(self.bb_ext_connector.handle)
+                except BaseException as ex:
+                    self.logger.error(f"{self.my_info.fqcn}: error removing bb_ext_connector {ex}")
                 self.bb_ext_connector = None
 
             # drop ad-hoc connectors to cells on server
@@ -484,7 +576,10 @@ class Cell(MessageReceiver, EndpointMonitor):
                     self.logger.debug(f"{self.my_info.fqcn}: removing adhoc connector to {c}")
                     connector = self.adhoc_connectors.pop(c, None)
                     if connector:
-                        self.communicator.remove_connector(connector.handle)
+                        try:
+                            self.communicator.remove_connector(connector.handle)
+                        except BaseException as ex:
+                            self.logger.error(f"{self.my_info.fqcn}: error removing adhoc connector {ex}")
 
             # drop agents
             with self.agent_lock:
@@ -548,35 +643,40 @@ class Cell(MessageReceiver, EndpointMonitor):
                 raise RuntimeError(f"{self.my_info.fqcn}: cannot create backbone internal listener")
         return self.int_listener
 
-    def _create_external_listener(self, adhoc: bool):
+    def _create_external_listener(self, url: str):
+        adhoc = len(url) == 0
         with self.ext_listener_lock:
-            if not self.ext_listener and not self.ext_listener_impossible:
-                self.logger.debug(f"{os.getpid()}: {self.my_info.fqcn}: trying create ext listener: adhoc={adhoc}")
-                if not adhoc:
-                    url = self.root_url
-                else:
-                    url = ""
+            if url:
+                listener = self.ext_listeners.get(url)
+                if listener:
+                    return listener
+            elif len(self.ext_listeners) > 0:
+                # no url specified - just pick one if any
+                k = random.choice(list(self.ext_listeners))
+                return self.ext_listeners[k]
 
-                self.ext_listener = self.connector_manager.get_external_listener(url, adhoc)
-                if self.ext_listener:
+            listener = None
+            if not self.ext_listener_impossible:
+                self.logger.debug(f"{self.my_info.fqcn}: trying create ext listener: url={url}")
+                listener = self.connector_manager.get_external_listener(url, adhoc)
+                if listener:
                     if not adhoc:
                         self.logger.info(
-                            f"{os.getpid()}: {self.my_info.fqcn}: "
-                            f"created backbone external listener for {self.root_url}")
+                            f"{self.my_info.fqcn}: created backbone external listener for {url}")
                     else:
-                        self.logger.info(f"{os.getpid()}: {self.my_info.fqcn}: created adhoc external listener "
-                                         f"for {self.ext_listener.get_connection_url()}")
+                        self.logger.info(f"{self.my_info.fqcn}: created adhoc external listener "
+                                         f"for {listener.get_connection_url()}")
+                    self.ext_listeners[listener.get_connection_url()] = listener
                 else:
                     if not adhoc:
                         raise RuntimeError(
                             f"{os.getpid()}: {self.my_info.fqcn}: "
-                            f"cannot create backbone external listener for {self.root_url}")
+                            f"cannot create backbone external listener for {url}")
                     else:
                         self.logger.warning(
-                            f"{os.getpid()}: {self.my_info.fqcn}: cannot create adhoc external listener")
-
+                            f"{self.my_info.fqcn}: cannot create adhoc external listener")
                     self.ext_listener_impossible = True
-        return self.ext_listener
+            return listener
 
     def _create_bb_external_connector(self):
         self.logger.debug(f"{self.my_info.fqcn}: creating connector to {self.root_url}")
@@ -685,14 +785,12 @@ class Cell(MessageReceiver, EndpointMonitor):
         self.bulk_checker.start()
         self.bulk_processor.start()
         self.communicator.start()
-        self.stop_waiter_thread.start()
         self.running = True
 
     def stop(self):
         if self.running:
             self.running = False
-            # trigger stop process
-            self.stop_waiter.set()
+            self.asked_to_stop = True
 
     def _close(self):
         """
@@ -702,6 +800,9 @@ class Cell(MessageReceiver, EndpointMonitor):
 
         """
         self.logger.debug(f"{self.my_info.fqcn}: Closing Cell")
+        self.bulk_checker.join()
+        self.bulk_processor.join()
+
         try:
             self.communicator.stop()
         except:
@@ -709,10 +810,6 @@ class Cell(MessageReceiver, EndpointMonitor):
             traceback.print_exc()
 
         self.logger.debug(f"{self.my_info.fqcn}: Communicator Stopped!")
-        self.running = False
-        self.asked_to_stop = True
-        self.bulk_checker.join()
-        self.bulk_processor.join()
         self.logger.debug(f"{self.my_info.fqcn}: CELL closed!")
 
     def register_request_cb(
@@ -974,7 +1071,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                 # Not a direct path since the destination and the next leg are not the same
                 if self.my_info.is_on_server:
                     # server side - try to create a listener and let the peer know the endpoint
-                    listener = self._create_external_listener(True)
+                    listener = self._create_external_listener("")
                     if listener:
                         conn_url = listener.get_connection_url()
                         req.set_header(MessageHeaderKey.CONN_URL, conn_url)
@@ -1419,6 +1516,9 @@ class Cell(MessageReceiver, EndpointMonitor):
             self.logger.warning(format_log_message(self.my_info.fqcn, message, "dropped forwarded message"))
 
     def _process_reply(self, origin: str, message: Message, msg_type: str):
+        channel = message.get_header(MessageHeaderKey.CHANNEL, "")
+        topic = message.get_header(MessageHeaderKey.TOPIC, "")
+        now = time.time()
         self.logger.debug(f"{self.my_info.fqcn}: processing reply from {origin} for type {msg_type}")
         decode_payload(message)
 
@@ -1446,8 +1546,6 @@ class Cell(MessageReceiver, EndpointMonitor):
                     self.my_info.fqcn, message, "missing DESTINATION header in original headers"))
         else:
             # invoking incoming reply filter
-            channel = message.get_header(MessageHeaderKey.CHANNEL, "")
-            topic = message.get_header(MessageHeaderKey.TOPIC, "")
             reply_filters = self.in_reply_filter_reg.find(channel, topic)
             if reply_filters:
                 self.logger.debug(f"{self.my_info.fqcn}: invoking incoming reply filters")
@@ -1467,7 +1565,13 @@ class Cell(MessageReceiver, EndpointMonitor):
                     self.logger.error(f"req_dest='{req_dest}', expecting={waiter.targets}")
                     return
                 waiter.received_replies[req_dest] = message
-                waiter.reply_time[req_dest] = time.time()
+                waiter.reply_time[req_dest] = now
+                time_taken = now - waiter.send_time
+
+                self.msg_stats_pool.record_value(
+                    category=f"{channel}:{topic}",
+                    value=time_taken
+                )
 
                 # all targets replied?
                 all_targets_replied = True
@@ -1568,7 +1672,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                     # see whether we can offer a listener
                     if not oi.is_on_server:
                         self.logger.debug(f"{self.my_info.fqcn}: trying to offer ad-hoc listener to {origin}")
-                        listener = self._create_external_listener(True)
+                        listener = self._create_external_listener("")
                         if listener:
                             my_conn_url = listener.get_connection_url()
 

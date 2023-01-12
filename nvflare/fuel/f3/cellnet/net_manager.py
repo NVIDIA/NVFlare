@@ -95,6 +95,13 @@ class NetManager(CommandModule):
                     visible=True,
                 ),
                 CommandSpec(
+                    name="msg_stats",
+                    description="show request stats",
+                    usage="msg_stats target [mode]",
+                    handler_func=self._cmd_msg_stats,
+                    visible=True,
+                ),
+                CommandSpec(
                     name="shutdown",
                     description="shutdown the whole cellnet",
                     usage="shutdown",
@@ -242,6 +249,41 @@ class NetManager(CommandModule):
         conn.append_string(f"starting bulk test on {targets}", flush=True)
         result = self.agent.start_bulk_test(targets, bulk_size)
         conn.append_dict(result)
+
+    def _cmd_msg_stats(self, conn: Connection, args: [str]):
+        if len(args) < 2:
+            cmd_entry = conn.get_prop(ConnProps.CMD_ENTRY)
+            conn.append_string(f"Usage: {cmd_entry.usage}")
+            return
+
+        valid_modes = ['avg', 'count', 'percent', 'min', 'max']
+        target = args[1]
+        mode = 'count'
+        if len(args) > 2:
+            mode = args[2]
+
+        if mode.startswith('p'):
+            mode = 'percent'
+        elif mode.startswith('c'):
+            mode = 'count'
+        elif mode.startswith('a'):
+            mode = 'avg'
+
+        if mode not in valid_modes:
+            conn.append_error(f"invalid mode '{mode}': must be one of {valid_modes}")
+            return
+
+        reply = self.agent.get_msg_stats_table(target, mode)
+        if isinstance(reply, str):
+            conn.append_error(reply)
+            return
+        if not isinstance(reply, dict):
+            conn.append_error(f"expect dict bt got {type(reply)}")
+            return
+        t = conn.append_table(reply.get("headers"))
+        rows = reply.get("rows")
+        for _, c in rows.items():
+            t.add_row(c)
 
     def _cmd_change_root(self, conn: Connection, args: [str]):
         if len(args) < 2:

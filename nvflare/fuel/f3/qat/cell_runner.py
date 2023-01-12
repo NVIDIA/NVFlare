@@ -43,7 +43,6 @@ class CellRunner:
             parent_fqcn: str = "",
             log_level: str = "info"
     ):
-        self.asked_to_stop = False
         self.new_root_url = None
         self.config_path = config_path
         self.config_file = config_file
@@ -98,6 +97,7 @@ class CellRunner:
         self.cell.set_message_interceptor(
             cb=self._inspect_message
         )
+        self.cell.set_run_monitor(self._check_new_root)
 
     def _inspect_message(self, message: Message):
         header_name = "inspected_by"
@@ -200,15 +200,15 @@ class CellRunner:
                 self.client_runners[client_name] = _RunnerInfo(client_name, client_name, p)
 
     def stop(self):
-        self.asked_to_stop = True
         self.agent.stop()
 
     def _change_root(self, url: str):
         self.new_root_url = url
 
+    def _check_new_root(self):
+        if self.new_root_url:
+            self.cell.change_server_root(self.new_root_url)
+            self.new_root_url = None
+
     def run(self):
-        while not self.asked_to_stop:
-            if self.new_root_url:
-                self.cell.change_server_root(self.new_root_url)
-                self.new_root_url = None
-            time.sleep(0.5)
+        self.cell.run()

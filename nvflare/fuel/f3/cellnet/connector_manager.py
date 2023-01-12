@@ -26,6 +26,7 @@ _KEY_EXT = "external"
 _KEY_SCHEME = "scheme"
 _KEY_HOST = "host"
 _KEY_PORTS = "ports"
+_KEY_ALLOW_ADHOC = "allow_adhoc"
 
 
 class ConnectorInfo:
@@ -62,11 +63,12 @@ class ConnectorManager:
         self.secure = secure
 
         # set up default drivers
-        self.int_scheme = "http"
+        self.int_scheme = "tcp"
         self.int_resources = {
             _KEY_HOST: "localhost",
             _KEY_PORTS: ["30000-40000"]  # select a port randomly
         }
+        self.ext_allow_adhoc = False
         self.ext_scheme = "http"
         self.ext_resources = {}
 
@@ -91,6 +93,7 @@ class ConnectorManager:
             if ext_conf:
                 self.ext_scheme = ext_conf.get(_KEY_SCHEME)
                 self.ext_resources = ext_conf.get(_KEY_RESOURCES)
+                self.ext_allow_adhoc = ext_conf.get(_KEY_ALLOW_ADHOC, False)
 
         self.logger.debug(f"internal scheme={self.int_scheme}, resources={self.int_resources}")
         self.logger.debug(f"external scheme={self.ext_scheme}, resources={self.ext_resources}")
@@ -136,8 +139,8 @@ class ConnectorManager:
             self.logger.debug(
                 f"{os.getpid()}: creating ad-hoc external listener: "
                 f"active={active} scheme={scheme}, resources={resources}")
-            if not active and not resources:
-                # no resources configured - ad-hoc listener is not allowed!
+            if not active and not self.ext_allow_adhoc:
+                # ad-hoc listener is not allowed!
                 return None
 
         reqs = {
