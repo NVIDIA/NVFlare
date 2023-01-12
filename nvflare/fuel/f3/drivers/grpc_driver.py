@@ -62,7 +62,7 @@ class StreamConnection(Connection):
             StreamConnection.seq_num += 1
             seq = StreamConnection.seq_num
             self.logger.debug(f"{self.side}: queued frame #{seq}")
-            self.oq.append(Frame(seq=1, data=bytes(frame)))
+            self.oq.append(Frame(seq=seq, data=bytes(frame)))
         except BaseException as ex:
             raise CommError(CommError.ERROR, f"Error sending frame: {ex}")
 
