@@ -23,7 +23,9 @@ from nvflare.apis.shareable import Shareable
 
 
 class SVTPrivacy(DXOFilter):
-    def __init__(self, fraction=0.1, epsilon=0.1, noise_var=0.1, gamma=1e-5, tau=1e-6, data_kinds: [str] = None, replace=True):
+    def __init__(
+        self, fraction=0.1, epsilon=0.1, noise_var=0.1, gamma=1e-5, tau=1e-6, data_kinds: [str] = None, replace=True
+    ):
         """Implementation of the standard Sparse Vector Technique (SVT) differential privacy algorithm.
 
         lambda_rho = gamma * 2.0 / epsilon
