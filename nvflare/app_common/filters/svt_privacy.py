@@ -23,7 +23,9 @@ from nvflare.apis.shareable import Shareable
 
 
 class SVTPrivacy(DXOFilter):
-    def __init__(self, fraction=0.1, epsilon=0.1, noise_var=0.1, gamma=1e-5, tau=1e-6, data_kinds: [str] = None):
+    def __init__(
+        self, fraction=0.1, epsilon=0.1, noise_var=0.1, gamma=1e-5, tau=1e-6, data_kinds: [str] = None, replace=True
+    ):
         """Implementation of the standard Sparse Vector Technique (SVT) differential privacy algorithm.
 
         lambda_rho = gamma * 2.0 / epsilon
@@ -35,6 +37,8 @@ class SVTPrivacy(DXOFilter):
             noise_var (float, optional): additive noise. Defaults to 0.1.
             gamma (float, optional): Defaults to 1e-5.
             tau (float, optional): Defaults to 1e-6.
+            data_kinds (str, optional): Defaults to None.
+            replace (bool): whether to sample with replacement. Defaults to True.
         """
         if not data_kinds:
             data_kinds = [DataKind.WEIGHT_DIFF, DataKind.WEIGHTS]
@@ -47,6 +51,7 @@ class SVTPrivacy(DXOFilter):
         self.eps_3 = noise_var
         self.gamma = gamma
         self.tau = tau
+        self.replace = replace
 
     def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:
         """Compute the differentially private SVT.
@@ -100,7 +105,7 @@ class SVTPrivacy(DXOFilter):
             accepted += candidate_idx[above_threshold].tolist()
             candidate_idx = candidate_idx[~above_threshold]
             self.log_info(fl_ctx, "selected {} responses, requested {}".format(len(accepted), n_upload))
-        accepted = np.random.choice(accepted, size=np.int64(n_upload))
+        accepted = np.random.choice(accepted, size=np.int64(n_upload), replace=self.replace)
         # eps_3 return with noise
         noise = np.random.laplace(scale=self.gamma * 2.0 / self.eps_3, size=accepted.shape)
         self.log_info(fl_ctx, "noise max: {}, median {}".format(np.max(np.abs(noise)), np.median(np.abs(noise))))
