@@ -31,12 +31,12 @@ from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 
 class MLFlowReceiver(AnalyticsReceiver):
     def __init__(
-            self,
-            tracking_uri: Optional[str] = None,
-            kwargs: Optional[dict] = None,
-            artifact_location: Optional[str] = None,
-            events=None,
-            buffer_flush_time_in_sec=1,
+        self,
+        tracking_uri: Optional[str] = None,
+        kwargs: Optional[dict] = None,
+        artifact_location: Optional[str] = None,
+        events=None,
+        buffer_flush_time_in_sec=1,
     ):
         """
         MLFlowReceiver receives log events from client and deliver to the MLFLow.
@@ -105,9 +105,7 @@ class MLFlowReceiver(AnalyticsReceiver):
                     mlflow_client, experiment_name, art_full_path, experiment_tags
                 )
                 tags = self.get_run_tags(self.kwargs)
-                run = mlflow_client.create_run(
-                    experiment_id=self.experiment_id, run_name=run_name, tags=tags
-                )
+                run = mlflow_client.create_run(experiment_id=self.experiment_id, run_name=run_name, tags=tags)
                 self.run_ids[site.name] = run.info.run_id
 
     def _init_buffer(self, sites):
@@ -151,11 +149,11 @@ class MLFlowReceiver(AnalyticsReceiver):
         return root_log_dir
 
     def _create_experiment(
-            self,
-            mlflow_client: MlflowClient,
-            experiment_name: str,
-            artifact_location: str,
-            experiment_tags: Optional[dict] = None,
+        self,
+        mlflow_client: MlflowClient,
+        experiment_name: str,
+        artifact_location: str,
+        experiment_tags: Optional[dict] = None,
     ) -> Optional[str]:
         experiment_id = None
         if experiment_name:
@@ -164,6 +162,7 @@ class MLFlowReceiver(AnalyticsReceiver):
                 self.logger.info(f"Experiment with name '{experiment_name}' does not exist. Creating a new experiment.")
                 try:
                     import pathlib
+
                     artifact_location_uri = pathlib.Path(artifact_location).as_uri()
                     experiment_id = mlflow_client.create_experiment(
                         name=experiment_name, artifact_location=artifact_location_uri, tags=experiment_tags
