@@ -27,7 +27,7 @@ from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.apis.utils.job_utils import convert_legacy_zipped_app_to_job
 from nvflare.fuel.hci.base64_utils import b64str_to_bytes, bytes_to_b64str
 from nvflare.fuel.hci.conn import Connection
-from nvflare.fuel.hci.proto import ConfirmMethod
+from nvflare.fuel.hci.proto import ConfirmMethod, MetaKey, MetaStatusValue, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
@@ -72,7 +72,7 @@ class JobCommandModule(CommandModule, CommandUtil):
                 CommandSpec(
                     name=AdminCommandNames.DELETE_WORKSPACE,
                     description="delete the workspace of a job",
-                    usage="delete_workspace job_id",
+                    usage=f"{AdminCommandNames.DELETE_WORKSPACE} job_id",
                     handler_func=self.delete_job_id,
                     authz_func=self.authorize_job,
                     enabled=False,
@@ -81,21 +81,28 @@ class JobCommandModule(CommandModule, CommandUtil):
                 CommandSpec(
                     name=AdminCommandNames.START_APP,
                     description="start the FL app",
-                    usage="start_app job_id server|client|all",
+                    usage=f"{AdminCommandNames.START_APP} job_id server|client|all",
                     handler_func=self.start_app,
                     authz_func=self.authorize_job,
                 ),
                 CommandSpec(
                     name=AdminCommandNames.LIST_JOBS,
                     description="list submitted jobs",
-                    usage="list_jobs [-n name_prefix] [-d] [job_id_prefix]",
+                    usage=f"{AdminCommandNames.LIST_JOBS} [-n name_prefix] [-d] [-a] [job_id_prefix]",
                     handler_func=self.list_jobs,
                     authz_func=self.command_authz_required,
                 ),
                 CommandSpec(
+                    name=AdminCommandNames.GET_JOB_META,
+                    description="get meta info of specified job",
+                    usage=f"{AdminCommandNames.GET_JOB_META} job_id",
+                    handler_func=self.get_job_meta,
+                    authz_func=self.authorize_job,
+                ),
+                CommandSpec(
                     name=AdminCommandNames.DELETE_JOB,
                     description="delete a job and persisted workspace",
-                    usage="delete_job job_id",
+                    usage=f"{AdminCommandNames.DELETE_JOB} job_id",
                     handler_func=self.delete_job,
                     authz_func=self.authorize_job,
                     confirm=ConfirmMethod.AUTH,
@@ -103,7 +110,7 @@ class JobCommandModule(CommandModule, CommandUtil):
                 CommandSpec(
                     name=AdminCommandNames.ABORT_JOB,
                     description="abort a job if it is running or dispatched",
-                    usage="abort_job job_id",
+                    usage=f"{AdminCommandNames.ABORT_JOB} job_id",
                     handler_func=self.abort_job,  # see if running, if running, send abort command
                     authz_func=self.authorize_job,
                     confirm=ConfirmMethod.YESNO,
@@ -111,21 +118,21 @@ class JobCommandModule(CommandModule, CommandUtil):
                 CommandSpec(
                     name=AdminCommandNames.ABORT_TASK,
                     description="abort the client current task execution",
-                    usage="abort_task job_id <client-name>",
+                    usage=f"{AdminCommandNames.ABORT_TASK} job_id <client-name>",
                     handler_func=self.abort_task,
                     authz_func=self.authorize_abort_client_task,
                 ),
                 CommandSpec(
                     name=AdminCommandNames.CLONE_JOB,
                     description="clone a job with a new job_id",
-                    usage="clone_job job_id",
+                    usage=f"{AdminCommandNames.CLONE_JOB} job_id",
                     handler_func=self.clone_job,
                     authz_func=self.authorize_job,
                 ),
                 CommandSpec(
                     name=AdminCommandNames.SUBMIT_JOB,
                     description="submit a job",
-                    usage="submit_job job_folder",
+                    usage=f"{AdminCommandNames.SUBMIT_JOB} job_folder",
                     handler_func=self.submit_job,
                     authz_func=self.command_authz_required,
                     client_cmd=ftd.UPLOAD_FOLDER_FQN,
@@ -133,7 +140,7 @@ class JobCommandModule(CommandModule, CommandUtil):
                 CommandSpec(
                     name=AdminCommandNames.DOWNLOAD_JOB,
                     description="download a specified job",
-                    usage="download_job job_id",
+                    usage=f"{AdminCommandNames.DOWNLOAD_JOB} job_id",
                     handler_func=self.download_job,
                     authz_func=self.authorize_job,
                     client_cmd=ftd.DOWNLOAD_FOLDER_FQN,
@@ -143,7 +150,9 @@ class JobCommandModule(CommandModule, CommandUtil):
 
     def authorize_job(self, conn: Connection, args: List[str]):
         if len(args) < 2:
-            conn.append_error("syntax error: missing job_id")
+            conn.append_error(
+                "syntax error: missing job_id", meta=make_meta(MetaStatusValue.SYNTAX_ERROR, "missing job_id")
+            )
             return PreAuthzReturnCode.ERROR
 
         job_id = args[1].lower()
@@ -155,7 +164,9 @@ class JobCommandModule(CommandModule, CommandUtil):
             job = job_def_manager.get_job(job_id, fl_ctx)
 
         if not job:
-            conn.append_error(f"Job with ID {job_id} doesn't exist")
+            conn.append_error(
+                f"Job with ID {job_id} doesn't exist", meta=make_meta(MetaStatusValue.INVALID_JOB_ID, job_id)
+            )
             return PreAuthzReturnCode.ERROR
 
         conn.set_prop(self.JOB, job)
@@ -167,7 +178,7 @@ class JobCommandModule(CommandModule, CommandUtil):
         if len(args) > 2:
             err = self.validate_command_targets(conn, args[2:])
             if err:
-                conn.append_error(err)
+                conn.append_error(err, meta=make_meta(MetaStatusValue.SYNTAX_ERROR, err))
                 return PreAuthzReturnCode.ERROR
 
         return PreAuthzReturnCode.REQUIRE_AUTHZ
@@ -276,6 +287,9 @@ class JobCommandModule(CommandModule, CommandUtil):
             parser = SafeArgumentParser(prog="list_jobs")
             parser.add_argument("job_id", nargs="?", help="Job ID prefix")
             parser.add_argument("-d", action="store_true", help="Show detailed list")
+            parser.add_argument(
+                "-a", action="store_true", help="List all jobs, default is filtered to jobs submitted by the same user"
+            )
             parser.add_argument("-n", help="Filter by job name prefix")
             parsed_args = parser.parse_args(args[1:])
 
@@ -291,8 +305,12 @@ class JobCommandModule(CommandModule, CommandUtil):
             if jobs:
                 id_prefix = parsed_args.job_id
                 name_prefix = parsed_args.n
+                if parsed_args.a:
+                    user_name = None
+                else:
+                    user_name = conn.get_prop(ConnProps.USER_NAME, "")
 
-                filtered_jobs = [job for job in jobs if self._job_match(job.meta, id_prefix, name_prefix)]
+                filtered_jobs = [job for job in jobs if self._job_match(job.meta, id_prefix, name_prefix, user_name)]
                 if not filtered_jobs:
                     conn.append_error("No jobs matching the searching criteria")
                     return
@@ -315,12 +333,17 @@ class JobCommandModule(CommandModule, CommandUtil):
     def delete_job(self, conn: Connection, args: List[str]):
         job = conn.get_prop(self.JOB)
         if not job:
-            conn.append_error("program error: job not set in conn")
+            conn.append_error(
+                "program error: job not set in conn", meta=make_meta(MetaStatusValue.INTERNAL_ERROR, "no job")
+            )
             return
 
         job_id = conn.get_prop(self.JOB_ID)
         if job.meta.get(JobMetaKey.STATUS, "") in [RunStatus.DISPATCHED.value, RunStatus.RUNNING.value]:
-            conn.append_error(f"job: {job_id} is running, could not be deleted at this time.")
+            conn.append_error(
+                f"job: {job_id} is running, could not be deleted at this time.",
+                meta=make_meta(MetaStatusValue.JOB_RUNNING, job_id),
+            )
             return
 
         try:
@@ -329,11 +352,31 @@ class JobCommandModule(CommandModule, CommandUtil):
 
             with engine.new_context() as fl_ctx:
                 job_def_manager.delete(job_id, fl_ctx)
-                conn.append_string("Job {} deleted.".format(job_id))
+                conn.append_string(f"Job {job_id} deleted.")
         except BaseException as e:
-            conn.append_error(f"exception occurred: {secure_format_exception(e)}")
+            conn.append_error(
+                f"exception occurred: {secure_format_exception(e)}",
+                meta=make_meta(MetaStatusValue.INTERNAL_ERROR, f"exception {type(e)}"),
+            )
             return
-        conn.append_success("")
+        conn.append_success("", meta=make_meta(MetaStatusValue.OK))
+
+    def get_job_meta(self, conn: Connection, args: List[str]):
+        job_id = conn.get_prop(self.JOB_ID)
+        engine = conn.app_ctx
+        job_def_manager = engine.job_def_manager
+        if not isinstance(job_def_manager, JobDefManagerSpec):
+            raise TypeError(
+                f"job_def_manager in engine is not of type JobDefManagerSpec, but got {type(job_def_manager)}"
+            )
+        with engine.new_context() as fl_ctx:
+            job = job_def_manager.get_job(jid=job_id, fl_ctx=fl_ctx)
+            if job:
+                conn.append_dict(job.meta, meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOB_META: job.meta}))
+            else:
+                conn.append_error(
+                    f"job {job_id} does not exist", meta=make_meta(MetaStatusValue.INVALID_JOB_ID, job_id)
+                )
 
     def abort_job(self, conn: Connection, args: List[str]):
         engine = conn.app_ctx
@@ -344,9 +387,12 @@ class JobCommandModule(CommandModule, CommandUtil):
             with engine.new_context() as fl_ctx:
                 job_runner.stop_run(job_id, fl_ctx)
             conn.append_string("Abort signal has been sent to the server app.")
-            conn.append_success("")
-        except Exception as e:
-            conn.append_error(f"Exception occurred trying to abort job: {secure_format_exception(e)}")
+            conn.append_success("", make_meta(MetaStatusValue.OK))
+        except BaseException as e:
+            conn.append_error(
+                f"Exception occurred trying to abort job: {secure_format_exception(e)}",
+                meta=make_meta(MetaStatusValue.INTERNAL_ERROR, f"exception {type(e)}"),
+            )
             return
 
     def clone_job(self, conn: Connection, args: List[str]):
@@ -373,11 +419,15 @@ class JobCommandModule(CommandModule, CommandUtil):
                 job_meta[JobMetaKey.CLONED_FROM.value] = job_id
 
                 meta = job_def_manager.create(job_meta, data_bytes, fl_ctx)
-                conn.append_string("Cloned job {} as: {}".format(job_id, meta.get(JobMetaKey.JOB_ID)))
-        except Exception as e:
-            conn.append_error(f"Exception occurred trying to clone job: {secure_format_exception(e)}")
+                new_job_id = meta.get(JobMetaKey.JOB_ID)
+                conn.append_string("Cloned job {} as: {}".format(job_id, new_job_id))
+        except BaseException as e:
+            conn.append_error(
+                f"Exception occurred trying to clone job: {secure_format_exception(e)}",
+                meta=make_meta(MetaStatusValue.INTERNAL_ERROR, f"exception {type(e)}"),
+            )
             return
-        conn.append_success("")
+        conn.append_success("", meta=make_meta(status=MetaStatusValue.OK, extra={MetaKey.JOB_ID: new_job_id}))
 
     def authorize_list_files(self, conn: Connection, args: List[str]):
         if len(args) < 2:
@@ -434,43 +484,57 @@ class JobCommandModule(CommandModule, CommandUtil):
         conn.append_success("")
 
     @staticmethod
-    def _job_match(job_meta: Dict, id_prefix: str, name_prefix: str) -> bool:
-        return ((not id_prefix) or job_meta.get("job_id").lower().startswith(id_prefix.lower())) and (
-            (not name_prefix) or job_meta.get("name").lower().startswith(name_prefix.lower())
+    def _job_match(job_meta: Dict, id_prefix: str, name_prefix: str, user_name: str) -> bool:
+        return (
+            ((not id_prefix) or job_meta.get("job_id").lower().startswith(id_prefix.lower()))
+            and ((not name_prefix) or job_meta.get("name").lower().startswith(name_prefix.lower()))
+            and ((not user_name) or job_meta.get("submitter_name") == user_name)
         )
 
     @staticmethod
     def _send_detail_list(conn: Connection, jobs: List[Job]):
+        list_of_jobs = []
         for job in jobs:
             JobCommandModule._set_duration(job)
             conn.append_string(json.dumps(job.meta, indent=4))
+            list_of_jobs.append(job.meta)
+        conn.append_string("", meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOBS: list_of_jobs}))
 
     @staticmethod
     def _send_summary_list(conn: Connection, jobs: List[Job]):
-
-        table = Table(["Job ID", "Name", "Status", "Submit Time", "Run Duration"])
+        table = conn.append_table(["Job ID", "Name", "Status", "Submit Time", "Run Duration"], name=MetaKey.JOBS)
+        legacy_string_table = Table(["Job ID", "Name", "Status", "Submit Time", "Run Duration"])
         for job in jobs:
             JobCommandModule._set_duration(job)
+            table_row = [
+                job.meta.get(JobMetaKey.JOB_ID.value, ""),
+                CommandUtil.get_job_name(job.meta),
+                job.meta.get(JobMetaKey.STATUS.value, ""),
+                job.meta.get(JobMetaKey.SUBMIT_TIME_ISO.value, ""),
+                str(job.meta.get(JobMetaKey.DURATION.value, "N/A")),
+            ]
             table.add_row(
-                [
-                    job.meta.get(JobMetaKey.JOB_ID, ""),
-                    CommandUtil.get_job_name(job.meta),
-                    job.meta.get(JobMetaKey.STATUS, ""),
-                    job.meta.get(JobMetaKey.SUBMIT_TIME_ISO, ""),
-                    str(job.meta.get(JobMetaKey.DURATION, "N/A")),
-                ]
+                table_row,
+                meta={
+                    MetaKey.JOB_ID: job.meta.get(JobMetaKey.JOB_ID.value, ""),
+                    MetaKey.JOB_NAME: CommandUtil.get_job_name(job.meta),
+                    MetaKey.STATUS: job.meta.get(JobMetaKey.STATUS.value, ""),
+                    MetaKey.SUBMIT_TIME: job.meta.get(JobMetaKey.SUBMIT_TIME_ISO.value, ""),
+                    MetaKey.DURATION: str(job.meta.get(JobMetaKey.DURATION.value, "N/A")),
+                },
             )
+            legacy_string_table.add_row(table_row)
 
         writer = io.StringIO()
-        table.write(writer)
+        legacy_string_table.write(writer)
         conn.append_string(writer.getvalue())
 
     @staticmethod
     def _set_duration(job):
         if job.meta.get(JobMetaKey.STATUS) == RunStatus.RUNNING.value:
-            start_time = datetime.datetime.strptime(job.meta.get(JobMetaKey.START_TIME), "%Y-%m-%d %H:%M:%S.%f")
+            start_time = datetime.datetime.strptime(job.meta.get(JobMetaKey.START_TIME.value), "%Y-%m-%d %H:%M:%S.%f")
             duration = datetime.datetime.now() - start_time
-            job.meta[JobMetaKey.DURATION] = str(duration)
+            job.meta[JobMetaKey.DURATION.value] = str(duration)
 
     def submit_job(self, conn: Connection, args: List[str]):
         folder_name = args[1]
@@ -484,7 +548,7 @@ class JobCommandModule(CommandModule, CommandUtil):
                 job_validator = JobMetaValidator()
                 valid, error, meta = job_validator.validate(folder_name, data_bytes)
                 if not valid:
-                    conn.append_error(error)
+                    conn.append_error(error, meta=make_meta(MetaStatusValue.INVALID_JOB_DEFINITION, error))
                     return
 
                 job_def_manager = engine.job_def_manager
@@ -499,12 +563,15 @@ class JobCommandModule(CommandModule, CommandUtil):
                 meta[JobMetaKey.SUBMITTER_ROLE.value] = conn.get_prop(ConnProps.USER_ROLE, "")
 
                 meta = job_def_manager.create(meta, data_bytes, fl_ctx)
-                conn.append_string("Submitted job: {}".format(meta.get(JobMetaKey.JOB_ID)))
-        except Exception as e:
-            conn.append_error(f"Exception occurred trying to submit job: {secure_format_exception(e)}")
+                job_id = meta.get(JobMetaKey.JOB_ID)
+                conn.append_string(f"Submitted job: {job_id}")
+                conn.append_success("", meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOB_ID: job_id}))
+        except BaseException as e:
+            conn.append_error(
+                f"Exception occurred trying to submit job: {secure_format_exception(e)}",
+                meta=make_meta(MetaStatusValue.INTERNAL_ERROR, f"exception {type(e)} occurred"),
+            )
             return
-
-        conn.append_success("")
 
     def _unzip_data(self, download_dir, job_data, job_id):
         job_id_dir = os.path.join(download_dir, job_id)
@@ -539,7 +606,13 @@ class JobCommandModule(CommandModule, CommandUtil):
                 job_data = job_def_manager.get_job_data(job_id, fl_ctx)
                 size = get_size(job_data, seen=None)
                 if size > MAX_DOWNLOAD_JOB_SIZE:
-                    conn.append_string(ftd.DOWNLOAD_URL_MARKER + download_job_url + job_id)
+                    conn.append_string(
+                        ftd.DOWNLOAD_URL_MARKER + download_job_url + job_id,
+                        meta=make_meta(
+                            MetaStatusValue.OK,
+                            extra={MetaKey.JOB_ID: job_id, MetaKey.JOB_DOWNLOAD_URL: download_job_url + job_id},
+                        ),
+                    )
                     return
 
                 self._unzip_data(download_dir, job_data, job_id)
@@ -549,7 +622,7 @@ class JobCommandModule(CommandModule, CommandUtil):
         try:
             data = zip_directory_to_bytes(download_dir, job_id)
             b64str = bytes_to_b64str(data)
-            conn.append_string(b64str)
+            conn.append_string(b64str, meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOB_ID: job_id}))
         except FileNotFoundError:
             conn.append_error("No record found for job '{}'".format(job_id))
         except BaseException:

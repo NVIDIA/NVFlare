@@ -23,7 +23,7 @@ from typing import List, Optional
 
 from nvflare.fuel.hci.cmd_arg_utils import split_to_args
 from nvflare.fuel.hci.conn import Connection, receive_and_process
-from nvflare.fuel.hci.proto import ConfirmMethod, InternalCommands, make_error
+from nvflare.fuel.hci.proto import ConfirmMethod, InternalCommands, ProtoKey, make_error
 from nvflare.fuel.hci.reg import CommandEntry, CommandModule, CommandRegister
 from nvflare.fuel.hci.table import Table
 from nvflare.fuel.utils.fsm import FSM, State
@@ -44,8 +44,12 @@ _CMD_TYPE_UNKNOWN = 0
 _CMD_TYPE_CLIENT = 1
 _CMD_TYPE_SERVER = 2
 
-_KEY_STATUS = "status"
-_KEY_DETAILS = "details"
+
+class ResultKey(object):
+
+    STATUS = "status"
+    DETAILS = "details"
+    META = "meta"
 
 
 def session_event_cb_signature(event_type: str, info: str):
@@ -93,30 +97,33 @@ class _ServerReplyJsonProcessor(object):
         reply_processor.reply_start(ctx, resp)
 
         if resp is not None:
-            data = resp["data"]
+            data = resp[ProtoKey.DATA]
             for item in data:
-                it = item["type"]
-                if it == "string":
-                    reply_processor.process_string(ctx, item["data"])
-                elif it == "success":
-                    reply_processor.process_success(ctx, item["data"])
-                elif it == "error":
-                    reply_processor.process_error(ctx, item["data"])
+                it = item[ProtoKey.TYPE]
+                if it == ProtoKey.STRING:
+                    reply_processor.process_string(ctx, item[ProtoKey.DATA])
+                elif it == ProtoKey.SUCCESS:
+                    reply_processor.process_success(ctx, item[ProtoKey.DATA])
+                elif it == ProtoKey.ERROR:
+                    reply_processor.process_error(ctx, item[ProtoKey.DATA])
                     break
-                elif it == "table":
+                elif it == ProtoKey.TABLE:
                     table = Table(None)
-                    table.set_rows(item["rows"])
+                    table.set_rows(item[ProtoKey.ROWS])
                     reply_processor.process_table(ctx, table)
-                elif it == "dict":
-                    reply_processor.process_dict(ctx, item["data"])
-                elif it == "token":
-                    reply_processor.process_token(ctx, item["data"])
-                elif it == "shutdown":
-                    reply_processor.process_shutdown(ctx, item["data"])
+                elif it == ProtoKey.DICT:
+                    reply_processor.process_dict(ctx, item[ProtoKey.DATA])
+                elif it == ProtoKey.TOKEN:
+                    reply_processor.process_token(ctx, item[ProtoKey.DATA])
+                elif it == ProtoKey.SHUTDOWN:
+                    reply_processor.process_shutdown(ctx, item[ProtoKey.DATA])
                     break
                 else:
                     reply_processor.protocol_error(ctx, "Invalid item type: " + it)
                     break
+            meta = resp.get(ProtoKey.META)
+            if meta:
+                ctx.set_meta(meta)
         else:
             reply_processor.protocol_error(ctx, "Protocol Error")
 
@@ -247,12 +254,12 @@ class _TryLogin(State):
     def execute(self, **kwargs):
         api = self.api
         result = api.auto_login()
-        if result[_KEY_STATUS] == APIStatus.SUCCESS:
+        if result[ResultKey.STATUS] == APIStatus.SUCCESS:
             api.server_sess_active = True
             api.fire_session_event(SessionEventType.LOGIN_SUCCESS, f"Logged into server at {api.host}:{api.port}")
             return _STATE_NAME_OPERATE
 
-        details = result.get(_KEY_DETAILS, "")
+        details = result.get(ResultKey.DETAILS, "")
         if details != _SESSION_LOGGING_OUT:
             api.fire_session_event(SessionEventType.LOGIN_FAILURE, details)
 
@@ -294,8 +301,8 @@ class _Operate(State):
         if not self.last_sess_check_time or time.time() - self.last_sess_check_time >= self.sess_check_interval:
             self.last_sess_check_time = time.time()
             result = api.check_session_status_on_server()
-            details = result.get(_KEY_DETAILS, "")
-            status = result[_KEY_STATUS]
+            details = result.get(ResultKey.DETAILS, "")
+            status = result[ResultKey.STATUS]
             if status in APIStatus.ERROR_INACTIVE_SESSION:
                 if details != _SESSION_LOGGING_OUT:
                     api.fire_session_event(SessionEventType.SESSION_TIMEOUT, details)
@@ -458,7 +465,7 @@ class AdminAPI(AdminAPISpec):
                 resp = self.login_with_poc(username=self.user_name, poc_key=self.poc_key)
             else:
                 resp = self.login(username=self.user_name)
-            if resp[_KEY_STATUS] in [APIStatus.SUCCESS, APIStatus.ERROR_AUTHENTICATION, APIStatus.ERROR_CERT]:
+            if resp[ResultKey.STATUS] in [APIStatus.SUCCESS, APIStatus.ERROR_AUTHENTICATION, APIStatus.ERROR_CERT]:
                 return resp
             time.sleep(1.0)
         return resp
@@ -470,8 +477,8 @@ class AdminAPI(AdminAPISpec):
                 print(f"DEBUG: login result is {result}")
         except:
             result = {
-                _KEY_STATUS: APIStatus.ERROR_RUNTIME,
-                _KEY_DETAILS: "Exception occurred when trying to login - please try later",
+                ResultKey.STATUS: APIStatus.ERROR_RUNTIME,
+                ResultKey.DETAILS: "Exception occurred when trying to login - please try later",
             }
         return result
 
@@ -576,7 +583,10 @@ class AdminAPI(AdminAPISpec):
     def _login(self) -> dict:
         result = self._get_command_list_from_server()
         if not result:
-            return {_KEY_STATUS: APIStatus.ERROR_RUNTIME, _KEY_DETAILS: "Can't fetch command list from server."}
+            return {
+                ResultKey.STATUS: APIStatus.ERROR_RUNTIME,
+                ResultKey.DETAILS: "Can't fetch command list from server.",
+            }
 
         # prepare client modules
         # we may have additional dynamically created cmd modules based on server commands
@@ -593,7 +603,7 @@ class AdminAPI(AdminAPISpec):
             self._load_client_cmds_from_module_specs(extra_module_specs)
         self.client_cmd_reg.finalize(self.register_command)
         self.server_sess_active = True
-        return {_KEY_STATUS: APIStatus.SUCCESS, _KEY_DETAILS: "Login success"}
+        return {ResultKey.STATUS: APIStatus.SUCCESS, ResultKey.DETAILS: "Login success"}
 
     def is_ready(self) -> bool:
         """Whether the API is ready for executing commands."""
@@ -611,9 +621,12 @@ class AdminAPI(AdminAPISpec):
         self.login_result = None
         self.server_execute(f"{InternalCommands.CERT_LOGIN} {username}", _LoginReplyProcessor())
         if self.login_result is None:
-            return {_KEY_STATUS: APIStatus.ERROR_RUNTIME, _KEY_DETAILS: "Communication Error - please try later"}
+            return {
+                ResultKey.STATUS: APIStatus.ERROR_RUNTIME,
+                ResultKey.DETAILS: "Communication Error - please try later",
+            }
         elif self.login_result == "REJECT":
-            return {_KEY_STATUS: APIStatus.ERROR_CERT, _KEY_DETAILS: "Incorrect user name or certificate"}
+            return {ResultKey.STATUS: APIStatus.ERROR_CERT, ResultKey.DETAILS: "Incorrect user name or certificate"}
 
         return self._login()
 
@@ -630,10 +643,15 @@ class AdminAPI(AdminAPISpec):
         self.login_result = None
         self.server_execute(f"{InternalCommands.PWD_LOGIN} {username} {poc_key}", _LoginReplyProcessor())
         if self.login_result is None:
-            return {_KEY_STATUS: APIStatus.ERROR_RUNTIME, _KEY_DETAILS: "Communication Error - please try later"}
+            return {
+                ResultKey.STATUS: APIStatus.ERROR_RUNTIME,
+                ResultKey.DETAILS: "Communication Error - please try later",
+            }
         elif self.login_result == "REJECT":
-            return {_KEY_STATUS: APIStatus.ERROR_AUTHENTICATION, _KEY_DETAILS: "Incorrect user name or password"}
-
+            return {
+                ResultKey.STATUS: APIStatus.ERROR_AUTHENTICATION,
+                ResultKey.DETAILS: "Incorrect user name or password",
+            }
         return self._login()
 
     def _send_to_sock(self, sock, ctx: CommandContext):
@@ -774,7 +792,7 @@ class AdminAPI(AdminAPISpec):
         if return_result:
             return return_result
         if result is None:
-            return {_KEY_STATUS: APIStatus.ERROR_RUNTIME, _KEY_DETAILS: "Client did not respond"}
+            return {ResultKey.STATUS: APIStatus.ERROR_RUNTIME, ResultKey.DETAILS: "Client did not respond"}
         return result
 
     def do_command(self, command):
@@ -791,14 +809,14 @@ class AdminAPI(AdminAPISpec):
         cmd_type, cmd_name, args, entries = self._get_command_detail(command)
         if cmd_type == _CMD_TYPE_UNKNOWN:
             return {
-                _KEY_STATUS: APIStatus.ERROR_SYNTAX,
-                _KEY_DETAILS: f"Command {cmd_name} not found",
+                ResultKey.STATUS: APIStatus.ERROR_SYNTAX,
+                ResultKey.DETAILS: f"Command {cmd_name} not found",
             }
 
         if len(entries) > 1:
             return {
-                _KEY_STATUS: APIStatus.ERROR_SYNTAX,
-                _KEY_DETAILS: f"Ambiguous command {cmd_name} - qualify with scope",
+                ResultKey.STATUS: APIStatus.ERROR_SYNTAX,
+                ResultKey.DETAILS: f"Ambiguous command {cmd_name} - qualify with scope",
             }
 
         ent = entries[0]
@@ -808,15 +826,15 @@ class AdminAPI(AdminAPISpec):
         # server command
         if not self.server_sess_active:
             return {
-                _KEY_STATUS: APIStatus.ERROR_INACTIVE_SESSION,
-                _KEY_DETAILS: "Session is inactive, please try later",
+                ResultKey.STATUS: APIStatus.ERROR_INACTIVE_SESSION,
+                ResultKey.DETAILS: "Session is inactive, please try later",
             }
 
         return self.server_execute(command, cmd_entry=ent)
 
     def server_execute(self, command, reply_processor=None, cmd_entry=None):
         if self.in_logout:
-            return {_KEY_STATUS: APIStatus.SUCCESS, _KEY_DETAILS: "session is logging out"}
+            return {ResultKey.STATUS: APIStatus.SUCCESS, ResultKey.DETAILS: "session is logging out"}
 
         args = split_to_args(command)
         ctx = self._new_command_context(command, args, cmd_entry)
@@ -830,17 +848,20 @@ class AdminAPI(AdminAPISpec):
             print(f"DEBUG: server_execute Done [{usecs} usecs] {datetime.now()}")
 
         result = ctx.get_command_result()
+        meta = ctx.get_meta()
         if result is None:
-            return {_KEY_STATUS: APIStatus.ERROR_SERVER_CONNECTION, _KEY_DETAILS: "Server did not respond"}
-        if "data" in result:
-            for item in result["data"]:
-                if item["type"] == "error":
-                    if "session_inactive" in item["data"]:
-                        result.update({_KEY_STATUS: APIStatus.ERROR_INACTIVE_SESSION})
-                    elif any(
-                        err in item["data"] for err in ("Failed to communicate with Admin Server", "wrong server")
-                    ):
-                        result.update({_KEY_STATUS: APIStatus.ERROR_SERVER_CONNECTION})
-        if _KEY_STATUS not in result:
-            result.update({_KEY_STATUS: APIStatus.SUCCESS})
+            return {ResultKey.STATUS: APIStatus.ERROR_SERVER_CONNECTION, ResultKey.DETAILS: "Server did not respond"}
+        if meta:
+            result[ResultKey.META] = meta
+
+        if ProtoKey.DATA in result:
+            for item in result[ProtoKey.DATA]:
+                if item[ProtoKey.TYPE] == ProtoKey.ERROR:
+                    item_data = item[ProtoKey.DATA]
+                    if "session_inactive" in item_data:
+                        result[ResultKey.STATUS] = APIStatus.ERROR_INACTIVE_SESSION
+                    elif any(err in item_data for err in ("Failed to communicate with Admin Server", "wrong server")):
+                        result[ResultKey.STATUS] = APIStatus.ERROR_SERVER_CONNECTION
+        if ResultKey.STATUS not in result:
+            result[ResultKey.STATUS] = APIStatus.SUCCESS
         return result

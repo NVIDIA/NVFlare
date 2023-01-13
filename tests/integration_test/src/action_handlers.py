@@ -141,7 +141,7 @@ class _AbortJobHandler(_CmdHandler):
 
 class _ListJobHandler(_CmdHandler):
     def handle(self, command_args: list, admin_controller: AdminController, admin_api: FLAdminAPI):
-        response = admin_api.list_jobs()
+        response = admin_api.list_jobs("-a")
         assert response["status"] == APIStatus.SUCCESS
 
 

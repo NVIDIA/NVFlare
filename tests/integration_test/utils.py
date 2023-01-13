@@ -159,7 +159,7 @@ def _parse_job_run_statuses(list_jobs_string: str) -> Dict[str, RunStatus]:
 
 
 def get_job_run_statuses(admin_api: FLAdminAPI):
-    list_jobs_result = admin_api.list_jobs()
+    list_jobs_result = admin_api.list_jobs("-a")
     if list_jobs_result["status"] == APIStatus.SUCCESS:
         list_jobs_string = list_jobs_result["details"]["message"]
         job_run_statuses = _parse_job_run_statuses(list_jobs_string)
@@ -220,7 +220,7 @@ def run_admin_api_tests(admin_api: FLAdminAPI):
     print("\nCommand: get_available_apps_to_upload")
     print(admin_api.get_available_apps_to_upload())
     print("\nList Jobs:")
-    list_jobs_return_message = admin_api.list_jobs().get("details").get("message")
+    list_jobs_return_message = admin_api.list_jobs("-a").get("details").get("message")
     print(list_jobs_return_message)
     first_job = list_jobs_return_message.split()[17]
     print("\nCommand: ls server -a .")
