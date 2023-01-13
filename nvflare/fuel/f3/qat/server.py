@@ -69,8 +69,8 @@ class Server(CellRunner):
 
         self.cell.add_cleanup_cb(self._clean_up)
 
-    def start(self):
-        super().start()
+    def start(self, start_all=True):
+        super().start(start_all)
         self.admin.start()
 
     def _clean_up(self):

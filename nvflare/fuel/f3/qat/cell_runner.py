@@ -157,7 +157,7 @@ class CellRunner:
         assert origin == self.cell.get_fqcn()
         self.cell.logger.debug(f"{self.cell.get_fqcn()}: _filter_outgoing_request called")
 
-    def _create_subprocess(self, name: str, parent_fqcn: str, parent_url: str):
+    def _create_subprocess(self, name: str, parent_fqcn: str, parent_url: str, start_it=True):
         parts = [
             f"{sys.executable} -m run_cell",
             f"-c {self.config_path}",
@@ -172,10 +172,16 @@ class CellRunner:
             parts.append(f"-pu {parent_url}")
 
         command = " ".join(parts)
-        return subprocess.Popen(shlex.split(command), preexec_fn=os.setsid, env=os.environ.copy())
+        print(f"Start Cell Command: {command}")
 
-    def start(self):
+        if start_it:
+            return subprocess.Popen(shlex.split(command), preexec_fn=os.setsid, env=os.environ.copy())
+        else:
+            return None
+
+    def start(self, start_all=True):
         self.cell.start()
+
         if self.create_internal_listener:
             # create children
             int_url = self.cell.get_internal_listener_url()
@@ -183,7 +189,8 @@ class CellRunner:
                 p = self._create_subprocess(
                     name=child_name,
                     parent_url=int_url,
-                    parent_fqcn=self.cell.get_fqcn()
+                    parent_fqcn=self.cell.get_fqcn(),
+                    start_it=start_all
                 )
                 child_fqcn = FQCN.join([self.cell.get_fqcn(), child_name])
                 info = _RunnerInfo(child_name, child_fqcn, p)
@@ -195,7 +202,8 @@ class CellRunner:
                 p = self._create_subprocess(
                     name=client_name,
                     parent_url="",
-                    parent_fqcn=""
+                    parent_fqcn="",
+                    start_it=start_all
                 )
                 self.client_runners[client_name] = _RunnerInfo(client_name, client_name, p)
 

@@ -19,6 +19,13 @@ from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.constants import ConnProps
 
 
+def _to_int(s: str):
+    try:
+        return int(s)
+    except:
+        return f"'{s}' is not a valid number"
+
+
 class NetManager(CommandModule):
 
     def __init__(
@@ -116,6 +123,7 @@ class NetManager(CommandModule):
 
         for c in cell_fqcns:
             conn.append_string(c)
+        conn.append_string(f"Total Cells: {len(cell_fqcns)}")
 
     def _cmd_url_use(self, conn: Connection, args: [str]):
         if len(args) != 2:
@@ -160,6 +168,7 @@ class NetManager(CommandModule):
         if agents:
             for a in agents:
                 conn.append_string(a)
+            conn.append_string(f"Total Agents: {len(agents)}")
 
     def _cmd_connectors(self, conn: Connection, args: [str]):
         if len(args) != 2:
@@ -183,9 +192,16 @@ class NetManager(CommandModule):
         num_tries = 100
         payload_size = 1000
         if len(args) > 3:
-            num_tries = int(args[3])
+            num_tries = _to_int(args[3])
+            if not isinstance(num_tries, int):
+                conn.append_error(num_tries)
+                return
+
         if len(args) > 4:
-            payload_size = int(args[4])
+            payload_size = _to_int(args[4])
+            if not isinstance(payload_size, int):
+                conn.append_error(payload_size)
+                return
 
         result = self.agent.speed_test(
             from_fqcn=from_fqcn,
@@ -199,9 +215,17 @@ class NetManager(CommandModule):
         num_tries = 10
         timeout = 5.0
         if len(args) > 1:
-            num_tries = int(args[1])
+            num_tries = _to_int(args[1])
+            if not isinstance(num_tries, int):
+                conn.append_error(num_tries)
+                return
+
         if len(args) > 2:
-            timeout = int(args[2])
+            timeout = _to_int(args[2])
+            if not isinstance(timeout, int):
+                conn.append_error(timeout)
+                return
+
         err, targets = self.agent.request_cells_info()
         if err:
             conn.append_error(err)
@@ -233,10 +257,9 @@ class NetManager(CommandModule):
     def _cmd_bulk_test(self, conn: Connection, args: [str]):
         bulk_size = 1
         if len(args) > 1:
-            try:
-                bulk_size = int(args[1])
-            except:
-                conn.append_error(f"invalid bulk_size {args[1]} - must be int")
+            bulk_size = _to_int(args[1])
+            if not isinstance(bulk_size, int):
+                conn.append_error(bulk_size)
                 return
 
         err, targets = self.agent.request_cells_info()

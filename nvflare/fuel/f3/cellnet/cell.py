@@ -30,6 +30,7 @@ from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor, EndpointState
 from nvflare.fuel.f3.communicator import Communicator, MessageReceiver
 from nvflare.fuel.utils.stats_utils import new_time_pool
 
+from nvflare.fuel.f3.comm_config import CommConfigurator
 from .connector_manager import ConnectorManager
 from .defs import (
     MessageHeaderKey, MessageType, ReturnReason,
@@ -231,6 +232,8 @@ def _validate_url(url: str) -> bool:
 class Cell(MessageReceiver, EndpointMonitor):
 
     APP_ID = 1
+    ERR_TYPE_MSG_TOO_BIG = "MsgTooBig"
+    ERR_TYPE_COMM = "CommErr"
 
     def __init__(
             self,
@@ -267,8 +270,10 @@ class Cell(MessageReceiver, EndpointMonitor):
             client_1            (he root cell of client_1)
 
         """
+        comm_configurator = CommConfigurator()
         self._name = self.__class__.__name__
         self.logger = logging.getLogger(self._name)
+        self.max_msg_size = comm_configurator.get_max_message_size()
 
         err = FQCN.validate(fqcn)
         if err:
@@ -276,6 +281,7 @@ class Cell(MessageReceiver, EndpointMonitor):
 
         self.my_info = FqcnInfo(FQCN.normalize(fqcn))
         self.secure = secure
+        self.logger.debug(f"{self.my_info.fqcn}: max_msg_size={self.max_msg_size}")
 
         if not root_url:
             raise ValueError(f"{self.my_info.fqcn}: root_url not provided")
@@ -327,7 +333,11 @@ class Cell(MessageReceiver, EndpointMonitor):
             local_endpoint=ep
         )
 
-        self.connector_manager = ConnectorManager(communicator=self.communicator, secure=secure)
+        self.connector_manager = ConnectorManager(
+            communicator=self.communicator,
+            secure=secure,
+            comm_configurator=comm_configurator
+        )
 
         self.communicator.register_message_receiver(app_id=self.APP_ID, receiver=self)
         self.communicator.register_monitor(monitor=self)
@@ -435,15 +445,14 @@ class Cell(MessageReceiver, EndpointMonitor):
 
         self.logger.info(f"=========== {self.my_info.fqcn}: cell is shutting down. Start cleanup ...")
         time.sleep(2.0)  # let pending messages to go out
-        t = threading.Thread(target=self._do_cleanup)
-        t.start()
 
         # wait for 2 secs to give others time to clean up
         self.cleanup_waiter = threading.Event()
-        #graceful_stop = True
+        t = threading.Thread(target=self._do_cleanup)
+        t.start()
+
         if not self.cleanup_waiter.wait(timeout=2.0):
             self.logger.warning(f"======== {self.my_info.fqcn}: Cleanup did not complete within 2 secs")
-            #graceful_stop = False
 
         num_active_threads = 0
         for thread in threading.enumerate():
@@ -453,7 +462,10 @@ class Cell(MessageReceiver, EndpointMonitor):
 
         self.logger.info(f"{self.my_info.fqcn}: Good Bye!")
         if num_active_threads > 0:
-            os.kill(os.getpid(), signal.SIGKILL)
+            try:
+                os.kill(os.getpid(), signal.SIGKILL)
+            except:
+                pass
 
     def _do_cleanup(self):
         self.logger.debug(f"{self.my_info.fqcn}: Start system cleanup ...")
@@ -938,6 +950,11 @@ class Cell(MessageReceiver, EndpointMonitor):
         return self._try_path(fqcn_path[:-1])
 
     def _find_endpoint(self, target_fqcn: str) -> Union[None, Endpoint]:
+        err = FQCN.validate(target_fqcn)
+        if err:
+            self.logger.error(f"{self.my_info.fqcn}: invalid target FQCN '{target_fqcn}': {err}")
+            return None
+
         try:
             return self._try_find_ep(target_fqcn)
         except:
@@ -1010,11 +1027,22 @@ class Cell(MessageReceiver, EndpointMonitor):
         try:
             encode_payload(message)
             message.set_header(MessageHeaderKey.SEND_TIME, time.time())
-            self.communicator.send(to_endpoint, Cell.APP_ID, message)
+            if not message.payload:
+                msg_size = 0
+            else:
+                msg_size = len(message.payload)
+
+            if msg_size > self.max_msg_size:
+                err_text = f"message is too big ({msg_size} > {self.max_msg_size}"
+                self.logger.error(err_text)
+                err = ReturnCode.MSG_TOO_BIG
+            else:
+                self.communicator.send(to_endpoint, Cell.APP_ID, message)
         except:
-            self.logger.error(f"failed to send message to {to_endpoint.name}")
+            err_text = f"failed to send message to {to_endpoint.name}"
+            self.logger.error(err_text)
             traceback.print_exc()
-            err = "CommError"
+            err = ReturnCode.COMM_ERROR
         return err
 
     def _send_target_messages(
@@ -1032,7 +1060,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                 reachable_targets[t] = ep
             else:
                 self.logger.error(f"{self.my_info.fqcn}: no path to cell '{t}'")
-                send_errs[t] = "no path"
+                send_errs[t] = ReturnCode.COMM_ERROR
 
         for t, ep in reachable_targets.items():
             tm = target_msgs[t]
@@ -1058,12 +1086,13 @@ class Cell(MessageReceiver, EndpointMonitor):
                 assert isinstance(req_filters, list)
                 for f in req_filters:
                     assert isinstance(f, _CB)
-                    try:
-                        f.cb(req, *f.args, **f.kwargs)
-                    except:
-                        traceback.print_exc()
-                        send_errs[t] = "filter exception"
-                        continue
+                    r = self._try_cb(req, f.cb, *f.args, **f.kwargs)
+                    if r:
+                        send_errs[t] = ReturnCode.FILTER_ERROR
+                        break
+                if send_errs.get(t):
+                    # process next target
+                    continue
 
             # is this a direct path?
             ti = FqcnInfo(t)
@@ -1077,7 +1106,8 @@ class Cell(MessageReceiver, EndpointMonitor):
                         req.set_header(MessageHeaderKey.CONN_URL, conn_url)
             err = self._send_to_endpoint(ep, req)
             if err:
-                self.logger.error(f"{self.my_info.fqcn}: failed to send to endpoint {ep.name}: {err}")
+                self.logger.error(
+                    f"{self.my_info.fqcn}: failed to send to endpoint {ep.name}: {err}")
             send_errs[t] = err
         return send_errs
 
@@ -1160,7 +1190,6 @@ class Cell(MessageReceiver, EndpointMonitor):
                 )
             send_errs = self._send_target_messages(target_msgs)
             send_count = 0
-            err_reply = make_reply(ReturnCode.COMM_ERROR)
             timeout_reply = make_reply(ReturnCode.TIMEOUT)
 
             # NOTE: it is possible that reply is already received and the waiter is triggered by now!
@@ -1172,8 +1201,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                     send_count += 1
                     result[t] = timeout_reply
                 else:
-                    self.logger.error(f"{self.my_info.fqcn}: failed to send to {t}: {err}")
-                    result[t] = err_reply
+                    result[t] = make_reply(rc=err)
                     waiter.reply_time[t] = now
 
             if send_count > 0:
@@ -1372,7 +1400,7 @@ class Cell(MessageReceiver, EndpointMonitor):
 
         ep = self._find_endpoint(to_cell)
         if not ep:
-            return "CommError"
+            return ReturnCode.COMM_ERROR
         reply.set_header(MessageHeaderKey.TO_CELL, ep.name)
         return self._send_to_endpoint(ep, reply)
 
@@ -1533,15 +1561,15 @@ class Cell(MessageReceiver, EndpointMonitor):
             raise RuntimeError(format_log_message(self.my_info.fqcn, message,
                                                   f"REQ_ID must be list of ids but got {type(req_ids)}"))
 
-        req_dest = origin
+        req_destination = origin
         if msg_type == MessageType.RETURN:
             self.logger.error(f"{self.my_info.fqcn}: got a RETURN!")
             original_headers = message.get_header(MessageHeaderKey.ORIGINAL_HEADERS, None)
             if not original_headers:
                 raise RuntimeError(format_log_message(
                     self.my_info.fqcn, message, "missing ORIGINAL_HEADERS in returned message!"))
-            req_dest = original_headers.get(MessageHeaderKey.DESTINATION, None)
-            if not req_dest:
+            req_destination = original_headers.get(MessageHeaderKey.DESTINATION, None)
+            if not req_destination:
                 raise RuntimeError(format_log_message(
                     self.my_info.fqcn, message, "missing DESTINATION header in original headers"))
         else:
@@ -1558,14 +1586,14 @@ class Cell(MessageReceiver, EndpointMonitor):
             waiter = self.waiters.get(rid, None)
             if waiter:
                 assert isinstance(waiter, _Waiter)
-                if req_dest not in waiter.targets:
+                if req_destination not in waiter.targets:
                     self.logger.error(
                         format_log_message(
-                            self.my_info.fqcn, message, f"unexpected reply for {rid} from {req_dest}"))
-                    self.logger.error(f"req_dest='{req_dest}', expecting={waiter.targets}")
+                            self.my_info.fqcn, message, f"unexpected reply for {rid} from {req_destination}"))
+                    self.logger.error(f"req_destination='{req_destination}', expecting={waiter.targets}")
                     return
-                waiter.received_replies[req_dest] = message
-                waiter.reply_time[req_dest] = now
+                waiter.received_replies[req_destination] = message
+                waiter.reply_time[req_destination] = now
                 time_taken = now - waiter.send_time
 
                 self.msg_stats_pool.record_value(
@@ -1740,7 +1768,9 @@ class Cell(MessageReceiver, EndpointMonitor):
     def _send_reply(self, reply: Message, endpoint: Endpoint):
         self.logger.debug(f"{self.my_info.fqcn}: sending reply back to {endpoint.name}")
         self.logger.debug(f"Reply message: {reply.headers}")
-        self._send_to_endpoint(endpoint, reply)
+        err = self._send_to_endpoint(endpoint, reply)
+        if err:
+            self.logger.error(f"{self.my_info.fqcn}: error sending reply back to {endpoint.name}: {err}")
 
     def _check_bulk(self):
         while not self.asked_to_stop:

@@ -11,5 +11,16 @@
     "resources": {
       "host": "localhost"
     }
+  },
+  "grpc": {
+    "max_workers": 20,
+    "options": [
+      [
+        "grpc.max_send_message_length", 1073741824
+      ],
+      [
+        "grpc.max_receive_message_length", 1073741824
+      ]
+    ]
   }
 }

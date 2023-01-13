@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import queue
-
+import logging
 
 class QueueClosed(Exception):
     pass
@@ -24,6 +24,7 @@ class QQ:
     def __init__(self):
         self.q = queue.Queue()
         self.closed = False
+        self.logger = logging.getLogger(self.__class__.__name__)
 
     def close(self):
         self.closed = True
@@ -44,7 +45,8 @@ class QQ:
                 return self.q.get(block=True, timeout=0.1)
             except queue.Empty:
                 if self.closed:
+                    self.logger.debug("Queue closed - stop iteration")
                     raise StopIteration()
             except BaseException as e:
-                print(f"queue exception {type(e)}")
+                self.logger.error(f"queue exception {type(e)}")
                 raise e

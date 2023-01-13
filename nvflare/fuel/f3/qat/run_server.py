@@ -29,6 +29,7 @@ def main():
     parser.add_argument("--config_dir", "-c", type=str, help="config folder", required=False, default=".")
     parser.add_argument("--config_file", "-f", type=str, help="config file name",
                         required=False, default="net_config.json")
+    parser.add_argument("--self_only", "-s", default=False, action='store_true')
     parser.add_argument("--log_level", "-l", type=str, help="log level", required=False, default="info")
     args = parser.parse_args()
 
@@ -46,7 +47,8 @@ def main():
         config_file=args.config_file,
         log_level=args.log_level
     )
-    server.start()
+    start_all = not args.self_only
+    server.start(start_all)
     server.run()
 
 

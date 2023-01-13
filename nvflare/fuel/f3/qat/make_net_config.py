@@ -35,7 +35,7 @@ def main():
     server_jobs = [f"s_{j}" for j in jobs]
 
     config = {
-        "root_url": "http://localhost:8002",
+        "root_url": "grpc://localhost:8002",
         "admin": {
             "host": "localhost",
             "port": "8003"

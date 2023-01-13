@@ -68,6 +68,8 @@ class ReturnCode:
     OK = "ok"
     TIMEOUT = "timeout"
     COMM_ERROR = "comm_error"
+    MSG_TOO_BIG = "msg_too_big"
+    FILTER_ERROR = "filter_error"
     INVALID_REQUEST = "invalid_request"
     PROCESS_EXCEPTION = "process_exception"   # receiver error processing request
     AUTHENTICATION_ERROR = "authentication_error"

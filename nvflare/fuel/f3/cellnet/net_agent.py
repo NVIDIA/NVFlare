@@ -40,7 +40,7 @@ _TOPIC_BULK_TEST = "bulk_test"
 _TOPIC_BULK_ITEM = "bulk_item"
 _TOPIC_MSG_STATS = "msg_stats"
 
-_ONE_K = bytes([1] * 1000)
+_ONE_K = bytes([1] * 1024)
 
 
 class NetAgent:
@@ -377,9 +377,6 @@ class NetAgent:
         self.cell.stop()
 
     def _request_speed_test(self, target_fqcn: str, num, size) -> Message:
-        if size > 1000000:
-            return new_message(payload={"error": f"size {size:,}KB is too big"})
-
         start = time.perf_counter()
         payload = bytes(_ONE_K * size)
         payload_size = len(payload)
@@ -391,6 +388,7 @@ class NetAgent:
         timeouts = 0
         comm_errs = 0
         proc_errs = 0
+        size_errs = 0
         start = time.perf_counter()
         for i in range(num):
             r = self.cell.send_request(
@@ -417,6 +415,8 @@ class NetAgent:
                 timeouts += 1
             elif rc == ReturnCode.COMM_ERROR:
                 comm_errs += 1
+            elif rc == ReturnCode.MSG_TOO_BIG:
+                size_errs += 1
             else:
                 errs += 1
         end = time.perf_counter()
@@ -427,6 +427,7 @@ class NetAgent:
             "prep": payload_prep_time,
             "timeouts": timeouts,
             "comm_errors": comm_errs,
+            "size_errors": size_errs,
             "proc_errors": proc_errs,
             "other_errors": errs,
             "total": total,
@@ -483,7 +484,7 @@ class NetAgent:
 
         start = time.perf_counter()
         for i in range(num_rounds):
-            payload = os.urandom(100)
+            payload = os.urandom(1024)
             h = hashlib.md5(payload)
             d1 = h.digest()
             target = targets[random.randrange(len(targets))]

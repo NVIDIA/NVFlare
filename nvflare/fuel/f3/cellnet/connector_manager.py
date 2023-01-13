@@ -17,7 +17,7 @@ import os
 from typing import Union
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.f3.communicator import Communicator, Mode
-from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.fuel.f3.comm_config import CommConfigurator
 from .defs import ConnectorRequirementKey
 
 _KEY_RESOURCES = "resources"
@@ -46,15 +46,11 @@ class ConnectorManager:
     Manages creation of connectors
     """
 
-    comm_config_files = [
-        "comm_config.json",
-        "comm_config.json.default"
-    ]
-
     def __init__(
             self,
             communicator: Communicator,
-            secure: bool
+            secure: bool,
+            comm_configurator: CommConfigurator
     ):
         self._name = self.__class__.__name__
         self.logger = logging.getLogger(self._name)
@@ -73,23 +69,14 @@ class ConnectorManager:
         self.ext_resources = {}
 
         # load config if any
-        config = None
-        for file_name in self.comm_config_files:
-            try:
-                config = ConfigService.load_json(file_name)
-                if config:
-                    break
-            except FileNotFoundError:
-                self.logger.debug(f"config file {file_name} not found from config path")
-                config = None
-
-        if config:
-            int_conf = self._validate_conn_config(config, _KEY_INT)
+        comm_config = comm_configurator.get_config()
+        if comm_config:
+            int_conf = self._validate_conn_config(comm_config, _KEY_INT)
             if int_conf:
                 self.int_scheme = int_conf.get(_KEY_SCHEME)
                 self.int_resources = int_conf.get(_KEY_RESOURCES)
 
-            ext_conf = self._validate_conn_config(config, _KEY_EXT)
+            ext_conf = self._validate_conn_config(comm_config, _KEY_EXT)
             if ext_conf:
                 self.ext_scheme = ext_conf.get(_KEY_SCHEME)
                 self.ext_resources = ext_conf.get(_KEY_RESOURCES)
