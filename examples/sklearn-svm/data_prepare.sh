@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-DATASET_PATH="${PWD}/dataset/sklearn_breast_cancer.csv"
+DATASET_PATH="/tmp/nvflare/dataset/sklearn_breast_cancer.csv"
 
 python3 utils/prepare_data.py \
 --dataset_name cancer \

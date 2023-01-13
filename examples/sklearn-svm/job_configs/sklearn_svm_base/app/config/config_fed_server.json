@@ -18,8 +18,15 @@
       "args": {}
     },
     {
-      "id": "aggregator",
-      "path": "sklearn_svm_model_aggregator.SKLearnSVMModelAggregator",
+      "id": "collector",
+      "path": "app_common.aggregators.collector.Collector",
+      "args": {
+        "assembler_id" : "svm_aggregator"
+      }
+    },
+    {
+      "id": "svm_aggregator",
+      "path": "svm_aggregator.SVMAggregator",
       "args": {}
     }
   ],
@@ -32,7 +39,7 @@
         "num_rounds": 2,
         "start_round": 0,
         "wait_time_after_min_received": 0,
-        "aggregator_id": "aggregator",
+        "aggregator_id": "collector",
         "persistor_id": "persistor",
         "shareable_generator_id": "shareable_generator",
         "train_task_name": "train",
