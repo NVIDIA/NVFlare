@@ -12,7 +12,8 @@ Federated ML experiment tracking presents unique challenges.
 * Tracking server load challenges: with many clients sending logging to the same ML tracking server, depending on the number of the iterations (usually in thousands or 10s of thousands) and rate of metrics logs, we could potentially have very high traffic to the ML tracking server.
 * Code re-usability: if we develop the code for Tensorboard, but now like to switch to MLFLow, can we do it without having to rewrite the logging statements?
 
-We can approach the federated experiment tracking with two approaches
+Assuming the Federated System is consists of one server and many clients, the server coordinate the ML training of clients. 
+We can interact with ML experiment tracking tools in two different ways: 
 
 * Client-side experiment tracking
   * Each client will directly send the log metrics/parameters to the ML experiment tracking server or local file system
