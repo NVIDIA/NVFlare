@@ -126,4 +126,3 @@ class UdsDriver(SocketDriver):
             socket_path = "/" + socket_path
 
         return socket_path
-
