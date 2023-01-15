@@ -6,7 +6,7 @@
       "tasks": ["train"],
       "executor": {
         "id": "Executor",
-        "path": "app_opt.sklearn.svm.svm_executor.SVMExecutor",
+        "path": "app_opt.sklearn.skexecutor.SKExecutor",
         "args": {
           "learner_id": "svm_learner"
         }

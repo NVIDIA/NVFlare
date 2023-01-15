@@ -57,7 +57,8 @@ class SVMLearner(SKLearner):
         index = svm.support_
         local_support_x = x_train[index]
         local_support_y = y_train[index]
-        return {"model": (local_support_x, local_support_y, svm)}
+        params = {"support_x": local_support_x, "support_y": local_support_y}
+        return params, svm
 
     def evaluate(self, curr_round: int, global_param: Optional[dict] = None) -> dict:
         # local validation with global center

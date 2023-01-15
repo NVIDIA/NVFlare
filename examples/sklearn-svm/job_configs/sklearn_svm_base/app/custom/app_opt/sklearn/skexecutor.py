@@ -26,7 +26,7 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.security.logging import secure_format_exception
 
 
-class SVMExecutor(Executor):
+class SKExecutor(Executor):
     def __init__(self, learner_id: str):
         super().__init__()
         self.client_id = None
@@ -60,13 +60,11 @@ class SVMExecutor(Executor):
 
     def train(self, current_round, global_param) -> Shareable:
         self._msg_log(f"Client {self.client_id} perform local train")
-
-        model = self.learner.train(current_round, global_param)
-        (local_support_x, local_support_y, svm) = model["model"]
-        params = {"support_x": local_support_x, "support_y": local_support_y}
-
-        self.save_model_local(svm)
-
+        # get the proper parameters to be shared
+        # and the local model
+        params, model = self.learner.train(current_round, global_param)
+        # save model and return dxo containing the params
+        self.save_model_local(model)
         dxo = DXO(data_kind=DataKind.WEIGHTS, data=params)
         self._msg_log("Local epochs finished. Returning shareable")
 
