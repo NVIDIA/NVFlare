@@ -34,6 +34,7 @@ class SVMLearner(SKLearner):
         super().__init__(data_path, train_start, train_end, valid_start, valid_end)
         self.train_data = None
         self.valid_data = None
+        self.n_samples = None
 
     def initialize(self, fl_ctx: FLContext):
         self.fl_ctx = fl_ctx
@@ -41,6 +42,9 @@ class SVMLearner(SKLearner):
         data = self.load_data()
         self.train_data = data["train"]
         self.valid_data = data["valid"]
+        # train data size, to be used for setting
+        # NUM_STEPS_CURRENT_ROUND for potential use in aggregation
+        self.n_samples = data["train"][-1]
 
     def get_parameters(self, global_param: Optional[dict] = None) -> dict:
         if global_param:

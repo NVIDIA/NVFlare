@@ -15,7 +15,7 @@ import os.path
 
 import joblib
 import tensorboard
-from nvflare.apis.dxo import DXO, DataKind, from_shareable
+from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
@@ -66,6 +66,7 @@ class SKExecutor(Executor):
         # save model and return dxo containing the params
         self.save_model_local(model)
         dxo = DXO(data_kind=DataKind.WEIGHTS, data=params)
+        dxo.set_meta_prop(MetaKey.NUM_STEPS_CURRENT_ROUND, self.learner.n_samples)
         self._msg_log("Local epochs finished. Returning shareable")
 
         return dxo.to_shareable()
@@ -78,13 +79,8 @@ class SKExecutor(Executor):
 
         self.save_model_global(svm)
 
-        dxo = DXO(data_kind=DataKind.WEIGHTS, data=global_param)
-        # result = DXO(data_kind=DataKind.METRICS, data=metrics)
-
         for key, value in metrics.items():
             self.log_value(key, value, current_round)
-
-        return dxo.to_shareable()
 
     def finalize(self, fl_ctx: FLContext):
         self.learner.finalize()
@@ -105,10 +101,9 @@ class SKExecutor(Executor):
                 (current_round, global_params) = self.get_global_params(
                     shareable, fl_ctx
                 )
-                if not global_params:
-                    return self.train(current_round, global_params)
-                else:
-                    return self.evaluate(current_round, global_params)
+                if global_params:
+                    self.evaluate(current_round, global_params)
+                return self.train(current_round, global_params)
             else:
                 self.log_error(fl_ctx, f"Could not handle task: {task_name}")
                 return make_reply(ReturnCode.TASK_UNKNOWN)
