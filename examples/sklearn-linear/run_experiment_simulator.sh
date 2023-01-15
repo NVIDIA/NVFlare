@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-
-n=5 #20
-for study in uniform #exponential square 
+task_name="sklearn_linear"
+n=5
+for study in uniform
 do
-    nvflare simulator job_configs/sklearn_linear_${n}_${study} -w ${PWD}/workspaces/workspace_${n}_${study} -n ${n} -t ${n}
+    nvflare simulator job_configs/${task_name}_${n}_${study} -w ${PWD}/workspaces/${task_name}_${n}_${study} -n ${n} -t ${n}
 done

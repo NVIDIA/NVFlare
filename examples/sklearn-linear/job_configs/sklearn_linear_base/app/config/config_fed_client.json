@@ -1,27 +1,36 @@
 {
   "format_version": 2,
+
   "executors": [
     {
-      "tasks": [
-        "train"
-      ],
+      "tasks": ["train"],
       "executor": {
         "id": "Executor",
-        "path": "sklearn_linear_csv_executor.FedSKLearnLinearCSVExecutor",
+        "path": "app_opt.sklearn.skexecutor.SKExecutor",
         "args": {
-          "data_split_filename": "data_split.json",
-          "local_model_path": "model.joblib",
-          "global_model_path": "model_global.joblib",
-          "learning_rate": "constant",
-          "eta0": 1e-4,
-          "loss": "log",
-          "penalty": "l2",
-          "fit_intercept": 1
+          "learner_id": "linear_learner"
         }
       }
     }
   ],
   "task_result_filters": [],
   "task_data_filters": [],
-  "components": []
+  "components": [
+    {
+      "id": "linear_learner",
+      "path": "linear_learner.LinearLearner",
+      "args": {
+        "data_path": "/tmp/nvflare/sklearn/dataset/linear_dataset.csv",
+        "train_start": 0,
+        "train_end": 0,
+        "valid_start": 0,
+        "valid_end": 0,
+        "learning_rate": "constant",
+        "eta0": 1e-4,
+        "loss": "log",
+        "penalty": "l2",
+        "fit_intercept": 1
+      }
+    }
+  ]
 }
