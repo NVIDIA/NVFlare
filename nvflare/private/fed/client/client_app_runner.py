@@ -14,6 +14,7 @@
 
 import os
 import sys
+import time
 
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.workspace import Workspace
@@ -33,6 +34,7 @@ class ClientAppRunner:
 
     def start_run(self, app_root, args, config_folder, federated_client, secure_train):
         client_runner = self.create_client_runner(app_root, args, config_folder, federated_client, secure_train)
+        federated_client.set_client_runner(client_runner)
         federated_client.status = ClientStatus.STARTED
         client_runner.run(app_root, args)
 
@@ -89,9 +91,14 @@ class ClientAppRunner:
         )
 
     def start_command_agent(self, args, client_runner, federated_client, fl_ctx):
+        while federated_client.cell is None:
+            time.sleep(0.1)
+
         # Start the command agent
-        self.command_agent = CommandAgent(federated_client, int(args.listen_port), client_runner)
+        # self.command_agent = CommandAgent(federated_client, int(args.listen_port), client_runner)
+        self.command_agent = CommandAgent(federated_client, client_runner)
         self.command_agent.start(fl_ctx)
+        client_runner.command_agent = self.command_agent
 
     def close(self):
         if self.command_agent:

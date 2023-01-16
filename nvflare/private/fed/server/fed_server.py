@@ -372,21 +372,24 @@ class FederatedServer(BaseServer):
         #         if conn.poll(0.1):
         assert isinstance(request, Message), "request must be CellMessage but got {}".format(
             type(request))
-        req = request.payload
+        # req = request.payload
+        #
+        # # assert isinstance(req, Message), "request payload must be Message but got {}".format(type(req))
+        # # topic = req.topic
+        #
+        # msg = fobs.loads(req)
 
-        # assert isinstance(req, Message), "request payload must be Message but got {}".format(type(req))
-        # topic = req.topic
-
-        msg = fobs.loads(req)
-
-        job_id = msg.get("job_id")
-        command = msg.get(ServerCommandKey.COMMAND)
-        data = msg.get(ServerCommandKey.DATA)
+        job_id = request.get_header(CellMessageHeaderKeys.JOB_ID)
+        command = request.get_header(MessageHeaderKey.TOPIC)
+        data = fobs.loads(request.payload)
 
         if command == ServerCommandNames.GET_CLIENTS:
-            clients = self.engine.run_processes.get(job_id).get(RunProcessKey.PARTICIPANTS)
-            job_id = self.engine.run_processes.get(job_id).get(RunProcessKey.JOB_ID)
-            return_data = {ServerCommandKey.CLIENTS: clients, ServerCommandKey.JOB_ID: job_id}
+            if job_id in self.engine.run_processes:
+                clients = self.engine.run_processes.get(job_id).get(RunProcessKey.PARTICIPANTS)
+                # job_id = self.engine.run_processes.get(job_id).get(RunProcessKey.JOB_ID)
+                return_data = {ServerCommandKey.CLIENTS: clients, ServerCommandKey.JOB_ID: job_id}
+            else:
+                return_data = {ServerCommandKey.CLIENTS: None, ServerCommandKey.JOB_ID: job_id}
 
             # conn.send(return_data)
             return make_cellnet_reply(F3ReturnCode.OK, "", fobs.dumps(return_data))
@@ -841,14 +844,16 @@ class FederatedServer(BaseServer):
                 #     }
                 #     command_conn.send(msg)
 
-                data = {ServerCommandKey.COMMAND: ServerCommandNames.HANDLE_DEAD_JOB, ServerCommandKey.DATA: Shareable()}
+                # data = {ServerCommandKey.COMMAND: ServerCommandNames.HANDLE_DEAD_JOB, ServerCommandKey.DATA: Shareable()}
+                shareable = Shareable()
+                shareable.set_header(ServerCommandKey.FL_CLIENT, client.name)
                 fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
-                request = new_cell_message({}, fobs.dumps(data))
+                request = new_cell_message({}, fobs.dumps(shareable))
                 return_data = self.cell.fire_and_forget(
-                    target=fqcn,
+                    targets=fqcn,
                     channel=CellChannel.SERVER_COMMAND,
                     topic=ServerCommandNames.HANDLE_DEAD_JOB,
-                    request=request
+                    message=request
                 )
 
         except BaseException:

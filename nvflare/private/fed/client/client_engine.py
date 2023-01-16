@@ -67,7 +67,7 @@ class ClientEngine(ClientEngineInternalSpec):
         self.args = args
         self.rank = rank
         self.client.process = None
-        self.client_executor = ProcessExecutor(os.path.join(args.workspace, "startup"))
+        self.client_executor = ProcessExecutor(client, os.path.join(args.workspace, "startup"))
         self.admin_agent = None
 
         self.fl_ctx_mgr = FLContextManager(

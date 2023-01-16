@@ -22,6 +22,16 @@ from google.protobuf.struct_pb2 import Struct
 
 import nvflare.private.fed.protos.federated_pb2 as fed_msg
 import nvflare.private.fed.protos.federated_pb2_grpc as fed_service
+from nvflare.apis.fl_constant import (
+    AdminCommandNames,
+    FLContextKey,
+    MachineStatus,
+    ReservedKey,
+    ServerCommandKey,
+    ServerCommandNames,
+)
+from nvflare.fuel.utils import fobs
+from nvflare.apis.shareable import Shareable
 from nvflare.apis.filter import Filter
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
@@ -256,40 +266,66 @@ class Communicator:
             A CurrentTask message from server
 
         """
-        task, retry = None, self.retry
-        with self.set_up_channel(servers[project_name]) as channel:
-            stub = fed_service.FederatedTrainingStub(channel)
-            while retry > 0:
-                try:
-                    start_time = time.time()
-                    task = stub.GetTask(_get_client_state(project_name, token, ssid, fl_ctx))
-                    # Clear the stopping flag
-                    # if the connection to server recovered.
-                    self.should_stop = False
+        # task, retry = None, self.retry
+        # with self.set_up_channel(servers[project_name]) as channel:
+        #     stub = fed_service.FederatedTrainingStub(channel)
+        #     while retry > 0:
+        #         try:
+        #             start_time = time.time()
+        #             task = stub.GetTask(_get_client_state(project_name, token, ssid, fl_ctx))
+        #             # Clear the stopping flag
+        #             # if the connection to server recovered.
+        #             self.should_stop = False
+        #
+        #             end_time = time.time()
+        #
+        #             if task.task_name == SpecialTaskName.TRY_AGAIN:
+        #                 self.logger.debug(
+        #                     f"Received from {project_name} server "
+        #                     f" ({task.ByteSize()} Bytes). getTask time: {end_time - start_time} seconds"
+        #                 )
+        #             else:
+        #                 self.logger.info(
+        #                     f"Received from {project_name} server "
+        #                     f" ({task.ByteSize()} Bytes). getTask time: {end_time - start_time} seconds"
+        #                 )
+        #             return task
+        #         except grpc.RpcError as grpc_error:
+        #             self.grpc_error_handler(servers[project_name], grpc_error, "getTask", verbose=self.verbose)
+        #             excep = FLCommunicationError(grpc_error, "grpc_error:getTask")
+        #             retry -= 1
+        #             time.sleep(5)
+        #     if self.should_stop:
+        #         raise excep
 
-                    end_time = time.time()
+        start_time = time.time()
+        shareable = Shareable()
+        shared_fl_ctx = FLContext()
+        shared_fl_ctx.set_public_props(fl_ctx.get_all_public_props())
+        shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_ctx)
+        task_message = new_cell_message({CellMessageHeaderKeys.TOKEN: token,
+                                          CellMessageHeaderKeys.SSID: ssid,
+                                          CellMessageHeaderKeys.PROJECT_NAME: project_name},
+                                         fobs.dumps(shareable))
+        job_id = str(shared_fl_ctx.get_prop(FLContextKey.CURRENT_RUN))
 
-                    if task.task_name == SpecialTaskName.TRY_AGAIN:
-                        self.logger.debug(
-                            f"Received from {project_name} server "
-                            f" ({task.ByteSize()} Bytes). getTask time: {end_time - start_time} seconds"
-                        )
-                    else:
-                        self.logger.info(
-                            f"Received from {project_name} server "
-                            f" ({task.ByteSize()} Bytes). getTask time: {end_time - start_time} seconds"
-                        )
-                    return task
-                except grpc.RpcError as grpc_error:
-                    self.grpc_error_handler(servers[project_name], grpc_error, "getTask", verbose=self.verbose)
-                    excep = FLCommunicationError(grpc_error, "grpc_error:getTask")
-                    retry -= 1
-                    time.sleep(5)
-            if self.should_stop:
-                raise excep
+        fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
+        result = self.cell.send_request(
+            target=fqcn,
+            channel=CellChannel.SERVER_COMMAND,
+            topic=ServerCommandNames.GET_TASK,
+            request=task_message
+        )
+        end_time = time.time()
+        return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
+        task = result
 
-        # Failed to get global, return None
-        return None
+        self.logger.info(
+            f"Received from {project_name} server "
+            f" ({task.ByteSize()} Bytes). getTask time: {end_time - start_time} seconds"
+        )
+
+        return task
 
     def submitUpdate(
         self, servers, project_name, token, ssid, fl_ctx: FLContext, client_name, shareable, execute_task_name

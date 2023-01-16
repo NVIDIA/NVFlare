@@ -66,8 +66,9 @@ def main():
     parser.add_argument("--ssid", "-d", type=str, help="ssid", required=True)
     parser.add_argument("--job_id", "-n", type=str, help="job_id", required=True)
     parser.add_argument("--client_name", "-c", type=str, help="client name", required=True)
-    parser.add_argument("--listen_port", "-p", type=str, help="listen port", required=True)
+    # parser.add_argument("--listen_port", "-p", type=str, help="listen port", required=True)
     parser.add_argument("--sp_target", "-g", type=str, help="Sp target", required=True)
+    parser.add_argument("--parent_url", "-p", type=str, help="parent_url", required=True)
 
     parser.add_argument(
         "--fed_client", "-s", type=str, help="an aggregation server specification json file", required=True
@@ -138,7 +139,8 @@ def main():
         logger.info("Worker_process started.")
 
         deployer = conf.base_deployer
-        federated_client = deployer.create_fed_client(args, args.sp_target)
+        # federated_client = deployer.create_fed_client(args, args.sp_target)
+        federated_client = deployer.create_fed_client(args)
         federated_client.status = ClientStatus.STARTING
 
         federated_client.token = args.token

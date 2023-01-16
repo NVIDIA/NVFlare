@@ -94,11 +94,14 @@ class FederatedClient(FederatedClientBase):
         return pull_success, task_name, remote_tasks
 
     def extract_shareable(self, responses, fl_ctx: FLContext):
-        shareable = Shareable()
-        peer_context = FLContext()
-        for item in responses:
-            shareable = shareable.from_bytes(proto_to_bytes(item.data.params["data"]))
-            peer_context = fobs.loads(proto_to_bytes(item.data.params["fl_context"]))
+        # shareable = Shareable()
+        # peer_context = FLContext()
+        # for item in responses:
+        #     shareable = shareable.from_bytes(proto_to_bytes(item.data.params["data"]))
+        #     peer_context = fobs.loads(proto_to_bytes(item.data.params["fl_context"]))
+
+        shareable = responses.payload
+        peer_context = responses.payload.get("fl_context")
 
         fl_ctx.set_peer_context(peer_context)
         shareable.set_peer_props(peer_context.get_all_public_props())

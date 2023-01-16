@@ -72,7 +72,7 @@ class ServerAppRunner:
             server.stop_training()
 
     def sync_up_parents_process(self, args, server):
-        server.engine.create_parent_connection(int(args.conn))
+        # server.engine.create_parent_connection(int(args.conn))
         server.engine.sync_clients_from_main_process()
 
     def update_job_run_status(self, server):

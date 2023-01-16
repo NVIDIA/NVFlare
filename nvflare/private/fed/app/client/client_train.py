@@ -56,6 +56,7 @@ def main():
     args.env = os.path.join("config", AppFolderConstants.CONFIG_ENV)
     args.train_config = os.path.join("config", AppFolderConstants.CONFIG_TRAIN)
     args.log_config = None
+    args.job_id = None
 
     workspace = Workspace(root_dir=args.workspace)
 
@@ -105,8 +106,11 @@ def main():
         federated_client.use_gpu = False
         federated_client.config_folder = config_folder
 
-        if rank == 0:
-            federated_client.register()
+        # if rank == 0:
+        while federated_client.cell is None:
+            time.sleep(0.1)
+
+        federated_client.register()
 
         if not federated_client.token:
             print("The client could not register to server. ")

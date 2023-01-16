@@ -139,6 +139,7 @@ class CellChannel:
     TASK = "task"
     SERVER_COMMAND = "server_command"
     SERVER_PARENT_LISTENER = "server_parent_listener"
+    CLIENT_COMMAND = "client_command"
 
 
 class CellChannelTopic:
@@ -161,6 +162,7 @@ class CellMessageHeaderKeys:
     TOKEN = "token"
     SSID = "ssid"
     UNAUTHENTICATED = "unauthenticated"
+    JOB_ID = "job_id"
     JOB_IDS = "job_ids"
     MESSAGE = "message"
     ABORT_JOBS = "abort_jobs"

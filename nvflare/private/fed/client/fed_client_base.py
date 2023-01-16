@@ -33,14 +33,17 @@ from nvflare.security.logging import secure_format_exception
 
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 
 from .client_status import ClientStatus
 from .communicator import Communicator
 
 
 def _check_progress(remote_tasks):
-    if remote_tasks[0] is not None:
-        return True, remote_tasks[0].task_name
+    # if remote_tasks[0] is not None:
+    #     return True, remote_tasks[0].task_name
+    if remote_tasks.get_header("task") is not None:
+        return True, remote_tasks.get_header("task")
     else:
         return False, None
 
@@ -88,6 +91,7 @@ class FederatedClientBase:
         self.servers = server_args
         self.cell = cell
         self.net_agent = None
+        self.args = args
 
         self.communicator = Communicator(
             ssl_args=client_args,
@@ -107,6 +111,7 @@ class FederatedClientBase:
         self.platform = None
         self.abort_signal = Signal()
         self.engine = None
+        self.client_runner = None
 
         self.status = ClientStatus.NOT_STARTED
         self.remote_tasks = None
@@ -157,10 +162,15 @@ class FederatedClientBase:
                 self.servers[project_name]["target"] = location
                 self.sp_established = True
 
-                parent_url = None
+                if self.args.job_id:
+                    fqcn = FQCN.join([self.client_name, self.args.job_id])
+                    parent_url = self.args.parent_url
+                else:
+                    fqcn = self.client_name
+                    parent_url = None
                 credentials = {}
                 self.cell = Cell(
-                    fqcn=self.client_name,
+                    fqcn=fqcn,
                     root_url=location,
                     secure=self.secure_train,
                     credentials=credentials,
@@ -171,8 +181,11 @@ class FederatedClientBase:
                 self.cell.start()
                 self.communicator.cell = self.cell
                 self.net_agent = NetAgent(self.cell)
-                if self.engine:
-                    self.engine.admin_agent.register_cell_cb()
+                if self.args.job_id:
+                    self.client_runner.command_agent.register_cell_cb()
+                else:
+                    if self.engine:
+                        self.engine.admin_agent.register_cell_cb()
 
                 self.logger.info(f"Got the new primary SP: {location}")
 
@@ -400,6 +413,9 @@ class FederatedClientBase:
 
     def set_client_engine(self, engine):
         self.engine = engine
+
+    def set_client_runner(self, client_runner):
+        self.client_runner = client_runner
 
     def close(self):
         """Quit the remote federated server, close the local session."""

@@ -15,15 +15,18 @@
 import logging
 import threading
 
+from nvflare.fuel.utils import fobs
 from nvflare.apis.fl_context import FLContext
 from nvflare.security.logging import secure_format_exception
+from nvflare.private.defs import RequestHeader, CellChannel, new_cell_message
+from nvflare.fuel.f3.cellnet.cell import Cell, CellAgent, Message as CellMessage, MessageHeaderKey, ReturnCode, make_reply as make_cellnet_reply
 
 from ..utils.fed_utils import listen_command
 from .admin_commands import AdminCommands
 
 
 class CommandAgent(object):
-    def __init__(self, federated_client, listen_port, client_runner) -> None:
+    def __init__(self, federated_client, client_runner) -> None:
         """To init the CommandAgent.
 
         Args:
@@ -32,7 +35,7 @@ class CommandAgent(object):
             client_runner: ClientRunner object
         """
         self.federated_client = federated_client
-        self.listen_port = int(listen_port)
+        # self.listen_port = int(listen_port)
         self.client_runner = client_runner
         self.thread = None
         self.asked_to_stop = False
@@ -41,33 +44,63 @@ class CommandAgent(object):
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def start(self, fl_ctx: FLContext):
-        engine = fl_ctx.get_engine()
-        self.thread = threading.Thread(
-            target=listen_command, args=[self.listen_port, engine, self.execute_command, self.logger]
-        )
-        self.thread.start()
+        self.engine = fl_ctx.get_engine()
+        # self.thread = threading.Thread(
+        #     target=listen_command, args=[self.listen_port, engine, self.execute_command, self.logger]
+        # )
+        # self.thread.start()
 
-    def execute_command(self, conn, engine):
-        while not self.asked_to_stop:
-            try:
-                if conn.poll(1.0):
-                    msg = conn.recv()
-                    command_name = msg.get("command")
-                    data = msg.get("data")
-                    command = AdminCommands.get_command(command_name)
-                    if command:
-                        with engine.new_context() as new_fl_ctx:
-                            reply = command.process(data=data, fl_ctx=new_fl_ctx)
-                            if reply:
-                                conn.send(reply)
-            except EOFError:
-                self.logger.info("listener communication terminated.")
-                break
-            except Exception as e:
-                self.logger.error(f"Process communication error: {self.listen_port}: {secure_format_exception(e)}.")
+        self.register_cell_cb()
+
+    def register_cell_cb(self):
+        self.federated_client.cell.register_request_cb(
+            channel=CellChannel.CLIENT_COMMAND,
+            topic="*",
+            cb=self.execute_command,
+        )
+
+    def execute_command(self, request: CellMessage) -> CellMessage:
+        # while not self.asked_to_stop:
+        #     try:
+        #         if conn.poll(1.0):
+        #             msg = conn.recv()
+        #             command_name = msg.get("command")
+        #             data = msg.get("data")
+        #             command = AdminCommands.get_command(command_name)
+        #             if command:
+        #                 with engine.new_context() as new_fl_ctx:
+        #                     reply = command.process(data=data, fl_ctx=new_fl_ctx)
+        #                     if reply:
+        #                         conn.send(reply)
+        #     except EOFError:
+        #         self.logger.info("listener communication terminated.")
+        #         break
+        #     except Exception as e:
+        #         self.logger.error(f"Process communication error: {self.listen_port}: {secure_format_exception(e)}.")
+
+        assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
+        req = request.payload
+
+        # assert isinstance(req, Message), "request payload must be Message but got {}".format(type(req))
+        # topic = req.topic
+
+        msg = fobs.loads(req)
+        command_name = msg.get("command")
+        data = msg.get("data")
+        command = AdminCommands.get_command(command_name)
+        if command:
+            with self.engine.new_context() as new_fl_ctx:
+                reply = command.process(data=data, fl_ctx=new_fl_ctx)
+                if reply is not None:
+                    return_message = new_cell_message({}, fobs.dumps(reply))
+                    return_message.set_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
+                else:
+                    return_message = new_cell_message({}, None)
+                return return_message
+        return make_cellnet_reply(ReturnCode.INVALID_REQUEST, "", None)
 
     def shutdown(self):
         self.asked_to_stop = True
 
-        if self.thread and self.thread.is_alive():
-            self.thread.join()
+        # if self.thread and self.thread.is_alive():
+        #     self.thread.join()

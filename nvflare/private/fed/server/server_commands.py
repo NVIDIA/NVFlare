@@ -33,6 +33,7 @@ from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.fuel.utils import fobs
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.widgets.widget import WidgetID
+from nvflare.private.fed.utils.fed_utils import make_context_data
 
 NO_OP_REPLY = "__no_op_reply"
 
@@ -147,13 +148,23 @@ class GetTaskCommand(CommandProcessor):
             shareable.set_header(TaskConstant.WAIT_TIME, 1.0)
         else:
             taskname, task_id, shareable = server_runner.process_task_request(client, fl_ctx)
-        data = {
-            ServerCommandKey.TASK_NAME: taskname,
-            ServerCommandKey.TASK_ID: task_id,
-            ServerCommandKey.SHAREABLE: shareable,
-            ServerCommandKey.FL_CONTEXT: copy.deepcopy(get_serializable_data(fl_ctx).props),
-        }
-        return fobs.dumps(data)
+        # data = {
+        #     ServerCommandKey.TASK_NAME: taskname,
+        #     ServerCommandKey.TASK_ID: task_id,
+        #     ServerCommandKey.SHAREABLE: shareable,
+        #     ServerCommandKey.FL_CONTEXT: copy.deepcopy(get_serializable_data(fl_ctx).props),
+        # }
+
+        # we need TASK_ID back as a cookie
+        shareable.add_cookie(name=FLContextKey.TASK_ID, data=task_id)
+
+        # we also need to make TASK_ID available to the client
+        shareable.set_header(key=FLContextKey.TASK_ID, value=task_id)
+
+        shareable.set_header(key=FLContextKey.PEER_CONTEXT, value=make_context_data(fl_ctx))
+
+        # return fobs.dumps(data)
+        return fobs.dumps(shareable)
 
 
 class SubmitUpdateCommand(CommandProcessor):
@@ -317,6 +328,30 @@ class ByeCommand(CommandProcessor):
         return None
 
 
+class HeartbeatCommand(CommandProcessor):
+    """To implement the ShutdownCommand."""
+
+    def get_command_name(self) -> str:
+        """To get the command name.
+
+        Returns: AdminCommandNames.SHUTDOWN
+
+        """
+        return ServerCommandNames.HEARTBEAT
+
+    def process(self, data: Shareable, fl_ctx: FLContext):
+        """Called to process the Shutdown command.
+
+        Args:
+            data: process data
+            fl_ctx: FLContext
+
+        Returns: Shutdown command message
+
+        """
+        return None
+
+
 class ServerCommands(object):
     """AdminCommands contains all the commands for processing the commands from the parent process."""
 
@@ -330,6 +365,7 @@ class ServerCommands(object):
         AuxCommunicateCommand(),
         ShowStatsCommand(),
         GetErrorsCommand(),
+        HeartbeatCommand()
     ]
 
     @staticmethod

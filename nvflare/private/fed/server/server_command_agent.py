@@ -20,7 +20,7 @@ from nvflare.fuel.utils import fobs
 from nvflare.private.fed.utils.fed_utils import listen_command
 from nvflare.security.logging import secure_format_exception
 from nvflare.fuel.f3.cellnet.cell import Cell, CellAgent, Message as CellMessage, MessageHeaderKey, ReturnCode
-from nvflare.private.defs import RequestHeader, CellChannel, new_cell_message
+from nvflare.private.defs import RequestHeader, CellChannel, new_cell_message, CellMessageHeaderKeys
 from nvflare.private.admin_defs import Message, error_reply, ok_reply
 
 from .server_commands import ServerCommands
@@ -80,10 +80,17 @@ class ServerCommandAgent(object):
         # assert isinstance(req, Message), "request payload must be Message but got {}".format(type(req))
         # topic = req.topic
 
-        msg = fobs.loads(req)
-        command_name = msg.get(ServerCommandKey.COMMAND)
-        data = msg.get(ServerCommandKey.DATA)
+        # msg = fobs.loads(req)
+        command_name = request.get_header(MessageHeaderKey.TOPIC)
+        data = fobs.loads(request.payload)
+
+        token = request.get_header(CellMessageHeaderKeys.TOKEN, None)
+        if token:
+            client = self.engine.server.client_manager.clients.get(token)
+            if client:
+                data.set_header(ServerCommandKey.FL_CLIENT, client)
         command = ServerCommands.get_command(command_name)
+
         if command:
             with self.engine.new_context() as new_fl_ctx:
                 reply = command.process(data=data, fl_ctx=new_fl_ctx)
@@ -91,7 +98,7 @@ class ServerCommandAgent(object):
                     return_message = new_cell_message({}, fobs.dumps(reply))
                     return_message.set_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
                 else:
-                    return_message = new_cell_message({}, None)
+                    return_message = new_cell_message({}, fobs.dumps(None))
                 return return_message
 
     def shutdown(self):

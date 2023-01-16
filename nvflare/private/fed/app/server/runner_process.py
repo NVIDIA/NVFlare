@@ -124,6 +124,7 @@ def main():
 
             cell.start()
             net_agent = NetAgent(cell)
+            server.cell = cell
 
             command_agent = ServerCommandAgent(server.engine, cell)
             command_agent.start()
