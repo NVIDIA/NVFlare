@@ -79,6 +79,7 @@ class DhPSIExecutor(ClientExecutor):
 
     def setup(self, shareable: Shareable):
         items = self.get_items()
+        # note, each interaction with client requires a new client,server keys to be secure.
         self.psi_client = PsiClient(items)
         self.psi_server = PsiServer(items, self.bloom_filter_fpr)
 
