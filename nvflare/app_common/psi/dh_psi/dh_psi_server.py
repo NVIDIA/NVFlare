@@ -48,13 +48,13 @@ class PsiServer:
         Returns:
             setup (ServerSetup): The server setup protobuf serialize string
         """
+        #
+        # setup = self.psi_server.CreateSetupMessage(self.fpr, client_items_size, self.items)
 
-        setup = self.psi_server.CreateSetupMessage(self.fpr, client_items_size, self.items)
-
-        # # version 1.0.3
-        # setup = self.psi_server.CreateSetupMessage(
-        #     self.fpr, client_items_size, self.items, psi.DataStructure.BLOOM_FILTER
-        # )
+        # version >= 1.0.3
+        setup = self.psi_server.CreateSetupMessage(
+            self.fpr, client_items_size, self.items, psi.DataStructure.BLOOM_FILTER
+        )
 
         return setup.SerializeToString()
 

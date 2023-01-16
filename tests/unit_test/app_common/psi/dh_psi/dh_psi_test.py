@@ -13,9 +13,8 @@
 # limitations under the License.
 import pytest
 
-#
-# from nvflare.app_common.psi.dh_psi.dh_psi_client import PsiClient
-# from nvflare.app_common.psi.dh_psi.dh_psi_server import PsiServer
+from nvflare.app_common.psi.dh_psi.dh_psi_client import PsiClient
+from nvflare.app_common.psi.dh_psi.dh_psi_server import PsiServer
 
 
 class TestPSIAlgo:
@@ -112,9 +111,10 @@ class TestPSIAlgo:
         ],
     )
     def test_psi_algo(self, test_input, expected):
-        #  have to comment out the unittests for now until we figure
-        #  out how to enable unit tests for optional requirements
-
+        # have to comment out the unittests for now until we figure
+        # out how to enable unit tests for optional requirements
+        # if you want to run the test, just uncomment the following code
+        #
         # server_items = test_input["server_items"]
         # client_items = test_input["client_items"]
         # client = PsiClient(client_items)
