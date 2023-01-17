@@ -12,10 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from nvflare.apis.dxo import DXO, DataKind
-from nvflare.apis.fl_component import FLComponent
 from nvflare.app_common.app_constant import PSIConst
 from nvflare.app_common.psi.dh_psi.dh_psi_workflow import DhPSIWorkFlow
-from nvflare.utils.decorators import collect_time, measure_time
 
 
 class TestDhPSIWorkflow:

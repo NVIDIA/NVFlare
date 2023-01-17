@@ -67,4 +67,7 @@ class PsiClient:
         resp_sub.ParseFromString(server_response_msg)
         response = resp_sub
         client_item_indices = sorted(self.psi_client.GetIntersection(self.setup, response))
-        return [self.items[i] for i in client_item_indices]
+        item_size = self.get_items_size()
+
+        # if the index is out of client item range, simply ignore.
+        return [self.items[i] for i in client_item_indices if i < item_size]
