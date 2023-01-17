@@ -161,10 +161,11 @@ class GetTaskCommand(CommandProcessor):
         # we also need to make TASK_ID available to the client
         shareable.set_header(key=FLContextKey.TASK_ID, value=task_id)
 
-        shareable.set_header(key=FLContextKey.PEER_CONTEXT, value=make_context_data(fl_ctx))
+        shareable.set_header(key=ServerCommandKey.TASK_NAME, value=taskname)
+        shareable.set_header(key=FLContextKey.PEER_CONTEXT, value=copy.deepcopy(get_serializable_data(fl_ctx).props))
 
         # return fobs.dumps(data)
-        return fobs.dumps(shareable)
+        return shareable
 
 
 class SubmitUpdateCommand(CommandProcessor):

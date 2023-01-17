@@ -14,6 +14,7 @@
 
 import logging
 import socket
+import sys
 import time
 from typing import List, Optional
 
@@ -322,7 +323,7 @@ class Communicator:
 
         self.logger.info(
             f"Received from {project_name} server "
-            f" ({task.ByteSize()} Bytes). getTask time: {end_time - start_time} seconds"
+            f" ({sys.getsizeof(task) } Bytes). getTask time: {end_time - start_time} seconds"
         )
 
         return task

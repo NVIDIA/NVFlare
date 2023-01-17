@@ -21,7 +21,7 @@ from typing import List, Optional
 
 from nvflare.apis.filter import Filter
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, ServerCommandKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.overseer_spec import SP
@@ -30,6 +30,7 @@ from nvflare.apis.signal import Signal
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import EngineConstant
 from nvflare.security.logging import secure_format_exception
+from nvflare.fuel.utils import fobs
 
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
@@ -42,10 +43,11 @@ from .communicator import Communicator
 def _check_progress(remote_tasks):
     # if remote_tasks[0] is not None:
     #     return True, remote_tasks[0].task_name
-    if remote_tasks.get_header("task") is not None:
-        return True, remote_tasks.get_header("task")
+    if remote_tasks[0] is not None:
+        shareable = fobs.loads(remote_tasks[0].payload)
+        return True, shareable.get_header(ServerCommandKey.TASK_NAME), shareable
     else:
-        return False, None
+        return False, None, None
 
 
 class FederatedClientBase:
@@ -332,9 +334,9 @@ class FederatedClientBase:
         try:
             pool = ThreadPool(len(self.servers))
             self.remote_tasks = pool.map(partial(self.fetch_execute_task, fl_ctx=fl_ctx), tuple(self.servers))
-            pull_success, task_name = _check_progress(self.remote_tasks)
+            pull_success, task_name, shareable = _check_progress(self.remote_tasks)
             # TODO: if some of the servers failed
-            return pull_success, task_name, self.remote_tasks
+            return pull_success, task_name, shareable
         finally:
             if pool:
                 pool.terminate()
