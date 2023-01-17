@@ -13,8 +13,8 @@
 # limitations under the License.
 import pytest
 
-from nvflare.app_common.psi.dh_psi.dh_psi_client import PsiClient
-from nvflare.app_common.psi.dh_psi.dh_psi_server import PsiServer
+# from nvflare.app_common.psi.dh_psi.dh_psi_client import PsiClient
+# from nvflare.app_common.psi.dh_psi.dh_psi_server import PsiServer
 
 
 class TestPSIAlgo:
