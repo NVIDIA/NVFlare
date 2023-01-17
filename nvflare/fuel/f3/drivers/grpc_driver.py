@@ -45,12 +45,15 @@ class StreamConnection(Connection):
 
     seq_num = 0
 
-    def __init__(self, oq: QQ, connector: Connector, peer_address, side: str):
+    def __init__(self, oq: QQ, connector: Connector, peer_address, side: str, context=None, channel=None):
         super().__init__(connector)
         self.side = side
         self.oq = oq
         self.closing = False
         self.peer_address = peer_address
+        self.context = context    # for server side
+        self.channel = channel    # for client side
+        self.lock = threading.Lock()
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def get_conn_properties(self) -> dict:
@@ -64,7 +67,14 @@ class StreamConnection(Connection):
 
     def close(self):
         self.closing = True
-        self.oq.close()
+        with self.lock:
+            self.oq.close()
+            if self.context:
+                self.context.abort(grpc.StatusCode.CANCELLED, "service closed")
+                self.context = None
+            if self.channel:
+                self.channel.close()
+                self.channel = None
 
     def send_frame(self, frame: Union[bytes, bytearray, memoryview]):
         try:
@@ -119,7 +129,7 @@ class Servicer(StreamerServicer):
         ct = threading.current_thread()
         try:
             self.logger.debug(f"SERVER started Stream CB in thread {ct.name}")
-            connection = StreamConnection(oq, self.server.connector, context.peer(), "SERVER")
+            connection = StreamConnection(oq, self.server.connector, context.peer(), "SERVER", context=context)
             self.logger.debug(f"SERVER created connection in thread {ct.name}")
             self.server.driver.add_connection(connection)
             self.logger.debug(f"SERVER created read_loop thread in thread {ct.name}")
@@ -207,15 +217,18 @@ class GrpcDriver(SocketDriver):
         port = params.get(DriverParams.PORT.value)
         address = f"{host}:{port}"
 
-        with grpc.insecure_channel(address, options=self.options) as channel:
-            stub = StreamerStub(channel)
-            oq = QQ()
-            connection = StreamConnection(oq, connector, address, "CLIENT")
-            self.add_connection(connection)
+        channel = grpc.insecure_channel(address, options=self.options)
+        stub = StreamerStub(channel)
+        oq = QQ()
+        connection = StreamConnection(oq, connector, address, "CLIENT", channel=channel)
+        self.add_connection(connection)
+        try:
             received = stub.Stream(connection.generate_output())
             connection.read_loop(received, oq)
-            connection.close()
-            self.logger.debug("CLIENT: finished connection")
+        except BaseException as ex:
+            self.logger.info(f"CLIENT: connection done: {type(ex)}")
+        connection.close()
+        self.logger.debug("CLIENT: finished connection")
 
     @staticmethod
     def get_urls(scheme: str, resources: dict) -> (str, str):
