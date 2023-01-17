@@ -196,5 +196,12 @@ class ServerEngineSpec(ABC):
 
     @abstractmethod
     def get_client_name_from_token(self, token: str) -> str:
-        """Gets client name from a client login token."""
+        """Gets the client name from client login token.
+
+        Args:
+            token: client login token
+
+        Returns:
+            Client name
+        """
         pass
