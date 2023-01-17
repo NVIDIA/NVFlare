@@ -26,6 +26,7 @@ from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.fed_event import ClientFedEventRunner
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
+from nvflare.fuel.utils import fobs
 
 from .client_aux_runner import ClientAuxRunner
 from .client_engine_executor_spec import ClientEngineExecutorSpec, TaskAssignment
@@ -101,10 +102,10 @@ class ClientRunManager(ClientEngineExecutorSpec):
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def get_task_assignment(self, fl_ctx: FLContext) -> TaskAssignment:
-        pull_success, task_name, shareable = self.client.fetch_task(fl_ctx)
+        pull_success, task_name, return_shareable = self.client.fetch_task(fl_ctx)
         task = None
         if pull_success:
-            # shareable = self.client.extract_shareable(return_shareable, fl_ctx)
+            shareable = self.client.extract_shareable(return_shareable, fl_ctx)
             task_id = shareable.get_header(key=FLContextKey.TASK_ID)
             task = TaskAssignment(name=task_name, task_id=task_id, data=shareable)
         return task
@@ -113,11 +114,10 @@ class ClientRunManager(ClientEngineExecutorSpec):
         return self.fl_ctx_mgr.new_context()
 
     def send_task_result(self, result: Shareable, fl_ctx: FLContext) -> bool:
-        try:
-            self.client.push_results(result, fl_ctx)  # push task execution results
+        push_result = self.client.push_results(result, fl_ctx)  # push task execution results
+        if push_result[0] == ReturnCode.OK:
             return True
-        except BaseException as e:
-            self.logger.error(f"send_task_result exception: {secure_format_exception(e)}.")
+        else:
             return False
 
     def get_workspace(self) -> Workspace:
@@ -156,9 +156,10 @@ class ClientRunManager(ClientEngineExecutorSpec):
         return self.conf.build_component(config_dict)
 
     def aux_send(self, topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> Shareable:
-        reply = self.client.aux_send(topic, request, timeout, fl_ctx)
+        reply = self.client.aux_send(topic, request, timeout, fl_ctx)[0]
         if reply:
-            return self.client.extract_shareable(reply, fl_ctx)
+            shareable = fobs.loads(reply.payload)
+            return self.client.extract_shareable(shareable, fl_ctx)
         else:
             return make_reply(ReturnCode.COMMUNICATION_ERROR)
 

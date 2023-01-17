@@ -258,7 +258,7 @@ class FederatedClientBase:
         try:
             self.logger.info("Starting to push execute result.")
             execute_task_name = fl_ctx.get_prop(FLContextKey.TASK_NAME)
-            message = self.communicator.submitUpdate(
+            return_code = self.communicator.submitUpdate(
                 self.servers,
                 project_name,
                 self.token,
@@ -269,7 +269,7 @@ class FederatedClientBase:
                 execute_task_name,
             )
 
-            return message
+            return return_code
         except FLCommunicationError as e:
             self.logger.info(secure_format_exception(e))
 

@@ -40,6 +40,7 @@ from nvflare.private.defs import SpecialTaskName
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
 from nvflare.private.fed.utils.fed_utils import make_context_data, make_shareable_data, shareable_to_modeldata
 from nvflare.security.logging import secure_format_exception
+from nvflare.apis.utils.fl_context_utils import get_serializable_data
 
 from nvflare.fuel.f3.cellnet.cell import Cell, Message, FQCN
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
@@ -302,7 +303,7 @@ class Communicator:
         start_time = time.time()
         shareable = Shareable()
         shared_fl_ctx = FLContext()
-        shared_fl_ctx.set_public_props(fl_ctx.get_all_public_props())
+        shared_fl_ctx.set_public_props(get_serializable_data(fl_ctx).get_all_public_props())
         shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_ctx)
         task_message = new_cell_message({CellMessageHeaderKeys.TOKEN: token,
                                           CellMessageHeaderKeys.SSID: ssid,
@@ -323,7 +324,7 @@ class Communicator:
 
         self.logger.info(
             f"Received from {project_name} server "
-            f" ({sys.getsizeof(task) } Bytes). getTask time: {end_time - start_time} seconds"
+            f" ({len(task.payload) } Bytes). getTask time: {end_time - start_time} seconds"
         )
 
         return task
@@ -346,37 +347,64 @@ class Communicator:
         Returns:
             A FederatedSummary message from the server.
         """
-        client_state = _get_client_state(project_name, token, ssid, fl_ctx)
-        client_state.client_name = client_name
-        contrib = _get_communication_data(shareable, client_state, fl_ctx, execute_task_name)
+        # client_state = _get_client_state(project_name, token, ssid, fl_ctx)
+        # client_state.client_name = client_name
+        # contrib = _get_communication_data(shareable, client_state, fl_ctx, execute_task_name)
+        #
+        # server_msg, retry = None, self.retry
+        # with self.set_up_channel(servers[project_name]) as channel:
+        #     stub = fed_service.FederatedTrainingStub(channel)
+        #     while retry > 0:
+        #         try:
+        #             start_time = time.time()
+        #             self.logger.info(f"Send submitUpdate to {project_name} server")
+        #             server_msg = stub.SubmitUpdate(contrib)
+        #             # Clear the stopping flag
+        #             # if the connection to server recovered.
+        #             self.should_stop = False
+        #
+        #             end_time = time.time()
+        #             self.logger.info(
+        #                 f"Received comments: {server_msg.meta.project.name} {server_msg.comment}."
+        #                 f" SubmitUpdate time: {end_time - start_time} seconds"
+        #             )
+        #             break
+        #         except grpc.RpcError as grpc_error:
+        #             if isinstance(grpc_error, grpc.Call):
+        #                 if grpc_error.details().startswith("Contrib"):
+        #                     self.logger.info(f"submitUpdate failed: {grpc_error.details()}")
+        #                     break  # outdated contribution, no need to retry
+        #             self.grpc_error_handler(servers[project_name], grpc_error, "submitUpdate", verbose=self.verbose)
+        #             retry -= 1
+        #             time.sleep(5)
+        # return server_msg
 
-        server_msg, retry = None, self.retry
-        with self.set_up_channel(servers[project_name]) as channel:
-            stub = fed_service.FederatedTrainingStub(channel)
-            while retry > 0:
-                try:
-                    start_time = time.time()
-                    self.logger.info(f"Send submitUpdate to {project_name} server")
-                    server_msg = stub.SubmitUpdate(contrib)
-                    # Clear the stopping flag
-                    # if the connection to server recovered.
-                    self.should_stop = False
+        start_time = time.time()
+        shared_fl_ctx = FLContext()
+        shared_fl_ctx.set_public_props(get_serializable_data(fl_ctx).get_all_public_props())
+        shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_ctx)
 
-                    end_time = time.time()
-                    self.logger.info(
-                        f"Received comments: {server_msg.meta.project.name} {server_msg.comment}."
-                        f" SubmitUpdate time: {end_time - start_time} seconds"
-                    )
-                    break
-                except grpc.RpcError as grpc_error:
-                    if isinstance(grpc_error, grpc.Call):
-                        if grpc_error.details().startswith("Contrib"):
-                            self.logger.info(f"submitUpdate failed: {grpc_error.details()}")
-                            break  # outdated contribution, no need to retry
-                    self.grpc_error_handler(servers[project_name], grpc_error, "submitUpdate", verbose=self.verbose)
-                    retry -= 1
-                    time.sleep(5)
-        return server_msg
+        # shareable.add_cookie(name=FLContextKey.TASK_ID, data=task_id)
+        shareable.set_header(FLContextKey.TASK_NAME, execute_task_name)
+
+        task_message = new_cell_message({CellMessageHeaderKeys.TOKEN: token,
+                                          CellMessageHeaderKeys.SSID: ssid,
+                                          CellMessageHeaderKeys.PROJECT_NAME: project_name},
+                                         fobs.dumps(shareable))
+        job_id = str(shared_fl_ctx.get_prop(FLContextKey.CURRENT_RUN))
+
+        fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
+        result = self.cell.send_request(
+            target=fqcn,
+            channel=CellChannel.SERVER_COMMAND,
+            topic=ServerCommandNames.SUBMIT_UPDATE,
+            request=task_message
+        )
+        end_time = time.time()
+        return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
+        self.logger.info(f" SubmitUpdate time: {end_time - start_time} seconds")
+
+        return return_code
 
     def auxCommunicate(
         self, servers, project_name, token, ssid, fl_ctx: FLContext, client_name, shareable, topic, timeout
@@ -398,34 +426,61 @@ class Communicator:
             An AuxReply message from server
 
         """
-        client_state = _get_client_state(project_name, token, ssid, fl_ctx)
-        client_state.client_name = client_name
+        # client_state = _get_client_state(project_name, token, ssid, fl_ctx)
+        # client_state.client_name = client_name
+        #
+        # aux_message = fed_msg.AuxMessage()
+        # # set client auth. data
+        # aux_message.client.CopyFrom(client_state)
+        #
+        # # shareable.set_header("Topic", topic)
+        # aux_message.data["data"].CopyFrom(make_shareable_data(shareable))
+        # aux_message.data["fl_context"].CopyFrom(make_context_data(fl_ctx))
+        #
+        # server_msg, retry = None, self.retry
+        # with self.set_up_channel(servers[project_name]) as channel:
+        #     stub = fed_service.FederatedTrainingStub(channel)
+        #     while retry > 0:
+        #         try:
+        #             self.logger.debug(f"Send AuxMessage to {project_name} server")
+        #             server_msg = stub.AuxCommunicate(aux_message, timeout=timeout)
+        #             # Clear the stopping flag
+        #             # if the connection to server recovered.
+        #             self.should_stop = False
+        #
+        #             break
+        #         except grpc.RpcError as grpc_error:
+        #             self.grpc_error_handler(servers[project_name], grpc_error, "AuxCommunicate", verbose=self.verbose)
+        #             retry -= 1
+        #             time.sleep(5)
+        # return server_msg
 
-        aux_message = fed_msg.AuxMessage()
-        # set client auth. data
-        aux_message.client.CopyFrom(client_state)
+        start_time = time.time()
+        shared_fl_ctx = FLContext()
+        shared_fl_ctx.set_public_props(get_serializable_data(fl_ctx).get_all_public_props())
+        shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_ctx)
 
-        # shareable.set_header("Topic", topic)
-        aux_message.data["data"].CopyFrom(make_shareable_data(shareable))
-        aux_message.data["fl_context"].CopyFrom(make_context_data(fl_ctx))
+        # shareable.add_cookie(name=FLContextKey.TASK_ID, data=task_id)
+        shareable.set_header(ServerCommandKey.TOPIC, topic)
 
-        server_msg, retry = None, self.retry
-        with self.set_up_channel(servers[project_name]) as channel:
-            stub = fed_service.FederatedTrainingStub(channel)
-            while retry > 0:
-                try:
-                    self.logger.debug(f"Send AuxMessage to {project_name} server")
-                    server_msg = stub.AuxCommunicate(aux_message, timeout=timeout)
-                    # Clear the stopping flag
-                    # if the connection to server recovered.
-                    self.should_stop = False
+        task_message = new_cell_message({CellMessageHeaderKeys.TOKEN: token,
+                                          CellMessageHeaderKeys.SSID: ssid,
+                                          CellMessageHeaderKeys.PROJECT_NAME: project_name},
+                                         fobs.dumps(shareable))
+        job_id = str(shared_fl_ctx.get_prop(FLContextKey.CURRENT_RUN))
 
-                    break
-                except grpc.RpcError as grpc_error:
-                    self.grpc_error_handler(servers[project_name], grpc_error, "AuxCommunicate", verbose=self.verbose)
-                    retry -= 1
-                    time.sleep(5)
-        return server_msg
+        fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
+        result = self.cell.send_request(
+            target=fqcn,
+            channel=CellChannel.SERVER_COMMAND,
+            topic=ServerCommandNames.AUX_COMMUNICATE,
+            request=task_message
+        )
+        end_time = time.time()
+        return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
+        self.logger.debug(f"Send AuxMessage to server. time: {end_time - start_time} seconds")
+
+        return result
 
     def quit_remote(self, servers, task_name, token, ssid, fl_ctx: FLContext):
         """Sending the last message to the server before leaving.

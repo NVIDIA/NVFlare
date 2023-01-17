@@ -162,7 +162,9 @@ class GetTaskCommand(CommandProcessor):
         shareable.set_header(key=FLContextKey.TASK_ID, value=task_id)
 
         shareable.set_header(key=ServerCommandKey.TASK_NAME, value=taskname)
-        shareable.set_header(key=FLContextKey.PEER_CONTEXT, value=copy.deepcopy(get_serializable_data(fl_ctx).props))
+        shared_fl_ctx = FLContext()
+        shared_fl_ctx.set_public_props(copy.deepcopy(get_serializable_data(fl_ctx).get_all_public_props()))
+        shareable.set_header(key=FLContextKey.PEER_CONTEXT, value=shared_fl_ctx)
 
         # return fobs.dumps(data)
         return shareable
@@ -189,14 +191,21 @@ class SubmitUpdateCommand(CommandProcessor):
         Returns:
 
         """
-        shareable = data.get(ReservedKey.SHAREABLE)
-        shared_fl_ctx = data.get(ReservedKey.SHARED_FL_CONTEXT)
-        client = shareable.get_header(ServerCommandKey.FL_CLIENT)
+        # shareable = data.get(ReservedKey.SHAREABLE)
+        # shared_fl_ctx = data.get(ReservedKey.SHARED_FL_CONTEXT)
+        # client = shareable.get_header(ServerCommandKey.FL_CLIENT)
+        # fl_ctx.set_peer_context(shared_fl_ctx)
+        # contribution_task_name = shareable.get_header(ServerCommandKey.TASK_NAME)
+        # task_id = shareable.get_cookie(FLContextKey.TASK_ID)
+        # server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
+
+        shared_fl_ctx = data.get_header(ServerCommandKey.PEER_FL_CONTEXT)
+        client = data.get_header(ServerCommandKey.FL_CLIENT)
         fl_ctx.set_peer_context(shared_fl_ctx)
-        contribution_task_name = shareable.get_header(ServerCommandKey.TASK_NAME)
-        task_id = shareable.get_cookie(FLContextKey.TASK_ID)
+        contribution_task_name = data.get_header(FLContextKey.TASK_NAME)
+        task_id = data.get_cookie(FLContextKey.TASK_ID)
         server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
-        server_runner.process_submission(client, contribution_task_name, task_id, shareable, fl_ctx)
+        server_runner.process_submission(client, contribution_task_name, task_id, data, fl_ctx)
 
         return None
 
@@ -235,19 +244,28 @@ class AuxCommunicateCommand(CommandProcessor):
         return ServerCommandNames.AUX_COMMUNICATE
 
     def process(self, data: Shareable, fl_ctx: FLContext):
+        # shared_fl_ctx = data.get_header(ServerCommandKey.PEER_FL_CONTEXT)
+        # topic = data.get_header(ServerCommandKey.TOPIC)
+        # shareable = data.get_header(ServerCommandKey.SHAREABLE)
+        # fl_ctx.set_peer_context(shared_fl_ctx)
+
         shared_fl_ctx = data.get_header(ServerCommandKey.PEER_FL_CONTEXT)
         topic = data.get_header(ServerCommandKey.TOPIC)
-        shareable = data.get_header(ServerCommandKey.SHAREABLE)
         fl_ctx.set_peer_context(shared_fl_ctx)
 
         engine = fl_ctx.get_engine()
-        reply = engine.dispatch(topic=topic, request=shareable, fl_ctx=fl_ctx)
+        reply = engine.dispatch(topic=topic, request=data, fl_ctx=fl_ctx)
 
-        data = {
-            ServerCommandKey.AUX_REPLY: reply,
-            ServerCommandKey.FL_CONTEXT: copy.deepcopy(get_serializable_data(fl_ctx).props),
-        }
-        return data
+        # data = {
+        #     ServerCommandKey.AUX_REPLY: reply,
+        #     ServerCommandKey.FL_CONTEXT: copy.deepcopy(get_serializable_data(fl_ctx).props),
+        # }
+
+        shared_fl_ctx = FLContext()
+        shared_fl_ctx.set_public_props(copy.deepcopy(get_serializable_data(fl_ctx).get_all_public_props()))
+        reply.set_header(key=FLContextKey.PEER_CONTEXT, value=shared_fl_ctx)
+
+        return reply
 
 
 class ShowStatsCommand(CommandProcessor):
