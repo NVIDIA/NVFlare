@@ -33,6 +33,7 @@ from .client_engine_executor_spec import ClientEngineExecutorSpec, TaskAssignmen
 from .client_json_config import ClientJsonConfigurator
 from .client_runner import ClientRunner
 from .fed_client import FederatedClient
+from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 
 
 class ClientRunInfo(object):
@@ -115,7 +116,7 @@ class ClientRunManager(ClientEngineExecutorSpec):
 
     def send_task_result(self, result: Shareable, fl_ctx: FLContext) -> bool:
         push_result = self.client.push_results(result, fl_ctx)  # push task execution results
-        if push_result[0] == ReturnCode.OK:
+        if push_result[0] == CellReturnCode.OK:
             return True
         else:
             return False

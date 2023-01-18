@@ -44,7 +44,8 @@ def _check_progress(remote_tasks):
     # if remote_tasks[0] is not None:
     #     return True, remote_tasks[0].task_name
     if remote_tasks[0] is not None:
-        shareable = fobs.loads(remote_tasks[0].payload)
+        # shareable = fobs.loads(remote_tasks[0].payload)
+        shareable = remote_tasks[0].payload
         return True, shareable.get_header(ServerCommandKey.TASK_NAME), shareable
     else:
         return False, None, None

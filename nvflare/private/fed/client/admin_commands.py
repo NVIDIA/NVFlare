@@ -20,7 +20,8 @@ from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.private.fed.client.client_status import get_status_message
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import WidgetID
-
+from nvflare.fuel.utils import fobs
+from nvflare.private.defs import RequestHeader, Message
 
 class CommandProcessor(object):
     """The CommandProcessor is responsible for processing a command from parent process."""
@@ -233,7 +234,7 @@ class AuxCommand(CommandProcessor):
         """
         return AdminCommandNames.AUX_COMMAND
 
-    def process(self, data: Shareable, fl_ctx: FLContext):
+    def process(self, data: Message, fl_ctx: FLContext):
         """Called to process the Aux communication command.
 
         Args:
@@ -245,8 +246,9 @@ class AuxCommand(CommandProcessor):
         """
         engine = fl_ctx.get_engine()
 
-        topic = data.get_header(ReservedHeaderKey.TOPIC)
-        return engine.dispatch(topic=topic, request=data, fl_ctx=fl_ctx)
+        topic = data.get_header(RequestHeader.TOPIC)
+        shareable = fobs.loads(data.body)
+        return engine.dispatch(topic=topic, request=shareable, fl_ctx=fl_ctx)
 
 
 class ByeCommand(CommandProcessor):

@@ -662,11 +662,14 @@ class ServerEngine(ServerEngineInternalSpec):
 
         message = Message(topic=ReservedTopic.AUX_COMMAND, body=fobs.dumps(request))
         message.set_header(RequestHeader.JOB_ID, str(fl_ctx.get_prop(FLContextKey.CURRENT_RUN)))
+        message.set_header(RequestHeader.TOPIC, topic)
         requests = {}
         for n in targets:
             requests.update({n: message})
 
-        replies = self.server.admin_server.send_requests(requests, timeout_secs=timeout)
+        job_id = fl_ctx.get_job_id()
+        # replies = self.server.admin_server.send_requests(requests, timeout_secs=timeout)
+        replies = self._send_requests(requests, job_id, timeout_secs=timeout)
         results = {}
         for r in replies:
             client_name = self.get_client_name_from_token(r.client_token)
@@ -677,7 +680,7 @@ class ServerEngine(ServerEngineInternalSpec):
                         self.logger.error(f"Aux message send error: {error_code} from client: {client_name}")
                         shareable = make_reply(ReturnCode.ERROR)
                     else:
-                        shareable = fobs.loads(r.reply.body)
+                        shareable = r.reply
                     results[client_name] = shareable
                 except BaseException as e:
                     results[client_name] = make_reply(ReturnCode.COMMUNICATION_ERROR)
@@ -689,6 +692,62 @@ class ServerEngine(ServerEngineInternalSpec):
                 results[client_name] = None
 
         return results
+
+    def _send_requests(self, requests: dict, job_id, timeout_secs=2.0) -> [ClientReply]:
+
+        if not isinstance(requests, dict):
+            raise TypeError("requests must be a dict but got {}".format(type(requests)))
+
+        if len(requests) == 0:
+            return []
+
+        target_msgs = {}
+        name_to_token = {}
+        name_to_req = {}
+        # for token, req in requests.items():
+        #     client = self.client_manager.clients.get(token)
+        #     if not client:
+        #         continue
+        #
+        #     target_msgs[client.name] = TargetMessage(
+        #         target=client.name,
+        #         channel=CellChannel.ADMIN,
+        #         topic="admin",
+        #         message=new_cell_message({}, req)
+        #     )
+        #
+        #     name_to_token[client.name] = token
+        #     name_to_req[client.name] = req
+        #
+        # if not target_msgs:
+        #     return []
+
+        targets = []
+        for token, req in requests.items():
+            client = self.client_manager.clients.get(token)
+            if not client:
+                continue
+            fqcn = FQCN.join([client.name, job_id])
+            targets.append(fqcn)
+            name_to_token[fqcn] = token
+            name_to_req[fqcn] = req
+
+        result = []
+        replies = self.server.cell.broadcast_request(
+            targets=targets,
+            channel=CellChannel.CLIENT_COMMAND,
+            topic=AdminCommandNames.AUX_COMMAND,
+            request=new_cell_message({}, fobs.dumps(req))
+
+        )
+        for name, reply in replies.items():
+            assert isinstance(reply, CellMessage)
+            result.append(ClientReply(
+                client_token=name_to_token[name],
+                req=name_to_req[name],
+                reply=fobs.loads(reply.payload)))
+        return result
+
 
     def send_command_to_child_runner_process(self, job_id: str, command_name: str, command_data, return_result=True):
         result = None

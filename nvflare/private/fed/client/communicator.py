@@ -312,20 +312,25 @@ class Communicator:
         job_id = str(shared_fl_ctx.get_prop(FLContextKey.CURRENT_RUN))
 
         fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
-        result = self.cell.send_request(
+        task = self.cell.send_request(
             target=fqcn,
             channel=CellChannel.SERVER_COMMAND,
             topic=ServerCommandNames.GET_TASK,
             request=task_message
         )
         end_time = time.time()
-        return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
-        task = result
+        return_code = task.get_header(MessageHeaderKey.RETURN_CODE)
 
-        self.logger.info(
-            f"Received from {project_name} server "
-            f" ({len(task.payload) } Bytes). getTask time: {end_time - start_time} seconds"
-        )
+        if return_code == ReturnCode.OK:
+            size = len(task.payload)
+            task.payload = fobs.loads(task.payload)
+            task_name = task.payload.get_header(ServerCommandKey.TASK_NAME)
+            self.logger.info(
+                f"Received from {project_name} server "
+                f" ({size} Bytes). getTask: {task_name} time: {end_time - start_time} seconds"
+            )
+        else:
+            task = None
 
         return task
 

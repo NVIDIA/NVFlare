@@ -84,9 +84,12 @@ class CommandAgent(object):
         # assert isinstance(req, Message), "request payload must be Message but got {}".format(type(req))
         # topic = req.topic
 
-        msg = fobs.loads(req)
-        command_name = msg.get("command")
-        data = msg.get("data")
+        command_name = request.get_header(MessageHeaderKey.TOPIC)
+        data = fobs.loads(request.payload)
+
+        # msg = fobs.loads(req)
+        # command_name = msg.get("command")
+        # data = msg.get("data")
         command = AdminCommands.get_command(command_name)
         if command:
             with self.engine.new_context() as new_fl_ctx:
