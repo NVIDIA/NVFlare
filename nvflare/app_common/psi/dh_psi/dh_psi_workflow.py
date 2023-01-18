@@ -216,7 +216,6 @@ class DhPSIWorkFlow(PSIWorkflow):
 
     def parallel_forward_pass(self, target_sites, processed: dict):
         self.log_info(self.fl_ctx, f"target_sites: {target_sites}")
-
         total_sites = len(target_sites)
         if total_sites < 2:
             final_site = target_sites[0]
