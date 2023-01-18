@@ -23,7 +23,6 @@ from nvflare.apis.controller_spec import ClientTask, ControllerSpec, SendOrder, 
 from nvflare.apis.fl_constant import FLContextKey, ReservedTopic
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.responder import Responder
-from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.security.logging import secure_format_exception
@@ -65,6 +64,13 @@ def _check_inputs(task: Task, fl_ctx: FLContext, targets: Union[List[Client], Li
                 )
 
 
+def _get_client_task(target, task: Task):
+    for ct in task.client_tasks:
+        if target == ct.client.name:
+            return ct
+    return None
+
+
 class Controller(Responder, ControllerSpec, ABC):
     def __init__(self, task_check_period=0.5):
         """Manage life cycles of tasks and their destinations.
@@ -72,7 +78,7 @@ class Controller(Responder, ControllerSpec, ABC):
         Args:
             task_check_period (float, optional): interval for checking status of tasks. Defaults to 0.5.
         """
-        Responder.__init__(self)
+        super().__init__()
         self._engine = None
         self._tasks = []  # list of standing tasks
         self._client_task_map = {}  # client_task_id => client_task
@@ -91,10 +97,11 @@ class Controller(Responder, ControllerSpec, ABC):
         Args:
             fl_ctx (FLContext): FLContext information
         """
-        self._engine = fl_ctx.get_engine()
-        if not self._engine:
+        engine = fl_ctx.get_engine()
+        if not engine:
             self.system_panic(f"Engine not found. {self.__class__.__name__} exiting.", fl_ctx)
             return
+        self._engine = engine
         self.start_controller(fl_ctx)
         self._task_monitor.start()
 
@@ -146,7 +153,7 @@ class Controller(Responder, ControllerSpec, ABC):
             TypeError: when any standing task containing an invalid client_task
 
         Returns:
-            Tuple[str, str, Shareable]: task_name, an id for the client_task, and the data for this requst
+            Tuple[str, str, Shareable]: task_name, an id for the client_task, and the data for this request
         """
         if not isinstance(client, Client):
             raise TypeError("client must be an instance of Client, but got {}".format(type(client)))
@@ -409,8 +416,7 @@ class Controller(Responder, ControllerSpec, ABC):
         # task.targets = targets
         target_names = list()
         if targets is None:
-            engine = fl_ctx.get_engine()
-            for client in engine.get_clients():
+            for client in self._engine.get_clients():
                 target_names.append(client.name)
         else:
             if not isinstance(targets, list):
@@ -428,7 +434,7 @@ class Controller(Responder, ControllerSpec, ABC):
         task.targets = target_names
 
         task.props[_TASK_KEY_MANAGER] = manager
-        task.props[_TASK_KEY_ENGINE] = fl_ctx.get_engine()
+        task.props[_TASK_KEY_ENGINE] = self._engine
         task.is_standing = True
         task.schedule_time = time.time()
 
@@ -617,7 +623,7 @@ class Controller(Responder, ControllerSpec, ABC):
 
         Change the task completion_status, which will inform task monitor to clean up this task
         NOTE: we only mark the task as completed and leave it to the task monitor to clean up
-        This is to avoid potential dead lock of task_lock
+        This is to avoid potential deadlock of task_lock
 
         Args:
             task (Task): the task to be cancelled
@@ -648,9 +654,7 @@ class Controller(Responder, ControllerSpec, ABC):
         self._end_task([task.name], fl_ctx)
 
     def _end_task(self, task_names, fl_ctx: FLContext):
-        engine = fl_ctx.get_engine()
-        if not isinstance(engine, ServerEngineSpec):
-            raise TypeError("engine should be an instance of ServerEngineSpec, but got {}".format(type(engine)))
+        engine = self._engine
         request = Shareable()
         request["task_names"] = task_names
         engine.send_aux_request(targets=None, topic=ReservedTopic.ABORT_ASK, request=request, timeout=0, fl_ctx=fl_ctx)
@@ -799,12 +803,10 @@ class Controller(Responder, ControllerSpec, ABC):
         self.wait_for_task(task, abort_signal)
 
     def _monitor_tasks(self):
-        clients_all_dead = False
         while not self._all_done:
-            if not clients_all_dead and not self._check_dead_clients():
+            clients_all_dead = self._check_dead_clients()
+            if not clients_all_dead:
                 self._check_tasks()
-            else:
-                clients_all_dead = True
             time.sleep(self._task_check_period)
 
     def _check_tasks(self):
@@ -885,7 +887,7 @@ class Controller(Responder, ControllerSpec, ABC):
 
         with self._dead_clients_lock:
             for target in task.targets:
-                ct = self._get_client_task(target, task)
+                ct = _get_client_task(target, task)
                 if ct is not None and ct.result_received_time:
                     # response has been received
                     continue
@@ -922,16 +924,9 @@ class Controller(Responder, ControllerSpec, ABC):
                 break
             time.sleep(self._task_check_period)
 
-    def _get_client_task(self, target, task: Task):
-        for ct in task.client_tasks:
-            if target == ct.client.name:
-                return ct
-        return None
-
     def _check_dead_clients(self):
         if self._engine:
             clients = self._engine.get_clients()
-            # now = time.time()
             with self._dead_clients_lock:
                 for client in clients:
                     if self._client_still_alive(client.name):
