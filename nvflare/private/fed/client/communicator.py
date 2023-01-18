@@ -325,12 +325,15 @@ class Communicator:
             size = len(task.payload)
             task.payload = fobs.loads(task.payload)
             task_name = task.payload.get_header(ServerCommandKey.TASK_NAME)
+            if task_name == SpecialTaskName.TRY_AGAIN:
+                time.sleep(5)
             self.logger.info(
                 f"Received from {project_name} server "
                 f" ({size} Bytes). getTask: {task_name} time: {end_time - start_time} seconds"
             )
         else:
             task = None
+            time.sleep(5)
 
         return task
 

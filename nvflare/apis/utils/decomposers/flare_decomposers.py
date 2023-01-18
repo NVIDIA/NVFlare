@@ -64,6 +64,8 @@ def register():
     if register.registered:
         return
 
+    from nvflare.private.fed.server.run_manager import RunInfo
+
     fobs.register(DictDecomposer(Shareable))
 
     fobs.register_data_classes(
@@ -72,7 +74,8 @@ def register():
         RunSnapshot,
         Signal,
         Namespace,
-        Message
+        Message,
+        RunInfo
     )
 
     fobs.register_folder(os.path.dirname(__file__), __package__)

@@ -58,14 +58,14 @@ class InfoCollectorCommandModule(JobCommandModule, CommandUtil):
                     authz_func=self.authorize_info_collection,
                     visible=True,
                 ),
-                CommandSpec(
-                    name=AdminCommandNames.RESET_ERRORS,
-                    description="reset errors",
-                    usage="reset_errors",
-                    handler_func=self.reset_errors,
-                    authz_func=self.command_authz_required,
-                    visible=True,
-                ),
+                # CommandSpec(
+                #     name=AdminCommandNames.RESET_ERRORS,
+                #     description="reset errors",
+                #     usage="reset_errors",
+                #     handler_func=self.reset_errors,
+                #     authz_func=self.command_authz_required,
+                #     visible=True,
+                # ),
             ],
         )
 
