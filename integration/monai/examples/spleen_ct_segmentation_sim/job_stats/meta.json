@@ -1,7 +1,7 @@
 {
-  "name": "spleen-bundle",
+  "name": "spleen-bundle-stats",
   "resource_spec": {},
-  "min_clients" : 1,
+  "min_clients" : 2,
   "deploy_map": {
     "app": [
       "@ALL"
