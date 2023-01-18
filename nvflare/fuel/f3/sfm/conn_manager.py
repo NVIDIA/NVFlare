@@ -32,7 +32,7 @@ from nvflare.fuel.f3.sfm.constants import Types, HandshakeKeys
 from nvflare.fuel.f3.sfm.sfm_conn import SfmConnection
 from nvflare.fuel.f3.sfm.sfm_endpoint import SfmEndpoint
 
-THREAD_POOL_SIZE = 16
+THREAD_POOL_SIZE = 50
 MAX_WAIT = 60
 
 log = logging.getLogger(__name__)

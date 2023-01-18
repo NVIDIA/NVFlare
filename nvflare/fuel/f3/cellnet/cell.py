@@ -524,7 +524,8 @@ class Cell(MessageReceiver, EndpointMonitor):
         if create_internal_listener:
             self._create_internal_listener()
 
-        if self.my_info.gen == 2:
+        # if self.my_info.gen == 2:
+        if self.my_info.gen == 1:
             # we only connect to server root for gen2 child (the job cell)
             self._create_bb_external_connector()
 
@@ -657,6 +658,9 @@ class Cell(MessageReceiver, EndpointMonitor):
 
     def _create_external_listener(self, url: str):
         adhoc = len(url) == 0
+        if adhoc and not self.connector_manager.ext_allow_adhoc:
+            return None
+
         with self.ext_listener_lock:
             if url:
                 listener = self.ext_listeners.get(url)

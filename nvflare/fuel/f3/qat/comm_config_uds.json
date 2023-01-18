@@ -7,7 +7,7 @@
   },
   "external": {
     "scheme": "uds",
-    "allow_adhoc": true,
+    "allow_adhoc": false,
     "resources": {
       "host": "localhost"
     }

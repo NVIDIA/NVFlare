@@ -1,5 +1,5 @@
 {
-  "root_url": ["grpc://localhost:8001", "http://localhost:8002"],
+  "root_url": ["aio://localhost:8001"],
   "admin": {
     "host": "localhost",
     "port": "8003"
