@@ -113,8 +113,12 @@ def assign_data_index_to_sites(
     }
     for site in range(num_sites):
         site_id = site_name_prefix + str(site + 1)
-        idx_start = valid_size + sum(site_sizes[:site])
-        idx_end = valid_size + sum(site_sizes[: site + 1])
+        if valid_fraction < 1.0:
+            idx_start = valid_size + sum(site_sizes[:site])
+            idx_end = valid_size + sum(site_sizes[: site + 1])
+        else:
+            idx_start = sum(site_sizes[:site])
+            idx_end = sum(site_sizes[: site + 1])
         split_data_indices[site_id] = {"start": idx_start, "end": idx_end}
 
     return split_data_indices

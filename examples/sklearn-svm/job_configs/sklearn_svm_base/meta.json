@@ -2,6 +2,8 @@
   "name": "sklearn_svm",
   "resource_spec": {},
   "deploy_map": {
-    "app": ["@ALL"]
+    "app": [
+      "@ALL"
+    ]
   }
 }

@@ -24,26 +24,38 @@ from sklearn.svm import SVC
 class SVMAggregator(Assembler):
     def __init__(self):
         super().__init__(data_kind=DataKind.WEIGHTS)
+        # Record the global support vectors
+        # so that only 1 round of training is performed
+        self.support_x = None
+        self.support_y = None
 
     def get_model_params(self, data: dict):
         return {"support_x": data["support_x"], "support_y": data["support_y"]}
 
     def aggregate(self, current_round: int, data: Dict[str, dict]) -> dict:
-        # Fist round, collect all support vectors and
-        # perform one round of SVM to produce global model
-        support_x = []
-        support_y = []
-        for client in self.accumulator:
-            client_model = self.accumulator[client]
-            support_x.append(client_model["support_x"])
-            support_y.append(client_model["support_y"])
-        global_x = np.concatenate(support_x)
-        global_y = np.concatenate(support_y)
-        svm_global = SVC(kernel="rbf")
-        svm_global.fit(global_x, global_y)
+        if current_round == 0:
+            # Fist round, collect all support vectors and
+            # perform one round of SVM to produce global model
+            support_x = []
+            support_y = []
+            for client in self.accumulator:
+                client_model = self.accumulator[client]
+                support_x.append(client_model["support_x"])
+                support_y.append(client_model["support_y"])
+            global_x = np.concatenate(support_x)
+            global_y = np.concatenate(support_y)
+            svm_global = SVC(kernel="rbf")
+            svm_global.fit(global_x, global_y)
 
-        index = svm_global.support_
-        support_x = global_x[index]
-        support_y = global_y[index]
+            index = svm_global.support_
+            self.support_x = global_x[index]
+            self.support_y = global_y[index]
+        # The following round directly returns the retained record
+        # No further training
+        params = {"support_x": self.support_x, "support_y": self.support_y}
+        return params
 
-        return {"support_x": support_x, "support_y": support_y}
+    def reset(self) -> None:
+        # Reset accumulator for next round,
+        # # but not the center and count, which will be used as the starting point of the next round
+        self.accumulator = {}

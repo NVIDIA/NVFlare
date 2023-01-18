@@ -1,4 +1,4 @@
-from typing import Dict, Optional
+from typing import Optional
 
 from app_common.aggregators.assembler import Assembler
 from nvflare.apis.dxo import DXO, from_shareable
@@ -18,16 +18,12 @@ class Collector(Aggregator):
 
     def __init__(self, assembler_id: str):
         super().__init__()
-        self.accumulator: Optional[Dict] = None
         self.assembler_id = assembler_id
         self.assembler: Optional[Assembler] = None
 
     def accept(self, shareable: Shareable, fl_ctx: FLContext) -> bool:
         if not self.assembler:
             self.assembler = fl_ctx.get_engine().get_component(self.assembler_id)
-        if not self.accumulator:
-            self.accumulator = self.assembler.get_accumulator()
-
         contributor_name = shareable.get_peer_prop(
             key=ReservedKey.IDENTITY_NAME, default="?"
         )
@@ -35,19 +31,16 @@ class Collector(Aggregator):
         if dxo is None or dxo.data is None:
             self.log_error(fl_ctx, "no data to aggregate")
             return False
-
         data = dxo.data
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
         return self._accept_contribution(contributor_name, current_round, data, fl_ctx)
 
-    def _client_in_accumulator(self, client_name):
-        return client_name in self.accumulator
-
     def _accept_contribution(
         self, contributor: str, current_round: int, data: dict, fl_ctx: FLContext
     ) -> bool:
-        if not self._client_in_accumulator(contributor):
-            self.accumulator[contributor] = self.assembler.get_model_params(data)
+        accumulator = self.assembler.get_accumulator()
+        if contributor not in accumulator:
+            accumulator[contributor] = self.assembler.get_model_params(data)
             accepted = True
         else:
             self.log_info(
@@ -100,16 +93,15 @@ class Collector(Aggregator):
     def aggregate(self, fl_ctx: FLContext) -> Shareable:
         self.log_debug(fl_ctx, "Start aggregation")
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
-        site_num = len(self.accumulator)
+        accumulator = self.assembler.get_accumulator()
+        site_num = len(accumulator)
         self.log_info(
             fl_ctx, f"aggregating {site_num} update(s) at round {current_round}"
         )
 
-        model = self.assembler.aggregate(current_round, self.accumulator)
+        model = self.assembler.aggregate(current_round, accumulator)
         # Reset accumulator for next round,
-        self.accumulator = {}
-
+        self.assembler.reset()
         self.log_debug(fl_ctx, "End aggregation")
-
         dxo = DXO(data_kind=self.assembler.get_expected_data_kind(), data=model)
         return dxo.to_shareable()

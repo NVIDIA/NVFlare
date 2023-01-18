@@ -35,10 +35,11 @@ class SVMLearner(SKLearner):
         self.train_data = None
         self.valid_data = None
         self.n_samples = None
+        self.svm = SVC(kernel="rbf")
+        self.params = {}
 
     def initialize(self, fl_ctx: FLContext):
         self.fl_ctx = fl_ctx
-
         data = self.load_data()
         self.train_data = data["train"]
         self.valid_data = data["valid"]
@@ -46,32 +47,25 @@ class SVMLearner(SKLearner):
         # NUM_STEPS_CURRENT_ROUND for potential use in aggregation
         self.n_samples = data["train"][-1]
 
-    def get_parameters(self, global_param: Optional[dict] = None) -> dict:
-        if global_param:
-            global_support_x = global_param["support_x"]
-            global_support_y = global_param["support_y"]
-            return {"model": (global_support_x, global_support_y)}
-        else:
-            return {}
-
     def train(self, curr_round: int, global_param: Optional[dict] = None) -> dict:
-        svm = SVC(kernel="rbf")
-        (x_train, y_train, train_size) = self.train_data
-        svm.fit(x_train, y_train)
-        index = svm.support_
-        local_support_x = x_train[index]
-        local_support_y = y_train[index]
-        params = {"support_x": local_support_x, "support_y": local_support_y}
-        return params, svm
+        if curr_round == 0:
+            # only perform training on the first round
+            # the following rounds directly returns the retained records
+            (x_train, y_train, train_size) = self.train_data
+            self.svm.fit(x_train, y_train)
+            index = self.svm.support_
+            local_support_x = x_train[index]
+            local_support_y = y_train[index]
+            self.params = {"support_x": local_support_x, "support_y": local_support_y}
+        return self.params, self.svm
 
     def evaluate(self, curr_round: int, global_param: Optional[dict] = None) -> dict:
-        # local validation with global center
+        # local validation with global support vectors
         # fit a standalone SVM with the global support vectors
         svm_global = SVC(kernel="rbf")
-        global_model = self.get_parameters(global_param)
-        metrics = {}
-        if "model" in global_model:
-            (support_x, support_y) = global_model["model"]
+        if global_param:
+            support_x = global_param["support_x"]
+            support_y = global_param["support_y"]
             svm_global.fit(support_x, support_y)
             (x_valid, y_valid, valid_size) = self.valid_data
             y_pred = svm_global.predict(x_valid)

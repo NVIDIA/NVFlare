@@ -48,3 +48,6 @@ class Assembler(FLComponent, ABC):
 
     def aggregate(self, current_round: int, data: Dict[str, dict]) -> dict:
         pass
+
+    def reset(self) -> None:
+        pass
