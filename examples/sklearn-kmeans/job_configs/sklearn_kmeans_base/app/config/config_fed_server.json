@@ -9,7 +9,7 @@
   "components": [
     {
       "id": "persistor",
-      "path": "joblib_model_param_persistor.JoblibModelParamPersistor",
+      "path": "app_opt.sklearn.joblib_model_param_persistor.JoblibModelParamPersistor",
       "args": {}
     },
     {
@@ -18,8 +18,15 @@
       "args": {}
     },
     {
-      "id": "aggregator",
-      "path": "sklearn_kmeans_model_aggregator.SKLearnKMeansModelAggregator",
+      "id": "collector",
+      "path": "app_common.aggregators.collector.Collector",
+      "args": {
+        "assembler_id" : "kmeans_aggregator"
+      }
+    },
+    {
+      "id": "kmeans_aggregator",
+      "path": "kmeans_aggregator.KMeansAggregator",
       "args": {}
     }
   ],
@@ -28,11 +35,11 @@
       "id": "scatter_and_gather",
       "name": "ScatterAndGather",
       "args": {
-        "min_clients": 5,
+        "min_clients": 3,
         "num_rounds": 5,
         "start_round": 0,
         "wait_time_after_min_received": 0,
-        "aggregator_id": "aggregator",
+        "aggregator_id": "collector",
         "persistor_id": "persistor",
         "shareable_generator_id": "shareable_generator",
         "train_task_name": "train",

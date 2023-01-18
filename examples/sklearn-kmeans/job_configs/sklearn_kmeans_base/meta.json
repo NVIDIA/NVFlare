@@ -1,5 +1,5 @@
 {
-  "name": "sklearn_kmeans_clustering",
+  "name": "sklearn_kmeans",
   "resource_spec": {},
   "deploy_map": {
     "app": [

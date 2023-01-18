@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-DATASET_PATH="${PWD}/dataset/sklearn_iris.csv"
+DATASET_PATH="/tmp/nvflare/dataset/sklearn_iris.csv"
 
 python3 utils/prepare_data.py \
 --dataset_name iris \

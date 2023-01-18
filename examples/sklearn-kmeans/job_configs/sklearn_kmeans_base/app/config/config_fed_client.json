@@ -1,23 +1,32 @@
 {
   "format_version": 2,
+
   "executors": [
     {
-      "tasks": [
-        "train"
-      ],
+      "tasks": ["train"],
       "executor": {
         "id": "Executor",
-        "path": "sklearn_kmeans_csv_executor.FedSKLearnKMeansCSVExecutor",
+        "path": "app_opt.sklearn.skexecutor.SKExecutor",
         "args": {
-          "data_split_filename": "data_split.json",
-          "local_model_path": "model.joblib",
-          "global_model_path": "model_global.joblib",
-          "n_clusters": 3
+          "learner_id": "kmeans_learner"
         }
       }
     }
   ],
   "task_result_filters": [],
   "task_data_filters": [],
-  "components": []
+  "components": [
+    {
+      "id": "kmeans_learner",
+      "path": "kmeans_learner.KMeansLearner",
+      "args": {
+        "data_path": "/tmp/nvflare/sklearn/dataset/kmeans_dataset.csv",
+        "train_start": 0,
+        "train_end": 0,
+        "valid_start": 0,
+        "valid_end": 0,
+        "n_clusters": 3
+      }
+    }
+  ]
 }

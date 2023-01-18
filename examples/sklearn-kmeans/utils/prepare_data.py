@@ -14,6 +14,7 @@
 
 import argparse
 import os
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -32,36 +33,60 @@ def sklearn_dataset_args_parser():
     return parser
 
 
-def main():
-    parser = sklearn_dataset_args_parser()
-    args = parser.parse_args()
-    # Load data
-    if args.dataset_name == "iris":
+def load_data(dataset_name: str = "iris"):
+    dataset = None
+    if dataset_name == "iris":
         dataset = datasets.load_iris()
-    elif args.dataset_name == "cancer":
+    elif dataset_name == "cancer":
         dataset = datasets.load_breast_cancer()
     else:
         raise ValueError("Dataset unknown!")
-    X = dataset.data
-    y = dataset.target
+    return dataset
 
-    if args.randomize != 0:
+
+def download_data(
+    output_dir: str,
+    dataset_name: str = "iris",
+    randomize: bool = False,
+    filename: Optional[str] = None,
+    file_format="csv",
+):
+    # Load data
+    dataset = load_data(dataset_name)
+    x = dataset.data
+    y = dataset.target
+    if randomize:
         np.random.seed(0)
         idx_random = np.random.permutation(len(y))
-        X = X[idx_random, :]
+        x = x[idx_random, :]
         y = y[idx_random]
 
-    data = np.column_stack((y, X))
+    data = np.column_stack((y, x))
     df = pd.DataFrame(data=data)
 
     # Check if the target folder exists,
     # If not, create
-    tgt_folder = os.path.dirname(args.out_path)
-    if not os.path.exists(tgt_folder):
-        os.makedirs(tgt_folder)
+
+    if os.path.exists(output_dir) and not os.path.isdir(output_dir):
+        os.rmdir(output_dir)
+    os.makedirs(output_dir, exist_ok=True)
 
     # Save to csv file
-    df.to_csv(args.out_path, sep=",", index=False, header=False)
+    filename = filename if filename else f"{dataset_name}.csv"
+    if file_format == "csv":
+        file_path = f"{output_dir}/{filename}"
+
+        df.to_csv(file_path, sep=",", index=False, header=False)
+    else:
+        raise NotImplementedError
+
+
+def main():
+    parser = sklearn_dataset_args_parser()
+    args = parser.parse_args()
+    output_dir = os.path.dirname(args.out_path)
+    filename = os.path.basename(args.out_path)
+    download_data(output_dir, args.dataset_name, args.randomize, filename)
 
 
 if __name__ == "__main__":

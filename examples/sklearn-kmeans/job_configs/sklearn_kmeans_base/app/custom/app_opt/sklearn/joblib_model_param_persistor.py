@@ -31,8 +31,8 @@ class JoblibModelParamPersistor(ModelPersistor):
     def __init__(self, save_name="model_param.joblib"):
         """
         Persist global model parameters from a dict to a joblib file
-        Note that this contains the necessary information to build a certain model
-        but may not be directly loadable
+        Note that this contains the necessary information to build
+        a certain model but may not be directly loadable
         """
         super().__init__()
         self.save_name = save_name
@@ -84,6 +84,6 @@ class JoblibModelParamPersistor(ModelPersistor):
                 self.logger.info(
                     f"Saving received model to {os.path.abspath(self.save_path)}"
                 )
-                # save 'weights' which is actual model, loadable by xgboost library
+                # save 'weights' which contains model parameters
                 model = model_learnable[ModelLearnableKey.WEIGHTS]
-                dump(model, self.save_path)
+                dump(model, self.save_path, compress=1)
