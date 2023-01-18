@@ -14,60 +14,26 @@
 
 import logging
 import socket
-import sys
 import time
 from typing import List, Optional
 
-import grpc
-from google.protobuf.struct_pb2 import Struct
-
-import nvflare.private.fed.protos.federated_pb2 as fed_msg
-import nvflare.private.fed.protos.federated_pb2_grpc as fed_service
+from nvflare.apis.filter import Filter
 from nvflare.apis.fl_constant import (
-    AdminCommandNames,
     FLContextKey,
-    MachineStatus,
-    ReservedKey,
     ServerCommandKey,
     ServerCommandNames,
 )
-from nvflare.fuel.utils import fobs
-from nvflare.apis.shareable import Shareable
-from nvflare.apis.filter import Filter
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
-from nvflare.private.defs import SpecialTaskName
-from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
-from nvflare.private.fed.utils.fed_utils import make_context_data, make_shareable_data, shareable_to_modeldata
-from nvflare.security.logging import secure_format_exception
+from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
-
-from nvflare.fuel.f3.cellnet.cell import Cell, Message, FQCN
+from nvflare.fuel.f3.cellnet.cell import Cell, FQCN
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
+from nvflare.fuel.utils import fobs
+from nvflare.private.defs import SpecialTaskName
 from nvflare.private.defs import new_cell_message, CellChannel, CellChannelTopic, CellMessageHeaderKeys
-
-
-def _get_client_state(project_name, token, ssid, fl_ctx: FLContext):
-    """Client's metadata used to authenticate and communicate.
-
-    Args:
-        project_name: FL study project name
-        token: client token
-        ssid: service session ID
-        fl_ctx: FLContext
-
-    Returns:
-        A ClientState message
-
-    """
-    state_message = fed_msg.ClientState(token=token, ssid=ssid)
-    state_message.meta.project.name = project_name
-    # state_message.meta.job_id = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
-
-    context_data = make_context_data(fl_ctx)
-    state_message.context["fl_context"].CopyFrom(context_data)
-
-    return state_message
+from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
+from nvflare.security.logging import secure_format_exception
 
 
 def _get_client_ip():
@@ -90,21 +56,6 @@ def _get_client_ip():
     finally:
         s.close()
     return ip
-
-
-def _get_communication_data(shareable, client_state, fl_ctx: FLContext, execute_task_name):
-    contrib = fed_msg.Contribution()
-    # set client auth. data
-    contrib.client.CopyFrom(client_state)
-    contrib.task_name = execute_task_name
-
-    current_model = shareable_to_modeldata(shareable, fl_ctx)
-    contrib.data.CopyFrom(current_model)
-
-    s = Struct()
-    contrib.meta_data.CopyFrom(s)
-
-    return contrib
 
 
 class Communicator:
@@ -140,46 +91,6 @@ class Communicator:
         self.compression = compression
 
         self.logger = logging.getLogger(self.__class__.__name__)
-
-    def set_up_channel(self, channel_dict, token=None):
-        """Connect client to the server.
-
-        Args:
-            channel_dict: grpc channel parameters
-            token: client token
-
-        Returns:
-            An initialised grpc channel
-
-        """
-        if self.secure_train:
-            with open(self.ssl_args["ssl_root_cert"], "rb") as f:
-                trusted_certs = f.read()
-            with open(self.ssl_args["ssl_private_key"], "rb") as f:
-                private_key = f.read()
-            with open(self.ssl_args["ssl_cert"], "rb") as f:
-                certificate_chain = f.read()
-
-            credentials = grpc.ssl_channel_credentials(
-                certificate_chain=certificate_chain, private_key=private_key, root_certificates=trusted_certs
-            )
-
-            # make sure that all headers are in lowercase,
-            # otherwise grpc throws an exception
-            call_credentials = grpc.metadata_call_credentials(
-                lambda context, callback: callback((("x-custom-token", token),), None)
-            )
-            # use this if you want standard "Authorization" header
-            # call_credentials = grpc.access_token_call_credentials(
-            #     "x-custom-token")
-            composite_credentials = grpc.composite_channel_credentials(credentials, call_credentials)
-            channel = grpc.secure_channel(
-                **channel_dict, credentials=composite_credentials, compression=self.compression
-            )
-
-        else:
-            channel = grpc.insecure_channel(**channel_dict, compression=self.compression)
-        return channel
 
     def client_registration(self, client_name, servers, project_name):
         """Client's metadata used to authenticate and communicate.
@@ -616,36 +527,3 @@ class Communicator:
                 self.logger.info(f"These runs: {display_runs} are not running on the server. Aborted them.")
         except:
             self.logger.info(f"Failed to clean up the runs: {display_runs}")
-
-    def grpc_error_handler(self, service, grpc_error, action, verbose=False):
-        """Handling grpc exceptions.
-
-        Args:
-            service: FL service
-            grpc_error: grpc error
-            action: action to take
-            verbose: verbose to error print out
-        """
-        status_code = None
-        if isinstance(grpc_error, grpc.Call):
-            status_code = grpc_error.code()
-
-        if grpc.StatusCode.RESOURCE_EXHAUSTED == status_code:
-            if grpc_error.details().startswith("No token"):
-                self.logger.info("No token for this client in current round. " "Waiting for server new round. ")
-                self.should_stop = False
-                return
-
-        self.logger.error(f"Action: {action} grpc communication error: {grpc_error}.")
-        if grpc.StatusCode.UNAVAILABLE == status_code:
-            self.logger.error(f"Could not connect to server: {service.get('target')}\t {grpc_error.details()}")
-            self.should_stop = True
-
-        if grpc.StatusCode.OUT_OF_RANGE == status_code:
-            self.logger.error(
-                f"Server training has stopped.\t" f"Setting flag for stopping training. {grpc_error.details()}"
-            )
-            self.should_stop = True
-
-        if verbose:
-            self.logger.info(grpc_error)
