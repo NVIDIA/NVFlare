@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
-import timeit
 import time
+import timeit
 from typing import Dict, Optional
 
 import mlflow
@@ -32,12 +32,12 @@ from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 
 class MLFlowReceiver(AnalyticsReceiver):
     def __init__(
-            self,
-            tracking_uri: Optional[str] = None,
-            kwargs: Optional[dict] = None,
-            artifact_location: Optional[str] = None,
-            events=None,
-            buffer_flush_time_in_sec=1,
+        self,
+        tracking_uri: Optional[str] = None,
+        kwargs: Optional[dict] = None,
+        artifact_location: Optional[str] = None,
+        events=None,
+        buffer_flush_time_in_sec=1,
     ):
         """
         MLFlowReceiver receives log events from client and deliver to the MLFLow.
@@ -153,11 +153,11 @@ class MLFlowReceiver(AnalyticsReceiver):
         return root_log_dir
 
     def _create_experiment(
-            self,
-            mlflow_client: MlflowClient,
-            experiment_name: str,
-            artifact_location: str,
-            experiment_tags: Optional[dict] = None,
+        self,
+        mlflow_client: MlflowClient,
+        experiment_name: str,
+        artifact_location: str,
+        experiment_tags: Optional[dict] = None,
     ) -> Optional[str]:
         experiment_id = None
         if experiment_name:
