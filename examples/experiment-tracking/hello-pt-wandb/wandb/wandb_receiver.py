@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import os
+import time
 from multiprocessing import Process, Queue
 from typing import NamedTuple, Optional
 
@@ -77,10 +78,11 @@ class WandBReceiver(AnalyticsReceiver):
     def initialize(self, fl_ctx: FLContext):
         self.fl_ctx = fl_ctx
         sites = fl_ctx.get_engine().get_clients()
+        run_group_id = int(time.time())
+        self.kwargs["group"] = f"{self.fl_ctx.get_job_id()}-{run_group_id}"
         for site in sites:
             self.log_info(self.fl_ctx, f"initialize WandB run for site {site.name}")
             self.kwargs["name"] = f"{site.name}"
-
             self.check_kwargs(self.kwargs)
 
             q = Queue()

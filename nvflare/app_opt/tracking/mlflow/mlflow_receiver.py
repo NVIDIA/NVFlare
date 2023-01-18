@@ -13,6 +13,7 @@
 # limitations under the License.
 import os
 import timeit
+import time
 from typing import Dict, Optional
 
 import mlflow
@@ -31,12 +32,12 @@ from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 
 class MLFlowReceiver(AnalyticsReceiver):
     def __init__(
-        self,
-        tracking_uri: Optional[str] = None,
-        kwargs: Optional[dict] = None,
-        artifact_location: Optional[str] = None,
-        events=None,
-        buffer_flush_time_in_sec=1,
+            self,
+            tracking_uri: Optional[str] = None,
+            kwargs: Optional[dict] = None,
+            artifact_location: Optional[str] = None,
+            events=None,
+            buffer_flush_time_in_sec=1,
     ):
         """
         MLFlowReceiver receives log events from client and deliver to the MLFLow.
@@ -88,14 +89,13 @@ class MLFlowReceiver(AnalyticsReceiver):
 
         art_full_path = self.get_artifact_location(self.artifact_location)
         experiment_name = self.get_experiment_name(self.kwargs, "FLARE FL Experiment")
-        run_name = self.get_run_name(self.kwargs, "FLARE FL Run")
         experiment_tags = self.get_experiment_tags(self.kwargs)
 
         sites = fl_ctx.get_engine().get_clients()
         self._init_buffer(sites)
-        self.mlflow_setup(art_full_path, experiment_name, experiment_tags, run_name, sites)
+        self.mlflow_setup(art_full_path, experiment_name, experiment_tags, sites)
 
-    def mlflow_setup(self, art_full_path, experiment_name, experiment_tags, run_name, sites):
+    def mlflow_setup(self, art_full_path, experiment_name, experiment_tags, sites):
         for site in sites:
             mlflow_client = self.mlflow_clients.get(site.name, None)
             if not mlflow_client:
@@ -104,7 +104,9 @@ class MLFlowReceiver(AnalyticsReceiver):
                 self.experiment_id = self._create_experiment(
                     mlflow_client, experiment_name, art_full_path, experiment_tags
                 )
-                tags = self.get_run_tags(self.kwargs)
+                run_group_id = int(time.time())
+                tags = self.get_run_tags(self.kwargs, run_group_id)
+                run_name = self.get_run_name(self.kwargs, "FLARE FL Run", site.name, run_group_id)
                 run = mlflow_client.create_run(experiment_id=self.experiment_id, run_name=run_name, tags=tags)
                 self.run_ids[site.name] = run.info.run_id
 
@@ -120,17 +122,19 @@ class MLFlowReceiver(AnalyticsReceiver):
         experiment_name = kwargs.get(TrackConst.EXPERIMENT_NAME, default_name)
         return experiment_name
 
-    def get_run_name(self, kwargs: dict, default_name: str):
+    def get_run_name(self, kwargs: dict, default_name: str, site_name: str, run_group_id: int):
         run_name = kwargs.get(TrackConst.RUN_NAME, default_name)
-        return run_name
+        return f"{run_name}-{site_name}-{run_group_id}"
 
     def get_experiment_tags(self, kwargs):
         tags = self._get_tags(TrackConst.EXPERIMENT_TAGS, kwargs=kwargs)
-        print("experiment tags", tags)
         return tags
 
-    def get_run_tags(self, kwargs):
-        return self._get_tags(TrackConst.RUN_TAGS, kwargs=kwargs)
+    def get_run_tags(self, kwargs, run_group_id):
+        run_tags = self._get_tags(TrackConst.RUN_TAGS, kwargs=kwargs)
+        run_tags["job_id"] = self.fl_ctx.get_job_id()
+        run_tags["group_id"] = str(run_group_id)
+        return run_tags
 
     def _get_tags(self, tag_key: str, kwargs: dict):
         tags = {}
@@ -149,11 +153,11 @@ class MLFlowReceiver(AnalyticsReceiver):
         return root_log_dir
 
     def _create_experiment(
-        self,
-        mlflow_client: MlflowClient,
-        experiment_name: str,
-        artifact_location: str,
-        experiment_tags: Optional[dict] = None,
+            self,
+            mlflow_client: MlflowClient,
+            experiment_name: str,
+            artifact_location: str,
+            experiment_tags: Optional[dict] = None,
     ) -> Optional[str]:
         experiment_id = None
         if experiment_name:
@@ -239,6 +243,9 @@ class MLFlowReceiver(AnalyticsReceiver):
 
         if self.time_taken >= self.buff_flush_time or force_flush:
             mlflow_client = self.get_mlflow_client(record_origin)
+            if not mlflow_client:
+                raise RuntimeError(f"mlflow client is None for site {record_origin}")
+
             run_id = self.get_run_id(record_origin)
 
             site_buff = self.buffer[record_origin]

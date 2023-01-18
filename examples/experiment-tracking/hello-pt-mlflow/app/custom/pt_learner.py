@@ -113,7 +113,7 @@ class PTLearner(Learner):
         params = {}
         params.update({"learning_rate": self.lr, "momentum": 0.8, "loss": "CrossEntropyLoss"})
         self.writer.log_params(params)
-        self.writer.set_tags({"local training client": fl_ctx.get_identity_name()})
+        self.writer.set_tags({"client": fl_ctx.get_identity_name()})
 
         # Get model weights
         try:

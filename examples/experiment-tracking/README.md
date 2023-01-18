@@ -117,8 +117,8 @@ All examples will leverage the example hello-pt.
 * The first example shows how to use MLFlow Tracking Tool ( both sender and receiver)
 * The second example shows how to use MLFlow Sender only, while the receivers are Tensorboard
 
-![mlflow_1](mlflow_2.png)
 ![mlflow_1](mlflow_1.png)
+
 
 [wandb_tracker](hello-pt-wandb/wandb)
 * This example shows how to create a custom integration with a new experimentation tracking system.
@@ -129,9 +129,7 @@ log writer in hello-pt-wandb to log metrics.
 [hello-pt-wandb](hello-pt-wandb)
 * The example shows how to use Weights & Biases Tracking Tool ( both sender and receiver)
 
-
 ![wandb_1](wandb_1.png)
-
 
 
 ## Setup for all examples
@@ -161,7 +159,7 @@ pip install notebook
 
 ### 4. Examples in Notebook
 
-For detailed examples explaination, please check the notebook
+For detailed examples explanation, please check the notebook
 
 ```
 jupyter notebook experiment_tracking.ipynb
