@@ -60,8 +60,10 @@ class SKExecutor(Executor):
 
     def train(self, current_round, global_param) -> Shareable:
         self._msg_log(f"Client {self.client_id} perform local train")
-        # get the proper parameters to be shared
-        # and the local model
+        # sklearn algorithms usually needs two different processing schemes
+        # one for first round (generate initial centers for clustering, regular training for svm)
+        # the other for following rounds (regular training for clustering, no further training for svm)
+        # hence the current round is fed to learner to distinguish the two
         params, model = self.learner.train(current_round, global_param)
         # save model and return dxo containing the params
         self.save_model_local(model)
@@ -74,19 +76,10 @@ class SKExecutor(Executor):
     def evaluate(self, current_round, global_param) -> Shareable:
         # retrieve current global center download from server's shareable
         self._msg_log(f"Client {self.client_id} perform local evaluation")
-
-        metrics, svm = self.learner.evaluate(current_round, global_param)
-
-        self.save_model_global(svm)
-
-        # dxo = DXO(data_kind=DataKind.WEIGHTS, data=global_param)
-        # dxo.set_meta_prop(MetaKey.NUM_STEPS_CURRENT_ROUND, self.learner.n_samples)
-        # result = DXO(data_kind=DataKind.METRICS, data=metrics)
-
+        metrics, model = self.learner.evaluate(current_round, global_param)
+        self.save_model_global(model)
         for key, value in metrics.items():
             self.log_value(key, value, current_round)
-
-        # return dxo.to_shareable()
 
     def finalize(self, fl_ctx: FLContext):
         self.learner.finalize()

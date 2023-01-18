@@ -9,7 +9,7 @@
   "components": [
     {
       "id": "persistor",
-      "path": "joblib_model_param_persistor.JoblibModelParamPersistor",
+      "path": "app_opt.sklearn.joblib_model_param_persistor.JoblibModelParamPersistor",
       "args": {}
     },
     {

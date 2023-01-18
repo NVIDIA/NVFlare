@@ -18,7 +18,7 @@ Each client is expected to have 1 local data file containing both training and v
 - valid_start: int, start row index for validation set
 - valid_end: int, end row index for validation set
 
-### Federated Linear Model
+### Federated linear model
 The machine learning algorithm shown in this example is [Linear classifiers with SGD training](https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.SGDClassifier.html).
 Under this setting, federated learning can be formulated as a FedAvg process with local training that each client optimizes the local model starting from global parameters with SGD. This can be achieved by setting the `warm_start` flag of SGDClassifier to `True`.
 
@@ -44,9 +44,9 @@ This step is performed by
 ```commandline
 bash prepare_job_config.sh
 ```
-In this example, we perform experiment with 3 clients under uniform data split. 
+In this example, we perform experiment with 5 clients under uniform data split. 
 
-Below is a sample config for site-1, saved to `/job_configs/sklearn_svm_3_uniform/app_site-1/config/config_fed_client.json`:
+Below is a sample config for site-1, saved to `/job_configs/sklearn_linear_5_uniform/app_site-1/config/config_fed_client.json`:
 ```json
 {
     "format_version": 2,
@@ -89,7 +89,7 @@ Below is a sample config for site-1, saved to `/job_configs/sklearn_svm_3_unifor
 
 ## Run experiment with FL simulator
 FL simulator is used to simulate FL experiments or debug codes, not for real FL deployment.
-We can run the FL simulator with 3 clients under uniform data split with
+We can run the FL simulator with 5 clients under uniform data split with
 ```commandline
 bash run_experiment_simulator.sh
 ```

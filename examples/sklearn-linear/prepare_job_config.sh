@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-DATASET_PATH="/media/ziyuexu/Data/HIGGS/HIGGS_UCI.csv"
+DATASET_PATH="~/dataset/HIGGS.csv"
 
 if [ ! -f "${DATASET_PATH}" ]
 then

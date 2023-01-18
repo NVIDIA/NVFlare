@@ -52,12 +52,11 @@ class LinearLearner(SKLearner):
 
     def initialize(self, fl_ctx: FLContext):
         self.fl_ctx = fl_ctx
-
         data = self.load_data()
         self.train_data = data["train"]
         self.valid_data = data["valid"]
         # train data size, to be used for setting
-        # NUM_STEPS_CURRENT_ROUND for potential aggregation
+        # NUM_STEPS_CURRENT_ROUND for potential use in aggregation
         self.n_samples = data["train"][-1]
 
         # initialize model to all zero
@@ -84,6 +83,7 @@ class LinearLearner(SKLearner):
             self.local_model.intercept_ = params["intercept"]
 
     def train(self, curr_round: int, global_param: Optional[dict] = None) -> dict:
+        # get training data
         (x_train, y_train, train_size) = self.train_data
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -100,7 +100,6 @@ class LinearLearner(SKLearner):
     def evaluate(self, curr_round: int, global_param: Optional[dict] = None) -> dict:
         # set local model with global parameters
         # and perform validation
-        metrics = {}
         if global_param:
             self.set_parameters(global_param)
             (x_valid, y_valid, valid_size) = self.valid_data
