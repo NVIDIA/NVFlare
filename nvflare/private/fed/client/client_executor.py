@@ -253,7 +253,8 @@ class ProcessExecutor(ClientExecutor):
                 #     conn_client.send(data)
                 #     status_message = conn_client.recv()
 
-                data = {"command": AdminCommandNames.CHECK_STATUS, "data": {}}
+                # data = {"command": AdminCommandNames.CHECK_STATUS, "data": {}}
+                data = {}
                 fqcn = FQCN.join([self.client.client_name, job_id])
                 request = new_cell_message({}, fobs.dumps(data))
                 return_data = self.client.cell.send_request(
@@ -264,7 +265,7 @@ class ProcessExecutor(ClientExecutor):
                 )
                 return_code = return_data.get_header(MessageHeaderKey.RETURN_CODE)
                 if return_code == ReturnCode.OK:
-                    status_message = return_data.payload
+                    status_message = fobs.loads(return_data.payload)
                     self.logger.debug("check status from process listener......")
                     return status_message
                 else:
@@ -293,7 +294,8 @@ class ProcessExecutor(ClientExecutor):
                 #     conn_client.send(data)
                 #     run_info = conn_client.recv()
 
-                data = {"command": AdminCommandNames.SHOW_STATS, "data": {}}
+                # data = {"command": AdminCommandNames.SHOW_STATS, "data": {}}
+                data = {}
                 fqcn = FQCN.join([self.client.client_name, job_id])
                 request = new_cell_message({}, fobs.dumps(data))
                 return_data = self.client.cell.send_request(
@@ -304,7 +306,7 @@ class ProcessExecutor(ClientExecutor):
                 )
                 return_code = return_data.get_header(MessageHeaderKey.RETURN_CODE)
                 if return_code == ReturnCode.OK:
-                    run_info = return_data.payload
+                    run_info = fobs.loads(return_data.payload)
                     return run_info
                 else:
                     return {}

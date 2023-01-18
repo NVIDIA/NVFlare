@@ -94,6 +94,10 @@ class InfoCollectorCommandModule(JobCommandModule, CommandUtil):
         conn.set_prop(self.CONN_KEY_COLLECTOR, collector)
 
         job_id = conn.get_prop(self.JOB_ID)
+        if job_id not in engine.run_processes:
+            conn.append_error(f"Job_id: {job_id} is not running.")
+            return PreAuthzReturnCode.ERROR
+
         run_info = engine.get_app_run_info(job_id)
         if not run_info:
             conn.append_string(
