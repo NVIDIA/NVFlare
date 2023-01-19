@@ -128,7 +128,7 @@ class BaseServer(ABC):
         # num_server_workers = grpc_args.get("num_server_workers", 1)
         # num_server_workers = max(self.client_manager.get_min_clients(), num_server_workers)
         target = grpc_args["service"].get("target", "0.0.0.0:6007")
-        root_url = grpc_args["service"].get("root_url", "http://localhost:8002")
+        schema = grpc_args["service"].get("schema", "http://")
 
         # grpc_options = grpc_args["service"].get("options", GRPC_DEFAULT_OPTIONS)
         credentials = {}
@@ -137,7 +137,7 @@ class BaseServer(ABC):
         my_fqcn = FQCN.ROOT_SERVER
         self.cell = Cell(
             fqcn=my_fqcn,
-            root_url=root_url,
+            root_url=schema + target,
             secure=secure_train,
             credentials=credentials,
             create_internal_listener=True,
