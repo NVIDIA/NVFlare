@@ -74,7 +74,7 @@ These items could be user_ids or feature names depending your use case.
   "components": [
     {
       "id": "local_psi",
-      "path": "sample_psi.SamplePSI",
+      "path": "local_psi.LocalPSI",
       "args": {
         "psi_writer_id": "psi_writer"
       }
@@ -119,7 +119,7 @@ Just specify the built-in PSI controller.
  the code is really trivial just needs to implement one method in PSI interface
 
 ```
-class SamplePSI(PSI):
+class LocalPSI(PSI):
 
     def __init__(self, psi_writer_id: str):
         pass
@@ -130,16 +130,25 @@ class SamplePSI(PSI):
 
 ## Run PSI job in Simulator
 
-```
-nvflare simulator -w /tmp/nvflare/ -n 5 -t 5 examples/psi/basic  
-```
+### User_email_match 
+   in this example, we generated some random emails addresses in three sites. 
+   you need to copy the data to tmp location first. 
 
+**prepare data**
+```
+     cp examples/psi/user_id_match/data /tmp/nvflare/.
+```   
+**import note**
+   The items must be unique. duplicate items can result incorrect intersection result
+
+**run job** 
+```
+nvflare simulator -w /tmp/nvflare/ -n 3 -t 3 examples/psi/user_meail_match  
+```
 Once job completed and succeed, you should be able to find the intersection for different sites at
 
 ```
 /tmp/nvflare/simulate_job/site-1/psi/intersection.txt 
 /tmp/nvflare/simulate_job/site-2/psi/intersection.txt 
-/tmp/nvflare/simulate_job/site-3/psi/intersection.txt 
-/tmp/nvflare/simulate_job/site-4/psi/intersection.txt 
-/tmp/nvflare/simulate_job/site-5/psi/intersection.txt 
+/tmp/nvflare/simulate_job/site-3/psi/intersection.txt  
 ```

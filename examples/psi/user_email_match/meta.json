@@ -1,5 +1,5 @@
 {
-  "name": "psi",
+  "name": "psi_user_id_match",
   "resource_spec": {},
   "min_clients" : 2,
   "deploy_map": {

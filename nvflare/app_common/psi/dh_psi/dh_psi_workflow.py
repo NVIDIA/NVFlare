@@ -75,7 +75,12 @@ class DhPSIWorkFlow(PSIWorkflow):
 
         self.backward_processed.update(self.backward_pass(self.ordered_sites, intersect_site))
 
-        self.log_info(self.fl_ctx, f"intersection sizes {self.backward_processed}, intersect_site ={intersect_site} ")
+        self.log_info(
+            self.fl_ctx,
+            f"backward_processed sites {self.backward_processed}\n,"
+            f"intersect_sites={intersect_site}\n"
+            f"ordered sites = {self.ordered_sites}\n",
+        )
 
         self.check_final_intersection_sizes(intersect_site)
 
@@ -216,7 +221,6 @@ class DhPSIWorkFlow(PSIWorkflow):
 
     def parallel_forward_pass(self, target_sites, processed: dict):
         self.log_info(self.fl_ctx, f"target_sites: {target_sites}")
-
         total_sites = len(target_sites)
         if total_sites < 2:
             final_site = target_sites[0]
@@ -334,7 +338,11 @@ class DhPSIWorkFlow(PSIWorkflow):
             abort_signal=abort_signal,
         )
         self.log_info(self.fl_ctx, f"{PSIConst.TASK_PREPARE} results = {results}")
-        self.ordered_sites = self.get_ordered_sites(results)
+        if not results:
+            abort_signal.trigger("no items to perform PSI")
+            raise RuntimeError("There is no item to perform PSI calculation")
+        else:
+            self.ordered_sites = self.get_ordered_sites(results)
 
     def prepare_setup_messages(self, s: SiteSize, other_site_sizes: Set[int]) -> Dict[str, str]:
         inputs = Shareable()

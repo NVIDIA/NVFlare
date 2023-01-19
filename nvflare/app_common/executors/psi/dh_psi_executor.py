@@ -59,7 +59,7 @@ class DhPSIExecutor(ClientExecutor):
                 return self.get_items_size()
             else:
                 if psi_stage_task == PSIConst.TASK_SETUP:
-                    return self.setup(shareable)
+                    return self.setup(shareable, client_name)
                 elif psi_stage_task == PSIConst.TASK_REQUEST:
                     return self.create_request(shareable)
                 elif psi_stage_task == PSIConst.TASK_RESPONSE:
@@ -77,8 +77,11 @@ class DhPSIExecutor(ClientExecutor):
         result[PSIConst.REQUEST_MSG] = request
         return result
 
-    def setup(self, shareable: Shareable):
+    def setup(self, shareable: Shareable, client_name: str):
         items = self.get_items()
+        if len(items) == 0:
+            raise RuntimeError(f"site {client_name} doesn't have any items for to perform PSI")
+
         # note, each interaction with client requires a new client,server keys to be secure.
         self.psi_client = PsiClient(items)
         self.psi_server = PsiServer(items, self.bloom_filter_fpr)
@@ -139,6 +142,15 @@ class DhPSIExecutor(ClientExecutor):
     def get_items(self):
 
         if not self.intersects:
-            return self.local_psi_handler.load_items()
+            items = self.local_psi_handler.load_items()
+            self.check_items_uniqueness(items)
         else:
-            return self.intersects
+            items = self.intersects
+        return items
+
+    def check_items_uniqueness(self, items):
+        import collections
+
+        duplicates = {item: count for item, count in collections.Counter(items).items() if count > 1}
+        if duplicates:
+            raise ValueError(f"the items must be unique, the following items with duplicates {duplicates}")
