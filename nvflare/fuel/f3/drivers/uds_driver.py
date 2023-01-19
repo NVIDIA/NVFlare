@@ -32,15 +32,14 @@ from socketserver import ThreadingUnixStreamServer, UnixStreamServer
 from typing import List
 
 from nvflare.fuel.f3.comm_error import CommError
-from nvflare.fuel.f3.drivers.driver import Driver, DriverParams, Connector
-from nvflare.fuel.f3.drivers.socket_driver import ConnectionHandler, StreamConnection, SocketDriver
+from nvflare.fuel.f3.drivers.driver import Connector, Driver, DriverParams
+from nvflare.fuel.f3.drivers.socket_driver import ConnectionHandler, SocketDriver, StreamConnection
 
 log = logging.getLogger(__name__)
 
 
 class SocketStreamServer(ThreadingUnixStreamServer):
-
-    def __init__(self, path: str, driver: 'Driver', connector: Connector):
+    def __init__(self, path: str, driver: "Driver", connector: Connector):
         self.path = path
         self.driver = driver
         self.connector = connector
@@ -126,4 +125,3 @@ class UdsDriver(SocketDriver):
             socket_path = "/" + socket_path
 
         return socket_path
-

@@ -36,14 +36,8 @@ def main():
 
     config = {
         "root_url": "http://localhost:8002",
-        "admin": {
-            "host": "localhost",
-            "port": "8003"
-        },
-        "server": {
-            "children": server_jobs,
-            "clients": clients
-        }
+        "admin": {"host": "localhost", "port": "8003"},
+        "server": {"children": server_jobs, "clients": clients},
     }
 
     for c in clients:

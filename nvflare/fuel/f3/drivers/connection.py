@@ -23,11 +23,10 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import uuid as uuid
 from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Union
-
-import uuid as uuid
 
 from nvflare.fuel.f3.drivers.connnector import Connector
 
@@ -35,22 +34,21 @@ BytesAlike = Union[bytes, bytearray, memoryview]
 
 
 class ConnState(Enum):
-    IDLE = 1           # Initial state
-    CONNECTED = 2      # New connection
-    CLOSED = 3         # Connection is closed
+    IDLE = 1  # Initial state
+    CONNECTED = 2  # New connection
+    CLOSED = 3  # Connection is closed
 
 
 class FrameReceiver(ABC):
-
     @abstractmethod
     def process_frame(self, frame: BytesAlike):
         """Frame received callback
 
-         Args:
-             frame: The frame received
+        Args:
+            frame: The frame received
 
-         Raises:
-             CommError: If any error happens while processing the frame
+        Raises:
+            CommError: If any error happens while processing the frame
         """
         pass
 

@@ -32,8 +32,8 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.fuel.utils import fobs
 from nvflare.private.defs import SpecialTaskName, TaskConstant
-from nvflare.widgets.widget import WidgetID
 from nvflare.private.fed.utils.fed_utils import make_context_data
+from nvflare.widgets.widget import WidgetID
 
 NO_OP_REPLY = "__no_op_reply"
 
@@ -384,7 +384,7 @@ class ServerCommands(object):
         AuxCommunicateCommand(),
         ShowStatsCommand(),
         GetErrorsCommand(),
-        HeartbeatCommand()
+        HeartbeatCommand(),
     ]
 
     @staticmethod

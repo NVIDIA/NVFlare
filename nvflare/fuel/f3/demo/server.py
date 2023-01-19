@@ -16,8 +16,13 @@ import os
 import time
 
 from nvflare.fuel.f3.communicator import Communicator
-from nvflare.fuel.f3.demo.callbacks import TimingReceiver, DemoEndpointMonitor, make_message, RequestReceiver, \
-    AdHocReceiver
+from nvflare.fuel.f3.demo.callbacks import (
+    AdHocReceiver,
+    DemoEndpointMonitor,
+    RequestReceiver,
+    TimingReceiver,
+    make_message,
+)
 from nvflare.fuel.f3.drivers.connnector import Mode
 from nvflare.fuel.f3.drivers.driver import DriverParams
 from nvflare.fuel.f3.endpoint import Endpoint

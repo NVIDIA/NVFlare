@@ -14,21 +14,20 @@
 import logging
 import time
 import traceback
-from concurrent.futures import ThreadPoolExecutor
-from typing import List, Dict, Optional
-
 import uuid
+from concurrent.futures import ThreadPoolExecutor
+from typing import Dict, List, Optional
 
 import msgpack
 
 from nvflare.fuel.f3.comm_error import CommError
-from nvflare.fuel.f3.drivers.connection import Connection, ConnState, FrameReceiver, BytesAlike
+from nvflare.fuel.f3.drivers.connection import BytesAlike, Connection, ConnState, FrameReceiver
 from nvflare.fuel.f3.drivers.connnector import Connector, Mode
-from nvflare.fuel.f3.drivers.driver import Driver, ConnMonitor
-from nvflare.fuel.f3.drivers.prefix import Prefix, PREFIX_LEN
+from nvflare.fuel.f3.drivers.driver import ConnMonitor, Driver
+from nvflare.fuel.f3.drivers.prefix import PREFIX_LEN, Prefix
 from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor, EndpointState
-from nvflare.fuel.f3.message import MessageReceiver, Headers, Message
-from nvflare.fuel.f3.sfm.constants import Types, HandshakeKeys
+from nvflare.fuel.f3.message import Headers, Message, MessageReceiver
+from nvflare.fuel.f3.sfm.constants import HandshakeKeys, Types
 from nvflare.fuel.f3.sfm.sfm_conn import SfmConnection
 from nvflare.fuel.f3.sfm.sfm_endpoint import SfmEndpoint
 
@@ -171,8 +170,9 @@ class ConnManager(ConnMonitor):
         if connector.started:
             return
 
-        log.info(f"Connector {connector.driver.get_name()}:{connector.handle} is starting in "
-                 f"{connector.mode.name} mode")
+        log.info(
+            f"Connector {connector.driver.get_name()}:{connector.handle} is starting in " f"{connector.mode.name} mode"
+        )
 
         self.executor.submit(self.start_connector_task, connector)
 
@@ -229,7 +229,7 @@ class ConnManager(ConnMonitor):
             if prefix.header_len == 0:
                 headers = None
             else:
-                headers = msgpack.unpackb(frame[PREFIX_LEN:PREFIX_LEN + prefix.header_len])
+                headers = msgpack.unpackb(frame[PREFIX_LEN : PREFIX_LEN + prefix.header_len])
 
             if prefix.type in (Types.HELLO, Types.READY):
                 if prefix.type == Types.HELLO:
@@ -239,8 +239,8 @@ class ConnManager(ConnMonitor):
                 self.update_endpoint(sfm_conn, data)
 
             elif prefix.type == Types.DATA:
-                if prefix.length > PREFIX_LEN+prefix.header_len:
-                    payload = frame[PREFIX_LEN+prefix.header_len:]
+                if prefix.length > PREFIX_LEN + prefix.header_len:
+                    payload = frame[PREFIX_LEN + prefix.header_len :]
                 else:
                     payload = None
 
@@ -299,7 +299,7 @@ class ConnManager(ConnMonitor):
     @staticmethod
     def get_dict_payload(prefix, frame):
         mv = memoryview(frame)
-        return msgpack.unpackb(mv[(PREFIX_LEN+prefix.header_len):])
+        return msgpack.unpackb(mv[(PREFIX_LEN + prefix.header_len) :])
 
     def handle_new_connection(self, connection: Connection):
 
@@ -315,7 +315,6 @@ class ConnManager(ConnMonitor):
 
 
 class SfmFrameReceiver(FrameReceiver):
-
     def __init__(self, conn_manager: ConnManager, conn: SfmConnection):
         self.conn_manager = conn_manager
         self.conn = conn

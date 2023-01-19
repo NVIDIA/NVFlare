@@ -14,6 +14,7 @@
 
 import argparse
 import logging
+
 from nvflare.fuel.f3.qat.cell_runner import CellRunner
 from nvflare.fuel.utils.config_service import ConfigService
 
@@ -24,7 +25,9 @@ def main():
     """
     parser = argparse.ArgumentParser()
     parser.add_argument("--config_dir", "-c", type=str, help="config folder", required=False, default=".")
-    parser.add_argument("--config_file", "-f", type=str, help="config file name", required=False, default="net_config.json")
+    parser.add_argument(
+        "--config_file", "-f", type=str, help="config file name", required=False, default="net_config.json"
+    )
     parser.add_argument("--name", "-n", type=str, help="my cell name", required=True)
     parser.add_argument("--parent_fqcn", "-pn", type=str, help="parent cell name", required=False, default="")
     parser.add_argument("--parent_url", "-pu", type=str, help="parent cell url", required=False, default="")
@@ -46,7 +49,7 @@ def main():
         my_name=args.name,
         parent_url=args.parent_url,
         parent_fqcn=args.parent_fqcn,
-        log_level=args.log_level
+        log_level=args.log_level,
     )
     runner.start()
     runner.run()

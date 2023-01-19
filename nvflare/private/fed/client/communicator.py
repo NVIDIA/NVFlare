@@ -18,20 +18,15 @@ import time
 from typing import List, Optional
 
 from nvflare.apis.filter import Filter
-from nvflare.apis.fl_constant import (
-    FLContextKey,
-    ServerCommandKey,
-    ServerCommandNames,
-)
+from nvflare.apis.fl_constant import FLContextKey, ServerCommandKey, ServerCommandNames
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
-from nvflare.fuel.f3.cellnet.cell import Cell, FQCN
+from nvflare.fuel.f3.cellnet.cell import FQCN, Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.utils import fobs
-from nvflare.private.defs import SpecialTaskName
-from nvflare.private.defs import new_cell_message, CellChannel, CellChannelTopic, CellMessageHeaderKeys
+from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeaderKeys, SpecialTaskName, new_cell_message
 from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
 from nvflare.security.logging import secure_format_exception
 
@@ -66,7 +61,7 @@ class Communicator:
         retry_timeout=30,
         client_state_processors: Optional[List[Filter]] = None,
         compression=None,
-        cell: Cell=None
+        cell: Cell = None,
     ):
         """To init the Communicator.
 
@@ -136,9 +131,13 @@ class Communicator:
         #     if result is None:
         #         return None
 
-        login_message = new_cell_message({CellMessageHeaderKeys.CLIENT_NAME: client_name,
-                                          CellMessageHeaderKeys.CLIENT_IP: local_ip,
-                                          CellMessageHeaderKeys.PROJECT_NAME: project_name})
+        login_message = new_cell_message(
+            {
+                CellMessageHeaderKeys.CLIENT_NAME: client_name,
+                CellMessageHeaderKeys.CLIENT_IP: local_ip,
+                CellMessageHeaderKeys.PROJECT_NAME: project_name,
+            }
+        )
 
         while True:
             try:
@@ -146,7 +145,7 @@ class Communicator:
                     target=FQCN.ROOT_SERVER,
                     channel=CellChannel.TASK,
                     topic=CellChannelTopic.Register,
-                    request=login_message
+                    request=login_message,
                 )
                 return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
                 if return_code == ReturnCode.UNAUTHENTICATED:
@@ -161,7 +160,7 @@ class Communicator:
                     break
 
             except BaseException as ex:
-               raise FLCommunicationError(ex, "error:client_registration")
+                raise FLCommunicationError(ex, "error:client_registration")
 
         return token, ssid
 
@@ -216,18 +215,19 @@ class Communicator:
         shared_fl_ctx = FLContext()
         shared_fl_ctx.set_public_props(get_serializable_data(fl_ctx).get_all_public_props())
         shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_ctx)
-        task_message = new_cell_message({CellMessageHeaderKeys.TOKEN: token,
-                                          CellMessageHeaderKeys.SSID: ssid,
-                                          CellMessageHeaderKeys.PROJECT_NAME: project_name},
-                                         fobs.dumps(shareable))
+        task_message = new_cell_message(
+            {
+                CellMessageHeaderKeys.TOKEN: token,
+                CellMessageHeaderKeys.SSID: ssid,
+                CellMessageHeaderKeys.PROJECT_NAME: project_name,
+            },
+            fobs.dumps(shareable),
+        )
         job_id = str(shared_fl_ctx.get_prop(FLContextKey.CURRENT_RUN))
 
         fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
         task = self.cell.send_request(
-            target=fqcn,
-            channel=CellChannel.SERVER_COMMAND,
-            topic=ServerCommandNames.GET_TASK,
-            request=task_message
+            target=fqcn, channel=CellChannel.SERVER_COMMAND, topic=ServerCommandNames.GET_TASK, request=task_message
         )
         end_time = time.time()
         return_code = task.get_header(MessageHeaderKey.RETURN_CODE)
@@ -306,10 +306,14 @@ class Communicator:
         # shareable.add_cookie(name=FLContextKey.TASK_ID, data=task_id)
         shareable.set_header(FLContextKey.TASK_NAME, execute_task_name)
 
-        task_message = new_cell_message({CellMessageHeaderKeys.TOKEN: token,
-                                          CellMessageHeaderKeys.SSID: ssid,
-                                          CellMessageHeaderKeys.PROJECT_NAME: project_name},
-                                         fobs.dumps(shareable))
+        task_message = new_cell_message(
+            {
+                CellMessageHeaderKeys.TOKEN: token,
+                CellMessageHeaderKeys.SSID: ssid,
+                CellMessageHeaderKeys.PROJECT_NAME: project_name,
+            },
+            fobs.dumps(shareable),
+        )
         job_id = str(shared_fl_ctx.get_prop(FLContextKey.CURRENT_RUN))
 
         fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
@@ -317,7 +321,7 @@ class Communicator:
             target=fqcn,
             channel=CellChannel.SERVER_COMMAND,
             topic=ServerCommandNames.SUBMIT_UPDATE,
-            request=task_message
+            request=task_message,
         )
         end_time = time.time()
         return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
@@ -382,10 +386,14 @@ class Communicator:
         # shareable.add_cookie(name=FLContextKey.TASK_ID, data=task_id)
         shareable.set_header(ServerCommandKey.TOPIC, topic)
 
-        task_message = new_cell_message({CellMessageHeaderKeys.TOKEN: token,
-                                          CellMessageHeaderKeys.SSID: ssid,
-                                          CellMessageHeaderKeys.PROJECT_NAME: project_name},
-                                         fobs.dumps(shareable))
+        task_message = new_cell_message(
+            {
+                CellMessageHeaderKeys.TOKEN: token,
+                CellMessageHeaderKeys.SSID: ssid,
+                CellMessageHeaderKeys.PROJECT_NAME: project_name,
+            },
+            fobs.dumps(shareable),
+        )
         job_id = str(shared_fl_ctx.get_prop(FLContextKey.CURRENT_RUN))
 
         fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
@@ -393,7 +401,7 @@ class Communicator:
             target=fqcn,
             channel=CellChannel.SERVER_COMMAND,
             topic=ServerCommandNames.AUX_COMMUNICATE,
-            request=task_message
+            request=task_message,
         )
         end_time = time.time()
         return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
@@ -437,15 +445,16 @@ class Communicator:
         #             time.sleep(3)
         # return server_message
 
-        quit_message = new_cell_message({CellMessageHeaderKeys.TOKEN: token,
-                                        CellMessageHeaderKeys.SSID: ssid,
-                                         CellMessageHeaderKeys.PROJECT_NAME: task_name})
+        quit_message = new_cell_message(
+            {
+                CellMessageHeaderKeys.TOKEN: token,
+                CellMessageHeaderKeys.SSID: ssid,
+                CellMessageHeaderKeys.PROJECT_NAME: task_name,
+            }
+        )
         try:
             result = self.cell.send_request(
-                target=FQCN.ROOT_SERVER,
-                channel=CellChannel.TASK,
-                topic=CellChannelTopic.Quit,
-                request=quit_message
+                target=FQCN.ROOT_SERVER, channel=CellChannel.TASK, topic=CellChannelTopic.Quit, request=quit_message
             )
             return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
             if return_code == ReturnCode.UNAUTHENTICATED:
@@ -455,7 +464,7 @@ class Communicator:
             server_message = result.get_header(CellMessageHeaderKeys.MESSAGE)
 
         except BaseException as ex:
-           raise FLCommunicationError(ex, "error:client_quit")
+            raise FLCommunicationError(ex, "error:client_quit")
 
         return server_message
 
@@ -484,35 +493,37 @@ class Communicator:
                 #             retry -= 1
                 #             time.sleep(5)
 
-                    job_ids = engine.get_all_job_ids()
-                    heartbeat_message = new_cell_message(
-                        {CellMessageHeaderKeys.TOKEN: token,
-                         CellMessageHeaderKeys.SSID: ssid,
-                         CellMessageHeaderKeys.CLIENT_NAME: client_name,
-                         CellMessageHeaderKeys.PROJECT_NAME: task_name,
-                         CellMessageHeaderKeys.JOB_IDS: job_ids
-                         })
+                job_ids = engine.get_all_job_ids()
+                heartbeat_message = new_cell_message(
+                    {
+                        CellMessageHeaderKeys.TOKEN: token,
+                        CellMessageHeaderKeys.SSID: ssid,
+                        CellMessageHeaderKeys.CLIENT_NAME: client_name,
+                        CellMessageHeaderKeys.PROJECT_NAME: task_name,
+                        CellMessageHeaderKeys.JOB_IDS: job_ids,
+                    }
+                )
 
-                    try:
-                        result = self.cell.send_request(
-                            target=FQCN.ROOT_SERVER,
-                            channel=CellChannel.TASK,
-                            topic=CellChannelTopic.HEART_BEAT,
-                            request=heartbeat_message
-                        )
-                        return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
-                        if return_code == ReturnCode.UNAUTHENTICATED:
-                            unauthenticated = result.get_header(MessageHeaderKey.ERROR)
-                            raise FLCommunicationError({}, "error:client_quit " + unauthenticated)
+                try:
+                    result = self.cell.send_request(
+                        target=FQCN.ROOT_SERVER,
+                        channel=CellChannel.TASK,
+                        topic=CellChannelTopic.HEART_BEAT,
+                        request=heartbeat_message,
+                    )
+                    return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
+                    if return_code == ReturnCode.UNAUTHENTICATED:
+                        unauthenticated = result.get_header(MessageHeaderKey.ERROR)
+                        raise FLCommunicationError({}, "error:client_quit " + unauthenticated)
 
-                        # server_message = result.get_header(CellMessageHeaderKeys.MESSAGE)
-                        abort_jobs = result.get_header(CellMessageHeaderKeys.ABORT_JOBS, [])
-                        self._clean_up_runs(engine, abort_jobs)
+                    # server_message = result.get_header(CellMessageHeaderKeys.MESSAGE)
+                    abort_jobs = result.get_header(CellMessageHeaderKeys.ABORT_JOBS, [])
+                    self._clean_up_runs(engine, abort_jobs)
 
-                    except BaseException as ex:
-                        raise FLCommunicationError(ex, "error:client_quit")
+                except BaseException as ex:
+                    raise FLCommunicationError(ex, "error:client_quit")
 
-                    time.sleep(30)
+                time.sleep(30)
             except BaseException as e:
                 self.logger.info(f"Failed to send heartbeat. Will try again. Exception: {secure_format_exception(e)}")
                 time.sleep(5)

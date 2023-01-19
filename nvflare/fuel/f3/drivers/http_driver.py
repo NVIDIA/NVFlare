@@ -13,14 +13,14 @@
 # limitations under the License.
 import asyncio
 import logging
-from typing import List, Any, Union
+from typing import Any, List, Union
 
 import websockets
 
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers import net_utils
 from nvflare.fuel.f3.drivers.connection import Connection, ConnState
-from nvflare.fuel.f3.drivers.driver import Driver, DriverParams, Connector
+from nvflare.fuel.f3.drivers.driver import Connector, Driver, DriverParams
 from nvflare.fuel.f3.drivers.prefix import Prefix
 from nvflare.fuel.f3.sfm.conn_manager import Mode
 
@@ -28,11 +28,10 @@ log = logging.getLogger(__name__)
 
 QUEUE_SIZE = 16
 THREAD_POOL_SIZE = 8
-MAX_MSG_SIZE = 2000000000   # 1GB
+MAX_MSG_SIZE = 2000000000  # 1GB
 
 
 class WsConnection(Connection):
-
     def __init__(self, websocket: Any, loop, connector: Connector):
         super().__init__(connector)
         self.websocket = websocket
@@ -60,7 +59,6 @@ class WsConnection(Connection):
 
 
 class HttpDriver(Driver):
-
     def __init__(self):
         super().__init__()
         self.connections = {}

@@ -12,19 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .net_agent import NetAgent
-
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.constants import ConnProps
 
+from .net_agent import NetAgent
+
 
 class NetManager(CommandModule):
-
-    def __init__(
-            self,
-            agent: NetAgent
-    ):
+    def __init__(self, agent: NetAgent):
         self.agent = agent
 
     def get_spec(self) -> CommandModuleSpec:
@@ -86,7 +82,9 @@ class NetManager(CommandModule):
                     usage="shutdown",
                     handler_func=self._cmd_shutdown,
                     visible=True,
-                )])
+                ),
+            ],
+        )
 
     def _cmd_cells(self, conn: Connection, args: [str]):
         err, cell_fqcns = self.agent.request_cells_info()
@@ -167,10 +165,7 @@ class NetManager(CommandModule):
             payload_size = int(args[4])
 
         result = self.agent.speed_test(
-            from_fqcn=from_fqcn,
-            to_fqcn=to_fqcn,
-            num_tries=num_tries,
-            payload_size=payload_size
+            from_fqcn=from_fqcn, to_fqcn=to_fqcn, num_tries=num_tries, payload_size=payload_size
         )
         conn.append_dict(result)
 
@@ -189,11 +184,7 @@ class NetManager(CommandModule):
             conn.append_error("no targets to test")
 
         conn.append_string(f"starting stress test on {targets}", flush=True)
-        result = self.agent.start_stress_test(
-            targets=targets,
-            num_rounds=num_tries,
-            timeout=timeout
-        )
+        result = self.agent.start_stress_test(targets=targets, num_rounds=num_tries, timeout=timeout)
 
         total_errors = 0
         for t, v in result.items():
@@ -205,7 +196,7 @@ class NetManager(CommandModule):
                 cell_errs += c
             total_errors += cell_errs
             if cell_errs == 0:
-                v.pop('errors')
+                v.pop("errors")
         conn.append_dict(result)
         conn.append_string(f"total errors: {total_errors}")
 

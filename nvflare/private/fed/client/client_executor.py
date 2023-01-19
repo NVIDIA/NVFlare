@@ -25,11 +25,11 @@ from multiprocessing.connection import Client
 from nvflare.apis.fl_constant import AdminCommandNames, ReturnCode, RunProcessKey
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
 from nvflare.apis.shareable import Shareable, make_reply
-from nvflare.security.logging import secure_format_exception, secure_log_traceback
-from nvflare.fuel.f3.cellnet.cell import Cell, Message, FQCN
+from nvflare.fuel.f3.cellnet.cell import FQCN, Cell, Message
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
-from nvflare.private.defs import new_cell_message, CellChannel, CellChannelTopic, CellMessageHeaderKeys
 from nvflare.fuel.utils import fobs
+from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeaderKeys, new_cell_message
+from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .client_status import ClientStatus, get_status_message
 
@@ -261,7 +261,7 @@ class ProcessExecutor(ClientExecutor):
                     target=fqcn,
                     channel=CellChannel.CLIENT_COMMAND,
                     topic=AdminCommandNames.CHECK_STATUS,
-                    request=request
+                    request=request,
                 )
                 return_code = return_data.get_header(MessageHeaderKey.RETURN_CODE)
                 if return_code == ReturnCode.OK:
@@ -299,10 +299,7 @@ class ProcessExecutor(ClientExecutor):
                 fqcn = FQCN.join([self.client.client_name, job_id])
                 request = new_cell_message({}, fobs.dumps(data))
                 return_data = self.client.cell.send_request(
-                    target=fqcn,
-                    channel=CellChannel.CLIENT_COMMAND,
-                    topic=AdminCommandNames.SHOW_STATS,
-                    request=request
+                    target=fqcn, channel=CellChannel.CLIENT_COMMAND, topic=AdminCommandNames.SHOW_STATS, request=request
                 )
                 return_code = return_data.get_header(MessageHeaderKey.RETURN_CODE)
                 if return_code == ReturnCode.OK:
@@ -340,7 +337,7 @@ class ProcessExecutor(ClientExecutor):
                     target=fqcn,
                     channel=CellChannel.CLIENT_COMMAND,
                     topic=AdminCommandNames.SHOW_ERRORS,
-                    request=request
+                    request=request,
                 )
                 return_code = return_data.get_header(MessageHeaderKey.RETURN_CODE)
                 if return_code == ReturnCode.OK:
@@ -374,7 +371,7 @@ class ProcessExecutor(ClientExecutor):
                     target=fqcn,
                     channel=CellChannel.CLIENT_COMMAND,
                     topic=AdminCommandNames.RESET_ERRORS,
-                    request=request
+                    request=request,
                 )
 
         except Exception as e:
@@ -421,14 +418,15 @@ class ProcessExecutor(ClientExecutor):
                         #     data = {"command": AdminCommandNames.ABORT, "data": {}}
                         #     conn_client.send(data)
 
-                        data = {"command": AdminCommandNames.ABORT, "data": {}}
+                        # data = {"command": AdminCommandNames.ABORT, "data": {}}
+                        data = {}
                         fqcn = FQCN.join([self.client.client_name, job_id])
                         request = new_cell_message({}, fobs.dumps(data))
                         return_data = self.client.cell.fire_and_forget(
-                            target=fqcn,
+                            targets=fqcn,
                             channel=CellChannel.CLIENT_COMMAND,
                             topic=AdminCommandNames.ABORT,
-                            request=request
+                            message=request,
                         )
                         self.logger.debug("abort sent")
 
@@ -444,8 +442,8 @@ class ProcessExecutor(ClientExecutor):
                         retry -= 1
                         time.sleep(5.0)
                     # finally:
-                        # if conn_client:
-                        #     conn_client.close()
+                    # if conn_client:
+                    #     conn_client.close()
                 else:
                     self.logger.info(f"Client worker process for run: {job_id} was already terminated.")
                     break
@@ -482,10 +480,7 @@ class ProcessExecutor(ClientExecutor):
                 fqcn = FQCN.join([self.client.client_name, job_id])
                 request = new_cell_message({}, fobs.dumps(data))
                 return_data = self.client.cell.fire_and_forget(
-                    target=fqcn,
-                    channel=CellChannel.CLIENT_COMMAND,
-                    topic=AdminCommandNames.ABORT_TASK,
-                    request=request
+                    target=fqcn, channel=CellChannel.CLIENT_COMMAND, topic=AdminCommandNames.ABORT_TASK, request=request
                 )
                 self.logger.debug("abort_task sent")
 
@@ -504,10 +499,7 @@ class ProcessExecutor(ClientExecutor):
                 fqcn = FQCN.join([client.client_name, job_id])
                 request = new_cell_message({}, fobs.dumps(data))
                 return_data = client.cell.send_request(
-                    target=fqcn,
-                    channel=CellChannel.CLIENT_COMMAND,
-                    topic=AdminCommandNames.START_APP,
-                    request=request
+                    target=fqcn, channel=CellChannel.CLIENT_COMMAND, topic=AdminCommandNames.START_APP, request=request
                 )
                 return_code = return_data.get_header(MessageHeaderKey.RETURN_CODE)
                 if return_code == ReturnCode.OK:

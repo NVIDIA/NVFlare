@@ -36,7 +36,6 @@ class Headers(dict):
 
 
 class Message:
-
     def __init__(self, headers: Headers, payload: BytesAlike):
         """Construct an FCI message"""
 
@@ -71,7 +70,6 @@ class Message:
 
 
 class MessageReceiver(ABC):
-
     @abstractmethod
     def process_message(self, endpoint: Endpoint, app_id: int, message: Message):
         pass

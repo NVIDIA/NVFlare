@@ -16,7 +16,11 @@ import threading
 import time
 from typing import List, Optional
 
-from nvflare.fuel.f3.cellnet.cell import Cell, TargetMessage, Message as CellMessage
+from nvflare.fuel.f3.cellnet.cell import Cell
+from nvflare.fuel.f3.cellnet.cell import Message as CellMessage
+from nvflare.fuel.f3.cellnet.cell import TargetMessage
+from nvflare.fuel.f3.cellnet.net_agent import NetAgent
+from nvflare.fuel.f3.cellnet.net_manager import NetManager
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule
 from nvflare.fuel.hci.server.audit import CommandAudit
@@ -27,9 +31,7 @@ from nvflare.fuel.hci.server.hci import AdminServer
 from nvflare.fuel.hci.server.login import LoginModule, SessionManager, SimpleAuthenticator
 from nvflare.fuel.sec.audit import Auditor, AuditService
 from nvflare.private.admin_defs import Message
-from nvflare.private.defs import ERROR_MSG_PREFIX, RequestHeader, CellChannel, new_cell_message
-from nvflare.fuel.f3.cellnet.net_agent import NetAgent
-from nvflare.fuel.f3.cellnet.net_manager import NetManager
+from nvflare.private.defs import ERROR_MSG_PREFIX, CellChannel, RequestHeader, new_cell_message
 
 
 def new_message(conn: Connection, topic, body, require_authz: bool) -> Message:
@@ -102,20 +104,20 @@ def check_client_replies(replies: List[ClientReply], client_sites: List[str], co
 
 class FedAdminServer(AdminServer):
     def __init__(
-            self,
-            cell: Cell,
-            fed_admin_interface,
-            users,
-            cmd_modules,
-            file_upload_dir,
-            file_download_dir,
-            host,
-            port,
-            ca_cert_file_name,
-            server_cert_file_name,
-            server_key_file_name,
-            accepted_client_cns=None,
-            download_job_url="",
+        self,
+        cell: Cell,
+        fed_admin_interface,
+        users,
+        cmd_modules,
+        file_upload_dir,
+        file_download_dir,
+        host,
+        port,
+        ca_cert_file_name,
+        server_cert_file_name,
+        server_key_file_name,
+        accepted_client_cns=None,
+        download_job_url="",
     ):
         """The FedAdminServer is the framework for developing admin commands.
 
@@ -302,10 +304,7 @@ class FedAdminServer(AdminServer):
                 continue
 
             target_msgs[client.name] = TargetMessage(
-                target=client.name,
-                channel=CellChannel.ADMIN,
-                topic="admin",
-                message=new_cell_message({}, req)
+                target=client.name, channel=CellChannel.ADMIN, topic="admin", message=new_cell_message({}, req)
             )
 
             name_to_token[client.name] = token
@@ -323,10 +322,7 @@ class FedAdminServer(AdminServer):
             replies = self.cell.broadcast_multi_requests(target_msgs, timeout_secs)
             for name, reply in replies.items():
                 assert isinstance(reply, CellMessage)
-                result.append(ClientReply(
-                    client_token=name_to_token[name],
-                    req=name_to_req[name],
-                    reply=reply.payload))
+                result.append(ClientReply(client_token=name_to_token[name], req=name_to_req[name], reply=reply.payload))
             return result
 
     def stop(self):

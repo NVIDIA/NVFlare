@@ -71,7 +71,6 @@ class FQCN:
 
 
 class FqcnInfo:
-
     def __init__(self, fqcn: str):
         self.fqcn = fqcn
         self.path = FQCN.split(fqcn)

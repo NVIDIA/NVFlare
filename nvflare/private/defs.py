@@ -12,8 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from nvflare.fuel.f3.message import Headers, Message
 from nvflare.fuel.hci.server.constants import ConnProps
-from nvflare.fuel.f3.message import Message, Headers
 
 
 class SpecialTaskName(object):

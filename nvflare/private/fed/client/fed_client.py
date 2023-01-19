@@ -20,14 +20,14 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.filter import Filter
 from nvflare.apis.fl_component import FLComponent
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-from nvflare.apis.fl_constant import FLContextKey
+from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.utils import fobs
 from nvflare.private.defs import SpecialTaskName
 from nvflare.private.event import fire_event
 from nvflare.private.fed.utils.numproto import proto_to_bytes
-from nvflare.fuel.f3.cellnet.cell import Cell
 
 from .fed_client_base import FederatedClientBase
 
@@ -49,7 +49,7 @@ class FederatedClient(FederatedClientBase):
         overseer_agent=None,
         args=None,
         components=None,
-        cell: Cell=None,
+        cell: Cell = None,
     ):
         """To init FederatedClient.
 
@@ -78,7 +78,7 @@ class FederatedClient(FederatedClientBase):
             overseer_agent=overseer_agent,
             args=args,
             components=components,
-            cell=cell
+            cell=cell,
         )
 
         self.executors = executors

@@ -49,19 +49,28 @@ from nvflare.apis.job_def import Job
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
+from nvflare.fuel.f3.cellnet.cell import FQCN, Cell
+from nvflare.fuel.f3.cellnet.cell import Message as CellMessage
+from nvflare.fuel.f3.cellnet.cell import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.cell import ReturnCode as F3ReturnCode
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
 from nvflare.private.admin_defs import Message, MsgHeader
-from nvflare.private.defs import RequestHeader, TrainingTopic
+from nvflare.private.defs import (
+    CellChannel,
+    CellChannelTopic,
+    CellMessageHeaderKeys,
+    RequestHeader,
+    TrainingTopic,
+    new_cell_message,
+)
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.private.fed.utils.fed_utils import security_close
 from nvflare.private.scheduler_constants import ShareableHeader
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
-from nvflare.fuel.f3.cellnet.cell import Cell, Message as CellMessage, FQCN, MessageHeaderKey, ReturnCode as F3ReturnCode
-from nvflare.private.defs import new_cell_message, CellChannel, CellChannelTopic, CellMessageHeaderKeys
 
 from .admin import ClientReply
 from .client_manager import ClientManager
@@ -183,7 +192,7 @@ class ServerEngine(ServerEngineInternalSpec):
                         target=FQCN.ROOT_SERVER,
                         channel=CellChannel.SERVER_PARENT_LISTENER,
                         topic=ServerCommandNames.HEARTBEAT,
-                        request=request
+                        request=request,
                     )
                     return_code = return_data.get_header(MessageHeaderKey.RETURN_CODE)
                     if return_code != F3ReturnCode.OK:
@@ -229,8 +238,15 @@ class ServerEngine(ServerEngineInternalSpec):
 
             open_ports = get_open_ports(2)
             self._start_runner_process(
-                self.args, app_root, run_number, app_custom_folder, open_ports, job.job_id, job_clients, snapshot,
-                self.server.cell
+                self.args,
+                app_root,
+                run_number,
+                app_custom_folder,
+                open_ports,
+                job.job_id,
+                job_clients,
+                snapshot,
+                self.server.cell,
             )
 
             # threading.Thread(target=self._listen_command, args=(open_ports[0], run_number)).start()
@@ -579,7 +595,7 @@ class ServerEngine(ServerEngineInternalSpec):
     def send_aux_request(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
         try:
             if not targets:
-                self.sync_clients_from_main_process()
+                # self.sync_clients_from_main_process()
                 targets = []
                 for t in self.get_clients():
                     targets.append(t.name)
@@ -610,7 +626,7 @@ class ServerEngine(ServerEngineInternalSpec):
             target=FQCN.ROOT_SERVER,
             channel=CellChannel.SERVER_PARENT_LISTENER,
             topic=ServerCommandNames.GET_CLIENTS,
-            request=request
+            request=request,
         )
         data = fobs.loads(return_data.payload)
         if data.get(ServerCommandKey.CLIENTS):
@@ -653,7 +669,7 @@ class ServerEngine(ServerEngineInternalSpec):
                     targets=FQCN.ROOT_SERVER,
                     channel=CellChannel.SERVER_PARENT_LISTENER,
                     topic=ServerCommandNames.UPDATE_RUN_STATUS,
-                    message=request
+                    message=request,
                 )
 
     def aux_send(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
@@ -737,17 +753,15 @@ class ServerEngine(ServerEngineInternalSpec):
             targets=targets,
             channel=CellChannel.CLIENT_COMMAND,
             topic=AdminCommandNames.AUX_COMMAND,
-            request=new_cell_message({}, fobs.dumps(req))
-
+            request=new_cell_message({}, fobs.dumps(req)),
+            timeout=timeout_secs,
         )
         for name, reply in replies.items():
             assert isinstance(reply, CellMessage)
-            result.append(ClientReply(
-                client_token=name_to_token[name],
-                req=name_to_req[name],
-                reply=fobs.loads(reply.payload)))
+            result.append(
+                ClientReply(client_token=name_to_token[name], req=name_to_req[name], reply=fobs.loads(reply.payload))
+            )
         return result
-
 
     def send_command_to_child_runner_process(self, job_id: str, command_name: str, command_data, return_result=True):
         result = None
@@ -765,10 +779,7 @@ class ServerEngine(ServerEngineInternalSpec):
             fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
             request = new_cell_message({}, fobs.dumps(command_data))
             return_data = self.server.cell.send_request(
-                target=fqcn,
-                channel=CellChannel.SERVER_COMMAND,
-                topic=command_name,
-                request=request
+                target=fqcn, channel=CellChannel.SERVER_COMMAND, topic=command_name, request=request
             )
             result = fobs.loads(return_data.payload)
 

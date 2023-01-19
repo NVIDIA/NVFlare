@@ -16,17 +16,16 @@ from socketserver import BaseRequestHandler
 from typing import Any, Union
 
 from nvflare.fuel.f3.comm_error import CommError
-from nvflare.fuel.f3.drivers.connection import Connection, ConnState, BytesAlike
-from nvflare.fuel.f3.drivers.driver import Driver, Connector
+from nvflare.fuel.f3.drivers.connection import BytesAlike, Connection, ConnState
+from nvflare.fuel.f3.drivers.driver import Connector, Driver
 from nvflare.fuel.f3.drivers.prefix import PREFIX_LEN, Prefix
 
 log = logging.getLogger(__name__)
 
-MAX_FRAME_SIZE = 1024*1024*1024
+MAX_FRAME_SIZE = 1024 * 1024 * 1024
 
 
 class StreamConnection(Connection):
-
     def __init__(self, stream: Any, connector: Connector, peer_address):
         super().__init__(connector)
         self.stream = stream
@@ -78,7 +77,7 @@ class StreamConnection(Connection):
 
         frame = bytearray(prefix.length)
         frame[0:PREFIX_LEN] = prefix_buf
-        self.read_into(frame, PREFIX_LEN, prefix.length-PREFIX_LEN)
+        self.read_into(frame, PREFIX_LEN, prefix.length - PREFIX_LEN)
 
         return frame
 
@@ -99,7 +98,6 @@ class StreamConnection(Connection):
 
 
 class ConnectionHandler(BaseRequestHandler):
-
     def handle(self):
 
         connection = None
@@ -120,6 +118,7 @@ class ConnectionHandler(BaseRequestHandler):
 
 class SocketDriver(Driver):
     """Common base class for socket-based drivers"""
+
     def __init__(self):
         super().__init__()
         self.connections = {}

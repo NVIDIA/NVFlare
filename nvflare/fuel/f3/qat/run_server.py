@@ -14,6 +14,7 @@
 
 import argparse
 import logging
+
 from nvflare.fuel.f3.qat.server import Server
 from nvflare.fuel.utils.config_service import ConfigService
 
@@ -27,8 +28,9 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--config_dir", "-c", type=str, help="config folder", required=False, default=".")
-    parser.add_argument("--config_file", "-f", type=str, help="config file name",
-                        required=False, default="net_config.json")
+    parser.add_argument(
+        "--config_file", "-f", type=str, help="config file name", required=False, default="net_config.json"
+    )
     parser.add_argument("--log_level", "-l", type=str, help="log level", required=False, default="info")
     args = parser.parse_args()
 
@@ -41,11 +43,7 @@ def main():
     logging.getLogger().setLevel(log_level)
 
     ConfigService.initialize(section_files={}, config_path=[args.config_dir])
-    server = Server(
-        config_path=args.config_dir,
-        config_file=args.config_file,
-        log_level=args.log_level
-    )
+    server = Server(config_path=args.config_dir, config_file=args.config_file, log_level=args.log_level)
     server.start()
     server.run()
 

@@ -27,14 +27,13 @@ from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.overseer_spec import SP
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
+from nvflare.fuel.f3.cellnet.cell import Cell
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.cellnet.net_agent import NetAgent
+from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import EngineConstant
 from nvflare.security.logging import secure_format_exception
-from nvflare.fuel.utils import fobs
-
-from nvflare.fuel.f3.cellnet.cell import Cell
-from nvflare.fuel.f3.cellnet.net_agent import NetAgent
-from nvflare.fuel.f3.cellnet.fqcn import FQCN
 
 from .client_status import ClientStatus
 from .communicator import Communicator
@@ -70,7 +69,7 @@ class FederatedClientBase:
         overseer_agent=None,
         args=None,
         components=None,
-        cell: Cell=None,
+        cell: Cell = None,
     ):
         """To init FederatedClientBase.
 
@@ -102,7 +101,7 @@ class FederatedClientBase:
             retry_timeout=retry_timeout,
             client_state_processors=client_state_processors,
             compression=compression,
-            cell=cell
+            cell=cell,
         )
 
         self.secure_train = secure_train

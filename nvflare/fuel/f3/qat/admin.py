@@ -13,11 +13,12 @@
 # limitations under the License.
 
 import argparse
+
 from nvflare.fuel.common.excepts import ConfigError
-from nvflare.fuel.hci.client.cli import AdminClient, CredentialType
 from nvflare.fuel.f3.qat.net_config import NetConfig
-from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.fuel.hci.client.cli import AdminClient, CredentialType
 from nvflare.fuel.hci.client.static_service_finder import StaticServiceFinder
+from nvflare.fuel.utils.config_service import ConfigService
 
 
 def main():
@@ -26,7 +27,9 @@ def main():
     """
     parser = argparse.ArgumentParser()
     parser.add_argument("--config_dir", "-c", type=str, help="config folder", required=False, default=".")
-    parser.add_argument("--config_file", "-f", type=str, help="config file name", required=False, default="net_config.json")
+    parser.add_argument(
+        "--config_file", "-f", type=str, help="config file name", required=False, default="net_config.json"
+    )
     args = parser.parse_args()
 
     ConfigService.initialize(section_files={}, config_path=[args.config_dir])
@@ -35,10 +38,7 @@ def main():
     if not admin_host or not admin_port:
         raise ConfigError("missing admin host or port in net_config")
 
-    service_finder = StaticServiceFinder(
-        host=admin_host,
-        port=int(admin_port)
-    )
+    service_finder = StaticServiceFinder(host=admin_host, port=int(admin_port))
 
     client = AdminClient(
         credential_type=CredentialType.PASSWORD,

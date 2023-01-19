@@ -22,6 +22,9 @@ import sys
 from nvflare.apis.fl_constant import JobConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
+from nvflare.fuel.f3.cellnet.cell import Cell, CellAgent, Message, MessageHeaderKey, MessageType
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
@@ -31,9 +34,6 @@ from nvflare.private.fed.server.server_app_runner import ServerAppRunner
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
-from nvflare.fuel.f3.cellnet.fqcn import FQCN
-from nvflare.fuel.f3.cellnet.cell import Cell, CellAgent, Message, MessageHeaderKey, MessageType
-from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 
 
 def main():

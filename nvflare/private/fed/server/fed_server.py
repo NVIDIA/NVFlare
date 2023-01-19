@@ -35,15 +35,18 @@ from nvflare.apis.fl_constant import (
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.workspace import Workspace
-from nvflare.fuel.f3.cellnet.cell import Cell, Message, make_reply as make_cellnet_reply
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode as F3ReturnCode
+from nvflare.fuel.f3.cellnet.cell import Cell, Message
+from nvflare.fuel.f3.cellnet.cell import make_reply as make_cellnet_reply
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.zip_utils import unzip_all_from_bytes
-from nvflare.private.defs import CellChannel, CellChannelTopic, new_cell_message, CellMessageHeaderKeys
+from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeaderKeys, new_cell_message
 from nvflare.private.fed.server.server_runner import ServerRunner
 from nvflare.widgets.fed_event import ServerFedEventRunner
+
 from .client_manager import ClientManager
 from .run_manager import RunManager
 from .server_engine import ServerEngine
@@ -329,17 +332,17 @@ class FederatedServer(BaseServer):
         self.cell.register_request_cb(
             channel=CellChannel.TASK,
             topic=CellChannelTopic.Register,
-            cb=self.Register,
+            cb=self.register_client,
         )
         self.cell.register_request_cb(
             channel=CellChannel.TASK,
             topic=CellChannelTopic.Quit,
-            cb=self.Quit,
+            cb=self.quit_client,
         )
         self.cell.register_request_cb(
             channel=CellChannel.TASK,
             topic=CellChannelTopic.HEART_BEAT,
-            cb=self.Heartbeat,
+            cb=self.client_heartbeat,
         )
 
         self.cell.register_request_cb(
@@ -355,8 +358,7 @@ class FederatedServer(BaseServer):
         #     job_id = self.run_processes.get(job_id).get(RunProcessKey.JOB_ID)
         #     try:
         #         if conn.poll(0.1):
-        assert isinstance(request, Message), "request must be CellMessage but got {}".format(
-            type(request))
+        assert isinstance(request, Message), "request must be CellMessage but got {}".format(type(request))
         # req = request.payload
         #
         # # assert isinstance(req, Message), "request payload must be Message but got {}".format(type(req))
@@ -406,13 +408,6 @@ class FederatedServer(BaseServer):
             server=self, args=args, client_manager=self.client_manager, snapshot_persistor=snapshot_persistor
         )
 
-    def get_current_model_meta_data(self):
-        """Get the model metadata, which usually contains additional fields."""
-        s = Struct()
-        for k, v in self.current_model_meta_data.items():
-            s.update({k: v})
-        return s
-
     # @property
     def task_meta_info(self, client_name):
         """Task meta information.
@@ -423,8 +418,10 @@ class FederatedServer(BaseServer):
         # meta_info = fed_msg.MetaData()
         # meta_info.created.CopyFrom(self.round_started)
         # meta_info.project.name = self.project_name
-        meta_info = {CellMessageHeaderKeys.PROJECT_NAME: self.project_name,
-                     CellMessageHeaderKeys.CLIENT_NAME: client_name}
+        meta_info = {
+            CellMessageHeaderKeys.PROJECT_NAME: self.project_name,
+            CellMessageHeaderKeys.CLIENT_NAME: client_name,
+        }
         return meta_info
 
     def remove_client_data(self, token):
@@ -460,10 +457,7 @@ class FederatedServer(BaseServer):
             return_message.set_header(MessageHeaderKey.RETURN_CODE, F3ReturnCode.OK)
             return return_message
 
-    # def Register(self, request, context):
-    # @request_processing
-    # def Register(self, cell: Cell, channel: str, topic: str, request: Message, fl_ctx: FLContext) -> Message:
-    def Register(self, request: Message) -> Message:
+    def register_client(self, request: Message) -> Message:
 
         """Register new clients on the fly.
 
@@ -489,8 +483,10 @@ class FederatedServer(BaseServer):
                 if self.admin_server:
                     self.admin_server.client_heartbeat(client.token, client.name)
 
-                headers = {CellMessageHeaderKeys.TOKEN: client.token,
-                           CellMessageHeaderKeys.SSID: self.server_state.ssid}
+                headers = {
+                    CellMessageHeaderKeys.TOKEN: client.token,
+                    CellMessageHeaderKeys.SSID: self.server_state.ssid,
+                }
             else:
                 headers = {}
             return self._generate_reply(headers=headers, payload=None, fl_ctx=fl_ctx)
@@ -505,7 +501,7 @@ class FederatedServer(BaseServer):
 
     # def Quit(self, request, context):
     # @request_processing
-    def Quit(self, request: Message) -> Message:
+    def quit_client(self, request: Message) -> Message:
         """Existing client quits the federated training process.
 
         Server will stop sharing the global model with the client,
@@ -524,7 +520,7 @@ class FederatedServer(BaseServer):
             headers = {CellMessageHeaderKeys.MESSAGE: "Removed client"}
             return self._generate_reply(headers=headers, payload=None, fl_ctx=fl_ctx)
 
-    def Heartbeat(self, request: Message) -> Message:
+    def client_heartbeat(self, request: Message) -> Message:
 
         with self.engine.new_context() as fl_ctx:
             self._before_service(fl_ctx)
@@ -539,7 +535,7 @@ class FederatedServer(BaseServer):
             #     client_name = cn_names[0].decode("utf-8")
             # else:
             #     client_name = request.client_name
-            client_name =  request.get_header(CellMessageHeaderKeys.CLIENT_NAME)
+            client_name = request.get_header(CellMessageHeaderKeys.CLIENT_NAME)
 
             if self.client_manager.heartbeat(token, client_name, fl_ctx):
                 self.tokens[token] = self.task_meta_info(client_name)
@@ -548,8 +544,9 @@ class FederatedServer(BaseServer):
 
             abort_runs = self._sync_client_jobs(request, token)
             # summary_info = fed_msg.FederatedSummary()
-            reply = self._generate_reply(headers={CellMessageHeaderKeys.MESSAGE: "Heartbeat response"},
-                                         payload=None, fl_ctx=fl_ctx)
+            reply = self._generate_reply(
+                headers={CellMessageHeaderKeys.MESSAGE: "Heartbeat response"}, payload=None, fl_ctx=fl_ctx
+            )
             if abort_runs:
                 # del summary_info.abort_jobs[:]
                 # summary_info.abort_jobs.extend(abort_runs)
@@ -606,7 +603,7 @@ class FederatedServer(BaseServer):
                     targets=fqcn,
                     channel=CellChannel.SERVER_COMMAND,
                     topic=ServerCommandNames.HANDLE_DEAD_JOB,
-                    message=request
+                    message=request,
                 )
 
         except BaseException:

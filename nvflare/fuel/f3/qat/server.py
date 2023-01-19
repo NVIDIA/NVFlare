@@ -14,24 +14,18 @@
 
 import logging
 
-from nvflare.fuel.hci.server.hci import AdminServer
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.net_manager import NetManager
-from .cell_runner import CellRunner, NetConfig
-
-from nvflare.fuel.hci.server.builtin import new_command_register_with_builtin_module
-from nvflare.fuel.hci.server.login import LoginModule, SessionManager, SimpleAuthenticator
 from nvflare.fuel.hci.security import hash_password
+from nvflare.fuel.hci.server.builtin import new_command_register_with_builtin_module
+from nvflare.fuel.hci.server.hci import AdminServer
+from nvflare.fuel.hci.server.login import LoginModule, SessionManager, SimpleAuthenticator
+
+from .cell_runner import CellRunner, NetConfig
 
 
 class Server(CellRunner):
-
-    def __init__(
-            self,
-            config_path: str,
-            config_file: str,
-            log_level: str
-    ):
+    def __init__(self, config_path: str, config_file: str, log_level: str):
         self._name = self.__class__.__name__
         self.logger = logging.getLogger(self._name)
 
@@ -41,11 +35,7 @@ class Server(CellRunner):
             raise RuntimeError("missing admin host/port in net config")
 
         CellRunner.__init__(
-            self,
-            config_path=config_path,
-            config_file=config_file,
-            my_name=FQCN.ROOT_SERVER,
-            log_level=log_level
+            self, config_path=config_path, config_file=config_file, my_name=FQCN.ROOT_SERVER, log_level=log_level
         )
 
         net_mgr = NetManager(self.agent)
@@ -61,11 +51,7 @@ class Server(CellRunner):
         cmd_reg.register_module(net_mgr)
         self.sess_mgr = sess_mgr
 
-        self.admin = AdminServer(
-            cmd_reg=cmd_reg,
-            host=admin_host,
-            port=int(admin_port)
-        )
+        self.admin = AdminServer(cmd_reg=cmd_reg, host=admin_host, port=int(admin_port))
 
         self.cell.add_cleanup_cb(self._clean_up)
 

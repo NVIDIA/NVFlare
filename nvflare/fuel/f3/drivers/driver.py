@@ -38,9 +38,9 @@
 from abc import ABC, abstractmethod
 from enum import Enum
 from typing import List
-from urllib.parse import urlparse, urlencode, parse_qsl
+from urllib.parse import parse_qsl, urlencode, urlparse
 
-from nvflare.fuel.f3.drivers.connection import ConnState, Connection
+from nvflare.fuel.f3.drivers.connection import Connection, ConnState
 from nvflare.fuel.f3.drivers.connnector import Connector
 
 
@@ -69,16 +69,15 @@ class DriverParams(str, Enum):
 
 
 class ConnMonitor(ABC):
-
     @abstractmethod
     def state_change(self, connection: Connection):
         """Driver state change notification, including new connections
 
-         Args:
-             connection: The connection that state has changed
+        Args:
+            connection: The connection that state has changed
 
-         Raises:
-             CommError: If any error happens while processing the frame
+        Raises:
+            CommError: If any error happens while processing the frame
         """
         pass
 
@@ -107,7 +106,7 @@ class Driver(ABC):
     @abstractmethod
     def supported_transports() -> List[str]:
         """Return a list of transports supported by this driver, for example
-           ["http", "https", "ws", "wss"]
+        ["http", "https", "ws", "wss"]
         """
         pass
 
@@ -162,8 +161,7 @@ class Driver(ABC):
         pass
 
     def register_conn_monitor(self, monitor: ConnMonitor):
-        """Register a monitor for connection state change, including new connections
-        """
+        """Register a monitor for connection state change, including new connections"""
         self.conn_monitor = monitor
 
     @staticmethod
@@ -227,6 +225,6 @@ class Driver(ABC):
             url += urlencode(params)
 
         if frag:
-            url += '#' + frag
+            url += "#" + frag
 
         return url

@@ -13,13 +13,13 @@
 # limitations under the License.
 import logging
 import socket
-from socketserver import ThreadingTCPServer, TCPServer
+from socketserver import TCPServer, ThreadingTCPServer
 from typing import List
 
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers import net_utils
-from nvflare.fuel.f3.drivers.driver import Driver, DriverParams, Connector
-from nvflare.fuel.f3.drivers.socket_driver import ConnectionHandler, StreamConnection, SocketDriver
+from nvflare.fuel.f3.drivers.driver import Connector, Driver, DriverParams
+from nvflare.fuel.f3.drivers.socket_driver import ConnectionHandler, SocketDriver, StreamConnection
 
 log = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ class TcpStreamServer(ThreadingTCPServer):
 
     TCPServer.allow_reuse_address = True
 
-    def __init__(self, driver: 'Driver', connector: Connector):
+    def __init__(self, driver: "Driver", connector: Connector):
         self.driver = driver
         self.connector = connector
 
@@ -50,7 +50,6 @@ class TcpStreamServer(ThreadingTCPServer):
 
 
 class TcpDriver(SocketDriver):
-
     @staticmethod
     def supported_transports() -> List[str]:
         return ["tcp", "stcp"]

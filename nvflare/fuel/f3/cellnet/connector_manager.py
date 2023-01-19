@@ -15,9 +15,11 @@
 import logging
 import os
 from typing import Union
+
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.f3.communicator import Communicator, Mode
 from nvflare.fuel.utils.config_service import ConfigService
+
 from .defs import ConnectorRequirementKey
 
 _KEY_RESOURCES = "resources"
@@ -29,7 +31,6 @@ _KEY_PORTS = "ports"
 
 
 class ConnectorInfo:
-
     def __init__(self, handle, connect_url: str, active: bool):
         self.handle = handle
         self.connect_url = connect_url
@@ -45,16 +46,9 @@ class ConnectorManager:
     Manages creation of connectors
     """
 
-    comm_config_files = [
-        "comm_config.json",
-        "comm_config.json.default"
-    ]
+    comm_config_files = ["comm_config.json", "comm_config.json.default"]
 
-    def __init__(
-            self,
-            communicator: Communicator,
-            secure: bool
-    ):
+    def __init__(self, communicator: Communicator, secure: bool):
         self._name = self.__class__.__name__
         self.logger = logging.getLogger(self._name)
 
@@ -63,10 +57,7 @@ class ConnectorManager:
 
         # set up default drivers
         self.int_scheme = "http"
-        self.int_resources = {
-            _KEY_HOST: "localhost",
-            _KEY_PORTS: ["30000-40000"]  # select a port randomly
-        }
+        self.int_resources = {_KEY_HOST: "localhost", _KEY_PORTS: ["30000-40000"]}  # select a port randomly
         self.ext_scheme = "http"
         self.ext_resources = {}
 
@@ -135,14 +126,13 @@ class ConnectorManager:
             resources = self.ext_resources
             self.logger.debug(
                 f"{os.getpid()}: creating ad-hoc external listener: "
-                f"active={active} scheme={scheme}, resources={resources}")
+                f"active={active} scheme={scheme}, resources={resources}"
+            )
             if not active and not resources:
                 # no resources configured - ad-hoc listener is not allowed!
                 return None
 
-        reqs = {
-            ConnectorRequirementKey.SECURE: self.secure
-        }
+        reqs = {ConnectorRequirementKey.SECURE: self.secure}
         if url:
             reqs[ConnectorRequirementKey.URL] = url
 
@@ -161,11 +151,7 @@ class ConnectorManager:
 
         return ConnectorInfo(handle, connect_url, active)
 
-    def get_external_listener(
-            self,
-            url: str,
-            adhoc: bool
-    ) -> Union[None, ConnectorInfo]:
+    def get_external_listener(self, url: str, adhoc: bool) -> Union[None, ConnectorInfo]:
         """
         Try to get an external listener.
 
@@ -173,18 +159,9 @@ class ConnectorManager:
             url:
             adhoc:
         """
-        return self._get_connector(
-            url=url,
-            active=False,
-            internal=False,
-            adhoc=adhoc
-        )
+        return self._get_connector(url=url, active=False, internal=False, adhoc=adhoc)
 
-    def get_external_connector(
-            self,
-            url: str,
-            adhoc: bool
-    ) -> Union[None, ConnectorInfo]:
+    def get_external_connector(self, url: str, adhoc: bool) -> Union[None, ConnectorInfo]:
         """
         Try to get an external listener.
 
@@ -192,37 +169,19 @@ class ConnectorManager:
             url:
             adhoc:
         """
-        return self._get_connector(
-            url=url,
-            active=True,
-            internal=False,
-            adhoc=adhoc
-        )
+        return self._get_connector(url=url, active=True, internal=False, adhoc=adhoc)
 
     def get_internal_listener(self) -> Union[None, ConnectorInfo]:
         """
         Try to get an internal listener.
         """
-        return self._get_connector(
-            url="",
-            active=False,
-            internal=True,
-            adhoc=False
-        )
+        return self._get_connector(url="", active=False, internal=True, adhoc=False)
 
-    def get_internal_connector(
-            self,
-            url: str
-    ) -> Union[None, ConnectorInfo]:
+    def get_internal_connector(self, url: str) -> Union[None, ConnectorInfo]:
         """
         Try to get an internal listener.
 
         Args:
             url:
         """
-        return self._get_connector(
-            url=url,
-            active=True,
-            internal=True,
-            adhoc=False
-        )
+        return self._get_connector(url=url, active=True, internal=True, adhoc=False)

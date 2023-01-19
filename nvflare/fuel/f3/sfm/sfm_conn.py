@@ -17,11 +17,11 @@ from typing import Optional
 
 import msgpack
 
-from nvflare.fuel.f3.drivers.connection import Connection, BytesAlike
-from nvflare.fuel.f3.drivers.prefix import Prefix, PREFIX_LEN
+from nvflare.fuel.f3.drivers.connection import BytesAlike, Connection
+from nvflare.fuel.f3.drivers.prefix import PREFIX_LEN, Prefix
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.message import Headers
-from nvflare.fuel.f3.sfm.constants import Types, HandshakeKeys
+from nvflare.fuel.f3.sfm.constants import HandshakeKeys, Types
 
 
 class SfmConnection:
@@ -66,15 +66,13 @@ class SfmConnection:
         """
 
         with self.lock:
-            self.sequence = (self.sequence + 1) & 0xffff
+            self.sequence = (self.sequence + 1) & 0xFFFF
             return self.sequence
 
     def send_handshake(self, frame_type: int):
         """Send HELLO/READY frame"""
 
-        data = {
-            HandshakeKeys.ENDPOINT_NAME: self.local_endpoint.name,
-            HandshakeKeys.TIMESTAMP: time.time()}
+        data = {HandshakeKeys.ENDPOINT_NAME: self.local_endpoint.name, HandshakeKeys.TIMESTAMP: time.time()}
 
         if self.local_endpoint.properties:
             data.update(self.local_endpoint.properties)

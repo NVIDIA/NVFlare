@@ -12,7 +12,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-from nvflare.fuel.f3.message import Message, Headers
+from nvflare.fuel.f3.message import Headers, Message
+
 from .defs import MessageHeaderKey
 
 
@@ -38,6 +39,6 @@ def format_log_message(fqcn: str, message: Message, log: str) -> str:
         "D=" + message.get_header(MessageHeaderKey.DESTINATION, "?"),
         "F=" + message.get_header(MessageHeaderKey.FROM_CELL, "?"),
         "T=" + message.get_header(MessageHeaderKey.TO_CELL, "?") + "]",
-        log
+        log,
     ]
     return " ".join(parts)

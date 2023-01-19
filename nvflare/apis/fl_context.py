@@ -12,10 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, List, Dict
-
 import logging
 import threading
+from typing import Any, Dict, List
 
 from .fl_constant import ReservedKey
 
@@ -58,7 +57,6 @@ def to_string(mask) -> str:
 
 
 class FLContext(object):
-
     def __init__(self):
         """Init the FLContext.
 
@@ -194,7 +192,7 @@ class FLContext(object):
             self.props.pop(key, None)
 
     def __str__(self):
-        raw_list = [f'{k}: {type(v[V])}' for k, v in self.props.items()]
+        raw_list = [f"{k}: {type(v[V])}" for k, v in self.props.items()]
         return " ".join(raw_list)
 
     # some convenience methods
@@ -261,12 +259,9 @@ class FLContextManager(object):
 
     """
 
-    def __init__(self,
-                 engine=None,
-                 identity_name: str = "",
-                 job_id: str = "",
-                 public_stickers=None,
-                 private_stickers=None):
+    def __init__(
+        self, engine=None, identity_name: str = "", job_id: str = "", public_stickers=None, private_stickers=None
+    ):
         """Init the FLContextManager.
 
         Args:

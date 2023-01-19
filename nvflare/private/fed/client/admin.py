@@ -14,12 +14,13 @@
 
 """The FedAdmin to communicate with the Admin server."""
 
-from nvflare.fuel.f3.cellnet.cell import Cell, Message as CellMessage
+from nvflare.fuel.f3.cellnet.cell import Cell
+from nvflare.fuel.f3.cellnet.cell import Message as CellMessage
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.sec.audit import Auditor, AuditService
 from nvflare.fuel.sec.authz import AuthorizationService, AuthzContext, Person
 from nvflare.private.admin_defs import Message, error_reply, ok_reply
-from nvflare.private.defs import RequestHeader, CellChannel, new_cell_message
+from nvflare.private.defs import CellChannel, RequestHeader, new_cell_message
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 
@@ -50,12 +51,7 @@ class RequestProcessor(object):
 class FedAdminAgent(object):
     """FedAdminAgent communicate with the FedAdminServer."""
 
-    def __init__(
-            self,
-            client_name: str,
-            cell: Cell,
-            app_ctx
-    ):
+    def __init__(self, client_name: str, cell: Cell, app_ctx):
         """Init the FedAdminAgent.
 
         Args:
@@ -98,65 +94,65 @@ class FedAdminAgent(object):
             self.processors[topic] = processor
 
     def _dispatch_request(
-            self,
-            request: CellMessage,
-            # *args, **kwargs
+        self,
+        request: CellMessage,
+        # *args, **kwargs
     ) -> CellMessage:
-            assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
-            req = request.payload
+        assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
+        req = request.payload
 
-            assert isinstance(req, Message), "request payload must be Message but got {}".format(type(req))
-            topic = req.topic
+        assert isinstance(req, Message), "request payload must be Message but got {}".format(type(req))
+        topic = req.topic
 
-            # create audit record
-            if self.auditor:
-                user_name = req.get_header(RequestHeader.USER_NAME, "")
-                ref_event_id = req.get_header(ConnProps.EVENT_ID, "")
-                self.auditor.add_event(user=user_name, action=topic, ref=ref_event_id)
+        # create audit record
+        if self.auditor:
+            user_name = req.get_header(RequestHeader.USER_NAME, "")
+            ref_event_id = req.get_header(ConnProps.EVENT_ID, "")
+            self.auditor.add_event(user=user_name, action=topic, ref=ref_event_id)
 
-            processor: RequestProcessor = self.processors.get(topic)
-            if processor:
-                try:
-                    reply = None
+        processor: RequestProcessor = self.processors.get(topic)
+        if processor:
+            try:
+                reply = None
 
-                    # see whether pre-authorization is needed
-                    authz_flag = req.get_header(RequestHeader.REQUIRE_AUTHZ)
-                    require_authz = authz_flag == "true"
-                    if require_authz:
-                        # authorize this command!
-                        cmd = req.get_header(RequestHeader.ADMIN_COMMAND, None)
-                        if cmd:
-                            user = Person(
-                                name=req.get_header(RequestHeader.USER_NAME, ""),
-                                org=req.get_header(RequestHeader.USER_ORG, ""),
-                                role=req.get_header(RequestHeader.USER_ROLE, ""),
-                            )
-                            submitter = Person(
-                                name=req.get_header(RequestHeader.SUBMITTER_NAME, ""),
-                                org=req.get_header(RequestHeader.SUBMITTER_ORG, ""),
-                                role=req.get_header(RequestHeader.SUBMITTER_ROLE, ""),
-                            )
+                # see whether pre-authorization is needed
+                authz_flag = req.get_header(RequestHeader.REQUIRE_AUTHZ)
+                require_authz = authz_flag == "true"
+                if require_authz:
+                    # authorize this command!
+                    cmd = req.get_header(RequestHeader.ADMIN_COMMAND, None)
+                    if cmd:
+                        user = Person(
+                            name=req.get_header(RequestHeader.USER_NAME, ""),
+                            org=req.get_header(RequestHeader.USER_ORG, ""),
+                            role=req.get_header(RequestHeader.USER_ROLE, ""),
+                        )
+                        submitter = Person(
+                            name=req.get_header(RequestHeader.SUBMITTER_NAME, ""),
+                            org=req.get_header(RequestHeader.SUBMITTER_ORG, ""),
+                            role=req.get_header(RequestHeader.SUBMITTER_ROLE, ""),
+                        )
 
-                            authz_ctx = AuthzContext(user=user, submitter=submitter, right=cmd)
-                            authorized, err = AuthorizationService.authorize(authz_ctx)
-                            if err:
-                                reply = error_reply(err)
-                            elif not authorized:
-                                reply = error_reply("not authorized")
-                        else:
-                            reply = error_reply("requires authz but missing admin command")
+                        authz_ctx = AuthzContext(user=user, submitter=submitter, right=cmd)
+                        authorized, err = AuthorizationService.authorize(authz_ctx)
+                        if err:
+                            reply = error_reply(err)
+                        elif not authorized:
+                            reply = error_reply("not authorized")
+                    else:
+                        reply = error_reply("requires authz but missing admin command")
 
-                    if not reply:
-                        reply = processor.process(req, self.app_ctx)
-                        if reply is None:
-                            # simply ack
-                            reply = ok_reply()
-                        else:
-                            if not isinstance(reply, Message):
-                                raise RuntimeError(f"processor for topic {topic} failed to produce valid reply")
-                except BaseException as e:
-                    secure_log_traceback()
-                    reply = error_reply(f"exception_occurred: {secure_format_exception(e)}")
-            else:
-                reply = error_reply("invalid_request")
-            return new_cell_message({}, reply)
+                if not reply:
+                    reply = processor.process(req, self.app_ctx)
+                    if reply is None:
+                        # simply ack
+                        reply = ok_reply()
+                    else:
+                        if not isinstance(reply, Message):
+                            raise RuntimeError(f"processor for topic {topic} failed to produce valid reply")
+            except BaseException as e:
+                secure_log_traceback()
+                reply = error_reply(f"exception_occurred: {secure_format_exception(e)}")
+        else:
+            reply = error_reply("invalid_request")
+        return new_cell_message({}, reply)

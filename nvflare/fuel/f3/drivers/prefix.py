@@ -47,7 +47,7 @@ PREFIX_LEN = PREFIX_STRUCT.size
 
 @dataclass
 class Prefix:
-    """ Prefix is the 16-byte fixed header for the SFM frame, every frame must have this prefix. Besides
+    """Prefix is the 16-byte fixed header for the SFM frame, every frame must have this prefix. Besides
     all the other attributes, it provides framing for the message. Framing is needed if the frame is sent
     over byte streams like TCP or Pipe.
 
@@ -74,12 +74,22 @@ class Prefix:
     sequence: int = 0
 
     @staticmethod
-    def from_bytes(buffer: bytes) -> 'Prefix':
+    def from_bytes(buffer: bytes) -> "Prefix":
         if len(buffer) < PREFIX_LEN:
             raise CommError(CommError.BAD_DATA, "Prefix too short")
 
         return Prefix(*PREFIX_STRUCT.unpack_from(buffer, 0))
 
     def to_buffer(self, buffer: BytesAlike, offset: int):
-        PREFIX_STRUCT.pack_into(buffer, offset, self.length, self.header_len, self.type, self.reserved,
-                                self.flags, self.app_id, self.stream_id, self.sequence)
+        PREFIX_STRUCT.pack_into(
+            buffer,
+            offset,
+            self.length,
+            self.header_len,
+            self.type,
+            self.reserved,
+            self.flags,
+            self.app_id,
+            self.stream_id,
+            self.sequence,
+        )

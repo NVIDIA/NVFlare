@@ -21,8 +21,8 @@ import grpc
 
 from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import FLContextKey
-from nvflare.private.defs import CellMessageHeaderKeys
 from nvflare.apis.fl_context import FLContext
+from nvflare.private.defs import CellMessageHeaderKeys
 
 
 class ClientManager:
@@ -150,8 +150,10 @@ class ClientManager:
                     #     grpc.StatusCode.FAILED_PRECONDITION,
                     #     "Client ID already registered as a client: {}".format(client_name),
                     # )
-                    context.set_prop(FLContextKey.COMMUNICATION_ERROR,
-                                     "Client ID already registered as a client: {}".format(client_name))
+                    context.set_prop(
+                        FLContextKey.COMMUNICATION_ERROR,
+                        "Client ID already registered as a client: {}".format(client_name),
+                    )
                     return None
 
             client = Client(client_name, str(uuid.uuid4()))
@@ -201,8 +203,10 @@ class ClientManager:
                         #     grpc.StatusCode.FAILED_PRECONDITION,
                         #     "Client ID already registered as a client: {}".format(client_name),
                         # )
-                        fl_ctx.set_prop(FLContextKey.COMMUNICATION_ERROR,
-                                        "Client ID already registered as a client: {}".format(client_name))
+                        fl_ctx.set_prop(
+                            FLContextKey.COMMUNICATION_ERROR,
+                            "Client ID already registered as a client: {}".format(client_name),
+                        )
                         self.logger.info(
                             "Failed to re-activate dead client:{} with token: {}. Client already exist.".format(
                                 client_name, _token

@@ -12,14 +12,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-from .cell import CellAgent
 from nvflare.fuel.f3.message import Message
 
+from .cell import CellAgent
 
-def cell_connected_cb_signature(
-        connected_cell: CellAgent,
-        *args, **kwargs
-):
+
+def cell_connected_cb_signature(connected_cell: CellAgent, *args, **kwargs):
     """
     This is the signature of the cell_connected callback.
 
@@ -34,31 +32,19 @@ def cell_connected_cb_signature(
     pass
 
 
-def cell_disconnected_cb_signature(
-        disconnected_cell: CellAgent,
-        *args, **kwargs
-):
+def cell_disconnected_cb_signature(disconnected_cell: CellAgent, *args, **kwargs):
     pass
 
 
-def request_cb_signature(
-        request: Message,
-        *args, **kwargs
-) -> Message:
+def request_cb_signature(request: Message, *args, **kwargs) -> Message:
     pass
 
 
-def message_interceptor_signature(
-        message: Message,
-        *args, **kwargs
-) -> Message:
+def message_interceptor_signature(message: Message, *args, **kwargs) -> Message:
     pass
 
 
-def filter_cb_signature(
-        message: Message,
-        *args, **kwargs
-) -> Message:
+def filter_cb_signature(message: Message, *args, **kwargs) -> Message:
     pass
 
 
