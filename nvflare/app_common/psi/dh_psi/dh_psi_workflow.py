@@ -338,7 +338,11 @@ class DhPSIWorkFlow(PSIWorkflow):
             abort_signal=abort_signal,
         )
         self.log_info(self.fl_ctx, f"{PSIConst.TASK_PREPARE} results = {results}")
-        self.ordered_sites = self.get_ordered_sites(results)
+        if not results:
+            abort_signal.trigger("no items to perform PSI")
+            raise RuntimeError("There is no item to perform PSI calculation")
+        else:
+            self.ordered_sites = self.get_ordered_sites(results)
 
     def prepare_setup_messages(self, s: SiteSize, other_site_sizes: Set[int]) -> Dict[str, str]:
         inputs = Shareable()
