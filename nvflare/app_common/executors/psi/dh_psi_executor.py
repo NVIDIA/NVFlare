@@ -150,6 +150,7 @@ class DhPSIExecutor(ClientExecutor):
 
     def check_items_uniqueness(self, items):
         import collections
+
         duplicates = {item: count for item, count in collections.Counter(items).items() if count > 1}
         if duplicates:
             raise ValueError(f"the items must be unique, the following items with duplicates {duplicates}")
