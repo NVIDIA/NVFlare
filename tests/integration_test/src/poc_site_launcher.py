@@ -18,20 +18,9 @@ import sys
 import tempfile
 import time
 
-from tests.integration_test.utils import (
-    cleanup_job_and_snapshot,
-    update_job_store_path_in_workspace,
-    update_snapshot_path_in_workspace,
-)
-
+from .constants import CLIENT_NVF_CONFIG, CLIENT_SCRIPT, SERVER_NVF_CONFIG, SERVER_SCRIPT
 from .site_launcher import ServerProperties, SiteLauncher, SiteProperties, run_command_in_subprocess
-
-SERVER_SCRIPT = "nvflare.private.fed.app.server.server_train"
-CLIENT_SCRIPT = "nvflare.private.fed.app.client.client_train"
-SERVER_NVF_CONFIG = "fed_server.json"
-CLIENT_NVF_CONFIG = "fed_client.json"
-
-ADMIN_NAME = "admin"
+from .utils import cleanup_job_and_snapshot, update_job_store_path_in_workspace, update_snapshot_path_in_workspace
 
 
 def _get_client_name(client_id: int):
@@ -144,6 +133,8 @@ class POCSiteLauncher(SiteLauncher):
         print(f"Launched client {client_name} process using {command}. process_id: {process.pid}")
 
     def cleanup(self):
-        cleanup_job_and_snapshot(self.poc_dir, "server")
+        for i in range(self.n_servers):
+            server_name = _get_server_name(i)
+            cleanup_job_and_snapshot(self.poc_dir, server_name)
         print(f"Deleting temporary directory: {self.poc_dir}.")
         shutil.rmtree(self.poc_dir)

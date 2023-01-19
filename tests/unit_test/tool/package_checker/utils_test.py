@@ -20,7 +20,14 @@ import pytest
 from requests import Response
 
 from nvflare.fuel.utils.network_utils import get_open_ports
-from nvflare.tool.package_checker.utils import check_overseer_running, check_response, try_bind_address, try_write_dir
+from nvflare.tool.package_checker.utils import (
+    NVFlareRole,
+    check_overseer_running,
+    check_response,
+    get_required_args_for_overseer_agent,
+    try_bind_address,
+    try_write_dir,
+)
 
 
 def _mock_response(code) -> Response:
@@ -71,3 +78,29 @@ class TestUtils:
                         role="",
                     )
                     assert resp.status_code == 200
+
+    @pytest.mark.parametrize(
+        "overseer_agent_class, role, result",
+        [
+            (
+                "nvflare.ha.overseer_agent.HttpOverseerAgent",
+                NVFlareRole.SERVER,
+                ["overseer_end_point", "role", "project", "name", "fl_port", "admin_port"],
+            ),
+            (
+                "nvflare.ha.overseer_agent.HttpOverseerAgent",
+                NVFlareRole.CLIENT,
+                ["overseer_end_point", "role", "project", "name"],
+            ),
+            (
+                "nvflare.ha.overseer_agent.HttpOverseerAgent",
+                NVFlareRole.ADMIN,
+                ["overseer_end_point", "role", "project", "name"],
+            ),
+            ("nvflare.ha.dummy_overseer_agent.DummyOverseerAgent", NVFlareRole.SERVER, ["sp_end_point"]),
+            ("nvflare.ha.dummy_overseer_agent.DummyOverseerAgent", NVFlareRole.CLIENT, ["sp_end_point"]),
+            ("nvflare.ha.dummy_overseer_agent.DummyOverseerAgent", NVFlareRole.ADMIN, ["sp_end_point"]),
+        ],
+    )
+    def test_get_required_args_for_overseer_agent(self, overseer_agent_class, role, result):
+        assert get_required_args_for_overseer_agent(overseer_agent_class, role) == result
