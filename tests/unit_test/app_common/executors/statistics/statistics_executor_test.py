@@ -19,9 +19,8 @@ import pytest
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-from nvflare.app_common.abstract.statistics_spec import Feature, HistogramType, StatisticConfig, Statistics
+from nvflare.app_common.abstract.statistics_spec import Feature, HistogramType, StatisticConfig
 from nvflare.app_common.executors.statistics.statistics_client_executor import StatisticsClientExecutor
-from nvflare.app_common.executors.statistics.statistics_executor import StatisticsExecutor
 from tests.unit_test.app_common.executors.statistics.mock_df_stats_executor import MockDFStatistics
 
 
