@@ -19,7 +19,8 @@
       "id": "local_psi",
       "path": "local_psi.LocalPSI",
       "args": {
-        "psi_writer_id": "psi_writer"
+        "psi_writer_id": "psi_writer",
+        "data_root_dir": "/tmp/nvflare/psi/data"
       }
     },
     {

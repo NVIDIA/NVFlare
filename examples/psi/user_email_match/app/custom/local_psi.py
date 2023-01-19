@@ -20,15 +20,14 @@ from nvflare.app_common.psi.psi_spec import PSI
 
 
 class LocalPSI(PSI):
-
-    def __init__(self, psi_writer_id: str):
+    def __init__(self, psi_writer_id: str, data_root_dir: str = "/tmp/nvflare/psi/data"):
         super().__init__(psi_writer_id)
-        self.data_root_dir = "/tmp/nvflare/data"
+        self.data_root_dir = data_root_dir
         self.data = {}
 
     def load_items(self) -> List[str]:
         site = self.fl_ctx.get_identity_name()
-        data_path = f"{self.data_root_dir}/{site}/data.csv"
+        data_path = os.path.join(self.data_root_dir, site, "data.csv")
 
         if os.path.isfile(data_path):
             df = pd.read_csv(data_path)
