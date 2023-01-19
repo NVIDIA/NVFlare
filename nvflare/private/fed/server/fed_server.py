@@ -109,20 +109,6 @@ class BaseServer(ABC):
     def remove_client_data(self, token):
         pass
 
-    # def close(self):
-    #     """Shutdown the server."""
-    #     try:
-    #         if self.lock:
-    #             self.lock.release()
-    #     except RuntimeError:
-    #         self.logger.info("canceling sync locks")
-    #     try:
-    #         if self.grpc_server:
-    #             self.grpc_server.stop(0)
-    #     finally:
-    #         self.logger.info("server off")
-    #         return 0
-
     def close(self):
         """Shutdown the server."""
         try:
@@ -137,60 +123,6 @@ class BaseServer(ABC):
             self.logger.info("server off")
             return 0
 
-    # def deploy(self, args, grpc_args=None, secure_train=False):
-    #     """Start a grpc server and listening the designated port."""
-    #     num_server_workers = grpc_args.get("num_server_workers", 1)
-    #     num_server_workers = max(self.client_manager.get_min_clients(), num_server_workers)
-    #     target = grpc_args["service"].get("target", "0.0.0.0:6007")
-    #     grpc_options = grpc_args["service"].get("options", GRPC_DEFAULT_OPTIONS)
-    #
-    #     compression = grpc.Compression.NoCompression
-    #     if "Deflate" == grpc_args.get("compression"):
-    #         compression = grpc.Compression.Deflate
-    #     elif "Gzip" == grpc_args.get("compression"):
-    #         compression = grpc.Compression.Gzip
-    #
-    #     if not self.grpc_server:
-    #         self.executor = futures.ThreadPoolExecutor(max_workers=num_server_workers)
-    #         self.grpc_server = grpc.server(
-    #             self.executor,
-    #             options=grpc_options,
-    #             compression=compression,
-    #         )
-    #         fed_service.add_FederatedTrainingServicer_to_server(self, self.grpc_server)
-    #         admin_service.add_AdminCommunicatingServicer_to_server(self, self.grpc_server)
-    #
-    #     if secure_train:
-    #         with open(grpc_args["ssl_private_key"], "rb") as f:
-    #             private_key = f.read()
-    #         with open(grpc_args["ssl_cert"], "rb") as f:
-    #             certificate_chain = f.read()
-    #         with open(grpc_args["ssl_root_cert"], "rb") as f:
-    #             root_ca = f.read()
-    #
-    #         server_credentials = grpc.ssl_server_credentials(
-    #             (
-    #                 (
-    #                     private_key,
-    #                     certificate_chain,
-    #                 ),
-    #             ),
-    #             root_certificates=root_ca,
-    #             require_client_auth=True,
-    #         )
-    #         port = target.split(":")[1]
-    #         tmp_target = f"0.0.0.0:{port}"
-    #         self.grpc_server.add_secure_port(tmp_target, server_credentials)
-    #         self.logger.info("starting secure server at %s", target)
-    #     else:
-    #         self.grpc_server.add_insecure_port(target)
-    #         self.logger.info("starting insecure server at %s", target)
-    #     self.grpc_server.start()
-    #
-    #     # return self.start()
-    #     cleanup_thread = threading.Thread(target=self.client_cleanup)
-    #     # heartbeat_thread.daemon = True
-    #     cleanup_thread.start()
     def deploy(self, args, grpc_args=None, secure_train=False):
         """Start a grpc server and listening the designated port."""
         # num_server_workers = grpc_args.get("num_server_workers", 1)
@@ -353,18 +285,7 @@ class FederatedServer(BaseServer):
 
     def _listen_command(self, request: Message) -> Message:
 
-        # while job_id in self.run_processes.keys():
-        #     clients = self.run_processes.get(job_id).get(RunProcessKey.PARTICIPANTS)
-        #     job_id = self.run_processes.get(job_id).get(RunProcessKey.JOB_ID)
-        #     try:
-        #         if conn.poll(0.1):
         assert isinstance(request, Message), "request must be CellMessage but got {}".format(type(request))
-        # req = request.payload
-        #
-        # # assert isinstance(req, Message), "request payload must be Message but got {}".format(type(req))
-        # # topic = req.topic
-        #
-        # msg = fobs.loads(req)
 
         job_id = request.get_header(CellMessageHeaderKeys.JOB_ID)
         command = request.get_header(MessageHeaderKey.TOPIC)
@@ -378,18 +299,7 @@ class FederatedServer(BaseServer):
             else:
                 return_data = {ServerCommandKey.CLIENTS: None, ServerCommandKey.JOB_ID: job_id}
 
-            # conn.send(return_data)
             return make_cellnet_reply(F3ReturnCode.OK, "", fobs.dumps(return_data))
-        # elif command == ServerCommandNames.AUX_SEND:
-        #     targets = data.get("targets")
-        #     topic = data.get("topic")
-        #     request = data.get("request")
-        #     timeout = data.get("timeout")
-        #     fl_ctx = data.get("fl_ctx")
-        #     replies = self.aux_send(
-        #         targets=targets, topic=topic, request=request, timeout=timeout, fl_ctx=fl_ctx
-        #     )
-        #     conn.send(replies)
         elif command == ServerCommandNames.UPDATE_RUN_STATUS:
             execution_error = data.get("execution_error")
             if execution_error:
@@ -415,9 +325,6 @@ class FederatedServer(BaseServer):
         The model_meta_info uniquely defines the current model,
         it is used to reject outdated client's update.
         """
-        # meta_info = fed_msg.MetaData()
-        # meta_info.created.CopyFrom(self.round_started)
-        # meta_info.project.name = self.project_name
         meta_info = {
             CellMessageHeaderKeys.PROJECT_NAME: self.project_name,
             CellMessageHeaderKeys.CLIENT_NAME: client_name,
@@ -528,13 +435,7 @@ class FederatedServer(BaseServer):
             state_check = self.server_state.heartbeat(fl_ctx)
             self._handle_state_check(state_check, fl_ctx)
 
-            # token = request.token
             token = request.get_header(CellMessageHeaderKeys.TOKEN)
-            # cn_names = context.auth_context().get("x509_common_name")
-            # if cn_names:
-            #     client_name = cn_names[0].decode("utf-8")
-            # else:
-            #     client_name = request.client_name
             client_name = request.get_header(CellMessageHeaderKeys.CLIENT_NAME)
 
             if self.client_manager.heartbeat(token, client_name, fl_ctx):
@@ -543,13 +444,10 @@ class FederatedServer(BaseServer):
                 self.admin_server.client_heartbeat(token, client_name)
 
             abort_runs = self._sync_client_jobs(request, token)
-            # summary_info = fed_msg.FederatedSummary()
             reply = self._generate_reply(
                 headers={CellMessageHeaderKeys.MESSAGE: "Heartbeat response"}, payload=None, fl_ctx=fl_ctx
             )
             if abort_runs:
-                # del summary_info.abort_jobs[:]
-                # summary_info.abort_jobs.extend(abort_runs)
                 reply.set_header(CellMessageHeaderKeys.ABORT_JOBS, abort_runs)
 
                 display_runs = ",".join(abort_runs)
@@ -561,7 +459,6 @@ class FederatedServer(BaseServer):
 
     def _sync_client_jobs(self, request, client_token):
         # jobs that are running on client but not on server need to be aborted!
-        # client_jobs = request.jobs
         client_jobs = request.get_header(CellMessageHeaderKeys.JOB_IDS)
         server_jobs = self.engine.run_processes.keys()
         jobs_need_abort = list(set(client_jobs).difference(server_jobs))
@@ -584,17 +481,6 @@ class FederatedServer(BaseServer):
     def _notify_dead_job(self, client, job_id: str):
         try:
             with self.engine.lock:
-                # command_conn = self.engine.get_command_conn(job_id)
-                # if command_conn:
-                #     shareable = Shareable()
-                #     shareable.set_header(ServerCommandKey.FL_CLIENT, client.name)
-                #     msg = {
-                #         ServerCommandKey.COMMAND: ServerCommandNames.HANDLE_DEAD_JOB,
-                #         ServerCommandKey.DATA: shareable,
-                #     }
-                #     command_conn.send(msg)
-
-                # data = {ServerCommandKey.COMMAND: ServerCommandNames.HANDLE_DEAD_JOB, ServerCommandKey.DATA: Shareable()}
                 shareable = Shareable()
                 shareable.set_header(ServerCommandKey.FL_CLIENT, client.name)
                 fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
@@ -605,7 +491,6 @@ class FederatedServer(BaseServer):
                     topic=ServerCommandNames.HANDLE_DEAD_JOB,
                     message=request,
                 )
-
         except BaseException:
             self.logger.info("Could not connect to server runner process")
 
@@ -627,34 +512,6 @@ class FederatedServer(BaseServer):
             participating_clients = process_info.get(RunProcessKey.PARTICIPANTS, None)
             if participating_clients and client.token in participating_clients:
                 self._notify_dead_job(client, job_id)
-
-    # def Retrieve(self, request, context):
-    #     client_name = request.client_name
-    #     messages = self.admin_server.get_outgoing_requests(client_token=client_name) if self.admin_server else []
-    #
-    #     response = admin_msg.Messages()
-    #     for m in messages:
-    #         response.message.append(message_to_proto(m))
-    #     return response
-    #
-    # def SendReply(self, request, context):
-    #     client_name = request.client_name
-    #     message = proto_to_message(request.message)
-    #     if self.admin_server:
-    #         self.admin_server.accept_reply(client_token=client_name, reply=message)
-    #
-    #     response = admin_msg.Empty()
-    #     return response
-    #
-    # def SendResult(self, request, context):
-    #     client_name = request.client_name
-    #     message = proto_to_message(request.message)
-    #
-    #     processor = self.processors.get(message.topic)
-    #     processor.process(client_name, message)
-    #
-    #     response = admin_msg.Empty()
-    #     return response
 
     def start_run(self, job_id, run_root, conf, args, snapshot):
         # Create the FL Engine

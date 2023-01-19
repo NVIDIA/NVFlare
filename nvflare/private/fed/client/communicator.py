@@ -80,7 +80,6 @@ class Communicator:
         self.should_stop = False
         self.heartbeat_done = False
         # TODO: should we change this back?
-        # self.retry = int(math.ceil(float(retry_timeout) / 5))
         self.retry = 1
         self.client_state_processors = client_state_processors
         self.compression = compression
@@ -100,36 +99,6 @@ class Communicator:
 
         """
         local_ip = _get_client_ip()
-
-        # login_message = fed_msg.ClientLogin(client_name=client_name, client_ip=local_ip)
-        # login_message.meta.project.name = project_name
-        #
-        # with self.set_up_channel(servers[project_name]) as channel:
-        #     stub = fed_service.FederatedTrainingStub(channel)
-        #     while True:
-        #         try:
-        #             result = stub.Register(login_message)
-        #             token = result.token
-        #             ssid = result.ssid
-        #             self.should_stop = False
-        #             break
-        #         except grpc.RpcError as grpc_error:
-        #             self.grpc_error_handler(
-        #                 servers[project_name],
-        #                 grpc_error,
-        #                 "client_registration",
-        #                 verbose=self.verbose,
-        #             )
-        #             excep = FLCommunicationError(grpc_error, "grpc_error:client_registration")
-        #             if isinstance(grpc_error, grpc.Call):
-        #                 status_code = grpc_error.code()
-        #                 if grpc.StatusCode.UNAUTHENTICATED == status_code:
-        #                     raise excep
-        #             time.sleep(5)
-        #     if self.should_stop:
-        #         raise excep
-        #     if result is None:
-        #         return None
 
         login_message = new_cell_message(
             {
@@ -164,7 +133,7 @@ class Communicator:
 
         return token, ssid
 
-    def getTask(self, servers, project_name, token, ssid, fl_ctx: FLContext):
+    def get_task(self, servers, project_name, token, ssid, fl_ctx: FLContext):
         """Get a task from server.
 
         Args:
@@ -178,38 +147,6 @@ class Communicator:
             A CurrentTask message from server
 
         """
-        # task, retry = None, self.retry
-        # with self.set_up_channel(servers[project_name]) as channel:
-        #     stub = fed_service.FederatedTrainingStub(channel)
-        #     while retry > 0:
-        #         try:
-        #             start_time = time.time()
-        #             task = stub.GetTask(_get_client_state(project_name, token, ssid, fl_ctx))
-        #             # Clear the stopping flag
-        #             # if the connection to server recovered.
-        #             self.should_stop = False
-        #
-        #             end_time = time.time()
-        #
-        #             if task.task_name == SpecialTaskName.TRY_AGAIN:
-        #                 self.logger.debug(
-        #                     f"Received from {project_name} server "
-        #                     f" ({task.ByteSize()} Bytes). getTask time: {end_time - start_time} seconds"
-        #                 )
-        #             else:
-        #                 self.logger.info(
-        #                     f"Received from {project_name} server "
-        #                     f" ({task.ByteSize()} Bytes). getTask time: {end_time - start_time} seconds"
-        #                 )
-        #             return task
-        #         except grpc.RpcError as grpc_error:
-        #             self.grpc_error_handler(servers[project_name], grpc_error, "getTask", verbose=self.verbose)
-        #             excep = FLCommunicationError(grpc_error, "grpc_error:getTask")
-        #             retry -= 1
-        #             time.sleep(5)
-        #     if self.should_stop:
-        #         raise excep
-
         start_time = time.time()
         shareable = Shareable()
         shared_fl_ctx = FLContext()
@@ -248,7 +185,7 @@ class Communicator:
 
         return task
 
-    def submitUpdate(
+    def submit_update(
         self, servers, project_name, token, ssid, fl_ctx: FLContext, client_name, shareable, execute_task_name
     ):
         """Submit the task execution result back to the server.
@@ -266,38 +203,6 @@ class Communicator:
         Returns:
             A FederatedSummary message from the server.
         """
-        # client_state = _get_client_state(project_name, token, ssid, fl_ctx)
-        # client_state.client_name = client_name
-        # contrib = _get_communication_data(shareable, client_state, fl_ctx, execute_task_name)
-        #
-        # server_msg, retry = None, self.retry
-        # with self.set_up_channel(servers[project_name]) as channel:
-        #     stub = fed_service.FederatedTrainingStub(channel)
-        #     while retry > 0:
-        #         try:
-        #             start_time = time.time()
-        #             self.logger.info(f"Send submitUpdate to {project_name} server")
-        #             server_msg = stub.SubmitUpdate(contrib)
-        #             # Clear the stopping flag
-        #             # if the connection to server recovered.
-        #             self.should_stop = False
-        #
-        #             end_time = time.time()
-        #             self.logger.info(
-        #                 f"Received comments: {server_msg.meta.project.name} {server_msg.comment}."
-        #                 f" SubmitUpdate time: {end_time - start_time} seconds"
-        #             )
-        #             break
-        #         except grpc.RpcError as grpc_error:
-        #             if isinstance(grpc_error, grpc.Call):
-        #                 if grpc_error.details().startswith("Contrib"):
-        #                     self.logger.info(f"submitUpdate failed: {grpc_error.details()}")
-        #                     break  # outdated contribution, no need to retry
-        #             self.grpc_error_handler(servers[project_name], grpc_error, "submitUpdate", verbose=self.verbose)
-        #             retry -= 1
-        #             time.sleep(5)
-        # return server_msg
-
         start_time = time.time()
         shared_fl_ctx = FLContext()
         shared_fl_ctx.set_public_props(get_serializable_data(fl_ctx).get_all_public_props())
@@ -329,7 +234,7 @@ class Communicator:
 
         return return_code
 
-    def auxCommunicate(
+    def aux_communicate(
         self, servers, project_name, token, ssid, fl_ctx: FLContext, client_name, shareable, topic, timeout
     ):
         """Send the auxiliary communication message to the server.
@@ -349,35 +254,6 @@ class Communicator:
             An AuxReply message from server
 
         """
-        # client_state = _get_client_state(project_name, token, ssid, fl_ctx)
-        # client_state.client_name = client_name
-        #
-        # aux_message = fed_msg.AuxMessage()
-        # # set client auth. data
-        # aux_message.client.CopyFrom(client_state)
-        #
-        # # shareable.set_header("Topic", topic)
-        # aux_message.data["data"].CopyFrom(make_shareable_data(shareable))
-        # aux_message.data["fl_context"].CopyFrom(make_context_data(fl_ctx))
-        #
-        # server_msg, retry = None, self.retry
-        # with self.set_up_channel(servers[project_name]) as channel:
-        #     stub = fed_service.FederatedTrainingStub(channel)
-        #     while retry > 0:
-        #         try:
-        #             self.logger.debug(f"Send AuxMessage to {project_name} server")
-        #             server_msg = stub.AuxCommunicate(aux_message, timeout=timeout)
-        #             # Clear the stopping flag
-        #             # if the connection to server recovered.
-        #             self.should_stop = False
-        #
-        #             break
-        #         except grpc.RpcError as grpc_error:
-        #             self.grpc_error_handler(servers[project_name], grpc_error, "AuxCommunicate", verbose=self.verbose)
-        #             retry -= 1
-        #             time.sleep(5)
-        # return server_msg
-
         start_time = time.time()
         shared_fl_ctx = FLContext()
         shared_fl_ctx.set_public_props(get_serializable_data(fl_ctx).get_all_public_props())
@@ -422,29 +298,6 @@ class Communicator:
             server's reply to the last message
 
         """
-        # server_message, retry = None, self.retry
-        # with self.set_up_channel(servers[task_name]) as channel:
-        #     stub = fed_service.FederatedTrainingStub(channel)
-        #     while retry > 0:
-        #         try:
-        #             start_time = time.time()
-        #             self.logger.info(f"Quitting server: {task_name}")
-        #             server_message = stub.Quit(_get_client_state(task_name, token, ssid, fl_ctx))
-        #             # Clear the stopping flag
-        #             # if the connection to server recovered.
-        #             self.should_stop = False
-        #
-        #             end_time = time.time()
-        #             self.logger.info(
-        #                 f"Received comment from server: {server_message.comment}. Quit time: {end_time - start_time} seconds"
-        #             )
-        #             break
-        #         except grpc.RpcError as grpc_error:
-        #             self.grpc_error_handler(servers[task_name], grpc_error, "quit_remote")
-        #             retry -= 1
-        #             time.sleep(3)
-        # return server_message
-
         quit_message = new_cell_message(
             {
                 CellMessageHeaderKeys.TOKEN: token,
@@ -469,30 +322,8 @@ class Communicator:
         return server_message
 
     def send_heartbeat(self, servers, task_name, token, ssid, client_name, engine: ClientEngineInternalSpec):
-        # message = fed_msg.Token()
-        # message.token = token
-        # message.ssid = ssid
-        # message.client_name = client_name
-
         while not self.heartbeat_done:
             try:
-                # with self.set_up_channel(servers[task_name]) as channel:
-                #     stub = fed_service.FederatedTrainingStub(channel)
-                #     # retry the heartbeat call for 10 minutes
-                #     retry = 2
-                #     while retry > 0:
-                #         try:
-                #             self.logger.debug(f"Send {task_name} heartbeat {token}")
-                #             job_ids = engine.get_all_job_ids()
-                #             del message.jobs[:]
-                #             message.jobs.extend(job_ids)
-                #             response = stub.Heartbeat(message)
-                #             self._clean_up_runs(engine, response)
-                #             break
-                #         except grpc.RpcError:
-                #             retry -= 1
-                #             time.sleep(5)
-
                 job_ids = engine.get_all_job_ids()
                 heartbeat_message = new_cell_message(
                     {

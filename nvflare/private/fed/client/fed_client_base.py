@@ -238,7 +238,7 @@ class FederatedClientBase:
         """
         try:
             self.logger.debug("Starting to fetch execute task.")
-            task = self.communicator.getTask(self.servers, project_name, self.token, self.ssid, fl_ctx)
+            task = self.communicator.get_task(self.servers, project_name, self.token, self.ssid, fl_ctx)
 
             return task
         except FLCommunicationError as e:
@@ -258,7 +258,7 @@ class FederatedClientBase:
         try:
             self.logger.info("Starting to push execute result.")
             execute_task_name = fl_ctx.get_prop(FLContextKey.TASK_NAME)
-            return_code = self.communicator.submitUpdate(
+            return_code = self.communicator.submit_update(
                 self.servers,
                 project_name,
                 self.token,
@@ -288,7 +288,7 @@ class FederatedClientBase:
         """
         try:
             self.logger.debug("Starting to send aux message.")
-            message = self.communicator.auxCommunicate(
+            message = self.communicator.aux_communicate(
                 self.servers, project_name, self.token, self.ssid, fl_ctx, self.client_name, shareable, topic, timeout
             )
 
