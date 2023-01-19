@@ -1,11 +1,14 @@
 {
   "format_version": 2,
+
   "server": {
     "heart_beat_timeout": 600,
     "task_request_interval": 0.05
   },
+
   "task_data_filters": [],
   "task_result_filters": [],
+
   "components": [
     {
       "id": "persistor",
@@ -16,7 +19,7 @@
     },
     {
       "id": "shareable_generator",
-      "path": "nvflare.app_opt.xgboost.tree_based.random_forest_shareable_generator.XGBModelShareableGenerator",
+      "path": "nvflare.app_opt.xgboost.tree_based.shareable_generator.XGBModelShareableGenerator",
       "args": {}
     },
     {

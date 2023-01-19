@@ -43,7 +43,7 @@ def job_config_args_parser():
         "--tree_method",
         type=str,
         default="hist",
-        help="tree_method for xgboost lib - use hist or gpu_hist for best perf",
+        help="tree_method for xgboost - use hist or gpu_hist for best perf"
     )
     return parser
 

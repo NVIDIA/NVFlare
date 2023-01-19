@@ -18,7 +18,7 @@ import pandas as pd
 import xgboost as xgb
 
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_opt.xgboost.tree_based.random_forest_executor import FedXGBTreeExecutor
+from nvflare.app_opt.xgboost.tree_based.executor import FedXGBTreeExecutor
 
 
 def _read_HIGGS_with_pandas(data_path, start: int, end: int):

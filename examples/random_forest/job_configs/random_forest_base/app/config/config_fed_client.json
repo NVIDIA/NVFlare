@@ -1,5 +1,6 @@
 {
   "format_version": 2,
+
   "executors": [
     {
       "tasks": [
@@ -7,7 +8,7 @@
       ],
       "executor": {
         "id": "Executor",
-        "path": "higgs_tree_executor.FedXGBTreeHiggsExecutor",
+        "path": "higgs_executor.FedXGBTreeHiggsExecutor",
         "args": {
           "data_split_filename": "data_split.json",
           "training_mode": "bagging",
