@@ -154,7 +154,7 @@ class FederatedClientBase:
     def set_sp(self, project_name, sp: SP):
         if sp and sp.primary is True:
             server = self.servers[project_name].get("target")
-            schema = self.servers[project_name].get("schema")
+            scheme = self.servers[project_name].get("scheme")
             location = sp.name + ":" + sp.fl_port
             if server != location:
                 if self.cell:
@@ -172,7 +172,7 @@ class FederatedClientBase:
                 credentials = {}
                 self.cell = Cell(
                     fqcn=fqcn,
-                    root_url=schema + location,
+                    root_url=scheme + location,
                     secure=self.secure_train,
                     credentials=credentials,
                     create_internal_listener=True,
@@ -188,7 +188,7 @@ class FederatedClientBase:
                     if self.engine:
                         self.engine.admin_agent.register_cell_cb()
 
-                self.logger.info(f"Got the new primary SP: {schema + location}")
+                self.logger.info(f"Got the new primary SP: {scheme + location}")
 
             if self.ssid and self.ssid != sp.service_session_id:
                 self.ssid = sp.service_session_id

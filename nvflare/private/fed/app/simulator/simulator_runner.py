@@ -194,7 +194,7 @@ class SimulatorRunner(FLComponent):
             # Deploy the FL server
             self.logger.info("Create the Simulator Server.")
             simulator_server, self.services = self.deployer.create_fl_server(self.args)
-            self.services.deploy(self.args, grpc_args=simulator_server)
+            # self.services.deploy(self.args, grpc_args=simulator_server)
 
             self.logger.info("Deploy the Apps.")
             self._deploy_apps(job_name, data_bytes, meta)

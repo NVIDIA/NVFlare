@@ -119,6 +119,7 @@ class SimulatorServer(FederatedServer):
 
     def deploy(self, args, grpc_args=None, secure_train=False):
         super(FederatedServer, self).deploy(args, grpc_args, secure_train)
+        self._register_cellnet_cbs()
 
     def stop_training(self):
         self.engine.run_processes.clear()
