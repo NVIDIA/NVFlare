@@ -21,8 +21,7 @@ import time
 
 import pytest
 
-from tests.integration_test.src import AdminController, POCSiteLauncher, ProvisionSiteLauncher
-from tests.integration_test.utils import cleanup_path, read_yaml
+from tests.integration_test.src import AdminController, POCSiteLauncher, ProvisionSiteLauncher, cleanup_path, read_yaml
 
 
 def get_module_class_from_full_path(full_path):

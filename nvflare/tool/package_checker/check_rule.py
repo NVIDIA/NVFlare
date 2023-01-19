@@ -23,6 +23,9 @@ from nvflare.tool.package_checker.utils import (
     check_overseer_running,
     check_response,
     check_socket_server_running,
+    construct_dummy_response,
+    get_required_args_for_overseer_agent,
+    is_dummy_overseer_agent,
     parse_overseer_agent_args,
     try_bind_address,
     try_write_dir,
@@ -77,11 +80,12 @@ class CheckOverseerRunning(CheckRule):
         else:
             overseer_agent_conf = fed_config["overseer_agent"]
 
-        required_args = ["overseer_end_point", "role", "project", "name"]
-        if self.role == NVFlareRole.SERVER:
-            required_args.extend(["fl_port", "admin_port"])
-
+        overseer_agent_class = overseer_agent_conf.get("path")
+        required_args = get_required_args_for_overseer_agent(overseer_agent_class=overseer_agent_class, role=self.role)
         overseer_agent_args = parse_overseer_agent_args(overseer_agent_conf, required_args)
+        if is_dummy_overseer_agent(overseer_agent_class):
+            resp = construct_dummy_response(overseer_agent_args=overseer_agent_args)
+            return CheckResult(CHECK_PASSED, "N/A", resp)
         resp, err = check_overseer_running(startup=startup, overseer_agent_args=overseer_agent_args, role=self.role)
         if err:
             return CheckResult(
@@ -154,11 +158,11 @@ class CheckSPSocketServerAvailable(CheckRule):
         sp_name, grpc_port, admin_port = sp_end_point.split(":")
         if not check_socket_server_running(startup=startup, host=sp_name, port=int(admin_port)):
             return CheckResult(
-                f"Can't connect to ({sp_end_point})/DNS can't resolve its ip",
-                f" 1) If ({sp_end_point}) is public, check internet connection, try ping  ({sp_end_point})."
-                + f" 2) If ({sp_end_point}) is private, then you need to add its ip to the etc/hosts."
-                + "3) If network is good, Please contact NVFLARE system admin and make sure the primary FL server"
-                + "is running.",
+                f"Can't connect to ({sp_name}:{admin_port}) / DNS can't resolve",
+                f" 1) If ({sp_name}:{admin_port}) is public, check internet connection, try ping ({sp_name}:{admin_port})."
+                f" 2) If ({sp_name}:{admin_port}) is private, then you need to add its ip to the etc/hosts."
+                f" 3) If network is good, Please contact NVFLARE system admin and make sure the primary FL server"
+                f" is running.",
             )
         return CheckResult(CHECK_PASSED, "N/A", data)
 
@@ -171,7 +175,7 @@ class CheckSPGRPCServerAvailable(CheckRule):
 
         if not check_grpc_server_running(startup=startup, host=sp_name, port=int(grpc_port)):
             return CheckResult(
-                f"Can't connect to primary service provider's ({sp_end_point}) grpc server",
+                f"Can't connect to primary service provider's grpc server ({sp_name}:{grpc_port})",
                 "Please check if server is up.",
             )
         return CheckResult(CHECK_PASSED, "N/A", data)

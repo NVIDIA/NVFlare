@@ -37,7 +37,7 @@ from tests.integration_test.src.action_handlers import (
     _TestDoneHandler,
 )
 from tests.integration_test.src.site_launcher import SiteLauncher
-from tests.integration_test.utils import get_job_run_statuses
+from tests.integration_test.src.utils import get_job_run_statuses
 
 
 def _parse_workflow_states(stats_message: dict):

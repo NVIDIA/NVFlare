@@ -8,7 +8,7 @@ usage()
     echo
     echo "Syntax: ./run_integration_tests.sh -m [-c]"
     echo "options:"
-    echo "m     Which backend/test to run (options: numpy, tensorflow, pytorch, overseer, ha, auth)."
+    echo "m     Which backend/test to run (options: numpy, tensorflow, pytorch, ha, auth, overseer, preflight)."
     echo "c     Clean up integration test results."
     echo
     exit 1
@@ -20,7 +20,7 @@ while getopts ":m:c" option; do
     case "${option}" in
         m) # framework/backend
             m=${OPTARG}
-            [[ $m == "numpy" || $m == "tensorflow" || $m == "pytorch" || $m == "overseer" || $m == "ha" || $m == "auth" ]] || usage
+            [[ $m == "numpy" || $m == "tensorflow" || $m == "pytorch" || $m == "overseer" || $m == "ha" || $m == "auth" || $m == "preflight" ]] || usage
             prefix="NVFLARE_TEST_FRAMEWORK=$m"
             ;;
         c) # Clean up
@@ -33,10 +33,18 @@ while getopts ":m:c" option; do
     esac
 done
 
-run_overseer()
+run_preflight_check_test()
+{
+    echo "Running preflight check integration tests."
+    cmd="$cmd preflight_check_test.py"
+    echo "$cmd"
+    eval "$cmd"
+}
+
+run_overseer_test()
 {
     echo "Running overseer integration tests."
-    cmd="$prefix $cmd overseer_test.py"
+    cmd="$cmd overseer_test.py"
     echo "$cmd"
     eval "$cmd"
 }
@@ -90,10 +98,12 @@ elif [[ $m == "tensorflow" ]]; then
     run_tensorflow
 elif [[ $m == "pytorch" ]]; then
     run_pytorch
-elif [[ $m == "overseer" ]]; then
-    run_overseer
 elif [[ $m == "ha" ]]; then
     run_ha
 elif [[ $m == "auth" ]]; then
     run_auth
+elif [[ $m == "overseer" ]]; then
+    run_overseer_test
+elif [[ $m == "preflight" ]]; then
+    run_preflight_check_test
 fi

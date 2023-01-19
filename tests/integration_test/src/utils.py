@@ -14,7 +14,10 @@
 
 import json
 import os
+import shlex
 import shutil
+import subprocess
+import sys
 import tempfile
 from typing import Dict
 
@@ -26,10 +29,7 @@ from nvflare.fuel.hci.client.fl_admin_api import FLAdminAPI
 from nvflare.fuel.hci.client.fl_admin_api_constants import FLDetailKey
 from nvflare.fuel.hci.client.fl_admin_api_spec import TargetType
 
-# need to be consistent with provision
-RESOURCE_CONFIG = "resources.json"
-DEFAULT_RESOURCE_CONFIG = "resources.json.default"
-FILE_STORAGE = "nvflare.app_common.storages.filesystem_storage.FilesystemStorage"
+from .constants import DEFAULT_RESOURCE_CONFIG, FILE_STORAGE, PROVISION_SCRIPT, RESOURCE_CONFIG
 
 
 def read_yaml(yaml_file_path):
@@ -46,6 +46,22 @@ def cleanup_path(path: str):
     if os.path.exists(path):
         print(f"Clean up directory: {path}")
         shutil.rmtree(path)
+
+
+def run_provision_command(project_yaml: str, workspace: str):
+    command = f"{sys.executable} -m {PROVISION_SCRIPT} -p {project_yaml} -w {workspace}"
+    process = run_command_in_subprocess(command)
+    process.wait()
+
+
+def run_command_in_subprocess(command):
+    new_env = os.environ.copy()
+    process = subprocess.Popen(
+        shlex.split(command),
+        preexec_fn=os.setsid,
+        env=new_env,
+    )
+    return process
 
 
 def _get_resource_json_file(workspace_path: str, site_name: str) -> str:
@@ -224,7 +240,7 @@ def run_admin_api_tests(admin_api: FLAdminAPI):
     print(list_jobs_return_message)
     first_job = list_jobs_return_message.split()[17]
     print("\nCommand: ls server -a .")
-    ls_return_message = admin_api.ls_target("server", "-a", ".").get("details").get("message")
+    ls_return_message = admin_api.ls_target("server", "-a", "..").get("details").get("message")
     print(ls_return_message)
     print("\nAssert Job {} is in the server root dir...".format(first_job))
     assert first_job in ls_return_message

@@ -54,19 +54,19 @@ def _get_job_storage_root(package_path: str) -> str:
     return job_storage_root
 
 
-def _get_grpc_host_and_port(package_path: str):
+def _get_grpc_host_and_port(package_path: str) -> (str, int):
     fed_config = _get_server_fed_config(package_path)
     server_conf = fed_config["servers"][0]
     grpc_service_config = server_conf["service"]
     grpc_target_address = grpc_service_config["target"]
-    host, port = grpc_target_address.split(":")
-    return host, int(port)
+    _, port = grpc_target_address.split(":")
+    return "localhost", int(port)
 
 
-def _get_admin_host_and_port(package_path: str):
+def _get_admin_host_and_port(package_path: str) -> (str, int):
     fed_config = _get_server_fed_config(package_path)
     server_conf = fed_config["servers"][0]
-    return server_conf["admin_host"], int(server_conf["admin_port"])
+    return "localhost", int(server_conf["admin_port"])
 
 
 class ServerPackageChecker(PackageChecker):
@@ -103,8 +103,8 @@ class ServerPackageChecker(PackageChecker):
         self.job_storage_root = _get_job_storage_root(self.package_path)
         return command
 
-    def stop_dry_run(self):
-        super().stop_dry_run()
+    def stop_dry_run(self, force=True):
+        super().stop_dry_run(force=force)
         if os.path.exists(self.snapshot_storage_root):
             shutil.rmtree(self.snapshot_storage_root)
         if os.path.exists(self.job_storage_root):

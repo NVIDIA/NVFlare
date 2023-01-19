@@ -25,7 +25,7 @@ import time
 from abc import ABC, abstractmethod
 
 from nvflare.fuel.hci.client.fl_admin_api import FLAdminAPI
-from tests.integration_test.utils import check_job_done, run_admin_api_tests
+from tests.integration_test.src.utils import check_job_done, run_admin_api_tests
 
 
 class _CmdHandler(ABC):
