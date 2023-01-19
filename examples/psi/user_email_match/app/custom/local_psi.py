@@ -11,8 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import os
 from typing import List
+
 import pandas as pd
 
 from nvflare.app_common.psi.psi_spec import PSI
@@ -27,7 +27,8 @@ class LocalPSI(PSI):
 
     def load_items(self) -> List[str]:
         site = self.fl_ctx.get_identity_name()
-        print(os.getcwd())
         df = pd.read_csv(f'{self.data_root_dir}/{site}/data.csv')
-        items = df[df.columns[0]].to_list()
+
+        # important the PSI algorithms requires the items are unique
+        items = list(set(df[df.columns[0]].to_list()))
         return items

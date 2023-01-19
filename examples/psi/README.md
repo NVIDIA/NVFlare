@@ -138,7 +138,9 @@ class LocalPSI(PSI):
 ```
      cp examples/psi/user_id_match/data /tmp/nvflare/.
 ```   
-    
+**import note**
+   The items must be unique. duplicate items can result incorrect intersection result
+
 **run job** 
 ```
 nvflare simulator -w /tmp/nvflare/ -n 3 -t 3 examples/psi/user_meail_match  

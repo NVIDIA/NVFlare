@@ -75,7 +75,12 @@ class DhPSIWorkFlow(PSIWorkflow):
 
         self.backward_processed.update(self.backward_pass(self.ordered_sites, intersect_site))
 
-        self.log_info(self.fl_ctx, f"intersection sizes {self.backward_processed}, intersect_site ={intersect_site} ")
+        self.log_info(
+            self.fl_ctx,
+            f"backward_processed sites {self.backward_processed}\n,"
+            f"intersect_sites={intersect_site}\n"
+            f"ordered sites = {self.ordered_sites}\n",
+        )
 
         self.check_final_intersection_sizes(intersect_site)
 
