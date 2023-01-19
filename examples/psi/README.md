@@ -39,7 +39,7 @@ following use cases:
 
 There are many protocols that can be used for PSI, For this implementation, the Private Set Intersection (PSI) protocol is based on [ECDH](https://en.wikipedia.org/wiki/Elliptic-curve_Diffie%E2%80%93Hellman),
 Bloom Filters, and Golomb Compressed Sets PSI algorithm. The algorithm is developed by [openmined PSI](https://github.com/OpenMined/PSI)
-for two-party PSI
+for two-party PSI.
 
 We took the two-party direct communication PSI protocol and extended to Federated Computing setting where all exchanges are
 funneled via a central FL server. We supported multi-party PSI via pair-wise approach.
@@ -48,8 +48,8 @@ funneled via a central FL server. We supported multi-party PSI via pair-wise app
 
 The usage is really simple. 
 
-* Step 1: user needs to implement the PSI interface where the client side's items need to be loaded
-These items could be user_ids or feature names depending your use case. 
+* Step 1: user needs to implement the PSI interface where the client side's items need to be loaded.
+These items could be user_ids or feature names depending on your use case.
 
 * Step 2: Specify the job configurations
 
@@ -136,19 +136,20 @@ class LocalPSI(PSI):
 
 **prepare data**
 ```
-     cp examples/psi/user_id_match/data /tmp/nvflare/.
+mkdir /tmp/nvflare/psi     
+cp -r examples/psi/user_email_match/data /tmp/nvflare/psi/.
 ```   
 **import note**
    The items must be unique. duplicate items can result incorrect intersection result
 
 **run job** 
 ```
-nvflare simulator -w /tmp/nvflare/ -n 3 -t 3 examples/psi/user_meail_match  
+nvflare simulator -w /tmp/nvflare/psi -n 3 -t 3 examples/psi/user_email_match
 ```
 Once job completed and succeed, you should be able to find the intersection for different sites at
 
 ```
-/tmp/nvflare/simulate_job/site-1/psi/intersection.txt 
-/tmp/nvflare/simulate_job/site-2/psi/intersection.txt 
-/tmp/nvflare/simulate_job/site-3/psi/intersection.txt  
+/tmp/nvflare/psi/simulate_job/site-1/psi/intersection.txt 
+/tmp/nvflare/psi/simulate_job/site-2/psi/intersection.txt 
+/tmp/nvflare/psi/simulate_job/site-3/psi/intersection.txt  
 ```
