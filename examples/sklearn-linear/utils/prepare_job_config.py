@@ -44,6 +44,13 @@ def job_config_args_parser():
         "--site_name_prefix", type=str, default="site-", help="Site name prefix"
     )
     parser.add_argument(
+        "--data_size",
+        type=int,
+        default=0,
+        help="Total data size, use if specified, in order to use partial data"
+             "If not specified, use the full data size fetched from file.",
+    )
+    parser.add_argument(
         "--valid_frac",
         type=float,
         help="Validation fraction of the total size, N = round(total_size* valid_frac), "
@@ -135,11 +142,21 @@ def get_file_line_count(input_path: str) -> int:
 def split_data(
     data_path: str,
     site_num: int,
+    data_size: int,
     valid_frac: float,
     site_name_prefix: str = "site-",
     split_method: SplitMethod = SplitMethod.UNIFORM,
 ):
-    size_total = get_file_line_count(data_path)
+    size_total_file = get_file_line_count(data_path)
+    if data_size > 0:
+        if data_size > size_total_file:
+            raise ValueError(
+                "data_size should be less than or equal to the true data size"
+            )
+        else:
+            size_total = data_size
+    else:
+        size_total = size_total_file
     site_indices = assign_data_index_to_sites(
         size_total, valid_frac, site_num, site_name_prefix, split_method
     )
@@ -268,7 +285,7 @@ def main():
 
     # generate data split
     site_indices = split_data(
-        args.data_path, args.site_num, args.valid_frac, args.site_name_prefix
+        args.data_path, args.site_num, args.data_size, args.valid_frac, args.site_name_prefix
     )
 
     # create client side app
