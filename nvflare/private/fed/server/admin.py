@@ -17,8 +17,6 @@ import time
 from typing import List, Optional
 
 from nvflare.fuel.f3.cellnet.cell import Cell
-from nvflare.fuel.f3.cellnet.cell import Message as CellMessage
-from nvflare.fuel.f3.cellnet.cell import TargetMessage
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.cellnet.net_manager import NetManager
 from nvflare.fuel.hci.conn import Connection
@@ -31,7 +29,8 @@ from nvflare.fuel.hci.server.hci import AdminServer
 from nvflare.fuel.hci.server.login import LoginModule, SessionManager, SimpleAuthenticator
 from nvflare.fuel.sec.audit import Auditor, AuditService
 from nvflare.private.admin_defs import Message
-from nvflare.private.defs import ERROR_MSG_PREFIX, CellChannel, RequestHeader, new_cell_message
+from nvflare.private.defs import ERROR_MSG_PREFIX, RequestHeader
+from nvflare.private.fed.server.message_send import ClientReply, send_requests
 
 
 def new_message(conn: Connection, topic, body, require_authz: bool) -> Message:
@@ -65,20 +64,6 @@ class _Client(object):
         self.token = token
         self.name = name
         self.last_heard_time = None
-
-
-class ClientReply(object):
-    def __init__(self, client_token: str, req: Message, reply: Message):
-        """Client reply.
-
-        Args:
-            client_token (str): client token
-            req (Message): request
-            reply (Message): reply
-        """
-        self.client_token = client_token
-        self.request = req
-        self.reply = reply
 
 
 class _ClientReq(object):
@@ -289,41 +274,7 @@ class FedAdminServer(AdminServer):
             A list of ClientReply
         """
 
-        if not isinstance(requests, dict):
-            raise TypeError("requests must be a dict but got {}".format(type(requests)))
-
-        if len(requests) == 0:
-            return []
-
-        target_msgs = {}
-        name_to_token = {}
-        name_to_req = {}
-        for token, req in requests.items():
-            client = self.clients.get(token)
-            if not client:
-                continue
-
-            target_msgs[client.name] = TargetMessage(
-                target=client.name, channel=CellChannel.ADMIN, topic="admin", message=new_cell_message({}, req)
-            )
-
-            name_to_token[client.name] = token
-            name_to_req[client.name] = req
-
-        if not target_msgs:
-            return []
-
-        if timeout_secs <= 0.0:
-            # this is fire-and-forget!
-            self.cell.fire_multi_requests_and_forget(target_msgs)
-            return []
-        else:
-            result = []
-            replies = self.cell.broadcast_multi_requests(target_msgs, timeout_secs)
-            for name, reply in replies.items():
-                assert isinstance(reply, CellMessage)
-                result.append(ClientReply(client_token=name_to_token[name], req=name_to_req[name], reply=reply.payload))
-            return result
+        return send_requests(cell=self.cell, command="admin", requests=requests, clients=self.clients, timeout_secs=timeout_secs)
 
     def stop(self):
         super().stop()

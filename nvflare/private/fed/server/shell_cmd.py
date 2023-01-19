@@ -31,7 +31,8 @@ from nvflare.fuel.hci.shell_cmd_val import (
 )
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import SysCommandTopic
-from nvflare.private.fed.server.admin import ClientReply, new_message
+from nvflare.private.fed.server.admin import new_message
+from nvflare.private.fed.server.message_send import ClientReply
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
 
 

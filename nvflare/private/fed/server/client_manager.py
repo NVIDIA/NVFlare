@@ -17,8 +17,6 @@ import threading
 import time
 import uuid
 
-import grpc
-
 from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext

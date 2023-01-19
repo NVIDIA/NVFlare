@@ -30,11 +30,9 @@ from nvflare.apis.signal import Signal
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
-from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import EngineConstant
 from nvflare.security.logging import secure_format_exception
-
 from .client_status import ClientStatus
 from .communicator import Communicator
 

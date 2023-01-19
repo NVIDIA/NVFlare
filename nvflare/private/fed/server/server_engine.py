@@ -24,7 +24,6 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from multiprocessing.connection import Client as CommandClient
-from multiprocessing.connection import Listener
 from threading import Lock
 from typing import Dict, List, Optional, Tuple
 
@@ -59,7 +58,6 @@ from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
 from nvflare.private.admin_defs import Message, MsgHeader
 from nvflare.private.defs import (
     CellChannel,
-    CellChannelTopic,
     CellMessageHeaderKeys,
     RequestHeader,
     TrainingTopic,
@@ -71,14 +69,15 @@ from nvflare.private.scheduler_constants import ShareableHeader
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
-
-from .admin import ClientReply
 from .client_manager import ClientManager
 from .job_runner import JobRunner
+from .message_send import ClientReply
 from .run_manager import RunInfo, RunManager
-from .server_commands import NO_OP_REPLY
 from .server_engine_internal_spec import EngineInfo, ServerEngineInternalSpec
 from .server_status import ServerStatus
+
+
+# from .message_send import send_requests
 
 
 class ClientConnection:
@@ -183,11 +182,7 @@ class ServerEngine(ServerEngineInternalSpec):
         while True:
             try:
                 with self.parent_conn_lock:
-                    # data = {ServerCommandKey.COMMAND: ServerCommandNames.HEARTBEAT, ServerCommandKey.DATA: {}}
-                    # self.parent_conn.send(data)
-
-                    data = {}
-                    request = new_cell_message({}, fobs.dumps(data))
+                    request = new_cell_message({}, fobs.dumps({}))
                     return_data = self.server.cell.send_request(
                         target=FQCN.ROOT_SERVER,
                         channel=CellChannel.SERVER_PARENT_LISTENER,
@@ -249,47 +244,8 @@ class ServerEngine(ServerEngineInternalSpec):
                 self.server.cell,
             )
 
-            # threading.Thread(target=self._listen_command, args=(open_ports[0], run_number)).start()
-
             self.engine_info.status = MachineStatus.STARTED
             return ""
-
-    # def _listen_command(self, listen_port, job_id):
-    #     address = ("localhost", int(listen_port))
-    #     listener = Listener(address, authkey="parent process secret password".encode())
-    #     conn = listener.accept()
-    #
-    #     while job_id in self.run_processes.keys():
-    #         clients = self.run_processes.get(job_id).get(RunProcessKey.PARTICIPANTS)
-    #         job_id = self.run_processes.get(job_id).get(RunProcessKey.JOB_ID)
-    #         try:
-    #             if conn.poll(0.1):
-    #                 received_data = conn.recv()
-    #                 command = received_data.get(ServerCommandKey.COMMAND)
-    #                 data = received_data.get(ServerCommandKey.DATA)
-    #
-    #                 if command == ServerCommandNames.GET_CLIENTS:
-    #                     return_data = {ServerCommandKey.CLIENTS: clients, ServerCommandKey.JOB_ID: job_id}
-    #                     conn.send(return_data)
-    #                 elif command == ServerCommandNames.AUX_SEND:
-    #                     targets = data.get("targets")
-    #                     topic = data.get("topic")
-    #                     request = data.get("request")
-    #                     timeout = data.get("timeout")
-    #                     fl_ctx = data.get("fl_ctx")
-    #                     replies = self.aux_send(
-    #                         targets=targets, topic=topic, request=request, timeout=timeout, fl_ctx=fl_ctx
-    #                     )
-    #                     conn.send(replies)
-    #                 elif command == ServerCommandNames.UPDATE_RUN_STATUS:
-    #                     execution_error = data.get("execution_error")
-    #                     if execution_error:
-    #                         with self.lock:
-    #                             run_process_info = self.run_processes.get(job_id)
-    #                             self.exception_run_processes[job_id] = run_process_info
-    #
-    #         except BaseException as e:
-    #             self.logger.warning(f"Failed to process the child process command: {secure_format_exception(e)}")
 
     def remove_exception_process(self, job_id):
         with self.lock:
@@ -297,22 +253,6 @@ class ServerEngine(ServerEngineInternalSpec):
                 self.exception_run_processes.pop(job_id)
 
     def wait_for_complete(self, job_id, process):
-        # while True:
-        #     try:
-        #         self.send_command_to_child_runner_process(
-        #             job_id=job_id, command_name=ServerCommandNames.HEARTBEAT, command_data={}, return_result=False
-        #         )
-        #         time.sleep(1.0)
-        #     except BaseException:
-        #         with self.lock:
-        #             if job_id in self.run_processes:
-        #                 run_process_info = self.run_processes.pop(job_id)
-        #                 return_code = run_process_info[RunProcessKey.CHILD_PROCESS].poll()
-        #                 # if process exit but with Execution exception
-        #                 if return_code and return_code != 0:
-        #                     self.exception_run_processes[job_id] = run_process_info
-        #         self.engine_info.status = MachineStatus.STOPPED
-        #         break
         process.wait()
         with self.lock:
             if job_id in self.run_processes:
@@ -610,12 +550,6 @@ class ServerEngine(ServerEngineInternalSpec):
 
     def sync_clients_from_main_process(self):
         with self.parent_conn_lock:
-            #     data = {ServerCommandKey.COMMAND: ServerCommandNames.GET_CLIENTS, ServerCommandKey.DATA: {}}
-            #     self.parent_conn.send(data)
-            #     return_data = self.parent_conn.recv()
-            #     clients = return_data.get(ServerCommandKey.CLIENTS)
-            #     self.client_manager.clients = clients
-
             return_data = self._get_clients_data(self.args.job_id)
             clients = return_data.get(ServerCommandKey.CLIENTS)
             self.client_manager.clients = clients
@@ -655,14 +589,6 @@ class ServerEngine(ServerEngineInternalSpec):
         with self.parent_conn_lock:
             with self.new_context() as fl_ctx:
                 execution_error = fl_ctx.get_prop(FLContextKey.FATAL_SYSTEM_ERROR, False)
-                # data = {
-                #     ServerCommandKey.COMMAND: ServerCommandNames.UPDATE_RUN_STATUS,
-                #     ServerCommandKey.DATA: {
-                #         "execution_error": execution_error,
-                #     },
-                # }
-                # self.parent_conn.send(data)
-
                 data = {"execution_error": execution_error}
                 request = new_cell_message({}, fobs.dumps(data))
                 return_data = self.server.cell.fire_and_forget(
@@ -684,8 +610,10 @@ class ServerEngine(ServerEngineInternalSpec):
             requests.update({n: message})
 
         job_id = fl_ctx.get_job_id()
-        # replies = self.server.admin_server.send_requests(requests, timeout_secs=timeout)
         replies = self._send_requests(requests, job_id, timeout_secs=timeout)
+        # replies = send_requests(cell=self.server.cell, command=AdminCommandNames.AUX_COMMAND,
+        #                         requests=requests, clients=self.client_manager.clients, job_id=job_id,
+        #                         timeout_secs=timeout)
         results = {}
         for r in replies:
             client_name = self.get_client_name_from_token(r.client_token)
@@ -717,26 +645,8 @@ class ServerEngine(ServerEngineInternalSpec):
         if len(requests) == 0:
             return []
 
-        target_msgs = {}
         name_to_token = {}
         name_to_req = {}
-        # for token, req in requests.items():
-        #     client = self.client_manager.clients.get(token)
-        #     if not client:
-        #         continue
-        #
-        #     target_msgs[client.name] = TargetMessage(
-        #         target=client.name,
-        #         channel=CellChannel.ADMIN,
-        #         topic="admin",
-        #         message=new_cell_message({}, req)
-        #     )
-        #
-        #     name_to_token[client.name] = token
-        #     name_to_req[client.name] = req
-        #
-        # if not target_msgs:
-        #     return []
 
         targets = []
         for token, req in requests.items():
@@ -766,16 +676,6 @@ class ServerEngine(ServerEngineInternalSpec):
     def send_command_to_child_runner_process(self, job_id: str, command_name: str, command_data, return_result=True):
         result = None
         with self.lock:
-            # command_conn = self.get_command_conn(job_id)
-            # if command_conn:
-            #     data = {ServerCommandKey.COMMAND: command_name, ServerCommandKey.DATA: command_data}
-            #     command_conn.send(data)
-            #     if return_result:
-            #         result = command_conn.recv()
-            #         if result == NO_OP_REPLY:
-            #             result = None
-
-            # data = {ServerCommandKey.DATA: command_data}
             fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
             request = new_cell_message({}, fobs.dumps(command_data))
             return_data = self.server.cell.send_request(
@@ -827,11 +727,6 @@ class ServerEngine(ServerEngineInternalSpec):
 
             job_info = fl_ctx.get_prop(FLContextKey.JOB_INFO)
             if not job_info:
-                # with self.parent_conn_lock:
-                #     data = {ServerCommandKey.COMMAND: ServerCommandNames.GET_CLIENTS, ServerCommandKey.DATA: {}}
-                #     self.parent_conn.send(data)
-                #     return_data = self.parent_conn.recv()
-
                 return_data = self._get_clients_data(job_id)
                 job_id = return_data.get(ServerCommandKey.JOB_ID)
                 job_clients = return_data.get(ServerCommandKey.CLIENTS)
