@@ -104,9 +104,11 @@ class MLFlowReceiver(AnalyticsReceiver):
                 self.experiment_id = self._create_experiment(
                     mlflow_client, experiment_name, art_full_path, experiment_tags
                 )
-                run_group_id = int(time.time())
-                tags = self.get_run_tags(self.kwargs, run_group_id)
-                run_name = self.get_run_name(self.kwargs, "FLARE FL Run", site.name, run_group_id)
+                run_group_id = str(int(time.time()))
+
+                default_run_name = "FLARE FL Run"
+                run_name = self.get_run_name(self.kwargs, default_run_name, site.name, run_group_id)
+                tags = self.get_run_tags(self.kwargs, run_group_id, run_name)
                 run = mlflow_client.create_run(experiment_id=self.experiment_id, run_name=run_name, tags=tags)
                 self.run_ids[site.name] = run.info.run_id
 
@@ -122,19 +124,27 @@ class MLFlowReceiver(AnalyticsReceiver):
         experiment_name = kwargs.get(TrackConst.EXPERIMENT_NAME, default_name)
         return experiment_name
 
-    def get_run_name(self, kwargs: dict, default_name: str, site_name: str, run_group_id: int):
+    def get_run_name(self, kwargs: dict, default_name: str, site_name: str, run_group_id: str):
         run_name = kwargs.get(TrackConst.RUN_NAME, default_name)
-        return f"{run_name}-{site_name}-{run_group_id}"
+        job_id_tag = self.get_job_id_tag(group_id=run_group_id)
+        return f"{site_name}-{job_id_tag}-{run_name}"
 
     def get_experiment_tags(self, kwargs):
         tags = self._get_tags(TrackConst.EXPERIMENT_TAGS, kwargs=kwargs)
         return tags
 
-    def get_run_tags(self, kwargs, run_group_id):
+    def get_run_tags(self, kwargs, run_group_id, run_name: str):
         run_tags = self._get_tags(TrackConst.RUN_TAGS, kwargs=kwargs)
-        run_tags["job_id"] = self.fl_ctx.get_job_id()
-        run_tags["group_id"] = str(run_group_id)
+        run_tags["job_id"] = self.get_job_id_tag(group_id=run_group_id)
+        run_tags["run_name"] = run_name
         return run_tags
+
+    def get_job_id_tag(self, group_id: str) -> str:
+        job_id = self.fl_ctx.get_job_id()
+        if job_id == "simulate_job":
+            # We are in simulator
+            job_id = group_id
+        return job_id
 
     def _get_tags(self, tag_key: str, kwargs: dict):
         tags = {}

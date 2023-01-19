@@ -78,23 +78,33 @@ class WandBReceiver(AnalyticsReceiver):
     def initialize(self, fl_ctx: FLContext):
         self.fl_ctx = fl_ctx
         sites = fl_ctx.get_engine().get_clients()
-        run_group_id = int(time.time())
-        self.kwargs["group"] = f"{self.fl_ctx.get_job_id()}-{run_group_id}"
+        run_group_id = str(int(time.time()))
+
+        # self.kwargs["group"] = f"{self.get_job_id_tag(run_group_id)}"
+        run_name = self.kwargs["name"]
         for site in sites:
             self.log_info(self.fl_ctx, f"initialize WandB run for site {site.name}")
-            self.kwargs["name"] = f"{site.name}"
+            self.kwargs["name"] = f"{site.name}-{run_name}"
+            self.kwargs["group"] = f"{site.name}-{self.get_job_id_tag(run_group_id)}"
             self.check_kwargs(self.kwargs)
 
             q = Queue()
             wandb_task = WandBTask(task_owner=site.name, task_type="init", task_data=self.kwargs, step=0)
-            q.put_nowait(wandb_task)
+            # q.put_nowait(wandb_task)
+            q.put(wandb_task)
 
             self.queues[site.name] = q
             p = Process(target=self.job, args=(q,))
             self.processes[site.name] = p
+            p.start()
+            time.sleep(0.2)
 
-        for site_name, site_p in self.processes.items():
-            site_p.start()
+    def get_job_id_tag(self, group_id: str) -> str:
+        job_id = self.fl_ctx.get_job_id()
+        if job_id == "simulate_job":
+            # We are in simulator
+            job_id = group_id
+        return job_id
 
     def save(self, fl_ctx: FLContext, shareable: Shareable, record_origin: str):
         dxo = from_shareable(shareable)
@@ -106,16 +116,16 @@ class WandBReceiver(AnalyticsReceiver):
         if q:
             if data.data_type == AnalyticsDataType.PARAMETER or data.data_type == AnalyticsDataType.METRIC:
                 log_data = {data.tag: data.value}
-                q.put_nowait(WandBTask(task_owner=record_origin, task_type="log", task_data=log_data, step=data.step))
+                q.put(WandBTask(task_owner=record_origin, task_type="log", task_data=log_data, step=data.step))
             elif data.data_type == AnalyticsDataType.PARAMETERS or data.data_type == AnalyticsDataType.METRICS:
-                q.put_nowait(WandBTask(task_owner=record_origin, task_type="log", task_data=data.value, step=data.step))
+                q.put(WandBTask(task_owner=record_origin, task_type="log", task_data=data.value, step=data.step))
 
     def finalize(self, fl_ctx: FLContext):
 
         for site in self.processes:
             self.log_info(self.fl_ctx, f"inform {site} to stop")
             q: Optional[Queue] = self.get_job_queue(site)
-            q.put_nowait(WandBTask(task_owner=site, task_type="stop", task_data={}, step=0))
+            q.put(WandBTask(task_owner=site, task_type="stop", task_data={}, step=0))
 
         for site in self.processes:
             p = self.processes[site]

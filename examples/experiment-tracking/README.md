@@ -118,6 +118,8 @@ All examples will leverage the example hello-pt.
 * The second example shows how to use MLFlow Sender only, while the receivers are Tensorboard
 
 ![mlflow_1](mlflow_1.png)
+![mlflow_2](mlflow_2.png)
+![mlflow_3](mlflow_3.png)
 
 
 [wandb_tracker](hello-pt-wandb/wandb)
