@@ -176,6 +176,8 @@ class Server:
         params = connector.params
         host = params.get(DriverParams.HOST.value)
         port = int(params.get(DriverParams.PORT.value))
+        if not host:
+            host = 0
         self.grpc_server.add_insecure_port(f'{host}:{port}')
 
     def start(self):
