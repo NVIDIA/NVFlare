@@ -33,6 +33,7 @@ from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import EngineConstant
 from nvflare.security.logging import secure_format_exception
+
 from .client_status import ClientStatus
 from .communicator import Communicator
 
@@ -272,10 +273,13 @@ class FederatedClientBase:
         except FLCommunicationError as e:
             self.logger.info(secure_format_exception(e))
 
-    def send_aux_message(self, project_name, topic: str, shareable: Shareable, timeout: float, fl_ctx: FLContext):
+    def send_aux_message(
+        self, project_name, targets: [], topic: str, shareable: Shareable, timeout: float, fl_ctx: FLContext
+    ):
         """Send auxiliary message to the server.
 
         Args:
+            targets: aux message targets
             project_name: FL study project name
             topic: aux topic name
             shareable: Shareable object
@@ -288,7 +292,16 @@ class FederatedClientBase:
         try:
             self.logger.debug("Starting to send aux message.")
             message = self.communicator.aux_communicate(
-                self.servers, project_name, self.token, self.ssid, fl_ctx, self.client_name, shareable, topic, timeout
+                self.servers,
+                project_name,
+                self.token,
+                self.ssid,
+                fl_ctx,
+                self.client_name,
+                shareable,
+                targets,
+                topic,
+                timeout,
             )
 
             return message
@@ -350,13 +363,20 @@ class FederatedClientBase:
             if pool:
                 pool.terminate()
 
-    def aux_send(self, topic, shareable: Shareable, timeout: float, fl_ctx: FLContext):
+    def aux_send(self, targets: [], topic, shareable: Shareable, timeout: float, fl_ctx: FLContext):
         """Push the local model to multiple servers."""
         pool = None
         try:
             pool = ThreadPool(len(self.servers))
             messages = pool.map(
-                partial(self.send_aux_message, topic=topic, shareable=shareable, timeout=timeout, fl_ctx=fl_ctx),
+                partial(
+                    self.send_aux_message,
+                    targets=targets,
+                    topic=topic,
+                    shareable=shareable,
+                    timeout=timeout,
+                    fl_ctx=fl_ctx,
+                ),
                 tuple(self.servers),
             )
             if messages is not None and messages[0] is not None:

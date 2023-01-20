@@ -15,10 +15,12 @@
 import threading
 import time
 
+from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
+from nvflare.fuel.f3.cellnet.defs import ReturnCode
 from nvflare.private.aux_runner import AuxRunner
 
 from .client_engine_executor_spec import ClientEngineExecutorSpec
@@ -54,7 +56,7 @@ class ClientAuxRunner(AuxRunner):
             if self.sender and self.sender.is_alive():
                 self.sender.join()
 
-    def send_aux_request(self, topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> Shareable:
+    def send_aux_request(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext):
         if not isinstance(topic, str):
             raise TypeError("invalid topic: expects str but got {}".format(type(topic)))
 
@@ -88,18 +90,23 @@ class ClientAuxRunner(AuxRunner):
         if not isinstance(engine, ClientEngineExecutorSpec):
             raise TypeError("engine must be ClientEngineExecutorSpec, but got {}".format(type(engine)))
 
-        reply = engine.aux_send(topic=topic, request=req_to_send, timeout=timeout, fl_ctx=fl_ctx)
+        target_names = []
+        for t in targets:
+            if isinstance(t, str):
+                name = t
+            elif isinstance(t, Client):
+                name = t.name
+            else:
+                raise ValueError("invalid target in list: got {}".format(type(t)))
 
-        # check whether the RUN should be aborted
-        if not isinstance(reply, Shareable):
-            self.log_error(fl_ctx, "bad reply from peer: expect Shareable but got {}".format(type(reply)))
-            return make_reply(ReturnCode.ERROR)
+            if name not in target_names:
+                target_names.append(t)
 
-        job_id = fl_ctx.get_job_id()
-        rc = reply.get_return_code()
-        if rc == ReturnCode.RUN_MISMATCH:
-            self.log_info(fl_ctx, "got RUN_MISMATCH - asked engine to abort app")
-            engine.abort_app(job_id=job_id, fl_ctx=fl_ctx)
+        valid_targets, invalid_names = engine.validate_targets(target_names, fl_ctx)
+        if invalid_names:
+            raise ValueError("invalid target(s): {}".format(invalid_names))
+
+        reply = engine.aux_send(targets=valid_targets, topic=topic, request=req_to_send, timeout=timeout, fl_ctx=fl_ctx)
 
         return reply
 
@@ -124,7 +131,7 @@ class ClientAuxRunner(AuxRunner):
                 bulk.set_peer_props(fl_ctx.get_all_public_props())
                 with self.fnf_lock:
                     bulk[self.DATA_KEY_BULK] = self.fnf_requests
-                    reply = self.engine.aux_send(topic=topic, request=bulk, timeout=15.0, fl_ctx=fl_ctx)
+                    reply = self.engine.aux_send(targets=None, topic=topic, request=bulk, timeout=15.0, fl_ctx=fl_ctx)
                     rc = reply.get_return_code()
                     if rc != ReturnCode.COMMUNICATION_ERROR:
                         # if communication error we'll retry

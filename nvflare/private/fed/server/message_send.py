@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.fuel.f3.cellnet.cell import Message as CellMessage, FQCN, TargetMessage
+from nvflare.fuel.f3.cellnet.cell import FQCN
+from nvflare.fuel.f3.cellnet.cell import Message as CellMessage
+from nvflare.fuel.f3.cellnet.cell import TargetMessage
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import CellChannel, new_cell_message
 
@@ -31,7 +33,7 @@ class ClientReply(object):
         self.reply = reply
 
 
-def send_requests(cell, command:str, requests: dict, clients, job_id=None, timeout_secs=2.0) -> [ClientReply]:
+def send_requests(cell, command: str, requests: dict, clients, job_id=None, timeout_secs=2.0) -> [ClientReply]:
     """Send requests to clients.
 
     NOTE::
@@ -89,5 +91,3 @@ def send_requests(cell, command:str, requests: dict, clients, job_id=None, timeo
             assert isinstance(reply, CellMessage)
             result.append(ClientReply(client_token=name_to_token[name], req=name_to_req[name], reply=reply.payload))
         return result
-
-

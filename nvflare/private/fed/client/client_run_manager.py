@@ -13,20 +13,25 @@
 # limitations under the License.
 
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, ReturnCode
+from nvflare.apis.fl_constant import FLContextKey, ReturnCode, ServerCommandKey, ServerCommandNames
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.workspace import Workspace
+from nvflare.fuel.f3.cellnet.cell import FQCN
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import ReturnCode
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.utils import fobs
+from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, new_cell_message
 from nvflare.private.event import fire_event
 from nvflare.private.fed.utils.fed_utils import create_job_processing_context_properties
 from nvflare.widgets.fed_event import ClientFedEventRunner
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
+
 from .client_aux_runner import ClientAuxRunner
 from .client_engine_executor_spec import ClientEngineExecutorSpec, TaskAssignment
 from .client_json_config import ClientJsonConfigurator
@@ -79,6 +84,8 @@ class ClientRunManager(ClientEngineExecutorSpec):
         self.aux_runner = ClientAuxRunner()
         self.add_handler(self.aux_runner)
         self.conf = conf
+
+        self.all_clients = None
 
         if not components:
             self.components = {}
@@ -140,6 +147,28 @@ class ClientRunManager(ClientEngineExecutorSpec):
     def get_all_components(self) -> dict:
         return self.components
 
+    def validate_targets(self, inputs, fl_ctx: FLContext) -> ([], []):
+        valid_inputs = []
+        invalid_inputs = []
+        if not self.all_clients:
+            self._get_all_clients(fl_ctx)
+        for item in inputs:
+            if item == FQCN.ROOT_SERVER:
+                valid_inputs.append(item)
+            else:
+                client = self.get_client_from_name(item)
+                if client:
+                    valid_inputs.append(item)
+                else:
+                    invalid_inputs.append(item)
+        return valid_inputs, invalid_inputs
+
+    def get_client_from_name(self, client_name):
+        for c in self.all_clients:
+            if client_name == c.name:
+                return c
+        return None
+
     def get_widget(self, widget_id: str) -> Widget:
         return self.widgets.get(widget_id)
 
@@ -154,22 +183,65 @@ class ClientRunManager(ClientEngineExecutorSpec):
             raise RuntimeError("No configurator set up.")
         return self.conf.build_component(config_dict)
 
-    def aux_send(self, topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> Shareable:
-        reply = self.client.aux_send(topic, request, timeout, fl_ctx)[0]
-        if reply:
-            shareable = fobs.loads(reply.payload)
-            return self.client.extract_shareable(shareable, fl_ctx)
-        else:
-            return make_reply(ReturnCode.COMMUNICATION_ERROR)
+    def aux_send(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
+        replies = self.client.aux_send(targets, topic, request, timeout, fl_ctx)[0]
 
-    def send_aux_request(self, topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> Shareable:
-        return self.aux_runner.send_aux_request(topic, request, timeout, fl_ctx)
+        results = {}
+        for name, reply in replies.items():
+            # assert isinstance(reply, CellMessage)
+            target_name = FQCN.get_root(name)
+            if reply:
+                try:
+                    error_code = reply.get_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
+                    if error_code != ReturnCode.OK:
+                        self.logger.error(f"Aux message send error: {error_code} from client: {name}")
+                        shareable = make_reply(ReturnCode.ERROR)
+                    else:
+                        shareable = fobs.loads(reply.payload)
+                    results[target_name] = shareable
+                except BaseException as e:
+                    results[target_name] = make_reply(ReturnCode.COMMUNICATION_ERROR)
+                    self.logger.error(
+                        f"Received unexpected reply from client: {target_name}, "
+                        f"message body:{reply.body} processing topic:{topic} Error:{e}"
+                    )
+            else:
+                results[target_name] = None
+        return results
+
+    def send_aux_request(
+        self, targets: Union[None, str, List[str]], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext
+    ) -> dict:
+        if not targets:
+            targets = [FQCN.ROOT_SERVER]
+        elif targets == "@ALL":
+            if not self.all_clients:
+                self._get_all_clients(fl_ctx)
+                targets = [FQCN.ROOT_SERVER]
+            for t in self.all_clients:
+                targets.append(t.name)
+        if targets:
+            return self.aux_runner.send_aux_request(targets, topic, request, timeout, fl_ctx)
+        else:
+            return {}
+
+    def _get_all_clients(self, fl_ctx):
+        job_id = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
+        get_clients_message = new_cell_message({CellMessageHeaderKeys.JOB_ID: job_id}, fobs.dumps({}))
+        return_data = self.client.cell.send_request(
+            target=FQCN.ROOT_SERVER,
+            channel=CellChannel.SERVER_PARENT_LISTENER,
+            topic=ServerCommandNames.GET_CLIENTS,
+            request=get_clients_message,
+        )
+        data = fobs.loads(return_data.payload)
+        self.all_clients = data.get(ServerCommandKey.CLIENTS)
 
     def register_aux_message_handler(self, topic: str, message_handle_func):
         self.aux_runner.register_aux_message_handler(topic, message_handle_func)
 
     def fire_and_forget_aux_request(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
-        return self.send_aux_request(topic, request, 0.0, fl_ctx)
+        return self.send_aux_request(targets=None, topic=topic, request=request, timeout=0.0, fl_ctx=fl_ctx)
 
     def abort_app(self, job_id: str, fl_ctx: FLContext):
         runner = fl_ctx.get_prop(key=FLContextKey.RUNNER, default=None)

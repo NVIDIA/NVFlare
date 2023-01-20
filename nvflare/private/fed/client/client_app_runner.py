@@ -75,6 +75,7 @@ class ClientAppRunner:
             fl_ctx.set_prop(FLContextKey.APP_ROOT, app_root, private=True, sticky=True)
             fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True)
             fl_ctx.set_prop(FLContextKey.SECURE_MODE, secure_train, private=True, sticky=True)
+            fl_ctx.set_prop(FLContextKey.CURRENT_RUN, args.job_id, private=True, sticky=True)
 
             client_runner = ClientRunner(config=conf.runner_config, job_id=args.job_id, engine=run_manager)
             run_manager.add_handler(client_runner)

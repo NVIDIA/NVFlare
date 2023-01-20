@@ -274,7 +274,9 @@ class FedAdminServer(AdminServer):
             A list of ClientReply
         """
 
-        return send_requests(cell=self.cell, command="admin", requests=requests, clients=self.clients, timeout_secs=timeout_secs)
+        return send_requests(
+            cell=self.cell, command="admin", requests=requests, clients=self.clients, timeout_secs=timeout_secs
+        )
 
     def stop(self):
         super().stop()

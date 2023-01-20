@@ -14,6 +14,7 @@
 
 import time
 from abc import ABC, abstractmethod
+from typing import List, Union
 
 from nvflare.apis.client_engine_spec import ClientEngineSpec
 from nvflare.apis.fl_context import FLContext
@@ -63,6 +64,18 @@ class ClientEngineExecutorSpec(ClientEngineSpec, ABC):
     def get_all_components(self) -> dict:
         pass
 
+    def validate_targets(self, target_names, fl_ctx: FLContext) -> ([], []):
+        """To validate the target names.
+
+        Args:
+            target_names: input target names
+            fl_ctx: FLContext
+
+        Returns: (valid_names, invalid_names)
+
+        """
+        pass
+
     @abstractmethod
     def register_aux_message_handler(self, topic: str, message_handle_func):
         """Register aux message handling function with specified topics.
@@ -83,12 +96,15 @@ class ClientEngineExecutorSpec(ClientEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def send_aux_request(self, topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> Shareable:
+    def send_aux_request(
+        self, targets: Union[None, str, List[str]], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext
+    ) -> Shareable:
         """Send a request to Server via the aux channel.
 
         Implementation: simply calls the ClientAuxRunner's send_aux_request method.
 
         Args:
+            targets: aux messages targets. None or empty list means the server.
             topic: topic of the request
             request: request to be sent
             timeout: number of secs to wait for replies. 0 means fire-and-forget.
@@ -114,12 +130,13 @@ class ClientEngineExecutorSpec(ClientEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def aux_send(self, topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> Shareable:
+    def aux_send(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> {}:
         """Send the request to the Server.
 
         If reply is received, make sure to set peer_ctx into the reply shareable!
 
         Args:
+            targets: aux messages targets. None or empty list means the server.
             topic: topic of the request
             request: request Shareable to be sent
             timeout: number of secs to wait for reply. 0 means fire-and-forget.
