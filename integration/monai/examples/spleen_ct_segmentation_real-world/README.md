@@ -22,7 +22,7 @@ And go to the folder containing this tutorial
 To execute the below commands, please open a terminal
 and go to the folder containing this tutorial:
 
-#### Optional) 1. Set up a virtual environment
+#### (Optional) Set up a virtual environment
 ```
 python3 -m pip install --user --upgrade pip
 python3 -m pip install --user virtualenv
@@ -52,7 +52,7 @@ python3 -m monai.bundle download --name "spleen_ct_segmentation" --version "0.3.
 
 In this example, `JOB_NAME` can be either `job` or `job_he`, depending on the configuration you would like to run (see below).
 The final folder structure under `JOB_NAME` will be:
-<pre style="background: #f4f4f4; border: 1px solid #ddd; border-left: 3px solid #02a3a3; line-height: 1.6; padding: 1.5em;">
+```
 .
 ├── app
 │   └── config
@@ -75,17 +75,17 @@ The final folder structure under `JOB_NAME` will be:
 │               ├── model.pt
 │               └── model.ts
 └── meta.json
-</pre>
+```
 
 ## 2. Download the data
 Download the spleen CT data from the [MSD challenge](http://medicaldecathlon.com/) and update data path.
 
 > **Note:** The dataset will be saved under `./data`.
-<pre style="background: #f4f4f4; border: 1px solid #ddd; border-left: 3px solid #02a3a3; line-height: 1.6; padding: 1.5em;">
+```
 JOB_NAME=job
 python3 download_spleen_dataset.py
 sed -i "s|/workspace/data/Task09_Spleen|${PWD}/data/Task09_Spleen|g" ${JOB_NAME}/app/config/spleen_ct_segmentation/configs/train.json
-</pre>
+```
 
 
 ## 3. Create your FL workspace and start FL system
@@ -98,38 +98,38 @@ The project file for creating the secure workspace used in this example is shown
 [./workspaces/secure_project.yml](./workspaces/secure_project.yml).
 
 If you want to run the homomorphic encryption job, please install [TenSEAL](https://github.com/OpenMined/TenSEAL):
-<pre style="background: #f4f4f4; border: 1px solid #ddd; border-left: 3px solid #02a3a3; line-height: 1.6; padding: 1.5em;">
+```
 pip install tenseal
-</pre>
+```
 (this example was tested with tenseal==0.3.12)
 
 Otherwise, please remove the `HEBuilder` section from [workspaces/secure_project.yml](./workspaces/secure_project.yml).
 
 To create the secure workspace, please use the following to build a package and copy it
 to `secure_workspace` for later experimentation.
-<pre style="background: #f4f4f4; border: 1px solid #ddd; border-left: 3px solid #02a3a3; line-height: 1.6; padding: 1.5em;">
+```
 cd ./workspaces
 nvflare provision -p ./secure_project.yml
 cp -r ./workspace/secure_project/prod_00 ./secure_workspace
 cd ..
-</pre>
+```
 For more information about secure provisioning see the [documentation](https://nvflare.readthedocs.io/en/latest/programming_guide/provisioning_system.html).
 
 ### 3.2 Start FL system
 
 For starting the FL system with 2 clients in the secure workspace, run
-<pre style="background: #f4f4f4; border: 1px solid #ddd; border-left: 3px solid #02a3a3; line-height: 1.6; padding: 1.5em;">
+```
 ./start_fl_secure.sh 2
-</pre>
+```
 
 ## 4. (Optional) Experimenting with POC ("proof of concept") workspace
 To run FL experiments in POC mode, create your local FL workspace the below command.
 In the following experiments, we will be using 2 clients. Press y and enter when prompted.
 
 ### 4.1 (Optional) Crate POC workspace
-<pre style="background: #f4f4f4; border: 1px solid #ddd; border-left: 3px solid #02a3a3; line-height: 1.6; padding: 1.5em;">
+```
 nvflare poc --prepare -n 2
-</pre>
+```
 By default, POC will create startup kits at `/tmp/nvflare/poc`.
 
 > **_NOTE:_** **POC** stands for "proof of concept" and is used for quick experimentation
@@ -143,9 +143,9 @@ By default, POC will create startup kits at `/tmp/nvflare/poc`.
 ### 4.2 (Optional)  Start FL system in POC mode
 
 Then, start the FL system with all provisioned clients by running
-<pre style="background: #f4f4f4; border: 1px solid #ddd; border-left: 3px solid #02a3a3; line-height: 1.6; padding: 1.5em;">
+```
 nvflare poc --start
-</pre>
+```
 
 ## 5. Run experiments
 
@@ -158,13 +158,13 @@ For details about resource management and consumption, please refer to the [docu
 ### 5.1 Federated averaging
 
 To run FedAvg using a real-world setup, submit the job using:
-<pre style="background: #f4f4f4; border: 1px solid #ddd; border-left: 3px solid #02a3a3; line-height: 1.6; padding: 1.5em;">
+```
 ./submit_job.sh job
-</pre>
+```
 (Optional) In POC mode, use
-<pre style="background: #f4f4f4; border: 1px solid #ddd; border-left: 3px solid #02a3a3; line-height: 1.6; padding: 1.5em;">
+```
 ./submit_job.sh job --poc
-</pre>
+```
 
 > **_NOTE:_** You can always use the admin console to manually abort a running job.
   using `abort_job [JOB_ID]`.
@@ -177,17 +177,17 @@ To run FedAvg using a real-world setup, submit the job using:
 
 After training, each client's best model will be used for cross-site validation.
 The results can be downloaded and shown with the admin console using
-<pre style="background: #f4f4f4; border: 1px solid #ddd; border-left: 3px solid #02a3a3; line-height: 1.6; padding: 1.5em;">
+```
   download_job [JOB_ID]
-</pre>
+```
 where `[JOB_ID]` is the ID assigned by the system when submitting the job.
 You can use the `list_jobs` [admin command](https://nvflare.readthedocs.io/en/main/real_world_fl/operation.html#admin-command-prompt) to find the relevant `JOB_ID`.
 
 The result will be downloaded to your admin workspace (the exact download path will be displayed when running the command).
 You should see the cross-site validation results at
-<pre style="background: #f4f4f4; border: 1px solid #ddd; border-left: 3px solid #02a3a3; line-height: 1.6; padding: 1.5em;">
+```
 [DOWNLOAD_DIR]/[JOB_ID]/workspace/cross_site_val/cross_val_results.json
-</pre>
+```
 
 ### 5.2 Secure aggregation using homomorphic encryption
 
@@ -200,6 +200,6 @@ Next we run FedAvg using homomorphic encryption (HE) for secure aggregation on t
 Follow the steps above for downloading the bundle and setting the data using `JOB_NAME=job_he`.
 
 Then, submit the job to run FedAvg with HE:
-<pre style="background: #f4f4f4; border: 1px solid #ddd; border-left: 3px solid #02a3a3; line-height: 1.6; padding: 1.5em;">
+```
 ./submit_job.sh job_he
-</pre>
+```
