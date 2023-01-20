@@ -220,11 +220,11 @@ def run_admin_api_tests(admin_api: FLAdminAPI):
     print("\nCommand: get_available_apps_to_upload")
     print(admin_api.get_available_apps_to_upload())
     print("\nList Jobs:")
-    list_jobs_return_message = admin_api.list_jobs("-a").get("details").get("message")
-    print(list_jobs_return_message)
-    first_job = list_jobs_return_message.split()[17]
+    list_jobs_return_rows = admin_api.list_jobs("-a").get("details")
+    print(list_jobs_return_rows)
+    first_job = str(list_jobs_return_rows[1][0])
     print("\nCommand: ls server -a .")
-    ls_return_message = admin_api.ls_target("server", "-a", "..").get("details").get("message")
+    ls_return_message = admin_api.ls_target("server", "-a", ".").get("details").get("message")
     print(ls_return_message)
     print("\nAssert Job {} is in the server root dir...".format(first_job))
     assert first_job in ls_return_message
@@ -238,4 +238,3 @@ def run_admin_api_tests(admin_api: FLAdminAPI):
 
     print("\n" + "=" * 50)
     print("Finished with admin commands testing through FLAdminAPI.")
-    print(("\n" + "*" * 120) * 20)
