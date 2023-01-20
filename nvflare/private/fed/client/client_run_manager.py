@@ -218,7 +218,7 @@ class ClientRunManager(ClientEngineExecutorSpec):
                 if targets == SiteType.ALL:
                     if not self.all_clients:
                         self._get_all_clients(fl_ctx)
-                        targets = [FQCN.ROOT_SERVER]
+                    targets = [FQCN.ROOT_SERVER]
                     for _, t in self.all_clients.items():
                         if t.name != self.client.client_name:
                             targets.append(t.name)
