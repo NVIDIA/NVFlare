@@ -15,13 +15,13 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional
 
-from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
+from nvflare.app_common.executors.init_final_component import InitFinalComponent
 from nvflare.app_common.psi.psi_persistor import PsiPersistor
 from nvflare.app_common.utils.component_utils import check_component_type
 
 
-class PSI(FLComponent, ABC):
+class PSI(InitFinalComponent, ABC):
     """
     PSI interface is intended for end-user interface to
     get intersection of items of clients specified without knowing
@@ -70,3 +70,6 @@ class PSI(FLComponent, ABC):
         self.intersection = intersection
         if self.psi_writer:
             self.psi_writer.save(items=intersection, overwrite_existing=True, fl_ctx=self.fl_ctx)
+
+    def finalize(self):
+        pass

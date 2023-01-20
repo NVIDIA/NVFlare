@@ -48,7 +48,7 @@ class DhPSIWorkFlow(PSIWorkflow):
     def pre_process(self, abort_signal: Signal) -> bool:
         # ask client send back their item sizes
         # sort client by ascending order
-        self.log_info(self.fl_ctx, f"pre_workflow on task {self.task_name}")
+        self.log_info(self.fl_ctx, f"pre_process on task {self.task_name}")
 
         if abort_signal.triggered:
             return False
