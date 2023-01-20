@@ -36,7 +36,7 @@ class SimulatorDeployer(ServerDeployer):
 
         heart_beat_timeout = simulator_server.get("heart_beat_timeout", 600)
 
-        self.services = SimulatorServer(
+        services = SimulatorServer(
             project_name=simulator_server.get("name", ""),
             max_num_clients=simulator_server.get("max_num_clients", 100),
             cmd_modules=self.cmd_modules,
@@ -46,18 +46,18 @@ class SimulatorDeployer(ServerDeployer):
             overseer_agent=self.overseer_agent,
             heart_beat_timeout=heart_beat_timeout,
         )
-        self.services.deploy(args, grpc_args=simulator_server)
+        services.deploy(args, grpc_args=simulator_server)
 
         admin_server = create_admin_server(
-            self.services,
+            services,
             server_conf=simulator_server,
             args=args,
             secure_train=False,
         )
         admin_server.start()
-        self.services.set_admin_server(admin_server)
+        services.set_admin_server(admin_server)
 
-        return simulator_server, self.services
+        return simulator_server, services
 
     def create_fl_client(self, client_name, args):
         client_config, build_ctx = self._create_simulator_client_config(client_name)
