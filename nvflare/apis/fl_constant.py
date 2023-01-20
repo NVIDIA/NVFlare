@@ -333,3 +333,4 @@ class JobConstants:
 class SiteType:
     SERVER = "server"
     CLIENT = "client"
+    ALL = "@ALL"

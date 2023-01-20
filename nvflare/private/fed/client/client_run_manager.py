@@ -16,7 +16,7 @@ import logging
 from typing import Dict, List, Optional, Union
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, ReturnCode, ServerCommandKey, ServerCommandNames
+from nvflare.apis.fl_constant import FLContextKey, ReturnCode, ServerCommandKey, ServerCommandNames, SiteType
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.workspace import Workspace
@@ -31,7 +31,6 @@ from nvflare.private.fed.utils.fed_utils import create_job_processing_context_pr
 from nvflare.widgets.fed_event import ClientFedEventRunner
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
-
 from .client_aux_runner import ClientAuxRunner
 from .client_engine_executor_spec import ClientEngineExecutorSpec, TaskAssignment
 from .client_json_config import ClientJsonConfigurator
@@ -164,7 +163,7 @@ class ClientRunManager(ClientEngineExecutorSpec):
         return valid_inputs, invalid_inputs
 
     def get_client_from_name(self, client_name):
-        for c in self.all_clients:
+        for _, c in self.all_clients.items():
             if client_name == c.name:
                 return c
         return None
@@ -214,12 +213,17 @@ class ClientRunManager(ClientEngineExecutorSpec):
     ) -> dict:
         if not targets:
             targets = [FQCN.ROOT_SERVER]
-        elif targets == "@ALL":
-            if not self.all_clients:
-                self._get_all_clients(fl_ctx)
-                targets = [FQCN.ROOT_SERVER]
-            for t in self.all_clients:
-                targets.append(t.name)
+        else:
+            if isinstance(targets, str):
+                if targets == SiteType.ALL:
+                    if not self.all_clients:
+                        self._get_all_clients(fl_ctx)
+                        targets = [FQCN.ROOT_SERVER]
+                    for _, t in self.all_clients.items():
+                        if t.name != self.client.client_name:
+                            targets.append(t.name)
+                else:
+                    targets = [targets]
         if targets:
             return self.aux_runner.send_aux_request(targets, topic, request, timeout, fl_ctx)
         else:
@@ -240,7 +244,7 @@ class ClientRunManager(ClientEngineExecutorSpec):
     def register_aux_message_handler(self, topic: str, message_handle_func):
         self.aux_runner.register_aux_message_handler(topic, message_handle_func)
 
-    def fire_and_forget_aux_request(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
+    def fire_and_forget_aux_request(self, topic: str, request: Shareable, fl_ctx: FLContext) -> dict:
         return self.send_aux_request(targets=None, topic=topic, request=request, timeout=0.0, fl_ctx=fl_ctx)
 
     def abort_app(self, job_id: str, fl_ctx: FLContext):
