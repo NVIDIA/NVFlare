@@ -356,10 +356,10 @@ class AdminController:
 
         self.test_done = False
         while not self.test_done:
-            job_meta = get_job_meta(self.super_admin_api, job_id=self.job_id)
-            job_run_status = job_meta.get("status")
 
             if self.job_id:
+                job_meta = get_job_meta(self.super_admin_api, job_id=self.job_id)
+                job_run_status = job_meta.get("status")
                 stats = self._get_stats(target=TargetType.SERVER, job_id=self.job_id)
                 # update run_state
                 changed, run_state = self._update_run_state(
