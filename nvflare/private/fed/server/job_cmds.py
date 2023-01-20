@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import datetime
-import io
 import json
 import logging
 import os
@@ -31,7 +30,6 @@ from nvflare.fuel.hci.proto import ConfirmMethod, MetaKey, MetaStatusValue, make
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
-from nvflare.fuel.hci.table import Table
 from nvflare.fuel.utils.argument_utils import SafeArgumentParser
 from nvflare.fuel.utils.obj_utils import get_size
 from nvflare.fuel.utils.zip_utils import ls_zip_from_bytes, unzip_all_from_bytes, zip_directory_to_bytes
@@ -503,7 +501,6 @@ class JobCommandModule(CommandModule, CommandUtil):
     @staticmethod
     def _send_summary_list(conn: Connection, jobs: List[Job]):
         table = conn.append_table(["Job ID", "Name", "Status", "Submit Time", "Run Duration"], name=MetaKey.JOBS)
-        legacy_string_table = Table(["Job ID", "Name", "Status", "Submit Time", "Run Duration"])
         for job in jobs:
             JobCommandModule._set_duration(job)
             table_row = [
@@ -523,11 +520,6 @@ class JobCommandModule(CommandModule, CommandUtil):
                     MetaKey.DURATION: str(job.meta.get(JobMetaKey.DURATION.value, "N/A")),
                 },
             )
-            legacy_string_table.add_row(table_row)
-
-        writer = io.StringIO()
-        legacy_string_table.write(writer)
-        conn.append_string(writer.getvalue())
 
     @staticmethod
     def _set_duration(job):

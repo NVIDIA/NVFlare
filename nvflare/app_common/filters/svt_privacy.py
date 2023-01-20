@@ -67,7 +67,7 @@ class SVTPrivacy(DXOFilter):
         model_diff = dxo.data
         total_steps = dxo.get_meta_prop(MetaKey.NUM_STEPS_CURRENT_ROUND, 1)
 
-        delta_w = np.concatenate([model_diff[name].ravel() / np.float(total_steps) for name in sorted(model_diff)])
+        delta_w = np.concatenate([model_diff[name].ravel() / np.float64(total_steps) for name in sorted(model_diff)])
         self.log_info(
             fl_ctx,
             "Delta_w: Max abs: {}, Min abs: {}, Median abs: {}.".format(
@@ -76,7 +76,7 @@ class SVTPrivacy(DXOFilter):
         )
 
         # precompute thresholds
-        n_upload = np.minimum(np.ceil(np.float(delta_w.size) * self.frac), np.float(delta_w.size))
+        n_upload = np.minimum(np.ceil(np.float64(delta_w.size) * self.frac), np.float64(delta_w.size))
 
         # eps_1: threshold with noise
         lambda_rho = self.gamma * 2.0 / self.eps_1
@@ -121,7 +121,7 @@ class SVTPrivacy(DXOFilter):
                 _start += 1
                 continue
             value = delta_w[_start : (_start + model_diff[name].size)]
-            dp_w[name] = value.reshape(model_diff[name].shape) * np.float(total_steps)
+            dp_w[name] = value.reshape(model_diff[name].shape) * np.float64(total_steps)
             _start += model_diff[name].size
 
         # We update the shareable weights only.  Headers are unchanged.
