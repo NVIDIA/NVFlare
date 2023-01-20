@@ -35,12 +35,11 @@ class WandBTask(NamedTuple):
 
 class WandBReceiver(AnalyticsReceiver):
 
-    def __init__(self, config: dict, kwargs: dict, mode: str = "offline", events=None, process_timeout=10):
+    def __init__(self, kwargs: dict, mode: str = "offline", events=None, process_timeout=10):
         if events is None:
             events = ["fed.analytix_log_stats"]
         super().__init__(events=events)
         self.fl_ctx = None
-        self.config = config
         self.mode = mode
         self.kwargs = kwargs
         self.queues = {}
@@ -82,10 +81,17 @@ class WandBReceiver(AnalyticsReceiver):
 
         # self.kwargs["group"] = f"{self.get_job_id_tag(run_group_id)}"
         run_name = self.kwargs["name"]
+        job_type = self.kwargs["job_type"]
+        job_id_tag = self.get_job_id_tag(run_group_id)
+        wand_config = self.kwargs.get("config", {})
         for site in sites:
             self.log_info(self.fl_ctx, f"initialize WandB run for site {site.name}")
-            self.kwargs["name"] = f"{site.name}-{run_name}"
-            self.kwargs["group"] = f"{site.name}-{self.get_job_id_tag(run_group_id)}"
+            self.kwargs["name"] = f"{site.name}-{job_id_tag}-{run_name}"
+            self.kwargs["group"] = f"{run_name}-{job_id_tag}"
+            wand_config["job_id"] = job_id_tag
+            wand_config["client"] = site.name
+            wand_config["run_name"] = run_name
+
             self.check_kwargs(self.kwargs)
 
             q = Queue()
