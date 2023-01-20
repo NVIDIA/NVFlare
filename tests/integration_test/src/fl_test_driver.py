@@ -158,7 +158,7 @@ def _admin_api_login(admin_api, admin_user_name, poc):
     return login_success
 
 
-class AdminController:
+class FLTestDriver:
     def __init__(self, download_root_dir: str, site_launcher: SiteLauncher, poll_period=1):
         """
 
