@@ -162,7 +162,7 @@ def main():
         if deployer:
             deployer.close()
         if federated_client:
-            federated_client.close()
+            federated_client.terminate()
         if thread and thread.is_alive():
             thread.join()
         AuditService.close()
