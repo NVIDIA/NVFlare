@@ -1,5 +1,5 @@
 {
-  "root_url": "http://localhost:9002",
+  "root_url": "grpc://localhost:9002",
   "admin": {
     "host": "localhost",
     "port": "9003"

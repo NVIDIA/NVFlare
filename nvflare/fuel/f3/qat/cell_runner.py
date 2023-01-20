@@ -158,6 +158,7 @@ class CellRunner:
         self.cell.logger.debug(f"{self.cell.get_fqcn()}: _filter_outgoing_request called")
 
     def _create_subprocess(self, name: str, parent_fqcn: str, parent_url: str, start_it=True):
+        time.sleep(0.2)
         parts = [
             f"{sys.executable} -m run_cell",
             f"-c {self.config_path}",
@@ -198,6 +199,7 @@ class CellRunner:
 
         if self.cell.get_fqcn() == FQCN.ROOT_SERVER and self.clients:
             # I'm the server root: create clients
+            time.sleep(1.0)
             for client_name in self.clients:
                 p = self._create_subprocess(
                     name=client_name,

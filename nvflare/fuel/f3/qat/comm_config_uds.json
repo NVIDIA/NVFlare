@@ -6,11 +6,14 @@
     }
   },
   "external": {
-    "scheme": "uds",
-    "allow_adhoc": false,
+    "scheme": "grpc",
+    "allow_adhoc": true,
     "resources": {
       "host": "localhost"
     }
+  },
+  "backbone": {
+    "connect_generation": 1
   },
   "grpc": {
     "max_workers": 20,

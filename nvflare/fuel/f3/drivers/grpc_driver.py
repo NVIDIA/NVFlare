@@ -204,7 +204,7 @@ class GrpcDriver(SocketDriver):
 
     @staticmethod
     def supported_transports() -> List[str]:
-        return ["grpc", "rpc"]
+        return ["rpc"]
 
     def listen(self, connector: Connector):
         self.connector = connector
@@ -234,7 +234,7 @@ class GrpcDriver(SocketDriver):
     def get_urls(scheme: str, resources: dict) -> (str, str):
         secure = resources.get(DriverParams.SECURE)
         if secure:
-            scheme = "grpcs"
+            scheme = "rpcs"
 
         host = resources.get("host") if resources else None
         if not host:

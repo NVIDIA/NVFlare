@@ -14,6 +14,7 @@
 
 import asyncio
 import time
+import traceback
 
 import grpc
 import logging
@@ -77,6 +78,14 @@ class AioContext:
         self.thread.join()
 
 
+class _ConnCtx:
+
+    def __init__(self):
+        self.conn = None
+        self.error = None
+        self.waiter = threading.Event()
+
+
 class AioStreamSession(Connection):
 
     seq_num = 0
@@ -102,8 +111,6 @@ class AioStreamSession(Connection):
         self.context = context    # for server side
         self.channel = channel    # for client side
         self.lock = threading.Lock()
-        # self.q_task = asyncio.create_task(self.oq.get())
-        self.q_task = None
 
     def get_conn_properties(self) -> dict:
         addr = self.peer_address
@@ -117,9 +124,6 @@ class AioStreamSession(Connection):
     def close(self):
         self.closing = True
         with self.lock:
-            if self.q_task:
-                self.q_task.cancel()
-                self.q_task = None
             if self.context:
                 self.aio_ctx.run_coro(self.context.abort(grpc.StatusCode.CANCELLED, "service closed"))
                 self.context = None
@@ -127,17 +131,20 @@ class AioStreamSession(Connection):
                 self.aio_ctx.run_coro(self.channel.close())
                 self.channel = None
 
-    async def _send_frame(self, frame: Frame):
-        self.logger.debug(f"{self.side}: sending frame {frame.seq}...")
-        await self.oq.put(frame)
-        self.logger.debug(f"{self.side}: sent frame {frame.seq}")
+    # async def _send_frame(self, frame: Frame):
+    #     self.logger.debug(f"{self.side}: sending frame {frame.seq}...")
+    #     await self.oq.put(frame)
+    #     self.logger.debug(f"{self.side}: sent frame {frame.seq}")
 
     def send_frame(self, frame: Union[bytes, bytearray, memoryview]):
         try:
             AioStreamSession.seq_num += 1
             seq = AioStreamSession.seq_num
             self.logger.debug(f"{self.side}: trying to queue frame #{seq}")
-            self.aio_ctx.run_coro(self._send_frame(Frame(seq=seq, data=bytes(frame))))
+            f = Frame(seq=seq, data=bytes(frame))
+            # self.aio_ctx.run_coro(self._send_frame(f))
+            # asyncio.run_coroutine_threadsafe(self.oq.put(f), self.aio_ctx.loop)
+            self.aio_ctx.run_coro(self.oq.put(f))
             self.logger.debug(f"{self.side}: queued item to queue {id(self.oq)}")
         except BaseException as ex:
             raise CommError(CommError.ERROR, f"Error sending frame: {ex}")
@@ -159,9 +166,6 @@ class AioStreamSession(Connection):
         except BaseException as ex:
             self.logger.error(f"{self.side}: exception {type(ex)} in read_loop")
         self.logger.debug(f"{self.side} in {ct.name}: done read_loop")
-
-    async def get_output_frame(self):
-        return await self.q_task
 
     async def generate_output(self):
         ct = threading.current_thread()
@@ -235,7 +239,9 @@ class Server:
             connector,
             aio_ctx: AioContext,
             options,
+            conn_ctx: _ConnCtx
     ):
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.driver = driver
         self.connector = connector
         self.grpc_server = grpc.aio.server(options=options)
@@ -243,25 +249,29 @@ class Server:
         add_StreamerServicer_to_server(servicer, self.grpc_server)
         params = connector.params
         host = params.get(DriverParams.HOST.value)
+        if not host:
+            host = 0
         port = int(params.get(DriverParams.PORT.value))
         addr = f'{host}:{port}'
-        self.grpc_server.add_insecure_port(addr)
-        self.logger = logging.getLogger(self.__class__.__name__)
+        try:
+            self.logger.debug(f"SERVER: connector params: {params}")
+            self.logger.debug(f"SERVER: adding insecure port {addr}")
+            self.grpc_server.add_insecure_port(addr)
+        except BaseException as ex:
+            self.logger.error(f"cannot create SERVER to listen on {addr}: {type(ex)}")
+            conn_ctx.error = f"cannot listen on {addr}: {type(ex)}: {ex}"
         self.logger.debug(f"added insecure address {addr}")
 
-    async def start(self):
+    async def start(self, conn_ctx: _ConnCtx):
         self.logger.debug("starting grpc server")
-        await self.grpc_server.start()
-        await self.grpc_server.wait_for_termination()
+        try:
+            await self.grpc_server.start()
+            await self.grpc_server.wait_for_termination()
+        except BaseException as ex:
+            conn_ctx.error = f"cannot start server: {type(ex)}: {ex}"
 
     async def shutdown(self):
         await self.grpc_server.stop(grace=0.5)
-
-
-class _ConnCtx:
-
-    def __init__(self, conn):
-        self.conn = conn
 
 
 class AioGrpcDriver(SocketDriver):
@@ -291,17 +301,33 @@ class AioGrpcDriver(SocketDriver):
 
     @staticmethod
     def supported_transports() -> List[str]:
-        return ["aio"]
+        return ["grpc"]
 
-    async def _start_server(self, connector: Connector, aio_ctx: AioContext):
+    async def _start_server(self, connector: Connector, aio_ctx: AioContext, conn_ctx: _ConnCtx):
         self.connector = connector
-        self.server = Server(self, connector, aio_ctx, options=self.options)
-        await self.server.start()
+        self.server = Server(self, connector, aio_ctx, options=self.options, conn_ctx=conn_ctx)
+        if not conn_ctx.error:
+            try:
+                conn_ctx.conn = True
+                await self.server.start(conn_ctx)
+            except BaseException as ex:
+                traceback.print_exc()
+                conn_ctx.error = f"failed to start server: {type(ex)}: {ex}"
+        conn_ctx.waiter.set()
 
     def listen(self, connector: Connector):
         self.logger.debug(f"listen called from thread {threading.current_thread().name}")
         aio_ctx = self._initialize_aio("SERVER")
-        aio_ctx.run_coro(self._start_server(connector, aio_ctx))
+        conn_ctx = _ConnCtx()
+        aio_ctx.run_coro(self._start_server(connector, aio_ctx, conn_ctx))
+        while not conn_ctx.conn and not conn_ctx.error:
+            self.logger.debug("SERVER: waiting for server to be started")
+            time.sleep(0.1)
+        if conn_ctx.error:
+            raise CommError(code=CommError.ERROR, message=conn_ctx.error)
+        self.logger.debug("SERVER: waiting for server to finish")
+        conn_ctx.waiter.wait()
+        self.logger.debug("SERVER: server is done")
 
     async def _start_connect(self, connector: Connector, aio_ctx: AioContext, conn_ctx: _ConnCtx):
         self.logger.debug("Started _start_connect coro")
@@ -311,53 +337,57 @@ class AioGrpcDriver(SocketDriver):
         address = f"{host}:{port}"
 
         self.logger.debug(f"CLIENT: trying to connect {address}")
-        async with grpc.aio.insecure_channel(address, options=self.options) as channel:
-            self.logger.debug(f"CLIENT: connected to {address}")
-            stub = StreamerStub(channel)
-            self.logger.debug("CLIENT: got stub!")
-            connection = AioStreamSession(
-                side="CLIENT",
-                aio_ctx=aio_ctx,
-                connector=connector,
-                peer_address=address,
-                channel=channel)
-            self.logger.debug(f"CLIENT: created AioStreamSession {id(connection)}")
-            try:
-                self.logger.debug(f"CLIENT: start streaming on connection {id(connection)}")
-                received = stub.Stream(connection.generate_output())
-                conn_ctx.conn = connection
-                await connection.read_loop(received)
-                # try:
-                #     async for f in received:
-                #         assert isinstance(f, Frame)
-                #         self.logger.debug(f"CLIENT: incoming frame #{f.seq}")
-                #         if connection.frame_receiver:
-                #             connection.frame_receiver.process_frame(f.data)
-                #         else:
-                #             self.logger.error(
-                #                 f"CLIENT: Frame receiver not registered for connection: {connection.name}")
-                # except BaseException as ex:
-                #     self.logger.error(f"{connection.side}: exception {type(ex)} in read_loop")
-                # self.logger.debug(f"{connection.side}: done read_loop")
-            except BaseException as ex:
-                self.logger.info(f"CLIENT: connection done: {type(ex)}")
-        with connection.lock:
-            connection.channel = None
-        connection.close()
-        self.logger.debug("CLIENT: finished connection")
+        try:
+            async with grpc.aio.insecure_channel(address, options=self.options) as channel:
+                self.logger.debug(f"CLIENT: connected to {address}")
+                stub = StreamerStub(channel)
+                self.logger.debug("CLIENT: got stub!")
+                connection = AioStreamSession(
+                    side="CLIENT",
+                    aio_ctx=aio_ctx,
+                    connector=connector,
+                    peer_address=address,
+                    channel=channel)
+                self.logger.debug(f"CLIENT: created AioStreamSession {id(connection)}")
+                try:
+                    self.logger.debug(f"CLIENT: start streaming on connection {id(connection)}")
+                    msg_iter = stub.Stream(connection.generate_output())
+                    conn_ctx.conn = connection
+                    await connection.read_loop(msg_iter)
+                except BaseException as ex:
+                    traceback.print_exc()
+                    self.logger.info(f"CLIENT: connection done: {type(ex)}")
+
+            with connection.lock:
+                connection.channel = None
+            connection.close()
+            self.logger.debug("CLIENT: finished connection")
+        except BaseException as ex:
+            traceback.print_exc()
+            conn_ctx.error = f"connection error: {type(ex)}: {ex}"
+        conn_ctx.waiter.set()
 
     def connect(self, connector: Connector):
         self.logger.debug("CLIENT: connect called")
         aio_ctx = self._initialize_aio("CLIENT")
-        conn_ctx = _ConnCtx(None)
+        conn_ctx = _ConnCtx()
         aio_ctx.run_coro(self._start_connect(connector, aio_ctx, conn_ctx))
-        while not conn_ctx.conn:
+        time.sleep(0.2)
+        while not conn_ctx.conn and not conn_ctx.error:
             self.logger.debug("CLIENT: waiting for connection")
-            time.sleep(0.5)
+            time.sleep(0.1)
+
+        if conn_ctx.error:
+            raise CommError(CommError.ERROR, conn_ctx.error)
 
         self.logger.debug(f"CLIENT: got connection {id(conn_ctx.conn)}")
         self.add_connection(conn_ctx.conn)
         self.logger.debug(f"CLIENT: created new connection {id(conn_ctx.conn)}")
+
+        # wait for connection to be finished
+        self.logger.debug(f"CLIENT: waiting for connection {id(conn_ctx.conn)} to finish")
+        conn_ctx.waiter.wait()
+        self.logger.debug(f"CLIENT: connection {id(conn_ctx.conn)} is done")
 
     def shutdown(self):
         for _, conn in self.connections.items():
@@ -371,7 +401,7 @@ class AioGrpcDriver(SocketDriver):
     def get_urls(scheme: str, resources: dict) -> (str, str):
         secure = resources.get(DriverParams.SECURE)
         if secure:
-            scheme = "aios"
+            scheme = "grpcs"
 
         host = resources.get("host") if resources else None
         if not host:

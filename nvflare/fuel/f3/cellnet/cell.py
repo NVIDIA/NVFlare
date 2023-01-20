@@ -524,9 +524,7 @@ class Cell(MessageReceiver, EndpointMonitor):
         if create_internal_listener:
             self._create_internal_listener()
 
-        # if self.my_info.gen == 2:
-        if self.my_info.gen == 1:
-            # we only connect to server root for gen2 child (the job cell)
+        if self.connector_manager.should_connect_to_server(self.my_info):
             self._create_bb_external_connector()
 
     def _set_bb_for_server_root(self):
@@ -633,6 +631,16 @@ class Cell(MessageReceiver, EndpointMonitor):
         return self.int_listener.get_connection_url()
 
     def _add_adhoc_connector(self, to_cell: str, url: str):
+        if self.bb_ext_connector:
+            # it is possible that the server root offers connect url after the bb_ext_connector is created
+            # but the actual connection has not been established.
+            # Do not create another adhoc connection to the server!
+            if isinstance(self.root_url, str) and url == self.root_url:
+                return None
+
+            if isinstance(self.root_url, list) and url in self.root_url:
+                return None
+
         with self.adhoc_connector_lock:
             if to_cell in self.adhoc_connectors:
                 return self.adhoc_connectors[to_cell]
@@ -1100,10 +1108,11 @@ class Cell(MessageReceiver, EndpointMonitor):
 
             # is this a direct path?
             ti = FqcnInfo(t)
-            if t != ep.name and not same_family(ti, self.my_info):
+            allow_adhoc = self.connector_manager.is_adhoc_allowed(ti, self.my_info)
+            if allow_adhoc and t != ep.name:
                 # Not a direct path since the destination and the next leg are not the same
-                if self.my_info.is_on_server:
-                    # server side - try to create a listener and let the peer know the endpoint
+                if self.ext_listeners or self.my_info.is_on_server:
+                    # try to get or create a listener and let the peer know the endpoint
                     listener = self._create_external_listener("")
                     if listener:
                         conn_url = listener.get_connection_url()
@@ -1702,7 +1711,8 @@ class Cell(MessageReceiver, EndpointMonitor):
                     self._add_adhoc_connector(origin, conn_url)
                 elif msg_type == MessageType.REQ:
                     # see whether we can offer a listener
-                    if not oi.is_on_server:
+                    allow_adhoc = self.connector_manager.is_adhoc_allowed(oi, self.my_info)
+                    if allow_adhoc and not oi.is_on_server:
                         self.logger.debug(f"{self.my_info.fqcn}: trying to offer ad-hoc listener to {origin}")
                         listener = self._create_external_listener("")
                         if listener:

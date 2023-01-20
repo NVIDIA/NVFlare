@@ -14,11 +14,13 @@
 
 import logging
 import os
+import time
 from typing import Union
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.f3.communicator import Communicator, Mode
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from .defs import ConnectorRequirementKey
+from .fqcn import FQCN, FqcnInfo
 
 _KEY_RESOURCES = "resources"
 _KEY_INT = "internal"
@@ -84,6 +86,45 @@ class ConnectorManager:
 
         self.logger.debug(f"internal scheme={self.int_scheme}, resources={self.int_resources}")
         self.logger.debug(f"external scheme={self.ext_scheme}, resources={self.ext_resources}")
+        self.comm_config = comm_config
+
+    def should_connect_to_server(self, fqcn_info: FqcnInfo) -> bool:
+        if fqcn_info.gen == 1:
+            return True
+
+        if self.comm_config:
+            bb_config = self.comm_config.get("backbone")
+            if bb_config:
+                gens = bb_config.get("connect_generation")
+                if gens:
+                    if isinstance(gens, list):
+                        return fqcn_info.gen in gens
+                    else:
+                        return fqcn_info.gen == gens
+        # use default policy
+        return fqcn_info.gen <= 2
+
+    def is_adhoc_allowed(self, c1: FqcnInfo, c2: FqcnInfo) -> bool:
+        """
+        Is adhoc connection allowed between the two cells?
+        Args:
+            c1:
+            c2:
+
+        Returns:
+
+        """
+        if c1.root == c2.root:
+            # same family
+            return False
+
+        if not self.ext_allow_adhoc:
+            return False
+
+        # we only allow gen2 (or above) cells to directly connect
+        if c1.gen >= 2 and c2.gen >= 2:
+            return True
+        return False
 
     @staticmethod
     def _validate_conn_config(config: dict, key: str) -> Union[None, dict]:
@@ -148,6 +189,8 @@ class ConnectorManager:
             self.logger.debug(f"{os.getpid()}: Listener resources: {reqs}")
             handle, connect_url = self.communicator.start_listener(scheme, reqs)
             self.logger.debug(f"{os.getpid()}: ############ dynamic listener at {connect_url}")
+            # to wait for listener ready and avoid race
+            time.sleep(0.5)
 
         return ConnectorInfo(handle, connect_url, active)
 
