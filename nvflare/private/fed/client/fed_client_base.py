@@ -374,14 +374,19 @@ class FederatedClientBase:
 
     def close(self):
         """Quit the remote federated server, close the local session."""
-        self.logger.info(f"Shutting down client: {self.client_name}")
-        if self.overseer_agent:
-            self.overseer_agent.end()
+        self.terminate()
 
         if self.engine:
             fl_ctx = self.engine.new_context()
         else:
             fl_ctx = FLContext()
         self.logout_client(fl_ctx)
+        self.logger.info(f"Logout client: {self.client_name} from server.")
 
         return 0
+
+    def terminate(self):
+        """Terminating the local client session."""
+        self.logger.info(f"Shutting down client run: {self.client_name}")
+        if self.overseer_agent:
+            self.overseer_agent.end()
