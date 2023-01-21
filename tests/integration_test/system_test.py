@@ -62,7 +62,7 @@ def get_test_config(test_config_yaml: str):
     return test_config
 
 
-test_configs = read_yaml("./test_cases.yml")
+test_configs = read_yaml("test_configs.yml")
 framework = os.environ.get("NVFLARE_TEST_FRAMEWORK", "numpy")
 if framework not in test_configs["test_configs"]:
     print(f"Framework/test {framework} is not supported, using default numpy.")

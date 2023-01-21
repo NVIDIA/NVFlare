@@ -160,7 +160,7 @@ def _admin_api_login(admin_api, admin_user_name, poc):
 
 class FLTestDriver:
     def __init__(self, download_root_dir: str, site_launcher: SiteLauncher, poll_period=1):
-        """
+        """FL system test driver.
 
         Args:
             download_root_dir: the root dir to download things to
