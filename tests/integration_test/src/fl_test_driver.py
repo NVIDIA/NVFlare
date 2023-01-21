@@ -317,9 +317,6 @@ class FLTestDriver:
         #       },
         # 'raw': {'time': '2022-04-04 15:13:09.367350', 'data': [xxx], 'status': <APIStatus.SUCCESS: 'SUCCESS'>}}
         prev_run_state = run_state.copy()
-        self.logger.info("Prev state:")
-        self._print_state(state=prev_run_state)
-        self.logger.info(f"STATS: {stats}")
 
         # parse stats
         if (
@@ -334,9 +331,6 @@ class FLTestDriver:
 
         # parse job status
         run_state["run_finished"] = job_run_status == RunStatus.FINISHED_COMPLETED.value
-
-        self.logger.info("Current state:")
-        self._print_state(state=run_state)
 
         return run_state != prev_run_state, run_state
 
