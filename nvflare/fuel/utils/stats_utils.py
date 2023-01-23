@@ -191,6 +191,15 @@ def new_time_pool(name: str) -> HistPool:
     )
 
 
+def new_message_size_pool(name: str) -> HistPool:
+    marks = (0.01, 0.1, 1, 10, 50, 100, 200, 500, 800, 1000)
+    return HistPool(
+        name=name,
+        marks=marks,
+        unit="MB"
+    )
+
+
 def test_time_pool():
     p = new_time_pool("test")
     for i in range(1000):
