@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 from typing import List, Optional
 
 
@@ -28,7 +29,7 @@ def repeat_to_length(string_to_expand, length):
 
 
 class Table(object):
-    def __init__(self, headers: Optional[List[str]] = None):
+    def __init__(self, headers: Optional[List[str]] = None, meta_rows=None):
         """A structure with header and rows of records.
 
         Note:
@@ -38,19 +39,23 @@ class Table(object):
             headers: headers of the table
         """
         self.rows = []
+        self.meta_rows = meta_rows
         if headers and len(headers) > 0:
             new_headers = []
             for h in headers:
                 new_headers.append(h.upper())
             self.rows.append(new_headers)
 
-    def set_rows(self, rows):
+    def set_rows(self, rows, meta_rows=None):
         """Sets the rows of records."""
         self.rows = rows
+        self.meta_rows = meta_rows
 
-    def add_row(self, row: List[str]):
+    def add_row(self, row: List[str], meta: dict = None):
         """Adds a record."""
         self.rows.append(row)
+        if meta:
+            self.meta_rows.append(meta)
 
     def write(self, writer):
         # compute the number of cols

@@ -131,7 +131,10 @@ def main():
     start = time.time()
     if args.train_in_one_session:
         bst = xgb.train(
-            xgb_params, dmat_train, num_boost_round=num_rounds, evals=[(dmat_valid, "validate"), (dmat_train, "train")]
+            xgb_params,
+            dmat_train,
+            num_boost_round=num_rounds,
+            evals=[(dmat_valid, "validate"), (dmat_train, "train")]
         )
     else:
         bst = train_one_by_one(

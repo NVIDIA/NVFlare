@@ -124,6 +124,19 @@ class JobDefManagerSpec(FLComponent, ABC):
         pass
 
     @abstractmethod
+    def refresh_meta(self, job: Job, meta_keys: list, fl_ctx: FLContext):
+        """Refresh meta of the job as specified in the meta keys
+        Save the values of the specified keys into job store
+
+        Args:
+            job: job object
+            meta_keys: meta keys need to updated
+            fl_ctx: FLContext
+
+        """
+        pass
+
+    @abstractmethod
     def set_status(self, jid: str, status: RunStatus, fl_ctx: FLContext):
         """Set status of an existing Job.
 

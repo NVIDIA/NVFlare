@@ -23,6 +23,7 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import EventScope, FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
+from nvflare.app_common.tracking.tracker_types import Tracker
 from nvflare.widgets.widget import Widget
 
 ANALYTIC_EVENT_TYPE = "analytix_log_stats"
@@ -48,19 +49,24 @@ def send_analytic_dxo(comp: FLComponent, dxo: DXO, fl_ctx: FLContext, event_type
     comp.fire_event(event_type=event_type, fl_ctx=fl_ctx)
 
 
-def create_analytic_dxo(tag: str, value, data_type: AnalyticsDataType, **kwargs) -> DXO:
+def create_analytic_dxo(
+    tag: str, value, data_type: AnalyticsDataType, step: int, sender: Tracker = Tracker.TORCH_TB, **kwargs
+) -> DXO:
     """Creates the analytic DXO.
 
     Args:
         tag (str): the tag associated with this value.
         value: the analytic data.
-        data_type (AnalyticsDataType): analytic data type.
+        data_type: (AnalyticsDataType): analytic data type.
+        step (int) : global step
+        sender: (Tracker), syntax of the sender: such TensorBoard or MLFLow
         kwargs: additional arguments to be passed into the receiver side's function.
 
     Returns:
         A DXO object that contains the analytic data.
     """
-    data = AnalyticsData(tag=tag, value=value, data_type=data_type, kwargs=kwargs)
+    step = step if step else kwargs.get("global_step", None)
+    data = AnalyticsData(key=tag, value=value, data_type=data_type, step=step, sender=sender, kwargs=kwargs)
     dxo = data.to_dxo()
     return dxo
 
@@ -77,8 +83,12 @@ class AnalyticsSender(Widget):
             event_type (str): event type to fire.
         """
         super().__init__()
+        self.fl_ctx = None
         self.engine = None
         self.event_type = event_type
+
+    def get_tracker_name(self) -> Tracker:
+        return Tracker.TORCH_TB
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
@@ -97,7 +107,9 @@ class AnalyticsSender(Widget):
             if not isinstance(global_step, int):
                 raise TypeError(f"Expect global step to be an instance of int, but got {type(global_step)}")
             kwargs["global_step"] = global_step
-        dxo = create_analytic_dxo(tag=tag, value=value, data_type=data_type, **kwargs)
+        dxo = create_analytic_dxo(
+            tag=tag, value=value, data_type=data_type, step=global_step, sender=self.get_tracker_name(), **kwargs
+        )
         with self.engine.new_context() as fl_ctx:
             send_analytic_dxo(self, dxo=dxo, fl_ctx=fl_ctx, event_type=self.event_type)
 

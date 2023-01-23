@@ -95,7 +95,6 @@ class FedXGBHistogramExecutor(FedXGBHistogramExecutorSpec, Executor, ABC):
             early_stopping_rounds=params.early_stopping_rounds,
             verbose_eval=params.verbose_eval,
             callbacks=[callback.EvaluationMonitor(rank=self.rank)],
-            obj="squared_log",
         )
 
         return bst

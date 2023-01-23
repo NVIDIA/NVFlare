@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+from typing import List
 
 import psutil
 
@@ -70,7 +71,7 @@ class SystemCommandModule(CommandModule, CommandUtil):
             ],
         )
 
-    def sys_info(self, conn: Connection, args: [str]):
+    def sys_info(self, conn: Connection, args: List[str]):
         if len(args) < 2:
             conn.append_error("syntax error: missing site names")
             return
@@ -130,7 +131,7 @@ class SystemCommandModule(CommandModule, CommandUtil):
             else:
                 conn.append_string(": No replies")
 
-    def report_resources(self, conn: Connection, args: [str]):
+    def report_resources(self, conn: Connection, args: List[str]):
         if len(args) < 2:
             conn.append_error("syntax error: missing site names")
             return

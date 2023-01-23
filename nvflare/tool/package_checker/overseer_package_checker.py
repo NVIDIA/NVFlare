@@ -44,7 +44,7 @@ class OverseerPackageChecker(PackageChecker):
         return False
 
     def init_rules(self, package_path):
-        self.dry_run_timeout = 10
+        self.dry_run_timeout = 5
         self.rules = [
             CheckAddressBinding(
                 name="Check overseer port binding", get_host_and_port_from_package=_get_overseer_host_and_port
