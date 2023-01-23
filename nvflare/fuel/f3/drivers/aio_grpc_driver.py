@@ -47,13 +47,13 @@ class AioContext:
     def __init__(self, name):
         self.closed = False
         self.name = name
-        self.thread = threading.Thread(target=self._run)
+        self.thread = threading.Thread(target=self._run_aio_loop)
         self.loop = None
         self.ready = False
         self.logger = logging.getLogger(self.__class__.__name__)
         self.thread.start()
 
-    def _run(self):
+    def _run_aio_loop(self):
         self.logger.debug(f"{self.name}: started AioContext in thread {threading.current_thread().name}")
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
@@ -164,6 +164,7 @@ class AioStreamSession(Connection):
                 else:
                     self.logger.error(f"{self.side}: Frame receiver not registered for connection: {self.name}")
         except BaseException as ex:
+            traceback.print_exc()
             self.logger.error(f"{self.side}: exception {type(ex)} in read_loop")
         self.logger.debug(f"{self.side} in {ct.name}: done read_loop")
 

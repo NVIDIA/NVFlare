@@ -182,6 +182,7 @@ class Server:
 
     def start(self):
         self.grpc_server.start()
+        self.grpc_server.wait_for_termination()
 
     def shutdown(self):
         self.grpc_server.stop(grace=0.5)

@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from .net_agent import NetAgent
+from .fqcn import FQCN
 
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
@@ -53,10 +54,10 @@ class NetManager(CommandModule):
                     visible=True,
                 ),
                 CommandSpec(
-                    name="agents",
-                    description="show agents of a cell",
-                    usage="agents target_cell",
-                    handler_func=self._cmd_agents,
+                    name="peers",
+                    description="show connected peers of a cell",
+                    usage="peers target_cell",
+                    handler_func=self._cmd_peers,
                     visible=True,
                 ),
                 CommandSpec(
@@ -109,21 +110,34 @@ class NetManager(CommandModule):
                     visible=True,
                 ),
                 CommandSpec(
-                    name="shutdown",
-                    description="shutdown the whole cellnet",
-                    usage="shutdown",
-                    handler_func=self._cmd_shutdown,
+                    name="stop_cell",
+                    description="stop a cell and its children",
+                    usage="stop_cell target",
+                    handler_func=self._cmd_stop_cell,
                     visible=True,
-                )])
+                ),
+                CommandSpec(
+                    name="stop_net",
+                    description="stop the whole cellnet",
+                    usage="shutdown",
+                    handler_func=self._cmd_stop_net,
+                    visible=True,
+                )
+            ]
+        )
 
     def _cmd_cells(self, conn: Connection, args: [str]):
         err, cell_fqcns = self.agent.request_cells_info()
         if err:
             conn.append_error(err)
-
-        for c in cell_fqcns:
-            conn.append_string(c)
-        conn.append_string(f"Total Cells: {len(cell_fqcns)}")
+        total_cells = 0
+        if cell_fqcns:
+            for c in cell_fqcns:
+                conn.append_string(c)
+                err = FQCN.validate(c)
+                if not err:
+                    total_cells += 1
+        conn.append_string(f"Total Cells: {total_cells}")
 
     def _cmd_url_use(self, conn: Connection, args: [str]):
         if len(args) != 2:
@@ -155,14 +169,14 @@ class NetManager(CommandModule):
             conn.append_string("Reply Headers:")
             conn.append_dict(reply_headers)
 
-    def _cmd_agents(self, conn: Connection, args: [str]):
+    def _cmd_peers(self, conn: Connection, args: [str]):
         if len(args) != 2:
             cmd_entry = conn.get_prop(ConnProps.CMD_ENTRY)
             conn.append_string(f"Usage: {cmd_entry.usage}")
             return
 
         target_fqcn = args[1]
-        err_dict, agents = self.agent.get_agents(target_fqcn)
+        err_dict, agents = self.agent.get_peers(target_fqcn)
         if err_dict:
             conn.append_dict(err_dict)
         if agents:
@@ -318,6 +332,16 @@ class NetManager(CommandModule):
         self.agent.change_root(url)
         conn.append_shutdown("Root Changed. Good Bye!")
 
-    def _cmd_shutdown(self, conn: Connection, args: [str]):
+    def _cmd_stop_net(self, conn: Connection, args: [str]):
         self.agent.stop()
-        conn.append_shutdown("System Stopped")
+        conn.append_shutdown("Cellnet Stopped")
+
+    def _cmd_stop_cell(self, conn: Connection, args: [str]):
+        if len(args) < 2:
+            cmd_entry = conn.get_prop(ConnProps.CMD_ENTRY)
+            conn.append_string(f"Usage: {cmd_entry.usage}")
+            return
+
+        target = args[1]
+        reply = self.agent.stop_cell(target)
+        conn.append_string(f"Asked {target} to stop: {reply}")

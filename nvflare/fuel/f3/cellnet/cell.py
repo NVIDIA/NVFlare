@@ -28,7 +28,7 @@ from urllib.parse import urlparse
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor, EndpointState
 from nvflare.fuel.f3.communicator import Communicator, MessageReceiver
-from nvflare.fuel.utils.stats_utils import new_time_pool
+from nvflare.fuel.utils.stats_utils import new_time_pool, new_message_size_pool
 
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from .connector_manager import ConnectorManager
@@ -401,6 +401,7 @@ class Cell(MessageReceiver, EndpointMonitor):
 
         self.cleanup_waiter = None
         self.msg_stats_pool = new_time_pool("Message Stats")
+        self.msg_size_pool = new_message_size_pool("Message Sizes")
 
     def set_run_monitor(
             self,
@@ -492,7 +493,7 @@ class Cell(MessageReceiver, EndpointMonitor):
         return self.my_info.fqcn
 
     def is_cell_reachable(self, target_fqcn: str) -> bool:
-        ep = self._find_endpoint(target_fqcn)
+        _, ep = self._find_endpoint(target_fqcn)
         return ep is not None
 
     def is_cell_connected(self, target_fqcn: str) -> bool:
@@ -961,17 +962,20 @@ class Cell(MessageReceiver, EndpointMonitor):
             return None
         return self._try_path(fqcn_path[:-1])
 
-    def _find_endpoint(self, target_fqcn: str) -> Union[None, Endpoint]:
+    def _find_endpoint(self, target_fqcn: str) -> (str, Union[None, Endpoint]):
         err = FQCN.validate(target_fqcn)
         if err:
             self.logger.error(f"{self.my_info.fqcn}: invalid target FQCN '{target_fqcn}': {err}")
-            return None
+            return ReturnCode.INVALID_TARGET, None
 
         try:
-            return self._try_find_ep(target_fqcn)
+            ep = self._try_find_ep(target_fqcn)
+            if not ep:
+                return ReturnCode.TARGET_UNREACHABLE, None
+            return "", ep
         except:
             traceback.print_exc()
-            return None
+            return ReturnCode.TARGET_UNREACHABLE, None
 
     def _try_find_ep(self, target_fqcn: str) -> Union[None, Endpoint]:
         self.logger.debug(f"{self.my_info.fqcn}: finding path to {target_fqcn}")
@@ -1067,12 +1071,12 @@ class Cell(MessageReceiver, EndpointMonitor):
         send_errs = {}
         reachable_targets = {}  # target fqcn => endpoint
         for t in target_msgs.keys():
-            ep = self._find_endpoint(t)
+            err, ep = self._find_endpoint(t)
             if ep:
                 reachable_targets[t] = ep
             else:
-                self.logger.error(f"{self.my_info.fqcn}: no path to cell '{t}'")
-                send_errs[t] = ReturnCode.COMM_ERROR
+                self.logger.error(f"{self.my_info.fqcn}: cannot send to '{t}': {err}")
+                send_errs[t] = err
 
         for t, ep in reachable_targets.items():
             tm = target_msgs[t]
@@ -1230,8 +1234,6 @@ class Cell(MessageReceiver, EndpointMonitor):
                     self.logger.error(f"{self.my_info.fqcn}: timeout on REQ {waiter.id} after {timeout} secs")
                     with self.stats_lock:
                         self.num_timeout_reqs += 1
-            else:
-                self.logger.error(f"{self.my_info.fqcn}: cannot send to {targets}")
         except BaseException as ex:
             raise ex
         finally:
@@ -1411,9 +1413,9 @@ class Cell(MessageReceiver, EndpointMonitor):
             }
         )
 
-        ep = self._find_endpoint(to_cell)
-        if not ep:
-            return ReturnCode.COMM_ERROR
+        err, ep = self._find_endpoint(to_cell)
+        if err:
+            return err
         reply.set_header(MessageHeaderKey.TO_CELL, ep.name)
         return self._send_to_endpoint(ep, reply)
 
@@ -1692,6 +1694,17 @@ class Cell(MessageReceiver, EndpointMonitor):
             # not for me - need to forward it
             self._forward(endpoint, origin, destination, msg_type, message)
             return
+
+        channel = message.get_header(MessageHeaderKey.CHANNEL, "")
+        topic = message.get_header(MessageHeaderKey.TOPIC, "")
+        if message.payload:
+            msg_size = len(message.payload)
+        else:
+            msg_size = 0
+        self.msg_size_pool.record_value(
+            category=f"{msg_type}:{channel}:{topic}",
+            value=msg_size
+        )
 
         # this message is for me
         self._add_to_route(message)

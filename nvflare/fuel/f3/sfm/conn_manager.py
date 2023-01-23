@@ -32,7 +32,8 @@ from nvflare.fuel.f3.sfm.constants import Types, HandshakeKeys
 from nvflare.fuel.f3.sfm.sfm_conn import SfmConnection
 from nvflare.fuel.f3.sfm.sfm_endpoint import SfmEndpoint
 
-THREAD_POOL_SIZE = 50
+FRAME_THREAD_POOL_SIZE = 100
+CONN_THREAD_POOL_SIZE = 16
 MAX_WAIT = 60
 
 log = logging.getLogger(__name__)
@@ -63,7 +64,8 @@ class ConnManager(ConnMonitor):
         self.receivers: Dict[int, MessageReceiver] = {}
 
         self.started = False
-        self.executor = ThreadPoolExecutor(THREAD_POOL_SIZE, "conn_mgr")
+        self.conn_mgr_executor = ThreadPoolExecutor(CONN_THREAD_POOL_SIZE, "conn_mgr")
+        self.frame_mgr_executor = ThreadPoolExecutor(FRAME_THREAD_POOL_SIZE, "frame_mgr")
 
     def add_connector(self, driver: Driver, params: dict, mode: Mode) -> str:
         handle = str(uuid.uuid4())
@@ -101,7 +103,8 @@ class ConnManager(ConnMonitor):
         for connector in self.connectors:
             connector.driver.shutdown()
 
-        self.executor.shutdown(False)
+        self.conn_mgr_executor.shutdown(False)
+        self.frame_mgr_executor.shutdown(False)
 
     def find_endpoint(self, name: str) -> Optional[Endpoint]:
 
@@ -174,7 +177,7 @@ class ConnManager(ConnMonitor):
         log.info(f"Connector {connector.driver.get_name()}:{connector.handle} is starting in "
                  f"{connector.mode.name} mode")
 
-        self.executor.submit(self.start_connector_task, connector)
+        self.conn_mgr_executor.submit(self.start_connector_task, connector)
 
     def start_connector_task(self, connector: Connector):
         """Start connector in a new thread"""
@@ -258,7 +261,7 @@ class ConnManager(ConnMonitor):
             log.debug(traceback.format_exc())
 
     def process_frame(self, sfm_conn: SfmConnection, frame: BytesAlike):
-        self.executor.submit(self.process_frame_task, sfm_conn, frame)
+        self.frame_mgr_executor.submit(self.process_frame_task, sfm_conn, frame)
 
     def update_endpoint(self, sfm_conn: SfmConnection, data):
 

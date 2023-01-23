@@ -25,11 +25,12 @@ from .utils import make_reply, new_message
 from typing import Union, List
 
 _CHANNEL = "_net_manager"
-_TOPIC_AGENTS = "agents"
+_TOPIC_PEERS = "peers"
 _TOPIC_CELLS = "cells"
 _TOPIC_ROUTE = "route"
 _TOPIC_START_ROUTE = "start_route"
 _TOPIC_STOP = "stop"
+_TOPIC_STOP_CELL = "stop_cell"
 _TOPIC_URL_USE = "url_use"
 _TOPIC_CONNS = "conns"
 _TOPIC_SPEED = "speed"
@@ -79,8 +80,14 @@ class NetAgent:
 
         cell.register_request_cb(
             channel=_CHANNEL,
-            topic=_TOPIC_AGENTS,
-            cb=self._do_agents,
+            topic=_TOPIC_STOP_CELL,
+            cb=self._do_stop_cell,
+        )
+
+        cell.register_request_cb(
+            channel=_CHANNEL,
+            topic=_TOPIC_PEERS,
+            cb=self._do_peers,
         )
 
         cell.register_request_cb(
@@ -145,6 +152,14 @@ class NetAgent:
         self.stop()
         return None
 
+    def _do_stop_cell(
+            self,
+            request: Message
+    ) -> Union[None, Message]:
+        print(f"============== {self.cell.get_fqcn()}: GOT Stop Request")
+        self.stop()
+        return new_message()
+
     def _do_route(
             self,
             request: Message
@@ -163,22 +178,22 @@ class NetAgent:
         reply_headers, req_headers = self.get_route_info(target_fqcn)
         return new_message(payload={"request": dict(req_headers), "reply": dict(reply_headers)})
 
-    def _get_agents(self) -> List[str]:
+    def _get_peers(self) -> List[str]:
         return list(self.cell.agents.keys())
 
-    def _do_agents(
+    def _do_peers(
             self,
             request: Message
     ) -> Union[None, Message]:
-        return new_message(payload=self._get_agents())
+        return new_message(payload=self._get_peers())
 
-    def get_agents(self, target_fqcn: str) -> (Union[None, dict], List[str]):
+    def get_peers(self, target_fqcn: str) -> (Union[None, dict], List[str]):
         if target_fqcn == self.cell.get_fqcn():
-            return None, self._get_agents()
+            return None, self._get_peers()
 
         reply = self.cell.send_request(
             channel=_CHANNEL,
-            topic=_TOPIC_AGENTS,
+            topic=_TOPIC_PEERS,
             target=target_fqcn,
             timeout=1.0,
             request=new_message()
@@ -274,6 +289,7 @@ class NetAgent:
                 result.extend(sub_result)
             else:
                 err = f"no reply from {t}: {rc}"
+                result.append(err)
         return err, result
 
     def _get_url_use_of_cell(self, url: str):
@@ -375,6 +391,20 @@ class NetAgent:
         # ask all children to stop
         self._broadcast_to_subs(topic=_TOPIC_STOP, timeout=0.0)
         self.cell.stop()
+
+    def stop_cell(self, target: str) -> str:
+        if self.cell.get_fqcn() == target:
+            self.stop()
+            return ReturnCode.OK
+        reply = self.cell.send_request(
+            channel=_CHANNEL,
+            topic=_TOPIC_STOP_CELL,
+            request=new_message(),
+            target=target,
+            timeout=1.0
+        )
+        rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
+        return rc
 
     def _request_speed_test(self, target_fqcn: str, num, size) -> Message:
         start = time.perf_counter()
@@ -478,9 +508,6 @@ class NetAgent:
 
         counts = {}
         errors = {}
-        for t in targets:
-            counts[t] = 0
-            errors[t] = 0
 
         start = time.perf_counter()
         for i in range(num_rounds):
@@ -496,17 +523,23 @@ class NetAgent:
                 request=req,
                 timeout=1.0
             )
+            if target not in counts:
+                counts[target] = 0
             counts[target] += 1
             rc = reply.get_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
             if rc != ReturnCode.OK:
                 self.cell.logger.error(f"{self.cell.get_fqcn()}: return code from {target}: {rc}")
+                if target not in errors:
+                    errors[target] = 0
                 errors[target] += 1
             else:
                 h = hashlib.md5(reply.payload)
                 d2 = h.digest()
                 if d1 != d2:
                     self.cell.logger.error(f"{self.cell.get_fqcn()}: digest mismatch from {target}")
-                    errors[target] = errors[target] + 1
+                    if target not in errors:
+                        errors[target] = 0
+                    errors[target] += 1
         end = time.perf_counter()
         return {"counts": counts, "errors": errors, "time": end - start}
 
@@ -703,6 +736,7 @@ class NetAgent:
 
         if targets:
             if timeout > 0.0:
+                timeout = timeout / self.cell.my_info.gen
                 return self.cell.broadcast_request(
                     channel=_CHANNEL,
                     topic=topic,

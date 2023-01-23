@@ -7,13 +7,15 @@
   },
   "external": {
     "scheme": "grpc",
-    "allow_adhoc": true,
+    "allow_adhoc": false,
     "resources": {
-      "host": "localhost"
+      "host": "localhost",
+      "secure": true,
+      "ports": ["8003-9000"]
     }
   },
   "backbone": {
-    "connect_generation": 1
+    "connect_generation": 2
   },
   "grpc": {
     "max_workers": 20,

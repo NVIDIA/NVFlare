@@ -67,6 +67,8 @@ class ReturnCode:
 
     OK = "ok"
     TIMEOUT = "timeout"
+    INVALID_TARGET = "invalid_target"
+    TARGET_UNREACHABLE = "target_unreachable"
     COMM_ERROR = "comm_error"
     MSG_TOO_BIG = "msg_too_big"
     FILTER_ERROR = "filter_error"
