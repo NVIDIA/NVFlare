@@ -19,7 +19,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from typing import Dict
 
 import yaml
 
@@ -163,24 +162,9 @@ def cleanup_job_and_snapshot(workspace: str, server_name: str):
     cleanup_path(snapshot_path)
 
 
-def _parse_job_run_statuses(list_jobs_string: str) -> Dict[str, RunStatus]:
-    """Parse the list_jobs string to return job run status."""
-    job_statuses = {}
-    # first three is table start and header row, last one is table end
-    rows = list_jobs_string.splitlines()[3:-1]
-    for r in rows:
-        segments = [s.strip() for s in r.split("|")]
-        job_statuses[segments[1]] = RunStatus(segments[3])
-    return job_statuses
-
-
-def get_job_run_statuses(admin_api: FLAdminAPI):
-    list_jobs_result = admin_api.list_jobs("-a")
-    if list_jobs_result["status"] == APIStatus.SUCCESS:
-        list_jobs_string = list_jobs_result["details"]["message"]
-        job_run_statuses = _parse_job_run_statuses(list_jobs_string)
-        return job_run_statuses
-    return {}
+def get_job_meta(admin_api: FLAdminAPI, job_id: str) -> dict:
+    response = admin_api.do_command(f"get_job_meta {job_id}")
+    return response["meta"].get("job_meta", {})
 
 
 def check_job_done(job_id: str, admin_api: FLAdminAPI):
@@ -201,20 +185,20 @@ def check_job_done(job_id: str, admin_api: FLAdminAPI):
                 ):
                     response = admin_api.check_status(target_type=TargetType.CLIENT)
                     if response["status"] != APIStatus.SUCCESS:
-                        print(f"CHECK client status failed: {response}")
+                        print(f"Check client status failed: {response}")
                         return False
                     if "details" not in response:
                         print(f"Check client status missing details: {response}.")
                         return False
                     else:
-                        job_run_statuses = get_job_run_statuses(admin_api)
-                        print(f"response is {response}")
-                        print(f"job_run_statuses is {job_run_statuses}")
+                        job_meta = get_job_meta(admin_api, job_id=job_id)
+                        job_run_status = job_meta.get("status")
+
                         for row in response["details"]["client_statuses"]:
                             if row[3] != "stopped":
                                 continue
                         # check if the current job is completed
-                        if job_id in job_run_statuses and job_run_statuses[job_id] in (
+                        if job_run_status in (
                             RunStatus.FINISHED_COMPLETED.value,
                             RunStatus.FINISHED_ABORTED.value,
                         ):
@@ -236,11 +220,11 @@ def run_admin_api_tests(admin_api: FLAdminAPI):
     print("\nCommand: get_available_apps_to_upload")
     print(admin_api.get_available_apps_to_upload())
     print("\nList Jobs:")
-    list_jobs_return_message = admin_api.list_jobs("-a").get("details").get("message")
-    print(list_jobs_return_message)
-    first_job = list_jobs_return_message.split()[17]
+    list_jobs_return_rows = admin_api.list_jobs("-a").get("details")
+    print(list_jobs_return_rows)
+    first_job = str(list_jobs_return_rows[1][0])
     print("\nCommand: ls server -a .")
-    ls_return_message = admin_api.ls_target("server", "-a", "..").get("details").get("message")
+    ls_return_message = admin_api.ls_target("server", "-a", ".").get("details").get("message")
     print(ls_return_message)
     print("\nAssert Job {} is in the server root dir...".format(first_job))
     assert first_job in ls_return_message
@@ -254,4 +238,3 @@ def run_admin_api_tests(admin_api: FLAdminAPI):
 
     print("\n" + "=" * 50)
     print("Finished with admin commands testing through FLAdminAPI.")
-    print(("\n" + "*" * 120) * 20)

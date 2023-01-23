@@ -17,12 +17,8 @@
 import argparse
 import logging
 import os
-import signal
 import sys
 import threading
-import time
-
-import psutil
 
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.workspace import Workspace
@@ -31,30 +27,11 @@ from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import EngineConstant
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger
+from nvflare.private.fed.app.utils import check_parent_alive
 from nvflare.private.fed.client.client_app_runner import ClientAppRunner
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize
 from nvflare.security.logging import secure_format_exception
-
-
-def check_parent_alive(parent_pid, stop_event: threading.Event):
-    while True:
-        if stop_event.is_set() or not psutil.pid_exists(parent_pid):
-            pid = os.getpid()
-            kill_child_processes(pid)
-            os.killpg(os.getpgid(pid), 9)
-            break
-        time.sleep(1)
-
-
-def kill_child_processes(parent_pid, sig=signal.SIGTERM):
-    try:
-        parent = psutil.Process(parent_pid)
-    except psutil.NoSuchProcess:
-        return
-    children = parent.children(recursive=True)
-    for process in children:
-        process.send_signal(sig)
 
 
 def main():

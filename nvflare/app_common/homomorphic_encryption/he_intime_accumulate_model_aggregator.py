@@ -158,7 +158,7 @@ class HEInTimeAccumulateWeightedAggregator(Aggregator):
                 else:
                     self.warning_count[client_name] = 0
             n_iter = 1.0
-        float_n_iter = np.float(n_iter)
+        float_n_iter = np.float64(n_iter)
 
         aggregation_weight = self.aggregation_weights.get(client_name)
         if aggregation_weight is None:

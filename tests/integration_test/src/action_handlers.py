@@ -19,7 +19,7 @@ import typing
 from nvflare.fuel.hci.client.api_status import APIStatus
 
 if typing.TYPE_CHECKING:
-    from .admin_controller import AdminController
+    from .fl_test_driver import FLTestDriver
 
 import time
 from abc import ABC, abstractmethod
@@ -30,12 +30,12 @@ from tests.integration_test.src.utils import check_job_done, run_admin_api_tests
 
 class _CmdHandler(ABC):
     @abstractmethod
-    def handle(self, command_args: list, admin_controller: AdminController, admin_api: FLAdminAPI):
+    def handle(self, command_args: list, admin_controller: FLTestDriver, admin_api: FLAdminAPI):
         pass
 
 
 class _StartHandler(_CmdHandler):
-    def handle(self, command_args: list, admin_controller: AdminController, admin_api: FLAdminAPI):
+    def handle(self, command_args: list, admin_controller: FLTestDriver, admin_api: FLAdminAPI):
         if command_args[0] == "server":
             if len(command_args) == 2:
                 # if server id is provided
@@ -62,7 +62,7 @@ class _StartHandler(_CmdHandler):
 
 
 class _KillHandler(_CmdHandler):
-    def handle(self, command_args: list, admin_controller: AdminController, admin_api: FLAdminAPI):
+    def handle(self, command_args: list, admin_controller: FLTestDriver, admin_api: FLAdminAPI):
         if command_args[0] == "server":
             if len(command_args) == 2:
                 # if server id is provided
@@ -86,27 +86,27 @@ class _KillHandler(_CmdHandler):
 
 
 class _SleepHandler(_CmdHandler):
-    def handle(self, command_args: list, admin_controller: AdminController, admin_api: FLAdminAPI):
+    def handle(self, command_args: list, admin_controller: FLTestDriver, admin_api: FLAdminAPI):
         time.sleep(int(command_args[0]))
 
 
 class _AdminCommandsHandler(_CmdHandler):
-    def handle(self, command_args: list, admin_controller: AdminController, admin_api: FLAdminAPI):
+    def handle(self, command_args: list, admin_controller: FLTestDriver, admin_api: FLAdminAPI):
         run_admin_api_tests(admin_api)
 
 
 class _NoopHandler(_CmdHandler):
-    def handle(self, command_args: list, admin_controller: AdminController, admin_api: FLAdminAPI):
+    def handle(self, command_args: list, admin_controller: FLTestDriver, admin_api: FLAdminAPI):
         pass
 
 
 class _TestDoneHandler(_CmdHandler):
-    def handle(self, command_args: list, admin_controller: AdminController, admin_api: FLAdminAPI):
+    def handle(self, command_args: list, admin_controller: FLTestDriver, admin_api: FLAdminAPI):
         admin_controller.test_done = True
 
 
 class _SubmitJobHandler(_CmdHandler):
-    def handle(self, command_args: list, admin_controller: AdminController, admin_api: FLAdminAPI):
+    def handle(self, command_args: list, admin_controller: FLTestDriver, admin_api: FLAdminAPI):
         job_name = str(command_args[0])
 
         response = admin_api.submit_job(job_name)
@@ -120,7 +120,7 @@ class _SubmitJobHandler(_CmdHandler):
 
 
 class _CloneJobHandler(_CmdHandler):
-    def handle(self, command_args: list, admin_controller: AdminController, admin_api: FLAdminAPI):
+    def handle(self, command_args: list, admin_controller: FLTestDriver, admin_api: FLAdminAPI):
         response = admin_api.clone_job(admin_controller.job_id)
         if response["status"] == APIStatus.ERROR_RUNTIME:
             admin_controller.admin_api_response = response["raw"]["data"]
@@ -131,7 +131,7 @@ class _CloneJobHandler(_CmdHandler):
 
 
 class _AbortJobHandler(_CmdHandler):
-    def handle(self, command_args: list, admin_controller: AdminController, admin_api: FLAdminAPI):
+    def handle(self, command_args: list, admin_controller: FLTestDriver, admin_api: FLAdminAPI):
         response = admin_api.abort_job(admin_controller.job_id)
         if response["status"] == APIStatus.ERROR_RUNTIME:
             admin_controller.admin_api_response = response["raw"]["data"]
@@ -140,13 +140,13 @@ class _AbortJobHandler(_CmdHandler):
 
 
 class _ListJobHandler(_CmdHandler):
-    def handle(self, command_args: list, admin_controller: AdminController, admin_api: FLAdminAPI):
+    def handle(self, command_args: list, admin_controller: FLTestDriver, admin_api: FLAdminAPI):
         response = admin_api.list_jobs("-a")
         assert response["status"] == APIStatus.SUCCESS
 
 
 class _ShellCommandHandler(_CmdHandler):
-    def handle(self, command_args: list, admin_controller: AdminController, admin_api: FLAdminAPI):
+    def handle(self, command_args: list, admin_controller: FLTestDriver, admin_api: FLAdminAPI):
         if str(command_args[0]) == "ls":
             response = admin_api.ls_target(str(command_args[1]))
             if response["status"] == APIStatus.ERROR_RUNTIME:
@@ -158,7 +158,7 @@ class _ShellCommandHandler(_CmdHandler):
 
 
 class _CheckJobHandler(_CmdHandler):
-    def handle(self, command_args: list, admin_controller: AdminController, admin_api: FLAdminAPI):
+    def handle(self, command_args: list, admin_controller: FLTestDriver, admin_api: FLAdminAPI):
         timeout = 1
         if command_args:
             timeout = float(command_args[0])

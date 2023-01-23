@@ -14,7 +14,7 @@
 
 import pytest
 
-from nvflare.apis.analytix import _DATA_TYPE_KEY, _KWARGS_KEY, AnalyticsData, AnalyticsDataType
+from nvflare.apis.analytix import _DATA_TYPE_KEY, AnalyticsData, AnalyticsDataType
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.app_common.tracking.tracker_types import TrackConst, Tracker
 from nvflare.app_common.widgets.streaming import create_analytic_dxo

@@ -31,8 +31,8 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.multi_process_executor_constants import CommunicateData, CommunicationMetaData
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import SecurityContentService
-from nvflare.private.fed.app.client.worker_process import check_parent_alive
 from nvflare.private.fed.app.fl_conf import create_privacy_manager
+from nvflare.private.fed.app.utils import check_parent_alive
 from nvflare.private.fed.client.client_run_manager import ClientRunManager
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorClientRunManager
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, configure_logging, fobs_initialize

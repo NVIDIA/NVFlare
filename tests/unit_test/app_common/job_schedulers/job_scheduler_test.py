@@ -333,7 +333,7 @@ class TestDefaultJobScheduler:
         with servers[0].new_context() as fl_ctx:
             _, _ = scheduler.schedule_job(job_manager=job_manager, job_candidates=[candidate], fl_ctx=fl_ctx)
 
-            assert job_manager.set_status.called == True
+            assert job_manager.set_status.called
             assert job_manager.set_status.call_args[0][1] == RunStatus.FINISHED_CANT_SCHEDULE
 
     def test_less_active_than_min(self, setup_and_teardown):

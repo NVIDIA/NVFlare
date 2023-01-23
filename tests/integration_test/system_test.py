@@ -21,7 +21,7 @@ import time
 
 import pytest
 
-from tests.integration_test.src import AdminController, POCSiteLauncher, ProvisionSiteLauncher, cleanup_path, read_yaml
+from tests.integration_test.src import FLTestDriver, POCSiteLauncher, ProvisionSiteLauncher, cleanup_path, read_yaml
 
 
 def get_module_class_from_full_path(full_path):
@@ -62,7 +62,7 @@ def get_test_config(test_config_yaml: str):
     return test_config
 
 
-test_configs = read_yaml("./test_cases.yml")
+test_configs = read_yaml("test_configs.yml")
 framework = os.environ.get("NVFLARE_TEST_FRAMEWORK", "numpy")
 if framework not in test_configs["test_configs"]:
     print(f"Framework/test {framework} is not supported, using default numpy.")
@@ -86,7 +86,7 @@ def setup_and_teardown_system(request):
 
     test_temp_dir = tempfile.mkdtemp()
 
-    admin_controller = None
+    fl_test_driver = None
     site_launcher = None
     test_cases = []
     try:
@@ -132,32 +132,32 @@ def setup_and_teardown_system(request):
 
         download_root_dir = os.path.join(test_temp_dir, "download_result")
         os.mkdir(download_root_dir)
-        admin_controller = AdminController(
+        fl_test_driver = FLTestDriver(
             site_launcher=site_launcher, download_root_dir=download_root_dir, poll_period=poll_period
         )
-        if not admin_controller.initialize_super_user(
+        if not fl_test_driver.initialize_super_user(
             workspace_root_dir=workspace_root, upload_root_dir=jobs_root_dir, poc=poc, super_user_name=super_user_name
         ):
-            raise RuntimeError("AdminController initialize_super_user failed.")
+            raise RuntimeError("FLTestDriver initialize_super_user failed.")
         if ha:
-            if not admin_controller.initialize_admin_users(
+            if not fl_test_driver.initialize_admin_users(
                 workspace_root_dir=workspace_root,
                 upload_root_dir=jobs_root_dir,
                 poc=poc,
                 admin_user_names=site_launcher.admin_user_names,
             ):
-                raise RuntimeError("AdminController initialize_admin_users failed.")
-        admin_controller.ensure_clients_started(num_clients=len(site_launcher.client_properties.keys()))
+                raise RuntimeError("FLTestDriver initialize_admin_users failed.")
+        fl_test_driver.ensure_clients_started(num_clients=len(site_launcher.client_properties.keys()))
     except RuntimeError:
-        if admin_controller:
-            admin_controller.finalize()
+        if fl_test_driver:
+            fl_test_driver.finalize()
         if site_launcher:
             site_launcher.stop_all_sites()
             site_launcher.cleanup()
         cleanup_path(test_temp_dir)
         cleaned = True
-    yield ha, test_cases, site_launcher, admin_controller
-    admin_controller.finalize()
+    yield ha, test_cases, site_launcher, fl_test_driver
+    fl_test_driver.finalize()
     site_launcher.stop_all_sites()
     if cleanup_in_the_end and not cleaned:
         if site_launcher:
@@ -168,10 +168,10 @@ def setup_and_teardown_system(request):
 @pytest.mark.xdist_group(name="system_tests_group")
 class TestSystem:
     def test_run_job_complete(self, setup_and_teardown_system):
-        ha, test_cases, site_launcher, admin_controller = setup_and_teardown_system
+        ha, test_cases, site_launcher, fl_test_driver = setup_and_teardown_system
 
-        print(f"Server status: {admin_controller.server_status()}.")
-        print(f"Client status: {admin_controller.client_status()}")
+        print(f"Server status: {fl_test_driver.server_status()}.")
+        print(f"Client status: {fl_test_driver.client_status()}")
 
         test_validate_results = []
         for test_data in test_cases:
@@ -184,7 +184,7 @@ class TestSystem:
                 process = subprocess.Popen(shlex.split(command))
                 process.wait()
 
-            admin_controller.run_event_sequence(event_sequence)
+            fl_test_driver.run_event_sequence(event_sequence)
 
             # Get the job validator
             if validators:
@@ -197,7 +197,7 @@ class TestSystem:
                     job_validator_cls = getattr(importlib.import_module(module_name), class_name)
                     job_validator = job_validator_cls(**validator_args)
 
-                    job_result = admin_controller.get_job_result(admin_controller.job_id)
+                    job_result = fl_test_driver.get_job_result(fl_test_driver.job_id)
                     job_validate_res = job_validator.validate_results(
                         job_result=job_result,
                         client_props=list(site_launcher.client_properties.values()),
@@ -216,7 +216,7 @@ class TestSystem:
                 print(f"Running teardown command: {command}")
                 process = subprocess.Popen(shlex.split(command))
                 process.wait()
-            admin_controller.reset_test_info(reset_job_info=reset_job_info)
+            fl_test_driver.reset_test_info(reset_job_info=reset_job_info)
             print("\n\n\n\n\n")
 
         _print_validate_result(validate_result=test_validate_results)

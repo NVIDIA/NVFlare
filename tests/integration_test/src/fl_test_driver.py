@@ -37,7 +37,7 @@ from tests.integration_test.src.action_handlers import (
     _TestDoneHandler,
 )
 from tests.integration_test.src.site_launcher import SiteLauncher
-from tests.integration_test.src.utils import get_job_run_statuses
+from tests.integration_test.src.utils import get_job_meta
 
 
 def _parse_workflow_states(stats_message: dict):
@@ -158,9 +158,9 @@ def _admin_api_login(admin_api, admin_user_name, poc):
     return login_success
 
 
-class AdminController:
+class FLTestDriver:
     def __init__(self, download_root_dir: str, site_launcher: SiteLauncher, poll_period=1):
-        """
+        """FL system test driver.
 
         Args:
             download_root_dir: the root dir to download things to
@@ -317,9 +317,6 @@ class AdminController:
         #       },
         # 'raw': {'time': '2022-04-04 15:13:09.367350', 'data': [xxx], 'status': <APIStatus.SUCCESS: 'SUCCESS'>}}
         prev_run_state = run_state.copy()
-        self.logger.info("Prev state:")
-        self._print_state(state=prev_run_state)
-        self.logger.info(f"STATS: {stats}")
 
         # parse stats
         if (
@@ -334,9 +331,6 @@ class AdminController:
 
         # parse job status
         run_state["run_finished"] = job_run_status == RunStatus.FINISHED_COMPLETED.value
-
-        self.logger.info("Current state:")
-        self._print_state(state=run_state)
 
         return run_state != prev_run_state, run_state
 
@@ -356,13 +350,14 @@ class AdminController:
 
         self.test_done = False
         while not self.test_done:
-            job_run_statuses = get_job_run_statuses(self.super_admin_api)
 
             if self.job_id:
+                job_meta = get_job_meta(self.super_admin_api, job_id=self.job_id)
+                job_run_status = job_meta.get("status")
                 stats = self._get_stats(target=TargetType.SERVER, job_id=self.job_id)
                 # update run_state
                 changed, run_state = self._update_run_state(
-                    stats=stats, run_state=run_state, job_run_status=job_run_statuses.get(self.job_id, "")
+                    stats=stats, run_state=run_state, job_run_status=job_run_status
                 )
 
             if event_idx < len(event_sequence):
