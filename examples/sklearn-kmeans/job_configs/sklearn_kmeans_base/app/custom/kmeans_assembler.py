@@ -36,7 +36,7 @@ class KMeansAssembler(CollectAssembler):
 
     def assemble(self, current_round: int, data: Dict[str, dict]) -> dict:
         if current_round == 0:
-            # Fist round, collect the information regarding n_feature and n_cluster
+            # First round, collect the information regarding n_feature and n_cluster
             # Initialize the aggregated center and count to all zero
             client_0 = list(self.collector.keys())[0]
             self.n_cluster = self.collector[client_0]["center"].shape[0]
@@ -54,8 +54,7 @@ class KMeansAssembler(CollectAssembler):
             kmeans_center_initial.fit(centers)
             self.center = kmeans_center_initial.cluster_centers_
         else:
-            # Aggregate centers, starting with previous center
-            # weight scaling recovered by previous count
+            # Mini-batch k-Means step to assemble the received centers
             for center_idx in range(self.n_cluster):
                 centers_global_rescale = self.center[center_idx] * self.count[center_idx]
                 # Aggregate center, add new center to previous estimate, weighted by counts
