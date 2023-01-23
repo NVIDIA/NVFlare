@@ -1502,7 +1502,7 @@ class Cell(MessageReceiver, EndpointMonitor):
     def _forward(self, endpoint: Endpoint, origin: str, destination: str, msg_type: str, message: Message):
         # not for me - need to forward it
         self.logger.debug(f"{self.my_info.fqcn}: forwarding for {origin} to {destination}")
-        ep = self._find_endpoint(destination)
+        err, ep = self._find_endpoint(destination)
         if ep:
             self.logger.debug(f"{self.my_info.fqcn}: found next leg {ep.name}")
             message.add_headers({
