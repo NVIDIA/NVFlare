@@ -163,10 +163,12 @@ class AioStreamSession(Connection):
                     self.frame_receiver.process_frame(f.data)
                 else:
                     self.logger.error(f"{self.side}: Frame receiver not registered for connection: {self.name}")
+        except asyncio.CancelledError:
+            self.logger.debug(f"{self.side}: RPC cancelled")
         except BaseException as ex:
             traceback.print_exc()
             self.logger.error(f"{self.side}: exception {type(ex)} in read_loop")
-        self.logger.debug(f"{self.side} in {ct.name}: done read_loop")
+        self.logger.debug(f"{self.side}: in {ct.name}: done read_loop")
 
     async def generate_output(self):
         ct = threading.current_thread()
@@ -217,6 +219,8 @@ class Servicer(StreamerServicer):
                     self._write_loop(connection, context),
                     connection.read_loop(request_iterator)
                 )
+            except asyncio.CancelledError:
+                self.logger.debug("SERVER: RPC cancelled")
             except BaseException as ex:
                 self.logger.debug(f"await gather except: {type(ex)}")
             self.logger.debug(f"SERVER: done await gather in thread {ct.name}")
@@ -355,6 +359,8 @@ class AioGrpcDriver(SocketDriver):
                     msg_iter = stub.Stream(connection.generate_output())
                     conn_ctx.conn = connection
                     await connection.read_loop(msg_iter)
+                except asyncio.CancelledError:
+                    self.logger.debug(f"CLIENT: RPC cancelled")
                 except BaseException as ex:
                     traceback.print_exc()
                     self.logger.info(f"CLIENT: connection done: {type(ex)}")
@@ -363,6 +369,8 @@ class AioGrpcDriver(SocketDriver):
                 connection.channel = None
             connection.close()
             self.logger.debug("CLIENT: finished connection")
+        except asyncio.CancelledError:
+            self.logger.debug("CLIENT: RPC cancelled")
         except BaseException as ex:
             traceback.print_exc()
             conn_ctx.error = f"connection error: {type(ex)}: {ex}"
