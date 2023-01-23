@@ -248,7 +248,7 @@ class AuxCommand(CommandProcessor):
         engine = fl_ctx.get_engine()
 
         topic = data.get_header(RequestHeader.TOPIC)
-        shareable = fobs.loads(data.body)
+        shareable = data.body
         return engine.dispatch(topic=topic, request=shareable, fl_ctx=fl_ctx)
 
 

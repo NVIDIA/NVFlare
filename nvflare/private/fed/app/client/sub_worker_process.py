@@ -22,20 +22,29 @@ import threading
 import time
 from multiprocessing.connection import Client, Listener
 
-from nvflare.fuel.utils import fobs
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.fuel.f3.cellnet.defs import ReturnCode
-from nvflare.fuel.f3.cellnet.cell import make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.executors.multi_process_executor import WorkerComponentBuilder
-from nvflare.fuel.common.multi_process_executor_constants import CommunicateData, CommunicationMetaData, MultiProcessCommandNames
+from nvflare.fuel.common.multi_process_executor_constants import (
+    CommunicateData,
+    CommunicationMetaData,
+    MultiProcessCommandNames,
+)
+from nvflare.fuel.f3.cellnet.cell import Cell
+from nvflare.fuel.f3.cellnet.cell import Message as CellMessage
+from nvflare.fuel.f3.cellnet.cell import MessageHeaderKey, make_reply
+from nvflare.fuel.f3.cellnet.defs import ReturnCode
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import SecurityContentService
+from nvflare.fuel.utils import fobs
+from nvflare.private.defs import CellChannel, new_cell_message
 from nvflare.private.fed.app.client.worker_process import check_parent_alive
 from nvflare.private.fed.app.fl_conf import create_privacy_manager
 from nvflare.private.fed.client.client_run_manager import ClientRunManager
@@ -43,10 +52,6 @@ from nvflare.private.fed.simulator.simulator_app_runner import SimulatorClientRu
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, configure_logging, fobs_initialize
 from nvflare.private.privacy_manager import PrivacyService
 from nvflare.security.logging import secure_log_traceback
-from nvflare.fuel.f3.cellnet.cell import Cell, Message as CellMessage, MessageHeaderKey
-from nvflare.fuel.f3.cellnet.fqcn import FQCN
-from nvflare.fuel.f3.cellnet.net_agent import NetAgent
-from nvflare.private.defs import CellChannel, new_cell_message
 
 
 class EventRelayer(FLComponent):
@@ -114,7 +119,6 @@ class EventRelayer(FLComponent):
 
 
 class SubWorkerExecutor:
-
     def __init__(self, args, local_rank) -> None:
         self.components = {}
         self.handlers = []
@@ -138,9 +142,7 @@ class SubWorkerExecutor:
             cb=self.execute_command,
         )
 
-        self.commands = {
-            MultiProcessCommandNames.INITIALIZE: self.initialize
-        }
+        self.commands = {MultiProcessCommandNames.INITIALIZE: self.initialize}
 
     def execute_command(self, request: CellMessage) -> CellMessage:
         command_name = request.get_header(MessageHeaderKey.TOPIC)
@@ -164,9 +166,7 @@ class SubWorkerExecutor:
 
         self.executor = self.components.get(executor_id, None)
         if not isinstance(self.executor, Executor):
-            raise ValueError(
-                "invalid executor {}: expect Executor but got {}".format(executor_id, type(self.executor))
-            )
+            raise ValueError("invalid executor {}: expect Executor but got {}".format(executor_id, type(self.executor)))
 
         return make_reply(ReturnCode.OK, "", None)
 
@@ -393,7 +393,6 @@ def handle_event(run_manager, local_rank, exe_conn):
 #     command_name = request.get_header(MessageHeaderKey.TOPIC)
 #     data = fobs.loads(request.payload)
 #     return new_cell_message({}, None)
-
 
 
 if __name__ == "__main__":

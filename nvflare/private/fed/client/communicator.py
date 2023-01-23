@@ -269,7 +269,7 @@ class Communicator:
                 CellMessageHeaderKeys.SSID: ssid,
                 CellMessageHeaderKeys.PROJECT_NAME: project_name,
             },
-            fobs.dumps(shareable),
+            shareable,
         )
         job_id = str(shared_fl_ctx.get_prop(FLContextKey.CURRENT_RUN))
 
@@ -283,8 +283,8 @@ class Communicator:
             name_to_req[fqcn] = task_message
         replies = self.cell.broadcast_request(
             targets=fqcns,
-            channel=CellChannel.SERVER_COMMAND,
-            topic=ServerCommandNames.AUX_COMMUNICATE,
+            channel=CellChannel.AUX_COMMUNICATION,
+            topic=topic,
             request=task_message,
         )
         end_time = time.time()
@@ -315,7 +315,10 @@ class Communicator:
         )
         try:
             result = self.cell.send_request(
-                target=FQCN.ROOT_SERVER, channel=CellChannel.SERVER_MAIN, topic=CellChannelTopic.Quit, request=quit_message
+                target=FQCN.ROOT_SERVER,
+                channel=CellChannel.SERVER_MAIN,
+                topic=CellChannelTopic.Quit,
+                request=quit_message,
             )
             return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
             if return_code == ReturnCode.UNAUTHENTICATED:

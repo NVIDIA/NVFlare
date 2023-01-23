@@ -20,6 +20,7 @@ from nvflare.fuel.f3.cellnet.cell import Message as CellMessage
 from nvflare.fuel.f3.cellnet.cell import MessageHeaderKey, ReturnCode
 from nvflare.fuel.utils import fobs
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, new_cell_message
+from nvflare.private.fed.server.server_commands import AuxCommunicateCommand
 
 from .server_commands import ServerCommands
 
@@ -39,46 +40,23 @@ class ServerCommandAgent(object):
         self.cell = cell
 
     def start(self):
-        # self.thread = threading.Thread(
-        #     target=listen_command, args=[self.listen_port, engine, self.execute_command, self.logger]
-        # )
-        # self.thread.start()
         self.cell.register_request_cb(
             channel=CellChannel.SERVER_COMMAND,
             topic="*",
             cb=self.execute_command,
         )
+        self.cell.register_request_cb(
+            channel=CellChannel.AUX_COMMUNICATION,
+            topic="*",
+            cb=self.aux_communicate,
+        )
         self.logger.info(f"ServerCommandAgent cell start: {self.cell.get_fqcn()}")
 
     def execute_command(self, request: CellMessage) -> CellMessage:
 
-        # while not self.asked_to_stop:
-        #     try:
-        #         if conn.poll(1.0):
-        #             msg = conn.recv()
-        #             msg = fobs.loads(msg)
-        #             command_name = msg.get(ServerCommandKey.COMMAND)
-        #             data = msg.get(ServerCommandKey.DATA)
-        #             command = ServerCommands.get_command(command_name)
-        #             if command:
-        #                 with engine.new_context() as new_fl_ctx:
-        #                     reply = command.process(data=data, fl_ctx=new_fl_ctx)
-        #                     if reply is not None:
-        #                         conn.send(reply)
-        #     except EOFError:
-        #         self.logger.info("listener communication terminated.")
-        #         break
-        #     except Exception as e:
-        #         self.logger.error(
-        #             f"IPC Communication error on the port: {self.listen_port}: {secure_format_exception(e)}."
-        #         )
         assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
         req = request.payload
 
-        # assert isinstance(req, Message), "request payload must be Message but got {}".format(type(req))
-        # topic = req.topic
-
-        # msg = fobs.loads(req)
         command_name = request.get_header(MessageHeaderKey.TOPIC)
         data = fobs.loads(request.payload)
 
@@ -98,6 +76,27 @@ class ServerCommandAgent(object):
                 else:
                     return_message = new_cell_message({}, fobs.dumps(None))
                 return return_message
+
+    def aux_communicate(self, request: CellMessage) -> CellMessage:
+
+        assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
+        data = request.payload
+
+        token = request.get_header(CellMessageHeaderKeys.TOKEN, None)
+        if token:
+            client = self.engine.server.client_manager.clients.get(token)
+            if client:
+                data.set_header(ServerCommandKey.FL_CLIENT, client)
+
+        command = AuxCommunicateCommand()
+        with self.engine.new_context() as new_fl_ctx:
+            reply = command.process(data=data, fl_ctx=new_fl_ctx)
+            if reply is not None:
+                return_message = new_cell_message({}, reply)
+                return_message.set_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
+            else:
+                return_message = new_cell_message({}, None)
+            return return_message
 
     def shutdown(self):
         self.asked_to_stop = True

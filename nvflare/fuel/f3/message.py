@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 from abc import ABC, abstractmethod
+from typing import Any
 
 from nvflare.fuel.f3.drivers.connection import BytesAlike
 from nvflare.fuel.f3.endpoint import Endpoint
@@ -36,7 +37,7 @@ class Headers(dict):
 
 
 class Message:
-    def __init__(self, headers: Headers, payload: BytesAlike):
+    def __init__(self, headers: Headers, payload: Any):
         """Construct an FCI message"""
 
         self.headers = headers

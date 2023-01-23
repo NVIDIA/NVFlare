@@ -136,7 +136,7 @@ class SSLConstants:
 class CellChannel:
 
     CLIENT_MAIN = "admin"
-    AUX = "aux"
+    AUX_COMMUNICATION = "aux_communication"
     SERVER_MAIN = "task"
     SERVER_COMMAND = "server_command"
     SERVER_PARENT_LISTENER = "server_parent_listener"

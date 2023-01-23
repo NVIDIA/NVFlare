@@ -480,8 +480,10 @@ class ProcessExecutor(ClientExecutor):
                 fqcn = FQCN.join([self.client.client_name, job_id])
                 request = new_cell_message({}, fobs.dumps(data))
                 return_data = self.client.cell.fire_and_forget(
-                    targets=fqcn, channel=CellChannel.CLIENT_COMMAND, topic=AdminCommandNames.ABORT_TASK,
-                    message=request
+                    targets=fqcn,
+                    channel=CellChannel.CLIENT_COMMAND,
+                    topic=AdminCommandNames.ABORT_TASK,
+                    message=request,
                 )
                 self.logger.debug("abort_task sent")
 

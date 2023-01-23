@@ -29,13 +29,17 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
-from nvflare.fuel.common.multi_process_executor_constants import CommunicateData, CommunicationMetaData, MultiProcessCommandNames
+from nvflare.fuel.common.multi_process_executor_constants import (
+    CommunicateData,
+    CommunicationMetaData,
+    MultiProcessCommandNames,
+)
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.class_utils import ModuleScanner
 from nvflare.fuel.utils.component_builder import ComponentBuilder
 from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.private.defs import CellChannel, new_cell_message
-from nvflare.fuel.utils import fobs
-from nvflare.fuel.f3.cellnet.fqcn import FQCN
 
 
 class WorkerComponentBuilder(ComponentBuilder):
@@ -228,14 +232,21 @@ class MultiProcessExecutor(Executor):
                     break
 
             fqcn = FQCN.join([engine.client.cell.get_fqcn(), "0"])
-            request = new_cell_message({}, fobs.dumps({
-                CommunicationMetaData.FL_CTX: get_serializable_data(fl_ctx),
-                CommunicationMetaData.COMPONENTS: self.components_conf,
-                CommunicationMetaData.LOCAL_EXECUTOR: self.executor_id,
-            }))
+            request = new_cell_message(
+                {},
+                fobs.dumps(
+                    {
+                        CommunicationMetaData.FL_CTX: get_serializable_data(fl_ctx),
+                        CommunicationMetaData.COMPONENTS: self.components_conf,
+                        CommunicationMetaData.LOCAL_EXECUTOR: self.executor_id,
+                    }
+                ),
+            )
             return_data = engine.client.cell.send_request(
-                target=fqcn, channel=CellChannel.CLIENT_SUB_WORKER_COMMAND,
-                topic=MultiProcessCommandNames.INITIALIZE, request=request
+                target=fqcn,
+                channel=CellChannel.CLIENT_SUB_WORKER_COMMAND,
+                topic=MultiProcessCommandNames.INITIALIZE,
+                request=request,
             )
 
         except:

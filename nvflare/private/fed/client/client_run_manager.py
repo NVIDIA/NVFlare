@@ -31,6 +31,7 @@ from nvflare.private.fed.utils.fed_utils import create_job_processing_context_pr
 from nvflare.widgets.fed_event import ClientFedEventRunner
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
+
 from .client_aux_runner import ClientAuxRunner
 from .client_engine_executor_spec import ClientEngineExecutorSpec, TaskAssignment
 from .client_json_config import ClientJsonConfigurator
@@ -196,7 +197,7 @@ class ClientRunManager(ClientEngineExecutorSpec):
                         self.logger.error(f"Aux message send error: {error_code} from client: {name}")
                         shareable = make_reply(ReturnCode.ERROR)
                     else:
-                        shareable = fobs.loads(reply.payload)
+                        shareable = reply.payload
                     results[target_name] = shareable
                 except BaseException as e:
                     results[target_name] = make_reply(ReturnCode.COMMUNICATION_ERROR)

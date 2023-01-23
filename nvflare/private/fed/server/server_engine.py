@@ -596,7 +596,7 @@ class ServerEngine(ServerEngineInternalSpec):
         # Send the aux messages through admin_server
         request.set_peer_props(fl_ctx.get_all_public_props())
 
-        message = Message(topic=ReservedTopic.AUX_COMMAND, body=fobs.dumps(request))
+        message = Message(topic=ReservedTopic.AUX_COMMAND, body=request)
         message.set_header(RequestHeader.JOB_ID, str(fl_ctx.get_prop(FLContextKey.CURRENT_RUN)))
         message.set_header(RequestHeader.TOPIC, topic)
         requests = {}
@@ -604,7 +604,7 @@ class ServerEngine(ServerEngineInternalSpec):
             requests.update({n: message})
 
         job_id = fl_ctx.get_job_id()
-        replies = self._send_requests(requests, job_id, timeout_secs=timeout)
+        replies = self._send_requests(topic, requests, job_id, timeout_secs=timeout)
         # replies = send_requests(cell=self.server.cell, command=AdminCommandNames.AUX_COMMAND,
         #                         requests=requests, clients=self.client_manager.clients, job_id=job_id,
         #                         timeout_secs=timeout)
@@ -631,7 +631,7 @@ class ServerEngine(ServerEngineInternalSpec):
 
         return results
 
-    def _send_requests(self, requests: dict, job_id, timeout_secs=2.0) -> [ClientReply]:
+    def _send_requests(self, topic: str, requests: dict, job_id, timeout_secs=2.0) -> [ClientReply]:
 
         if not isinstance(requests, dict):
             raise TypeError("requests must be a dict but got {}".format(type(requests)))
@@ -655,15 +655,15 @@ class ServerEngine(ServerEngineInternalSpec):
         result = []
         replies = self.server.cell.broadcast_request(
             targets=targets,
-            channel=CellChannel.CLIENT_COMMAND,
-            topic=AdminCommandNames.AUX_COMMAND,
-            request=new_cell_message({}, fobs.dumps(req)),
+            channel=CellChannel.AUX_COMMUNICATION,
+            topic=topic,
+            request=new_cell_message({}, req),
             timeout=timeout_secs,
         )
         for name, reply in replies.items():
             assert isinstance(reply, CellMessage)
             result.append(
-                ClientReply(client_token=name_to_token[name], req=name_to_req[name], reply=fobs.loads(reply.payload))
+                ClientReply(client_token=name_to_token[name], req=name_to_req[name], reply=reply.payload)
             )
         return result
 

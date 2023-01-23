@@ -20,6 +20,7 @@ from nvflare.fuel.f3.cellnet.cell import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.cell import make_reply as make_cellnet_reply
 from nvflare.fuel.utils import fobs
 from nvflare.private.defs import CellChannel, new_cell_message
+from nvflare.private.fed.client.admin_commands import AuxCommand
 
 from .admin_commands import AdminCommands
 
@@ -57,38 +58,20 @@ class CommandAgent(object):
             topic="*",
             cb=self.execute_command,
         )
+        self.federated_client.cell.register_request_cb(
+            channel=CellChannel.AUX_COMMUNICATION,
+            topic="*",
+            cb=self.aux_communication,
+        )
 
     def execute_command(self, request: CellMessage) -> CellMessage:
-        # while not self.asked_to_stop:
-        #     try:
-        #         if conn.poll(1.0):
-        #             msg = conn.recv()
-        #             command_name = msg.get("command")
-        #             data = msg.get("data")
-        #             command = AdminCommands.get_command(command_name)
-        #             if command:
-        #                 with engine.new_context() as new_fl_ctx:
-        #                     reply = command.process(data=data, fl_ctx=new_fl_ctx)
-        #                     if reply:
-        #                         conn.send(reply)
-        #     except EOFError:
-        #         self.logger.info("listener communication terminated.")
-        #         break
-        #     except Exception as e:
-        #         self.logger.error(f"Process communication error: {self.listen_port}: {secure_format_exception(e)}.")
 
         assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
         req = request.payload
 
-        # assert isinstance(req, Message), "request payload must be Message but got {}".format(type(req))
-        # topic = req.topic
-
         command_name = request.get_header(MessageHeaderKey.TOPIC)
         data = fobs.loads(request.payload)
 
-        # msg = fobs.loads(req)
-        # command_name = msg.get("command")
-        # data = msg.get("data")
         command = AdminCommands.get_command(command_name)
         if command:
             with self.engine.new_context() as new_fl_ctx:
@@ -100,6 +83,21 @@ class CommandAgent(object):
                     return_message = new_cell_message({}, None)
                 return return_message
         return make_cellnet_reply(ReturnCode.INVALID_REQUEST, "", None)
+
+    def aux_communication(self, request: CellMessage) -> CellMessage:
+
+        assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
+        data = request.payload
+
+        command = AuxCommand()
+        with self.engine.new_context() as new_fl_ctx:
+            reply = command.process(data=data, fl_ctx=new_fl_ctx)
+            if reply is not None:
+                return_message = new_cell_message({}, reply)
+                return_message.set_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
+            else:
+                return_message = new_cell_message({}, None)
+            return return_message
 
     def shutdown(self):
         self.asked_to_stop = True
