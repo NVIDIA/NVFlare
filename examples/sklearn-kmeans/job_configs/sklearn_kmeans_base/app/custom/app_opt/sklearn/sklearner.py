@@ -17,6 +17,7 @@ from abc import ABC
 from typing import Optional
 
 from app_opt.sklearn.data_loader import load_data_for_range
+
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 
@@ -42,12 +43,8 @@ class SKLearner(FLComponent, ABC):
         self.fl_ctx = fl_ctx
 
     def load_data(self) -> dict:
-        train_data = load_data_for_range(
-            self.data_path, self.train_start, self.train_end
-        )
-        valid_data = load_data_for_range(
-            self.data_path, self.valid_start, self.valid_end
-        )
+        train_data = load_data_for_range(self.data_path, self.train_start, self.train_end)
+        valid_data = load_data_for_range(self.data_path, self.valid_start, self.valid_end)
         return {"train": train_data, "valid": valid_data}
 
     def get_parameters(self, global_param: Optional[dict] = None) -> dict:

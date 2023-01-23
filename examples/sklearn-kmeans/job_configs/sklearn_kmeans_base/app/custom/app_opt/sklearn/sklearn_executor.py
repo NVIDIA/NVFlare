@@ -15,6 +15,7 @@ import os.path
 
 import joblib
 import tensorboard
+
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
@@ -97,9 +98,7 @@ class SKLearnExecutor(Executor):
             return make_reply(ReturnCode.TASK_ABORTED)
         try:
             if task_name == AppConstants.TASK_TRAIN:
-                (current_round, global_params) = self.get_global_params(
-                    shareable, fl_ctx
-                )
+                (current_round, global_params) = self.get_global_params(shareable, fl_ctx)
                 if global_params:
                     self.evaluate(current_round, global_params)
                 return self.train(current_round, global_params)
@@ -108,9 +107,7 @@ class SKLearnExecutor(Executor):
                 return make_reply(ReturnCode.TASK_UNKNOWN)
         except Exception as e:
             # Task execution error, return EXECUTION_EXCEPTION Shareable
-            self.log_exception(
-                fl_ctx, f"execute exception: {secure_format_exception(e)}"
-            )
+            self.log_exception(fl_ctx, f"execute exception: {secure_format_exception(e)}")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):

@@ -21,6 +21,7 @@ from enum import Enum
 from typing import List
 
 import numpy as np
+
 from nvflare.apis.fl_constant import JobConstants
 
 JOB_CONFIGS_ROOT = "job_configs"
@@ -34,21 +35,17 @@ class SplitMethod(Enum):
 
 
 def job_config_args_parser():
-    parser = argparse.ArgumentParser(
-        description="generate train configs with data split"
-    )
+    parser = argparse.ArgumentParser(description="generate train configs with data split")
     parser.add_argument("--task_name", type=str, help="Task name for the config")
     parser.add_argument("--data_path", type=str, help="Path to data file")
     parser.add_argument("--site_num", type=int, help="Total number of sites")
-    parser.add_argument(
-        "--site_name_prefix", type=str, default="site-", help="Site name prefix"
-    )
+    parser.add_argument("--site_name_prefix", type=str, default="site-", help="Site name prefix")
     parser.add_argument(
         "--data_size",
         type=int,
         default=0,
         help="Total data size, use if specified, in order to use partial data"
-             "If not specified, use the full data size fetched from file.",
+        "If not specified, use the full data size fetched from file.",
     )
     parser.add_argument(
         "--valid_frac",
@@ -104,9 +101,7 @@ def assign_data_index_to_sites(
     split_method: SplitMethod = SplitMethod.UNIFORM,
 ) -> dict:
     if valid_fraction > 1.0:
-        raise ValueError(
-            "validation percent should be less than or equal to 100% of the total data"
-        )
+        raise ValueError("validation percent should be less than or equal to 100% of the total data")
     elif valid_fraction < 1.0:
         valid_size = int(round(data_size * valid_fraction, 0))
         train_size = data_size - valid_size
@@ -150,16 +145,12 @@ def split_data(
     size_total_file = get_file_line_count(data_path)
     if data_size > 0:
         if data_size > size_total_file:
-            raise ValueError(
-                "data_size should be less than or equal to the true data size"
-            )
+            raise ValueError("data_size should be less than or equal to the true data size")
         else:
             size_total = data_size
     else:
         size_total = size_total_file
-    site_indices = assign_data_index_to_sites(
-        size_total, valid_frac, site_num, site_name_prefix, split_method
-    )
+    site_indices = assign_data_index_to_sites(size_total, valid_frac, site_num, site_name_prefix, split_method)
     return site_indices
 
 
@@ -217,9 +208,7 @@ def _copy_custom_files(src_job_path, src_app_name, dst_job_path, dst_app_name):
 
 def create_server_app(src_job_path, src_app_name, dst_job_path, site_name, args):
     dst_app_name = f"app_{site_name}"
-    server_config = _read_json(
-        src_job_path / src_app_name / "config" / JobConstants.SERVER_JOB_CONFIG
-    )
+    server_config = _read_json(src_job_path / src_app_name / "config" / JobConstants.SERVER_JOB_CONFIG)
     dst_config_path = dst_job_path / dst_app_name / "config"
 
     # make target config folders
@@ -234,13 +223,9 @@ def create_server_app(src_job_path, src_app_name, dst_job_path, site_name, args)
     _copy_custom_files(src_job_path, src_app_name, dst_job_path, dst_app_name)
 
 
-def create_client_app(
-    src_job_path, src_app_name, dst_job_path, site_name, site_indices, args
-):
+def create_client_app(src_job_path, src_app_name, dst_job_path, site_name, site_indices, args):
     dst_app_name = f"app_{site_name}"
-    client_config = _read_json(
-        src_job_path / src_app_name / "config" / JobConstants.CLIENT_JOB_CONFIG
-    )
+    client_config = _read_json(src_job_path / src_app_name / "config" / JobConstants.CLIENT_JOB_CONFIG)
     dst_config_path = dst_job_path / dst_app_name / "config"
 
     # make target config folders
@@ -284,9 +269,7 @@ def main():
     )
 
     # generate data split
-    site_indices = split_data(
-        args.data_path, args.site_num, args.data_size, args.valid_frac, args.site_name_prefix
-    )
+    site_indices = split_data(args.data_path, args.site_num, args.data_size, args.valid_frac, args.site_name_prefix)
 
     # create client side app
     for i in range(1, args.site_num + 1):

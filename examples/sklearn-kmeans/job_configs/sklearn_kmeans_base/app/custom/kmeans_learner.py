@@ -15,9 +15,10 @@
 from typing import Optional
 
 from app_opt.sklearn.sklearner import SKLearner
-from nvflare.apis.fl_context import FLContext
 from sklearn.cluster import KMeans, MiniBatchKMeans, kmeans_plusplus
 from sklearn.metrics import homogeneity_score
+
+from nvflare.apis.fl_context import FLContext
 
 
 class KMeansLearner(SKLearner):
@@ -68,7 +69,7 @@ class KMeansLearner(SKLearner):
                 init=center_global,
                 n_init=1,
                 reassignment_ratio=0,
-                random_state=0
+                random_state=0,
             )
             kmeans.fit(x_train)
             center_local = kmeans.cluster_centers_
