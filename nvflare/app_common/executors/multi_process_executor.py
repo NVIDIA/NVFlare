@@ -29,10 +29,13 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
-from nvflare.fuel.common.multi_process_executor_constants import CommunicateData, CommunicationMetaData
+from nvflare.fuel.common.multi_process_executor_constants import CommunicateData, CommunicationMetaData, MultiProcessCommandNames
 from nvflare.fuel.utils.class_utils import ModuleScanner
 from nvflare.fuel.utils.component_builder import ComponentBuilder
 from nvflare.fuel.utils.network_utils import get_open_ports
+from nvflare.private.defs import CellChannel, new_cell_message
+from nvflare.fuel.utils import fobs
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 
 
 class WorkerComponentBuilder(ComponentBuilder):
@@ -60,6 +63,7 @@ class MultiProcessExecutor(Executor):
         super().__init__()
         self.executor_id = executor_id
 
+        self.components_conf = components
         self.components = {}
         self.handlers = []
         self._build_components(components)
@@ -148,6 +152,7 @@ class MultiProcessExecutor(Executor):
             client_name = fl_ctx.get_identity_name()
             job_id = fl_ctx.get_job_id()
 
+            engine = fl_ctx.get_engine()
             simulate_mode = fl_ctx.get_prop(FLContextKey.SIMULATE_MODE, False)
             command = (
                 self.get_multi_process_command()
@@ -164,6 +169,10 @@ class MultiProcessExecutor(Executor):
                 + str(simulate_mode)
                 + " --parent_pid "
                 + str(os.getpid())
+                + " --root_url "
+                + str(engine.client.cell.root_url)
+                + " --parent_url "
+                + str(engine.client.cell.get_internal_listener_url())
             )
             self.logger.info(f"multi_process_executor command: {command}")
             # use os.setsid to create new process group ID
@@ -217,6 +226,18 @@ class MultiProcessExecutor(Executor):
                     index += 1
                 if received_all:
                     break
+
+            fqcn = FQCN.join([engine.client.cell.get_fqcn(), "0"])
+            request = new_cell_message({}, fobs.dumps({
+                CommunicationMetaData.FL_CTX: get_serializable_data(fl_ctx),
+                CommunicationMetaData.COMPONENTS: self.components_conf,
+                CommunicationMetaData.LOCAL_EXECUTOR: self.executor_id,
+            }))
+            return_data = engine.client.cell.send_request(
+                target=fqcn, channel=CellChannel.CLIENT_SUB_WORKER_COMMAND,
+                topic=MultiProcessCommandNames.INITIALIZE, request=request
+            )
+
         except:
             self.log_exception(fl_ctx, "error initializing multi_process executor")
 

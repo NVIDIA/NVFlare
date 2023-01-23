@@ -98,7 +98,7 @@ class ClientEngineExecutorSpec(ClientEngineSpec, ABC):
     @abstractmethod
     def send_aux_request(
         self, targets: Union[None, str, List[str]], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext
-    ) -> Shareable:
+    ) -> dict:
         """Send a request to Server via the aux channel.
 
         Implementation: simply calls the ClientAuxRunner's send_aux_request method.
@@ -110,7 +110,9 @@ class ClientEngineExecutorSpec(ClientEngineSpec, ABC):
             timeout: number of secs to wait for replies. 0 means fire-and-forget.
             fl_ctx: FL context
 
-        Returns: a reply Shareable
+        Returns:
+            a dict of reply Shareable in the format of:
+                { site_name: reply_shareable }
 
         """
         pass

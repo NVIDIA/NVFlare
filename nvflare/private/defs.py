@@ -141,6 +141,7 @@ class CellChannel:
     SERVER_COMMAND = "server_command"
     SERVER_PARENT_LISTENER = "server_parent_listener"
     CLIENT_COMMAND = "client_command"
+    CLIENT_SUB_WORKER_COMMAND = "client_sub_worker_command"
 
 
 class CellChannelTopic:
