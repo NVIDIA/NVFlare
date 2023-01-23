@@ -262,17 +262,17 @@ class FederatedServer(BaseServer):
 
     def _register_cellnet_cbs(self):
         self.cell.register_request_cb(
-            channel=CellChannel.TASK,
+            channel=CellChannel.SERVER_MAIN,
             topic=CellChannelTopic.Register,
             cb=self.register_client,
         )
         self.cell.register_request_cb(
-            channel=CellChannel.TASK,
+            channel=CellChannel.SERVER_MAIN,
             topic=CellChannelTopic.Quit,
             cb=self.quit_client,
         )
         self.cell.register_request_cb(
-            channel=CellChannel.TASK,
+            channel=CellChannel.SERVER_MAIN,
             topic=CellChannelTopic.HEART_BEAT,
             cb=self.client_heartbeat,
         )

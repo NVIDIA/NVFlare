@@ -69,7 +69,7 @@ def send_requests(cell, command: str, requests: dict, clients, job_id=None, time
             channel = CellChannel.CLIENT_COMMAND
         else:
             fqcn = client.name
-            channel = CellChannel.ADMIN
+            channel = CellChannel.CLIENT_MAIN
         target_msgs[client.name] = TargetMessage(
             target=fqcn, channel=channel, topic=command, message=new_cell_message({}, req)
         )

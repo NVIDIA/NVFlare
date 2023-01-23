@@ -73,7 +73,7 @@ class FedAdminAgent(object):
 
     def register_cell_cb(self):
         self.cell.register_request_cb(
-            channel=CellChannel.ADMIN,
+            channel=CellChannel.CLIENT_MAIN,
             topic="*",
             cb=self._dispatch_request,
         )

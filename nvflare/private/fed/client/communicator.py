@@ -112,7 +112,7 @@ class Communicator:
             try:
                 result = self.cell.send_request(
                     target=FQCN.ROOT_SERVER,
-                    channel=CellChannel.TASK,
+                    channel=CellChannel.SERVER_MAIN,
                     topic=CellChannelTopic.Register,
                     request=login_message,
                 )
@@ -315,7 +315,7 @@ class Communicator:
         )
         try:
             result = self.cell.send_request(
-                target=FQCN.ROOT_SERVER, channel=CellChannel.TASK, topic=CellChannelTopic.Quit, request=quit_message
+                target=FQCN.ROOT_SERVER, channel=CellChannel.SERVER_MAIN, topic=CellChannelTopic.Quit, request=quit_message
             )
             return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
             if return_code == ReturnCode.UNAUTHENTICATED:
@@ -346,7 +346,7 @@ class Communicator:
                 try:
                     result = self.cell.send_request(
                         target=FQCN.ROOT_SERVER,
-                        channel=CellChannel.TASK,
+                        channel=CellChannel.SERVER_MAIN,
                         topic=CellChannelTopic.HEART_BEAT,
                         request=heartbeat_message,
                     )
