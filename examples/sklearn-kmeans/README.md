@@ -66,7 +66,7 @@ Below is a sample config for site-1, saved to `/job_configs/sklearn_kmeans_3_uni
             ],
             "executor": {
                 "id": "Executor",
-                "path": "app_opt.sklearn.skexecutor.SKExecutor",
+                "path": "app_opt.sklearn.sklearn_executor.SKLearnExecutor",
                 "args": {
                     "learner_id": "kmeans_learner"
                 }
@@ -98,3 +98,5 @@ We can run the FL simulator with 3 clients under uniform data split with
 ```commandline
 bash run_experiment_simulator.sh
 ```
+Running with deterministic setting `random_state=0`, the resulting curve for `homogeneity_score` is
+![minibatch curve](./figs/minibatch.png)

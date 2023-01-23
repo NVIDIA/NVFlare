@@ -19,8 +19,6 @@ from nvflare.apis.fl_context import FLContext
 from sklearn.cluster import KMeans, MiniBatchKMeans, kmeans_plusplus
 from sklearn.metrics import homogeneity_score
 
-# Note: will move to this app_common when it gets matured
-
 
 class KMeansLearner(SKLearner):
     def __init__(
@@ -57,7 +55,7 @@ class KMeansLearner(SKLearner):
         if curr_round == 0:
             # first round, compute initial center with kmeans++ method
             # model will be None for this round
-            center_local, _ = kmeans_plusplus(x_train, n_clusters=self.n_clusters)
+            center_local, _ = kmeans_plusplus(x_train, n_clusters=self.n_clusters, random_state=0)
             kmeans = None
             params = {"center": center_local, "count": None}
         else:
@@ -70,6 +68,7 @@ class KMeansLearner(SKLearner):
                 init=center_global,
                 n_init=1,
                 reassignment_ratio=0,
+                random_state=0
             )
             kmeans.fit(x_train)
             center_local = kmeans.cluster_centers_

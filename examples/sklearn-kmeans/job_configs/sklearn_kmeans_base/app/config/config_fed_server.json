@@ -18,15 +18,15 @@
       "args": {}
     },
     {
-      "id": "collector",
-      "path": "app_common.aggregators.collector.Collector",
+      "id": "aggregator",
+      "path": "app_common.aggregators.collect_flex_assemble_aggregator.CollectFlexAssembleAggragator",
       "args": {
-        "assembler_id" : "kmeans_aggregator"
+        "assembler_id" : "kmeans_assembler"
       }
     },
     {
-      "id": "kmeans_aggregator",
-      "path": "kmeans_aggregator.KMeansAggregator",
+      "id": "kmeans_assembler",
+      "path": "kmeans_assembler.KMeansAssembler",
       "args": {}
     }
   ],
@@ -39,7 +39,7 @@
         "num_rounds": 5,
         "start_round": 0,
         "wait_time_after_min_received": 0,
-        "aggregator_id": "collector",
+        "aggregator_id": "aggregator",
         "persistor_id": "persistor",
         "shareable_generator_id": "shareable_generator",
         "train_task_name": "train",

@@ -6,7 +6,7 @@
       "tasks": ["train"],
       "executor": {
         "id": "Executor",
-        "path": "app_opt.sklearn.skexecutor.SKExecutor",
+        "path": "app_opt.sklearn.sklearn_executor.SKLearnExecutor",
         "args": {
           "learner_id": "kmeans_learner"
         }
