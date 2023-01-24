@@ -43,3 +43,5 @@ class MultiProcessCommandNames:
     INITIALIZE = "initialize"
     TASK_EXECUTION = "task_execution"
     FIRE_EVENT = "fire_event"
+    EXECUTE_RESULT = "execute_result"
+    CLOSE = "close"

@@ -662,9 +662,7 @@ class ServerEngine(ServerEngineInternalSpec):
         )
         for name, reply in replies.items():
             assert isinstance(reply, CellMessage)
-            result.append(
-                ClientReply(client_token=name_to_token[name], req=name_to_req[name], reply=reply.payload)
-            )
+            result.append(ClientReply(client_token=name_to_token[name], req=name_to_req[name], reply=reply.payload))
         return result
 
     def send_command_to_child_runner_process(self, job_id: str, command_name: str, command_data, return_result=True):

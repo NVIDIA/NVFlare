@@ -142,6 +142,7 @@ class CellChannel:
     SERVER_PARENT_LISTENER = "server_parent_listener"
     CLIENT_COMMAND = "client_command"
     CLIENT_SUB_WORKER_COMMAND = "client_sub_worker_command"
+    MULTI_PROCESS_EXECUTOR = "multi_process_executor"
 
 
 class CellChannelTopic:
@@ -151,6 +152,8 @@ class CellChannelTopic:
     GET_TASK = "get_task"
     SUBMIT_RESULT = "submit_result"
     HEART_BEAT = "hear_beat"
+    EXECUTE_RESULT = "execute_result"
+    FIRE_EVENT = "fire_event"
 
 
 ERROR_MSG_PREFIX = "NVFLARE_ERROR"
