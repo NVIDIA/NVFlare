@@ -209,7 +209,7 @@ class TestSystem:
             else:
                 print("No validators provided so results set to No Validators.")
                 validate_result = "No Validators"
-            test_validate_results.append((test_name, str(validate_result)))
+            test_validate_results.append((test_name, validate_result))
 
             print(f"Finished running test '{test_name}' in {time.time() - start_time} seconds.")
             for command in teardown:
@@ -247,7 +247,7 @@ def _print_validate_result(validate_result: list):
         print(
             "| {test_name:<{width1}s} | {result:<{width2}s} |".format(
                 test_name=test_name,
-                result=result,
+                result=str(result),
                 width1=test_name_length,
                 width2=result_length,
             )
