@@ -160,6 +160,7 @@ class MultiProcessExecutor(Executor):
 
             engine = fl_ctx.get_engine()
             simulate_mode = fl_ctx.get_prop(FLContextKey.SIMULATE_MODE, False)
+            cell = engine.client.cell
             command = (
                 self.get_multi_process_command()
                 + " -m nvflare.private.fed.app.client.sub_worker_process"
@@ -176,21 +177,21 @@ class MultiProcessExecutor(Executor):
                 + " --parent_pid "
                 + str(os.getpid())
                 + " --root_url "
-                + str(engine.client.cell.root_url)
+                + str(cell.root_url)
                 + " --parent_url "
-                + str(engine.client.cell.get_internal_listener_url())
+                + str(cell.get_internal_listener_url())
             )
             self.logger.info(f"multi_process_executor command: {command}")
             # use os.setsid to create new process group ID
             self.exe_process = subprocess.Popen(shlex.split(command, " "), preexec_fn=os.setsid, env=os.environ.copy())
 
             # send the init data to all the child processes
-            engine.client.cell.register_request_cb(
+            cell.register_request_cb(
                 channel=CellChannel.MULTI_PROCESS_EXECUTOR,
                 topic=CellChannelTopic.EXECUTE_RESULT,
                 cb=self.receive_execute_result,
             )
-            engine.client.cell.register_request_cb(
+            cell.register_request_cb(
                 channel=CellChannel.MULTI_PROCESS_EXECUTOR,
                 topic=CellChannelTopic.FIRE_EVENT,
                 cb=self._relay_fire_event,
@@ -198,9 +199,9 @@ class MultiProcessExecutor(Executor):
 
             self.targets = []
             for i in range(self.num_of_processes):
-                fqcn = FQCN.join([engine.client.cell.get_fqcn(), str(i)])
-                while not engine.client.cell.is_cell_reachable(fqcn):
-                    time.sleep(0.5)
+                fqcn = FQCN.join([cell.get_fqcn(), str(i)])
+                while not cell.is_cell_reachable(fqcn):
+                    time.sleep(1.0)
                 self.targets.append(fqcn)
             request = new_cell_message(
                 {},
@@ -210,7 +211,7 @@ class MultiProcessExecutor(Executor):
                     CommunicationMetaData.LOCAL_EXECUTOR: self.executor_id,
                 }
             )
-            replies = engine.client.cell.broadcast_request(
+            replies = cell.broadcast_request(
                 targets=self.targets,
                 channel=CellChannel.CLIENT_SUB_WORKER_COMMAND,
                 topic=MultiProcessCommandNames.INITIALIZE,
@@ -250,8 +251,7 @@ class MultiProcessExecutor(Executor):
                     private=True,
                     sticky=False,
                 )
-                engine = fl_ctx.get_engine()
-                engine.fire_event(event_type, fl_ctx)
+                self.engine.fire_event(event_type, fl_ctx)
                 return_data = {CommunicationMetaData.FL_CTX: get_serializable_data(fl_ctx)}
                 return F3make_reply(ReturnCode.OK, "", return_data)
 
@@ -266,7 +266,7 @@ class MultiProcessExecutor(Executor):
         )
 
         while not self.execute_complete:
-            time.sleep(0.5)
+            time.sleep(0.2)
         return self.execute_result
 
     def _execute_multi_process(
