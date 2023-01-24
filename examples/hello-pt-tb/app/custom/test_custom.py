@@ -11,23 +11,20 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import random
-from unittest.mock import patch, Mock
+
+from unittest.mock import Mock, patch
 
 import numpy
-import pytest
-
-from nvflare.apis.shareable import Shareable
 from pt_learner import PTLearner
 
 from nvflare.apis.dxo import DXO, DataKind
-from nvflare.apis.fl_constant import ReturnCode, ReservedKey
+from nvflare.apis.fl_constant import ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 
 
 class TestPTLearner:
-
     @patch.object(PTLearner, "save_local_model")
     def test_train_empty_input(self, mock_save_local_model):
         fl_ctx = FLContext()
