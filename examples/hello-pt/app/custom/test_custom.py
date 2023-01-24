@@ -54,16 +54,15 @@ class TestCifar10Trainer:
         train_task_name = "train"
         trainer = Cifar10Trainer(train_task_name=train_task_name, epochs=2)
         # just take first batch
-        myitt=iter(trainer._train_loader)
+        myitt = iter(trainer._train_loader)
         trainer._train_loader = [next(myitt)]
 
         dxo = DXO(data_kind=DataKind.WEIGHTS, data=trainer.model.state_dict())
         result = dxo.to_shareable()
         for i in range(3):
-            result = trainer.execute(
-                train_task_name, shareable=result, fl_ctx=FLContext(), abort_signal=Signal()
-            )
+            result = trainer.execute(train_task_name, shareable=result, fl_ctx=FLContext(), abort_signal=Signal())
             assert result.get_return_code() == ReturnCode.OK
+
 
 class TestCifar10Validator:
     def test_execute(self):
