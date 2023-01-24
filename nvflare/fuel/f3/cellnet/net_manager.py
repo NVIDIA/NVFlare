@@ -146,7 +146,16 @@ class NetManager(CommandModule):
             return
         url = args[1]
         results = self.agent.get_url_use(url)
-        conn.append_dict(results)
+        useless_cells = []
+        for k, v in results.items():
+            if v == "none":
+                useless_cells.append(k)
+        for k in useless_cells:
+            results.pop(k)
+        if not results:
+            conn.append_string(f"No cell uses {url}")
+        else:
+            conn.append_dict(results)
 
     def _cmd_route(self, conn: Connection, args: [str]):
         if len(args) < 2:

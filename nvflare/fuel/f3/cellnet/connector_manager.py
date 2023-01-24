@@ -15,12 +15,13 @@
 import logging
 import os
 import time
+import traceback
 from typing import Union
 from nvflare.fuel.common.excepts import ConfigError
-from nvflare.fuel.f3.communicator import Communicator, Mode
+from nvflare.fuel.f3.communicator import Communicator, Mode, CommError
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from .defs import ConnectorRequirementKey
-from .fqcn import FQCN, FqcnInfo
+from .fqcn import FqcnInfo
 
 _KEY_RESOURCES = "resources"
 _KEY_INT = "internal"
@@ -142,7 +143,14 @@ class ConnectorManager:
                     raise ConfigError(f"'{_KEY_RESOURCES}' in {key} must be dict but got {type(resources)}")
         return conn_config
 
-    def _get_connector(self, url: str, active: bool, internal: bool, adhoc: bool) -> Union[None, ConnectorInfo]:
+    def _get_connector(
+            self,
+            url: str,
+            active: bool,
+            internal: bool,
+            adhoc: bool,
+            secure: bool
+    ) -> Union[None, ConnectorInfo]:
         if active and not url:
             raise RuntimeError("url is required by not provided for active connector!")
 
@@ -172,27 +180,35 @@ class ConnectorManager:
                 return None
 
         reqs = {
-            ConnectorRequirementKey.SECURE: self.secure
+            ConnectorRequirementKey.SECURE: secure
         }
         if url:
             reqs[ConnectorRequirementKey.URL] = url
 
         reqs.update(resources)
 
-        if active:
-            handle = self.communicator.add_connector(url, Mode.ACTIVE)
-            connect_url = url
-        elif url:
-            handle = self.communicator.add_connector(url, Mode.PASSIVE)
-            connect_url = url
-        else:
-            self.logger.debug(f"{os.getpid()}: Listener resources: {reqs}")
-            handle, connect_url = self.communicator.start_listener(scheme, reqs)
-            self.logger.debug(f"{os.getpid()}: ############ dynamic listener at {connect_url}")
-            # to wait for listener ready and avoid race
-            time.sleep(0.5)
+        try:
+            if active:
+                handle = self.communicator.add_connector(url, Mode.ACTIVE)
+                connect_url = url
+            elif url:
+                handle = self.communicator.add_connector(url, Mode.PASSIVE)
+                connect_url = url
+            else:
+                self.logger.info(f"{os.getpid()}: Try start_listener Listener resources: {reqs}")
+                handle, connect_url = self.communicator.start_listener(scheme, reqs)
+                self.logger.debug(f"{os.getpid()}: ############ dynamic listener at {connect_url}")
+                # Kludge: to wait for listener ready and avoid race
+                time.sleep(0.5)
 
-        return ConnectorInfo(handle, connect_url, active)
+            return ConnectorInfo(handle, connect_url, active)
+        except CommError as ex:
+            self.logger.error(f"Failed to get connector: {ex}")
+            return None
+        except:
+            self.logger.error(f"unexpected exception:")
+            self.logger.error(traceback.format_exc())
+            return None
 
     def get_external_listener(
             self,
@@ -210,7 +226,8 @@ class ConnectorManager:
             url=url,
             active=False,
             internal=False,
-            adhoc=adhoc
+            adhoc=adhoc,
+            secure=self.secure
         )
 
     def get_external_connector(
@@ -229,7 +246,8 @@ class ConnectorManager:
             url=url,
             active=True,
             internal=False,
-            adhoc=adhoc
+            adhoc=adhoc,
+            secure=self.secure
         )
 
     def get_internal_listener(self) -> Union[None, ConnectorInfo]:
@@ -240,7 +258,8 @@ class ConnectorManager:
             url="",
             active=False,
             internal=True,
-            adhoc=False
+            adhoc=False,
+            secure=False
         )
 
     def get_internal_connector(
@@ -257,5 +276,6 @@ class ConnectorManager:
             url=url,
             active=True,
             internal=True,
-            adhoc=False
+            adhoc=False,
+            secure=False
         )

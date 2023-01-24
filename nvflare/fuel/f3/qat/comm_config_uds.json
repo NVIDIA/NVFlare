@@ -1,17 +1,17 @@
 {
   "internal": {
-    "scheme": "uds",
+    "scheme": "tcp",
     "resources": {
       "host": "localhost"
     }
   },
   "external": {
-    "scheme": "grpc",
-    "allow_adhoc": false,
+    "scheme": "tcp",
+    "allow_adhoc": true,
     "resources": {
       "host": "localhost",
-      "secure": true,
-      "ports": ["8003-9000"]
+      "secure": false,
+      "ports": [8004]
     }
   },
   "backbone": {

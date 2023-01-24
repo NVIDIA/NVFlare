@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
+import os
 import socket
 from socketserver import ThreadingTCPServer, TCPServer
 from typing import List
@@ -44,7 +45,7 @@ class TcpStreamServer(ThreadingTCPServer):
             self.server_bind()
             self.server_activate()
         except BaseException as ex:
-            log.error(f"Error binding to  {host}:{port}: {ex}")
+            log.error(f"{os.getpid()}: Error binding to  {host}:{port}: {ex}")
             self.server_close()
             raise
 

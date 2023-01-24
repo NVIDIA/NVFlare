@@ -736,7 +736,10 @@ class NetAgent:
 
         if targets:
             if timeout > 0.0:
-                timeout = timeout / self.cell.my_info.gen
+                if self.cell.my_info.is_root and self.cell.my_info.is_on_server:
+                    timeout = timeout + 0.1
+                else:
+                    timeout = timeout / self.cell.my_info.gen
                 return self.cell.broadcast_request(
                     channel=_CHANNEL,
                     topic=topic,

@@ -40,7 +40,7 @@ class FQCN:
         fqcn = FQCN.normalize(fqcn)
         if not fqcn:
             return "empty"
-        pattern = "^[A-Za-z0-9_.]*$"
+        pattern = "^[A-Za-z0-9_.-]*$"
         valid = bool(re.match(pattern, fqcn))
         if not valid:
             return "invalid char"
