@@ -50,7 +50,7 @@ def send_analytic_dxo(comp: FLComponent, dxo: DXO, fl_ctx: FLContext, event_type
 
 
 def create_analytic_dxo(
-    tag: str, value, data_type: AnalyticsDataType, step: int, sender: Tracker = Tracker.TORCH_TB, **kwargs
+    tag: str, value, data_type: AnalyticsDataType, step: int = None, sender: Tracker = Tracker.TORCH_TB, **kwargs
 ) -> DXO:
     """Creates the analytic DXO.
 
