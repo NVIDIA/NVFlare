@@ -85,7 +85,7 @@ Below is a sample config for site-1, saved to `/job_configs/sklearn_kmeans_3_uni
                 "train_end": 50,
                 "valid_start": 0,
                 "valid_end": 150,
-                "n_clusters": 3
+                "random_state": 0
             }
         }
     ]

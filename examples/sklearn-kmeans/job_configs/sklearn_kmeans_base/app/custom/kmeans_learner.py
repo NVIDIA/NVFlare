@@ -15,10 +15,9 @@
 from typing import Optional
 
 from app_opt.sklearn.sklearner import SKLearner
+from nvflare.apis.fl_context import FLContext
 from sklearn.cluster import KMeans, MiniBatchKMeans, kmeans_plusplus
 from sklearn.metrics import homogeneity_score
-
-from nvflare.apis.fl_context import FLContext
 
 
 class KMeansLearner(SKLearner):
@@ -29,14 +28,20 @@ class KMeansLearner(SKLearner):
         train_end: int,
         valid_start: int,
         valid_end: int,
-        n_clusters: int,
+        random_state: int = None,
+        max_iter: int = 1,
+        n_init: int = 1,
+        reassignment_ratio: int = 0,
     ):
         super().__init__(data_path, train_start, train_end, valid_start, valid_end)
+        self.random_state = random_state
+        self.max_iter = max_iter
+        self.n_init = n_init
+        self.reassignment_ratio = reassignment_ratio
         self.train_data = None
         self.valid_data = None
         self.n_samples = None
-
-        self.n_clusters = n_clusters
+        self.n_clusters = None
 
     def initialize(self, fl_ctx: FLContext):
         self.fl_ctx = fl_ctx
@@ -56,7 +61,10 @@ class KMeansLearner(SKLearner):
         if curr_round == 0:
             # first round, compute initial center with kmeans++ method
             # model will be None for this round
-            center_local, _ = kmeans_plusplus(x_train, n_clusters=self.n_clusters, random_state=0)
+            self.n_clusters = global_param["n_clusters"]
+            center_local, _ = kmeans_plusplus(
+                x_train, n_clusters=self.n_clusters, random_state=self.random_state
+            )
             kmeans = None
             params = {"center": center_local, "count": None}
         else:
@@ -65,11 +73,11 @@ class KMeansLearner(SKLearner):
             kmeans = MiniBatchKMeans(
                 n_clusters=self.n_clusters,
                 batch_size=self.n_samples,
-                max_iter=1,
+                max_iter=self.max_iter,
                 init=center_global,
-                n_init=1,
-                reassignment_ratio=0,
-                random_state=0,
+                n_init=self.n_init,
+                reassignment_ratio=self.reassignment_ratio,
+                random_state=self.random_state,
             )
             kmeans.fit(x_train)
             center_local = kmeans.cluster_centers_

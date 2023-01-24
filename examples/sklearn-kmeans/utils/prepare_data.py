@@ -23,8 +23,12 @@ from sklearn import datasets
 
 def sklearn_dataset_args_parser():
     parser = argparse.ArgumentParser(description="Load sklearn data and save to csv")
-    parser.add_argument("--dataset_name", type=str, choices=["iris", "cancer"], help="Dataset name")
-    parser.add_argument("--randomize", type=int, help="Whether to randomize data sequence")
+    parser.add_argument(
+        "--dataset_name", type=str, choices=["iris", "cancer"], help="Dataset name"
+    )
+    parser.add_argument(
+        "--randomize", type=int, help="Whether to randomize data sequence"
+    )
     parser.add_argument("--out_path", type=str, help="Path to output data file")
     return parser
 

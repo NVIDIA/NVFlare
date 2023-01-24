@@ -10,7 +10,11 @@
     {
       "id": "persistor",
       "path": "app_opt.sklearn.joblib_model_param_persistor.JoblibModelParamPersistor",
-      "args": {}
+      "args": {
+        "initial_params": {
+          "n_clusters": 3
+        }
+      }
     },
     {
       "id": "shareable_generator",
