@@ -15,6 +15,7 @@
 """Sub_worker process to start the multi-processes client."""
 
 import argparse
+import logging
 import copy
 import os
 import sys
@@ -153,11 +154,13 @@ class SubWorkerExecutor:
         )
 
         self.commands = {
-            MultiProcessCommandNames.INITIALIZE: self.initialize,
-            MultiProcessCommandNames.TASK_EXECUTION: self.execute_task,
-            MultiProcessCommandNames.FIRE_EVENT: self.handle_event,
-            MultiProcessCommandNames.CLOSE: self.close,
+            MultiProcessCommandNames.INITIALIZE: self._initialize,
+            MultiProcessCommandNames.TASK_EXECUTION: self._execute_task,
+            MultiProcessCommandNames.FIRE_EVENT: self._handle_event,
+            MultiProcessCommandNames.CLOSE: self._close,
         }
+
+        self.logger = logging.getLogger(self.__class__.__name__)
 
     def execute_command(self, request: CellMessage) -> CellMessage:
         command_name = request.get_header(MessageHeaderKey.TOPIC)
@@ -167,7 +170,7 @@ class SubWorkerExecutor:
             return make_reply(ReturnCode.INVALID_REQUEST, "", None)
         return self.commands[command_name](data)
 
-    def initialize(self, data):
+    def _initialize(self, data):
         executor_id = data[CommunicationMetaData.LOCAL_EXECUTOR]
         components_conf = data[CommunicationMetaData.COMPONENTS]
         component_builder = WorkerComponentBuilder()
@@ -217,7 +220,7 @@ class SubWorkerExecutor:
 
         return make_reply(ReturnCode.OK, "", None)
 
-    def execute_task(self, data):
+    def _execute_task(self, data):
         """To execute the event task and pass to worker_process.
 
         Args:
@@ -248,7 +251,7 @@ class SubWorkerExecutor:
                         request=request
                 )
 
-    def handle_event(self, data):
+    def _handle_event(self, data):
         """To handle the event.
 
         Args:
@@ -257,12 +260,14 @@ class SubWorkerExecutor:
         event_relayer = self.run_manager.get_component(CommunicationMetaData.RELAYER)
         event_relayer.relay_event(self.run_manager, data)
 
-    def close(self, data):
+    def _close(self, data):
         self.done = True
 
     def run(self):
+        self.logger.info("SubWorkerExecutor process started.")
         while not self.done:
             time.sleep(1.0)
+        self.logger.info("SubWorkerExecutor process shutdown.")
 
 
 def main():

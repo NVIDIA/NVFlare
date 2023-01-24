@@ -39,6 +39,7 @@ from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.utils.class_utils import ModuleScanner
 from nvflare.fuel.utils.component_builder import ComponentBuilder
 from nvflare.private.defs import CellChannel, new_cell_message, CellChannelTopic
+from nvflare.security.logging import secure_format_exception
 
 
 class WorkerComponentBuilder(ComponentBuilder):
@@ -200,8 +201,11 @@ class MultiProcessExecutor(Executor):
             self.targets = []
             for i in range(self.num_of_processes):
                 fqcn = FQCN.join([cell.get_fqcn(), str(i)])
+                start = time.time()
                 while not cell.is_cell_reachable(fqcn):
                     time.sleep(1.0)
+                    if time.time() - start > 60.0:
+                        raise RuntimeError(f"Could not reach the communication cell: {fqcn}")
                 self.targets.append(fqcn)
             request = new_cell_message(
                 {},
@@ -223,8 +227,8 @@ class MultiProcessExecutor(Executor):
                     raise ValueError(
                         reply.get_header(MessageHeaderKey.ERROR)
                     )
-        except:
-            self.log_exception(fl_ctx, "error initializing multi_process executor")
+        except BaseException as e:
+            self.log_exception(fl_ctx, f"error initializing multi_process executor: {secure_format_exception(e)}")
 
     def receive_execute_result(self, request: CellMessage) -> CellMessage:
         return_data = request.payload
