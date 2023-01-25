@@ -70,7 +70,7 @@ class ConnManager(ConnMonitor):
 
     def add_connector(self, driver: Driver, params: dict, mode: Mode) -> str:
         handle = str(uuid.uuid4())
-        connector = Connector(handle, driver, params, mode, 0, 0, False)
+        connector = Connector(handle, driver, params, mode, 0, 0, False, False)
         driver.register_conn_monitor(self)
         self.connectors.append(connector)
 
@@ -84,6 +84,7 @@ class ConnManager(ConnMonitor):
     def remove_connector(self, handle: str):
         for index, connector in enumerate(self.connectors):
             if handle == connector.handle:
+                connector.stopping = True
                 connector.driver.shutdown()
                 self.connectors.pop(index)
                 log.info(f"Connector {connector.driver.get_name()}:{handle} is removed")
@@ -104,8 +105,8 @@ class ConnManager(ConnMonitor):
         for connector in self.connectors:
             connector.driver.shutdown()
 
-        self.conn_mgr_executor.shutdown(False)
-        self.frame_mgr_executor.shutdown(False)
+        self.conn_mgr_executor.shutdown(True)
+        self.frame_mgr_executor.shutdown(True)
 
     def find_endpoint(self, name: str) -> Optional[Endpoint]:
 
@@ -194,7 +195,7 @@ class ConnManager(ConnMonitor):
 
         name = f"{connector.driver.get_name()}:{connector.handle}"
         wait = INIT_WAIT
-        while not self.stopping:
+        while not (self.stopping or connector.stopping):
             start_time = time.time()
             try:
                 starter(connector)
@@ -203,7 +204,7 @@ class ConnManager(ConnMonitor):
                 log.error(f"Connector {name} failed: {ex}")
                 log.debug(traceback.format_exc())
 
-            if self.stopping:
+            if self.stopping or connector.stopping:
                 log.info(f"Connector {name} has stopped")
                 break
 
