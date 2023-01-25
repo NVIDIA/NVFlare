@@ -41,7 +41,7 @@ local_endpoint = Endpoint("demo.client", {"test": 123}, conn_props)
 
 communicator = Communicator(local_endpoint)
 
-connect_url = "uds://tmp/test.socket"
+connect_url = "tcp://localhost:1111"
 handle1 = communicator.add_connector(connect_url, Mode.ACTIVE)
 
 listen_url = "tcp://localhost:1234"
@@ -52,7 +52,7 @@ resources = {
     DriverParams.SECURE: False,
     DriverParams.PORTS: "3000-6000",
 }
-handle3, ad_hoc_url = communicator.start_listener("uds", resources)
+handle3, ad_hoc_url = communicator.start_listener("tcp", resources)
 
 communicator.register_monitor(DemoEndpointMonitor(local_endpoint.name, endpoints))
 communicator.register_message_receiver(AppIds.CELL_NET, TimingReceiver())
@@ -63,7 +63,7 @@ log.info("Client is started")
 
 count = 0
 
-while count < 60:
+while count < 5:
 
     if endpoints:
         name = endpoints[0].name

@@ -89,16 +89,12 @@ class HttpDriver(Driver):
         for _, v in self.connections.items():
             v.close()
 
-        self.stop_event.set_result(None)
         self.loop.stop()
+        pending_tasks = asyncio.all_tasks(self.loop)
+        for task in pending_tasks:
+            task.cancel()
+        asyncio.sleep(0)
         self.loop.close()
-
-    async def async_shutdown(self):
-        for _, v in self.connections.items():
-            v.close()
-
-        self.stop_event.set_result(None)
-        self.loop.stop()
 
     @staticmethod
     def get_urls(scheme: str, resources: dict) -> (str, str):

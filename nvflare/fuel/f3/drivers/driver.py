@@ -89,7 +89,7 @@ class Driver(ABC):
     to transport frames to remote endpoint.
 
     The frame is opaque to the driver, except the length (first 4-bytes), which may be needed to
-    determine the frame boundary on stream-based transports like TCP or Pipe.
+    determine the frame boundary on stream-based transports like TCP or sockets.
 
     """
 

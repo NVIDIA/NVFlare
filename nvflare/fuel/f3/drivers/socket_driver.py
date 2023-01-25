@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
+import threading
 from socketserver import BaseRequestHandler
 from typing import Any, Union
 
@@ -125,17 +126,20 @@ class SocketDriver(Driver):
         self.connections = {}
         self.connector = None
         self.server = None
+        self.conn_lock = threading.Lock()
 
     def shutdown(self):
-        for _, conn in self.connections.items():
-            conn.close()
+        with self.conn_lock:
+            for _, conn in self.connections.items():
+                conn.close()
 
         if self.server:
             self.server.shutdown()
 
     def add_connection(self, conn: StreamConnection):
         log.debug(f"New connection created: {conn.name}, peer address: {conn.peer_address}")
-        self.connections[conn.name] = conn
+        with self.conn_lock:
+            self.connections[conn.name] = conn
         if not self.conn_monitor:
             log.error(f"Connection monitor not registered for driver {self.get_name()}")
         else:
@@ -144,7 +148,8 @@ class SocketDriver(Driver):
 
     def close_connection(self, conn: StreamConnection):
         log.debug(f"Connection: {conn.name} is disconnected")
-        self.connections.pop(conn.name)
+        with self.conn_lock:
+            self.connections.pop(conn.name)
         if not self.conn_monitor:
             log.error(f"Connection monitor not registered for driver {self.get_name()}")
         else:

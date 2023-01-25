@@ -58,7 +58,7 @@ class DriverManager:
         """Register a driver with Driver Manager
 
         Args:
-            driver_class: Driver to be registered. Driver can be either type or instance
+            driver_class: Driver to be registered. Driver must be a subclass of Driver
         """
 
         if not inspect.isclass(driver_class):

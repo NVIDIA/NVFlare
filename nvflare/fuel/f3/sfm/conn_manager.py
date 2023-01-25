@@ -34,6 +34,7 @@ from nvflare.fuel.f3.sfm.sfm_endpoint import SfmEndpoint
 
 FRAME_THREAD_POOL_SIZE = 100
 CONN_THREAD_POOL_SIZE = 16
+INIT_WAIT = 1
 MAX_WAIT = 60
 
 log = logging.getLogger(__name__)
@@ -127,10 +128,10 @@ class ConnManager(ConnMonitor):
     def send_message(self, endpoint: Endpoint, app_id: int, headers: Headers, payload: BytesAlike):
         """Send a message to endpoint for app
 
-        This method is similar to an HTTP request or RPC call.
+        The message is asynchronous, no response is expected.
 
         Args:
-            endpoint: An endpoint to send the request to
+            endpoint: An endpoint to send the message to
             app_id: Application ID
             headers: headers, optional
             payload: message payload, optional
@@ -155,6 +156,7 @@ class ConnManager(ConnMonitor):
             log.error("Logic error, ready endpoint has no connections")
             raise CommError(CommError.ERROR, f"Endpoint {endpoint.name} has no connection")
 
+        # TODO: If multiple connections, should retry a diff connection on errors
         sfm_conn.send_data(app_id, stream_id, headers, payload)
 
     def register_message_receiver(self, app_id: int, receiver: MessageReceiver):
@@ -180,7 +182,9 @@ class ConnManager(ConnMonitor):
         self.conn_mgr_executor.submit(self.start_connector_task, connector)
 
     def start_connector_task(self, connector: Connector):
-        """Start connector in a new thread"""
+        """Start connector in a new thread
+        This function will loop as long as connector is not stopped
+        """
 
         connector.started = True
         if connector.mode == Mode.ACTIVE:
@@ -188,24 +192,33 @@ class ConnManager(ConnMonitor):
         else:
             starter = connector.driver.listen
 
-        connected = False
-        wait = 1
-        while not connected and not self.stopping:
+        name = f"{connector.driver.get_name()}:{connector.handle}"
+        wait = INIT_WAIT
+        while not self.stopping:
+            start_time = time.time()
             try:
                 starter(connector)
-                connected = True
+                log.debug(f"Driver {name} is terminated without exception")
             except Exception as ex:
-                log.error(f"Connection failed: {ex}")
+                log.error(f"Connector {name} failed: {ex}")
                 log.debug(traceback.format_exc())
 
-                if not self.stopping:
-                    log.info(f"Retrying in {wait} seconds")
+            if self.stopping:
+                log.info(f"Connector {name} has stopped")
+                break
 
-                time.sleep(wait)
-                # Exponential backoff
-                wait *= 2
-                if wait > MAX_WAIT:
-                    wait = MAX_WAIT
+            # After a long run, resetting wait
+            run_time = time.time() - start_time
+            if run_time > MAX_WAIT:
+                log.debug(f"Driver {name} had a long run ({run_time} sec), resetting wait")
+                wait = INIT_WAIT
+
+            log.info(f"Retrying {name} in {wait} seconds")
+            time.sleep(wait)
+            # Exponential backoff
+            wait *= 2
+            if wait > MAX_WAIT:
+                wait = MAX_WAIT
 
     def state_change(self, connection: Connection):
         try:
@@ -250,6 +263,7 @@ class ConnManager(ConnMonitor):
                 message = Message(headers, payload)
                 receiver = self.receivers.get(prefix.app_id)
                 if receiver:
+                    # TODO: Need to provide connection in the CB
                     receiver.process_message(sfm_conn.endpoint.endpoint, prefix.app_id, message)
                 else:
                     log.debug(f"No receiver registered for App ID {prefix.app_id}, message ignored")
@@ -314,7 +328,27 @@ class ConnManager(ConnMonitor):
             sfm_conn.send_handshake(Types.HELLO)
 
     def close_connection(self, connection: Connection):
-        pass
+        name = connection.name
+        if name not in self.connections:
+            log.debug(f"Connection {name} has closed with no endpoint assigned")
+            return
+
+        sfm_conn = self.connections[name]
+        sfm_endpoint = sfm_conn.endpoint
+        old_state = sfm_endpoint.endpoint.state
+
+        if not sfm_endpoint.connections:
+            log.error(f"Connection {name} is already removed from endpoint {sfm_endpoint.endpoint.name}")
+        else:
+            for index, conn in enumerate(sfm_endpoint.connections):
+                if conn.get_name() == name:
+                    sfm_endpoint.connections.pop(index)
+                    break
+
+        state = EndpointState.READY if len(sfm_endpoint.connections) > 0 else EndpointState.DISCONNECTED
+        sfm_endpoint.endpoint.state = state
+        if old_state != state:
+            self.notify_monitors(sfm_endpoint.endpoint)
 
 
 class SfmFrameReceiver(FrameReceiver):

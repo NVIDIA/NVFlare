@@ -122,7 +122,9 @@ class SfmConnection:
         if payload:
             buffer[offset:] = payload
 
-        self.conn.send_frame(buffer)
+        # Only one thread can send data on a connection. Otherwise, the frames may interleave.
+        with self.lock:
+            self.conn.send_frame(buffer)
 
     @staticmethod
     def headers_to_bytes(headers: Optional[dict]) -> Optional[bytes]:

@@ -54,4 +54,3 @@ class Connector:
     total_conns: int
     curr_conns: int
     started: bool
-
