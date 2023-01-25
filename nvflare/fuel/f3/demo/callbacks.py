@@ -45,6 +45,7 @@ class DemoEndpointMonitor(EndpointMonitor):
         self.endpoint_list = endpoint_list
 
     def state_change(self, endpoint: Endpoint):
+        log.info(f"Endpoint {endpoint.name} state is changed to {endpoint.state.name}")
         if endpoint.state == EndpointState.READY:
             log.info(f"Endpoint {endpoint.name} is created")
             self.endpoint_list.append(endpoint)

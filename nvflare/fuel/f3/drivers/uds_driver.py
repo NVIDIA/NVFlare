@@ -87,7 +87,15 @@ class UdsDriver(SocketDriver):
 
         connection = StreamConnection(sock, connector, socket_path)
         self.add_connection(connection)
-        connection.read_loop()
+
+        try:
+            connection.read_loop()
+        except BaseException as ex:
+            log.error(f"Active connection {connection.name} closed due to error: {ex}")
+
+        finally:
+            if connection:
+                self.close_connection(connection)
 
     @staticmethod
     def get_urls(scheme: str, resources: dict) -> (str, str):
