@@ -78,6 +78,7 @@ class Communicator:
 
         Returns:
             The endpoint if found. None if not found
+
         """
         return self.conn_manager.find_endpoint(name)
 
