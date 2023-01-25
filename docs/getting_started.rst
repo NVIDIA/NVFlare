@@ -287,3 +287,49 @@ For this example run over 5 epochs, the training loss:
 Now that we've explored an example application with the FL Simulator, we can look at what it takes to bring
 this type of application to a secure, distributed deployment in the :ref:`Real World Federated Learning <real_world_fl>`
 section.
+
+
+.. _setting_up_poc:
+
+Setting Up the Application Environment in POC Mode
+==================================================
+
+.. warning::
+
+    POC mode is not intended to be secure and should not be run in any type of production environment or any environment
+    where the server's ports are exposed. For actual deployment and even development, it is recommended to use a
+    :ref:`secure provisioned setup <provisioned_setup>` or :ref:`starting_fl_simulator`.
+
+To get started with a proof of concept (POC) setup after :ref:`installation`, run this command to generate a poc folder
+with an overseer, server, two clients, and one admin client:
+
+.. code-block:: shell
+
+    $ nvflare poc --prepare -n 2
+
+For more details, see :ref:`poc_command`.
+
+.. _starting_poc:
+
+Starting the Application Environment in POC Mode
+================================================
+
+Once you are ready to start the FL system, you can run the following command
+to start the server and client systems and an admin console:
+
+.. code-block::
+
+  nvflare poc --start
+
+To start the server and client systems without an admin console:
+
+.. code-block::
+
+  nvflare poc --start -ex admin
+
+For more details, see :ref:`poc_command`.
+
+.. tip::
+
+   For anything more than the most basic proof of concept examples, it is recommended that you use a
+   :ref:`secure provisioned setup <provisioned_setup>`.
