@@ -183,8 +183,7 @@ def create_admin_agent(
     #     is_multi_gpu=is_multi_gpu,
     #     rank=rank,
     # )
-    sender = None
-    client_engine = ClientEngine(federated_client, federated_client.token, sender, args, rank)
+    client_engine = ClientEngine(federated_client, federated_client.token, args, rank)
     admin_agent = FedAdminAgent(
         client_name="admin_agent",
         # sender=sender,

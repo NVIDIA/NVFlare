@@ -28,6 +28,8 @@ from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.private.fed.app.client.worker_process import check_parent_alive
 from nvflare.private.fed.client.admin import FedAdminAgent
+from nvflare.fuel.f3.cellnet.cell import Cell
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 
 # from nvflare.private.fed.client.admin_msg_sender import AdminMessageSender
 from nvflare.private.fed.client.client_req_processors import ClientRequestProcessors
@@ -38,6 +40,8 @@ from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize
 from nvflare.security.logging import secure_format_exception
 from nvflare.security.security import EmptyAuthorizer
+
+from nvflare.private.fed.app.deployer.base_client_deployer import BaseClientDeployer
 
 
 class ClientTaskWorker(FLComponent):
@@ -61,6 +65,12 @@ class ClientTaskWorker(FLComponent):
         client_engine.fire_event(EventType.SYSTEM_START, client_engine.new_context())
 
         return admin_agent
+
+    def create_client_engine(self, federated_client: FederatedClient, args, rank=0):
+        client_engine = SimulatorClientEngine(federated_client, federated_client.token, args, rank)
+        federated_client.set_client_engine(client_engine)
+
+        client_engine.fire_event(EventType.SYSTEM_START, client_engine.new_context())
 
     def create_client_runner(self, client):
         """Create the ClientRunner for the client to run the ClientApp.
@@ -111,17 +121,22 @@ class ClientTaskWorker(FLComponent):
         admin_agent = None
         try:
             data = conn.recv()
-            client = data[SimulatorConstants.CLIENT]
+            # client = data[SimulatorConstants.CLIENT]
             client_config = data[SimulatorConstants.CLIENT_CONFIG]
             deploy_args = data[SimulatorConstants.DEPLOY_ARGS]
+            build_ctx = data[SimulatorConstants.BUILD_CTX]
+
+            client = self._create_client(args, build_ctx, deploy_args)
 
             app_root = os.path.join(args.workspace, SimulatorConstants.JOB_NAME, "app_" + client.client_name)
             app_custom_folder = os.path.join(app_root, "custom")
             sys.path.append(app_custom_folder)
 
-            servers = [{t["name"]: t["service"]} for t in client_config.get("servers")]
-            admin_agent = self.create_admin_agent(sorted(servers)[0], client, deploy_args)
-            admin_agent.start()
+            # servers = [{t["name"]: t["service"]} for t in client_config.get("servers")]
+            # admin_agent = self.create_admin_agent(sorted(servers)[0], client, deploy_args)
+            # admin_agent.start()
+            self.create_client_engine(client, deploy_args)
+
             while True:
                 interval, stop_run = self.do_one_task(client)
                 conn.send(stop_run)
@@ -138,6 +153,27 @@ class ClientTaskWorker(FLComponent):
             if admin_agent:
                 admin_agent.shutdown()
 
+    def _create_client(self, args, build_ctx, deploy_args):
+        deployer = BaseClientDeployer()
+        deployer.build(build_ctx)
+        client = deployer.create_fed_client(deploy_args)
+        self._create_client_cell(client, args.root_url, args.parent_url)
+        return client
+
+    def _create_client_cell(self, federated_client, root_url, parent_url):
+        fqcn = FQCN.join([federated_client.client_name, SimulatorConstants.JOB_NAME])
+        credentials = {}
+        cell = Cell(
+            fqcn=fqcn,
+            root_url=root_url,
+            secure=False,
+            credentials=credentials,
+            create_internal_listener=True,
+            parent_url=parent_url,
+        )
+        cell.start()
+        federated_client.communicator.cell = cell
+
 
 def _create_connection(listen_port):
     address = ("localhost", int(listen_port))
@@ -153,6 +189,8 @@ def main():
     parser.add_argument("--port", type=str, help="Listen port", required=True)
     parser.add_argument("--gpu", "-g", type=str, help="gpu index number")
     parser.add_argument("--parent_pid", type=int, help="parent process pid", required=True)
+    parser.add_argument("--root_url", "-g", type=str, help="cellnet root_url")
+    parser.add_argument("--parent_url", "-g", type=str, help="cellnet parent_url")
     args = parser.parse_args()
 
     # start parent process checking thread

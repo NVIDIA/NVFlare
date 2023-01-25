@@ -161,43 +161,6 @@ class ServerEngine(ServerEngineInternalSpec):
             return run_info
         return None
 
-    def create_parent_connection(self, port):
-        while not self.parent_conn:
-            try:
-                address = ("localhost", port)
-                self.parent_conn = CommandClient(address, authkey="parent process secret password".encode())
-            except BaseException:
-                time.sleep(1.0)
-                pass
-
-        threading.Thread(target=self.heartbeat_to_parent, args=[]).start()
-
-    def heartbeat_to_parent(self):
-        while True:
-            try:
-                with self.parent_conn_lock:
-                    request = new_cell_message({}, fobs.dumps({}))
-                    return_data = self.server.cell.send_request(
-                        target=FQCN.ROOT_SERVER,
-                        channel=CellChannel.SERVER_PARENT_LISTENER,
-                        topic=ServerCommandNames.HEARTBEAT,
-                        request=request,
-                    )
-                    return_code = return_data.get_header(MessageHeaderKey.RETURN_CODE)
-                    if return_code != F3ReturnCode.OK:
-                        break
-                time.sleep(1.0)
-            except BaseException:
-                # The parent process can not be reached. Terminate the child process.
-                break
-        # wait and delay some time for the wrap up process before the child process self terminate.
-        start_time = time.time()
-        while self.engine_info.status != MachineStatus.STOPPED:
-            time.sleep(1.0)
-            if time.time() - start_time > 30.0:
-                break
-        os.killpg(os.getpgid(os.getpid()), 9)
-
     def delete_job_id(self, num):
         job_id_folder = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(num))
         if os.path.exists(job_id_folder):

@@ -76,7 +76,7 @@ class SimulatorDeployer(ServerDeployer):
         federated_client.start_heartbeat()
         federated_client.run_manager = None
 
-        return federated_client, client_config, args
+        return federated_client, client_config, args, build_ctx
 
     def _create_client_cell(self, client_config, client_name, federated_client):
         target = client_config["servers"][0].get("service").get("target")
@@ -92,6 +92,7 @@ class SimulatorDeployer(ServerDeployer):
             parent_url=parent_url,
         )
         cell.start()
+        federated_client.cell = cell
         federated_client.communicator.cell = cell
         # if self.engine:
         #     self.engine.admin_agent.register_cell_cb()

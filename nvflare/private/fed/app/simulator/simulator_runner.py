@@ -72,6 +72,7 @@ class SimulatorRunner(FLComponent):
         self.federated_clients = []
         self.client_config = None
         self.deploy_args = None
+        self.build_ctx = None
 
     def _generate_args(
         self, job_folder: str, workspace: str, clients=None, n_clients=None, threads=None, gpu=None, max_clients=100
@@ -277,7 +278,7 @@ class SimulatorRunner(FLComponent):
         # Deploy the FL clients
         self.logger.info("Create the simulate clients.")
         for client_name in self.client_names:
-            client, self.client_config, self.deploy_args = self.deployer.create_fl_client(client_name, self.args)
+            client, self.client_config, self.deploy_args, self.build_ctx = self.deployer.create_fl_client(client_name, self.args)
             self.federated_clients.append(client)
             app_root = os.path.join(self.simulator_root, "app_" + client_name)
             app_custom_folder = os.path.join(app_root, "custom")
@@ -351,7 +352,7 @@ class SimulatorRunner(FLComponent):
         os._exit(0)
 
     def client_run(self, clients, gpu):
-        client_runner = SimulatorClientRunner(self.args, clients, self.client_config, self.deploy_args)
+        client_runner = SimulatorClientRunner(self.args, clients, self.client_config, self.deploy_args, self.build_ctx)
         client_runner.run(gpu)
 
     def start_server_app(self):
@@ -373,7 +374,7 @@ class SimulatorRunner(FLComponent):
 
 
 class SimulatorClientRunner(FLComponent):
-    def __init__(self, args, clients: [], client_config, deploy_args):
+    def __init__(self, args, clients: [], client_config, deploy_args, build_ctx):
         super().__init__()
         self.args = args
         self.federated_clients = clients
@@ -382,6 +383,7 @@ class SimulatorClientRunner(FLComponent):
         self.simulator_root = os.path.join(self.args.workspace, SimulatorConstants.JOB_NAME)
         self.client_config = client_config
         self.deploy_args = deploy_args
+        self.build_ctx = build_ctx
 
     def run(self, gpu):
         try:
@@ -435,6 +437,10 @@ class SimulatorClientRunner(FLComponent):
             + str(open_port)
             + " --parent_pid "
             + str(os.getpid())
+            + " --root_url "
+            + str(client.cell.get_root_url())
+            + " --parent_url "
+            + str(client.cell.get_internal_listener_url())
         )
         if gpu:
             command += " --gpu " + str(gpu)
@@ -442,10 +448,12 @@ class SimulatorClientRunner(FLComponent):
 
         conn = self._create_connection(open_port)
 
+        self.build_ctx["client_name"] = client.client_name
         data = {
-            SimulatorConstants.CLIENT: client,
+            # SimulatorConstants.CLIENT: client,
             SimulatorConstants.CLIENT_CONFIG: self.client_config,
             SimulatorConstants.DEPLOY_ARGS: self.deploy_args,
+            SimulatorConstants.BUILD_CTX: self.build_ctx,
         }
         conn.send(data)
 
@@ -467,11 +475,14 @@ class SimulatorClientRunner(FLComponent):
 
     def _create_connection(self, open_port):
         conn = None
+        start = time.time()
         while not conn:
             try:
                 address = ("localhost", open_port)
                 conn = Client(address, authkey=CommunicationMetaData.CHILD_PASSWORD.encode())
             except BaseException:
+                if time.time() - start > 60.:
+                    raise RuntimeError(f"Failed to create connection to the child process in {self.__class__.__name__}")
                 time.sleep(1.0)
                 pass
         return conn

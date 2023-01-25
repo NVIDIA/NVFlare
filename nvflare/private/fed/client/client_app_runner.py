@@ -35,8 +35,11 @@ class ClientAppRunner:
     def start_run(self, app_root, args, config_folder, federated_client, secure_train):
         client_runner = self.create_client_runner(app_root, args, config_folder, federated_client, secure_train)
         federated_client.set_client_runner(client_runner)
+        start = time.time()
         while federated_client.communicator.cell is None:
             time.sleep(1.0)
+            if time.time() - start > 60.:
+                raise RuntimeError(f"No cell created for communicator. Failed to start the ClientAppRunner.")
         federated_client.status = ClientStatus.STARTED
         client_runner.run(app_root, args)
 
@@ -96,8 +99,11 @@ class ClientAppRunner:
         )
 
     def start_command_agent(self, args, client_runner, federated_client, fl_ctx):
+        start = time.time()
         while federated_client.cell is None:
             time.sleep(0.1)
+            if time.time() - start > 60.:
+                raise RuntimeError(f"No cell created. Failed to start the command_agent for ClientAppRunner.")
 
         # Start the command agent
         # self.command_agent = CommandAgent(federated_client, int(args.listen_port), client_runner)

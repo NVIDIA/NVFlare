@@ -49,7 +49,7 @@ def _remove_custom_path():
 class ClientEngine(ClientEngineInternalSpec):
     """ClientEngine runs in the client parent process."""
 
-    def __init__(self, client, client_name, sender, args, rank, workers=5):
+    def __init__(self, client, client_name, args, rank, workers=5):
         """To init the ClientEngine.
 
         Args:
@@ -63,7 +63,6 @@ class ClientEngine(ClientEngineInternalSpec):
         super().__init__()
         self.client = client
         self.client_name = client_name
-        self.sender = sender
         self.args = args
         self.rank = rank
         self.client.process = None

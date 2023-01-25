@@ -18,8 +18,8 @@ from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 
 
 class SimulatorClientEngine(ClientEngine):
-    def __init__(self, client, client_name, sender, args, rank, workers=5):
-        super().__init__(client, client_name, sender, args, rank, workers)
+    def __init__(self, client, client_name, args, rank, workers=5):
+        super().__init__(client, client_name, args, rank, workers)
 
     def send_aux_command(self, shareable: Shareable, job_id):
         run_manager = self.client.run_manager
