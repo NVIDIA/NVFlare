@@ -121,7 +121,7 @@ class SfmConnection:
 
         if payload:
             buffer[offset:] = payload
-            
+
         # Only one thread can send data on a connection. Otherwise, the frames may interleave.
         with self.lock:
             self.conn.send_frame(buffer)

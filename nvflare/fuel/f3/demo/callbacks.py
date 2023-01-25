@@ -94,3 +94,4 @@ class AdHocReceiver(MessageReceiver):
         ad_hoc_url = message.payload.decode("utf-8")
         self.communicator.add_connector(ad_hoc_url, Mode.ACTIVE)
         log.info(f"Making ad hoc connection to {ad_hoc_url}")
+
