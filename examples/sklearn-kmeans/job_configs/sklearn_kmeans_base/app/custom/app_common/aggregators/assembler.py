@@ -20,9 +20,10 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 
 
-class CollectAssembler(FLComponent, ABC):
-    """Assembler class for flexible assemble aggregation functionality
-    This defines the functionality of CollectFlexAssembleAggragator for assembling the submissions collected.
+class Assembler(FLComponent, ABC):
+    """Assembler class for aggregation functionality
+    This defines the functionality of assembling the collected submissions
+    for CollectAndAssembleAggragator
     """
 
     def __init__(self, data_kind: str):

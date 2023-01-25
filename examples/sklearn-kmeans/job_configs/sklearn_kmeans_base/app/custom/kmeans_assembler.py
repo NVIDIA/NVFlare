@@ -16,12 +16,12 @@
 from typing import Dict
 
 import numpy as np
-from app_common.aggregators.collect_assembler import CollectAssembler
+from app_common.aggregators.assembler import Assembler
 from nvflare.apis.dxo import DataKind
 from sklearn.cluster import KMeans
 
 
-class KMeansAssembler(CollectAssembler):
+class KMeansAssembler(Assembler):
     def __init__(self):
         super().__init__(data_kind=DataKind.WEIGHTS)
         # Aggregator needs to keep record of historical
