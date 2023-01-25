@@ -138,15 +138,12 @@ class HttpDriver(Driver):
     async def async_connect(self):
 
         params = self.connector.params
-
-        host = params.get(DriverParams.HOST.value)
-        port = params.get(DriverParams.PORT.value)
-
         ssl_context = net_utils.get_ssl_context(params, False)
         if ssl_context:
             scheme = "wss"
         else:
             scheme = "ws"
+
         async with websockets.connect(f"{scheme}://{host}:{port}", ssl=ssl_context, max_size=MAX_MSG_SIZE) as ws:
             conn = WsConnection(ws, self.loop, self.connector)
             self.add_connection(conn)

@@ -18,7 +18,6 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import List, Dict, Optional
 
 import uuid
-
 import msgpack
 
 from nvflare.fuel.f3.comm_error import CommError
