@@ -155,7 +155,7 @@ class FederatedClientBase:
     def set_sp(self, project_name, sp: SP):
         if sp and sp.primary is True:
             server = self.servers[project_name].get("target")
-            scheme = self.servers[project_name].get("scheme")
+            scheme = self.servers[project_name].get("scheme", "grpc://")
             location = sp.name + ":" + sp.fl_port
             if server != location:
                 if self.cell:

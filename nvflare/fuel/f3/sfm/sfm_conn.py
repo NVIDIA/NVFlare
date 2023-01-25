@@ -17,11 +17,11 @@ from typing import Optional
 
 import msgpack
 
-from nvflare.fuel.f3.drivers.connection import BytesAlike, Connection
-from nvflare.fuel.f3.drivers.prefix import PREFIX_LEN, Prefix
+from nvflare.fuel.f3.drivers.connection import Connection, BytesAlike
+from nvflare.fuel.f3.drivers.prefix import Prefix, PREFIX_LEN
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.message import Headers
-from nvflare.fuel.f3.sfm.constants import HandshakeKeys, Types
+from nvflare.fuel.f3.sfm.constants import Types, HandshakeKeys
 
 
 class SfmConnection:
@@ -66,13 +66,15 @@ class SfmConnection:
         """
 
         with self.lock:
-            self.sequence = (self.sequence + 1) & 0xFFFF
+            self.sequence = (self.sequence + 1) & 0xffff
             return self.sequence
 
     def send_handshake(self, frame_type: int):
         """Send HELLO/READY frame"""
 
-        data = {HandshakeKeys.ENDPOINT_NAME: self.local_endpoint.name, HandshakeKeys.TIMESTAMP: time.time()}
+        data = {
+            HandshakeKeys.ENDPOINT_NAME: self.local_endpoint.name,
+            HandshakeKeys.TIMESTAMP: time.time()}
 
         if self.local_endpoint.properties:
             data.update(self.local_endpoint.properties)
@@ -120,7 +122,9 @@ class SfmConnection:
         if payload:
             buffer[offset:] = payload
 
-        self.conn.send_frame(buffer)
+        # Only one thread can send data on a connection. Otherwise, the frames may interleave.
+        with self.lock:
+            self.conn.send_frame(buffer)
 
     @staticmethod
     def headers_to_bytes(headers: Optional[dict]) -> Optional[bytes]:

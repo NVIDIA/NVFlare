@@ -60,6 +60,10 @@ class Message:
 
         return self.headers.get(key, default)
 
+    def remove_header(self, key: str):
+        if self.headers:
+            self.headers.pop(key, None)
+
     def set_prop(self, key: str, value):
         setattr(self, key, value)
 
@@ -71,6 +75,7 @@ class Message:
 
 
 class MessageReceiver(ABC):
+
     @abstractmethod
     def process_message(self, endpoint: Endpoint, app_id: int, message: Message):
         pass

@@ -16,11 +16,11 @@ from enum import Enum
 
 
 class EndpointState(Enum):
-    IDLE = 0  # Initial state
-    READY = 2  # Endpoint is ready
-    CLOSING = 3  # Endpoint is closing, can't send
-    DISCONNECTED = 4  # Endpoint is disconnected
-    ERROR = 5  # Endpoint is in error state
+    IDLE = 0            # Initial state
+    READY = 2           # Endpoint is ready
+    CLOSING = 3         # Endpoint is closing, can't send
+    DISCONNECTED = 4    # Endpoint is disconnected
+    ERROR = 5           # Endpoint is in error state
 
 
 class Endpoint:

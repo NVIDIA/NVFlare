@@ -80,7 +80,7 @@ class SimulatorDeployer(ServerDeployer):
 
     def _create_client_cell(self, client_config, client_name, federated_client):
         target = client_config["servers"][0].get("service").get("target")
-        scheme = client_config["servers"][0].get("service").get("scheme")
+        scheme = client_config["servers"][0].get("service").get("scheme", "grpc://")
         credentials = {}
         parent_url = None
         cell = Cell(
@@ -102,7 +102,7 @@ class SimulatorDeployer(ServerDeployer):
             "name": "simulator_server",
             "service": {
                 "target": "localhost:" + str(self.open_ports[0]),
-                "scheme": "http://",
+                "scheme": "grpc://",
             },
             "admin_host": "localhost",
             "admin_port": self.open_ports[1],
@@ -122,7 +122,7 @@ class SimulatorDeployer(ServerDeployer):
                     "name": "simulator_server",
                     "service": {
                         "target": "localhost:" + str(self.open_ports[0]),
-                        "scheme": "http://",
+                        "scheme": "grpc://",
                     },
                 }
             ],

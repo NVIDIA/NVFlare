@@ -247,7 +247,7 @@ class ServerEngine(ServerEngineInternalSpec):
             + " -p "
             + str(cell.get_internal_listener_url())
             + " -u "
-            + str(cell.root_url)
+            + str(cell.get_root_url_for_child())
             + " --set"
             + command_options
             + " print_conf=True restore_snapshot="

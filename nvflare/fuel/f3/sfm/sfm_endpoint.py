@@ -14,7 +14,7 @@
 
 # Hard-coded stream ID to be used by packets before handshake
 import threading
-from typing import List, Optional
+from typing import Optional, List
 
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.sfm.sfm_conn import SfmConnection
@@ -47,5 +47,5 @@ class SfmEndpoint:
         """
 
         with self.lock:
-            self.stream_id = (self.stream_id + 1) & 0xFFFF
+            self.stream_id = (self.stream_id + 1) & 0xffff
             return self.stream_id

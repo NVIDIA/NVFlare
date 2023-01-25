@@ -17,10 +17,10 @@ from typing import List
 
 import msgpack
 
-from nvflare.fuel.f3.communicator import Communicator, MessageReceiver
+from nvflare.fuel.f3.communicator import MessageReceiver, Communicator
 from nvflare.fuel.f3.drivers.connnector import Mode
-from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor, EndpointState
-from nvflare.fuel.f3.message import Headers, Message
+from nvflare.fuel.f3.endpoint import EndpointMonitor, Endpoint, EndpointState
+from nvflare.fuel.f3.message import Message, Headers
 
 logging.basicConfig()
 logging.getLogger().setLevel(logging.DEBUG)
@@ -31,12 +31,15 @@ MESSAGE = "message"
 
 
 def make_message(headers: Headers, msg: str) -> Message:
-    data = {TIMESTAMP: time.time(), MESSAGE: msg}
+    data = {
+        TIMESTAMP: time.time(),
+        MESSAGE: msg}
 
     return Message(headers, msgpack.packb(data))
 
 
 class DemoEndpointMonitor(EndpointMonitor):
+
     def __init__(self, name: str, endpoint_list: List[Endpoint]):
         self.name = name
         self.endpoint_list = endpoint_list
@@ -63,6 +66,7 @@ class TimingReceiver(MessageReceiver):
 
 
 class RequestReceiver(MessageReceiver):
+
     def __init__(self, communicator: Communicator):
         self.communicator = communicator
 
@@ -81,6 +85,7 @@ class RequestReceiver(MessageReceiver):
 
 
 class AdHocReceiver(MessageReceiver):
+
     def __init__(self, communicator: Communicator):
         self.communicator = communicator
 
@@ -89,3 +94,4 @@ class AdHocReceiver(MessageReceiver):
         ad_hoc_url = message.payload.decode("utf-8")
         self.communicator.add_connector(ad_hoc_url, Mode.ACTIVE)
         log.info(f"Making ad hoc connection to {ad_hoc_url}")
+

@@ -12,14 +12,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-from nvflare.fuel.f3.message import Message
-
-
 class ConnectorRequirementKey:
 
     URL = "url"
     HOST = "host"
-    SECURE = "secure"  # bool: secure or not
+    SECURE = "secure"           # bool: secure or not
 
 
 CELLNET_PREFIX = "cn__"
@@ -62,7 +59,7 @@ class MessagePropKey:
 class Encoding:
 
     BYTES = "bytes"
-    FOBS = "fobs"  # FOBS coded
+    FOBS = "fobs"       # FOBS coded
     NONE = "none"
 
 
@@ -70,9 +67,13 @@ class ReturnCode:
 
     OK = "ok"
     TIMEOUT = "timeout"
+    INVALID_TARGET = "invalid_target"
+    TARGET_UNREACHABLE = "target_unreachable"
     COMM_ERROR = "comm_error"
+    MSG_TOO_BIG = "msg_too_big"
+    FILTER_ERROR = "filter_error"
     INVALID_REQUEST = "invalid_request"
-    PROCESS_EXCEPTION = "process_exception"  # receiver error processing request
+    PROCESS_EXCEPTION = "process_exception"   # receiver error processing request
     AUTHENTICATION_ERROR = "authentication_error"
     SERVICE_UNAVAILABLE = "service_unavailable"
     INVALID_SESSION = "invalid_session"
@@ -84,7 +85,7 @@ class MessageType:
 
     REQ = "req"
     REPLY = "reply"
-    RETURN = "return"  # return to sender due to forward error
+    RETURN = "return"   # return to sender due to forward error
 
 
 class CellPropertyKey:
@@ -114,17 +115,3 @@ class AbortRun(Exception):
 
 class InvalidRequest(Exception):
     pass
-
-
-class TargetMessage:
-    def __init__(
-        self,
-        target: str,
-        channel: str,
-        topic: str,
-        message: Message,
-    ):
-        self.target = target
-        self.channel = channel
-        self.topic = topic
-        self.message = message

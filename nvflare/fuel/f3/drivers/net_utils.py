@@ -93,7 +93,8 @@ def check_tcp_port(port) -> bool:
         result = True
     except Exception as e:
         log.debug(f"Port {port} binding error: {e}")
-    s.close()
+    finally:
+        s.close()
 
     return result
 
@@ -105,11 +106,10 @@ def get_open_tcp_port(resources: dict) -> Optional[int]:
         return port
 
     ports = resources.get(DriverParams.PORTS)
-    if not ports:
-        port = random.randint(LO_PORT, HI_PORT)
-        return port
-
-    all_ports = parse_port_list(ports)
+    if ports:
+        all_ports = parse_port_list(ports)
+    else:
+        all_ports = [range(LO_PORT, HI_PORT+1)]
 
     for port_range in all_ports:
         if len(port_range) <= MAX_ITER_SIZE:
@@ -118,7 +118,7 @@ def get_open_tcp_port(resources: dict) -> Optional[int]:
                     return port
         else:
             for i in range(RANDOM_TRIES):
-                port = random.randint(port_range.start, port_range.stop)
+                port = random.randint(port_range.start, port_range.stop-1)
                 if check_tcp_port(port):
                     return port
 

@@ -12,20 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from nvflare.fuel.f3.cellnet.cell import Cell, CellAgent, Message, MessageHeaderKey, MessageType
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.cellnet.net_agent import NetAgent
+from .net_config import NetConfig
+
 import os
 import shlex
 import subprocess
 import sys
 import time
 
-from nvflare.fuel.f3.cellnet.cell import Cell, CellAgent, Message, MessageHeaderKey, MessageType
-from nvflare.fuel.f3.cellnet.fqcn import FQCN
-from nvflare.fuel.f3.cellnet.net_agent import NetAgent
-
-from .net_config import NetConfig
-
 
 class _RunnerInfo:
+
     def __init__(self, name: str, fqcn: str, process):
         self.name = name
         self.fqcn = fqcn
@@ -33,16 +33,17 @@ class _RunnerInfo:
 
 
 class CellRunner:
+
     def __init__(
-        self,
-        config_path: str,
-        config_file: str,
-        my_name: str,
-        parent_url: str = "",
-        parent_fqcn: str = "",
-        log_level: str = "info",
+            self,
+            config_path: str,
+            config_file: str,
+            my_name: str,
+            parent_url: str = "",
+            parent_fqcn: str = "",
+            log_level: str = "info"
     ):
-        self.asked_to_stop = False
+        self.new_root_url = None
         self.config_path = config_path
         self.config_file = config_file
         self.log_level = log_level
@@ -66,18 +67,37 @@ class CellRunner:
             create_internal_listener=self.create_internal_listener,
             parent_url=parent_url,
         )
-        self.agent = NetAgent(self.cell)
+        self.agent = NetAgent(self.cell, self._change_root)
 
         self.child_runners = {}
         self.client_runners = {}
 
         self.cell.set_cell_connected_cb(cb=self._cell_connected)
         self.cell.set_cell_disconnected_cb(cb=self._cell_disconnected)
-        self.cell.add_incoming_reply_filter(channel="*", topic="*", cb=self._filter_incoming_reply)
-        self.cell.add_incoming_request_filter(channel="*", topic="*", cb=self._filter_incoming_request)
-        self.cell.add_outgoing_reply_filter(channel="*", topic="*", cb=self._filter_outgoing_reply)
-        self.cell.add_outgoing_request_filter(channel="*", topic="*", cb=self._filter_outgoing_request)
-        self.cell.set_message_interceptor(cb=self._inspect_message)
+        self.cell.add_incoming_reply_filter(
+            channel="*",
+            topic="*",
+            cb=self._filter_incoming_reply
+        )
+        self.cell.add_incoming_request_filter(
+            channel="*",
+            topic="*",
+            cb=self._filter_incoming_request
+        )
+        self.cell.add_outgoing_reply_filter(
+            channel="*",
+            topic="*",
+            cb=self._filter_outgoing_reply
+        )
+        self.cell.add_outgoing_request_filter(
+            channel="*",
+            topic="*",
+            cb=self._filter_outgoing_request
+        )
+        self.cell.set_message_interceptor(
+            cb=self._inspect_message
+        )
+        self.cell.set_run_monitor(self._check_new_root)
 
     def _inspect_message(self, message: Message):
         header_name = "inspected_by"
@@ -137,13 +157,14 @@ class CellRunner:
         assert origin == self.cell.get_fqcn()
         self.cell.logger.debug(f"{self.cell.get_fqcn()}: _filter_outgoing_request called")
 
-    def _create_subprocess(self, name: str, parent_fqcn: str, parent_url: str):
+    def _create_subprocess(self, name: str, parent_fqcn: str, parent_url: str, start_it=True):
+        time.sleep(0.2)
         parts = [
             f"{sys.executable} -m run_cell",
             f"-c {self.config_path}",
             f"-f {self.config_file}",
             f"-n {name}",
-            f"-l {self.log_level}",
+            f"-l {self.log_level}"
         ]
         if parent_fqcn:
             parts.append(f"-pn {parent_fqcn}")
@@ -152,29 +173,52 @@ class CellRunner:
             parts.append(f"-pu {parent_url}")
 
         command = " ".join(parts)
-        return subprocess.Popen(shlex.split(command), preexec_fn=os.setsid, env=os.environ.copy())
+        print(f"Start Cell Command: {command}")
 
-    def start(self):
+        if start_it:
+            return subprocess.Popen(shlex.split(command), preexec_fn=os.setsid, env=os.environ.copy())
+        else:
+            return None
+
+    def start(self, start_all=True):
         self.cell.start()
+
         if self.create_internal_listener:
             # create children
             int_url = self.cell.get_internal_listener_url()
             for child_name in self.children:
-                p = self._create_subprocess(name=child_name, parent_url=int_url, parent_fqcn=self.cell.get_fqcn())
+                p = self._create_subprocess(
+                    name=child_name,
+                    parent_url=int_url,
+                    parent_fqcn=self.cell.get_fqcn(),
+                    start_it=start_all
+                )
                 child_fqcn = FQCN.join([self.cell.get_fqcn(), child_name])
                 info = _RunnerInfo(child_name, child_fqcn, p)
                 self.child_runners[child_name] = info
 
         if self.cell.get_fqcn() == FQCN.ROOT_SERVER and self.clients:
             # I'm the server root: create clients
+            time.sleep(1.0)
             for client_name in self.clients:
-                p = self._create_subprocess(name=client_name, parent_url="", parent_fqcn="")
+                p = self._create_subprocess(
+                    name=client_name,
+                    parent_url="",
+                    parent_fqcn="",
+                    start_it=start_all
+                )
                 self.client_runners[client_name] = _RunnerInfo(client_name, client_name, p)
 
     def stop(self):
-        self.asked_to_stop = True
         self.agent.stop()
 
+    def _change_root(self, url: str):
+        self.new_root_url = url
+
+    def _check_new_root(self):
+        if self.new_root_url:
+            self.cell.change_server_root(self.new_root_url)
+            self.new_root_url = None
+
     def run(self):
-        while not self.asked_to_stop:
-            time.sleep(0.5)
+        self.cell.run()

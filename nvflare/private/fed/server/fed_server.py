@@ -46,6 +46,7 @@ from nvflare.fuel.utils.zip_utils import unzip_all_from_bytes
 from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeaderKeys, new_cell_message
 from nvflare.private.fed.server.server_runner import ServerRunner
 from nvflare.widgets.fed_event import ServerFedEventRunner
+from nvflare.security.logging import secure_format_exception
 
 from .client_manager import ClientManager
 from .run_manager import RunManager
@@ -128,7 +129,7 @@ class BaseServer(ABC):
         # num_server_workers = grpc_args.get("num_server_workers", 1)
         # num_server_workers = max(self.client_manager.get_min_clients(), num_server_workers)
         target = grpc_args["service"].get("target", "0.0.0.0:6007")
-        scheme = grpc_args["service"].get("scheme", "http://")
+        scheme = grpc_args["service"].get("scheme", "grpc://")
 
         # grpc_options = grpc_args["service"].get("options", GRPC_DEFAULT_OPTIONS)
         credentials = {}
@@ -546,11 +547,13 @@ class FederatedServer(BaseServer):
             engine_thread.start()
 
             self.engine.engine_info.status = MachineStatus.STARTED
-            while self.engine.engine_info.status != MachineStatus.STOPPED:
-                if self.engine.asked_to_stop:
-                    self.engine.engine_info.status = MachineStatus.STOPPED
+            # while self.engine.engine_info.status != MachineStatus.STOPPED:
+            #     if self.engine.asked_to_stop:
+            #         self.engine.engine_info.status = MachineStatus.STOPPED
+            #
+            #     time.sleep(3)
 
-                time.sleep(3)
+            self.cell.run()
 
             if engine_thread.is_alive():
                 engine_thread.join()
@@ -577,7 +580,14 @@ class FederatedServer(BaseServer):
 
     def run_engine(self):
         self.engine.engine_info.status = MachineStatus.STARTED
-        self.server_runner.run()
+        try:
+            self.server_runner.run()
+        except BaseException as e:
+            self.logger.error(f"FL client execution exception: {secure_format_exception(e)}")
+        finally:
+            self.engine.update_job_run_status()
+            self.cell.stop()
+
         self.engine.engine_info.status = MachineStatus.STOPPED
 
     def deploy(self, args, grpc_args=None, secure_train=False):

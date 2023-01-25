@@ -18,6 +18,9 @@ import argparse
 import logging
 import os
 import sys
+import signal
+import psutil
+
 
 from nvflare.apis.fl_constant import JobConstants
 from nvflare.apis.workspace import Workspace
@@ -151,8 +154,27 @@ def main():
         raise e
 
 
+def ternimate_process():
+    pid = os.getpid()
+    kill_child_processes(pid)
+    os.killpg(os.getpgid(pid), 9)
+
+
+def kill_child_processes(parent_pid, sig=signal.SIGTERM):
+    try:
+        parent = psutil.Process(parent_pid)
+    except psutil.NoSuchProcess:
+        return
+    children = parent.children(recursive=True)
+    for process in children:
+        process.send_signal(sig)
+
+
 if __name__ == "__main__":
     """
     This is the program when starting the child process for running the NVIDIA FLARE server runner.
     """
     main()
+
+    # ternimate_process()
+

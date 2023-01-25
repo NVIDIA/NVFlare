@@ -47,9 +47,8 @@ class Mode(Enum):
 @dataclass
 class Connector:
     """Connector information"""
-
     handle: str
-    driver: "Driver"
+    driver: 'Driver'
     params: dict
     mode: Mode
     total_conns: int

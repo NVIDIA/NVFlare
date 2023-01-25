@@ -1,14 +1,31 @@
 {
   "internal": {
-    "scheme": "uds",
+    "scheme": "tcp",
     "resources": {
       "host": "localhost"
     }
   },
   "external": {
-    "scheme": "uds",
+    "scheme": "tcp",
+    "allow_adhoc": true,
     "resources": {
-      "host": "localhost"
+      "host": "localhost",
+      "secure": false,
+      "ports": [8004]
     }
+  },
+  "backbone": {
+    "connect_generation": 2
+  },
+  "grpc": {
+    "max_workers": 20,
+    "options": [
+      [
+        "grpc.max_send_message_length", 1073741824
+      ],
+      [
+        "grpc.max_receive_message_length", 1073741824
+      ]
+    ]
   }
 }

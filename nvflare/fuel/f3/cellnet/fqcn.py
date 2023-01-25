@@ -13,6 +13,7 @@
 #  limitations under the License.
 
 from typing import List
+import re
 
 
 class FQCN:
@@ -39,6 +40,10 @@ class FQCN:
         fqcn = FQCN.normalize(fqcn)
         if not fqcn:
             return "empty"
+        pattern = "^[A-Za-z0-9_.-]*$"
+        valid = bool(re.match(pattern, fqcn))
+        if not valid:
+            return "invalid char"
         parts = FQCN.split(fqcn)
         info = {}
         for p in parts:
@@ -71,6 +76,7 @@ class FQCN:
 
 
 class FqcnInfo:
+
     def __init__(self, fqcn: str):
         self.fqcn = fqcn
         self.path = FQCN.split(fqcn)

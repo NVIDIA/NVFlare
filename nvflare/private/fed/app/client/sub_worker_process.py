@@ -262,11 +262,13 @@ class SubWorkerExecutor:
 
     def _close(self, data):
         self.done = True
+        self.cell.stop()
 
     def run(self):
         self.logger.info("SubWorkerExecutor process started.")
-        while not self.done:
-            time.sleep(1.0)
+        # while not self.done:
+        #     time.sleep(1.0)
+        self.cell.run()
         self.logger.info("SubWorkerExecutor process shutdown.")
 
 

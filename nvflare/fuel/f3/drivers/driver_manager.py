@@ -39,7 +39,7 @@ import importlib
 import inspect
 import logging
 import os
-from typing import Optional, Type, Union
+from typing import Union, Type, Optional
 
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers.driver import Driver
@@ -58,7 +58,7 @@ class DriverManager:
         """Register a driver with Driver Manager
 
         Args:
-            driver_class: Driver to be registered. Driver can be either type or instance
+            driver_class: Driver to be registered. Driver must be a subclass of Driver
         """
 
         if not inspect.isclass(driver_class):

@@ -20,6 +20,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--num_clients", "-c", type=int, help="number of clients", required=False, default=2)
     parser.add_argument("--num_jobs", "-j", type=int, help="number of jobs", required=False, default=1)
+    parser.add_argument("--scheme", "-s", type=str, help="scheme of the root url", required=False, default="grpc")
     args = parser.parse_args()
 
     num_clients = args.num_clients
@@ -35,9 +36,15 @@ def main():
     server_jobs = [f"s_{j}" for j in jobs]
 
     config = {
-        "root_url": "http://localhost:8002",
-        "admin": {"host": "localhost", "port": "8003"},
-        "server": {"children": server_jobs, "clients": clients},
+        "root_url": f"{args.scheme}://localhost:8002",
+        "admin": {
+            "host": "localhost",
+            "port": "8003"
+        },
+        "server": {
+            "children": server_jobs,
+            "clients": clients
+        }
     }
 
     for c in clients:

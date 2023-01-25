@@ -99,13 +99,13 @@ class Communicator:
     def register_message_receiver(self, app_id: int, receiver: MessageReceiver):
         """Register a receiver to process FCI message for the app
 
-        Args:
-            app_id: Application ID
-            receiver: The class to process the message
+         Args:
+             app_id: Application ID
+             receiver: The class to process the message
 
-        Raises:
-            CommError: If duplicate endpoint/app or responder is of wrong type
-        """
+         Raises:
+             CommError: If duplicate endpoint/app or responder is of wrong type
+         """
 
         self.conn_manager.register_message_receiver(app_id, receiver)
 

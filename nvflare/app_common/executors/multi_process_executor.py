@@ -178,7 +178,7 @@ class MultiProcessExecutor(Executor):
                 + " --parent_pid "
                 + str(os.getpid())
                 + " --root_url "
-                + str(cell.root_url)
+                + str(cell.get_root_url_for_child())
                 + " --parent_url "
                 + str(cell.get_internal_listener_url())
             )
