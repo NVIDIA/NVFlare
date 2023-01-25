@@ -153,32 +153,6 @@ class Driver(ABC):
         pass
 
     @abstractmethod
-    def get_connect_url(self, scheme: str, resources: dict):
-        """Get the URL that can be used to connect to this endpoint
-
-        Args:
-            scheme: A scheme supported by the driver, like http or https
-            resources: User specified resources like host and port ranges.
-
-        Raises:
-            CommError: If no free port can be found
-        """
-        pass
-
-    @abstractmethod
-    def get_listening_url(self, scheme: str, resources: dict):
-        """Get the URL that can be used to listen for connections to this endpoint
-
-        Args:
-            scheme: A scheme supported by the driver, like http or https
-            resources: User specified resources like host and port ranges.
-
-        Raises:
-            CommError: If no free port can be found
-        """
-        pass
-
-    @abstractmethod
     def shutdown(self):
         """Stop driver and disconnect all the connections created by it
 

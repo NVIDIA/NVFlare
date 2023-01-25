@@ -47,8 +47,10 @@ handle1 = communicator.add_connector(connect_url, Mode.ACTIVE)
 listen_url = "tcp://localhost:1234"
 handle2 = communicator.add_connector(listen_url, Mode.PASSIVE)
 
+
 resources = {
     DriverParams.SECURE: False,
+    DriverParams.PORTS: "3000-6000",
 }
 handle3, ad_hoc_url = communicator.start_listener("tcp", resources)
 
