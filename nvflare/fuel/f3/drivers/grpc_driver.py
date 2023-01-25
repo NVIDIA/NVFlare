@@ -231,6 +231,7 @@ class GrpcDriver(SocketDriver):
         except BaseException as ex:
             self.logger.info(f"CLIENT: connection done: {type(ex)}")
         connection.close()
+        self.close_connection(connection)
         self.logger.debug("CLIENT: finished connection")
 
     @staticmethod

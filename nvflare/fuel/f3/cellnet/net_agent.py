@@ -630,6 +630,7 @@ class NetAgent:
     ) -> Union[None, Message]:
         new_root_url = request.payload
         assert isinstance(new_root_url, str)
+        self.change_root(new_root_url)
         if self.change_root_cb is not None:
             self.change_root_cb(new_root_url)
         return None
