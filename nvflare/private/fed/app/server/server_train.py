@@ -27,7 +27,7 @@ from nvflare.fuel.hci.security import hash_password
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import AppFolderConstants, SSLConstants
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger, create_privacy_manager
-from nvflare.private.fed.server.admin import FedAdminServer
+from nvflare.private.fed.server.root.admin import FedAdminServer
 from nvflare.private.fed.server.fed_server import FederatedServer
 from nvflare.private.fed.server.server_status import ServerStatus
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize, security_init

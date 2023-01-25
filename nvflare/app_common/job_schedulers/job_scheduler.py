@@ -12,31 +12,55 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import datetime
 import threading
+import time
 from typing import Dict, List, Optional, Tuple
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_def import ALL_SITES, Job, JobMetaKey
+from nvflare.apis.job_def import ALL_SITES, Job, JobMetaKey, RunStatus
+from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.apis.job_scheduler_spec import DispatchInfo, JobSchedulerSpec
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 
 SERVER_SITE_NAME = "server"
 
 
+SCHEDULE_RESULT_OK = 0  # the job is scheduled
+SCHEDULE_RESULT_NO_RESOURCE = 1  # job is not scheduled due to lack of resources
+SCHEDULE_RESULT_BLOCK = 2  # job is to be blocked from scheduled again due to fatal error
+
+
 class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
     def __init__(
         self,
         max_jobs: int = 1,
+        max_schedule_count: int = 10,
+        min_schedule_interval: float = 10.0,
+        max_schedule_interval: float = 600.0,
     ):
+        """
+        Create a DefaultJobScheduler
+        Args:
+            max_jobs: max number of concurrent jobs allowed
+            max_schedule_count: max number of times to try to schedule a job
+            min_schedule_interval: min interval between two schedules
+            max_schedule_interval: max interval between two schedules
+        """
         super().__init__()
         self.max_jobs = max_jobs
+        self.max_schedule_count = max_schedule_count
+        self.min_schedule_interval = min_schedule_interval
+        self.max_schedule_interval = max_schedule_interval
         self.scheduled_jobs = []
         self.lock = threading.Lock()
 
-    def _check_client_resources(self, resource_reqs: Dict[str, dict], fl_ctx: FLContext) -> Dict[str, Tuple[bool, str]]:
+    def _check_client_resources(
+        self, job_id: str, resource_reqs: Dict[str, dict], fl_ctx: FLContext
+    ) -> Dict[str, Tuple[bool, str]]:
         """Checks resources on each site.
 
         Args:
@@ -52,7 +76,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         if not isinstance(engine, ServerEngineSpec):
             raise RuntimeError(f"engine inside fl_ctx should be of type ServerEngineSpec, but got {type(engine)}.")
 
-        result = engine.check_client_resources(resource_reqs)
+        result = engine.check_client_resources(job_id, resource_reqs)
         self.log_debug(fl_ctx, f"check client resources result: {result}")
 
         return result
@@ -76,13 +100,14 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         self.log_debug(fl_ctx, f"cancel client resources using check results: {resource_check_results}")
         return False, None
 
-    def _try_job(self, job: Job, fl_ctx) -> (bool, Optional[Dict[str, DispatchInfo]]):
+    def _try_job(self, job: Job, fl_ctx: FLContext) -> (int, Optional[Dict[str, DispatchInfo]], str):
         engine = fl_ctx.get_engine()
         online_clients = engine.get_clients()
         online_site_names = [x.name for x in online_clients]
 
         if not job.deploy_map:
-            raise RuntimeError(f"Job ({job.job_id}) does not have deploy_map, can't be scheduled.")
+            self.log_error(fl_ctx, f"Job '{job.job_id}' does not have deploy_map, can't be scheduled.")
+            return SCHEDULE_RESULT_BLOCK, None, "no deploy map"
 
         applicable_sites = []
         sites_to_app = {}
@@ -105,7 +130,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
             for s in required_sites:
                 if s not in applicable_sites:
                     self.log_debug(fl_ctx, f"Job {job.job_id} can't be scheduled: required site {s} is not connected.")
-                    return False, None
+                    return SCHEDULE_RESULT_NO_RESOURCE, None, f"missing required site {s}"
 
         if job.min_sites and len(applicable_sites) < job.min_sites:
             self.log_debug(
@@ -113,7 +138,11 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
                 f"Job {job.job_id} can't be scheduled: connected sites ({len(applicable_sites)}) "
                 f"are less than min_sites ({job.min_sites}).",
             )
-            return False, None
+            return (
+                SCHEDULE_RESULT_NO_RESOURCE,
+                None,
+                f"connected sites ({len(applicable_sites)}) < min_sites ({job.min_sites})",
+            )
 
         # we are assuming server resource is sufficient
         resource_reqs = {}
@@ -122,11 +151,28 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
                 resource_reqs[site_name] = job.resource_spec[site_name]
             else:
                 resource_reqs[site_name] = {}
-        resource_check_results = self._check_client_resources(resource_reqs=resource_reqs, fl_ctx=fl_ctx)
+
+        job_participants = [fl_ctx.get_identity_name(default="server")]
+        job_participants.extend(applicable_sites)
+
+        fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id, private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.CLIENT_RESOURCE_SPECS, resource_reqs, private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.JOB_PARTICIPANTS, job_participants, private=True, sticky=False)
+        self.fire_event(EventType.BEFORE_CHECK_CLIENT_RESOURCES, fl_ctx)
+
+        block_reason = fl_ctx.get_prop(FLContextKey.JOB_BLOCK_REASON)
+        if block_reason:
+            # cannot schedule this job
+            self.log_info(fl_ctx, f"Job {job.job_id} can't be scheduled: {block_reason}")
+            return SCHEDULE_RESULT_NO_RESOURCE, None, block_reason
+
+        resource_check_results = self._check_client_resources(
+            job_id=job.job_id, resource_reqs=resource_reqs, fl_ctx=fl_ctx
+        )
 
         if not resource_check_results:
             self.log_debug(fl_ctx, f"Job {job.job_id} can't be scheduled: resource check results is None or empty.")
-            return False, None
+            return SCHEDULE_RESULT_NO_RESOURCE, None, "error checking resources"
 
         required_sites_not_enough_resource = list(required_sites)
         num_sites_ok = 0
@@ -145,8 +191,13 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
 
         if num_sites_ok < job.min_sites:
             self.log_debug(fl_ctx, f"Job {job.job_id} can't be scheduled: not enough sites have enough resources.")
-            return self._cancel_resources(
+            self._cancel_resources(
                 resource_reqs=job.resource_spec, resource_check_results=resource_check_results, fl_ctx=fl_ctx
+            )
+            return (
+                SCHEDULE_RESULT_NO_RESOURCE,
+                None,
+                f"not enough sites have enough resources (ok sites {num_sites_ok} < min sites {job.min_sites}",
             )
 
         if required_sites_not_enough_resource:
@@ -155,8 +206,14 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
                 f"Job {job.job_id} can't be scheduled: required sites: {required_sites_not_enough_resource}"
                 f" don't have enough resources.",
             )
-            return self._cancel_resources(
+            self._cancel_resources(
                 resource_reqs=job.resource_spec, resource_check_results=resource_check_results, fl_ctx=fl_ctx
+            )
+
+            return (
+                SCHEDULE_RESULT_NO_RESOURCE,
+                None,
+                f"required sites: {required_sites_not_enough_resource} don't have enough resources",
             )
 
         # add server dispatch info
@@ -164,7 +221,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
             app_name=sites_to_app[SERVER_SITE_NAME], resource_requirements={}, token=None
         )
 
-        return True, sites_dispatch_info
+        return SCHEDULE_RESULT_OK, sites_dispatch_info, ""
 
     def _exceed_max_jobs(self, fl_ctx: FLContext) -> bool:
         exceed_limit = False
@@ -191,19 +248,93 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
                     self.scheduled_jobs.remove(job_id)
 
     def schedule_job(
-        self, job_candidates: List[Job], fl_ctx: FLContext
+        self, job_manager: JobDefManagerSpec, job_candidates: List[Job], fl_ctx: FLContext
+    ) -> (Optional[Job], Optional[Dict[str, DispatchInfo]]):
+        failed_jobs = []
+        blocked_jobs = []
+        try:
+            ready_job, dispatch_info = self._do_schedule_job(job_candidates, fl_ctx, failed_jobs, blocked_jobs)
+        except:
+            self.log_exception(fl_ctx, "error scheduling job")
+            ready_job, dispatch_info = None, None
+
+        # process failed and blocked jobs
+        try:
+            if failed_jobs:
+                # set the try count
+                for job in failed_jobs:
+                    job_manager.refresh_meta(job, self._get_update_meta_keys(), fl_ctx)
+
+            if blocked_jobs:
+                for job in blocked_jobs:
+                    job_manager.refresh_meta(job, self._get_update_meta_keys(), fl_ctx)
+                    job_manager.set_status(job.job_id, RunStatus.FINISHED_CANT_SCHEDULE, fl_ctx)
+        except:
+            self.log_exception(fl_ctx, "error updating scheduling info in job store")
+        return ready_job, dispatch_info
+
+    def _get_update_meta_keys(self):
+        return [
+            JobMetaKey.SCHEDULE_COUNT.value,
+            JobMetaKey.LAST_SCHEDULE_TIME.value,
+            JobMetaKey.SCHEDULE_HISTORY.value,
+        ]
+
+    def _update_schedule_history(self, job: Job, result: str):
+        history = job.meta.get(JobMetaKey.SCHEDULE_HISTORY.value, None)
+        if not history:
+            history = []
+            job.meta[JobMetaKey.SCHEDULE_HISTORY.value] = history
+        now = datetime.datetime.now()
+        cur_time = now.strftime("%Y-%m-%d %H:%M:%S")
+        history.append(f"{cur_time}: {result}")
+
+        schedule_count = job.meta.get(JobMetaKey.SCHEDULE_COUNT.value, 0)
+        schedule_count += 1
+        job.meta[JobMetaKey.SCHEDULE_COUNT.value] = schedule_count
+        job.meta[JobMetaKey.LAST_SCHEDULE_TIME.value] = time.time()
+
+    def _do_schedule_job(
+        self, job_candidates: List[Job], fl_ctx: FLContext, failed_jobs: list, blocked_jobs: list
     ) -> (Optional[Job], Optional[Dict[str, DispatchInfo]]):
         self.log_debug(fl_ctx, f"Current scheduled_jobs is {self.scheduled_jobs}")
         if self._exceed_max_jobs(fl_ctx=fl_ctx):
+            self.log_debug(fl_ctx, f"skipped scheduling since there are {self.max_jobs} concurrent job(s) already")
             return None, None
 
         # sort by submitted time
-        job_candidates.sort(key=lambda j: j.meta.get(JobMetaKey.SUBMIT_TIME, 0.0))
-
+        job_candidates.sort(key=lambda j: j.meta.get(JobMetaKey.SUBMIT_TIME.value, 0.0))
+        engine = fl_ctx.get_engine()
         for job in job_candidates:
-            ok, sites_dispatch_info = self._try_job(job, fl_ctx)
-            self.log_debug(fl_ctx, f"Try to schedule job {job.job_id}, get result: {ok}, {sites_dispatch_info}.")
-            if ok:
-                return job, sites_dispatch_info
+            schedule_count = job.meta.get(JobMetaKey.SCHEDULE_COUNT.value, 0)
+            if schedule_count >= self.max_schedule_count:
+                self.log_info(
+                    fl_ctx, f"skipped job {job.job_id} since it exceeded max schedule count {self.max_schedule_count}"
+                )
+                blocked_jobs.append(job)
+                self._update_schedule_history(job, f"exceeded max schedule count {self.max_schedule_count}")
+                continue
+
+            last_schedule_time = job.meta.get(JobMetaKey.LAST_SCHEDULE_TIME.value, 0.0)
+            time_since_last_schedule = time.time() - last_schedule_time
+            n = 0 if schedule_count == 0 else schedule_count - 1
+            required_interval = min(self.max_schedule_interval, (2**n) * self.min_schedule_interval)
+            if time_since_last_schedule < required_interval:
+                # do not schedule again too soon
+                continue
+
+            with engine.new_context() as ctx:
+                rc, sites_dispatch_info, result = self._try_job(job, ctx)
+                self.log_debug(ctx, f"Try to schedule job {job.job_id}, get result: {rc}, {sites_dispatch_info}.")
+                if not result:
+                    result = "scheduled"
+                self._update_schedule_history(job, result)
+                if rc == SCHEDULE_RESULT_OK:
+                    return job, sites_dispatch_info
+                elif rc == SCHEDULE_RESULT_NO_RESOURCE:
+                    failed_jobs.append(job)
+                else:
+                    blocked_jobs.append(job)
+
         self.log_debug(fl_ctx, "No job is scheduled.")
         return None, None

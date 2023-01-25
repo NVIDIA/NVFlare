@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import time
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from typing import Optional
 
 from nvflare.apis.client import Client
@@ -24,7 +24,7 @@ from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import Shareable
 
-from .job_runner import JobRunner
+from nvflare.private.fed.server.root.job_runner import JobRunner
 from .run_manager import RunInfo, RunManager
 from .server_json_config import ServerJsonConfigurator
 
@@ -38,7 +38,7 @@ class EngineInfo(object):
         self.app_names = {}
 
 
-class ServerEngineInternalSpec(ServerEngineSpec, ABC):
+class ServerEngineInternalSpec(ServerEngineSpec):
     def get_engine_info(self) -> EngineInfo:
         """Get general info of the engine."""
         pass

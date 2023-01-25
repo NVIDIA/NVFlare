@@ -16,8 +16,10 @@ import os
 import time
 
 from nvflare.fuel.f3.communicator import Communicator
-from nvflare.fuel.f3.demo.callbacks import TimingReceiver, DemoEndpointMonitor, make_message, RequestReceiver
-from nvflare.fuel.f3.drivers.driver import Mode, DriverParams
+from nvflare.fuel.f3.demo.callbacks import TimingReceiver, DemoEndpointMonitor, make_message, RequestReceiver, \
+    AdHocReceiver
+from nvflare.fuel.f3.drivers.connnector import Mode
+from nvflare.fuel.f3.drivers.driver import DriverParams
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.message import AppIds, Message
 
@@ -38,16 +40,17 @@ conn_props = {
 
 local_endpoint = Endpoint("demo.server", {"test": 456}, conn_props)
 communicator = Communicator(local_endpoint)
-resources = {
-    DriverParams.SECURE: True,
-    DriverParams.PORTS: ["4567-4600"],
-}
-_, listening_url = communicator.get_connector_urls("https", resources)
-handle = communicator.add_connector(listening_url, Mode.PASSIVE)
+
+listening_url = "tcp://localhost:1111"
+handle1 = communicator.add_connector(listening_url, Mode.PASSIVE)
+
+connect_url = "tcp://localhost:1234"
+handle2 = communicator.add_connector(connect_url, Mode.ACTIVE)
 
 communicator.register_monitor(DemoEndpointMonitor(local_endpoint.name, endpoints))
 communicator.register_message_receiver(AppIds.CELL_NET, TimingReceiver())
 communicator.register_message_receiver(AppIds.DEFAULT, RequestReceiver(communicator))
+communicator.register_message_receiver(123, AdHocReceiver(communicator))
 communicator.start()
 log.info("Server is started")
 
@@ -69,7 +72,7 @@ while count < 60:
     count += 1
 
 time.sleep(10)
-communicator.remove_connector(handle)
+communicator.remove_connector(handle1)
+# communicator.remove_connector(handle2)
 communicator.stop()
 log.info("Server stopped!")
-

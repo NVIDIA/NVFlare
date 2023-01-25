@@ -40,6 +40,11 @@ class ReturnCode(object):
     EMPTY_RESULT = "EMPTY_RESULT"
 
     SERVER_NOT_READY = "SERVER_NOT_READY"
+    INVALID_SESSION = "INVALID_SESSION"
+    NOT_AUTHENTICATED = "NOT_AUTHENTICATED"
+    INVALID_REQUEST = "INVALID_REQUEST"
+    ABORT_RUN = "ABOUT_RUN"
+    SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"
 
 
 class MachineStatus(Enum):
@@ -141,13 +146,18 @@ class FLContextKey(object):
     SCOPE_PROPERTIES = "__scope_props__"
     SCOPE_OBJECT = "__scope_object__"
     FATAL_SYSTEM_ERROR = ReservedKey.FATAL_SYSTEM_ERROR
+    CLIENT_RESOURCE_SPECS = "__client_resource_specs"
+    JOB_PARTICIPANTS = "__job_participants"
+    JOB_BLOCK_REASON = "__job_block_reason"  # why the job should be blocked from scheduling
+    SSID = "__ssid"
+    PROJECT_NAME = "__project_name"
+    CLIENT_TOKEN = "__client_token"
 
 
 class ReservedTopic(object):
 
     END_RUN = "__end_run__"
     ABORT_ASK = "__abort_task__"
-    AUX_COMMAND = "__aux_command__"
 
 
 class AdminCommandNames(object):

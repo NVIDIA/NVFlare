@@ -29,6 +29,8 @@ from typing import Union
 
 import uuid as uuid
 
+from nvflare.fuel.f3.drivers.connnector import Connector
+
 BytesAlike = Union[bytes, bytearray, memoryview]
 
 
@@ -54,13 +56,13 @@ class FrameReceiver(ABC):
 
 
 class Connection(ABC):
-    """FCI connection spec. A connection is used to transfer opaque frames.
-    """
+    """FCI connection spec. A connection is used to transfer opaque frames"""
 
-    def __init__(self):
+    def __init__(self, connector: Connector):
         self.name = str(uuid.uuid4())
         self.state = ConnState.IDLE
         self.frame_receiver = None
+        self.connector = connector
 
     @abstractmethod
     def get_conn_properties(self) -> dict:

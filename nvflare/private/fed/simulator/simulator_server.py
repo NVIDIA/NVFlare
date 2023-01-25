@@ -19,7 +19,7 @@ from nvflare.apis.fl_constant import FLContextKey, ReservedKey, RunProcessKey, S
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.private.fed.server.run_manager import RunManager
-from nvflare.private.fed.server.server_state import HotState
+from nvflare.private.fed.server.root.server_state import HotState
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 
 from ..server.fed_server import FederatedServer
@@ -101,9 +101,6 @@ class SimulatorServer(FederatedServer):
             task_id = shareable.get_cookie(FLContextKey.TASK_ID)
             server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
             server_runner.process_submission(client, contribution_task_name, task_id, shareable, fl_ctx)
-
-    def remove_dead_clients(self):
-        pass
 
     def _aux_communicate(self, fl_ctx, shareable, shared_fl_context, topic):
         try:

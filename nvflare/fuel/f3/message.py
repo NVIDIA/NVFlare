@@ -13,8 +13,6 @@
 #  limitations under the License.
 from abc import ABC, abstractmethod
 
-import msgpack
-
 from nvflare.fuel.f3.drivers.connection import BytesAlike
 from nvflare.fuel.f3.endpoint import Endpoint
 
@@ -40,14 +38,40 @@ class Headers(dict):
 class Message:
 
     def __init__(self, headers: Headers, payload: BytesAlike):
-        """Construct an FCI message
-
-         Raises:
-             CommError: If any error encountered while starting up
-         """
+        """Construct an FCI message"""
 
         self.headers = headers
         self.payload = payload
+
+    def set_header(self, key: str, value):
+        if self.headers is None:
+            self.headers = {}
+
+        self.headers[key] = value
+
+    def add_headers(self, headers: dict):
+        if self.headers is None:
+            self.headers = {}
+        self.headers.update(headers)
+
+    def get_header(self, key: str, default=None):
+        if self.headers is None:
+            return None
+
+        return self.headers.get(key, default)
+
+    def remove_header(self, key: str):
+        if self.headers:
+            self.headers.pop(key, None)
+
+    def set_prop(self, key: str, value):
+        setattr(self, key, value)
+
+    def get_prop(self, key: str, default=None):
+        try:
+            return getattr(self, key)
+        except AttributeError:
+            return default
 
 
 class MessageReceiver(ABC):

@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.private.admin_defs import Message
+from nvflare.private.admin_defs import AdminMessage
 from nvflare.private.fed.protos.admin_pb2 import Message as Proto_Message
 
 
-def message_to_proto(message: Message) -> Proto_Message:
+def message_to_proto(message: AdminMessage) -> Proto_Message:
     proto_message = Proto_Message()
     proto_message.id = message.id
     proto_message.topic = message.topic
@@ -35,13 +35,13 @@ def message_to_proto(message: Message) -> Proto_Message:
     return proto_message
 
 
-def proto_to_message(proto: Proto_Message) -> Message:
+def proto_to_message(proto: Proto_Message) -> AdminMessage:
     if proto.body_type == "str":
-        message = Message(topic=proto.topic, body=proto.body.decode("utf-8"))
+        message = AdminMessage(topic=proto.topic, body=proto.body.decode("utf-8"))
     elif proto.body_type == "bytes":
-        message = Message(topic=proto.topic, body=proto.body)
+        message = AdminMessage(topic=proto.topic, body=proto.body)
     else:
-        message = Message(topic=proto.topic, body=proto.body)
+        message = AdminMessage(topic=proto.topic, body=proto.body)
 
     message.id = proto.id
     for k, v in proto.headers.items():

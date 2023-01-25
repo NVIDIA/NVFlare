@@ -47,14 +47,14 @@ PREFIX_LEN = PREFIX_STRUCT.size
 
 @dataclass
 class Prefix:
-    """ Prefix is the 16-byte fixed header for the SFM frame, every frame must have this prefix. Besides
-    all the other attributes, it provides framing for the message. Framing is needed if the frame is sent
-    over byte streams like TCP or Pipe.
+    """ Prefix is the 16-byte fixed header for the SFM frame, every frame must have this prefix.
+    Beside all the other attributes, it provides framing for the message. Framing is needed if the
+    frame is sent over byte streams like TCP or sockets.
 
     The 8 fields in the prefix are all integers encoded in big-endian,
 
         1. length(4): Total length of the frame.
-        2. header_len(2): Length of the header
+        2. header_len(2): Length of the encoded headers
         3. type(1): Frame type (DATA, HELLO etc)
         4. reserved(1): Not used, 0
         5. flags(2): Attribute of the frame (OOB, ACK etc).

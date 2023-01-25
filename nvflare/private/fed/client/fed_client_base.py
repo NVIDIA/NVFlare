@@ -29,6 +29,7 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import EngineConstant
+from nvflare.private.fed.pcmi import ParentCellMessageInterface
 from nvflare.security.logging import secure_format_exception
 
 from .client_status import ClientStatus
@@ -53,11 +54,11 @@ class FederatedClientBase:
         client_name,
         client_args,
         secure_train,
+        cmi: ParentCellMessageInterface,
         server_args=None,
         retry_timeout=30,
         client_state_processors: Optional[List[Filter]] = None,
         handlers: Optional[List[FLComponent]] = None,
-        compression=None,
         overseer_agent=None,
         args=None,
         components=None,
@@ -72,24 +73,15 @@ class FederatedClientBase:
             retry_timeout: retry timeout
             client_state_processors: client state processor filters
             handlers: handlers
-            compression: communication compression algorithm
         """
         self.logger = logging.getLogger(self.__class__.__name__)
 
         self.client_name = client_name
+        self.cmi = cmi
         self.token = None
         self.ssid = None
         self.client_args = client_args
         self.servers = server_args
-
-        self.communicator = Communicator(
-            ssl_args=client_args,
-            secure_train=secure_train,
-            retry_timeout=retry_timeout,
-            client_state_processors=client_state_processors,
-            compression=compression,
-        )
-
         self.secure_train = secure_train
         self.handlers = handlers
         self.components = components
@@ -182,76 +174,6 @@ class FederatedClientBase:
             except FLCommunicationError:
                 self.communicator.heartbeat_done = True
 
-    def fetch_execute_task(self, project_name, fl_ctx: FLContext):
-        """Fetch a task from the server.
-
-        Args:
-            project_name: FL study project name
-            fl_ctx: FLContext
-
-        Returns:
-            A CurrentTask message from server
-        """
-        try:
-            self.logger.debug("Starting to fetch execute task.")
-            task = self.communicator.getTask(self.servers, project_name, self.token, self.ssid, fl_ctx)
-
-            return task
-        except FLCommunicationError as e:
-            self.logger.info(secure_format_exception(e))
-
-    def push_execute_result(self, project_name, shareable: Shareable, fl_ctx: FLContext):
-        """Submit execution results of a task to server.
-
-        Args:
-            project_name: FL study project name
-            shareable: Shareable object
-            fl_ctx: FLContext
-
-        Returns:
-            A FederatedSummary message from the server.
-        """
-        try:
-            self.logger.info("Starting to push execute result.")
-            execute_task_name = fl_ctx.get_prop(FLContextKey.TASK_NAME)
-            message = self.communicator.submitUpdate(
-                self.servers,
-                project_name,
-                self.token,
-                self.ssid,
-                fl_ctx,
-                self.client_name,
-                shareable,
-                execute_task_name,
-            )
-
-            return message
-        except FLCommunicationError as e:
-            self.logger.info(secure_format_exception(e))
-
-    def send_aux_message(self, project_name, topic: str, shareable: Shareable, timeout: float, fl_ctx: FLContext):
-        """Send auxiliary message to the server.
-
-        Args:
-            project_name: FL study project name
-            topic: aux topic name
-            shareable: Shareable object
-            timeout: communication timeout
-            fl_ctx: FLContext
-
-        Returns:
-            A reply message
-        """
-        try:
-            self.logger.debug("Starting to send aux message.")
-            message = self.communicator.auxCommunicate(
-                self.servers, project_name, self.token, self.ssid, fl_ctx, self.client_name, shareable, topic, timeout
-            )
-
-            return message
-        except FLCommunicationError as e:
-            self.logger.info(secure_format_exception(e))
-
     def send_heartbeat(self, project_name):
         try:
             if self.token:
@@ -263,53 +185,23 @@ class FederatedClientBase:
         except FLCommunicationError:
             self.communicator.heartbeat_done = True
 
+    def quit_remote(self, project_name, fl_ctx: FLContext):
+        """Sending the last message to the server before leaving.
+
+        Args:
+            fl_ctx: FLContext
+
+        Returns: N/A
+
+        """
+        return self.communicator.quit_remote(self.servers, project_name, self.token, fl_ctx)
+
     def heartbeat(self):
         """Sends a heartbeat from the client to the server."""
         pool = None
         try:
             pool = ThreadPool(len(self.servers))
             return pool.map(self.send_heartbeat, tuple(self.servers))
-        finally:
-            if pool:
-                pool.terminate()
-
-    def pull_task(self, fl_ctx: FLContext):
-        """Fetch remote models and update the local client's session."""
-        pool = None
-        try:
-            pool = ThreadPool(len(self.servers))
-            self.remote_tasks = pool.map(partial(self.fetch_execute_task, fl_ctx=fl_ctx), tuple(self.servers))
-            pull_success, task_name = _check_progress(self.remote_tasks)
-            # TODO: if some of the servers failed
-            return pull_success, task_name, self.remote_tasks
-        finally:
-            if pool:
-                pool.terminate()
-
-    def push_results(self, shareable: Shareable, fl_ctx: FLContext):
-        """Push the local model to multiple servers."""
-        pool = None
-        try:
-            pool = ThreadPool(len(self.servers))
-            return pool.map(partial(self.push_execute_result, shareable=shareable, fl_ctx=fl_ctx), tuple(self.servers))
-        finally:
-            if pool:
-                pool.terminate()
-
-    def aux_send(self, topic, shareable: Shareable, timeout: float, fl_ctx: FLContext):
-        """Push the local model to multiple servers."""
-        pool = None
-        try:
-            pool = ThreadPool(len(self.servers))
-            messages = pool.map(
-                partial(self.send_aux_message, topic=topic, shareable=shareable, timeout=timeout, fl_ctx=fl_ctx),
-                tuple(self.servers),
-            )
-            if messages is not None and messages[0] is not None:
-                # Only handle single server communication for now.
-                return messages
-            else:
-                return None
         finally:
             if pool:
                 pool.terminate()
@@ -341,17 +233,22 @@ class FederatedClientBase:
         heartbeat_thread = threading.Thread(target=self.run_heartbeat)
         heartbeat_thread.start()
 
-    def quit_remote(self, task_name, fl_ctx: FLContext):
-        """Sending the last message to the server before leaving.
+    def logout_client(self, fl_ctx: FLContext):
+        """Logout the client from the server.
 
         Args:
-            task_name: task name
             fl_ctx: FLContext
 
         Returns: N/A
 
         """
-        return self.communicator.quit_remote(self.servers, task_name, self.token, self.ssid, fl_ctx)
+        pool = None
+        try:
+            pool = ThreadPool(len(self.servers))
+            return pool.map(partial(self.quit_remote, fl_ctx=fl_ctx), tuple(self.servers))
+        finally:
+            if pool:
+                pool.terminate()
 
     def set_client_engine(self, engine):
         self.engine = engine
@@ -361,5 +258,11 @@ class FederatedClientBase:
         self.logger.info(f"Shutting down client: {self.client_name}")
         if self.overseer_agent:
             self.overseer_agent.end()
+
+        if self.engine:
+            fl_ctx = self.engine.new_context()
+        else:
+            fl_ctx = FLContext()
+        self.logout_client(fl_ctx)
 
         return 0

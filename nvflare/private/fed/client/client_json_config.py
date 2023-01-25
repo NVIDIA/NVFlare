@@ -20,7 +20,7 @@ from nvflare.fuel.utils.json_scanner import Node
 from nvflare.private.fed_json_config import FedJsonConfigurator
 from nvflare.private.json_configer import ConfigContext, ConfigError
 
-from .client_runner import ClientRunnerConfig
+from nvflare.private.fed.client.job.client_runner import ClientRunnerConfig
 
 
 class _ExecutorDef(object):

@@ -18,8 +18,7 @@ from abc import ABC, abstractmethod
 from nvflare.apis.client_engine_spec import ClientEngineSpec
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-from nvflare.apis.workspace import Workspace
-from nvflare.widgets.widget import Widget
+from nvflare.fuel.f3.cellnet.cell import Cell
 
 
 class TaskAssignment(object):
@@ -44,6 +43,10 @@ class ClientEngineExecutorSpec(ClientEngineSpec, ABC):
     """The ClientEngineExecutorSpec defines the ClientEngine APIs running in the child process."""
 
     @abstractmethod
+    def get_cell(self) -> Cell:
+        pass
+
+    @abstractmethod
     def get_task_assignment(self, fl_ctx: FLContext) -> TaskAssignment:
         pass
 
@@ -52,82 +55,7 @@ class ClientEngineExecutorSpec(ClientEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def get_workspace(self) -> Workspace:
-        pass
-
-    @abstractmethod
-    def get_widget(self, widget_id: str) -> Widget:
-        pass
-
-    @abstractmethod
     def get_all_components(self) -> dict:
-        pass
-
-    @abstractmethod
-    def register_aux_message_handler(self, topic: str, message_handle_func):
-        """Register aux message handling function with specified topics.
-
-        Exception is raised when:
-            a handler is already registered for the topic;
-            bad topic - must be a non-empty string
-            bad message_handle_func - must be callable
-
-        Implementation Note:
-        This method should simply call the ClientAuxRunner's register_aux_message_handler method.
-
-        Args:
-            topic: the topic to be handled by the func
-            message_handle_func: the func to handle the message. Must follow aux_message_handle_func_signature.
-
-        """
-        pass
-
-    @abstractmethod
-    def send_aux_request(self, topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> Shareable:
-        """Send a request to Server via the aux channel.
-
-        Implementation: simply calls the ClientAuxRunner's send_aux_request method.
-
-        Args:
-            topic: topic of the request
-            request: request to be sent
-            timeout: number of secs to wait for replies. 0 means fire-and-forget.
-            fl_ctx: FL context
-
-        Returns: a reply Shareable
-
-        """
-        pass
-
-    @abstractmethod
-    def fire_and_forget_aux_request(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
-        """Send an async request to Server via the aux channel.
-
-        Args:
-            topic: topic of the request
-            request: request to be sent
-            fl_ctx: FL context
-
-        Returns:
-
-        """
-        pass
-
-    @abstractmethod
-    def aux_send(self, topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> Shareable:
-        """Send the request to the Server.
-
-        If reply is received, make sure to set peer_ctx into the reply shareable!
-
-        Args:
-            topic: topic of the request
-            request: request Shareable to be sent
-            timeout: number of secs to wait for reply. 0 means fire-and-forget.
-            fl_ctx: fl context
-
-        Returns: a reply.
-
-        """
         pass
 
     @abstractmethod

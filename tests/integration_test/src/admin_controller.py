@@ -330,7 +330,6 @@ class AdminController:
             and "message" in stats["details"]
             and isinstance(stats["details"]["message"], dict)
         ):
-            logging.info(f"YYYYYYY stats_message is: {stats['details']['message']} YYYYYY")
             run_state["workflows"] = _parse_workflow_states(stats_message=stats["details"]["message"])
 
         # parse job status

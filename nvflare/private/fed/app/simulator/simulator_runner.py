@@ -41,7 +41,7 @@ from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.client.worker_process import kill_child_processes
 from nvflare.private.fed.app.deployer.simulator_deployer import SimulatorDeployer
 from nvflare.private.fed.client.client_status import ClientStatus
-from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
+from nvflare.private.fed.server.root.job_meta_validator import JobMetaValidator
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorServerAppRunner
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize
@@ -170,21 +170,17 @@ class SimulatorRunner(FLComponent):
                     self.logger.error(f"These GPUs are not available: {wrong_gpus}")
                     return False
 
-                if len(gpus) <= 1:
-                    self.logger.error("Please provide more than 1 GPU to run the Simulator with multi-GPUs.")
-                    return False
-
                 if len(gpus) > len(self.client_names):
                     self.logger.error(
                         f"The number of clients ({len(self.client_names)}) must be larger than or equal to "
                         f"the number of GPUS: ({len(gpus)})"
                     )
                     return False
-                if self.args.threads and self.args.threads > 1:
+                if len(gpus) > 1 and self.args.threads > 1:
                     self.logger.info(
                         "When running with multi GPU, each GPU will run with only 1 thread. " "Set the Threads to 1."
                     )
-                self.args.threads = 1
+                    self.args.threads = 1
 
             if self.args.threads and self.args.threads > len(self.client_names):
                 self.logger.error("The number of threads to run can not be larger than the number of clients.")

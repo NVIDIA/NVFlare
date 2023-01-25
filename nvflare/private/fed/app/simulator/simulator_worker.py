@@ -27,9 +27,9 @@ from nvflare.fuel.common.multi_process_executor_constants import CommunicationMe
 from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.private.fed.app.client.worker_process import check_parent_alive
-from nvflare.private.fed.client.admin import FedAdminAgent
+from nvflare.private.fed.client.root.admin import FedAdminAgent
 from nvflare.private.fed.client.admin_msg_sender import AdminMessageSender
-from nvflare.private.fed.client.client_req_processors import ClientRequestProcessors
+from nvflare.private.fed.client.root.client_req_processors import ClientRequestProcessors
 from nvflare.private.fed.client.fed_client import FederatedClient
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorClientAppRunner
 from nvflare.private.fed.simulator.simulator_client_engine import SimulatorClientEngine

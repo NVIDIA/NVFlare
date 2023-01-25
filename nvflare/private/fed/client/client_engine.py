@@ -150,7 +150,6 @@ class ClientEngine(ClientEngineInternalSpec):
             job_id,
             self.args,
             app_custom_folder,
-            open_port,
             allocated_resource,
             token,
             resource_manager,
@@ -251,9 +250,6 @@ class ClientEngine(ClientEngineInternalSpec):
 
     def reset_errors(self, job_id):
         self.client_executor.reset_errors(job_id)
-
-    def send_aux_command(self, shareable: Shareable, job_id):
-        return self.client_executor.process_aux_command(shareable, job_id)
 
     def get_all_job_ids(self):
         return self.client_executor.get_run_processes_keys()

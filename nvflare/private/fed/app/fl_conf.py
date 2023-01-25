@@ -33,7 +33,7 @@ from .deployer.server_deployer import ServerDeployer
 from .fl_app_validator import FLAppValidator
 
 FL_PACKAGES = ["nvflare"]
-FL_MODULES = ["server", "client", "app"]
+FL_MODULES = ["server", "client", "app_common", "private"]
 
 
 class FLServerStarterConfiger(JsonConfigurator):

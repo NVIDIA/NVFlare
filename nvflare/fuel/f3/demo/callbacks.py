@@ -18,6 +18,7 @@ from typing import List
 import msgpack
 
 from nvflare.fuel.f3.communicator import MessageReceiver, Communicator
+from nvflare.fuel.f3.drivers.connnector import Mode
 from nvflare.fuel.f3.endpoint import EndpointMonitor, Endpoint, EndpointState
 from nvflare.fuel.f3.message import Message, Headers
 
@@ -81,3 +82,15 @@ class RequestReceiver(MessageReceiver):
         # Request header with MSG_ID is included with response
         response = make_message(message.headers, f"Response to message '{data.get(MESSAGE)}")
         self.communicator.send(endpoint, app_id, response)
+
+
+class AdHocReceiver(MessageReceiver):
+
+    def __init__(self, communicator: Communicator):
+        self.communicator = communicator
+
+    def process_message(self, endpoint: Endpoint, app_id: int, message: Message):
+
+        ad_hoc_url = message.payload.decode("utf-8")
+        self.communicator.add_connector(ad_hoc_url, Mode.ACTIVE)
+        log.info(f"Making ad hoc connection to {ad_hoc_url}")

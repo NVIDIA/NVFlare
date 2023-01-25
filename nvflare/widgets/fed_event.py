@@ -188,11 +188,13 @@ class ServerFedEventRunner(FedEventRunner):
     def fire_and_forget_request(self, request: Shareable, fl_ctx: FLContext, targets=None):
         if not isinstance(self.engine, ServerEngineSpec):
             raise TypeError("self.engine must be ServerEngineSpec but got {}".format(type(self.engine)))
-        self.engine.fire_and_forget_aux_request(
+        self.engine.send_aux_request(
             topic=self.topic,
             targets=targets,
             request=request,
             fl_ctx=fl_ctx,
+            timeout=0.0,
+            bulk_send=True
         )
 
 
@@ -210,9 +212,16 @@ class ClientFedEventRunner(FedEventRunner):
 
     def fire_and_forget_request(self, request: Shareable, fl_ctx: FLContext, targets=None):
         if not self.ready:
-            self.log_warning(fl_ctx, "Engine in not ready, skip the fed event firing.")
+            self.log_warning(fl_ctx, "Engine is not ready, skip the fed event firing.")
             return
 
         if not isinstance(self.engine, ClientEngineSpec):
             raise TypeError("self.engine must be ClientEngineSpec but got {}".format(type(self.engine)))
-        self.engine.fire_and_forget_aux_request(topic=self.topic, request=request, fl_ctx=fl_ctx)
+        self.engine.send_aux_request(
+            targets=[],
+            topic=self.topic,
+            request=request,
+            fl_ctx=fl_ctx,
+            timeout=0.0,
+            bulk_send=True
+        )

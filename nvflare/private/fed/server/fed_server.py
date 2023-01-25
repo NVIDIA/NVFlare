@@ -22,11 +22,10 @@ from concurrent import futures
 from threading import Lock
 from typing import List, Optional
 
-import grpc
-from google.protobuf.struct_pb2 import Struct
-from google.protobuf.timestamp_pb2 import Timestamp
+from .root.root_commander import RootCommander
 
-import nvflare.private.fed.protos.admin_pb2 as admin_msg
+from nvflare.private.defs import CellChannel, SessionTopic, TaskTopic, MessagePayloadKey
+from nvflare.private.fed.cmi import CellMessageInterface
 import nvflare.private.fed.protos.admin_pb2_grpc as admin_service
 import nvflare.private.fed.protos.federated_pb2 as fed_msg
 import nvflare.private.fed.protos.federated_pb2_grpc as fed_service
@@ -45,11 +44,15 @@ from nvflare.apis.fl_constant import (
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, ReturnCode, Shareable, make_reply
 from nvflare.apis.workspace import Workspace
+from nvflare.fuel.f3.cellnet.cell import (
+    Cell, Message, MessageHeaderKey, new_message, ServiceUnavailable,
+    AbortRun, InvalidSession, InvalidRequest
+)
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.zip_utils import unzip_all_from_bytes
 from nvflare.private.defs import SpecialTaskName
-from nvflare.private.fed.server.server_runner import ServerRunner
+from nvflare.private.fed.server.job.server_runner import ServerRunner
 from nvflare.private.fed.utils.fed_utils import shareable_to_modeldata
 from nvflare.private.fed.utils.messageproto import message_to_proto, proto_to_message
 from nvflare.private.fed.utils.numproto import proto_to_bytes
@@ -59,7 +62,7 @@ from nvflare.widgets.fed_event import ServerFedEventRunner
 from .client_manager import ClientManager
 from .run_manager import RunManager
 from .server_engine import ServerEngine
-from .server_state import (
+from nvflare.private.fed.server.server_state import (
     ABORT_RUN,
     ACTION,
     MESSAGE,
@@ -207,16 +210,20 @@ class BaseServer(ABC):
             if client.last_connect_time < time.time() - self.heart_beat_timeout:
                 delete.append(token)
         for token in delete:
-            client = self.client_manager.remove_client(token)
-            self.remove_client_data(token)
-            if self.admin_server:
-                self.admin_server.client_dead(token)
-            self.notify_dead_client(client)
+            client = self.logout_client(token)
             self.logger.info(
                 "Remove the dead Client. Name: {}\t Token: {}.  Total clients: {}".format(
                     client.name, token, len(self.client_manager.get_clients())
                 )
             )
+
+    def logout_client(self, token):
+        client = self.client_manager.remove_client(token)
+        self.remove_client_data(token)
+        if self.admin_server:
+            self.admin_server.client_dead(token)
+        self.notify_dead_client(client)
+        return client
 
     def notify_dead_client(self, client):
         """Called to do further processing of the dead client
@@ -239,6 +246,7 @@ class BaseServer(ABC):
 class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_service.AdminCommunicatingServicer):
     def __init__(
         self,
+        cell: Cell,
         project_name=None,
         min_num_clients=2,
         max_num_clients=10,
@@ -271,6 +279,7 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             handlers=handlers,
         )
 
+        self.cell = cell
         self.contributed_clients = {}
         self.tokens = None
         self.round_started = Timestamp()
@@ -299,6 +308,23 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         self.server_state: ServerState = ColdState()
         self.snapshot_persistor = snapshot_persistor
 
+        cell.set_message_interceptor(self._inspect_message)
+        cell.register_request_cb(
+            channel=CellChannel.SESSION,
+            topic=SessionTopic.REGISTER,
+            cb=self._do_register
+        )
+        cell.register_request_cb(
+            channel=CellChannel.SESSION,
+            topic=SessionTopic.HEARTBEAT,
+            cb=self._do_heartbeat
+        )
+        cell.register_request_cb(
+            channel=CellChannel.SESSION,
+            topic=SessionTopic.LOGOUT,
+            cb=self._do_quit
+        )
+
     def _create_server_engine(self, args, snapshot_persistor):
         return ServerEngine(
             server=self, args=args, client_manager=self.client_manager, snapshot_persistor=snapshot_persistor
@@ -310,18 +336,6 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         for k, v in self.current_model_meta_data.items():
             s.update({k: v})
         return s
-
-    @property
-    def task_meta_info(self):
-        """Task meta information.
-
-        The model_meta_info uniquely defines the current model,
-        it is used to reject outdated client's update.
-        """
-        meta_info = fed_msg.MetaData()
-        meta_info.created.CopyFrom(self.round_started)
-        meta_info.project.name = self.project_name
-        return meta_info
 
     def remove_client_data(self, token):
         self.tokens.pop(token, None)
@@ -337,7 +351,33 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         for client in self.get_all_clients().keys():
             self.tokens[client] = self.task_meta_info
 
-    def Register(self, request, context):
+    def _inspect_message(self, message: Message):
+        channel = message.get_header(MessageHeaderKey.CHANNEL)
+        topic = message.get_header(MessageHeaderKey.TOPIC)
+        with self.engine.new_context() as fl_ctx:
+            if channel == CellChannel.SESSION:
+                if topic == SessionTopic.REGISTER:
+                    state_check = self.server_state.register(fl_ctx)
+                elif topic == SessionTopic.HEARTBEAT:
+                    state_check = self.server_state.heartbeat(fl_ctx)
+                else:
+                    return None
+            else:
+                self._ssid_check(message)
+                if channel == CellChannel.TASK:
+                    if topic == TaskTopic.GET_TASK:
+                        state_check = self.server_state.get_task(fl_ctx)
+                    elif topic == TaskTopic.SUBMIT_RESULT:
+                        state_check = self.server_state.submit_result(fl_ctx)
+                    else:
+                        return None
+                elif channel == CellChannel.AUX:
+                    state_check = self.server_state.aux_communicate(fl_ctx)
+                else:
+                    return None
+            return self._handle_state_check(state_check)
+
+    def _do_register(self, request: Message):
         """Register new clients on the fly.
 
         Each client must get registered before getting the global model.
@@ -347,320 +387,68 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         This function does not change min_num_clients and max_num_clients.
         """
 
-        with self.engine.new_context() as fl_ctx:
-            state_check = self.server_state.register(fl_ctx)
-            self._handle_state_check(context, state_check)
+        token = self.client_manager.authenticate(request)
+        self.tokens[token] = self.task_meta_info
+        if self.admin_server:
+            self.admin_server.client_heartbeat(token)
 
-            token = self.client_manager.authenticate(request, context)
-            if token:
-                self.tokens[token] = self.task_meta_info
-                if self.admin_server:
-                    self.admin_server.client_heartbeat(token)
+        result = Shareable({
+                CellMessageInterface.HEADER_CLIENT_TOKEN: token,
+                CellMessageInterface.HEADER_SSID: self.server_state.ssid
+            })
+        return new_message(payload=result)
 
-                return fed_msg.FederatedSummary(
-                    comment="New client registered", token=token, ssid=self.server_state.ssid
-                )
+    @staticmethod
+    def _handle_state_check(state_check):
+        action = state_check.get(ACTION)
+        msg = state_check.get(MESSAGE)
+        if action == NIS:
+            raise ServiceUnavailable(msg)
+        if action == ABORT_RUN:
+            raise AbortRun(msg)
 
-    def _handle_state_check(self, context, state_check):
-        if state_check.get(ACTION) == NIS:
-            context.abort(
-                grpc.StatusCode.FAILED_PRECONDITION,
-                state_check.get(MESSAGE),
-            )
-        elif state_check.get(ACTION) == ABORT_RUN:
-            context.abort(
-                grpc.StatusCode.ABORTED,
-                state_check.get(MESSAGE),
-            )
+    def _ssid_check(self, request: Message):
+        ssid = request.get_header(CellMessageInterface.HEADER_SSID)
+        if ssid != self.server_state.ssid:
+            raise InvalidSession("Invalid Service session ID")
 
-    def _ssid_check(self, client_state, context):
-        if client_state.ssid != self.server_state.ssid:
-            context.abort(grpc.StatusCode.UNAUTHENTICATED, "Invalid Service session ID")
-
-    def Quit(self, request, context):
+    def _do_quit(self, request: Message):
         """Existing client quits the federated training process.
-
-        Server will stop sharing the global model with the client,
-        further contribution will be rejected.
-
         This function does not change min_num_clients and max_num_clients.
         """
-        # fire_event(EventType.CLIENT_QUIT, self.handlers, self.fl_ctx)
-
-        client = self.client_manager.validate_client(request, context)
+        client = self.client_manager.validate_client(request)
         if client:
             token = client.get_token()
+            self.logout_client(token)
+        return new_message()
 
-            _ = self.client_manager.remove_client(token)
-            self.tokens.pop(token, None)
-            if self.admin_server:
-                self.admin_server.client_dead(token)
+    def _do_heartbeat(self, request: Message):
+        token = request.get_header(CellMessageInterface.HEADER_CLIENT_TOKEN)
+        client_name = request.get_prop(CellMessageInterface.HEADER_CLIENT_NAME)
 
-        return fed_msg.FederatedSummary(comment="Removed client")
+        if self.client_manager.heartbeat(token, client_name):
+            self.tokens[token] = self.task_meta_info
+        if self.admin_server:
+            self.admin_server.client_heartbeat(token)
 
-    def GetTask(self, request, context):
-        """Process client's get task request."""
-
-        with self.engine.new_context() as fl_ctx:
-            state_check = self.server_state.get_task(fl_ctx)
-            self._handle_state_check(context, state_check)
-            self._ssid_check(request, context)
-
-            client = self.client_manager.validate_client(request, context)
-            if client is None:
-                context.abort(grpc.StatusCode.FAILED_PRECONDITION, "Client not valid.")
-
-            self.logger.debug(f"Fetch task requested from client: {client.name} ({client.get_token()})")
-            token = client.get_token()
-
-            shared_fl_ctx = fobs.loads(proto_to_bytes(request.context["fl_context"]))
-            job_id = str(shared_fl_ctx.get_prop(FLContextKey.CURRENT_RUN))
-
-            with self.lock:
-                if job_id not in self.engine.run_processes.keys():
-                    self.logger.info("server has no current run - asked client to end the run")
-                    task_name = SpecialTaskName.END_RUN
-                    task_id = ""
-                    shareable = None
-                else:
-                    shareable, task_id, task_name = self._process_task_request(client, fl_ctx, shared_fl_ctx)
-
-                    # task_name, task_id, shareable = self.server_runner.process_task_request(client, fl_ctx)
-
-                if shareable is None:
-                    shareable = Shareable()
-
-                task = fed_msg.CurrentTask(task_name=task_name)
-                task.meta.CopyFrom(self.task_meta_info)
-                meta_data = self.get_current_model_meta_data()
-
-                # we need TASK_ID back as a cookie
-                shareable.add_cookie(name=FLContextKey.TASK_ID, data=task_id)
-
-                # we also need to make TASK_ID available to the client
-                shareable.set_header(key=FLContextKey.TASK_ID, value=task_id)
-
-                task.meta_data.CopyFrom(meta_data)
-
-                current_model = shareable_to_modeldata(shareable, fl_ctx)
-                task.data.CopyFrom(current_model)
-                if task_name == SpecialTaskName.TRY_AGAIN:
-                    self.logger.debug(f"GetTask: Return task: {task_name} to client: {client.name} ({token}) ")
-                else:
-                    self.logger.info(f"GetTask: Return task: {task_name} to client: {client.name} ({token}) ")
-
-                return task
-
-    def _process_task_request(self, client, fl_ctx, shared_fl_ctx):
-        task_name = SpecialTaskName.END_RUN
-        task_id = ""
-        shareable = None
-        try:
-            with self.engine.lock:
-                job_id = shared_fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
-                command_conn = self.engine.get_command_conn(str(job_id))
-                if command_conn:
-                    command_shareable = Shareable()
-                    command_shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_ctx)
-                    command_shareable.set_header(ServerCommandKey.FL_CLIENT, client)
-
-                    data = {
-                        ServerCommandKey.COMMAND: ServerCommandNames.GET_TASK,
-                        ServerCommandKey.DATA: command_shareable,
-                    }
-                    command_conn.send(data)
-
-                    return_data = fobs.loads(command_conn.recv())
-                    task_name = return_data.get(ServerCommandKey.TASK_NAME)
-                    task_id = return_data.get(ServerCommandKey.TASK_ID)
-                    shareable = return_data.get(ServerCommandKey.SHAREABLE)
-                    child_fl_ctx = return_data.get(ServerCommandKey.FL_CONTEXT)
-
-                    fl_ctx.props.update(child_fl_ctx)
-        except BaseException as e:
+        abort_runs = self._sync_client_jobs(request, token)
+        summary_info = Shareable()
+        if abort_runs:
+            summary_info[MessagePayloadKey.ABORT_JOBS] = abort_runs
+            display_runs = ",".join(abort_runs)
             self.logger.info(
-                f"Could not connect to server runner process: {secure_format_exception(e)} - asked client to end the run"
+                f"These jobs: {display_runs} are not running on the server. "
+                f"Ask client: {client_name} to abort these runs."
             )
-        return shareable, task_id, task_name
+        return new_message(payload=summary_info)
 
-    def SubmitUpdate(self, request, context):
-        """Handle client's submission of the federated updates."""
-        # if self.server_runner is None or self.engine.run_manager is None:
-
-        with self.engine.new_context() as fl_ctx:
-            state_check = self.server_state.submit_result(fl_ctx)
-            self._handle_state_check(context, state_check)
-            self._ssid_check(request.client, context)
-
-            contribution = request
-
-            client = self.client_manager.validate_client(contribution.client, context)
-            if client is None:
-                response_comment = "Ignored the submit from invalid client. "
-                self.logger.info(response_comment)
-            else:
-                with self.lock:
-                    shareable = Shareable.from_bytes(proto_to_bytes(request.data.params["data"]))
-                    shared_fl_context = fobs.loads(proto_to_bytes(request.data.params["fl_context"]))
-
-                    job_id = str(shared_fl_context.get_prop(FLContextKey.CURRENT_RUN))
-                    if job_id not in self.engine.run_processes.keys():
-                        self.logger.info("ignored result submission since Server Engine isn't ready")
-                        context.abort(grpc.StatusCode.OUT_OF_RANGE, "Server has stopped")
-
-                    shared_fl_context.set_prop(FLContextKey.SHAREABLE, shareable, private=True)
-
-                    contribution_meta = contribution.client.meta
-                    client_contrib_id = "{}_{}_{}".format(
-                        contribution_meta.project.name, client.name, contribution_meta.current_round
-                    )
-                    contribution_task_name = contribution.task_name
-
-                    timenow = Timestamp()
-                    timenow.GetCurrentTime()
-                    time_seconds = timenow.seconds - self.round_started.seconds
-                    self.logger.info(
-                        "received update from %s (%s Bytes, %s seconds)",
-                        client_contrib_id,
-                        contribution.ByteSize(),
-                        time_seconds or "less than 1",
-                    )
-
-                    shareable.set_header(ServerCommandKey.FL_CLIENT, client)
-                    shareable.set_header(ServerCommandKey.TASK_NAME, contribution_task_name)
-                    data = {ReservedKey.SHAREABLE: shareable, ReservedKey.SHARED_FL_CONTEXT: shared_fl_context}
-
-                    self._submit_update(data, shared_fl_context)
-
-                    # self.server_runner.process_submission(client, contribution_task_name, task_id, shareable, fl_ctx)
-
-            response_comment = "Received from {} ({} Bytes, {} seconds)".format(
-                contribution.client.client_name,
-                contribution.ByteSize(),
-                time_seconds or "less than 1",
-            )
-            summary_info = fed_msg.FederatedSummary(comment=response_comment)
-            summary_info.meta.CopyFrom(self.task_meta_info)
-
-            return summary_info
-
-    def _submit_update(self, submit_update_data, shared_fl_context):
-        try:
-            job_id = shared_fl_context.get_prop(FLContextKey.CURRENT_RUN)
-            self.engine.send_command_to_child_runner_process(
-                job_id=job_id,
-                command_name=ServerCommandNames.SUBMIT_UPDATE,
-                command_data=submit_update_data,
-                return_result=False,
-            )
-        except BaseException:
-            self.logger.info("Could not connect to server runner process - asked client to end the run")
-
-    def AuxCommunicate(self, request, context):
-        """Handle auxiliary channel communication."""
-        with self.engine.new_context() as fl_ctx:
-            state_check = self.server_state.aux_communicate(fl_ctx)
-            self._handle_state_check(context, state_check)
-            self._ssid_check(request.client, context)
-
-            self.logger.info("getting AuxCommunicate request")
-
-            contribution = request
-
-            client = self.client_manager.validate_client(contribution.client, context)
-            if client is None:
-                response_comment = "Ignored the submit from invalid client. "
-                self.logger.info(response_comment)
-
-            shareable = Shareable()
-            shareable = shareable.from_bytes(proto_to_bytes(request.data["data"]))
-            shared_fl_context = fobs.loads(proto_to_bytes(request.data["fl_context"]))
-
-            job_id = str(shared_fl_context.get_prop(FLContextKey.CURRENT_RUN))
-            if job_id not in self.engine.run_processes.keys():
-                self.logger.info("ignored AuxCommunicate request since Server Engine isn't ready")
-                reply = make_reply(ReturnCode.SERVER_NOT_READY)
-                aux_reply = fed_msg.AuxReply()
-                aux_reply.data.CopyFrom(shareable_to_modeldata(reply, fl_ctx))
-
-                return aux_reply
-
-            fl_ctx.set_peer_context(shared_fl_context)
-            shareable.set_peer_props(shared_fl_context.get_all_public_props())
-
-            shared_fl_context.set_prop(FLContextKey.SHAREABLE, shareable, private=True)
-
-            topic = shareable.get_header(ReservedHeaderKey.TOPIC)
-
-            reply = self._aux_communicate(fl_ctx, shareable, shared_fl_context, topic)
-
-            aux_reply = fed_msg.AuxReply()
-            aux_reply.data.CopyFrom(shareable_to_modeldata(reply, fl_ctx))
-
-            return aux_reply
-
-    def _aux_communicate(self, fl_ctx, shareable, shared_fl_context, topic):
-        try:
-            command_shareable = Shareable()
-            command_shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_context)
-            command_shareable.set_header(ServerCommandKey.TOPIC, topic)
-            command_shareable.set_header(ServerCommandKey.SHAREABLE, shareable)
-            data = {
-                ServerCommandKey.COMMAND: ServerCommandNames.AUX_COMMUNICATE,
-                ServerCommandKey.DATA: command_shareable,
-            }
-            with self.engine.lock:
-                job_id = shared_fl_context.get_prop(FLContextKey.CURRENT_RUN)
-                command_conn = self.engine.get_command_conn(str(job_id))
-                if command_conn:
-                    command_conn.send(data)
-
-                    return_data = command_conn.recv()
-                    reply = return_data.get(ServerCommandKey.AUX_REPLY)
-                    child_fl_ctx = return_data.get(ServerCommandKey.FL_CONTEXT)
-
-                    fl_ctx.props.update(child_fl_ctx)
-                else:
-                    reply = make_reply(ReturnCode.ERROR)
-        except BaseException:
-            self.logger.info("Could not connect to server runner process - asked client to end the run")
-            reply = make_reply(ReturnCode.COMMUNICATION_ERROR)
-
-        return reply
-
-    def Heartbeat(self, request, context):
-
-        with self.engine.new_context() as fl_ctx:
-            state_check = self.server_state.heartbeat(fl_ctx)
-            self._handle_state_check(context, state_check)
-
-            token = request.token
-            cn_names = context.auth_context().get("x509_common_name")
-            if cn_names:
-                client_name = cn_names[0].decode("utf-8")
-            else:
-                client_name = request.client_name
-
-            if self.client_manager.heartbeat(token, client_name, context):
-                self.tokens[token] = self.task_meta_info
-            if self.admin_server:
-                self.admin_server.client_heartbeat(token)
-
-            abort_runs = self._sync_client_jobs(request, token)
-            summary_info = fed_msg.FederatedSummary()
-            if abort_runs:
-                del summary_info.abort_jobs[:]
-                summary_info.abort_jobs.extend(abort_runs)
-                display_runs = ",".join(abort_runs)
-                self.logger.info(
-                    f"These jobs: {display_runs} are not running on the server. "
-                    f"Ask client: {client_name} to abort these runs."
-                )
-            return summary_info
-
-    def _sync_client_jobs(self, request, client_token):
+    def _sync_client_jobs(self, request: Message, client_token):
         # jobs that are running on client but not on server need to be aborted!
-        client_jobs = request.jobs
+        payload = request.payload
+        if not isinstance(payload, Shareable):
+            raise InvalidRequest(f"payload must be Shareable but got {type(payload)}")
+
+        client_jobs = payload.get(MessagePayloadKey.JOBS)
         server_jobs = self.engine.run_processes.keys()
         jobs_need_abort = list(set(client_jobs).difference(server_jobs))
 
@@ -680,19 +468,9 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
         return jobs_need_abort
 
     def _notify_dead_job(self, client, job_id: str):
-        try:
-            with self.engine.lock:
-                command_conn = self.engine.get_command_conn(job_id)
-                if command_conn:
-                    shareable = Shareable()
-                    shareable.set_header(ServerCommandKey.FL_CLIENT, client.name)
-                    msg = {
-                        ServerCommandKey.COMMAND: ServerCommandNames.HANDLE_DEAD_JOB,
-                        ServerCommandKey.DATA: shareable,
-                    }
-                    command_conn.send(msg)
-        except BaseException:
-            self.logger.info("Could not connect to server runner process")
+        commander = self.engine.get_commander()
+        assert isinstance(commander, RootCommander)
+        commander.notify_dead_job(client.name, job_id)
 
     def notify_dead_client(self, client):
         """Called to do further processing of the dead client
@@ -712,34 +490,6 @@ class FederatedServer(BaseServer, fed_service.FederatedTrainingServicer, admin_s
             participating_clients = process_info.get(RunProcessKey.PARTICIPANTS, None)
             if participating_clients and client.token in participating_clients:
                 self._notify_dead_job(client, job_id)
-
-    def Retrieve(self, request, context):
-        client_name = request.client_name
-        messages = self.admin_server.get_outgoing_requests(client_token=client_name) if self.admin_server else []
-
-        response = admin_msg.Messages()
-        for m in messages:
-            response.message.append(message_to_proto(m))
-        return response
-
-    def SendReply(self, request, context):
-        client_name = request.client_name
-        message = proto_to_message(request.message)
-        if self.admin_server:
-            self.admin_server.accept_reply(client_token=client_name, reply=message)
-
-        response = admin_msg.Empty()
-        return response
-
-    def SendResult(self, request, context):
-        client_name = request.client_name
-        message = proto_to_message(request.message)
-
-        processor = self.processors.get(message.topic)
-        processor.process(client_name, message)
-
-        response = admin_msg.Empty()
-        return response
 
     def start_run(self, job_id, run_root, conf, args, snapshot):
         # Create the FL Engine

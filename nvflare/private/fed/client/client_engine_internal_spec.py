@@ -12,25 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 
 from nvflare.apis.client_engine_spec import ClientEngineSpec
 
 
-class ClientEngineInternalSpec(ClientEngineSpec, ABC):
+class ClientEngineInternalSpec(ClientEngineSpec):
     """The ClientEngineInternalSpec defines the ClientEngine APIs running in the parent process."""
 
     @abstractmethod
     def get_engine_status(self):
-        pass
-
-    @abstractmethod
-    def get_client_name(self) -> str:
-        """Get the ClientEngine client_name.
-
-        Returns: the client_name
-
-        """
         pass
 
     @abstractmethod

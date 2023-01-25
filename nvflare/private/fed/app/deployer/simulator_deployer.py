@@ -18,9 +18,9 @@ import tempfile
 from nvflare.apis.event_type import EventType
 from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.private.fed.app.server.server_train import create_admin_server
-from nvflare.private.fed.client.admin import FedAdminAgent
+from nvflare.private.fed.client.root.admin import FedAdminAgent
 from nvflare.private.fed.client.admin_msg_sender import AdminMessageSender
-from nvflare.private.fed.client.client_req_processors import ClientRequestProcessors
+from nvflare.private.fed.client.root.client_req_processors import ClientRequestProcessors
 from nvflare.private.fed.client.fed_client import FederatedClient
 from nvflare.private.fed.simulator.simulator_client_engine import SimulatorClientEngine
 from nvflare.private.fed.simulator.simulator_server import SimulatorServer

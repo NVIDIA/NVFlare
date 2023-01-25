@@ -78,7 +78,6 @@ class Communicator:
 
         Returns:
             The endpoint if found. None if not found
-
         """
         return self.conn_manager.find_endpoint(name)
 
@@ -109,26 +108,6 @@ class Communicator:
 
         self.conn_manager.register_message_receiver(app_id, receiver)
 
-    def get_connector_urls(self, scheme: str, resources: dict) -> (str, str):
-        """Return the URLs can be used for a specific scheme to reach this endpoint
-
-        Args:
-            scheme: Connection scheme, e.g. http, https
-            resources: User specified resources like host and port ranges
-
-        Returns:
-            A tuple with active and passive URLs
-
-        Raises:
-            CommError: If any errors like invalid host or port not available
-        """
-
-        driver = self.driver_mgr.find_driver(scheme)
-        if not driver:
-            raise CommError(CommError.NOT_SUPPORTED, f"No driver found for scheme {scheme}")
-
-        return driver.get_connect_url(scheme, resources), driver.get_listening_url(scheme, resources)
-
     def add_connector(self, url: str, mode: Mode) -> str:
         """Load a connector. The driver is selected based on the URL
 
@@ -145,13 +124,39 @@ class Communicator:
 
         return self._load_driver(url, mode)
 
-    def add_connector_advanced(self, driver: Driver, mode: Mode, params: dict) -> str:
+    def start_listener(self, scheme: str, resources: dict) -> (str, str):
+        """Add and start a connector in passive mode on an address selected by the driver.
+
+        Args:
+            scheme: Connection scheme, e.g. http, https
+            resources: User specified resources like host and port ranges
+
+        Returns:
+            A tuple with connector handle and connect url
+
+        Raises:
+            CommError: If any errors like invalid host or port not available
+        """
+
+        driver_class = self.driver_mgr.find_driver_class(scheme)
+        if not driver_class:
+            raise CommError(CommError.NOT_SUPPORTED, f"No driver found for scheme {scheme}")
+
+        connect_url, listening_url = driver_class.get_urls(scheme, resources)
+        params = Driver.parse_url(listening_url)
+
+        handle = self.add_connector_advanced(driver_class(), Mode.PASSIVE, params, True)
+
+        return handle, connect_url
+
+    def add_connector_advanced(self, driver: Driver, mode: Mode, params: dict, start: bool = False) -> str:
         """Add a connector using a specific driver instance.
 
         Args:
             driver: A transport driver instance
             mode: Active or passive
             params: Driver parameters
+            start: Start the connector if true
 
         Returns:
             A handle that can be used to delete the connector
@@ -160,7 +165,23 @@ class Communicator:
             CommError: If any errors
         """
 
-        return self._update_conn_parameters(driver, params, mode)
+        handle = self._update_conn_parameters(driver, params, mode)
+        if not start:
+            return handle
+
+        listener = None
+        for connector in self.conn_manager.connectors:
+            if handle == connector.handle:
+                listener = connector
+                break
+
+        if not listener:
+            log.info(f"Connector {driver.get_name()}:{handle} is not found")
+            return ""
+
+        self.conn_manager.start_connector(listener)
+
+        return handle
 
     def remove_connector(self, handle: str):
         """Remove the connector
@@ -184,9 +205,9 @@ class Communicator:
 
     def _load_driver(self, url: str, mode: Mode) -> str:
 
-        driver = self.driver_mgr.find_driver(url)
-        if not driver:
+        driver_class = self.driver_mgr.find_driver_class(url)
+        if not driver_class:
             raise CommError(CommError.NOT_SUPPORTED, f"No driver found for URL {url}")
 
         params = Driver.parse_url(url)
-        return self._update_conn_parameters(driver, params, mode)
+        return self._update_conn_parameters(driver_class(), params, mode)
