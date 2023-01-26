@@ -34,7 +34,6 @@ __all__ = [
     "serialize_stream",
     "deserialize",
     "deserialize_stream",
-    "reset",
 ]
 
 FOBS_TYPE = "__fobs_type__"
@@ -61,8 +60,6 @@ def register(decomposer: Union[Decomposer, Type[Decomposer]]) -> None:
     Args:
         decomposer: The decomposer type or instance
     """
-
-    global _decomposers
 
     if inspect.isclass(decomposer):
         instance = decomposer()
@@ -170,18 +167,6 @@ def _fobs_packer(obj: Any) -> dict:
     return {FOBS_TYPE: type_name, FOBS_DATA: decomposed}
 
 
-def _load_class(type_name: str):
-    parts = type_name.split(".")
-    if len(parts) == 1:
-        parts = ["builtins", type_name]
-
-    mod = __import__(parts[0])
-    for comp in parts[1:]:
-        mod = getattr(mod, comp)
-
-    return mod
-
-
 def _fobs_unpacker(obj: Any) -> Any:
 
     if type(obj) is not dict or FOBS_TYPE not in obj:
@@ -189,15 +174,7 @@ def _fobs_unpacker(obj: Any) -> Any:
 
     type_name = obj[FOBS_TYPE]
     if type_name not in _decomposers:
-        error = True
-        if _enum_auto_register:
-            cls = _load_class(type_name)
-            if issubclass(cls, Enum):
-                register_enum_types(cls)
-                error = False
-        if error:
-            raise TypeError(f"Unknown type {type_name}, caused by mismatching decomposers")
-
+        raise TypeError(f"Unknown type {type_name}, caused by mismatching decomposers")
     decomposer = _decomposers[type_name]
     return decomposer.recompose(obj[FOBS_DATA])
 
@@ -251,10 +228,3 @@ def deserialize_stream(stream: BinaryIO, **kwargs) -> Any:
     """
     data = stream.read()
     return deserialize(data, **kwargs)
-
-
-def reset():
-    """Reset FOBS to initial state. Used for unit test"""
-    global _decomposers, _decomposers_registered
-    _decomposers.clear()
-    _decomposers_registered = False

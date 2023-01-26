@@ -1,63 +1,19 @@
-"""
-Simple numpy-based code for dynamically updating histogram.
-TJL 7/1/15 <tjlane@slac.stanford.edu>
-"""
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import sys
-
-# import numpy as np
-# import matplotlib.pyplot as plt
-
 from typing import List, Tuple, Union
-
-
-# class DynamicHistogram(object):
-#
-#     def __init__(self, bins):
-#         """
-#         Create a histogram capable of dynamically updating itself -- that is,
-#         adding new samples on the fly.
-#
-#         Parameters
-#         ----------
-#         bins : np.ndarray
-#             A vector of the low/left-inclusive bin edges
-#         """
-#
-#         self._bins = bins
-#         self._counts = np.zeros(bins.shape, dtype=int)
-#
-#         return
-#
-#     @property
-#     def bins(self):
-#         return self._bins
-#
-#     @property
-#     def counts(self):
-#         return self._counts
-#
-#     def add_samples(self, x):
-#         """
-#         Add a sample, 'x', to the histogram.
-#
-#         Parameters
-#         ----------
-#         x : float, np.ndarray
-#             The sample value. Can be a vector representing multiple samples.
-#         """
-#
-#         if type(x) is float:
-#             x = np.array([x])
-#         inds = np.digitize(x, self.bins)
-#         cnts = np.bincount(inds)
-#         self._counts[:len(cnts)] += cnts
-#         return
-#
-#     def plot(self):
-#         plt.plot(self.bins, self.counts, lw=2)
-#         plt.xlabel('value')
-#         plt.ylabel('frequency')
-#         plt.show()
 
 
 def format_value(v: float, n=3):
@@ -213,58 +169,58 @@ def test_time_pool():
         print(f"{n}: {len(r)}")
 
 
-# def test_plot():
-#     """
-#     simple test, for speed!
-#     """
-#
-#     import time
-#
-#     num_bins = 20
-#     # num_samples = int(1e5)
-#     num_samples = 20
-#
-#     start = time.time()
-#     min = -5.0
-#     max = 5.0
-#
-#     bins = np.linspace(min, max, num_bins)
-#     hist = DynamicHistogram(bins)
-#
-#     for i in range(num_samples):
-#         #x = np.random.normal()
-#         x = -5.000001
-#         print(f"sample {i}: {x}")
-#         # if x < min:
-#         #     x = min
-#         # if x > max:
-#         #     x = max
-#
-#         print(f"22sample {i}: {x}")
-#         hist.add_samples(x)
-#
-#     end = time.time()
-#
-#     elapsed = end - start
-#     print('Added %d samples in %.3f seconds (%d bins)' % (num_samples, elapsed, num_bins))
-#     print('%d ns per sample (random number gen is ~300 ns)' % (1e9 * elapsed / num_samples))
-#
-#     bins = hist.bins
-#     print(f"bins: t={type(bins)} len={len(bins)}, v={bins}")
-#
-#     counts = hist.counts
-#     print(f"counts: t={type(counts)} len={len(counts)} v={counts}, total={np.sum(counts)}")
-#
-#     percents = counts / np.sum(counts)
-#     print(f"percents={percents}, total={np.sum(percents)}")
-#
-#     for i in range(len(bins)):
-#         print(f"BIN {i}: {round(bins[i], 2)}")
-#     hist.plot()
-#
-#     return
+def test_plot():
+    """
+    simple test, for speed!
+    """
+
+    import time
+
+    num_bins = 20
+    # num_samples = int(1e5)
+    num_samples = 20
+
+    start = time.time()
+    min = -5.0
+    max = 5.0
+
+    bins = np.linspace(min, max, num_bins)
+    hist = DynamicHistogram(bins)
+
+    for i in range(num_samples):
+        #x = np.random.normal()
+        x = -5.000001
+        print(f"sample {i}: {x}")
+        # if x < min:
+        #     x = min
+        # if x > max:
+        #     x = max
+
+        print(f"22sample {i}: {x}")
+        hist.add_samples(x)
+
+    end = time.time()
+
+    elapsed = end - start
+    print('Added %d samples in %.3f seconds (%d bins)' % (num_samples, elapsed, num_bins))
+    print('%d ns per sample (random number gen is ~300 ns)' % (1e9 * elapsed / num_samples))
+
+    bins = hist.bins
+    print(f"bins: t={type(bins)} len={len(bins)}, v={bins}")
+
+    counts = hist.counts
+    print(f"counts: t={type(counts)} len={len(counts)} v={counts}, total={np.sum(counts)}")
+
+    percents = counts / np.sum(counts)
+    print(f"percents={percents}, total={np.sum(percents)}")
+
+    for i in range(len(bins)):
+        print(f"BIN {i}: {round(bins[i], 2)}")
+    hist.plot()
+
+    return
 
 
 if __name__ == '__main__':
-    #test_plot()
-    test_time_pool()
+    test_plot()
+    #test_time_pool()

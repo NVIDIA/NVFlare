@@ -12,9 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Dict, List, Union
+
 import json
 import os
-from typing import Dict, List, Union
 
 
 def find_file_in_dir(file_basename, path) -> Union[None, str]:
@@ -65,7 +66,10 @@ class ConfigService:
     _config_path = []
 
     @staticmethod
-    def initialize(section_files: Dict[str, str], config_path: List[str]):
+    def initialize(
+            section_files: Dict[str, str],
+            config_path: List[str]
+    ):
         """
         Initialize the ConfigService.
         Configuration is divided into sections, and each section must have a JSON config file.
@@ -143,8 +147,7 @@ class ConfigService:
         file_path = ConfigService.find_file(file_basename)
         if not file_path:
             raise FileNotFoundError(
-                f"cannot find file '{file_basename}' from search path '{ConfigService._config_path}'"
-            )
+                f"cannot find file '{file_basename}' from search path '{ConfigService._config_path}'")
         return json.load(open(file_path, "rt"))
 
     @staticmethod

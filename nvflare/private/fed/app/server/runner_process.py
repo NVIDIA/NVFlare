@@ -139,8 +139,8 @@ def main():
             server_app_runner = ServerAppRunner()
             server_app_runner.start_server_app(workspace, server, args, args.app_root, args.job_id, snapshot, logger)
         finally:
-            if cell:
-                cell.stop()
+            # if cell:
+            #     cell.stop()
             if command_agent:
                 command_agent.shutdown()
             if deployer:

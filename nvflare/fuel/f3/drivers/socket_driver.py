@@ -103,17 +103,13 @@ class ConnectionHandler(BaseRequestHandler):
 
     def handle(self):
 
-        connection = None
+        connection = StreamConnection(self.request, self.server.connector, self.client_address)
+        self.server.driver.add_connection(connection)
 
         try:
-            connection = StreamConnection(self.request, self.server.connector, self.client_address)
-            self.server.driver.add_connection(connection)
-
             connection.read_loop()
-
         except BaseException as ex:
-            log.error(f"Connection closed due to error: {ex}")
-
+            log.error(f"Passive connection {connection.name} closed due to error: {ex}")
         finally:
             if connection:
                 self.server.driver.close_connection(connection)

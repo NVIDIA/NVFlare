@@ -192,6 +192,8 @@ class NetManager(CommandModule):
             for a in agents:
                 conn.append_string(a)
             conn.append_string(f"Total Agents: {len(agents)}")
+        else:
+            conn.append_string("No peers")
 
     def _cmd_connectors(self, conn: Connection, args: [str]):
         if len(args) != 2:
@@ -339,7 +341,7 @@ class NetManager(CommandModule):
 
         url = args[1]
         self.agent.change_root(url)
-        conn.append_shutdown("Root Changed. Good Bye!")
+        conn.append_string("Asked to change root")
 
     def _cmd_stop_net(self, conn: Connection, args: [str]):
         self.agent.stop()

@@ -606,12 +606,14 @@ class Cell(MessageReceiver, EndpointMonitor):
                     assert isinstance(agent, CellAgent)
                     if agent.info.is_on_server:
                         agents_to_delete.append(fqcn)
-                    for a in agents_to_delete:
-                        self.logger.debug(f"{self.my_info.fqcn}: removing agent {a}")
-                        self.agents.pop(a, None)
+                for a in agents_to_delete:
+                    self.logger.debug(f"{self.my_info.fqcn}: removing agent {a}")
+                    self.agents.pop(a, None)
 
             # recreate backbone connector to the root
             if self.my_info.gen <= 2:
+                # self.logger.debug("waiting 5 secs before connecting to new server ...")
+                # time.sleep(5.0)
                 self.logger.debug(f"{self.my_info.fqcn}: recreating bb_external_connector ...")
                 self._create_bb_external_connector()
 

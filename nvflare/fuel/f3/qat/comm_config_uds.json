@@ -1,13 +1,13 @@
 {
   "internal": {
-    "scheme": "tcp",
+    "scheme": "grpc",
     "resources": {
       "host": "localhost"
     }
   },
   "external": {
-    "scheme": "tcp",
-    "allow_adhoc": true,
+    "scheme": "grpc",
+    "allow_adhoc": false,
     "resources": {
       "host": "localhost",
       "secure": false,

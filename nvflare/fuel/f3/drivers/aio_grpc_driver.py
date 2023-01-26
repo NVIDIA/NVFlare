@@ -396,6 +396,7 @@ class AioGrpcDriver(SocketDriver):
         # wait for connection to be finished
         self.logger.debug(f"CLIENT: waiting for connection {id(conn_ctx.conn)} to finish")
         conn_ctx.waiter.wait()
+        self.close_connection(conn_ctx.conn)
         self.logger.debug(f"CLIENT: connection {id(conn_ctx.conn)} is done")
 
     def shutdown(self):

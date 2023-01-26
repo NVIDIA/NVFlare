@@ -33,7 +33,7 @@ class RunInfo(object):
         self.job_id = job_id
         self.start_time = time.time()
         self.app_path = app_path
-        self.status = MachineStatus.STOPPED
+        self.status = MachineStatus.STOPPED.value
 
 
 class RunManager:
