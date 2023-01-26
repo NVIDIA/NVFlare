@@ -1,7 +1,7 @@
 -r requirements-doc.txt
 pydocstyle==6.1.1
-isort==5.11.4
-flake8==6.0.0
+isort==5.10.1
+flake8==5.0.4
 black==22.10.0
 click==8.1.3
 pytest-xdist==3.0.2

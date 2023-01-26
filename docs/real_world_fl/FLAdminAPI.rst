@@ -3,7 +3,10 @@ FLAdminAPI
 
 :class:`FLAdminAPI<nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI>` is a wrapper for admin commands that can be issued
 by an admin client to the FL server. You can use a provisioned admin client's certs and keys to initialize an instance
-of FLAdminAPI to programmatically submit commands to the FL server. :ref:`flare_api` is the redesigned version of this.
+of FLAdminAPI to programmatically submit commands to the FL server.
+
+As of version 2.3.0, FLAdminAPI will continue to exist as is, but :ref:`flare_api` is a redesigned version of this
+intended to provide a better user experience, so it is recommended to use :ref:`flare_api` instead.
 
 Initialization
 --------------
