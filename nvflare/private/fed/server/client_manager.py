@@ -144,15 +144,16 @@ class ClientManager:
 
             for token, client in self.clients.items():
                 if client.name == client_name:
-                    # context.abort(
-                    #     grpc.StatusCode.FAILED_PRECONDITION,
+                    # context.set_prop(
+                    #     FLContextKey.COMMUNICATION_ERROR,
                     #     "Client ID already registered as a client: {}".format(client_name),
                     # )
-                    context.set_prop(
-                        FLContextKey.COMMUNICATION_ERROR,
-                        "Client ID already registered as a client: {}".format(client_name),
-                    )
-                    return None
+                    # return None
+                    with self.lock:
+                        self.clients.pop(token)
+                        self.logger.info(f"Client: {client_name} already registered. Re-login the client "
+                                         f"with a new token.")
+                        break
 
             client = Client(client_name, str(uuid.uuid4()))
         return client
@@ -206,7 +207,7 @@ class ClientManager:
                             "Client ID already registered as a client: {}".format(client_name),
                         )
                         self.logger.info(
-                            "Failed to re-activate dead client:{} with token: {}. Client already exist.".format(
+                            "Failed to re-activate the client:{} with token: {}. Client already exist.".format(
                                 client_name, _token
                             )
                         )
@@ -216,7 +217,7 @@ class ClientManager:
                 client.last_connect_time = time.time()
                 # self._set_instance_name(client)
                 self.clients.update({token: client})
-                self.logger.info("Re-activate dead client:{} with token: {}".format(client_name, token))
+                self.logger.info("Re-activate the client:{} with token: {}".format(client_name, token))
 
                 return True
 
