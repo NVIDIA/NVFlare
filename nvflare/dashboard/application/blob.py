@@ -27,6 +27,14 @@ lighter_folder = os.path.dirname(utils.__file__)
 template = utils.load_yaml(os.path.join(lighter_folder, "impl", "master_template.yml"))
 
 
+def get_csp_template(csp, participant, template):
+    return template[f"{csp}_start_{participant}_sh"]
+
+
+def get_csp_start_script_name(csp):
+    return f"{csp}_start.sh"
+
+
 def _write(file_full_path, content, mode, exe=False):
     mode = mode + "w"
     with open(file_full_path, mode) as f:
@@ -109,6 +117,7 @@ def gen_server(key, first_server=True):
         "admin_port": admin_port,
         "fed_learn_port": fl_port,
         "config_folder": "config",
+        "ha_mode": "true" if project.ha_mode else "false",
         "org_name": "",
     }
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -119,7 +128,7 @@ def gen_server(key, first_server=True):
         _write(os.path.join(dest_dir, "fed_server.json"), json.dumps(config, indent=2), "t")
         _write(
             os.path.join(dest_dir, "start.sh"),
-            template["start_svr_sh"],
+            utils.sh_replace(template["start_svr_sh"], replacement_dict),
             "t",
             exe=True,
         )
@@ -138,6 +147,13 @@ def gen_server(key, first_server=True):
         _write(os.path.join(dest_dir, "server.crt"), cert_pair.ser_cert, "b", exe=False)
         _write(os.path.join(dest_dir, "server.key"), cert_pair.ser_pri_key, "b", exe=False)
         _write(os.path.join(dest_dir, "rootCA.pem"), project.root_cert, "b", exe=False)
+        if not project.ha_mode:
+            _write(
+                os.path.join(dest_dir, get_csp_start_script_name("azure")),
+                utils.sh_replace(get_csp_template("azure", "svr"), {"server_name": entity.name}),
+                "t",
+                exe=True,
+            )
         signatures = utils.sign_all(dest_dir, deserialize_ca_key(project.root_key))
         json.dump(signatures, open(os.path.join(dest_dir, "signature.json"), "wt"))
 
@@ -237,6 +253,12 @@ def gen_client(key, id):
         _write(os.path.join(dest_dir, "client.crt"), cert_pair.ser_cert, "b", exe=False)
         _write(os.path.join(dest_dir, "client.key"), cert_pair.ser_pri_key, "b", exe=False)
         _write(os.path.join(dest_dir, "rootCA.pem"), project.root_cert, "b", exe=False)
+        _write(
+            os.path.join(dest_dir, get_csp_start_script_name("azure")),
+            get_csp_template("azure", "cln"),
+            "t",
+            exe=True,
+        )
         signatures = utils.sign_all(dest_dir, deserialize_ca_key(project.root_key))
         json.dump(signatures, open(os.path.join(dest_dir, "signature.json"), "wt"))
 
@@ -274,6 +296,7 @@ def gen_client(key, id):
             template["readme_fc"],
             "t",
         )
+
         run_args = ["zip", "-rq", "-P", key, "tmp.zip", "."]
         subprocess.run(run_args, cwd=tmp_dir)
         fileobj = io.BytesIO()
