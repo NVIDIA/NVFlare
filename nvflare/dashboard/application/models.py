@@ -64,9 +64,6 @@ class Project(db.Model):
     server2 = db.Column(db.String(128), default="")
     root_cert = db.Column(db.String(4096), default="")
     root_key = db.Column(db.String(4096), default="")
-    cloud_enabled = db.Column(db.Boolean, default=False)
-    cloud_location = db.Column(db.String(128), default="westus2")
-    requirements = db.Column(db.String(4096), default="")
 
     def asdict(self):
         table_dict = {
