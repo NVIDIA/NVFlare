@@ -136,6 +136,7 @@ class InfoCollectorCommandModule(JobCommandModule, CommandUtil):
             conn.append_any(result)
         elif target_type == self.TARGET_TYPE_CLIENT:
             message = new_message(conn, topic=InfoCollectorTopic.SHOW_ERRORS, body="", require_authz=True)
+            message.set_header(RequestHeader.JOB_ID, job_id)
             replies = self.send_request_to_clients(conn, message)
             self._process_stats_replies(conn, replies)
 

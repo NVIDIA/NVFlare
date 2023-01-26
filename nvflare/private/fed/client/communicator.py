@@ -108,6 +108,12 @@ class Communicator:
             }
         )
 
+        start = time.time()
+        while not self.cell.is_cell_connected(FQCN.ROOT_SERVER):
+            time.sleep(0.1)
+            if time.time() - start > 30.:
+                raise FLCommunicationError("error:Could not connect to the server for client_registration.")
+
         while True:
             try:
                 result = self.cell.send_request(
