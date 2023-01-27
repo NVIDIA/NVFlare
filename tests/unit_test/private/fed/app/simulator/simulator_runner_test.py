@@ -30,7 +30,7 @@ class TestSimulatorRunner:
         shutil.rmtree(self.workspace)
 
     @patch("nvflare.private.fed.app.deployer.simulator_deployer.SimulatorServer.deploy")
-    @patch("nvflare.private.fed.app.server.server_train.FedAdminServer")
+    @patch("nvflare.private.fed.app.utils.FedAdminServer")
     @patch("nvflare.private.fed.app.deployer.simulator_deployer.FederatedClient.register")
     @patch("nvflare.private.fed.app.deployer.simulator_deployer.FederatedClient.start_heartbeat")
     @patch("nvflare.private.fed.app.deployer.simulator_deployer.FedAdminAgent")
@@ -47,7 +47,7 @@ class TestSimulatorRunner:
         assert sorted(client_names) == sorted(expected_clients)
 
     @patch("nvflare.private.fed.app.deployer.simulator_deployer.SimulatorServer.deploy")
-    @patch("nvflare.private.fed.app.server.server_train.FedAdminServer")
+    @patch("nvflare.private.fed.app.utils.FedAdminServer")
     @patch("nvflare.private.fed.app.deployer.simulator_deployer.FederatedClient.register")
     @patch("nvflare.private.fed.app.deployer.simulator_deployer.FederatedClient.start_heartbeat")
     @patch("nvflare.private.fed.app.deployer.simulator_deployer.FedAdminAgent")
@@ -64,7 +64,7 @@ class TestSimulatorRunner:
         assert sorted(client_names) == sorted(expected_clients)
 
     @patch("nvflare.private.fed.app.deployer.simulator_deployer.SimulatorServer.deploy")
-    @patch("nvflare.private.fed.app.server.server_train.FedAdminServer")
+    @patch("nvflare.private.fed.app.utils.FedAdminServer")
     @patch("nvflare.private.fed.app.deployer.simulator_deployer.FederatedClient.register")
     @patch("nvflare.private.fed.app.deployer.simulator_deployer.FederatedClient.start_heartbeat")
     @patch("nvflare.private.fed.app.deployer.simulator_deployer.FedAdminAgent")

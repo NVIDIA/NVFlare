@@ -14,6 +14,7 @@
 
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.private.fed.client.client_engine import ClientEngine
+from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 
 
 class SimulatorClientEngine(ClientEngine):
@@ -26,3 +27,11 @@ class SimulatorClientEngine(ClientEngine):
             with run_manager.new_context() as fl_ctx:
                 topic = shareable.get_header(ReservedHeaderKey.TOPIC)
                 return run_manager.dispatch(topic=topic, request=shareable, fl_ctx=fl_ctx)
+
+
+class SimulatorParentClientEngine(ClientEngine):
+    def __init__(self):
+        pass
+
+    def get_all_job_ids(self):
+        return [SimulatorConstants.JOB_NAME]

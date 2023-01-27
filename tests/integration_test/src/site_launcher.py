@@ -14,11 +14,11 @@
 
 import logging
 import os
-import shlex
 import signal
-import subprocess
 from abc import ABC, abstractmethod
 from typing import Dict, Optional
+
+from .utils import run_command_in_subprocess
 
 
 class SiteProperties:
@@ -44,16 +44,6 @@ def kill_process(site_prop: SiteProperties):
     p.wait()
     print(f"Kill {site_prop.name}.")
     site_prop.process.wait()
-
-
-def run_command_in_subprocess(command):
-    new_env = os.environ.copy()
-    process = subprocess.Popen(
-        shlex.split(command),
-        preexec_fn=os.setsid,
-        env=new_env,
-    )
-    return process
 
 
 class SiteLauncher(ABC):
@@ -105,28 +95,19 @@ class SiteLauncher(ABC):
         if client_id not in self.client_properties:
             raise RuntimeError(f"Client {client_id} not in client_properties.")
         client_prop: SiteProperties = self.client_properties[client_id]
-        if not client_prop.process:
-            print(f"Client {client_id} process is None.")
-            self.client_properties.pop(client_id)
-            return False
 
         try:
             kill_process(client_prop)
         except Exception as e:
             print(f"Exception in stopping client {client_id}: {e.__str__()}")
-            return False
-
-        return True
 
     def stop_all_clients(self):
-        for client_id in self.client_properties:
+        for client_id in list(self.client_properties.keys()):
             self.stop_client(client_id)
-        self.client_properties.clear()
 
     def stop_all_servers(self):
-        for server_id in self.server_properties:
+        for server_id in list(self.server_properties.keys()):
             self.stop_server(server_id)
-        self.server_properties.clear()
 
     def stop_all_sites(self):
         self.stop_all_clients()
@@ -140,6 +121,7 @@ class SiteLauncher(ABC):
                 active_server_id = k
         return active_server_id
 
-    @abstractmethod
     def cleanup(self):
-        pass
+        self.overseer_properties = None
+        self.server_properties.clear()
+        self.client_properties.clear()
