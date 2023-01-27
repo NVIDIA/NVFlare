@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
+import threading
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor
@@ -67,12 +68,14 @@ class ConnManager(ConnMonitor):
         self.started = False
         self.conn_mgr_executor = ThreadPoolExecutor(CONN_THREAD_POOL_SIZE, "conn_mgr")
         self.frame_mgr_executor = ThreadPoolExecutor(FRAME_THREAD_POOL_SIZE, "frame_mgr")
+        self.lock = threading.Lock()
 
     def add_connector(self, driver: Driver, params: dict, mode: Mode) -> str:
         handle = str(uuid.uuid4())
         connector = Connector(handle, driver, params, mode, 0, 0, False, False)
         driver.register_conn_monitor(self)
-        self.connectors.append(connector)
+        with self.lock:
+            self.connectors.append(connector)
 
         log.debug(f"Connector {driver.get_name()}:{handle} Mode: {mode.name} is created")
 
@@ -82,15 +85,16 @@ class ConnManager(ConnMonitor):
         return handle
 
     def remove_connector(self, handle: str):
-        for index, connector in enumerate(self.connectors):
-            if handle == connector.handle:
-                connector.stopping = True
-                connector.driver.shutdown()
-                self.connectors.pop(index)
-                log.info(f"Connector {connector.driver.get_name()}:{handle} is removed")
-                return
+        with self.lock:
+            for index, connector in enumerate(self.connectors):
+                if handle == connector.handle:
+                    connector.stopping = True
+                    connector.driver.shutdown()
+                    self.connectors.pop(index)
+                    log.info(f"Connector {connector.driver.get_name()}:{handle} is removed")
+                    return
 
-        log.error(f"Unknown connector handle: {handle}")
+            log.error(f"Unknown connector handle: {handle}")
 
     def start(self):
         for connector in self.connectors:
@@ -265,7 +269,7 @@ class ConnManager(ConnMonitor):
                 receiver = self.receivers.get(prefix.app_id)
                 if receiver:
                     # TODO: Need to provide connection in the CB
-                    receiver.process_message(sfm_conn.endpoint.endpoint, prefix.app_id, message)
+                    receiver.process_message(sfm_conn.sfm_endpoint.endpoint, prefix.app_id, message)
                 else:
                     log.debug(f"No receiver registered for App ID {prefix.app_id}, message ignored")
 
@@ -278,11 +282,16 @@ class ConnManager(ConnMonitor):
     def process_frame(self, sfm_conn: SfmConnection, frame: BytesAlike):
         self.frame_mgr_executor.submit(self.process_frame_task, sfm_conn, frame)
 
-    def update_endpoint(self, sfm_conn: SfmConnection, data):
+    def update_endpoint(self, sfm_conn: SfmConnection, data: dict):
 
         endpoint_name = data.pop(HandshakeKeys.ENDPOINT_NAME)
+        if not endpoint_name:
+            raise CommError(CommError.BAD_DATA,
+                            f"Handshake without endpoint name for connection {sfm_conn.get_name()}")
+
         if endpoint_name == self.local_endpoint.name:
-            raise CommError(CommError.BAD_DATA, f"Duplicate endpoint name {endpoint_name}")
+            raise CommError(CommError.BAD_DATA,
+                            f"Duplicate endpoint name {endpoint_name} for connection {sfm_conn.get_name()}")
 
         endpoint = Endpoint(endpoint_name, data)
         endpoint.state = EndpointState.READY
@@ -299,8 +308,8 @@ class ConnManager(ConnMonitor):
             sfm_endpoint = SfmEndpoint(endpoint)
 
         sfm_endpoint.add_connection(sfm_conn)
-        sfm_conn.endpoint = sfm_endpoint
-        self.endpoints[sfm_endpoint.endpoint.name] = sfm_endpoint
+        sfm_conn.sfm_endpoint = sfm_endpoint
+        self.endpoints[endpoint_name] = sfm_endpoint
 
         if endpoint.state != old_state:
             self.notify_monitors(endpoint)
@@ -322,34 +331,35 @@ class ConnManager(ConnMonitor):
     def handle_new_connection(self, connection: Connection):
 
         sfm_conn = SfmConnection(connection, self.local_endpoint)
-        self.connections[sfm_conn.get_name()] = sfm_conn
+        with self.lock:
+            self.connections[sfm_conn.get_name()] = sfm_conn
+
         connection.register_frame_receiver(SfmFrameReceiver(self, sfm_conn))
 
         if connection.connector.mode == Mode.ACTIVE:
             sfm_conn.send_handshake(Types.HELLO)
 
     def close_connection(self, connection: Connection):
-        name = connection.name
-        if name not in self.connections:
-            log.debug(f"Connection {name} has closed with no endpoint assigned")
-            return
 
-        sfm_conn = self.connections[name]
-        sfm_endpoint = sfm_conn.endpoint
-        old_state = sfm_endpoint.endpoint.state
+        with self.lock:
+            name = connection.name
+            if name not in self.connections:
+                log.debug(f"Connection {name} has closed with no endpoint assigned")
+                return
 
-        if not sfm_endpoint.connections:
-            log.error(f"Connection {name} is already removed from endpoint {sfm_endpoint.endpoint.name}")
-        else:
-            for index, conn in enumerate(sfm_endpoint.connections):
-                if conn.get_name() == name:
-                    sfm_endpoint.connections.pop(index)
-                    break
+            sfm_conn = self.connections.pop(name)
+            sfm_endpoint = sfm_conn.sfm_endpoint
+            if sfm_endpoint is None:
+                log.debug(f"Connection {name} is closed before SFM handshake")
+                return
 
-        state = EndpointState.READY if len(sfm_endpoint.connections) > 0 else EndpointState.DISCONNECTED
-        sfm_endpoint.endpoint.state = state
-        if old_state != state:
-            self.notify_monitors(sfm_endpoint.endpoint)
+            old_state = sfm_endpoint.endpoint.state
+            sfm_endpoint.remove_connection(sfm_conn)
+
+            state = EndpointState.READY if sfm_endpoint.connections else EndpointState.DISCONNECTED
+            sfm_endpoint.endpoint.state = state
+            if old_state != state:
+                self.notify_monitors(sfm_endpoint.endpoint)
 
 
 class SfmFrameReceiver(FrameReceiver):

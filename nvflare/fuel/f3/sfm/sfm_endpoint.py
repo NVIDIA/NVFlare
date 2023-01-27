@@ -11,15 +11,18 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-# Hard-coded stream ID to be used by packets before handshake
+import logging
 import threading
 from typing import Optional, List
 
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.sfm.sfm_conn import SfmConnection
 
+# Hard-coded stream ID to be used by packets before handshake
 RESERVED_STREAM_ID = 16
+MAX_CONN_PER_ENDPOINT = 1
+
+log = logging.getLogger(__name__)
 
 
 class SfmEndpoint:
@@ -32,7 +35,33 @@ class SfmEndpoint:
         self.connections: List[SfmConnection] = []
 
     def add_connection(self, sfm_conn: SfmConnection):
-        self.connections.append(sfm_conn)
+
+        with self.lock:
+            while len(self.connections) >= MAX_CONN_PER_ENDPOINT:
+                first_conn = self.connections[0]
+                first_conn.conn.close()
+                self.connections.pop(0)
+                log.debug(f"Connection {first_conn.get_name()} is evicted from endpoint {self.endpoint.name}")
+
+            self.connections.append(sfm_conn)
+
+    def remove_connection(self, sfm_conn: SfmConnection):
+
+        if not self.connections:
+            log.debug(f"Connection {sfm_conn.get_name()} is already removed. "
+                      f"No connections for endpoint {self.endpoint.name}")
+            return
+
+        found = False
+        with self.lock:
+            for index, conn in enumerate(self.connections):
+                if conn.get_name() == sfm_conn.get_name():
+                    self.connections.pop(index)
+                    log.debug(f"Connection {conn.get_name()} is removed from endpoint {self.endpoint.name}")
+                    found = True
+
+        if not found:
+            log.debug(f"Connection {sfm_conn.get_name()} is already removed from endpoint {self.endpoint.name}")
 
     def get_connection(self, stream_id: int) -> Optional[SfmConnection]:
         if not self.connections:
