@@ -19,8 +19,8 @@ from joblib import dump, load
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
+from nvflare.app_common.abstract.model_persistor import ModelPersistor
 from nvflare.app_common.app_constant import AppConstants
 
 
