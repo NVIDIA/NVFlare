@@ -23,8 +23,13 @@ from nvflare.fuel.f3.drivers.driver import DriverParams
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.message import AppIds, Message
 
-logging.basicConfig()
-logging.getLogger().setLevel(logging.DEBUG)
+logging.basicConfig(level=logging.DEBUG)
+formatter = logging.Formatter(fmt="%(relativeCreated)6d [%(threadName)-12s] [%(levelname)-5s] %(name)s: %(message)s")
+handler = logging.StreamHandler()
+handler.setFormatter(formatter)
+root_log = logging.getLogger()
+root_log.handlers.clear()
+root_log.addHandler(handler)
 log = logging.getLogger(__name__)
 
 endpoints = []
@@ -41,7 +46,7 @@ conn_props = {
 local_endpoint = Endpoint("demo.server", {"test": 456}, conn_props)
 communicator = Communicator(local_endpoint)
 
-listening_url = "tcp://localhost:1111"
+listening_url = "uds://tmp/socket"
 handle1 = communicator.add_connector(listening_url, Mode.PASSIVE)
 
 connect_url = "tcp://localhost:1234"

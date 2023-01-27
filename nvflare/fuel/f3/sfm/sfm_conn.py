@@ -52,7 +52,7 @@ class SfmConnection:
     def __init__(self, conn: Connection, local_endpoint: Endpoint):
         self.conn = conn
         self.local_endpoint = local_endpoint
-        self.endpoint = None
+        self.sfm_endpoint = None
         self.last_activity = 0
         self.sequence = 0
         self.lock = threading.Lock()
