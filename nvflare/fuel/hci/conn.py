@@ -129,26 +129,26 @@ class Connection(BaseContext):
 
         self.sock.sendall(bytes(line + end, "utf-8"))
 
-    def append_table(self, headers: List[str]) -> Table:
-        return self.buffer.append_table(headers)
+    def append_table(self, headers: List[str], name=None) -> Table:
+        return self.buffer.append_table(headers, name=name)
 
-    def append_string(self, data: str, flush=False):
-        self.buffer.append_string(data)
+    def append_string(self, data: str, flush=False, meta: dict = None):
+        self.buffer.append_string(data, meta=meta)
         if flush:
             self.flush()
 
-    def append_success(self, data: str, flush=False):
-        self.buffer.append_success(data)
+    def append_success(self, data: str, flush=False, meta: dict = None):
+        self.buffer.append_success(data, meta=meta)
         if flush:
             self.flush()
 
-    def append_dict(self, data: dict, flush=False):
-        self.buffer.append_dict(data)
+    def append_dict(self, data: dict, flush=False, meta: dict = None):
+        self.buffer.append_dict(data, meta=meta)
         if flush:
             self.flush()
 
-    def append_error(self, data: str, flush=False):
-        self.buffer.append_error(data)
+    def append_error(self, data: str, flush=False, meta: dict = None):
+        self.buffer.append_error(data, meta=meta)
         if flush:
             self.flush()
 
@@ -167,14 +167,14 @@ class Connection(BaseContext):
         if flush:
             self.flush()
 
-    def append_any(self, data, flush=False):
+    def append_any(self, data, flush=False, meta: dict = None):
         if data is None:
             return
 
         if isinstance(data, str):
-            self.append_string(data, flush)
+            self.append_string(data, flush, meta=meta)
         elif isinstance(data, dict):
-            self.append_dict(data, flush)
+            self.append_dict(data, flush, meta)
         else:
             self.append_error("unsupported data type {}".format(type(data)))
 

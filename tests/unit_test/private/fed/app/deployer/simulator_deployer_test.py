@@ -45,7 +45,7 @@ class TestSimulatorDeploy(unittest.TestCase):
         return parser
 
     def test_create_server(self):
-        with patch("nvflare.private.fed.app.server.server_train.FedAdminServer") as mock_admin:
+        with patch("nvflare.private.fed.app.utils.FedAdminServer") as mock_admin:
             workspace = tempfile.mkdtemp()
             parser = self._create_parser()
             args = parser.parse_args(["job_folder", "-w" + workspace, "-n 2", "-t 1"])

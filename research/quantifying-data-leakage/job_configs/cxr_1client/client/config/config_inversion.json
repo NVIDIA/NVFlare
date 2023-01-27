@@ -1,0 +1,21 @@
+{
+    "img_prior": "prior_1.jpg",
+    "save_path": "gradinv",
+    "model_name": "resnet18",
+    "criterion": "BCEWithLogitsLoss",
+    "iterations": 40000,
+    "resolution": 224,
+    "start_rand": false,
+    "init_target_rand": true,
+    "no_lr_decay": false,
+    "grad_l2": 1e-3,
+    "original_bn_l2": 1e-1,
+    "energy_l2": 1e-1,
+    "tv_l1": 0.0,
+    "tv_l2": 1e-4,
+    "lr": 1e-1,
+    "l2": 1e-5,
+    "local_epoch": 1,
+    "local_optim": "sgd",
+    "save_every": 500
+}

@@ -18,6 +18,8 @@ MONAI allows the definition of AI models using the "[bundle](https://docs.monai.
 It allows for easy experimentation and sharing of models that have been developed using MONAI.
 Using the bundle configurations, we can use MONAI's `MonaiAlgo` (the implementation of `ClientAlgo`) to execute a bundle model in a federated scenario using NVFlare.
 
+![Federated Learning Module in MONAI (https://docs.monai.io/en/stable/modules.html#federated-learning)](https://docs.monai.io/en/stable/_images/federated.svg)
+
 ## Description
 NVFlare executes the `ClientAlgo` class using the `ClientAlgoExecutor` class provided with this package.
 

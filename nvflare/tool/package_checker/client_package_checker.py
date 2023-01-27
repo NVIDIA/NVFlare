@@ -39,7 +39,6 @@ class ClientPackageChecker(PackageChecker):
         return False
 
     def init_rules(self, package_path):
-        self.dry_run_timeout = 5
         self.rules = [
             [
                 CheckOverseerRunning(name="Check overseer running", role=self.NVF_ROLE),

@@ -394,9 +394,13 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         if options:
             options = self._validate_options_string(options)
             command = command + " " + options
-        success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(command)
-        if reply_data_full_response:
-            return FLAdminAPIResponse(APIStatus.SUCCESS, {"message": reply_data_full_response}, reply)
+        success, _, reply = self._get_processed_cmd_reply_data(command)
+        if success:
+            if reply.get("data"):
+                for data in reply["data"]:
+                    if data["type"] == "table":
+                        details = data["rows"]
+                        return FLAdminAPIResponse(APIStatus.SUCCESS, details, reply)
         return FLAdminAPIResponse(
             APIStatus.ERROR_RUNTIME, {"message": "Runtime error: could not handle server reply."}, reply
         )

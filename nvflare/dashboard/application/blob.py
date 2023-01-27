@@ -74,12 +74,12 @@ def gen_server(key, first_server=True):
     project = Project.query.first()
     if first_server:
         entity = Entity(project.server1)
-        fl_port = 8003
-        admin_port = 8004
+        fl_port = 8002
+        admin_port = 8003
     else:
         entity = Entity(project.server2)
-        fl_port = 8103
-        admin_port = 8104
+        fl_port = 8102
+        admin_port = 8103
     issuer = Entity(project.short_name)
     signing_cert_pair = CertPair(issuer, project.root_key, project.root_cert)
     cert_pair = make_cert(entity, signing_cert_pair)
@@ -102,7 +102,7 @@ def gen_server(key, first_server=True):
         }
     else:
         overseer_agent = {"path": "nvflare.ha.dummy_overseer_agent.DummyOverseerAgent"}
-        overseer_agent["args"] = {"sp_end_point": f"{project.server1}:8003:8004"}
+        overseer_agent["args"] = {"sp_end_point": f"{project.server1}:8002:8003"}
 
     config["overseer_agent"] = overseer_agent
     replacement_dict = {
@@ -206,7 +206,7 @@ def gen_client(key, id):
         }
     else:
         overseer_agent = {"path": "nvflare.ha.dummy_overseer_agent.DummyOverseerAgent"}
-        overseer_agent["args"] = {"sp_end_point": f"{project.server1}:8003:8004"}
+        overseer_agent["args"] = {"sp_end_point": f"{project.server1}:8002:8003"}
     config["overseer_agent"] = overseer_agent
 
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -305,9 +305,8 @@ def gen_user(key, id):
         }
     else:
         overseer_agent = {"path": "nvflare.ha.dummy_overseer_agent.DummyOverseerAgent"}
-        overseer_agent["args"] = {"sp_end_point": f"{project.server1}:8003:8004"}
-    agent_config = {"overseer_agent": overseer_agent}
-    config["admin"] = agent_config
+        overseer_agent["args"] = {"sp_end_point": f"{project.server1}:8002:8003"}
+    config["admin"].update({"overseer_agent": overseer_agent})
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         user_dir = os.path.join(tmp_dir, entity.name)

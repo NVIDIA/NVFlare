@@ -57,13 +57,12 @@ class CustomController(Controller):
 
     def start_controller(self, fl_ctx: FLContext):
         self._phase = "init"
-        engine = fl_ctx.get_engine()
 
-        self.shareable_gen = engine.get_component(self.shareable_generator_id)
+        self.shareable_gen = self._engine.get_component(self.shareable_generator_id)
         if not isinstance(self.shareable_gen, ShareableGenerator):
             self.system_panic("shareable_gen should be an instance of ShareableGenerator.", fl_ctx)
 
-        self.persistor = engine.get_component(self.persistor_id)
+        self.persistor = self._engine.get_component(self.persistor_id)
         if not isinstance(self.persistor, LearnablePersistor):
             self.system_panic("persistor should be an instance of LearnablePersistor.", fl_ctx)
 
@@ -82,9 +81,7 @@ class CustomController(Controller):
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         self._phase = "train"
-        engine = fl_ctx.get_engine()
 
-        # No rounds - will remove later
         for r in range(self._num_rounds):
             if not abort_signal:
                 return
@@ -97,7 +94,7 @@ class CustomController(Controller):
                 result_received_cb=_process_training_result,
             )
 
-            client_list = engine.get_clients()
+            client_list = self._engine.get_clients()
             for c in client_list:
                 self.log_info(fl_ctx, f"@@@ client name {c.name}")
 

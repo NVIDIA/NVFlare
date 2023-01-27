@@ -34,7 +34,7 @@ if versions["error"]:
     year = today[0] % 1000
     month = today[1]
     day = today[2]
-    version = f"2.2.1.dev{year:02d}{month:02d}{day:02d}"
+    version = f"2.2.4.dev{year:02d}{month:02d}{day:02d}"
 else:
     version = versions["version"]
 

@@ -16,7 +16,9 @@
 
 import threading
 import time
+from typing import List
 
+from nvflare.fuel.hci.proto import MetaStatusValue, make_meta
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.sec.audit import Auditor, AuditService
 from nvflare.fuel.sec.authz import AuthorizationService, AuthzContext, Person
@@ -40,7 +42,7 @@ class Sender(object):
         """
         pass
 
-    def retrieve_requests(self) -> [Message]:
+    def retrieve_requests(self) -> List[Message]:
         """Send the message to retrieve pending requests from the Server.
 
         Returns: list of messages.
@@ -68,7 +70,7 @@ class Sender(object):
 class RequestProcessor(object):
     """The RequestProcessor is responsible for processing a request."""
 
-    def get_topics(self) -> [str]:
+    def get_topics(self) -> List[str]:
         """Get topics that this processor will handle.
 
         Returns: list of topics
@@ -210,28 +212,38 @@ class FedAdminAgent(object):
                                 )
 
                                 authz_ctx = AuthzContext(user=user, submitter=submitter, right=cmd)
-
                                 authorized, err = AuthorizationService.authorize(authz_ctx)
                                 if err:
-                                    reply = error_reply(err)
+                                    reply = error_reply(err, meta=make_meta(MetaStatusValue.NOT_AUTHORIZED, err))
                                 elif not authorized:
-                                    reply = error_reply("not authorized")
+                                    reply = error_reply(
+                                        "not authorized",
+                                        meta=make_meta(MetaStatusValue.NOT_AUTHORIZED, "not authorized"),
+                                    )
                             else:
-                                reply = error_reply("requires authz but missing admin command")
+                                reply = error_reply(
+                                    "requires authz but missing admin command",
+                                    meta=make_meta(MetaStatusValue.INTERNAL_ERROR, "missing admin command"),
+                                )
 
                         if not reply:
                             reply = processor.process(req, self.app_ctx)
                             if reply is None:
                                 # simply ack
-                                reply = ok_reply()
+                                reply = ok_reply(meta=make_meta(MetaStatusValue.OK))
                             else:
                                 if not isinstance(reply, Message):
                                     raise RuntimeError(f"processor for topic {topic} failed to produce valid reply")
                     except BaseException as e:
                         secure_log_traceback()
-                        reply = error_reply(f"exception_occurred: {secure_format_exception(e)}")
+                        reply = error_reply(
+                            f"exception_occurred: {secure_format_exception(e)}",
+                            meta=make_meta(MetaStatusValue.INTERNAL_ERROR, f"exception {type(e)}"),
+                        )
                 else:
-                    reply = error_reply("invalid_request")
+                    reply = error_reply(
+                        "invalid_request", meta=make_meta(MetaStatusValue.INTERNAL_ERROR, f"invalid request {topic}")
+                    )
 
                 reply.set_ref_id(req.id)
                 self.sender.send_reply(reply)

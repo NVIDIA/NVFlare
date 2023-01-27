@@ -37,6 +37,11 @@ def serialize_cert(cert):
     return cert.public_bytes(serialization.Encoding.PEM)
 
 
+def load_crt(path):
+    serialized_cert = open(path, "rb").read()
+    return x509.load_pem_x509_certificate(serialized_cert, default_backend())
+
+
 class CertBuilder(Builder):
     def __init__(self):
         """Build certificate chain for every participant.

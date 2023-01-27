@@ -82,8 +82,3 @@ class TestTask:
         task = create_task(name="__test_task")
         with pytest.raises(ValueError, match="Keys start with __ is reserved. Please use other key."):
             task.set_prop("__test", "world")
-
-    def test_get_task_prop_invalid_key(self):
-        task = create_task(name="__test_task")
-        with pytest.raises(ValueError, match="Keys start with __ is reserved. Please use other key."):
-            task.get_prop("__test")
