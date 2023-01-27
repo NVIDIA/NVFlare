@@ -82,3 +82,4 @@ existing code using the FLAdminAPI, it is recommended to just use the FLARE API.
 
    FLAdminAPI
    flare_api
+   migrating_to_flare_api
