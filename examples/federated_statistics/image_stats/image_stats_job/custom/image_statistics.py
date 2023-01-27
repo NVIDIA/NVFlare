@@ -43,7 +43,7 @@ class ImageStatistics(Statistics):
         self.loader = None
         self.failure_images = 0
 
-    def initialize(self, parts: dict, fl_ctx: FLContext):
+    def initialize(self, fl_ctx: FLContext):
         self.client_name = fl_ctx.get_identity_name()
         self.loader = LoadImage()
         self.loader.register(ITKReader())

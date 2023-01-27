@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import uuid
 
 
@@ -19,6 +20,7 @@ class MsgHeader(object):
 
     REF_MSG_ID = "_refMsgId"
     RETURN_CODE = "_rtnCode"
+    META = "_meta"
 
 
 class ReturnCode(object):
@@ -43,6 +45,17 @@ class Message(object):
     def set_header(self, key, value):
         self.headers[key] = value
 
+    def set_meta(self, meta: dict):
+        meta_str = json.dumps(meta)
+        self.set_header(MsgHeader.META, meta_str)
+
+    def get_meta(self):
+        meta_str = self.get_header(MsgHeader.META, None)
+        if meta_str:
+            return json.loads(meta_str)
+        else:
+            return None
+
     def set_headers(self, headers: dict):
         if not headers:
             return
@@ -61,13 +74,15 @@ class Message(object):
         self.set_header(MsgHeader.REF_MSG_ID, msg_id)
 
 
-def error_reply(err: str) -> Message:
+def error_reply(err: str, meta: dict = None) -> Message:
     msg = Message(topic="reply", body=err)
     msg.set_header(MsgHeader.RETURN_CODE, ReturnCode.ERROR)
+    if meta:
+        msg.set_meta(meta)
     return msg
 
 
-def ok_reply(topic=None, body=None) -> Message:
+def ok_reply(topic=None, body=None, meta: dict = None) -> Message:
     if body is None:
         body = "ok"
 
@@ -76,4 +91,6 @@ def ok_reply(topic=None, body=None) -> Message:
 
     msg = Message(topic=topic, body=body)
     msg.set_header(MsgHeader.RETURN_CODE, ReturnCode.OK)
+    if meta:
+        msg.set_meta(meta)
     return msg

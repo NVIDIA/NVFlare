@@ -15,8 +15,8 @@ from abc import ABC, abstractmethod
 from enum import IntEnum
 from typing import Dict, List, NamedTuple, Optional
 
-from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
+from nvflare.app_common.executors.init_final_component import InitFinalComponent
 
 """
     Statistics defines methods that user need to implement in order to calculate the local statistics
@@ -85,13 +85,12 @@ class StatisticConfig(NamedTuple):
     config: dict
 
 
-class Statistics(FLComponent, ABC):
-    def initialize(self, parts: dict, fl_ctx: FLContext):
+class Statistics(InitFinalComponent, ABC):
+    def initialize(self, fl_ctx: FLContext):
         """
         This is called when client is start Run. At this point
-        the server hasn't not communicate to the Statistics calculator yet.
+        the server hasn't communicated to the Statistics calculator yet.
         Args:
-            parts: parts: components to be used by the Statistics
             fl_ctx: fl_ctx: FLContext of the running environment
         Returns:
 

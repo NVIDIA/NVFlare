@@ -626,27 +626,27 @@ compose_yaml: |
   services:
     __overseer__:
       build: ./nvflare
-      image: nvflare-service
+      image: ${IMAGE_NAME}
       volumes:
         - .:/workspace
-      command: ["/workspace/startup/start.sh"]
+      command: ["${WORKSPACE}/startup/start.sh"]
       ports:
         - "8443:8443"
 
     __flserver__:
-      image: nvflare-service
+      image: ${IMAGE_NAME}
       ports:
         - "8002:8002"
         - "8003:8003"
       volumes:
         - .:/workspace
         - nvflare_svc_persist:/tmp/nvflare/
-      command: ["/usr/local/bin/python3",
+      command: ["${PYTHON_EXECUTABLE}",
             "-u",
             "-m",
             "nvflare.private.fed.app.server.server_train",
             "-m",
-            "/workspace",
+            "${WORKSPACE}",
             "-s",
             "fed_server.json",
             "--set",
@@ -656,15 +656,15 @@ compose_yaml: |
           ]
 
     __flclient__:
-      image: nvflare-service
+      image: ${IMAGE_NAME}
       volumes:
         - .:/workspace
-      command: ["/usr/local/bin/python3",
+      command: ["${PYTHON_EXECUTABLE}",
             "-u",
             "-m",
             "nvflare.private.fed.app.client.client_train",
             "-m",
-            "/workspace",
+            "${WORKSPACE}",
             "-s",
             "fed_client.json",
             "--set",

@@ -126,9 +126,9 @@ class HEModelEncryptor(DXOFilter):
 
             # weigh before encryption
             if self.aggregation_weight:
-                values = values * np.float(self.aggregation_weight)
+                values = values * np.float64(self.aggregation_weight)
             if self.weigh_by_local_iter:
-                values = values * np.float(self.n_iter)
+                values = values * np.float64(self.n_iter)
 
             if param_name in self.encrypt_layers or self.encrypt_layers[0] is True:
                 self.log_info(fl_ctx, f"Encrypting vars {i+1} of {n_params}: {param_name} with {_n} values")

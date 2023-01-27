@@ -14,22 +14,21 @@
 
 import os
 import shutil
-import sys
 import tempfile
 
 import yaml
 
-from tests.integration_test.utils import (
+from .site_launcher import ServerProperties, SiteLauncher, SiteProperties, kill_process
+from .utils import (
     cleanup_job_and_snapshot,
     read_yaml,
+    run_command_in_subprocess,
+    run_provision_command,
     update_job_store_path_in_workspace,
     update_snapshot_path_in_workspace,
 )
 
-from .site_launcher import ServerProperties, SiteLauncher, SiteProperties, kill_process, run_command_in_subprocess
-
 WORKSPACE = "ci_workspace"
-PROVISION_SCRIPT = "nvflare.cli provision"
 PROD_FOLDER_NAME = "prod_00"
 
 
@@ -69,9 +68,7 @@ class ProvisionSiteLauncher(SiteLauncher):
         _, temp_yaml = tempfile.mkstemp()
         with open(temp_yaml, "w") as f:
             yaml.dump(self.project_yaml, f, default_flow_style=False)
-        command = f"{sys.executable} -m {PROVISION_SCRIPT} -p {temp_yaml} -w {WORKSPACE}"
-        process = run_command_in_subprocess(command)
-        process.wait()
+        run_provision_command(project_yaml=temp_yaml, workspace=WORKSPACE)
         os.remove(temp_yaml)
         new_job_store = None
         new_snapshot_store = None
@@ -95,7 +92,7 @@ class ProvisionSiteLauncher(SiteLauncher):
                 process = run_command_in_subprocess("pkill -9 -f gunicorn")
                 process.wait()
             else:
-                print("No overseer process.")
+                print("No overseer process to stop.")
         except Exception as e:
             print(f"Exception in stopping overseer: {e.__str__()}")
         finally:
@@ -126,5 +123,7 @@ class ProvisionSiteLauncher(SiteLauncher):
     def cleanup(self):
         process = run_command_in_subprocess(f"pkill -9 -f {PROD_FOLDER_NAME}")
         process.wait()
-        cleanup_job_and_snapshot(self._get_workspace_dir(), "localhost0")
+        for server_name in self.server_properties:
+            cleanup_job_and_snapshot(self._get_workspace_dir(), server_name)
         shutil.rmtree(WORKSPACE)
+        super().cleanup()

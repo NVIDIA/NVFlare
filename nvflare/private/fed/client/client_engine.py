@@ -97,6 +97,7 @@ class ClientEngine(ClientEngineInternalSpec):
         running_jobs = []
         for job_id in self.get_all_job_ids():
             run_folder = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(job_id))
+            app_name = ""
             app_file = os.path.join(run_folder, "fl_app.txt")
             if os.path.exists(app_file):
                 with open(app_file, "r") as f:
