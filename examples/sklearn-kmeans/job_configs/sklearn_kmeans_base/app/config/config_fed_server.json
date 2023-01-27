@@ -23,7 +23,7 @@
     },
     {
       "id": "aggregator",
-      "path": "nvflare.app_common.aggregators.collect_and_assemble_aggregator.CollectAndAssembleAggragator",
+      "path": "nvflare.app_common.aggregators.collect_and_assemble_aggregator.CollectAndAssembleAggregator",
       "args": {
         "assembler_id" : "kmeans_assembler"
       }

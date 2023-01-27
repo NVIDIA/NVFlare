@@ -43,7 +43,7 @@ class Assembler(FLComponent, ABC):
 
     @abstractmethod
     def get_model_params(self, data: dict) -> dict:
-        """Connects the collector with CollectFlexAssembleAggragator
+        """Connects the assembler's collector with CollectAndAssembleAggregator
         Get the collected parameters from the main aggregator
         Return:
             A dict of parameters needed for further assembling
