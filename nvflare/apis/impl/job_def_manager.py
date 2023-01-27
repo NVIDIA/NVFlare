@@ -96,11 +96,10 @@ class SimpleJobDefManager(JobDefManagerSpec):
         # validate meta to make sure it has:
 
         jid = str(uuid.uuid4())
+        now = time.time()
         meta[JobMetaKey.JOB_ID.value] = jid
-        meta[JobMetaKey.SUBMIT_TIME.value] = time.time()
-        meta[JobMetaKey.SUBMIT_TIME_ISO.value] = (
-            datetime.datetime.fromtimestamp(meta[JobMetaKey.SUBMIT_TIME]).astimezone().isoformat()
-        )
+        meta[JobMetaKey.SUBMIT_TIME.value] = now
+        meta[JobMetaKey.SUBMIT_TIME_ISO.value] = datetime.datetime.fromtimestamp(now).astimezone().isoformat()
         meta[JobMetaKey.START_TIME.value] = ""
         meta[JobMetaKey.DURATION.value] = "N/A"
         meta[JobMetaKey.STATUS.value] = RunStatus.SUBMITTED.value
@@ -201,16 +200,39 @@ class SimpleJobDefManager(JobDefManagerSpec):
             RunStatus.FINISHED_ABORTED.value,
             RunStatus.FINISHED_COMPLETED.value,
             RunStatus.FINISHED_EXECUTION_EXCEPTION.value,
+            RunStatus.FINISHED_CANT_SCHEDULE.value,
         ]:
             job_meta = store.get_meta(self.job_uri(jid))
             if job_meta[JobMetaKey.START_TIME.value]:
-                start_time = datetime.datetime.strptime(job_meta.get(JobMetaKey.START_TIME), "%Y-%m-%d %H:%M:%S.%f")
+                start_time = datetime.datetime.strptime(
+                    job_meta.get(JobMetaKey.START_TIME.value), "%Y-%m-%d %H:%M:%S.%f"
+                )
                 meta[JobMetaKey.DURATION.value] = str(datetime.datetime.now() - start_time)
         store.update_meta(uri=self.job_uri(jid), meta=meta, replace=False)
 
     def update_meta(self, jid: str, meta, fl_ctx: FLContext):
         store = self._get_job_store(fl_ctx)
         store.update_meta(uri=self.job_uri(jid), meta=meta, replace=False)
+
+    def refresh_meta(self, job: Job, meta_keys: list, fl_ctx: FLContext):
+        """Refresh meta of the job as specified in the meta keys
+        Save the values of the specified keys into job store
+
+        Args:
+            job: job object
+            meta_keys: meta keys need to updated
+            fl_ctx: FLContext
+
+        """
+        if meta_keys:
+            meta = {}
+            for k in meta_keys:
+                if k in job.meta:
+                    meta[k] = job.meta[k]
+        else:
+            meta = job.meta
+        if meta:
+            self.update_meta(job.job_id, meta, fl_ctx)
 
     def get_all_jobs(self, fl_ctx: FLContext) -> List[Job]:
         job_filter = _AllJobsFilter()

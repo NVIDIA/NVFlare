@@ -1,0 +1,104 @@
+# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+from typing import Optional
+
+from sklearn.cluster import KMeans, MiniBatchKMeans, kmeans_plusplus
+from sklearn.metrics import homogeneity_score
+
+from nvflare.apis.fl_context import FLContext
+from nvflare.app_opt.sklearn.sklearner import SKLearner
+
+
+class KMeansLearner(SKLearner):
+    def __init__(
+        self,
+        data_path: str,
+        train_start: int,
+        train_end: int,
+        valid_start: int,
+        valid_end: int,
+        random_state: int = None,
+        max_iter: int = 1,
+        n_init: int = 1,
+        reassignment_ratio: int = 0,
+    ):
+        super().__init__(data_path, train_start, train_end, valid_start, valid_end)
+        self.random_state = random_state
+        self.max_iter = max_iter
+        self.n_init = n_init
+        self.reassignment_ratio = reassignment_ratio
+        self.train_data = None
+        self.valid_data = None
+        self.n_samples = None
+        self.n_clusters = None
+
+    def initialize(self, fl_ctx: FLContext):
+        self.fl_ctx = fl_ctx
+        data = self.load_data()
+        self.train_data = data["train"]
+        self.valid_data = data["valid"]
+        # train data size, to be used for setting
+        # NUM_STEPS_CURRENT_ROUND for potential use in aggregation
+        self.n_samples = data["train"][-1]
+        # note that the model needs to be created every round
+        # due to the available API for center initialization
+
+    def train(self, curr_round: int, global_param: Optional[dict] = None) -> dict:
+        # get training data, note that clustering is unsupervised
+        # so only x_train will be used
+        (x_train, y_train, train_size) = self.train_data
+        if curr_round == 0:
+            # first round, compute initial center with kmeans++ method
+            # model will be None for this round
+            self.n_clusters = global_param["n_clusters"]
+            center_local, _ = kmeans_plusplus(x_train, n_clusters=self.n_clusters, random_state=self.random_state)
+            kmeans = None
+            params = {"center": center_local, "count": None}
+        else:
+            center_global = global_param["center"]
+            # following rounds, local training starting from global center
+            kmeans = MiniBatchKMeans(
+                n_clusters=self.n_clusters,
+                batch_size=self.n_samples,
+                max_iter=self.max_iter,
+                init=center_global,
+                n_init=self.n_init,
+                reassignment_ratio=self.reassignment_ratio,
+                random_state=self.random_state,
+            )
+            kmeans.fit(x_train)
+            center_local = kmeans.cluster_centers_
+            count_local = kmeans._counts
+            params = {"center": center_local, "count": count_local}
+        return params, kmeans
+
+    def evaluate(self, curr_round: int, global_param: Optional[dict] = None) -> dict:
+        # local validation with global center
+        # fit a standalone KMeans with just the given center
+        center_global = global_param["center"]
+        kmeans_global = KMeans(n_clusters=self.n_clusters, init=center_global, n_init=1)
+        kmeans_global.fit(center_global)
+        # get validation data, both x and y will be used
+        (x_valid, y_valid, valid_size) = self.valid_data
+        y_pred = kmeans_global.predict(x_valid)
+        homo = homogeneity_score(y_valid, y_pred)
+        metrics = {"Homogeneity": homo}
+        return metrics, kmeans_global
+
+    def finalize(self) -> None:
+        # freeing resources in finalize
+        del self.train_data
+        del self.valid_data
+        self.log_info(self.fl_ctx, "Freed training resources")

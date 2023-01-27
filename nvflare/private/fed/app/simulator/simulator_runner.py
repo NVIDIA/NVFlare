@@ -38,8 +38,8 @@ from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.fuel.utils.zip_utils import split_path, unzip_all_from_bytes, zip_directory_to_bytes
 from nvflare.lighter.poc_commands import get_host_gpu_ids
 from nvflare.private.defs import AppFolderConstants
-from nvflare.private.fed.app.client.worker_process import kill_child_processes
 from nvflare.private.fed.app.deployer.simulator_deployer import SimulatorDeployer
+from nvflare.private.fed.app.utils import kill_child_processes
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorServerAppRunner

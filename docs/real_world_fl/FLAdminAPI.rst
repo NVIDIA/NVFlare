@@ -5,6 +5,9 @@ FLAdminAPI
 by an admin client to the FL server. You can use a provisioned admin client's certs and keys to initialize an instance
 of FLAdminAPI to programmatically submit commands to the FL server.
 
+As of version 2.3.0, FLAdminAPI will continue to exist as is, but :ref:`flare_api` is a redesigned version of this
+intended to provide a better user experience, so it is recommended to use :ref:`flare_api` instead.
+
 Initialization
 --------------
 It is recommended to use the :class:`FLAdminAPIRunner<nvflare.fuel.hci.client.fl_admin_api_runner.FLAdminAPIRunner>` to
@@ -25,11 +28,7 @@ inherited from AdminAPI.
 
     api.logout()
 
-After using FLAdminAPI, the overseer_agent must be cleaned up with a call to:
-
-.. code:: python
-
-    api.overseer_agent.end()
+The ``logout()`` in AdminAPI handles ending the overseer_agent which may take a few seconds to complete.
 
 Usage
 -----

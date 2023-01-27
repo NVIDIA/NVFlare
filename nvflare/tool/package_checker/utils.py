@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import os
 import shlex
 import shutil
@@ -89,17 +90,42 @@ def _send_request(
     return resp
 
 
-def parse_overseer_agent_args(overseer_agent_conf: dict, required_args: list):
+def parse_overseer_agent_args(overseer_agent_conf: dict, required_args: list) -> dict:
     result = {}
-    overseer_agent_path = overseer_agent_conf.get("path")
-    if overseer_agent_path != "nvflare.ha.overseer_agent.HttpOverseerAgent":
-        raise Exception(f"overseer agent {overseer_agent_path} is not supported.")
     for k in required_args:
         value = overseer_agent_conf.get("args", {}).get(k)
         if value is None:
             raise Exception(f"overseer agent missing arg '{k}'.")
         result[k] = value
     return result
+
+
+def construct_dummy_response(overseer_agent_args: dict) -> Response:
+    response_content = {"primary_sp": {"sp_end_point": overseer_agent_args["sp_end_point"]}}
+    resp = Response()
+    resp.status_code = 200
+    resp._content = str.encode(json.dumps(response_content))
+    return resp
+
+
+def is_dummy_overseer_agent(overseer_agent_class: str) -> bool:
+    if overseer_agent_class == "nvflare.ha.dummy_overseer_agent.DummyOverseerAgent":
+        return True
+    return False
+
+
+def get_required_args_for_overseer_agent(overseer_agent_class: str, role: str) -> list:
+    """Gets required argument list for a specific overseer agent class."""
+    if overseer_agent_class == "nvflare.ha.overseer_agent.HttpOverseerAgent":
+        required_args = ["overseer_end_point", "role", "project", "name"]
+        if role == NVFlareRole.SERVER:
+            required_args.extend(["fl_port", "admin_port"])
+        return required_args
+    elif overseer_agent_class == "nvflare.ha.dummy_overseer_agent.DummyOverseerAgent":
+        required_args = ["sp_end_point"]
+        return required_args
+    else:
+        raise Exception(f"overseer agent {overseer_agent_class} is not supported.")
 
 
 def _prepare_data(args: dict):
@@ -177,8 +203,8 @@ def check_socket_server_running(startup: str, host: str, port: int) -> bool:
 
         ctx.load_verify_locations(os.path.join(startup, _get_ca_cert_file_name()))
         ctx.load_cert_chain(
-            certfile=os.path.join(startup, _get_cert_file_name("client")),
-            keyfile=os.path.join(startup, _get_prv_key_file_name("client")),
+            certfile=os.path.join(startup, _get_cert_file_name(NVFlareRole.CLIENT)),
+            keyfile=os.path.join(startup, _get_prv_key_file_name(NVFlareRole.CLIENT)),
         )
 
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -195,9 +221,9 @@ def check_socket_server_running(startup: str, host: str, port: int) -> bool:
 def check_grpc_server_running(startup: str, host: str, port: int, token=None) -> bool:
     with open(os.path.join(startup, _get_ca_cert_file_name()), "rb") as f:
         trusted_certs = f.read()
-    with open(os.path.join(startup, _get_prv_key_file_name("client")), "rb") as f:
+    with open(os.path.join(startup, _get_prv_key_file_name(NVFlareRole.CLIENT)), "rb") as f:
         private_key = f.read()
-    with open(os.path.join(startup, _get_cert_file_name("client")), "rb") as f:
+    with open(os.path.join(startup, _get_cert_file_name(NVFlareRole.CLIENT)), "rb") as f:
         certificate_chain = f.read()
 
     call_credentials = grpc.metadata_call_credentials(

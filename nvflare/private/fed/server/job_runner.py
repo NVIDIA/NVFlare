@@ -25,7 +25,9 @@ from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, RunProcess
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import ALL_SITES, Job, JobMetaKey, RunStatus
 from nvflare.apis.workspace import Workspace
+from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
+from nvflare.lighter.utils import verify_folder_signature
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import check_client_replies
@@ -121,6 +123,15 @@ class JobRunner(FLComponent):
                     if err:
                         deploy_detail.append(f"server: {err}")
                         raise RuntimeError(f"Failed to deploy app '{app_name}': {err}")
+
+                    kv_list = parse_vars(engine.args.set)
+                    secure_train = kv_list.get("secure_train", True)
+                    if secure_train:
+                        app_path = workspace.get_app_dir(job.job_id)
+                        if not verify_folder_signature(app_path):
+                            err = "job signature verification failed"
+                            deploy_detail.append(f"server: {err}")
+                            raise RuntimeError(f"Failed to verify app '{app_name}': {err}")
 
                     self.log_info(
                         fl_ctx, f"Application {app_name} deployed to the server for job: {run_number}", fire_event=False
@@ -326,8 +337,12 @@ class JobRunner(FLComponent):
             while not self.ask_to_stop:
                 # approved_jobs = job_manager.get_jobs_by_status(RunStatus.APPROVED, fl_ctx)
                 approved_jobs = job_manager.get_jobs_by_status(RunStatus.SUBMITTED, fl_ctx)
+
                 if self.scheduler:
-                    (ready_job, sites) = self.scheduler.schedule_job(job_candidates=approved_jobs, fl_ctx=fl_ctx)
+                    ready_job, sites = self.scheduler.schedule_job(
+                        job_manager=job_manager, job_candidates=approved_jobs, fl_ctx=fl_ctx
+                    )
+
                     if ready_job:
                         with self.lock:
                             client_sites = {k: v for k, v in sites.items() if k != "server"}
@@ -341,7 +356,20 @@ class JobRunner(FLComponent):
                                 deploy_detail = fl_ctx.get_prop(FLContextKey.JOB_DEPLOY_DETAIL)
                                 if deploy_detail:
                                     job_manager.update_meta(
-                                        ready_job.job_id, {JobMetaKey.JOB_DEPLOY_DETAIL.value: deploy_detail}, fl_ctx
+                                        ready_job.job_id,
+                                        {
+                                            JobMetaKey.JOB_DEPLOY_DETAIL.value: deploy_detail,
+                                            JobMetaKey.SCHEDULE_COUNT.value: ready_job.meta[
+                                                JobMetaKey.SCHEDULE_COUNT.value
+                                            ],
+                                            JobMetaKey.LAST_SCHEDULE_TIME.value: ready_job.meta[
+                                                JobMetaKey.LAST_SCHEDULE_TIME.value
+                                            ],
+                                            JobMetaKey.SCHEDULE_HISTORY.value: ready_job.meta[
+                                                JobMetaKey.SCHEDULE_HISTORY.value
+                                            ],
+                                        },
+                                        fl_ctx,
                                     )
 
                                 if failed_clients:

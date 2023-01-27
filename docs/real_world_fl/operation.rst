@@ -74,4 +74,11 @@ commands shown as examples of how they may be run with a description.
    whitespace before the filename. For example, you may run ``sys_info server >serverinfo.txt``. To only save the
    file output without printing it, use two greater-than symbols ">>" instead: ``sys_info server >>serverinfo.txt``.
 
-.. include:: FLAdminAPI.rst
+The FLARE API is the redesigned FLAdminAPI with a better user experience introduced in version 2.3.0. If you do not have
+existing code using the FLAdminAPI, it is recommended to just use the FLARE API.
+
+.. toctree::
+   :maxdepth: 1
+
+   FLAdminAPI
+   flare_api

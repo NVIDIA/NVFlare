@@ -27,16 +27,19 @@ Command Usage
     job_folder
 
     optional arguments:
-    -h, --help            show this help message and exit
+    -h, --help             show this help message and exit
     -w WORKSPACE, --workspace WORKSPACE
-                            WORKSPACE folder
+                           WORKSPACE folder
     -n N_CLIENTS, --n_clients N_CLIENTS
-                            number of clients
+                           number of clients
     -c CLIENTS, --clients CLIENTS
-                            client names list
+                           client names list
     -t THREADS, --threads THREADS
-                            number of parallel running clients
-    -gpu GPU, --gpu GPU   list of GPU Device Ids, comma separated
+                           number of parallel running clients
+    -gpu GPU, --gpu GPU
+                           list of GPU Device Ids, comma separated
+    -m MAX_CLIENTS, --max_clients MAX_CLIENTS
+                           maximum number of clients
 
 *****************
 Command examples
@@ -770,34 +773,45 @@ One of the goals for the Simulator is to enable researchers easily debug the NVF
 
 .. code-block:: python
 
-    def parse_args():
-        parser = argparse.ArgumentParser()
-        parser.add_argument("job_folder")
-        # parser.add_argument("--data_path", "-i", type=str, help="Input data_path")
-        parser.add_argument("--workspace", "-o", type=str, help="WORKSPACE folder", required=True)
-        parser.add_argument("--clients", "-n", type=int, help="number of clients")
-        parser.add_argument("--client_list", "-c", type=str, help="client names list")
-        parser.add_argument("--threads", "-t", type=int, help="number of running threads", required=True)
-        parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
-        args = parser.parse_args()
-        return args
-    
-    
+    def define_simulator_parser(simulator_parser):
+        simulator_parser.add_argument("job_folder")
+        simulator_parser.add_argument("-w", "--workspace", type=str, help="WORKSPACE folder")
+        simulator_parser.add_argument("-n", "--n_clients", type=int, help="number of clients")
+        simulator_parser.add_argument("-c", "--clients", type=str, help="client names list")
+        simulator_parser.add_argument("-t", "--threads", type=int, help="number of parallel running clients")
+        simulator_parser.add_argument("-gpu", "--gpu", type=str, help="list of GPU Device Ids, comma separated")
+        simulator_parser.add_argument("-m", "--max_clients", type=int, default=100, help="max number of clients")
+
+
+    def run_simulator(simulator_args):
+        simulator = SimulatorRunner(
+            job_folder=simulator_args.job_folder,
+            workspace=simulator_args.workspace,
+            clients=simulator_args.clients,
+            n_clients=simulator_args.n_clients,
+            threads=simulator_args.threads,
+            gpu=simulator_args.gpu,
+            max_clients=simulator_args.max_clients,
+        )
+        run_status = simulator.run()
+
+        return run_status
+
+
     if __name__ == "__main__":
         """
-        This is the main program when starting the NVIDIA FLARE server process.
+        This is the main program when running the NVFlare Simulator. Use the Flare simulator API,
+        create the SimulatorRunner object, do a setup(), then calls the run().
         """
-    
-        if sys.version_info >= (3, 9):
-            raise RuntimeError("Python versions 3.9 and above are not yet supported. Please use Python 3.8 or 3.7.")
+
         if sys.version_info < (3, 7):
-            raise RuntimeError("Python versions 3.6 and below are not supported. Please use Python 3.8 or 3.7.")
-        args = parse_args()
-    
-        simulator = SimulatorRunner(args)
-        if simulator.setup():
-            simulator.run()
-        os._exit(0)
+            raise RuntimeError("Please use Python 3.7 or above.")
+
+        parser = argparse.ArgumentParser()
+        define_simulator_parser(parser)
+        args = parser.parse_args()
+        status = run_simulator(args)
+        sys.exit(status)
 
 ***************************
 SWAP_IN and SWAP_OUT events
@@ -822,3 +836,8 @@ The GPU numbers do not have to be unique. If you use "-gpu 0,0", this will run 2
 .. note::
 
     If you have invalid GPU IDs assigned and ``nvidia-smi`` is available, the simuilation will be aborted. Otherwise if ``nvidia-smi`` is not available, the simulation will run on CPU.
+
+*************************
+To change the MAX_CLIENTS
+*************************
+By default, the simulator runs with a maximum number of 100 clients. If you need to simulate larger number of clients, use the "-m MAX_CLIENTS" option to set the number of clients to run. The simulator can support more than 1000 clients with one run. You just need to make sure that the machine that the simulator is running on has enough resources to support the parallel execution of the number of clients set.

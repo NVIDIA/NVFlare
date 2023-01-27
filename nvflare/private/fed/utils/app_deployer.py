@@ -19,7 +19,6 @@ import shutil
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.zip_utils import unzip_all_from_bytes
-from nvflare.lighter.utils import verify_folder_signature
 from nvflare.private.privacy_manager import PrivacyService
 from nvflare.security.logging import secure_format_exception
 
@@ -59,11 +58,6 @@ class AppDeployer(object):
                 os.makedirs(app_path)
 
             unzip_all_from_bytes(self.app_data, app_path)
-
-            verified = verify_folder_signature(app_path)
-
-            if not verified:
-                return "signature verification failed"
 
             with open(app_file, "wt") as f:
                 f.write(f"{self.app_name}")

@@ -141,6 +141,9 @@ class FLContextKey(object):
     SCOPE_PROPERTIES = "__scope_props__"
     SCOPE_OBJECT = "__scope_object__"
     FATAL_SYSTEM_ERROR = ReservedKey.FATAL_SYSTEM_ERROR
+    CLIENT_RESOURCE_SPECS = "__client_resource_specs"
+    JOB_PARTICIPANTS = "__job_participants"
+    JOB_BLOCK_REASON = "__job_block_reason"  # why the job should be blocked from scheduling
 
 
 class ReservedTopic(object):
@@ -154,6 +157,7 @@ class AdminCommandNames(object):
 
     SUBMIT_JOB = "submit_job"
     LIST_JOBS = "list_jobs"
+    GET_JOB_META = "get_job_meta"
     DOWNLOAD_JOB = "download_job"
     ABORT_JOB = "abort_job"
     DELETE_JOB = "delete_job"

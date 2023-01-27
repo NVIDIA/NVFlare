@@ -21,6 +21,7 @@ from nvflare.apis.analytix import AnalyticsData, AnalyticsDataType
 from nvflare.apis.dxo import from_shareable
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
+from nvflare.app_common.tracking.tracker_types import TrackConst
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 
 FUNCTION_MAPPING = {
@@ -76,23 +77,24 @@ class TBAnalyticsReceiver(AnalyticsReceiver):
             self.writers_table[record_origin] = writer
 
         # depend on the type in dxo do different things
-        for k, v in dxo.data.items():
-            tag_name = f"{k}"
-            self.log_debug(
-                fl_ctx,
-                f"save tag {tag_name} and value {v} with type {analytic_data.data_type} from {record_origin}",
-                fire_event=False,
-            )
-            func_name = FUNCTION_MAPPING.get(analytic_data.data_type, None)
-            if func_name is None:
-                self.log_error(fl_ctx, f"The data_type {analytic_data.data_type} is not supported.", fire_event=False)
-                continue
+        k = dxo.data[TrackConst.TRACK_KEY]
+        v = dxo.data[TrackConst.TRACK_VALUE]
+        tag_name = k
+        self.log_debug(
+            fl_ctx,
+            f"save tag {tag_name} and value {v} with type {analytic_data.data_type} from {record_origin}",
+            fire_event=False,
+        )
+        func_name = FUNCTION_MAPPING.get(analytic_data.data_type, None)
+        if func_name is None:
+            self.log_error(fl_ctx, f"The data_type {analytic_data.data_type} is not supported.", fire_event=False)
+            return
 
-            func = getattr(writer, func_name)
-            if isinstance(analytic_data.kwargs, dict):
-                func(tag_name, v, **analytic_data.kwargs)
-            else:
-                func(tag_name, v)
+        func = getattr(writer, func_name)
+        if isinstance(analytic_data.kwargs, dict):
+            func(tag_name, v, **analytic_data.kwargs)
+        else:
+            func(tag_name, v)
 
     def finalize(self, fl_ctx: FLContext):
         for writer in self.writers_table.values():
