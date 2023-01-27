@@ -14,10 +14,11 @@
 
 from typing import Optional
 
-from app_opt.sklearn.sklearner import SKLearner
-from nvflare.apis.fl_context import FLContext
 from sklearn.cluster import KMeans, MiniBatchKMeans, kmeans_plusplus
 from sklearn.metrics import homogeneity_score
+
+from nvflare.apis.fl_context import FLContext
+from nvflare.app_opt.sklearn.sklearner import SKLearner
 
 
 class KMeansLearner(SKLearner):
@@ -62,9 +63,7 @@ class KMeansLearner(SKLearner):
             # first round, compute initial center with kmeans++ method
             # model will be None for this round
             self.n_clusters = global_param["n_clusters"]
-            center_local, _ = kmeans_plusplus(
-                x_train, n_clusters=self.n_clusters, random_state=self.random_state
-            )
+            center_local, _ = kmeans_plusplus(x_train, n_clusters=self.n_clusters, random_state=self.random_state)
             kmeans = None
             params = {"center": center_local, "count": None}
         else:

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# We will move to this app_common when it gets matured
+
 from abc import ABC, abstractmethod
 from typing import Dict
 

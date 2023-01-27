@@ -1,11 +1,11 @@
 from typing import Optional
 
-from app_common.aggregators.assembler import Assembler
 from nvflare.apis.dxo import DXO, from_shareable
 from nvflare.apis.fl_constant import ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.aggregator import Aggregator
+from nvflare.app_common.aggregators.assembler import Assembler
 from nvflare.app_common.app_constant import AppConstants
 
 
@@ -26,9 +26,7 @@ class CollectAndAssembleAggragator(Aggregator):
     def accept(self, shareable: Shareable, fl_ctx: FLContext) -> bool:
         if not self.assembler:
             self.assembler = fl_ctx.get_engine().get_component(self.assembler_id)
-        contributor_name = shareable.get_peer_prop(
-            key=ReservedKey.IDENTITY_NAME, default="?"
-        )
+        contributor_name = shareable.get_peer_prop(key=ReservedKey.IDENTITY_NAME, default="?")
         dxo = self._get_contribution(shareable, fl_ctx)
         if dxo is None or dxo.data is None:
             self.log_error(fl_ctx, "no data to aggregate")
@@ -37,9 +35,7 @@ class CollectAndAssembleAggragator(Aggregator):
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
         return self._accept_contribution(contributor_name, current_round, data, fl_ctx)
 
-    def _accept_contribution(
-        self, contributor: str, current_round: int, data: dict, fl_ctx: FLContext
-    ) -> bool:
+    def _accept_contribution(self, contributor: str, current_round: int, data: dict, fl_ctx: FLContext) -> bool:
         collector = self.assembler.get_collector()
         if contributor not in collector:
             collector[contributor] = self.assembler.get_model_params(data)
@@ -47,18 +43,13 @@ class CollectAndAssembleAggragator(Aggregator):
         else:
             self.log_info(
                 fl_ctx,
-                f"Discarded: Current round: {current_round} "
-                + f"contributions already include client: {contributor}",
+                f"Discarded: Current round: {current_round} " + f"contributions already include client: {contributor}",
             )
             accepted = False
         return accepted
 
-    def _get_contribution(
-        self, shareable: Shareable, fl_ctx: FLContext
-    ) -> Optional[DXO]:
-        contributor_name = shareable.get_peer_prop(
-            key=ReservedKey.IDENTITY_NAME, default="?"
-        )
+    def _get_contribution(self, shareable: Shareable, fl_ctx: FLContext) -> Optional[DXO]:
+        contributor_name = shareable.get_peer_prop(key=ReservedKey.IDENTITY_NAME, default="?")
         try:
             dxo = from_shareable(shareable)
         except BaseException:
@@ -97,9 +88,7 @@ class CollectAndAssembleAggragator(Aggregator):
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
         collector = self.assembler.get_collector()
         site_num = len(collector)
-        self.log_info(
-            fl_ctx, f"aggregating {site_num} update(s) at round {current_round}"
-        )
+        self.log_info(fl_ctx, f"aggregating {site_num} update(s) at round {current_round}")
 
         model = self.assembler.assemble(current_round, collector)
         # Reset assembler for next round

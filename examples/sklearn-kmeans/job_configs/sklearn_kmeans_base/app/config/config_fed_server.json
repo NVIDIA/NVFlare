@@ -9,7 +9,7 @@
   "components": [
     {
       "id": "persistor",
-      "path": "app_opt.sklearn.joblib_model_param_persistor.JoblibModelParamPersistor",
+      "path": "nvflare.app_opt.sklearn.joblib_model_param_persistor.JoblibModelParamPersistor",
       "args": {
         "initial_params": {
           "n_clusters": 3
@@ -23,7 +23,7 @@
     },
     {
       "id": "aggregator",
-      "path": "app_common.aggregators.collect_flex_assemble_aggregator.CollectFlexAssembleAggragator",
+      "path": "nvflare.app_common.aggregators.collect_and_assemble_aggregator.CollectAndAssembleAggragator",
       "args": {
         "assembler_id" : "kmeans_assembler"
       }

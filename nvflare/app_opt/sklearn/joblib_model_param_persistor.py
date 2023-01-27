@@ -15,15 +15,12 @@
 import os
 
 from joblib import dump, load
+
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.abstract.model import (
-    ModelLearnable,
-    ModelLearnableKey,
-    make_model_learnable,
-)
 from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
+from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, make_model_learnable
 from nvflare.app_common.app_constant import AppConstants
 
 
@@ -61,9 +58,7 @@ class JoblibModelParamPersistor(LearnablePersistor):
             self.logger.info("Loading server model")
             model = load(self.save_path)
         else:
-            self.logger.info(
-                f"Initialization, sending global settings: {self.initial_params}"
-            )
+            self.logger.info(f"Initialization, sending global settings: {self.initial_params}")
             model = self.initial_params
         model_learnable = make_model_learnable(weights=model, meta_props=dict())
 
@@ -81,13 +76,8 @@ class JoblibModelParamPersistor(LearnablePersistor):
             fl_ctx: FLContext
         """
         if model_learnable:
-            if (
-                fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
-                == fl_ctx.get_prop(AppConstants.NUM_ROUNDS) - 1
-            ):
-                self.logger.info(
-                    f"Saving received model to {os.path.abspath(self.save_path)}"
-                )
+            if fl_ctx.get_prop(AppConstants.CURRENT_ROUND) == fl_ctx.get_prop(AppConstants.NUM_ROUNDS) - 1:
+                self.logger.info(f"Saving received model to {os.path.abspath(self.save_path)}")
                 # save 'weights' which contains model parameters
                 model = model_learnable[ModelLearnableKey.WEIGHTS]
                 dump(model, self.save_path, compress=1)

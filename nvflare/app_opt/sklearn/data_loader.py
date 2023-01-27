@@ -31,7 +31,7 @@ def _to_data_tuple(data):
 
 
 def get_pandas_reader(data_path: str):
-    from app_common.utils.file_utils import get_file_format
+    from nvflare.app_common.utils.file_utils import get_file_format
 
     file_format = get_file_format(data_path)
     reader = pd_readers.get(file_format, None)
@@ -53,9 +53,7 @@ def load_data(data_path: str, require_header: bool = False):
     return _to_data_tuple(data)
 
 
-def load_data_for_range(
-    data_path: str, start: int, end: int, require_header: bool = False
-):
+def load_data_for_range(data_path: str, start: int, end: int, require_header: bool = False):
     reader = get_pandas_reader(data_path)
 
     if hasattr(reader, "skiprows"):
