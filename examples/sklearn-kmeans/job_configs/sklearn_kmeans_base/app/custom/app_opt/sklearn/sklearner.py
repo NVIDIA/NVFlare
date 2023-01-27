@@ -13,7 +13,7 @@
 # limitations under the License.
 
 # We will move to this app_common when it gets matured
-from abc import ABC
+from abc import ABC, abstractmethod
 from typing import Optional
 
 from app_opt.sklearn.data_loader import load_data_for_range
@@ -53,11 +53,14 @@ class SKLearner(FLComponent, ABC):
     def get_parameters(self, global_param: Optional[dict] = None) -> dict:
         pass
 
+    @abstractmethod
     def train(self, curr_round: int, global_param: Optional[dict] = None) -> dict:
         pass
 
+    @abstractmethod
     def evaluate(self, curr_round: int, global_param: Optional[dict] = None) -> dict:
         pass
 
+    @abstractmethod
     def finalize(self) -> None:
         pass

@@ -31,7 +31,7 @@ class KMeansLearner(SKLearner):
         random_state: int = None,
         max_iter: int = 1,
         n_init: int = 1,
-        reassignment_ratio: int = 0,
+        reassignment_ratio: int = 0
     ):
         super().__init__(data_path, train_start, train_end, valid_start, valid_end)
         self.random_state = random_state
@@ -62,9 +62,7 @@ class KMeansLearner(SKLearner):
             # first round, compute initial center with kmeans++ method
             # model will be None for this round
             self.n_clusters = global_param["n_clusters"]
-            center_local, _ = kmeans_plusplus(
-                x_train, n_clusters=self.n_clusters, random_state=self.random_state
-            )
+            center_local, _ = kmeans_plusplus(x_train, n_clusters=self.n_clusters, random_state=self.random_state)
             kmeans = None
             params = {"center": center_local, "count": None}
         else:
@@ -77,7 +75,7 @@ class KMeansLearner(SKLearner):
                 init=center_global,
                 n_init=self.n_init,
                 reassignment_ratio=self.reassignment_ratio,
-                random_state=self.random_state,
+                random_state=self.random_state
             )
             kmeans.fit(x_train)
             center_local = kmeans.cluster_centers_

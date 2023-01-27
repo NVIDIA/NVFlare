@@ -23,11 +23,11 @@ from nvflare.app_common.abstract.model import (
     ModelLearnableKey,
     make_model_learnable,
 )
-from nvflare.app_common.abstract.model_persistor import ModelPersistor
+from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
 from nvflare.app_common.app_constant import AppConstants
 
 
-class JoblibModelParamPersistor(ModelPersistor):
+class JoblibModelParamPersistor(LearnablePersistor):
     def __init__(self, initial_params, save_name="model_param.joblib"):
         """
         Persist global model parameters from a dict to a joblib file
@@ -47,7 +47,7 @@ class JoblibModelParamPersistor(ModelPersistor):
             os.makedirs(self.log_dir)
         fl_ctx.sync_sticky()
 
-    def load_model(self, fl_ctx: FLContext) -> ModelLearnable:
+    def load(self, fl_ctx: FLContext) -> ModelLearnable:
         """Initialize and load the Model.
 
         Args:
@@ -61,9 +61,7 @@ class JoblibModelParamPersistor(ModelPersistor):
             self.logger.info("Loading server model")
             model = load(self.save_path)
         else:
-            self.logger.info(
-                f"Initialization, sending global settings: {self.initial_params}"
-            )
+            self.logger.info(f"Initialization, sending global settings: {self.initial_params}")
             model = self.initial_params
         model_learnable = make_model_learnable(weights=model, meta_props=dict())
 
@@ -73,7 +71,7 @@ class JoblibModelParamPersistor(ModelPersistor):
         if event == EventType.START_RUN:
             self._initialize(fl_ctx)
 
-    def save_model(self, model_learnable: ModelLearnable, fl_ctx: FLContext):
+    def save(self, model_learnable: ModelLearnable, fl_ctx: FLContext):
         """Persists the Model object.
 
         Args:

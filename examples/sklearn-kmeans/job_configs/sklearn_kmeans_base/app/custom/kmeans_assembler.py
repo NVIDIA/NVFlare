@@ -16,12 +16,13 @@
 from typing import Dict
 
 import numpy as np
-from app_common.aggregators.assembler import Assembler
-from nvflare.apis.dxo import DataKind
+from app_common.aggregators.collect_assembler import CollectAssembler
 from sklearn.cluster import KMeans
 
+from nvflare.apis.dxo import DataKind
 
-class KMeansAssembler(Assembler):
+
+class KMeansAssembler(CollectAssembler):
     def __init__(self):
         super().__init__(data_kind=DataKind.WEIGHTS)
         # Aggregator needs to keep record of historical
@@ -55,14 +56,10 @@ class KMeansAssembler(Assembler):
         else:
             # Mini-batch k-Means step to assemble the received centers
             for center_idx in range(self.n_cluster):
-                centers_global_rescale = (
-                    self.center[center_idx] * self.count[center_idx]
-                )
+                centers_global_rescale = self.center[center_idx] * self.count[center_idx]
                 # Aggregate center, add new center to previous estimate, weighted by counts
                 for client, record in self.collector.items():
-                    centers_global_rescale += (
-                        record["center"][center_idx] * record["count"][center_idx]
-                    )
+                    centers_global_rescale += record["center"][center_idx] * record["count"][center_idx]
                     self.count[center_idx] += record["count"][center_idx]
                 # Rescale to compute mean of all points (old and new combined)
                 alpha = 1 / self.count[center_idx]
