@@ -19,8 +19,7 @@ import sys
 
 import docker
 from nvflare.apis.utils.format_check import name_check
-from nvflare.dashboard.application.blob import _write
-from nvflare.lighter import utils
+from nvflare.lighter.utils import generate_password
 
 
 def start(args):
@@ -50,7 +49,7 @@ def start(args):
             else:
                 need_email = False
         print("generating random password")
-        pwd = utils.generate_password(8)
+        pwd = generate_password(8)
         print(f"Project admin credential is {answer} and the password is {pwd}")
         environment.update({"NVFL_CREDENTIAL": f"{answer}:{pwd}"})
     try:
@@ -111,21 +110,6 @@ def stop():
     print("nvflare-dashboard exited")
 
 
-def cloud(args):
-    lighter_folder = os.path.dirname(utils.__file__)
-    template = utils.load_yaml(os.path.join(lighter_folder, "impl", "master_template.yml"))
-    cwd = os.getcwd()
-    dest = os.path.join(cwd, "cloud_start.sh")
-    _write(
-        dest,
-        template["cloud_dashboard_sh"],
-        "t",
-        exe=True,
-    )
-    print(f"Dashboard launch script for cloud is written at {dest}")
-    print("To run it, please make sure Azure CLI and jq are installed")
-
-
 def has_no_arguments() -> bool:
     last_item = sys.argv[-1]
     return (
@@ -141,7 +125,6 @@ def main():
 
 
 def define_dashboard_parser(parser):
-    parser.add_argument("--cloud", action="store_true", help="create the script to launch dashboard in cloud")
     parser.add_argument("--start", action="store_true", help="start dashboard")
     parser.add_argument("--stop", action="store_true", help="stop dashboard")
     parser.add_argument("-p", "--port", type=str, default="443", help="port to listen")
@@ -162,8 +145,6 @@ def handle_dashboard(args):
         stop()
     elif args.start:
         start(args)
-    elif args.cloud:
-        cloud(args)
 
 
 if __name__ == "__main__":

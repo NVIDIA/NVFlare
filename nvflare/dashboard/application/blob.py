@@ -171,15 +171,6 @@ def gen_server(key, first_server=True):
             template["readme_fs"],
             "t",
         )
-        if project.cloud_enabled:
-            dns_tag = entity.name.split(f".{project.cloud_location}.")[0]
-            _write(
-                os.path.join(server_dir, "cloud_start.sh"),
-                utils.sh_replace(template["cloud_server_sh"], {"dns_tag": dns_tag, "location": project.cloud_location}),
-                "t",
-                exe=True,
-            )
-            _write(os.path.join(server_dir, "requirements.txt"), project.requirements, "t")
         run_args = ["zip", "-rq", "-P", key, "tmp.zip", "."]
         subprocess.run(run_args, cwd=tmp_dir)
         fileobj = io.BytesIO()
@@ -283,15 +274,6 @@ def gen_client(key, id):
             template["readme_fc"],
             "t",
         )
-        if project.cloud_enabled:
-            _write(
-                os.path.join(client_dir, "cloud_start.sh"),
-                template["cloud_client_sh"],
-                "t",
-                exe=True,
-            )
-            _write(os.path.join(client_dir, "requirements.txt"), project.requirements, "t")
-
         run_args = ["zip", "-rq", "-P", key, "tmp.zip", "."]
         subprocess.run(run_args, cwd=tmp_dir)
         fileobj = io.BytesIO()
@@ -324,8 +306,7 @@ def gen_user(key, id):
     else:
         overseer_agent = {"path": "nvflare.ha.dummy_overseer_agent.DummyOverseerAgent"}
         overseer_agent["args"] = {"sp_end_point": f"{project.server1}:8002:8003"}
-    # agent_config = {"overseer_agent": overseer_agent}
-    config["admin"]["overseer_agent"] = overseer_agent
+    config["admin"].update({"overseer_agent": overseer_agent})
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         user_dir = os.path.join(tmp_dir, entity.name)
