@@ -23,7 +23,7 @@ The machine learning algorithm shown in this example is [k-Means clustering](htt
 The aggregation follows the particular scheme defined in [Mini-batch k-Means](https://scikit-learn.org/stable/modules/generated/sklearn.cluster.MiniBatchKMeans.html). 
 Under this setting, each round of federated learning can be formulated as:
 - local training: starting from global centers, each client trains a local MiniBatchKMeans model with their own data
-- global aggregation: server collects the cluster center and counts information from all clients, and aggregate them by considering each client's results as a mini-batch, and update the global center and per-center counts. More details please refer to the link above. 
+- global aggregation: server collects the cluster center and counts information from all clients, and aggregate them by considering each client's results as a mini-batch, and update the global center and per-center counts.
 
 For center initialization, at first round, each client generate its initial centers with k-means++ method, then the server collects all initial centers and perform one round of k-Means to generate the initial global center.
 

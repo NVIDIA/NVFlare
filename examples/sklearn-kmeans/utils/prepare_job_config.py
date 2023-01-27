@@ -48,7 +48,7 @@ def job_config_args_parser():
         type=int,
         default=0,
         help="Total data size, use if specified, in order to use partial data"
-             "If not specified, use the full data size fetched from file.",
+        "If not specified, use the full data size fetched from file.",
     )
     parser.add_argument(
         "--valid_frac",
@@ -285,7 +285,11 @@ def main():
 
     # generate data split
     site_indices = split_data(
-        args.data_path, args.site_num, args.data_size, args.valid_frac, args.site_name_prefix
+        args.data_path,
+        args.site_num,
+        args.data_size,
+        args.valid_frac,
+        args.site_name_prefix,
     )
 
     # create client side app

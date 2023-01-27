@@ -1,6 +1,6 @@
 from typing import Optional
 
-from app_common.aggregators.collect_assembler import CollectAssembler
+from app_common.aggregators.assembler import Assembler
 from nvflare.apis.dxo import DXO, from_shareable
 from nvflare.apis.fl_constant import ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
@@ -9,8 +9,8 @@ from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.app_constant import AppConstants
 
 
-class CollectFlexAssembleAggragator(Aggregator):
-    """ Perform collection and flexible assemble aggregation
+class CollectAndAssembleAggragator(Aggregator):
+    """Perform collection and flexible assemble aggregation
 
     This is used for methods needing a special assemble mechanism on the client submissions.
     It first collects all submissions from clients, then delegates the assembling functionality to assembler,
@@ -21,7 +21,7 @@ class CollectFlexAssembleAggragator(Aggregator):
     def __init__(self, assembler_id: str):
         super().__init__()
         self.assembler_id = assembler_id
-        self.assembler: Optional[CollectAssembler] = None
+        self.assembler: Optional[Assembler] = None
 
     def accept(self, shareable: Shareable, fl_ctx: FLContext) -> bool:
         if not self.assembler:

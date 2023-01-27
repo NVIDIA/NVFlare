@@ -61,7 +61,9 @@ class JoblibModelParamPersistor(LearnablePersistor):
             self.logger.info("Loading server model")
             model = load(self.save_path)
         else:
-            self.logger.info(f"Initialization, sending global settings: {self.initial_params}")
+            self.logger.info(
+                f"Initialization, sending global settings: {self.initial_params}"
+            )
             model = self.initial_params
         model_learnable = make_model_learnable(weights=model, meta_props=dict())
 
