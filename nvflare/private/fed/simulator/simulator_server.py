@@ -12,10 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import time
 from typing import List, Optional
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey, RunProcessKey, ServerCommandKey
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey, RunProcessKey, ServerCommandKey, MachineStatus
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.private.fed.server.run_manager import RunManager
@@ -135,3 +136,10 @@ class SimulatorServer(FederatedServer):
             client_manager=self.client_manager,
             handlers=self.runner_config.handlers,
         )
+
+    def wait_engine_run_complete(self):
+        while self.engine.engine_info.status != MachineStatus.STOPPED:
+            if self.engine.asked_to_stop:
+                self.engine.engine_info.status = MachineStatus.STOPPED
+
+            time.sleep(3)

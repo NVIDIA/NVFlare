@@ -366,6 +366,10 @@ class SimulatorRunner(FLComponent):
         local = os.path.join(self.args.workspace, WorkspaceConstants.SITE_FOLDER_NAME)
         os.makedirs(local, exist_ok=True)
         workspace = Workspace(root_dir=self.args.workspace, site_name="server")
+
+        self.services.job_cell = self.services.create_job_cell(SimulatorConstants.JOB_NAME,
+                                                               self.services.cell.get_root_url_for_child(),
+                                                               self.services.cell.get_internal_listener_url(), False)
         server_app_runner = SimulatorServerAppRunner()
         snapshot = None
         server_app_runner.start_server_app(
@@ -433,12 +437,16 @@ class SimulatorClientRunner(FLComponent):
             + self.args.workspace
             + " --client "
             + client.client_name
+            + " --token "
+            + client.token
             + " --port "
             + str(open_port)
             + " --parent_pid "
             + str(os.getpid())
+            + " --simulator_root "
+            + self.simulator_root
             + " --root_url "
-            + str(client.cell.get_root_url())
+            + str(client.cell.get_root_url_for_child())
             + " --parent_url "
             + str(client.cell.get_internal_listener_url())
         )
