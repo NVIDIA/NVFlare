@@ -15,11 +15,13 @@
 import argparse
 import os
 import signal
+import subprocess
 import sys
 
 import docker
 from nvflare.apis.utils.format_check import name_check
-from nvflare.lighter.utils import generate_password
+from nvflare.dashboard.application.blob import _write
+from nvflare.lighter import utils
 
 
 def start(args):
@@ -49,7 +51,7 @@ def start(args):
             else:
                 need_email = False
         print("generating random password")
-        pwd = generate_password(8)
+        pwd = utils.generate_password(8)
         print(f"Project admin credential is {answer} and the password is {pwd}")
         environment.update({"NVFL_CREDENTIAL": f"{answer}:{pwd}"})
     try:
@@ -73,7 +75,7 @@ def start(args):
         print("No additional environment variables set to the launched container.")
     try:
         container_obj = client.containers.run(
-            "nvflare/nvflare",
+            dashboard_image,
             entrypoint=["/usr/local/bin/python3", "nvflare/dashboard/wsgi.py"],
             detach=True,
             auto_remove=True,
@@ -110,6 +112,23 @@ def stop():
     print("nvflare-dashboard exited")
 
 
+def cloud(args):
+    lighter_folder = os.path.dirname(utils.__file__)
+    template = utils.load_yaml(os.path.join(lighter_folder, "impl", "master_template.yml"))
+    cwd = os.getcwd()
+    csp = args.cloud
+    dest = os.path.join(cwd, f"{csp}_start.sh")
+    _write(
+        dest,
+        template[f"{csp}_start_dsb_sh"],
+        "t",
+        exe=True,
+    )
+    print(f"Dashboard launch script for cloud is written at {dest}.  Now running the script.")
+    process = subprocess.run(dest)
+    os.remove(dest)
+
+
 def has_no_arguments() -> bool:
     last_item = sys.argv[-1]
     return (
@@ -125,6 +144,9 @@ def main():
 
 
 def define_dashboard_parser(parser):
+    parser.add_argument(
+        "--cloud", type=str, default="", help="launch dashboard on cloud service provider (ex: --cloud azure)"
+    )
     parser.add_argument("--start", action="store_true", help="start dashboard")
     parser.add_argument("--stop", action="store_true", help="stop dashboard")
     parser.add_argument("-p", "--port", type=str, default="443", help="port to listen")
@@ -145,6 +167,8 @@ def handle_dashboard(args):
         stop()
     elif args.start:
         start(args)
+    elif args.cloud == "azure":
+        cloud(args)
 
 
 if __name__ == "__main__":

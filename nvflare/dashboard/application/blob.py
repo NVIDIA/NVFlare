@@ -360,6 +360,11 @@ def gen_user(key, id):
             template["readme_am"],
             "t",
         )
+        _write(
+            os.path.join(user_dir, "system_info.ipynb"),
+            template["adm_notebook"],
+            "t",
+        )
         run_args = ["zip", "-rq", "-P", key, "tmp.zip", "."]
         subprocess.run(run_args, cwd=tmp_dir)
         fileobj = io.BytesIO()
