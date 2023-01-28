@@ -114,23 +114,24 @@ def main():
             # create the FL server
             _, server = deployer.create_fl_server(args, secure_train=secure_train)
 
-            my_fqcn = FQCN.join([FQCN.ROOT_SERVER, args.job_id])
-            credentials = {}
-            cell = Cell(
-                fqcn=my_fqcn,
-                root_url=args.root_url,
-                secure=secure_train,
-                credentials=credentials,
-                create_internal_listener=True,
-                parent_url=args.parent_url,
-            )
-
-            cell.start()
-            net_agent = NetAgent(cell)
-            server.cell = cell
-
-            command_agent = ServerCommandAgent(server.engine, cell)
-            command_agent.start()
+            # my_fqcn = FQCN.join([FQCN.ROOT_SERVER, args.job_id])
+            # credentials = {}
+            # cell = Cell(
+            #     fqcn=my_fqcn,
+            #     root_url=args.root_url,
+            #     secure=secure_train,
+            #     credentials=credentials,
+            #     create_internal_listener=True,
+            #     parent_url=args.parent_url,
+            # )
+            #
+            # cell.start()
+            # net_agent = NetAgent(cell)
+            # server.cell = cell
+            #
+            # command_agent = ServerCommandAgent(server.engine, cell)
+            # command_agent.start()
+            server.cell = server.create_job_cell(args.job_id, args.root_url, args.parent_url, secure_train)
 
             snapshot = None
             if args.snapshot:

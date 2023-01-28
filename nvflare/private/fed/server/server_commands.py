@@ -384,6 +384,12 @@ class ServerCommands(object):
         HeartbeatCommand(),
     ]
 
+    client_request_commands_names = [
+        ServerCommandNames.GET_TASK,
+        ServerCommandNames.SUBMIT_UPDATE,
+        ServerCommandNames.AUX_COMMUNICATE
+    ]
+
     @staticmethod
     def get_command(command_name):
         """Call to return the AdminCommand object.

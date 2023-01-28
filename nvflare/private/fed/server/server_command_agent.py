@@ -16,7 +16,7 @@ import logging
 
 from nvflare.apis.fl_constant import ServerCommandKey
 from nvflare.fuel.f3.cellnet.cell import Cell
-from nvflare.fuel.f3.cellnet.cell import Message as CellMessage
+from nvflare.fuel.f3.cellnet.cell import Message as CellMessage, make_reply
 from nvflare.fuel.f3.cellnet.cell import MessageHeaderKey, ReturnCode
 from nvflare.fuel.utils import fobs
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, new_cell_message
@@ -61,10 +61,13 @@ class ServerCommandAgent(object):
         data = fobs.loads(request.payload)
 
         token = request.get_header(CellMessageHeaderKeys.TOKEN, None)
+        client = None
         if token:
             client = self.engine.server.client_manager.clients.get(token)
             if client:
                 data.set_header(ServerCommandKey.FL_CLIENT, client)
+        if command_name in ServerCommands.client_request_commands_names and not client:
+            return make_reply(ReturnCode.AUTHENTICATION_ERROR, "Request from invalid client", fobs.dumps(None))
         command = ServerCommands.get_command(command_name)
 
         if command:
@@ -74,7 +77,7 @@ class ServerCommandAgent(object):
                     return_message = new_cell_message({}, fobs.dumps(reply))
                     return_message.set_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
                 else:
-                    return_message = new_cell_message({}, fobs.dumps(None))
+                    return_message = make_reply(ReturnCode.PROCESS_EXCEPTION, "No process results", fobs.dumps(None))
                 return return_message
 
     def aux_communicate(self, request: CellMessage) -> CellMessage:

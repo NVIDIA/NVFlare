@@ -22,7 +22,6 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
-from nvflare.fuel.f3.cellnet.defs import ReturnCode
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.utils import fobs
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, new_cell_message
@@ -192,8 +191,8 @@ class ClientRunManager(ClientEngineExecutorSpec):
             target_name = FQCN.get_root(name)
             if reply:
                 try:
-                    error_code = reply.get_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
-                    if error_code != ReturnCode.OK:
+                    error_code = reply.get_header(MessageHeaderKey.RETURN_CODE, CellReturnCode.OK)
+                    if error_code != CellReturnCode.OK:
                         self.logger.error(f"Aux message send error: {error_code} from client: {name}")
                         shareable = make_reply(ReturnCode.ERROR)
                     else:

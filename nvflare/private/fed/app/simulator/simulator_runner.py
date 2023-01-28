@@ -27,7 +27,7 @@ from multiprocessing import Manager, Process
 from multiprocessing.connection import Client
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import JobConstants, MachineStatus, WorkspaceConstants
+from nvflare.apis.fl_constant import JobConstants, MachineStatus, WorkspaceConstants, RunProcessKey
 from nvflare.apis.job_def import ALL_SITES, JobMetaKey
 from nvflare.apis.utils.job_utils import convert_legacy_zipped_app_to_job
 from nvflare.apis.workspace import Workspace
@@ -314,6 +314,14 @@ class SimulatorRunner(FLComponent):
         if self.setup():
             try:
                 self.create_clients()
+                # self.services.engine.run_processes[SimulatorConstants.JOB_NAME][RunProcessKey.PARTICIPANTS] =
+                self.services.engine.run_processes[SimulatorConstants.JOB_NAME] = {
+                    RunProcessKey.LISTEN_PORT: None,
+                    RunProcessKey.CONNECTION: None,
+                    RunProcessKey.CHILD_PROCESS: None,
+                    RunProcessKey.JOB_ID: SimulatorConstants.JOB_NAME,
+                    RunProcessKey.PARTICIPANTS: self.services.engine.client_manager.clients,
+                }
 
                 self.logger.info("Deploy and start the Server App.")
                 server_thread = threading.Thread(target=self.start_server_app, args=[])
@@ -366,6 +374,10 @@ class SimulatorRunner(FLComponent):
         local = os.path.join(self.args.workspace, WorkspaceConstants.SITE_FOLDER_NAME)
         os.makedirs(local, exist_ok=True)
         workspace = Workspace(root_dir=self.args.workspace, site_name="server")
+
+        self.services.job_cell = self.services.create_job_cell(SimulatorConstants.JOB_NAME,
+                                                               self.services.cell.get_root_url_for_child(),
+                                                               self.services.cell.get_internal_listener_url(), False)
         server_app_runner = SimulatorServerAppRunner()
         snapshot = None
         server_app_runner.start_server_app(
@@ -433,12 +445,16 @@ class SimulatorClientRunner(FLComponent):
             + self.args.workspace
             + " --client "
             + client.client_name
+            + " --token "
+            + client.token
             + " --port "
             + str(open_port)
             + " --parent_pid "
             + str(os.getpid())
+            + " --simulator_root "
+            + self.simulator_root
             + " --root_url "
-            + str(client.cell.get_root_url())
+            + str(client.cell.get_root_url_for_child())
             + " --parent_url "
             + str(client.cell.get_internal_listener_url())
         )

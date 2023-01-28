@@ -143,6 +143,7 @@ class CellChannel:
     CLIENT_COMMAND = "client_command"
     CLIENT_SUB_WORKER_COMMAND = "client_sub_worker_command"
     MULTI_PROCESS_EXECUTOR = "multi_process_executor"
+    SIMULATOR_RUNNER = "simulator_runner"
 
 
 class CellChannelTopic:
@@ -154,6 +155,8 @@ class CellChannelTopic:
     HEART_BEAT = "hear_beat"
     EXECUTE_RESULT = "execute_result"
     FIRE_EVENT = "fire_event"
+
+    SIMULATOR_WORKER_INIT = "simulator_worker_init"
 
 
 ERROR_MSG_PREFIX = "NVFLARE_ERROR"

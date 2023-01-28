@@ -47,6 +47,8 @@ from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeade
 from nvflare.private.fed.server.server_runner import ServerRunner
 from nvflare.widgets.fed_event import ServerFedEventRunner
 from nvflare.security.logging import secure_format_exception
+from nvflare.fuel.f3.cellnet.net_agent import NetAgent
+from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 
 from .client_manager import ClientManager
 from .run_manager import RunManager
@@ -319,6 +321,27 @@ class FederatedServer(BaseServer):
             server=self, args=args, client_manager=self.client_manager, snapshot_persistor=snapshot_persistor
         )
 
+    def create_job_cell(self, job_id, root_url, parent_url, secure_train) -> Cell:
+        my_fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
+        credentials = {}
+        cell = Cell(
+            fqcn=my_fqcn,
+            root_url=root_url,
+            secure=secure_train,
+            credentials=credentials,
+            create_internal_listener=True,
+            parent_url=parent_url,
+        )
+
+        cell.start()
+        net_agent = NetAgent(cell)
+        # self.cell = cell
+
+        command_agent = ServerCommandAgent(self.engine, cell)
+        command_agent.start()
+
+        return cell
+
     # @property
     def task_meta_info(self, client_name):
         """Task meta information.
@@ -553,7 +576,7 @@ class FederatedServer(BaseServer):
             #
             #     time.sleep(3)
 
-            self.cell.run()
+            self.wait_engine_run_complete()
 
             if engine_thread.is_alive():
                 engine_thread.join()
@@ -561,6 +584,9 @@ class FederatedServer(BaseServer):
         finally:
             self.engine.engine_info.status = MachineStatus.STOPPED
             self.run_manager = None
+
+    def wait_engine_run_complete(self):
+        self.cell.run()
 
     def create_run_manager(self, workspace, job_id):
         return RunManager(
