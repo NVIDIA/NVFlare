@@ -27,7 +27,7 @@ from multiprocessing import Manager, Process
 from multiprocessing.connection import Client
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import JobConstants, MachineStatus, WorkspaceConstants
+from nvflare.apis.fl_constant import JobConstants, MachineStatus, WorkspaceConstants, RunProcessKey
 from nvflare.apis.job_def import ALL_SITES, JobMetaKey
 from nvflare.apis.utils.job_utils import convert_legacy_zipped_app_to_job
 from nvflare.apis.workspace import Workspace
@@ -314,6 +314,14 @@ class SimulatorRunner(FLComponent):
         if self.setup():
             try:
                 self.create_clients()
+                # self.services.engine.run_processes[SimulatorConstants.JOB_NAME][RunProcessKey.PARTICIPANTS] =
+                self.services.engine.run_processes[SimulatorConstants.JOB_NAME] = {
+                    RunProcessKey.LISTEN_PORT: None,
+                    RunProcessKey.CONNECTION: None,
+                    RunProcessKey.CHILD_PROCESS: None,
+                    RunProcessKey.JOB_ID: SimulatorConstants.JOB_NAME,
+                    RunProcessKey.PARTICIPANTS: self.services.engine.client_manager.clients,
+                }
 
                 self.logger.info("Deploy and start the Server App.")
                 server_thread = threading.Thread(target=self.start_server_app, args=[])

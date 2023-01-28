@@ -74,13 +74,13 @@ class SimulatorServer(FederatedServer):
             overseer_agent,
         )
 
-        self.engine.run_processes[SimulatorConstants.JOB_NAME] = {
-            RunProcessKey.LISTEN_PORT: None,
-            RunProcessKey.CONNECTION: None,
-            RunProcessKey.CHILD_PROCESS: None,
-            RunProcessKey.JOB_ID: SimulatorConstants.JOB_NAME,
-            # RunProcessKey.PARTICIPANTS: job_clients,
-        }
+        # self.engine.run_processes[SimulatorConstants.JOB_NAME] = {
+        #     RunProcessKey.LISTEN_PORT: None,
+        #     RunProcessKey.CONNECTION: None,
+        #     RunProcessKey.CHILD_PROCESS: None,
+        #     RunProcessKey.JOB_ID: SimulatorConstants.JOB_NAME,
+        #     # RunProcessKey.PARTICIPANTS: job_clients,
+        # }
 
         self.server_state = HotState()
 
