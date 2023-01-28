@@ -39,7 +39,7 @@ class PackageChecker(ABC):
     def init(self, package_path: str):
         if not os.path.exists(package_path):
             raise RuntimeError(f"Package path: {package_path} does not exist.")
-        self.package_path = package_path
+        self.package_path = os.path.abspath(package_path)
         self.init_rules(package_path)
 
     @abstractmethod
@@ -54,8 +54,8 @@ class PackageChecker(ABC):
     def stop_dry_run(self, force: bool = True):
         # todo: add gracefully shutdown command, currently
         print("killing dry run process")
-
-        cmd = f"pkill -9 -f '{self.package_path}'"
+        command = self.get_dry_run_command()
+        cmd = f"pkill -9 -f '{command}'"
         process = run_command_in_subprocess(cmd)
         process.wait()
 
