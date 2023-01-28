@@ -82,7 +82,7 @@ class PackageChecker(ABC):
 
             # check if server can run
             if all_passed:
-                ret_code = self.check_dry_run()
+                ret_code = self.check_dry_run(timeout=self.dry_run_timeout)
             return ret_code
         except Exception as e:
             self.add_report(
@@ -92,11 +92,11 @@ class PackageChecker(ABC):
             )
             return ret_code
 
-    def check_dry_run(self) -> int:
+    def check_dry_run(self, timeout: int) -> int:
         command = self.get_dry_run_command()
         process = run_command_in_subprocess(command)
         try:
-            out, _ = process.communicate(timeout=self.dry_run_timeout)
+            out, _ = process.communicate(timeout=timeout)
             ret_code = process.returncode
             if ret_code == 0:
                 self.add_report(
