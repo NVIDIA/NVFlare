@@ -6,7 +6,7 @@
       "tasks": ["train"],
       "executor": {
         "id": "Executor",
-        "path": "app_opt.sklearn.skexecutor.SKExecutor",
+        "path": "nvflare.app_opt.sklearn.sklearn_executor.SKLearnExecutor",
         "args": {
           "learner_id": "linear_learner"
         }
@@ -25,11 +25,7 @@
         "train_end": 0,
         "valid_start": 0,
         "valid_end": 0,
-        "learning_rate": "constant",
-        "eta0": 1e-4,
-        "loss": "log",
-        "penalty": "l2",
-        "fit_intercept": 1
+        "random_state": 0
       }
     }
   ]

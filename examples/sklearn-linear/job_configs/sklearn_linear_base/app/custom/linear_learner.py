@@ -17,12 +17,11 @@ import warnings
 from typing import Optional
 
 import numpy as np
-from app_opt.sklearn.sklearner import SKLearner
-from nvflare.apis.fl_context import FLContext
 from sklearn.linear_model import SGDClassifier
 from sklearn.metrics import roc_auc_score
 
-# Note: will move to this app_common when it gets matured
+from nvflare.apis.fl_context import FLContext
+from nvflare.app_opt.sklearn.sklearner import SKLearner
 
 
 class LinearLearner(SKLearner):
@@ -33,22 +32,14 @@ class LinearLearner(SKLearner):
         train_end: int,
         valid_start: int,
         valid_end: int,
-        learning_rate: str = "constant",
-        eta0: float = 1e-4,
-        loss: str = "log",
-        penalty: str = "l2",
-        fit_intercept: int = 1,
+        random_state: int = None,
     ):
         super().__init__(data_path, train_start, train_end, valid_start, valid_end)
+        self.random_state = random_state
         self.train_data = None
         self.valid_data = None
         self.n_samples = None
-
-        self.learning_rate = learning_rate
-        self.eta0 = eta0
-        self.loss = loss
-        self.penalty = penalty
-        self.fit_intercept = fit_intercept
+        self.local_model = None
 
     def initialize(self, fl_ctx: FLContext):
         self.fl_ctx = fl_ctx
@@ -56,26 +47,10 @@ class LinearLearner(SKLearner):
         self.train_data = data["train"]
         self.valid_data = data["valid"]
         # train data size, to be used for setting
-        # NUM_STEPS_CURRENT_ROUND for potential use in aggregation
+        # NUM_STEPS_CURRENT_ROUND for potential aggregation
         self.n_samples = data["train"][-1]
-
-        # initialize model to all zero
-        self.local_model = SGDClassifier(
-            loss=self.loss,
-            penalty=self.penalty,
-            fit_intercept=bool(self.fit_intercept),
-            learning_rate=self.learning_rate,
-            eta0=self.eta0,
-            max_iter=1,
-            warm_start=True,
-            random_state=0,
-        )
-        n_classes = 2  # Binary classification
-        n_features = data["train"][0].shape[1]  # Number of features in dataset
-        self.local_model.classes_ = np.array([i for i in range(n_classes)])
-        self.local_model.coef_ = np.zeros((1, n_features))
-        if self.fit_intercept:
-            self.local_model.intercept_ = np.zeros((1,))
+        self.n_features = data["train"][0].shape[1]
+        # model will be created after receiving gobal parameters
 
     def set_parameters(self, params):
         self.local_model.coef_ = params["coef"]
@@ -83,8 +58,29 @@ class LinearLearner(SKLearner):
             self.local_model.intercept_ = params["intercept"]
 
     def train(self, curr_round: int, global_param: Optional[dict] = None) -> dict:
-        # get training data
         (x_train, y_train, train_size) = self.train_data
+        if curr_round == 0:
+            # initialize model with global_param
+            # and set to all zero
+            fit_intercept = bool(global_param["fit_intercept"])
+            self.local_model = SGDClassifier(
+                loss=global_param["loss"],
+                penalty=global_param["penalty"],
+                fit_intercept=fit_intercept,
+                learning_rate=global_param["learning_rate"],
+                eta0=global_param["eta0"],
+                max_iter=1,
+                warm_start=True,
+                random_state=self.random_state,
+            )
+            n_classes = global_param["n_classes"]  # Binary classification
+            self.local_model.classes_ = np.array([i for i in range(n_classes)])
+            self.local_model.coef_ = np.zeros((1, self.n_features))
+            if fit_intercept:
+                self.local_model.intercept_ = np.zeros((1,))
+        # Training starting from global model
+        # Note that the parameter update using global model has been performed
+        # during global model evaluation
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             self.local_model.fit(x_train, y_train)
@@ -99,13 +95,12 @@ class LinearLearner(SKLearner):
 
     def evaluate(self, curr_round: int, global_param: Optional[dict] = None) -> dict:
         # set local model with global parameters
-        # and perform validation
-        if global_param:
-            self.set_parameters(global_param)
-            (x_valid, y_valid, valid_size) = self.valid_data
-            y_pred = self.local_model.predict(x_valid)
-            auc = roc_auc_score(y_valid, y_pred)
-            metrics = {"AUC": auc}
+        self.set_parameters(global_param)
+        # perform validation
+        (x_valid, y_valid, valid_size) = self.valid_data
+        y_pred = self.local_model.predict(x_valid)
+        auc = roc_auc_score(y_valid, y_pred)
+        metrics = {"AUC": auc}
         return metrics, self.local_model
 
     def finalize(self) -> None:

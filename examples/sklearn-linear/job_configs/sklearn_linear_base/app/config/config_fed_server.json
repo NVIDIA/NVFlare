@@ -9,8 +9,17 @@
   "components": [
     {
       "id": "persistor",
-      "path": "app_opt.sklearn.joblib_model_param_persistor.JoblibModelParamPersistor",
-      "args": {}
+      "path": "nvflare.app_opt.sklearn.joblib_model_param_persistor.JoblibModelParamPersistor",
+      "args": {
+        "initial_params": {
+          "n_classes": 2,
+          "learning_rate": "constant",
+          "eta0": 1e-4,
+          "loss": "log",
+          "penalty": "l2",
+          "fit_intercept": 1
+        }
+      }
     },
     {
       "id": "shareable_generator",
@@ -31,7 +40,7 @@
       "name": "ScatterAndGather",
       "args": {
         "min_clients": 5,
-        "num_rounds": 5,
+        "num_rounds": 50,
         "start_round": 0,
         "wait_time_after_min_received": 0,
         "aggregator_id": "aggregator",
