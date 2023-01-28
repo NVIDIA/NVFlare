@@ -14,12 +14,11 @@
 
 from typing import Optional
 
-from app_opt.sklearn.sklearner import SKLearner
-from nvflare.apis.fl_context import FLContext
 from sklearn.metrics import roc_auc_score
 from sklearn.svm import SVC
 
-# Note: will move to this app_common when it gets matured
+from nvflare.apis.fl_context import FLContext
+from nvflare.app_opt.sklearn.sklearner import SKLearner
 
 
 class SVMLearner(SKLearner):
@@ -35,7 +34,8 @@ class SVMLearner(SKLearner):
         self.train_data = None
         self.valid_data = None
         self.n_samples = None
-        self.svm = SVC(kernel="rbf")
+        self.svm = None
+        self.kernel = None
         self.params = {}
 
     def initialize(self, fl_ctx: FLContext):
@@ -46,13 +46,18 @@ class SVMLearner(SKLearner):
         # train data size, to be used for setting
         # NUM_STEPS_CURRENT_ROUND for potential use in aggregation
         self.n_samples = data["train"][-1]
+        # model will be created after receiving global parameter of kernel
 
     def train(self, curr_round: int, global_param: Optional[dict] = None) -> dict:
         if curr_round == 0:
             # only perform training on the first round
             # the following rounds directly returns the retained records
             (x_train, y_train, train_size) = self.train_data
+            self.kernel = global_param["kernel"]
+            self.svm = SVC(kernel=self.kernel)
+            # train model
             self.svm.fit(x_train, y_train)
+            # get support vectors
             index = self.svm.support_
             local_support_x = x_train[index]
             local_support_y = y_train[index]
@@ -62,15 +67,15 @@ class SVMLearner(SKLearner):
     def evaluate(self, curr_round: int, global_param: Optional[dict] = None) -> dict:
         # local validation with global support vectors
         # fit a standalone SVM with the global support vectors
-        svm_global = SVC(kernel="rbf")
-        if global_param:
-            support_x = global_param["support_x"]
-            support_y = global_param["support_y"]
-            svm_global.fit(support_x, support_y)
-            (x_valid, y_valid, valid_size) = self.valid_data
-            y_pred = svm_global.predict(x_valid)
-            auc = roc_auc_score(y_valid, y_pred)
-            metrics = {"AUC": auc}
+        svm_global = SVC(kernel=self.kernel)
+        support_x = global_param["support_x"]
+        support_y = global_param["support_y"]
+        svm_global.fit(support_x, support_y)
+        # validate global model
+        (x_valid, y_valid, valid_size) = self.valid_data
+        y_pred = svm_global.predict(x_valid)
+        auc = roc_auc_score(y_valid, y_pred)
+        metrics = {"AUC": auc}
         return metrics, svm_global
 
     def finalize(self) -> None:

@@ -63,7 +63,7 @@ Below is a sample config for site-1, saved to `/job_configs/sklearn_svm_3_unifor
             ],
             "executor": {
                 "id": "Executor",
-                "path": "app_opt.sklearn.svm.svm_executor.SVMExecutor",
+                "path": "nvflare.app_opt.sklearn.sklearn_executor.SKLearnExecutor",
                 "args": {
                     "learner_id": "svm_learner"
                 }
@@ -94,3 +94,4 @@ We can run the FL simulator with 3 clients under uniform data split with
 ```commandline
 bash run_experiment_simulator.sh
 ```
+Running with default SVC, the resulting the global model's AUC is 0.806.

@@ -16,41 +16,43 @@
 from typing import Dict
 
 import numpy as np
-from app_common.aggregators.assembler import Assembler
-from nvflare.apis.dxo import DataKind
 from sklearn.svm import SVC
 
+from nvflare.apis.dxo import DataKind
+from nvflare.app_common.aggregators.assembler import Assembler
 
-class SVMAggregator(Assembler):
-    def __init__(self):
+
+class SVMAssembler(Assembler):
+    def __init__(self, kernel):
         super().__init__(data_kind=DataKind.WEIGHTS)
         # Record the global support vectors
         # so that only 1 round of training is performed
         self.support_x = None
         self.support_y = None
+        self.kernel = kernel
 
     def get_model_params(self, data: dict):
         return {"support_x": data["support_x"], "support_y": data["support_y"]}
 
-    def aggregate(self, current_round: int, data: Dict[str, dict]) -> dict:
+    def assemble(self, current_round: int, data: Dict[str, dict]) -> dict:
         if current_round == 0:
-            # Fist round, collect all support vectors and
-            # perform one round of SVM to produce global model
+            # First round, collect all support vectors from clients
             support_x = []
             support_y = []
-            for client in self.accumulator:
-                client_model = self.accumulator[client]
+            for client in self.collector:
+                client_model = self.collector[client]
                 support_x.append(client_model["support_x"])
                 support_y.append(client_model["support_y"])
             global_x = np.concatenate(support_x)
             global_y = np.concatenate(support_y)
-            svm_global = SVC(kernel="rbf")
+            # perform one round of SVM to produce global model
+            svm_global = SVC(kernel=self.kernel)
             svm_global.fit(global_x, global_y)
-
+            # get global support vectors
             index = svm_global.support_
             self.support_x = global_x[index]
             self.support_y = global_y[index]
-        # The following round directly returns the retained record
+        # The following rounds, if any, directly returns the retained record
         # No further training
         params = {"support_x": self.support_x, "support_y": self.support_y}
         return params
@@ -58,4 +60,4 @@ class SVMAggregator(Assembler):
     def reset(self) -> None:
         # Reset accumulator for next round,
         # # but not the center and count, which will be used as the starting point of the next round
-        self.accumulator = {}
+        self.collector = {}

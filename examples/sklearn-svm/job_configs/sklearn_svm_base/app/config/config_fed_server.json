@@ -9,8 +9,12 @@
   "components": [
     {
       "id": "persistor",
-      "path": "app_opt.sklearn.joblib_model_param_persistor.JoblibModelParamPersistor",
-      "args": {}
+      "path": "nvflare.app_opt.sklearn.joblib_model_param_persistor.JoblibModelParamPersistor",
+      "args": {
+        "initial_params": {
+          "kernel": "rbf"
+        }
+      }
     },
     {
       "id": "shareable_generator",
@@ -18,16 +22,18 @@
       "args": {}
     },
     {
-      "id": "collector",
-      "path": "app_common.aggregators.collector.Collector",
+      "id": "aggregator",
+      "path": "nvflare.app_common.aggregators.collect_and_assemble_aggregator.CollectAndAssembleAggregator",
       "args": {
-        "assembler_id" : "svm_aggregator"
+        "assembler_id" : "svm_assembler"
       }
     },
     {
-      "id": "svm_aggregator",
-      "path": "svm_aggregator.SVMAggregator",
-      "args": {}
+      "id": "svm_assembler",
+      "path": "svm_assembler.SVMAssembler",
+      "args": {
+        "kernel": "rbf"
+      }
     }
   ],
   "workflows": [
@@ -39,7 +45,7 @@
         "num_rounds": 2,
         "start_round": 0,
         "wait_time_after_min_received": 0,
-        "aggregator_id": "collector",
+        "aggregator_id": "aggregator",
         "persistor_id": "persistor",
         "shareable_generator_id": "shareable_generator",
         "train_task_name": "train",
