@@ -250,6 +250,7 @@ class FederatedServer(BaseServer):
         self.engine = self._create_server_engine(args, snapshot_persistor)
         self.run_manager = None
         self.server_runner = None
+        self.command_agent = None
 
         self.processors = {}
         self.runner_config = None
@@ -337,8 +338,8 @@ class FederatedServer(BaseServer):
         net_agent = NetAgent(cell)
         # self.cell = cell
 
-        command_agent = ServerCommandAgent(self.engine, cell)
-        command_agent.start()
+        self.command_agent = ServerCommandAgent(self.engine, cell)
+        self.command_agent.start()
 
         return cell
 

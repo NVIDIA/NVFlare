@@ -352,6 +352,11 @@ class SimulatorRunner(FLComponent):
                 self.logger.error(f"Simulator run error: {secure_format_exception(e)}")
                 run_status = 2
             finally:
+                for client in self.federated_clients:
+                    client.cell.stop()
+                if self.services:
+                    self.services.cell.stop()
+                    self.services.command_agent.cell.stop()
                 self.deployer.close()
         else:
             run_status = 1
