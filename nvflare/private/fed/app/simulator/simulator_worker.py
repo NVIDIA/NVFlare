@@ -96,6 +96,7 @@ class ClientTaskWorker(FLComponent):
 
     def run(self, args, conn):
         admin_agent = None
+        client = None
         try:
             data = conn.recv()
             client_config = data[SimulatorConstants.CLIENT_CONFIG]
@@ -123,6 +124,8 @@ class ClientTaskWorker(FLComponent):
         except BaseException as e:
             self.logger.error(f"ClientTaskWorker run error: {secure_format_exception(e)}")
         finally:
+            if client:
+                client.cell.stop()
             if admin_agent:
                 admin_agent.shutdown()
 
