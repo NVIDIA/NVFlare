@@ -61,16 +61,25 @@ cd ..
 For more information about secure provisioning see the [documentation](https://nvflare.readthedocs.io/en/latest/programming_guide/provisioning_system.html).
 
 ### 3.2 Multi-tasking resource management
-In this example, we assume `N_GPU` local GPUs with at least 8 GB of memory 
-each are available on the host system. 
+In this example, we assume `N_GPU` local GPUs, each with at least 8 GB of 
+memory, are available on the host system. To find the available number of 
+GPUs, run
 ```
 export N_GPU=$(nvidia-smi --list-gpus | wc -l)
 echo "There are ${N_GPU} GPUs available."
 ```
-Each client needs about 1 GB of GPU memory to run an FL experiment.
-Hence, we need to change the clients' local `GPUResourceManager` configurations to show `N_GPU` GPUs at each client, 
-each with 1 GB of available memory in order to run 8 clients on in parallel each GPU. 
-To do this, we copy `resource.json.default` to `resources.json` and modify as required: 
+We can change the clients' local `GPUResourceManager` configurations to 
+show the available `N_GPU` GPUs at each client.
+
+Each client needs about 1 GB of GPU memory to run an FL experiment with the 
+CIFAR-10 dataset. Therefore, each client needs to request 1 GB of memory such 
+that 8 can run in parallel on the same GPU.
+
+To request the GPU memory, set the `"mem_per_gpu_in_GiB"` value in the job's 
+`meta.json` file. 
+
+To update the clients' available resources, we copy `resource.json.default` 
+to `resources.json` and modify them as follows: 
 ```
 n_clients=8
 for id in $(eval echo "{1..$n_clients}") 
