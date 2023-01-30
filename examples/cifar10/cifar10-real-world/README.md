@@ -67,8 +67,9 @@ each are available on the host system.
 export N_GPU=$(nvidia-smi --list-gpus | wc -l)
 echo "There are ${N_GPU} GPUs available."
 ```
+Each client needs about 1 GB of GPU memory to run an FL experiment.
 Hence, we need to change the clients' local `GPUResourceManager` configurations to show `N_GPU` GPUs at each client, 
-each with 1 GB of memory in order to equally distribute 8 clients on each GPU. 
+each with 1 GB of available memory in order to run 8 clients on in parallel each GPU. 
 To do this, we copy `resource.json.default` to `resources.json` and modify as required: 
 ```
 n_clients=8
