@@ -93,7 +93,9 @@ class SystemInfo:
     def __str__(self) -> str:
         client_info_str = "\n".join(map(str, self.client_info))
         job_info_str = "\n".join(map(str, self.job_info))
-        return f"SystemInfo\n  server_info: {self.server_info}\n  client_info: \n{client_info_str}\n  job_info: {job_info_str}"
+        return (
+            f"SystemInfo\nserver_info:\n{self.server_info}\nclient_info:\n{client_info_str}\njob_info:\n{job_info_str}"
+        )
 
 
 class SessionSpec(ABC):
