@@ -32,6 +32,13 @@ _KEY_PORTS = "ports"
 _KEY_ALLOW_ADHOC = "allow_adhoc"
 
 
+class _Defaults:
+
+    ALLOW_ADHOC_CONNECTIONS = False
+    SCHEME_FOR_INTERNAL_CONNECTIONS = "uds"
+    SCHEME_FOR_ADHOC_CONNECTIONS = "grpc"
+
+
 class ConnectorInfo:
 
     def __init__(self, handle, connect_url: str, active: bool):
@@ -62,13 +69,12 @@ class ConnectorManager:
         self.secure = secure
 
         # set up default drivers
-        self.int_scheme = "tcp"
+        self.int_scheme = _Defaults.SCHEME_FOR_INTERNAL_CONNECTIONS
         self.int_resources = {
             _KEY_HOST: "localhost",
-            _KEY_PORTS: ["30000-40000"]  # select a port randomly
         }
-        self.ext_allow_adhoc = False
-        self.ext_scheme = "http"
+        self.ext_allow_adhoc = _Defaults.ALLOW_ADHOC_CONNECTIONS
+        self.ext_scheme = _Defaults.SCHEME_FOR_ADHOC_CONNECTIONS
         self.ext_resources = {}
 
         # load config if any

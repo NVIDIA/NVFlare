@@ -15,6 +15,26 @@
 import sys
 from typing import List, Tuple, Union
 
+_KEY_MAX = "max"
+_KEY_MIN = "min"
+_KEY_NAME = "name"
+_KEY_DESC = "description"
+_KEY_TOTAL = "total"
+_KEY_COUNT = "count"
+_KEY_UNIT = "unit"
+_KEY_MARKS = "marks"
+_KEY_COUNTER_NAMES = "counter_names"
+_KEY_CAT_DATA = "cat_data"
+
+
+class HistMode:
+
+    COUNT = "count"
+    PERCENT = "percent"
+    AVERAGE = "avg"
+    MIN = "min"
+    MAX = "max"
+
 
 def format_value(v: float, n=3):
     fmt = "{:." + str(n) + "e}"
@@ -37,33 +57,69 @@ class _Bin:
         if self.max is None or self.max < value:
             self.max = value
 
-    def get_content(self, mode='count', total=0.0):
+    def get_content(self, mode=HistMode.COUNT, total=0.0):
         if self.count == 0:
             return ""
-        if mode == 'count':
+        if mode == HistMode.COUNT:
             return str(self.count)
-        if mode == 'percent':
+        if mode == HistMode.PERCENT:
             return str(round(self.count/total, 2))
-        if mode == 'avg':
+        if mode == HistMode.AVERAGE:
             avg = self.total / self.count
             return format_value(avg)
-        if mode == 'min':
+        if mode == HistMode.MIN:
             return format_value(self.min)
-        if mode == 'max':
+        if mode == HistMode.MAX:
             return format_value(self.max)
         return "?"
 
+    def to_dict(self) -> dict:
+        return {
+            _KEY_COUNT: self.count,
+            _KEY_TOTAL: self.total,
+            _KEY_MIN: self.min if self.min is not None else "",
+            _KEY_MAX: self.max if self.max is not None else "",
+        }
 
-class HistPool:
+    @staticmethod
+    def from_dict(d: dict):
+        if not isinstance(d, dict):
+            raise ValueError(f"d must be dict but got {type(d)}")
+        b = _Bin()
+        b.count = d.get(_KEY_COUNT, 0)
+        b.total = d.get(_KEY_TOTAL, 0)
+        m = d.get(_KEY_MIN)
+        b.min = m if m else None
+        x = d.get(_KEY_MAX)
+        b.min = x if x else None
+        return b
+
+
+class StatsPool:
+
+    def __init__(self, name: str, description: str):
+        self.name = name
+        self.description = description
+
+    def to_dict(self) -> dict:
+        pass
+
+    @staticmethod
+    def from_dict(d: dict):
+        pass
+
+
+class HistPool(StatsPool):
 
     def __init__(
             self,
             name: str,
+            description: str,
             marks: Union[List[float], Tuple],
             unit: str
     ):
+        StatsPool.__init__(self, name, description)
         self.unit = unit
-        self.name = name
         self.marks = marks
         self.cat_bins = {}  # category name => list of bins
 
@@ -102,7 +158,7 @@ class HistPool:
                     bins[i] = b
                 b.record_value(value)
 
-    def get_table(self, mode='count'):
+    def get_table(self, mode=HistMode.COUNT):
         headers = ["category"]
         has_values = [False for _ in range(len(self.ranges))]
 
@@ -119,7 +175,7 @@ class HistPool:
         rows = {}
         for cat_name, bins in self.cat_bins.items():
             total_count = 0
-            if mode == 'percent':
+            if mode == HistMode.PERCENT:
                 for b in bins:
                     if b:
                         total_count += b.count
@@ -137,90 +193,121 @@ class HistPool:
             rows[cat_name] = r
         return headers, rows
 
+    def to_dict(self):
+        cat_bins = {}
+        for cat, bins in self.cat_bins.items():
+            exp_bins = []
+            for b in bins:
+                if not b:
+                    exp_bins.append("")
+                else:
+                    exp_bins.append(b.to_dict())
+            cat_bins[cat] = exp_bins
+        return {
+            _KEY_NAME: self.name,
+            _KEY_DESC: self.description,
+            _KEY_MARKS: list(self.marks),
+            _KEY_UNIT: self.unit,
+            _KEY_CAT_DATA: cat_bins
+        }
 
-def new_time_pool(name: str) -> HistPool:
+    @staticmethod
+    def from_dict(d: dict):
+        p = HistPool(
+            name=d.get(_KEY_NAME, ""),
+            description=d.get(_KEY_DESC, ""),
+            unit=d.get(_KEY_UNIT, ""),
+            marks=d.get(_KEY_MARKS)
+        )
+        cat_bins = d.get(_KEY_CAT_DATA)
+        if not cat_bins:
+            return p
+
+        for cat, bins in cat_bins.items():
+            in_bins = []
+            for b in bins:
+                if not b:
+                    in_bins.append(None)
+                else:
+                    assert isinstance(b, dict)
+                    in_bins.append(_Bin.from_dict(b))
+            p.cat_bins[cat] = in_bins
+        return p
+
+
+class CounterPool(StatsPool):
+
+    def __init__(
+            self,
+            name: str,
+            description: str,
+            counter_names: List[str]
+    ):
+        if not counter_names:
+            raise ValueError("counter_names cannot be empty")
+        StatsPool.__init__(self, name, description)
+        self.counter_names = counter_names
+        self.cat_counters = {}  # dict of cat_name => counter dict (counter_name => int)
+
+    def increment(self, category: str, counter_name: str, amount=1):
+        if counter_name not in self.counter_names:
+            raise ValueError(f"'{counter_name}' is not defined in pool '{self.name}'")
+
+        counters = self.cat_counters.get(category)
+        if not counters:
+            counters = {}
+            self.cat_counters[category] = counters
+        c = counters.get(counter_name, 0)
+        c += amount
+        counters[counter_name] = c
+
+    def get_table(self):
+        headers = ["category"]
+        headers.extend(self.counter_names)
+
+        rows = {}
+        for cat_name, counters in self.cat_counters.items():
+            r = [cat_name]
+            for cn in self.counter_names:
+                value = counters.get(cn, 0)
+                r.append(str(value))
+            rows[cat_name] = r
+        return headers, rows
+
+    def to_dict(self):
+        return {
+            _KEY_NAME: self.name,
+            _KEY_DESC: self.description,
+            _KEY_COUNTER_NAMES: list(self.counter_names),
+            _KEY_CAT_DATA: self.cat_counters
+        }
+
+    @staticmethod
+    def from_dict(d: dict):
+        p = CounterPool(
+            name=d.get(_KEY_NAME, ""),
+            description=d.get(_KEY_DESC, ""),
+            counter_names=d.get(_KEY_COUNTER_NAMES)
+        )
+        p.cat_counters = d.get(_KEY_CAT_DATA)
+        return p
+
+
+def new_time_pool(name: str, description="") -> HistPool:
     marks = (0.0001, 0.0005, 0.001, 0.002, 0.004, 0.008, 0.01, 0.02, 0.04, 0.08, 0.1, 0.2, 0.4, 0.8, 1.0, 2.0)
     return HistPool(
         name=name,
+        description=description,
         marks=marks,
         unit="second"
     )
 
 
-def new_message_size_pool(name: str) -> HistPool:
+def new_message_size_pool(name: str, description="") -> HistPool:
     marks = (0.01, 0.1, 1, 10, 50, 100, 200, 500, 800, 1000)
     return HistPool(
         name=name,
+        description=description,
         marks=marks,
         unit="MB"
     )
-
-
-def test_time_pool():
-    p = new_time_pool("test")
-    for i in range(1000):
-        x = np.random.normal()
-        p.record_value("random", x)
-
-    headers, rows = p.get_table(mode='count')
-    print(f"Headers {len(headers)}: {headers}")
-    print(f"Rows: {rows}")
-    for n, r in rows.items():
-        print(f"{n}: {len(r)}")
-
-
-def test_plot():
-    """
-    simple test, for speed!
-    """
-
-    import time
-
-    num_bins = 20
-    # num_samples = int(1e5)
-    num_samples = 20
-
-    start = time.time()
-    min = -5.0
-    max = 5.0
-
-    bins = np.linspace(min, max, num_bins)
-    hist = DynamicHistogram(bins)
-
-    for i in range(num_samples):
-        #x = np.random.normal()
-        x = -5.000001
-        print(f"sample {i}: {x}")
-        # if x < min:
-        #     x = min
-        # if x > max:
-        #     x = max
-
-        print(f"22sample {i}: {x}")
-        hist.add_samples(x)
-
-    end = time.time()
-
-    elapsed = end - start
-    print('Added %d samples in %.3f seconds (%d bins)' % (num_samples, elapsed, num_bins))
-    print('%d ns per sample (random number gen is ~300 ns)' % (1e9 * elapsed / num_samples))
-
-    bins = hist.bins
-    print(f"bins: t={type(bins)} len={len(bins)}, v={bins}")
-
-    counts = hist.counts
-    print(f"counts: t={type(counts)} len={len(counts)} v={counts}, total={np.sum(counts)}")
-
-    percents = counts / np.sum(counts)
-    print(f"percents={percents}, total={np.sum(percents)}")
-
-    for i in range(len(bins)):
-        print(f"BIN {i}: {round(bins[i], 2)}")
-    hist.plot()
-
-    return
-
-
-if __name__ == '__main__':
-    test_plot()
-    #test_time_pool()

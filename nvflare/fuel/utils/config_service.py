@@ -11,12 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import argparse
 from typing import Dict, List, Union
 
 import json
 import os
 
+
+ENV_VAR_PREFIX = "NVFLARE_"
 
 def find_file_in_dir(file_basename, path) -> Union[None, str]:
     """
@@ -64,11 +66,15 @@ class ConfigService:
 
     _sections = {}
     _config_path = []
+    _cmd_args = None
+    _var_dict = None
 
     @staticmethod
     def initialize(
             section_files: Dict[str, str],
-            config_path: List[str]
+            config_path: List[str],
+            parsed_args=None,
+            var_dict=None
     ):
         """
         Initialize the ConfigService.
@@ -80,6 +86,8 @@ class ConfigService:
         Args:
             section_files: dict: section name => config file
             config_path: list of config directories
+            process_start_cmd_args: command args for starting the program
+            var_dict: dict for additional vars
 
         Returns:
 
@@ -92,6 +100,9 @@ class ConfigService:
 
         if not config_path:
             raise ValueError("config_dirs is empty")
+
+        if var_dict and not isinstance(var_dict, dict):
+            raise ValueError(f"var_dict must dict but got {type(var_dict)}")
 
         for d in config_path:
             if not isinstance(d, str):
@@ -107,6 +118,12 @@ class ConfigService:
 
         for section, file_basename in section_files.items():
             ConfigService._sections[section] = ConfigService.load_json(file_basename)
+
+        ConfigService._var_dict = var_dict
+        if parsed_args:
+            if not isinstance(parsed_args, argparse.Namespace):
+                raise ValueError(f"parsed_args must be argparse.Namespace but got {type(parsed_args)}")
+            ConfigService._cmd_args = dict(parsed_args.__dict__)
 
     @staticmethod
     def get_section(name: str):
@@ -165,3 +182,25 @@ class ConfigService:
         if not isinstance(file_basename, str):
             raise TypeError(f"file_basename must be str but got {type(file_basename)}")
         return search_file(file_basename, ConfigService._config_path)
+
+    @staticmethod
+    def get_var(name: str, default=None):
+        if not isinstance(name, str):
+            raise ValueError(f"var name must be str but got {type(name)}")
+
+        # see whether command args have it
+        if ConfigService._cmd_args and name in ConfigService._cmd_args:
+            return ConfigService._cmd_args.get(name)
+        if ConfigService._var_dict and name in ConfigService._var_dict:
+            return ConfigService._var_dict.get(name)
+
+        # check OS env vars
+        if not name.startswith(ENV_VAR_PREFIX):
+            env_var_name = ENV_VAR_PREFIX + name
+        else:
+            env_var_name = name
+
+        env_var_name = env_var_name.upper()
+        if env_var_name in os.environ:
+            return os.environ.get(env_var_name)
+        return default

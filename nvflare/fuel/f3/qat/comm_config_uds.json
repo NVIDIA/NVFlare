@@ -1,6 +1,6 @@
 {
   "internal": {
-    "scheme": "grpc",
+    "scheme": "uds",
     "resources": {
       "host": "localhost"
     }
