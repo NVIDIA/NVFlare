@@ -271,7 +271,7 @@ def _shutdown_client(federated_client, admin_agent, touch_file):
         if federated_client.process:
             federated_client.process.terminate()
 
-        admin_agent.shutdown()
+        federated_client.cell.stop()
         security_close()
     except BaseException as e:
         secure_log_traceback()

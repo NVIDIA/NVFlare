@@ -15,17 +15,15 @@
 import copy
 import logging
 
-from nvflare.apis.fl_constant import ServerCommandKey, FLContextKey, ReservedKey
+from nvflare.apis.fl_constant import ServerCommandKey, FLContextKey
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.shareable import ReservedHeaderKey
+from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.cell import Message as CellMessage, make_reply
 from nvflare.fuel.f3.cellnet.cell import MessageHeaderKey, ReturnCode
 from nvflare.fuel.utils import fobs
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, new_cell_message
-from nvflare.private.fed.server.server_commands import AuxCommunicateCommand
-from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import ReservedHeaderKey
-from nvflare.apis.utils.fl_context_utils import get_serializable_data
-
 from .server_commands import ServerCommands
 
 
@@ -90,20 +88,12 @@ class ServerCommandAgent(object):
         data = request.payload
 
         topic = request.get_header(MessageHeaderKey.TOPIC)
-        command = AuxCommunicateCommand()
         with self.engine.new_context() as fl_ctx:
-            # reply = command.process(data=data, fl_ctx=new_fl_ctx)
-
             shared_fl_ctx = data.get_header(ReservedHeaderKey.PEER_PROPS)
             fl_ctx.set_peer_context(shared_fl_ctx)
 
             engine = fl_ctx.get_engine()
             reply = engine.dispatch(topic=topic, request=data, fl_ctx=fl_ctx)
-
-            # data = {
-            #     ServerCommandKey.AUX_REPLY: reply,
-            #     ServerCommandKey.FL_CONTEXT: copy.deepcopy(get_serializable_data(fl_ctx).props),
-            # }
 
             shared_fl_ctx = FLContext()
             shared_fl_ctx.set_public_props(copy.deepcopy(get_serializable_data(fl_ctx).get_all_public_props()))
@@ -118,6 +108,3 @@ class ServerCommandAgent(object):
 
     def shutdown(self):
         self.asked_to_stop = True
-
-        # if self.thread and self.thread.is_alive():
-        #     self.thread.join()

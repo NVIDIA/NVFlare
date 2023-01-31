@@ -425,11 +425,7 @@ class FederatedServer(BaseServer):
 
     def _handle_state_check(self, state_check, fl_ctx: FLContext):
         if state_check.get(ACTION) in [NIS, ABORT_RUN]:
-            fl_ctx.set_prop(FLContextKey.COMMUNICATION_ERROR, state_check.get(MESSAGE))
-
-    def _ssid_check(self, client_state, context):
-        if client_state.ssid != self.server_state.ssid:
-            context.abort(grpc.StatusCode.UNAUTHENTICATED, "Invalid Service session ID")
+            fl_ctx.set_prop(FLContextKey.COMMUNICATION_ERROR, state_check.get(MESSAGE), sticky=False)
 
     # def Quit(self, request, context):
     # @request_processing
@@ -709,6 +705,9 @@ class FederatedServer(BaseServer):
     def stop_training(self):
         self.status = ServerStatus.STOPPED
         self.logger.info("Server app stopped.\n\n")
+
+    def start(self):
+        self.cell.run()
 
     def fl_shutdown(self):
         self.engine.stop_all_jobs()

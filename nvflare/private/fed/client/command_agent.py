@@ -12,14 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import logging
 
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.fuel.f3.cellnet.cell import Message as CellMessage
 from nvflare.fuel.f3.cellnet.cell import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.cell import make_reply as make_cellnet_reply
 from nvflare.fuel.utils import fobs
 from nvflare.private.defs import CellChannel, new_cell_message
+from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from .admin_commands import AdminCommands
 
 
@@ -84,6 +87,10 @@ class CommandAgent(object):
         with self.engine.new_context() as fl_ctx:
             topic = request.get_header(MessageHeaderKey.TOPIC)
             reply = self.engine.dispatch(topic=topic, request=shareable, fl_ctx=fl_ctx)
+
+            shared_fl_ctx = FLContext()
+            shared_fl_ctx.set_public_props(copy.deepcopy(get_serializable_data(fl_ctx).get_all_public_props()))
+            reply.set_header(key=FLContextKey.PEER_CONTEXT, value=shared_fl_ctx)
 
             if reply is not None:
                 return_message = new_cell_message({}, reply)

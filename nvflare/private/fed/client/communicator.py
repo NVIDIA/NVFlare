@@ -125,7 +125,7 @@ class Communicator:
                 return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
                 if return_code == ReturnCode.UNAUTHENTICATED:
                     unauthenticated = result.get_header(MessageHeaderKey.ERROR)
-                    raise FLCommunicationError({}, "error:client_registration " + unauthenticated)
+                    raise FLCommunicationError("error:client_registration " + unauthenticated)
 
                 token = result.get_header(CellMessageHeaderKeys.TOKEN)
                 ssid = result.get_header(CellMessageHeaderKeys.SSID)
@@ -135,7 +135,7 @@ class Communicator:
                     break
 
             except BaseException as ex:
-                raise FLCommunicationError(ex, "error:client_registration")
+                raise FLCommunicationError("error:client_registration", ex)
 
         return token, ssid
 
@@ -328,13 +328,12 @@ class Communicator:
             )
             return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
             if return_code == ReturnCode.UNAUTHENTICATED:
-                unauthenticated = result.get_header(MessageHeaderKey.ERROR)
-                raise FLCommunicationError({}, "error:client_quit " + unauthenticated)
+                self.logger.info(f"Client token: {token} has been removed from the server.")
 
             server_message = result.get_header(CellMessageHeaderKeys.MESSAGE)
 
         except BaseException as ex:
-            raise FLCommunicationError(ex, "error:client_quit")
+            raise FLCommunicationError("error:client_quit", ex)
 
         return server_message
 
@@ -362,14 +361,14 @@ class Communicator:
                     return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
                     if return_code == ReturnCode.UNAUTHENTICATED:
                         unauthenticated = result.get_header(MessageHeaderKey.ERROR)
-                        raise FLCommunicationError({}, "error:client_quit " + unauthenticated)
+                        raise FLCommunicationError("error:client_quit " + unauthenticated)
 
                     # server_message = result.get_header(CellMessageHeaderKeys.MESSAGE)
                     abort_jobs = result.get_header(CellMessageHeaderKeys.ABORT_JOBS, [])
                     self._clean_up_runs(engine, abort_jobs)
 
                 except BaseException as ex:
-                    raise FLCommunicationError(ex, "error:client_quit")
+                    raise FLCommunicationError("error:client_quit", ex)
 
                 time.sleep(30)
             except BaseException as e:
