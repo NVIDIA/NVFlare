@@ -617,9 +617,12 @@ class FederatedServer(BaseServer):
             self.logger.error(f"FL client execution exception: {secure_format_exception(e)}")
         finally:
             self.engine.update_job_run_status()
-            self.cell.stop()
+            self.stop_run_engine_cell()
 
         self.engine.engine_info.status = MachineStatus.STOPPED
+
+    def stop_run_engine_cell(self):
+        self.cell.stop()
 
     def deploy(self, args, grpc_args=None, secure_train=False):
         super().deploy(args, grpc_args, secure_train)
@@ -712,9 +715,6 @@ class FederatedServer(BaseServer):
     def stop_training(self):
         self.status = ServerStatus.STOPPED
         self.logger.info("Server app stopped.\n\n")
-
-    def start(self):
-        self.cell.run()
 
     def fl_shutdown(self):
         self.engine.stop_all_jobs()

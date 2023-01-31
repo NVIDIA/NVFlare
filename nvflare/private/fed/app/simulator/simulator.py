@@ -15,6 +15,7 @@
 """Federated Simulator launching script."""
 
 import argparse
+import os
 import sys
 
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
@@ -50,6 +51,11 @@ if __name__ == "__main__":
     This is the main program when running the NVFlare Simulator. Use the Flare simulator API,
     create the SimulatorRunner object, do a setup(), then calls the run().
     """
+
+    # For MacOS, it needs to use 'spawn' for creating multi-process.
+    if os.name == 'posix':
+        import multiprocessing
+        multiprocessing.set_start_method('spawn')
 
     if sys.version_info < (3, 7):
         raise RuntimeError("Please use Python 3.7 or above.")
