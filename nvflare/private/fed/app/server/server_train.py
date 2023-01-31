@@ -134,7 +134,7 @@ def main():
         # From Python 3.9 and above, the ThreadPoolExecutor does not allow submit() to create a new thread while the
         # main thread has exited. Use the ServerStatus.SHUTDOWN to keep the main thread waiting for the gRPC
         # server to be shutdown.
-        services.start()
+        services.wait_engine_run_complete()
         while services.status != ServerStatus.SHUTDOWN:
             time.sleep(1.0)
 

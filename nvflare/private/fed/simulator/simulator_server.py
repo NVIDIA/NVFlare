@@ -16,13 +16,11 @@ import time
 from typing import List, Optional
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey, RunProcessKey, ServerCommandKey, MachineStatus
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ServerCommandKey, MachineStatus
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
+from nvflare.apis.shareable import ReturnCode, make_reply
 from nvflare.private.fed.server.run_manager import RunManager
 from nvflare.private.fed.server.server_state import HotState
-from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
-
 from ..server.fed_server import FederatedServer
 from ..server.server_engine import ServerEngine
 
@@ -80,6 +78,7 @@ class SimulatorServer(FederatedServer):
         #     # RunProcessKey.PARTICIPANTS: job_clients,
         # }
 
+        self.job_cell = None
         self.server_state = HotState()
 
     def _process_task_request(self, client, fl_ctx, shared_fl_ctx: FLContext):
@@ -141,3 +140,6 @@ class SimulatorServer(FederatedServer):
                 self.engine.engine_info.status = MachineStatus.STOPPED
 
             time.sleep(3)
+
+    def stop_run_engine_cell(self):
+        self.job_cell.stop()

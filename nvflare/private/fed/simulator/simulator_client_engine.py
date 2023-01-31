@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.apis.shareable import ReservedHeaderKey, Shareable
+from nvflare.apis.fl_context import FLContextManager
 from nvflare.private.fed.client.client_engine import ClientEngine
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 
@@ -23,8 +23,10 @@ class SimulatorClientEngine(ClientEngine):
 
 
 class SimulatorParentClientEngine(ClientEngine):
-    def __init__(self):
-        pass
+    def __init__(self, client_name):
+        self.fl_ctx_mgr = FLContextManager(
+            engine=self, identity_name=client_name, job_id="", public_stickers={}, private_stickers={}
+        )
 
     def get_all_job_ids(self):
         return [SimulatorConstants.JOB_NAME]

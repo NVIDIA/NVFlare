@@ -353,10 +353,12 @@ class SimulatorRunner(FLComponent):
                 run_status = 2
             finally:
                 for client in self.federated_clients:
+                    client.communicator.heartbeat_done = True
+                    # time.sleep(1.)
+                    client.close()
                     client.cell.stop()
-                if self.services:
-                    self.services.cell.stop()
-                    self.services.command_agent.cell.stop()
+
+                # self.services.close()
                 self.deployer.close()
         else:
             run_status = 1
@@ -388,6 +390,8 @@ class SimulatorRunner(FLComponent):
         server_app_runner.start_server_app(
             workspace, self.services, self.args, app_server_root, self.args.job_id, snapshot, self.logger
         )
+
+        self.services.close()
 
 
 class SimulatorClientRunner(FLComponent):
