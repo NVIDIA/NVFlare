@@ -131,24 +131,6 @@ class ClientEngineExecutorSpec(ClientEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def aux_send(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> {}:
-        """Send the request to the Server.
-
-        If reply is received, make sure to set peer_ctx into the reply shareable!
-
-        Args:
-            targets: aux messages targets. None or empty list means the server.
-            topic: topic of the request
-            request: request Shareable to be sent
-            timeout: number of secs to wait for reply. 0 means fire-and-forget.
-            fl_ctx: fl context
-
-        Returns: a reply.
-
-        """
-        pass
-
-    @abstractmethod
     def build_component(self, config_dict):
         """Build a component from the config_dict.
 

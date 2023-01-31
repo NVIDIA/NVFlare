@@ -21,13 +21,6 @@ class SimulatorClientEngine(ClientEngine):
     def __init__(self, client, client_name, args, rank, workers=5):
         super().__init__(client, client_name, args, rank, workers)
 
-    def send_aux_command(self, shareable: Shareable, job_id):
-        run_manager = self.client.run_manager
-        if run_manager:
-            with run_manager.new_context() as fl_ctx:
-                topic = shareable.get_header(ReservedHeaderKey.TOPIC)
-                return run_manager.dispatch(topic=topic, request=shareable, fl_ctx=fl_ctx)
-
 
 class SimulatorParentClientEngine(ClientEngine):
     def __init__(self):

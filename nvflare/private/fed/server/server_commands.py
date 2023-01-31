@@ -206,7 +206,7 @@ class SubmitUpdateCommand(CommandProcessor):
         server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
         server_runner.process_submission(client, contribution_task_name, task_id, data, fl_ctx)
 
-        return None
+        return ""
 
 
 class HandleDeadJobCommand(CommandProcessor):
@@ -234,37 +234,6 @@ class HandleDeadJobCommand(CommandProcessor):
         server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
         server_runner.handle_dead_job(client_name, fl_ctx)
         return ""
-
-
-class AuxCommunicateCommand(CommandProcessor):
-    """Server AuxCommunicate command."""
-
-    def get_command_name(self) -> str:
-        return ServerCommandNames.AUX_COMMUNICATE
-
-    def process(self, data: Shareable, fl_ctx: FLContext):
-        # shared_fl_ctx = data.get_header(ServerCommandKey.PEER_FL_CONTEXT)
-        # topic = data.get_header(ServerCommandKey.TOPIC)
-        # shareable = data.get_header(ServerCommandKey.SHAREABLE)
-        # fl_ctx.set_peer_context(shared_fl_ctx)
-
-        shared_fl_ctx = data.get_header(ServerCommandKey.PEER_FL_CONTEXT)
-        topic = data.get_header(ServerCommandKey.TOPIC)
-        fl_ctx.set_peer_context(shared_fl_ctx)
-
-        engine = fl_ctx.get_engine()
-        reply = engine.dispatch(topic=topic, request=data, fl_ctx=fl_ctx)
-
-        # data = {
-        #     ServerCommandKey.AUX_REPLY: reply,
-        #     ServerCommandKey.FL_CONTEXT: copy.deepcopy(get_serializable_data(fl_ctx).props),
-        # }
-
-        shared_fl_ctx = FLContext()
-        shared_fl_ctx.set_public_props(copy.deepcopy(get_serializable_data(fl_ctx).get_all_public_props()))
-        reply.set_header(key=FLContextKey.PEER_CONTEXT, value=shared_fl_ctx)
-
-        return reply
 
 
 class ShowStatsCommand(CommandProcessor):
@@ -380,7 +349,6 @@ class ServerCommands(object):
         GetTaskCommand(),
         SubmitUpdateCommand(),
         HandleDeadJobCommand(),
-        AuxCommunicateCommand(),
         ShowStatsCommand(),
         GetErrorsCommand(),
         HeartbeatCommand(),

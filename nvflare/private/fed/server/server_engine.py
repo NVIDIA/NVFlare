@@ -23,7 +23,6 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from multiprocessing.connection import Client as CommandClient
 from threading import Lock
 from typing import Dict, List, Optional, Tuple
 
@@ -33,7 +32,6 @@ from nvflare.apis.fl_constant import (
     AdminCommandNames,
     FLContextKey,
     MachineStatus,
-    ReservedTopic,
     ReturnCode,
     RunProcessKey,
     ServerCommandKey,
@@ -45,13 +43,10 @@ from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.fl_snapshot import RunSnapshot
 from nvflare.apis.impl.job_def_manager import JobDefManagerSpec
 from nvflare.apis.job_def import Job
-from nvflare.apis.shareable import Shareable, make_reply
+from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.cell import FQCN, Cell
-from nvflare.fuel.f3.cellnet.cell import Message as CellMessage
-from nvflare.fuel.f3.cellnet.cell import MessageHeaderKey
-from nvflare.fuel.f3.cellnet.cell import ReturnCode as F3ReturnCode
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
@@ -63,15 +58,12 @@ from nvflare.private.scheduler_constants import ShareableHeader
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
-
 from .client_manager import ClientManager
 from .job_runner import JobRunner
 from .message_send import ClientReply
 from .run_manager import RunInfo, RunManager
 from .server_engine_internal_spec import EngineInfo, ServerEngineInternalSpec
 from .server_status import ServerStatus
-
-# from .message_send import send_requests
 
 
 class ClientConnection:
@@ -122,7 +114,6 @@ class ServerEngine(ServerEngineInternalSpec):
 
         self.asked_to_stop = False
         self.snapshot_persistor = snapshot_persistor
-        self.parent_conn = None
         self.parent_conn_lock = Lock()
         self.job_runner = None
         self.job_def_manager = None
@@ -526,22 +517,6 @@ class ServerEngine(ServerEngineInternalSpec):
             time.sleep(1.0)
             return self._get_clients_data(job_id)
 
-    def parent_aux_send(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
-        with self.parent_conn_lock:
-            data = {
-                ServerCommandKey.COMMAND: ServerCommandNames.AUX_SEND,
-                ServerCommandKey.DATA: {
-                    "targets": targets,
-                    "topic": topic,
-                    "request": request,
-                    "timeout": timeout,
-                    "fl_ctx": get_serializable_data(fl_ctx),
-                },
-            }
-            self.parent_conn.send(data)
-            return_data = self.parent_conn.recv()
-            return return_data
-
     def update_job_run_status(self):
         with self.parent_conn_lock:
             with self.new_context() as fl_ctx:
@@ -555,79 +530,6 @@ class ServerEngine(ServerEngineInternalSpec):
                     message=request,
                 )
 
-    def aux_send(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
-        # Send the aux messages through admin_server
-        request.set_peer_props(fl_ctx.get_all_public_props())
-
-        message = Message(topic=ReservedTopic.AUX_COMMAND, body=request)
-        message.set_header(RequestHeader.JOB_ID, str(fl_ctx.get_prop(FLContextKey.CURRENT_RUN)))
-        message.set_header(RequestHeader.TOPIC, topic)
-        requests = {}
-        for n in targets:
-            requests.update({n: message})
-
-        job_id = fl_ctx.get_job_id()
-        replies = self._send_requests(topic, requests, job_id, timeout_secs=timeout)
-        # replies = send_requests(cell=self.server.cell, command=AdminCommandNames.AUX_COMMAND,
-        #                         requests=requests, clients=self.client_manager.clients, job_id=job_id,
-        #                         timeout_secs=timeout)
-        results = {}
-        for r in replies:
-            client_name = self.get_client_name_from_token(r.client_token)
-            if r.reply:
-                try:
-                    error_code = r.reply.get_header(MsgHeader.RETURN_CODE, ReturnCode.OK)
-                    if error_code != ReturnCode.OK:
-                        self.logger.error(f"Aux message send error: {error_code} from client: {client_name}")
-                        shareable = make_reply(ReturnCode.ERROR)
-                    else:
-                        shareable = r.reply
-                    results[client_name] = shareable
-                except BaseException as e:
-                    results[client_name] = make_reply(ReturnCode.COMMUNICATION_ERROR)
-                    self.logger.error(
-                        f"Received unexpected reply from client: {client_name}, "
-                        f"message body:{r.reply.body} processing topic:{topic} Error:{e}"
-                    )
-            else:
-                results[client_name] = None
-
-        return results
-
-    def _send_requests(self, topic: str, requests: dict, job_id, timeout_secs=2.0) -> [ClientReply]:
-
-        if not isinstance(requests, dict):
-            raise TypeError("requests must be a dict but got {}".format(type(requests)))
-
-        if len(requests) == 0:
-            return []
-
-        name_to_token = {}
-        name_to_req = {}
-
-        targets = []
-        for token, req in requests.items():
-            client = self.client_manager.clients.get(token)
-            if not client:
-                continue
-            fqcn = FQCN.join([client.name, job_id])
-            targets.append(fqcn)
-            name_to_token[fqcn] = token
-            name_to_req[fqcn] = req
-
-        result = []
-        replies = self.server.cell.broadcast_request(
-            targets=targets,
-            channel=CellChannel.AUX_COMMUNICATION,
-            topic=topic,
-            request=new_cell_message({}, req),
-            timeout=timeout_secs,
-        )
-        for name, reply in replies.items():
-            assert isinstance(reply, CellMessage)
-            result.append(ClientReply(client_token=name_to_token[name], req=name_to_req[name], reply=reply.payload))
-        return result
-
     def send_command_to_child_runner_process(self, job_id: str, command_name: str, command_data, return_result=True):
         result = None
         with self.lock:
@@ -639,21 +541,6 @@ class ServerEngine(ServerEngineInternalSpec):
             result = fobs.loads(return_data.payload)
 
         return result
-
-    def get_command_conn(self, job_id):
-        # this function need to be called with self.lock
-        port = self.run_processes.get(job_id, {}).get(RunProcessKey.LISTEN_PORT)
-        command_conn = self.run_processes.get(job_id, {}).get(RunProcessKey.CONNECTION)
-
-        if not command_conn:
-            try:
-                address = ("localhost", port)
-                command_conn = CommandClient(address, authkey="client process secret password".encode())
-                command_conn = ClientConnection(command_conn)
-                self.run_processes[job_id][RunProcessKey.CONNECTION] = command_conn
-            except Exception:
-                pass
-        return command_conn
 
     def persist_components(self, fl_ctx: FLContext, completed: bool):
         self.logger.info("Start saving snapshot on server.")
