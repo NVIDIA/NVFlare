@@ -247,27 +247,6 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def aux_send(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
-        """Send a request to client(s) via the auxiliary channel.
-
-        Args:
-            targets: list of Client or client names
-            topic: topic of the request
-            request: request to be sent
-            timeout: number of secs to wait for replies
-            fl_ctx: FL context
-
-        Returns:
-             A dict of replies: client_name => Shareable
-
-        NOTE: when a reply is received, the peer_ctx props must be set into the PEER_PROPS header
-        of the reply Shareable.
-
-        If a reply is not received from a client, do not put it into the reply dict.
-        """
-        pass
-
-    @abstractmethod
     def show_stats(self, job_id) -> dict:
         """Show_stats of the server.
 

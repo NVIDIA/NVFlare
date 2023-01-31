@@ -186,32 +186,6 @@ class ClientRunManager(ClientEngineExecutorSpec):
     def get_cell(self):
         return self.cell
 
-    def aux_send(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
-        replies = self.client.aux_send(targets, topic, request, timeout, fl_ctx)[0]
-
-        results = {}
-        for name, reply in replies.items():
-            # assert isinstance(reply, CellMessage)
-            target_name = FQCN.get_root(name)
-            if reply:
-                try:
-                    error_code = reply.get_header(MessageHeaderKey.RETURN_CODE, CellReturnCode.OK)
-                    if error_code != CellReturnCode.OK:
-                        self.logger.error(f"Aux message send error: {error_code} from client: {name}")
-                        shareable = make_reply(ReturnCode.ERROR, {FLContextKey.COMMUNICATION_ERROR: error_code})
-                    else:
-                        shareable = reply.payload
-                    results[target_name] = shareable
-                except BaseException as e:
-                    results[target_name] = make_reply(ReturnCode.COMMUNICATION_ERROR)
-                    self.logger.error(
-                        f"Received unexpected reply from client: {target_name}, "
-                        f"message body:{reply.body} processing topic:{topic} Error:{e}"
-                    )
-            else:
-                results[target_name] = None
-        return results
-
     def send_aux_request(
         self, targets: Union[None, str, List[str]], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext
     ) -> dict:

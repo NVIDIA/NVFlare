@@ -34,11 +34,6 @@ class SimulatorServerEngine(ServerEngine):
     def sync_clients_from_main_process(self):
         pass
 
-    def parent_aux_send(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
-        replies = self.aux_send(targets=targets, topic=topic, request=request, timeout=timeout, fl_ctx=fl_ctx)
-
-        return replies
-
     def update_job_run_status(self):
         pass
 

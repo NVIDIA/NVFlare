@@ -240,65 +240,6 @@ class Communicator:
 
         return return_code
 
-    def aux_communicate(
-        self, servers, project_name, token, ssid, fl_ctx: FLContext, client_name, shareable, targets: [], topic, timeout
-    ):
-        """Send the auxiliary communication message to the server.
-
-        Args:
-            servers: FL servers
-            project_name: server project name
-            token: client token
-            ssid: service session ID
-            fl_ctx: fl_ctx
-            client_name: client name
-            shareable: aux message shareable
-            targets: aux message targets
-            topic: aux message topic
-            timeout: aux communication timeout
-
-        Returns:
-            An AuxReply message from server
-
-        """
-        start_time = time.time()
-        shared_fl_ctx = FLContext()
-        shared_fl_ctx.set_public_props(get_serializable_data(fl_ctx).get_all_public_props())
-        shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_ctx)
-
-        # shareable.add_cookie(name=FLContextKey.TASK_ID, data=task_id)
-        shareable.set_header(ServerCommandKey.TOPIC, topic)
-
-        task_message = new_cell_message(
-            {
-                CellMessageHeaderKeys.TOKEN: token,
-                CellMessageHeaderKeys.SSID: ssid,
-                CellMessageHeaderKeys.PROJECT_NAME: project_name,
-            },
-            shareable,
-        )
-        job_id = str(shared_fl_ctx.get_prop(FLContextKey.CURRENT_RUN))
-
-        name_to_token = {}
-        name_to_req = {}
-        fqcns = []
-        for item in targets:
-            fqcn = FQCN.join([item, job_id])
-            fqcns.append(fqcn)
-            name_to_token[fqcn] = token
-            name_to_req[fqcn] = task_message
-        replies = self.cell.broadcast_request(
-            targets=fqcns,
-            channel=CellChannel.AUX_COMMUNICATION,
-            topic=topic,
-            request=task_message,
-        )
-        end_time = time.time()
-
-        self.logger.debug(f"Send AuxMessage to targets: {targets}. time: {end_time - start_time} seconds")
-
-        return replies
-
     def quit_remote(self, servers, task_name, token, ssid, fl_ctx: FLContext):
         """Sending the last message to the server before leaving.
 
