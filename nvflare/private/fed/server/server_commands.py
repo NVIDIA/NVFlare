@@ -206,7 +206,7 @@ class SubmitUpdateCommand(CommandProcessor):
         server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
         server_runner.process_submission(client, contribution_task_name, task_id, data, fl_ctx)
 
-        return None
+        return ""
 
 
 class HandleDeadJobCommand(CommandProcessor):
