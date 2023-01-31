@@ -13,18 +13,18 @@
 # limitations under the License.
 
 import time
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
+from nvflare.apis.client import Client
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import MachineStatus
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.workspace import Workspace
+from nvflare.private.aux_runner import AuxRunner
 from nvflare.private.event import fire_event
 from nvflare.private.fed.utils.fed_utils import create_job_processing_context_properties
-
 from .client_manager import ClientManager
-from .server_aux_runner import ServerAuxRunner
 
 
 class RunInfo(object):
@@ -63,7 +63,8 @@ class RunManager:
 
         self.client_manager = client_manager
         self.handlers = handlers
-        self.aux_runner = ServerAuxRunner()
+        # self.aux_runner = ServerAuxRunner(self)
+        self.aux_runner = AuxRunner(self)
         self.add_handler(self.aux_runner)
 
         if job_id:
@@ -79,6 +80,7 @@ class RunManager:
         self.run_info = RunInfo(job_id=job_id, app_path=self.workspace.get_app_dir(job_id))
 
         self.components = components
+        self.cell = None
 
     def get_server_name(self):
         return self.server_name
@@ -106,6 +108,37 @@ class RunManager:
 
     def add_handler(self, handler: FLComponent):
         self.handlers.append(handler)
+
+    def get_cell(self):
+        return self.cell
+
+    def validate_clients(self, client_names: List[str]) -> Tuple[List[Client], List[str]]:
+        return self._get_all_clients_from_inputs(client_names)
+
+    def _get_all_clients_from_inputs(self, inputs):
+        clients = []
+        invalid_inputs = []
+        for item in inputs:
+            client = self.client_manager.clients.get(item)
+            # if item in self.get_all_clients():
+            if client:
+                clients.append(client)
+            else:
+                client = self.get_client_from_name(item)
+                if client:
+                    clients.append(client)
+                else:
+                    invalid_inputs.append(item)
+        return clients, invalid_inputs
+
+    def get_client_from_name(self, client_name):
+        for c in self.get_clients():
+            if client_name == c.name:
+                return c
+        return None
+
+    def get_clients(self) -> [Client]:
+        return list(self.client_manager.get_clients().values())
 
     def create_job_processing_context_properties(self, workspace, job_id):
         return create_job_processing_context_properties(workspace, job_id)

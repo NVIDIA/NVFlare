@@ -19,13 +19,13 @@ from nvflare.private.aux_runner import AuxRunner
 
 
 class ServerAuxRunner(AuxRunner):
-    def __init__(self):
+    def __init__(self, engine):
         """This class is for auxiliary channel communication on server side.
 
         Note: The ServerEngine must create a new ServerAuxRunner object for each RUN, and make sure
               it is added as an event handler.
         """
-        AuxRunner.__init__(self)
+        AuxRunner.__init__(self, engine)
 
     def send_aux_request(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
         """Send request through auxiliary channel.

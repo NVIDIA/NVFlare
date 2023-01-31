@@ -184,9 +184,11 @@ class FederatedClientBase:
                 self.communicator.cell = self.cell
                 self.net_agent = NetAgent(self.cell)
                 if self.args.job_id:
+                    self.client_runner.engine.cell = self.cell
                     self.client_runner.command_agent.register_cell_cb()
                 else:
                     if self.engine:
+                        self.engine.cell = self.cell
                         self.engine.admin_agent.register_cell_cb()
 
                 self.logger.info(f"Got the new primary SP: {scheme + location}")

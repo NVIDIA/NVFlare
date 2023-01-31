@@ -102,7 +102,7 @@ class ClientAuxRunner(AuxRunner):
             if name not in target_names:
                 target_names.append(t)
 
-        valid_targets, invalid_names = engine.validate_targets(target_names, fl_ctx)
+        valid_targets, invalid_names = engine.validate_clients(target_names, fl_ctx)
         if invalid_names:
             raise ValueError("invalid target(s): {}".format(invalid_names))
 
