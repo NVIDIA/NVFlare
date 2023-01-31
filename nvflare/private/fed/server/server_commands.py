@@ -153,6 +153,8 @@ class GetTaskCommand(CommandProcessor):
         # }
 
         # we need TASK_ID back as a cookie
+        if not shareable:
+            shareable = Shareable()
         shareable.add_cookie(name=FLContextKey.TASK_ID, data=task_id)
 
         # we also need to make TASK_ID available to the client

@@ -12,15 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import logging
 
-from nvflare.apis.fl_constant import ServerCommandKey
+from nvflare.apis.fl_constant import ServerCommandKey, FLContextKey, ReservedKey
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.cell import Message as CellMessage, make_reply
 from nvflare.fuel.f3.cellnet.cell import MessageHeaderKey, ReturnCode
 from nvflare.fuel.utils import fobs
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, new_cell_message
 from nvflare.private.fed.server.server_commands import AuxCommunicateCommand
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.shareable import ReservedHeaderKey
+from nvflare.apis.utils.fl_context_utils import get_serializable_data
 
 from .server_commands import ServerCommands
 
@@ -85,15 +89,26 @@ class ServerCommandAgent(object):
         assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
         data = request.payload
 
-        token = request.get_header(CellMessageHeaderKeys.TOKEN, None)
-        if token:
-            client = self.engine.server.client_manager.clients.get(token)
-            if client:
-                data.set_header(ServerCommandKey.FL_CLIENT, client)
-
+        topic = request.get_header(MessageHeaderKey.TOPIC)
         command = AuxCommunicateCommand()
-        with self.engine.new_context() as new_fl_ctx:
-            reply = command.process(data=data, fl_ctx=new_fl_ctx)
+        with self.engine.new_context() as fl_ctx:
+            # reply = command.process(data=data, fl_ctx=new_fl_ctx)
+
+            shared_fl_ctx = data.get_header(ReservedHeaderKey.PEER_PROPS)
+            fl_ctx.set_peer_context(shared_fl_ctx)
+
+            engine = fl_ctx.get_engine()
+            reply = engine.dispatch(topic=topic, request=data, fl_ctx=fl_ctx)
+
+            # data = {
+            #     ServerCommandKey.AUX_REPLY: reply,
+            #     ServerCommandKey.FL_CONTEXT: copy.deepcopy(get_serializable_data(fl_ctx).props),
+            # }
+
+            shared_fl_ctx = FLContext()
+            shared_fl_ctx.set_public_props(copy.deepcopy(get_serializable_data(fl_ctx).get_all_public_props()))
+            reply.set_header(key=FLContextKey.PEER_CONTEXT, value=shared_fl_ctx)
+
             if reply is not None:
                 return_message = new_cell_message({}, reply)
                 return_message.set_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)

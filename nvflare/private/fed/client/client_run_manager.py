@@ -24,14 +24,13 @@ from nvflare.fuel.f3.cellnet.cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.utils import fobs
+from nvflare.private.aux_runner import AuxRunner
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, new_cell_message
 from nvflare.private.event import fire_event
 from nvflare.private.fed.utils.fed_utils import create_job_processing_context_properties
 from nvflare.widgets.fed_event import ClientFedEventRunner
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
-
-from .client_aux_runner import ClientAuxRunner
 from .client_engine_executor_spec import ClientEngineExecutorSpec, TaskAssignment
 from .client_json_config import ClientJsonConfigurator
 from .client_runner import ClientRunner
@@ -80,9 +79,11 @@ class ClientRunManager(ClientEngineExecutorSpec):
         self.handlers = handlers
         self.workspace = workspace
         self.components = components
-        self.aux_runner = ClientAuxRunner()
+        # self.aux_runner = ClientAuxRunner()
+        self.aux_runner = AuxRunner(self)
         self.add_handler(self.aux_runner)
         self.conf = conf
+        self.cell = None
 
         self.all_clients = None
 
@@ -146,11 +147,11 @@ class ClientRunManager(ClientEngineExecutorSpec):
     def get_all_components(self) -> dict:
         return self.components
 
-    def validate_targets(self, inputs, fl_ctx: FLContext) -> ([], []):
+    def validate_clients(self, inputs) -> ([], []):
         valid_inputs = []
         invalid_inputs = []
         if not self.all_clients:
-            self._get_all_clients(fl_ctx)
+            self._get_all_clients(self.new_context())
         for item in inputs:
             if item == FQCN.ROOT_SERVER:
                 valid_inputs.append(item)
@@ -182,6 +183,9 @@ class ClientRunManager(ClientEngineExecutorSpec):
             raise RuntimeError("No configurator set up.")
         return self.conf.build_component(config_dict)
 
+    def get_cell(self):
+        return self.cell
+
     def aux_send(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
         replies = self.client.aux_send(targets, topic, request, timeout, fl_ctx)[0]
 
@@ -194,7 +198,7 @@ class ClientRunManager(ClientEngineExecutorSpec):
                     error_code = reply.get_header(MessageHeaderKey.RETURN_CODE, CellReturnCode.OK)
                     if error_code != CellReturnCode.OK:
                         self.logger.error(f"Aux message send error: {error_code} from client: {name}")
-                        shareable = make_reply(ReturnCode.ERROR)
+                        shareable = make_reply(ReturnCode.ERROR, {FLContextKey.COMMUNICATION_ERROR: error_code})
                     else:
                         shareable = reply.payload
                     results[target_name] = shareable

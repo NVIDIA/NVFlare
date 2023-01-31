@@ -64,12 +64,11 @@ class ClientEngineExecutorSpec(ClientEngineSpec, ABC):
     def get_all_components(self) -> dict:
         pass
 
-    def validate_targets(self, target_names, fl_ctx: FLContext) -> ([], []):
+    def validate_clients(self, target_names) -> ([], []):
         """To validate the target names.
 
         Args:
             target_names: input target names
-            fl_ctx: FLContext
 
         Returns: (valid_names, invalid_names)
 

@@ -20,8 +20,6 @@ from nvflare.fuel.f3.cellnet.cell import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.cell import make_reply as make_cellnet_reply
 from nvflare.fuel.utils import fobs
 from nvflare.private.defs import CellChannel, new_cell_message
-from nvflare.private.fed.client.admin_commands import AuxCommand
-
 from .admin_commands import AdminCommands
 
 
@@ -35,7 +33,6 @@ class CommandAgent(object):
             client_runner: ClientRunner object
         """
         self.federated_client = federated_client
-        # self.listen_port = int(listen_port)
         self.client_runner = client_runner
         self.thread = None
         self.asked_to_stop = False
@@ -45,11 +42,6 @@ class CommandAgent(object):
 
     def start(self, fl_ctx: FLContext):
         self.engine = fl_ctx.get_engine()
-        # self.thread = threading.Thread(
-        #     target=listen_command, args=[self.listen_port, engine, self.execute_command, self.logger]
-        # )
-        # self.thread.start()
-
         self.register_cell_cb()
 
     def register_cell_cb(self):
@@ -87,11 +79,12 @@ class CommandAgent(object):
     def aux_communication(self, request: CellMessage) -> CellMessage:
 
         assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
-        data = request.payload
+        shareable = request.payload
 
-        command = AuxCommand()
-        with self.engine.new_context() as new_fl_ctx:
-            reply = command.process(data=data, fl_ctx=new_fl_ctx)
+        with self.engine.new_context() as fl_ctx:
+            topic = request.get_header(MessageHeaderKey.TOPIC)
+            reply = self.engine.dispatch(topic=topic, request=shareable, fl_ctx=fl_ctx)
+
             if reply is not None:
                 return_message = new_cell_message({}, reply)
                 return_message.set_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
@@ -101,6 +94,3 @@ class CommandAgent(object):
 
     def shutdown(self):
         self.asked_to_stop = True
-
-        # if self.thread and self.thread.is_alive():
-        #     self.thread.join()

@@ -545,6 +545,7 @@ class FederatedServer(BaseServer):
         self.engine.set_run_manager(self.run_manager)
         self.engine.set_configurator(conf)
         self.engine.asked_to_stop = False
+        self.run_manager.cell = self.cell
 
         fed_event_runner = ServerFedEventRunner()
         self.run_manager.add_handler(fed_event_runner)
@@ -634,6 +635,7 @@ class FederatedServer(BaseServer):
                     prv_key_path=grpc_args["ssl_private_key"],
                 )
 
+        self.engine.cell = self.cell
         self._register_cellnet_cbs()
 
         self.overseer_agent.start(self.overseer_callback)
