@@ -193,6 +193,13 @@ class BaseServer(ABC):
 
     def fl_shutdown(self):
         self.shutdown = True
+        start = time.time()
+        while self.client_manager.clients:
+            # Wait for the clients to shutdown and quite first.
+            time.sleep(0.1)
+            if time.time() - start > 30.:
+                self.logger.info("There are still clients connected. But shutdown the server after timeout.")
+                break
         self.close()
         if self.executor:
             self.executor.shutdown()
