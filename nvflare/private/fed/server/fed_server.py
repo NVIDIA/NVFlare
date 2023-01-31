@@ -193,6 +193,13 @@ class BaseServer(ABC):
 
     def fl_shutdown(self):
         self.shutdown = True
+        start = time.time()
+        while self.client_manager.clients:
+            # Wait for the clients to shutdown and quite first.
+            time.sleep(0.1)
+            if time.time() - start > 30.:
+                self.logger.info("There are still clients connected. But shutdown the server after timeout.")
+                break
         self.close()
         if self.executor:
             self.executor.shutdown()
@@ -425,11 +432,7 @@ class FederatedServer(BaseServer):
 
     def _handle_state_check(self, state_check, fl_ctx: FLContext):
         if state_check.get(ACTION) in [NIS, ABORT_RUN]:
-            fl_ctx.set_prop(FLContextKey.COMMUNICATION_ERROR, state_check.get(MESSAGE))
-
-    def _ssid_check(self, client_state, context):
-        if client_state.ssid != self.server_state.ssid:
-            context.abort(grpc.StatusCode.UNAUTHENTICATED, "Invalid Service session ID")
+            fl_ctx.set_prop(FLContextKey.COMMUNICATION_ERROR, state_check.get(MESSAGE), sticky=False)
 
     # def Quit(self, request, context):
     # @request_processing
@@ -709,6 +712,9 @@ class FederatedServer(BaseServer):
     def stop_training(self):
         self.status = ServerStatus.STOPPED
         self.logger.info("Server app stopped.\n\n")
+
+    def start(self):
+        self.cell.run()
 
     def fl_shutdown(self):
         self.engine.stop_all_jobs()
