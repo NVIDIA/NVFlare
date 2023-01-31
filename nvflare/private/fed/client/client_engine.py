@@ -251,9 +251,6 @@ class ClientEngine(ClientEngineInternalSpec):
     def reset_errors(self, job_id):
         self.client_executor.reset_errors(job_id)
 
-    def send_aux_command(self, shareable: Shareable, job_id):
-        return self.client_executor.process_aux_command(shareable, job_id)
-
     def get_all_job_ids(self):
         return self.client_executor.get_run_processes_keys()
 
@@ -271,7 +268,7 @@ def _shutdown_client(federated_client, admin_agent, touch_file):
         if federated_client.process:
             federated_client.process.terminate()
 
-        admin_agent.shutdown()
+        federated_client.cell.stop()
         security_close()
     except BaseException as e:
         secure_log_traceback()

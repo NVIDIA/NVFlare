@@ -64,12 +64,11 @@ class ClientEngineExecutorSpec(ClientEngineSpec, ABC):
     def get_all_components(self) -> dict:
         pass
 
-    def validate_targets(self, target_names, fl_ctx: FLContext) -> ([], []):
+    def validate_clients(self, target_names) -> ([], []):
         """To validate the target names.
 
         Args:
             target_names: input target names
-            fl_ctx: FLContext
 
         Returns: (valid_names, invalid_names)
 
@@ -127,24 +126,6 @@ class ClientEngineExecutorSpec(ClientEngineSpec, ABC):
             fl_ctx: FL context
 
         Returns:
-
-        """
-        pass
-
-    @abstractmethod
-    def aux_send(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> {}:
-        """Send the request to the Server.
-
-        If reply is received, make sure to set peer_ctx into the reply shareable!
-
-        Args:
-            targets: aux messages targets. None or empty list means the server.
-            topic: topic of the request
-            request: request Shareable to be sent
-            timeout: number of secs to wait for reply. 0 means fire-and-forget.
-            fl_ctx: fl context
-
-        Returns: a reply.
 
         """
         pass

@@ -132,8 +132,9 @@ def main():
         )
         # admin_agent.start()
 
-        while True:
-            time.sleep(1.0)
+        # while True:
+        #     time.sleep(1.0)
+        federated_client.cell.run()
 
         deployer.close()
 

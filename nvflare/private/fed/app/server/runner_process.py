@@ -17,24 +17,20 @@
 import argparse
 import logging
 import os
-import sys
 import signal
-import psutil
+import sys
 
+import psutil
 
 from nvflare.apis.fl_constant import JobConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
-from nvflare.fuel.f3.cellnet.cell import Cell, CellAgent, Message, MessageHeaderKey, MessageType
-from nvflare.fuel.f3.cellnet.fqcn import FQCN
-from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger
 from nvflare.private.fed.server.server_app_runner import ServerAppRunner
-from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
@@ -114,23 +110,24 @@ def main():
             # create the FL server
             _, server = deployer.create_fl_server(args, secure_train=secure_train)
 
-            my_fqcn = FQCN.join([FQCN.ROOT_SERVER, args.job_id])
-            credentials = {}
-            cell = Cell(
-                fqcn=my_fqcn,
-                root_url=args.root_url,
-                secure=secure_train,
-                credentials=credentials,
-                create_internal_listener=True,
-                parent_url=args.parent_url,
-            )
-
-            cell.start()
-            net_agent = NetAgent(cell)
-            server.cell = cell
-
-            command_agent = ServerCommandAgent(server.engine, cell)
-            command_agent.start()
+            # my_fqcn = FQCN.join([FQCN.ROOT_SERVER, args.job_id])
+            # credentials = {}
+            # cell = Cell(
+            #     fqcn=my_fqcn,
+            #     root_url=args.root_url,
+            #     secure=secure_train,
+            #     credentials=credentials,
+            #     create_internal_listener=True,
+            #     parent_url=args.parent_url,
+            # )
+            #
+            # cell.start()
+            # net_agent = NetAgent(cell)
+            # server.cell = cell
+            #
+            # command_agent = ServerCommandAgent(server.engine, cell)
+            # command_agent.start()
+            server.cell = server.create_job_cell(args.job_id, args.root_url, args.parent_url, secure_train)
 
             snapshot = None
             if args.snapshot:

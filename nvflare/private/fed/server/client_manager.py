@@ -51,7 +51,7 @@ class ClientManager:
 
         if len(self.clients) >= self.max_num_clients:
             # context.abort(grpc.StatusCode.RESOURCE_EXHAUSTED, "Maximum number of clients reached")
-            context.set_prop(FLContextKey.COMMUNICATION_ERROR, "Maximum number of clients reached")
+            context.set_prop(FLContextKey.COMMUNICATION_ERROR, "Maximum number of clients reached", sticky=False)
 
         # new client will join the current round immediately
         with self.lock:
@@ -82,7 +82,7 @@ class ClientManager:
     def login_client(self, client_login, context):
         if not self.is_valid_task(client_login.get_header(CellMessageHeaderKeys.PROJECT_NAME)):
             # context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Requested task does not match the current server task")
-            context.set_prop(FLContextKey.UNAUTHENTICATED, "Requested task does not match the current server task")
+            context.set_prop(FLContextKey.UNAUTHENTICATED, "Requested task does not match the current server task", sticky=False)
         return self.authenticated_client(client_login, context)
 
     def validate_client(self, request, fl_ctx: FLContext, allow_new=False):
@@ -100,15 +100,15 @@ class ClientManager:
         token = request.get_header(CellMessageHeaderKeys.TOKEN)
         if not token:
             # context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Could not read client uid from the payload")
-            fl_ctx.set_prop(FLContextKey.UNAUTHENTICATED, "Could not read client uid from the payload")
+            fl_ctx.set_prop(FLContextKey.UNAUTHENTICATED, "Could not read client uid from the payload", sticky=False)
             client = None
         elif not self.is_valid_task(request.get_header(CellMessageHeaderKeys.PROJECT_NAME)):
             # context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Requested task does not match the current server task")
-            fl_ctx.set_prop(FLContextKey.UNAUTHENTICATED, "Requested task does not match the current server task")
+            fl_ctx.set_prop(FLContextKey.UNAUTHENTICATED, "Requested task does not match the current server task", sticky=False)
             client = None
         elif not (allow_new or self.is_from_authorized_client(token)):
             # context.abort(grpc.StatusCode.UNAUTHENTICATED, "Unknown client identity")
-            fl_ctx.set_prop(FLContextKey.UNAUTHENTICATED, "Unknown client identity")
+            fl_ctx.set_prop(FLContextKey.UNAUTHENTICATED, "Unknown client identity", sticky=False)
             client = None
         else:
             client = self.clients.get(token)
@@ -204,7 +204,7 @@ class ClientManager:
                         # )
                         fl_ctx.set_prop(
                             FLContextKey.COMMUNICATION_ERROR,
-                            "Client ID already registered as a client: {}".format(client_name),
+                            "Client ID already registered as a client: {}".format(client_name), sticky=False
                         )
                         self.logger.info(
                             "Failed to re-activate the client:{} with token: {}. Client already exist.".format(

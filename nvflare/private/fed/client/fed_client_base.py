@@ -184,9 +184,11 @@ class FederatedClientBase:
                 self.communicator.cell = self.cell
                 self.net_agent = NetAgent(self.cell)
                 if self.args.job_id:
+                    self.client_runner.engine.cell = self.cell
                     self.client_runner.command_agent.register_cell_cb()
                 else:
                     if self.engine:
+                        self.engine.cell = self.cell
                         self.engine.admin_agent.register_cell_cb()
 
                 self.logger.info(f"Got the new primary SP: {scheme + location}")
@@ -273,41 +275,6 @@ class FederatedClientBase:
         except FLCommunicationError as e:
             self.logger.info(secure_format_exception(e))
 
-    def send_aux_message(
-        self, project_name, targets: [], topic: str, shareable: Shareable, timeout: float, fl_ctx: FLContext
-    ):
-        """Send auxiliary message to the server.
-
-        Args:
-            targets: aux message targets
-            project_name: FL study project name
-            topic: aux topic name
-            shareable: Shareable object
-            timeout: communication timeout
-            fl_ctx: FLContext
-
-        Returns:
-            A reply message
-        """
-        try:
-            self.logger.debug("Starting to send aux message.")
-            message = self.communicator.aux_communicate(
-                self.servers,
-                project_name,
-                self.token,
-                self.ssid,
-                fl_ctx,
-                self.client_name,
-                shareable,
-                targets,
-                topic,
-                timeout,
-            )
-
-            return message
-        except FLCommunicationError as e:
-            self.logger.info(secure_format_exception(e))
-
     def send_heartbeat(self, project_name):
         try:
             if self.token:
@@ -366,31 +333,6 @@ class FederatedClientBase:
             if pool:
                 pool.terminate()
 
-    def aux_send(self, targets: [], topic, shareable: Shareable, timeout: float, fl_ctx: FLContext):
-        """Push the local model to multiple servers."""
-        pool = None
-        try:
-            pool = ThreadPool(len(self.servers))
-            messages = pool.map(
-                partial(
-                    self.send_aux_message,
-                    targets=targets,
-                    topic=topic,
-                    shareable=shareable,
-                    timeout=timeout,
-                    fl_ctx=fl_ctx,
-                ),
-                tuple(self.servers),
-            )
-            if messages is not None and messages[0] is not None:
-                # Only handle single server communication for now.
-                return messages
-            else:
-                return None
-        finally:
-            if pool:
-                pool.terminate()
-
     def register(self):
         """Push the local model to multiple servers."""
         pool = None
@@ -443,14 +385,19 @@ class FederatedClientBase:
 
     def close(self):
         """Quit the remote federated server, close the local session."""
-        self.logger.info(f"Shutting down client: {self.client_name}")
-        if self.overseer_agent:
-            self.overseer_agent.end()
+        self.terminate()
 
         if self.engine:
             fl_ctx = self.engine.new_context()
         else:
             fl_ctx = FLContext()
         self.logout_client(fl_ctx)
+        self.logger.info(f"Logout client: {self.client_name} from server.")
 
         return 0
+
+    def terminate(self):
+        """Terminating the local client session."""
+        self.logger.info(f"Shutting down client run: {self.client_name}")
+        if self.overseer_agent:
+            self.overseer_agent.end()

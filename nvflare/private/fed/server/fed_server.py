@@ -47,6 +47,8 @@ from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeade
 from nvflare.private.fed.server.server_runner import ServerRunner
 from nvflare.widgets.fed_event import ServerFedEventRunner
 from nvflare.security.logging import secure_format_exception
+from nvflare.fuel.f3.cellnet.net_agent import NetAgent
+from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 
 from .client_manager import ClientManager
 from .run_manager import RunManager
@@ -191,6 +193,13 @@ class BaseServer(ABC):
 
     def fl_shutdown(self):
         self.shutdown = True
+        start = time.time()
+        while self.client_manager.clients:
+            # Wait for the clients to shutdown and quite first.
+            time.sleep(0.1)
+            if time.time() - start > 30.:
+                self.logger.info("There are still clients connected. But shutdown the server after timeout.")
+                break
         self.close()
         if self.executor:
             self.executor.shutdown()
@@ -248,6 +257,7 @@ class FederatedServer(BaseServer):
         self.engine = self._create_server_engine(args, snapshot_persistor)
         self.run_manager = None
         self.server_runner = None
+        self.command_agent = None
 
         self.processors = {}
         self.runner_config = None
@@ -318,6 +328,27 @@ class FederatedServer(BaseServer):
         return ServerEngine(
             server=self, args=args, client_manager=self.client_manager, snapshot_persistor=snapshot_persistor
         )
+
+    def create_job_cell(self, job_id, root_url, parent_url, secure_train) -> Cell:
+        my_fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
+        credentials = {}
+        cell = Cell(
+            fqcn=my_fqcn,
+            root_url=root_url,
+            secure=secure_train,
+            credentials=credentials,
+            create_internal_listener=True,
+            parent_url=parent_url,
+        )
+
+        cell.start()
+        net_agent = NetAgent(cell)
+        # self.cell = cell
+
+        self.command_agent = ServerCommandAgent(self.engine, cell)
+        self.command_agent.start()
+
+        return cell
 
     # @property
     def task_meta_info(self, client_name):
@@ -401,11 +432,7 @@ class FederatedServer(BaseServer):
 
     def _handle_state_check(self, state_check, fl_ctx: FLContext):
         if state_check.get(ACTION) in [NIS, ABORT_RUN]:
-            fl_ctx.set_prop(FLContextKey.COMMUNICATION_ERROR, state_check.get(MESSAGE))
-
-    def _ssid_check(self, client_state, context):
-        if client_state.ssid != self.server_state.ssid:
-            context.abort(grpc.StatusCode.UNAUTHENTICATED, "Invalid Service session ID")
+            fl_ctx.set_prop(FLContextKey.COMMUNICATION_ERROR, state_check.get(MESSAGE), sticky=False)
 
     # def Quit(self, request, context):
     # @request_processing
@@ -521,6 +548,7 @@ class FederatedServer(BaseServer):
         self.engine.set_run_manager(self.run_manager)
         self.engine.set_configurator(conf)
         self.engine.asked_to_stop = False
+        self.run_manager.cell = self.cell
 
         fed_event_runner = ServerFedEventRunner()
         self.run_manager.add_handler(fed_event_runner)
@@ -553,7 +581,7 @@ class FederatedServer(BaseServer):
             #
             #     time.sleep(3)
 
-            self.cell.run()
+            self.wait_engine_run_complete()
 
             if engine_thread.is_alive():
                 engine_thread.join()
@@ -561,6 +589,9 @@ class FederatedServer(BaseServer):
         finally:
             self.engine.engine_info.status = MachineStatus.STOPPED
             self.run_manager = None
+
+    def wait_engine_run_complete(self):
+        self.cell.run()
 
     def create_run_manager(self, workspace, job_id):
         return RunManager(
@@ -607,6 +638,7 @@ class FederatedServer(BaseServer):
                     prv_key_path=grpc_args["ssl_private_key"],
                 )
 
+        self.engine.cell = self.cell
         self._register_cellnet_cbs()
 
         self.overseer_agent.start(self.overseer_callback)
@@ -680,6 +712,9 @@ class FederatedServer(BaseServer):
     def stop_training(self):
         self.status = ServerStatus.STOPPED
         self.logger.info("Server app stopped.\n\n")
+
+    def start(self):
+        self.cell.run()
 
     def fl_shutdown(self):
         self.engine.stop_all_jobs()

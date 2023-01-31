@@ -44,6 +44,7 @@ class StreamConnection(Connection):
             return {}
 
     def close(self):
+        log.debug(f"Connection {self.name} is closing")
         self.closing = True
         if self.stream:
             self.stream.close()
@@ -95,6 +96,8 @@ class StreamConnection(Connection):
         remaining = length
         while remaining:
             n = self.stream.recv_into(view, remaining)
+            if n == 0:
+                raise CommError(CommError.CLOSED, f"Connection {self.name} is closed by peer")
             view = view[n:]
             remaining -= n
 
@@ -103,7 +106,10 @@ class ConnectionHandler(BaseRequestHandler):
 
     def handle(self):
 
-        connection = StreamConnection(self.request, self.server.connector, self.client_address)
+        # ThreadingUnixStreamServer doesn't set client_address
+        address = self.client_address if self.client_address else self.server.path
+
+        connection = StreamConnection(self.request, self.server.connector, address)
         self.server.driver.add_connection(connection)
 
         try:
@@ -133,9 +139,10 @@ class SocketDriver(Driver):
             self.server.shutdown()
 
     def add_connection(self, conn: StreamConnection):
-        log.debug(f"New connection created: {conn.name}, peer address: {conn.peer_address}")
+        log.debug(f"New connection created: {self.get_name()}:{conn.name}, peer address: {conn.peer_address}")
         with self.conn_lock:
             self.connections[conn.name] = conn
+
         if not self.conn_monitor:
             log.error(f"Connection monitor not registered for driver {self.get_name()}")
         else:
@@ -143,9 +150,10 @@ class SocketDriver(Driver):
             self.conn_monitor.state_change(conn)
 
     def close_connection(self, conn: StreamConnection):
-        log.debug(f"Connection: {conn.name} is disconnected")
+        log.debug(f"Connection: {self.get_name()}:{conn.name} is disconnected")
         with self.conn_lock:
             self.connections.pop(conn.name)
+
         if not self.conn_monitor:
             log.error(f"Connection monitor not registered for driver {self.get_name()}")
         else:
