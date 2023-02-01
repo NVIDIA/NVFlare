@@ -13,14 +13,15 @@
 # limitations under the License.
 import asyncio
 import logging
-from typing import List, Any, Union
+from typing import List, Any, Union, Dict
 
 import websockets
 
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers import net_utils
-from nvflare.fuel.f3.drivers.connection import Connection, ConnState
-from nvflare.fuel.f3.drivers.driver import Driver, DriverParams, Connector
+from nvflare.fuel.f3.drivers.base_driver import BaseDriver
+from nvflare.fuel.f3.connection import Connection
+from nvflare.fuel.f3.drivers.driver import DriverParams, Connector, DriverCap
 from nvflare.fuel.f3.drivers.prefix import Prefix
 from nvflare.fuel.f3.sfm.conn_manager import Mode
 
@@ -59,11 +60,10 @@ class WsConnection(Connection):
             log.error(f"Error sending frame: {ex}")
 
 
-class HttpDriver(Driver):
+class HttpDriver(BaseDriver):
 
     def __init__(self):
         super().__init__()
-        self.connections = {}
         self.loop = None
         self.stop_event = None
         self.connector = None
@@ -71,6 +71,13 @@ class HttpDriver(Driver):
     @staticmethod
     def supported_transports() -> List[str]:
         return ["http", "https", "ws", "wss"]
+
+    @staticmethod
+    def capabilities() -> Dict[str, Any]:
+        return {
+            DriverCap.HEARTBEAT.value: True,
+            DriverCap.SUPPORT_SSL.value: True
+        }
 
     def listen(self, connector: Connector):
         self.connector = connector
@@ -81,13 +88,12 @@ class HttpDriver(Driver):
         self.start_event_loop(Mode.ACTIVE)
 
     def shutdown(self):
+        self.close_all()
+
         if not self.loop:
             return
 
         self.stop_event.set_result(None)
-
-        for _, v in self.connections.items():
-            v.close()
 
         self.loop.stop()
         pending_tasks = asyncio.all_tasks(self.loop)
@@ -151,6 +157,7 @@ class HttpDriver(Driver):
             conn = WsConnection(ws, self.loop, self.connector)
             self.add_connection(conn)
             await self.read_write_loop(conn)
+            self.close_connection(conn)
 
     async def async_listen(self):
         params = self.connector.params
@@ -164,15 +171,7 @@ class HttpDriver(Driver):
         conn = WsConnection(websocket, self.loop, self.connector)
         self.add_connection(conn)
         await self.read_write_loop(conn)
-
-    def add_connection(self, conn: WsConnection):
-        self.connections[conn.name] = conn
-        if not self.conn_monitor:
-            log.error(f"Connection monitor not registered for driver {self.get_name()}")
-        else:
-            log.debug(f"Connection {self.get_name()}:{conn.name} is open")
-            conn.state = ConnState.CONNECTED
-            self.conn_monitor.state_change(conn)
+        self.close_connection(conn)
 
     async def reader(self, conn: WsConnection):
         while not conn.closing:
@@ -201,11 +200,6 @@ class HttpDriver(Driver):
 
     async def read_write_loop(self, conn: WsConnection):
         """Pumping data on the connection"""
-
         await asyncio.gather(self.reader(conn), self.writer(conn))
-
-        conn.state = ConnState.CLOSED
-        if self.conn_monitor:
-            self.conn_monitor.state_change(conn)
 
         log.debug(f"Connection {self.get_name()}:{conn.name} is closed")

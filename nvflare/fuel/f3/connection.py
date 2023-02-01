@@ -23,11 +23,10 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import threading
 from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Union
-
-import uuid as uuid
 
 from nvflare.fuel.f3.drivers.connnector import Connector
 
@@ -58,8 +57,11 @@ class FrameReceiver(ABC):
 class Connection(ABC):
     """FCI connection spec. A connection is used to transfer opaque frames"""
 
+    lock = threading.Lock()
+    conn_count = 0
+
     def __init__(self, connector: Connector):
-        self.name = str(uuid.uuid4())
+        self.name = Connection._get_connection_name()
         self.state = ConnState.IDLE
         self.frame_receiver = None
         self.connector = connector
@@ -104,3 +106,10 @@ class Connection(ABC):
             CommError: If any error happens while processing the frame
         """
         self.frame_receiver = receiver
+
+    @staticmethod
+    def _get_connection_name():
+        with Connection.lock:
+            Connection.conn_count += 1
+
+        return "CN%05d" % Connection.conn_count

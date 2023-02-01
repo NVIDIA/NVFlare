@@ -17,7 +17,7 @@ from typing import Optional
 
 import msgpack
 
-from nvflare.fuel.f3.drivers.connection import Connection, BytesAlike
+from nvflare.fuel.f3.connection import Connection, BytesAlike
 from nvflare.fuel.f3.drivers.prefix import Prefix, PREFIX_LEN
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.message import Headers

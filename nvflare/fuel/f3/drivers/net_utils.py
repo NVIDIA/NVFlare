@@ -27,15 +27,27 @@ LO_PORT = 1025
 HI_PORT = 65535
 MAX_ITER_SIZE = 10
 RANDOM_TRIES = 20
+SECURE_SCHEMES = {"https", "wss", "grpcs", "stcp"}
 
 
-def get_ssl_context(params: dict, server: bool) -> Optional[SSLContext]:
-    scheme = params.get(DriverParams.SCHEME.value)
-    if scheme not in ("https", "wss", "stcp"):
+def bool_value(value) -> bool:
+    if isinstance(value, str):
+        return value.lower() in {"true", "yes", "y", "t", "1"}
+
+    return value
+
+
+def ssl_required(params: dict) -> bool:
+    scheme = params.get(DriverParams.SCHEME.value, None)
+    return scheme in SECURE_SCHEMES or bool_value(params.get(DriverParams.SECURE.value, False))
+
+
+def get_ssl_context(params: dict, ssl_server: bool) -> Optional[SSLContext]:
+    if not ssl_required(params):
         return None
 
     ca_path = params.get(DriverParams.CA_CERT.value)
-    if server:
+    if ssl_server:
         cert_path = params.get(DriverParams.SERVER_CERT.value)
         key_path = params.get(DriverParams.SERVER_KEY.value)
     else:
@@ -43,9 +55,11 @@ def get_ssl_context(params: dict, server: bool) -> Optional[SSLContext]:
         key_path = params.get(DriverParams.CLIENT_KEY.value)
 
     if not all([ca_path, cert_path, key_path]):
-        raise CommError(CommError.BAD_CONFIG, f"Certificate parameters are required for scheme {scheme}")
+        scheme = params.get(DriverParams.SCHEME.value, "Unknown")
+        role = "Server" if ssl_server else "Client"
+        raise CommError(CommError.BAD_CONFIG, f"{role} certificate parameters are missing for scheme {scheme}")
 
-    if server:
+    if ssl_server:
         ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
     else:
         ctx = ssl.create_default_context()
@@ -58,6 +72,13 @@ def get_ssl_context(params: dict, server: bool) -> Optional[SSLContext]:
     ctx.load_cert_chain(certfile=cert_path, keyfile=key_path)
 
     return ctx
+
+
+def get_address(params: dict) -> str:
+    host = params.get(DriverParams.HOST.value, "0.0.0.0")
+    port = params.get(DriverParams.PORT.value, 0)
+
+    return f"{host}:{port}"
 
 
 def parse_port_range(entry: Any):

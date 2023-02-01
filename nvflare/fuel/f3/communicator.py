@@ -170,11 +170,7 @@ class Communicator:
         if not start:
             return handle
 
-        listener = None
-        for connector in self.conn_manager.connectors:
-            if handle == connector.handle:
-                listener = connector
-                break
+        listener = self.conn_manager.connectors.get(handle, None)
 
         if not listener:
             log.info(f"Connector {driver.get_name()}:{handle} is not found")

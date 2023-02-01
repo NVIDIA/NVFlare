@@ -48,6 +48,7 @@ class Mode(Enum):
 class Connector:
     """Connector information"""
     handle: str
+    # noinspection PyUnresolvedReferences
     driver: 'Driver'
     params: dict
     mode: Mode

@@ -17,21 +17,21 @@ from concurrent import futures
 import grpc
 import logging
 import threading
-from typing import Union, List
+from typing import Union, List, Dict, Any
 
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.comm_error import CommError
-from nvflare.fuel.f3.drivers.connection import Connection
-from nvflare.fuel.f3.drivers.driver import Connector, DriverParams
-from nvflare.fuel.f3.drivers.socket_driver import SocketDriver
+from nvflare.fuel.f3.connection import Connection
+from nvflare.fuel.f3.drivers.driver import Connector, DriverParams, DriverCap
 from nvflare.fuel.f3.drivers import net_utils
+from .base_driver import BaseDriver
 
 from .grpc.qq import QQ
 from nvflare.fuel.f3.drivers.grpc.streamer_pb2_grpc import (
     StreamerServicer, add_StreamerServicer_to_server, StreamerStub
 )
 from .grpc.streamer_pb2 import Frame
-
+from .net_utils import get_address
 
 MAX_MSG_SIZE = 1024 * 1024 * 1024    # 1G
 
@@ -45,25 +45,19 @@ class StreamConnection(Connection):
 
     seq_num = 0
 
-    def __init__(self, oq: QQ, connector: Connector, peer_address, side: str, context=None, channel=None):
+    def __init__(self, oq: QQ, connector: Connector, conn_props: dict, side: str, context=None, channel=None):
         super().__init__(connector)
         self.side = side
         self.oq = oq
         self.closing = False
-        self.peer_address = peer_address
+        self.conn_props = conn_props
         self.context = context    # for server side
         self.channel = channel    # for client side
         self.lock = threading.Lock()
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def get_conn_properties(self) -> dict:
-        addr = self.peer_address
-        if isinstance(addr, tuple):
-            return {"peer_host": addr[0], "peer_port": addr[1]}
-        elif addr:
-            return {"peer_addr": addr}
-        else:
-            return {}
+        return self.conn_props
 
     def close(self):
         self.closing = True
@@ -129,7 +123,9 @@ class Servicer(StreamerServicer):
         ct = threading.current_thread()
         try:
             self.logger.debug(f"SERVER started Stream CB in thread {ct.name}")
-            connection = StreamConnection(oq, self.server.connector, context.peer(), "SERVER", context=context)
+            conn_props = {DriverParams.PEER_ADDR.value: context.peer(),
+                          DriverParams.LOCAL_ADDR.value: get_address(self.server.connector.params)}
+            connection = StreamConnection(oq, self.server.connector, conn_props, "SERVER", context=context)
             self.logger.debug(f"SERVER created connection in thread {ct.name}")
             self.server.driver.add_connection(connection)
             self.logger.debug(f"SERVER created read_loop thread in thread {ct.name}")
@@ -188,10 +184,10 @@ class Server:
         self.grpc_server.stop(grace=0.5)
 
 
-class GrpcDriver(SocketDriver):
+class GrpcDriver(BaseDriver):
 
     def __init__(self):
-        SocketDriver.__init__(self)
+        super().__init__()
         self.server = None
         self.max_workers = 10
         self.options = GRPC_DEFAULT_OPTIONS
@@ -209,6 +205,13 @@ class GrpcDriver(SocketDriver):
     def supported_transports() -> List[str]:
         return ["rpc"]
 
+    @staticmethod
+    def capabilities() -> Dict[str, Any]:
+        return {
+            DriverCap.HEARTBEAT.value: True,
+            DriverCap.SUPPORT_SSL.value: False
+        }
+
     def listen(self, connector: Connector):
         self.connector = connector
         self.server = Server(self, connector, max_workers=self.max_workers, options=self.options)
@@ -216,14 +219,15 @@ class GrpcDriver(SocketDriver):
 
     def connect(self, connector: Connector):
         params = connector.params
-        host = params.get(DriverParams.HOST.value)
-        port = params.get(DriverParams.PORT.value)
-        address = f"{host}:{port}"
+        address = get_address(params)
 
         channel = grpc.insecure_channel(address, options=self.options)
         stub = StreamerStub(channel)
+
+        conn_props = {DriverParams.PEER_ADDR.value: address}
+
         oq = QQ()
-        connection = StreamConnection(oq, connector, address, "CLIENT", channel=channel)
+        connection = StreamConnection(oq, connector, conn_props, "CLIENT", channel=channel)
         self.add_connection(connection)
         try:
             received = stub.Stream(connection.generate_output())
@@ -233,6 +237,11 @@ class GrpcDriver(SocketDriver):
         connection.close()
         self.close_connection(connection)
         self.logger.debug("CLIENT: finished connection")
+
+    def shutdown(self):
+        self.close_all()
+        if self.server:
+            self.server.shutdown()
 
     @staticmethod
     def get_urls(scheme: str, resources: dict) -> (str, str):
