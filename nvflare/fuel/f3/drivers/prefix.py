@@ -39,7 +39,7 @@ import struct
 from dataclasses import dataclass
 
 from nvflare.fuel.f3.comm_error import CommError
-from nvflare.fuel.f3.drivers.connection import BytesAlike
+from nvflare.fuel.f3.connection import BytesAlike
 
 PREFIX_STRUCT = struct.Struct(">IHBBHHHH")
 PREFIX_LEN = PREFIX_STRUCT.size

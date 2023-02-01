@@ -39,7 +39,7 @@ from .defs import (
 )
 from .utils import make_reply, new_message, format_log_message, encode_payload, decode_payload
 from .fqcn import FQCN, FqcnInfo, same_family
-
+from ..connection import Connection
 
 _BULK_CHANNEL = "cellnet.bulk"
 
@@ -1448,7 +1448,7 @@ class Cell(MessageReceiver, EndpointMonitor):
         except:
             return make_reply(ReturnCode.PROCESS_EXCEPTION)
 
-    def process_message(self, endpoint: Endpoint, app_id: int, message: Message):
+    def process_message(self, endpoint: Endpoint, connection: Connection, app_id: int, message: Message):
         # this is the receiver callback
         try:
             self._process_received_msg(endpoint, message)

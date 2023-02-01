@@ -15,12 +15,15 @@ import logging
 import os
 import socket
 from socketserver import ThreadingTCPServer, TCPServer
-from typing import List
+from typing import List, Dict, Any
 
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers import net_utils
-from nvflare.fuel.f3.drivers.driver import Driver, DriverParams, Connector
-from nvflare.fuel.f3.drivers.socket_driver import ConnectionHandler, StreamConnection, SocketDriver
+from nvflare.fuel.f3.drivers.base_driver import BaseDriver
+from nvflare.fuel.f3.drivers.driver import Driver, DriverParams, Connector, DriverCap
+from nvflare.fuel.f3.drivers.net_utils import get_ssl_context
+from nvflare.fuel.f3.drivers.socket_conn import ConnectionHandler, SocketConnection
+from nvflare.fuel.hci.security import get_certificate_common_name
 
 log = logging.getLogger(__name__)
 
@@ -34,12 +37,16 @@ class TcpStreamServer(ThreadingTCPServer):
         self.connector = connector
 
         params = connector.params
+        self.ssl_context = get_ssl_context(params, ssl_server=True)
+
         host = params.get(DriverParams.HOST.value)
         port = int(params.get(DriverParams.PORT.value))
+        self.local_addr = f"{host}:{port}"
 
         TCPServer.__init__(self, (host, port), ConnectionHandler, False)
 
-        # Wrap SSL here
+        if self.ssl_context:
+            self.socket = self.ssl_context.wrap_socket(self.socket, server_side=True)
 
         try:
             self.server_bind()
@@ -50,11 +57,22 @@ class TcpStreamServer(ThreadingTCPServer):
             raise
 
 
-class TcpDriver(SocketDriver):
+class TcpDriver(BaseDriver):
+
+    def __init__(self):
+        super().__init__()
+        self.server = None
 
     @staticmethod
     def supported_transports() -> List[str]:
         return ["tcp", "stcp"]
+
+    @staticmethod
+    def capabilities() -> Dict[str, Any]:
+        return {
+            DriverCap.HEARTBEAT.value: False,
+            DriverCap.SUPPORT_SSL.value: True
+        }
 
     def listen(self, connector: Connector):
         self.connector = connector
@@ -63,12 +81,28 @@ class TcpDriver(SocketDriver):
 
     def connect(self, connector: Connector):
         params = connector.params
-        address = params.get(DriverParams.HOST.value), int(params.get(DriverParams.PORT.value))
+        host = params.get(DriverParams.HOST.value)
+        port = int(params.get(DriverParams.PORT.value))
 
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.connect(address)
 
-        connection = StreamConnection(sock, connector, address)
+        context = get_ssl_context(params, ssl_server=False)
+        if context:
+            sock = context.wrap_socket(sock)
+
+        sock.connect((host, port))
+
+        peer = sock.getpeername()
+        conn_props = {DriverParams.PEER_ADDR.value: f"{peer[0]}:{peer[1]}"}
+        local = sock.getsockname()
+        conn_props[DriverParams.LOCAL_ADDR.value] = f"{local[0]}:{local[1]}"
+
+        if context:
+            cn = get_certificate_common_name(sock.getpeercert())
+            if cn:
+                conn_props[DriverParams.PEER_CN.value] = cn
+
+        connection = SocketConnection(sock, connector, conn_props)
         self.add_connection(connection)
 
         try:
@@ -79,6 +113,11 @@ class TcpDriver(SocketDriver):
         finally:
             if connection:
                 self.close_connection(connection)
+
+    def shutdown(self):
+        self.close_all()
+        if self.server:
+            self.server.shutdown()
 
     @staticmethod
     def get_urls(scheme: str, resources: dict) -> (str, str):

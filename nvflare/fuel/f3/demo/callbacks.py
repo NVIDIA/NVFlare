@@ -52,7 +52,7 @@ class DemoEndpointMonitor(EndpointMonitor):
 
 
 class TimingReceiver(MessageReceiver):
-    def process_message(self, endpoint: Endpoint, app_id: int, message: Message):
+    def process_message(self, endpoint: Endpoint, conn, app_id: int, message: Message):
 
         if message.payload:
             data = msgpack.unpackb(message.payload)
@@ -71,7 +71,7 @@ class RequestReceiver(MessageReceiver):
     def __init__(self, communicator: Communicator):
         self.communicator = communicator
 
-    def process_message(self, endpoint: Endpoint, app_id: int, message: Message):
+    def process_message(self, endpoint: Endpoint, conn, app_id: int, message: Message):
 
         data = msgpack.unpackb(message.payload)
         timestamp = data.get(TIMESTAMP)
@@ -90,9 +90,17 @@ class AdHocReceiver(MessageReceiver):
     def __init__(self, communicator: Communicator):
         self.communicator = communicator
 
-    def process_message(self, endpoint: Endpoint, app_id: int, message: Message):
+    def process_message(self, endpoint: Endpoint, conn, app_id: int, message: Message):
 
         ad_hoc_url = message.payload.decode("utf-8")
         self.communicator.add_connector(ad_hoc_url, Mode.ACTIVE)
         log.info(f"Making ad hoc connection to {ad_hoc_url}")
 
+
+class LoopbackReceiver(MessageReceiver):
+
+    def __init__(self, communicator: Communicator):
+        self.communicator = communicator
+
+    def process_message(self, endpoint: Endpoint, conn, app_id: int, message: Message):
+        log.info(f"Received loopback message from endpoint {endpoint.name} for app {app_id}")

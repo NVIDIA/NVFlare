@@ -39,7 +39,7 @@ import importlib
 import inspect
 import logging
 import os
-from typing import Union, Type, Optional
+from typing import Type, Optional
 
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers.driver import Driver
