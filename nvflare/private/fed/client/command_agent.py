@@ -62,7 +62,6 @@ class CommandAgent(object):
     def execute_command(self, request: CellMessage) -> CellMessage:
 
         assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
-        req = request.payload
 
         command_name = request.get_header(MessageHeaderKey.TOPIC)
         data = fobs.loads(request.payload)
