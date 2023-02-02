@@ -271,3 +271,16 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
 
         """
         pass
+
+    @abstractmethod
+    def reset_errors(self, job_id) -> str:
+        """Get the errors of the server components.
+
+        Args:
+            job_id: current job_id
+
+        Returns:
+            Server components errors.
+
+        """
+        pass

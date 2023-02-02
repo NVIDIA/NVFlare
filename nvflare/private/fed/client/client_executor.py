@@ -310,11 +310,11 @@ class ProcessExecutor(ClientExecutor):
                 data = {"command": AdminCommandNames.RESET_ERRORS, "data": {}}
                 fqcn = FQCN.join([self.client.client_name, job_id])
                 request = new_cell_message({}, fobs.dumps(data))
-                return_data = self.client.cell.fire_and_forget(
-                    target=fqcn,
+                self.client.cell.fire_and_forget(
+                    targets=fqcn,
                     channel=CellChannel.CLIENT_COMMAND,
                     topic=AdminCommandNames.RESET_ERRORS,
-                    request=request,
+                    message=request,
                 )
 
         except Exception as e:
