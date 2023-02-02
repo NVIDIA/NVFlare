@@ -18,6 +18,9 @@ from .fqcn import FQCN
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.constants import ConnProps
+from nvflare.fuel.utils.stats_utils import HistMode
+
+_VALID_MODES = [HistMode.COUNT, HistMode.PERCENT, HistMode.AVERAGE, HistMode.MAX, HistMode.MIN]
 
 
 def _to_int(s: str):
@@ -107,6 +110,27 @@ class NetManager(CommandModule):
                     description="show request stats",
                     usage="msg_stats target [mode]",
                     handler_func=self._cmd_msg_stats,
+                    visible=True,
+                ),
+                CommandSpec(
+                    name="list_pools",
+                    description="list stats pools",
+                    usage="list_pools target",
+                    handler_func=self._cmd_list_pools,
+                    visible=True,
+                ),
+                CommandSpec(
+                    name="show_pool",
+                    description="show stats pool detail",
+                    usage="show_pool target pool_name [mode]",
+                    handler_func=self._cmd_show_pool,
+                    visible=True,
+                ),
+                CommandSpec(
+                    name="show_comm_config",
+                    description="show communication config",
+                    usage="show_comm_config target",
+                    handler_func=self._cmd_show_comm_config,
                     visible=True,
                 ),
                 CommandSpec(
@@ -298,27 +322,41 @@ class NetManager(CommandModule):
         result = self.agent.start_bulk_test(targets, bulk_size)
         conn.append_dict(result)
 
+    @staticmethod
+    def _parse_mode(mode: str) -> str:
+        if not mode:
+            return HistMode.COUNT
+
+        if mode.startswith('p'):
+            return HistMode.PERCENT
+        elif mode.startswith('c'):
+            return HistMode.COUNT
+        elif mode.startswith('a'):
+            return HistMode.AVERAGE
+        if mode not in _VALID_MODES:
+            return ""
+
+    @staticmethod
+    def _show_table_dict(conn: Connection, d: dict):
+        t = conn.append_table(d.get("headers"))
+        rows = d.get("rows")
+        for r in rows:
+            t.add_row(r)
+
     def _cmd_msg_stats(self, conn: Connection, args: [str]):
         if len(args) < 2:
             cmd_entry = conn.get_prop(ConnProps.CMD_ENTRY)
             conn.append_string(f"Usage: {cmd_entry.usage}")
             return
 
-        valid_modes = ['avg', 'count', 'percent', 'min', 'max']
         target = args[1]
-        mode = 'count'
+        mode = ""
         if len(args) > 2:
             mode = args[2]
+        mode = self._parse_mode(mode)
 
-        if mode.startswith('p'):
-            mode = 'percent'
-        elif mode.startswith('c'):
-            mode = 'count'
-        elif mode.startswith('a'):
-            mode = 'avg'
-
-        if mode not in valid_modes:
-            conn.append_error(f"invalid mode '{mode}': must be one of {valid_modes}")
+        if not mode:
+            conn.append_error(f"invalid mode '{mode}': must be one of {_VALID_MODES}")
             return
 
         reply = self.agent.get_msg_stats_table(target, mode)
@@ -328,10 +366,66 @@ class NetManager(CommandModule):
         if not isinstance(reply, dict):
             conn.append_error(f"expect dict bt got {type(reply)}")
             return
-        t = conn.append_table(reply.get("headers"))
-        rows = reply.get("rows")
-        for _, c in rows.items():
-            t.add_row(c)
+        self._show_table_dict(conn, reply)
+
+    def _cmd_show_pool(self, conn: Connection, args: [str]):
+        if len(args) < 3:
+            cmd_entry = conn.get_prop(ConnProps.CMD_ENTRY)
+            conn.append_string(f"Usage: {cmd_entry.usage}")
+            return
+
+        target = args[1]
+        pool_name = args[2]
+        mode = ""
+        if len(args) > 3:
+            mode = args[3]
+        mode = self._parse_mode(mode)
+
+        if not mode:
+            conn.append_error(f"invalid mode '{mode}': must be one of {_VALID_MODES}")
+            return
+
+        reply = self.agent.show_pool(target, pool_name, mode)
+        if isinstance(reply, str):
+            conn.append_error(reply)
+            return
+        if not isinstance(reply, dict):
+            conn.append_error(f"expect dict bt got {type(reply)}")
+            return
+        self._show_table_dict(conn, reply)
+
+    def _cmd_list_pools(self, conn: Connection, args: [str]):
+        if len(args) < 2:
+            cmd_entry = conn.get_prop(ConnProps.CMD_ENTRY)
+            conn.append_string(f"Usage: {cmd_entry.usage}")
+            return
+
+        target = args[1]
+        reply = self.agent.get_pool_list(target)
+        if isinstance(reply, str):
+            conn.append_error(reply)
+            return
+        if not isinstance(reply, dict):
+            conn.append_error(f"expect dict bt got {type(reply)}")
+            return
+        self._show_table_dict(conn, reply)
+
+    def _cmd_show_comm_config(self, conn: Connection, args: [str]):
+        if len(args) < 2:
+            cmd_entry = conn.get_prop(ConnProps.CMD_ENTRY)
+            conn.append_string(f"Usage: {cmd_entry.usage}")
+            return
+
+        target = args[1]
+        reply = self.agent.get_comm_config(target)
+        if isinstance(reply, str):
+            conn.append_error(reply)
+            return
+
+        if not isinstance(reply, dict):
+            conn.append_error(f"expect dict bt got {type(reply)}")
+            return
+        conn.append_dict(reply)
 
     def _cmd_change_root(self, conn: Connection, args: [str]):
         if len(args) < 2:

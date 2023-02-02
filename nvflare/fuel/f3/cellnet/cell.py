@@ -16,7 +16,6 @@ import copy
 import logging
 import os
 import random
-import signal
 import threading
 import time
 import traceback
@@ -25,10 +24,12 @@ import uuid
 from typing import List, Union, Dict
 from urllib.parse import urlparse
 
-from nvflare.fuel.f3.message import Message
+from nvflare.fuel.f3.connection import Connection
+from nvflare.fuel.f3.drivers.driver import DriverParams
 from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor, EndpointState
 from nvflare.fuel.f3.communicator import Communicator, MessageReceiver
-from nvflare.fuel.utils.stats_utils import new_time_pool, new_message_size_pool
+from nvflare.fuel.f3.message import Message
+from nvflare.fuel.f3.stats_pool import StatsPoolManager
 
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from .connector_manager import ConnectorManager
@@ -39,9 +40,10 @@ from .defs import (
 )
 from .utils import make_reply, new_message, format_log_message, encode_payload, decode_payload
 from .fqcn import FQCN, FqcnInfo, same_family
-from ..connection import Connection
+
 
 _BULK_CHANNEL = "cellnet.bulk"
+_ONE_MB = 1024 * 1024
 
 
 class TargetMessage:
@@ -229,6 +231,21 @@ def _validate_url(url: str) -> bool:
     return True
 
 
+class _CounterName:
+
+    LATE = "late"
+    SENT = "sent"
+    RETURN = "return"
+    FORWARD = "forward"
+    RECEIVED = "received"
+    REPLIED = "replied"
+    REPLY_NONE = "no_reply:none"
+    NO_REPLY_LATE = "no_reply:late"
+    REPLY_NOT_EXPECTED = "no_reply_expected"
+    REQ_FILTER_ERROR = "req_filter_error"
+    REP_FILTER_ERROR = "rep_filter_error"
+
+
 class Cell(MessageReceiver, EndpointMonitor):
 
     APP_ID = 1
@@ -274,6 +291,7 @@ class Cell(MessageReceiver, EndpointMonitor):
         self._name = self.__class__.__name__
         self.logger = logging.getLogger(self._name)
         self.max_msg_size = comm_configurator.get_max_message_size()
+        self.comm_configurator = comm_configurator
 
         err = FQCN.validate(fqcn)
         if err:
@@ -347,7 +365,6 @@ class Cell(MessageReceiver, EndpointMonitor):
         self.out_req_filter_reg = _Registry()  # for request sent
         self.in_reply_filter_reg = _Registry()  # for reply received
         self.error_handler_reg = _Registry()
-        self.cleanup_reg = _Registry()
         self.cell_connected_cb = None
         self.cell_connected_cb_args = None
         self.cell_connected_cb_kwargs = None
@@ -357,9 +374,6 @@ class Cell(MessageReceiver, EndpointMonitor):
         self.message_interceptor = None
         self.message_interceptor_args = None
         self.message_interceptor_kwargs = None
-        self.run_monitor_cb = None
-        self.run_monitor_args = None
-        self.run_monitor_kwargs = None
 
         self.waiters = {}  # req_id => req
         self.stats_lock = threading.Lock()
@@ -400,100 +414,36 @@ class Cell(MessageReceiver, EndpointMonitor):
         )
 
         self.cleanup_waiter = None
-        self.msg_stats_pool = new_time_pool("Message Stats")
-        self.msg_size_pool = new_message_size_pool("Message Sizes")
+        self.msg_stats_pool = StatsPoolManager.add_time_hist_pool(
+            "Request_Response", "Request/response time in secs (sender)")
+        self.req_cb_stats_pool = StatsPoolManager.add_time_hist_pool(
+            "Request_Processing", "Time spent (secs) by request processing callbacks (receiver)")
+        self.msg_travel_stats_pool = StatsPoolManager.add_time_hist_pool(
+            "Msg_Travel", "Time taken (secs) to get here (receiver)")
+        self.sent_msg_size_pool = StatsPoolManager.add_msg_size_pool(
+            "Sent_Msg_sizes", "Sizes of messages sent (MBs)")
+        self.received_msg_size_pool = StatsPoolManager.add_msg_size_pool(
+            "Received_Msg_Sizes", "Sizes of messages received (MBs)")
 
-    def set_run_monitor(
-            self,
-            cb,
-            *args,
-            **kwargs
-    ):
-        """
-        Set a callback that is called periodically during the running of the cell.
+        counter_names = [_CounterName.SENT]
+        self.sent_msg_counter_pool = StatsPoolManager.add_counter_pool(
+            name="Sent_Msg_Counters",
+            description="Result counters of sent messages",
+            counter_names=counter_names
+        )
 
-        Args:
-            cb: the callback function. It must follow the signature of message_interceptor_signature.
-            *args: args to be passed to the cb.
-            **kwargs: kwargs to be passed to the cb
-
-        Returns: None
-
-        """
-        if not callable(cb):
-            raise ValueError(f"specified run_monitor {type(cb)} is not callable")
-
-        self.run_monitor_cb = cb
-        self.run_monitor_args = args
-        self.run_monitor_kwargs = kwargs
+        counter_names = [_CounterName.RECEIVED]
+        self.received_msg_counter_pool = StatsPoolManager.add_counter_pool(
+            name="Received_Msg_Counters",
+            description="Result counters of received messages",
+            counter_names=counter_names
+        )
 
     def get_root_url_for_child(self):
         if isinstance(self.root_url, list):
             return self.root_url[0]
         else:
             return self.root_url
-
-    def run(self):
-        # this method must be called from main method
-        t = threading.current_thread()
-        if t.name != "MainThread":
-            raise RuntimeError(
-                f"{self.my_info.fqcn}: the cell.run() method is called from {t.name}: "
-                "it must be called from MainThread")
-
-        self.logger.info(f"=========== {self.my_info.fqcn}: started to run forever")
-        while not self.asked_to_stop:
-            if self.run_monitor_cb is not None:
-                should_stop = self.run_monitor_cb(*self.run_monitor_args, **self.run_monitor_kwargs)
-                if should_stop:
-                    self.logger.info(f"{self.my_info.fqcn}: CB {self.run_monitor_cb.__name__} asked to stop!")
-                    break
-            time.sleep(0.5)
-
-        self.logger.info(f"=========== {self.my_info.fqcn}: cell is shutting down. Start cleanup ...")
-        time.sleep(2.0)  # let pending messages to go out
-
-        # wait for 2 secs to give others time to clean up
-        self.cleanup_waiter = threading.Event()
-        t = threading.Thread(target=self._do_cleanup)
-        t.start()
-
-        if not self.cleanup_waiter.wait(timeout=2.0):
-            self.logger.warning(f"======== {self.my_info.fqcn}: Cleanup did not complete within 2 secs")
-
-        num_active_threads = 0
-        for thread in threading.enumerate():
-            if thread.name != "MainThread":
-                self.logger.warning(f"#### {self.my_info.fqcn}: still running thread {thread.name}")
-                num_active_threads += 1
-
-        self.logger.info(f"{self.my_info.fqcn}: Good Bye!")
-        if num_active_threads > 0:
-            try:
-                os.kill(os.getpid(), signal.SIGKILL)
-            except:
-                pass
-
-    def _do_cleanup(self):
-        self.logger.debug(f"{self.my_info.fqcn}: Start system cleanup ...")
-        cb_list = self.cleanup_reg.find("*", "*")
-        if cb_list:
-            self.logger.debug(f"{self.my_info.fqcn}: found {len(cb_list)} cleanup CBs")
-            for _cb in cb_list:
-                assert isinstance(_cb, _CB)
-                try:
-                    self.logger.info(f"{self.my_info.fqcn}: calling cleanup CB {_cb.cb.__name__}")
-                    _cb.cb(*_cb.args, **_cb.kwargs)
-                    self.logger.debug(f"{self.my_info.fqcn}: finished cleanup CB {_cb.cb.__name__}")
-                except BaseException as ex:
-                    self.logger.warning(f"{self.my_info.fqcn}: exception {ex} from cleanup CB {_cb.cb.__name__}")
-        else:
-            self.logger.debug(f"{self.my_info.fqcn}: nothing to cleanup!")
-
-        # closing cell finally!
-        self._close()
-        self.logger.debug(f"{self.my_info.fqcn}: Cleanup Finished!")
-        self.cleanup_waiter.set()
 
     def get_fqcn(self) -> str:
         return self.my_info.fqcn
@@ -675,7 +625,7 @@ class Cell(MessageReceiver, EndpointMonitor):
 
     def _create_external_listener(self, url: str):
         adhoc = len(url) == 0
-        if adhoc and not self.connector_manager.ext_allow_adhoc:
+        if adhoc and not self.connector_manager.adhoc_allowed:
             return None
 
         with self.ext_listener_lock:
@@ -821,18 +771,18 @@ class Cell(MessageReceiver, EndpointMonitor):
         self.running = True
 
     def stop(self):
-        if self.running:
-            self.running = False
-            self.asked_to_stop = True
-
-    def _close(self):
         """
         Cleanup the cell. Once the cell is stopped, it won't be able to send/receive messages.
 
         Returns:
 
         """
+        if not self.running:
+            return
+
         self.logger.debug(f"{self.my_info.fqcn}: Closing Cell")
+        self.running = False
+        self.asked_to_stop = True
         self.bulk_checker.join()
         self.bulk_processor.join()
 
@@ -840,7 +790,7 @@ class Cell(MessageReceiver, EndpointMonitor):
             self.communicator.stop()
         except:
             self.logger.error(f"{self.my_info.fqcn}: error stopping Communicator")
-            traceback.print_exc()
+            self.logger.error(traceback.format_exc())
 
         self.logger.debug(f"{self.my_info.fqcn}: Communicator Stopped!")
         self.logger.debug(f"{self.my_info.fqcn}: CELL closed!")
@@ -881,16 +831,6 @@ class Cell(MessageReceiver, EndpointMonitor):
         if not callable(cb):
             raise ValueError(f"specified incoming_request_filter {type(cb)} is not callable")
         self.in_req_filter_reg.append(channel, topic, _CB(cb, args, kwargs))
-
-    def add_cleanup_cb(
-            self,
-            cb,
-            *args,
-            **kwargs
-    ):
-        if not callable(cb):
-            raise ValueError(f"specified cleanup_cb {type(cb)} is not callable")
-        self.cleanup_reg.append("*", "*", _CB(cb, args, kwargs))
 
     def add_outgoing_reply_filter(
             self,
@@ -1062,10 +1002,14 @@ class Cell(MessageReceiver, EndpointMonitor):
                 err = ReturnCode.MSG_TOO_BIG
             else:
                 self.communicator.send(to_endpoint, Cell.APP_ID, message)
+                self.sent_msg_size_pool.record_value(
+                    category=self._stats_category(message),
+                    value=self._msg_size_mbs(message)
+                )
         except:
             err_text = f"failed to send message to {to_endpoint.name}"
             self.logger.error(err_text)
-            traceback.print_exc()
+            self.logger.error(traceback.format_exc())
             err = ReturnCode.COMM_ERROR
         return err
 
@@ -1098,7 +1042,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                 MessageHeaderKey.ORIGIN: self.my_info.fqcn,
                 MessageHeaderKey.FROM_CELL: self.my_info.fqcn,
                 MessageHeaderKey.MSG_TYPE: MessageType.REQ,
-                MessageHeaderKey.ROUTE: [self.my_info.fqcn],
+                MessageHeaderKey.ROUTE: [(self.my_info.fqcn, time.time())],
                 MessageHeaderKey.DESTINATION: t,
                 MessageHeaderKey.TO_CELL: ep.name
             })
@@ -1133,6 +1077,11 @@ class Cell(MessageReceiver, EndpointMonitor):
             if err:
                 self.logger.error(
                     f"{self.my_info.fqcn}: failed to send to endpoint {ep.name}: {err}")
+            else:
+                self.sent_msg_counter_pool.increment(
+                    category=self._stats_category(req),
+                    counter_name=_CounterName.SENT
+                )
             send_errs[t] = err
         return send_errs
 
@@ -1249,6 +1198,12 @@ class Cell(MessageReceiver, EndpointMonitor):
             self.logger.debug(f"released waiter on REQ {waiter.id}")
         if waiter.received_replies:
             result.update(waiter.received_replies)
+        for t, reply in result.items():
+            rc = reply.get_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
+            self.sent_msg_counter_pool.increment(
+                category=self._stats_category(reply),
+                counter_name=rc
+            )
         return result
 
     def broadcast_request(
@@ -1414,7 +1369,7 @@ class Cell(MessageReceiver, EndpointMonitor):
             {
                 MessageHeaderKey.FROM_CELL: self.my_info.fqcn,
                 MessageHeaderKey.ORIGIN: self.my_info.fqcn,
-                MessageHeaderKey.ROUTE: [self.my_info.fqcn],
+                MessageHeaderKey.ROUTE: [(self.my_info.fqcn, time.time())],
                 MessageHeaderKey.DESTINATION: to_cell,
                 MessageHeaderKey.REQ_ID: for_req_ids,
                 MessageHeaderKey.MSG_TYPE: MessageType.REPLY,
@@ -1446,14 +1401,17 @@ class Cell(MessageReceiver, EndpointMonitor):
         except AbortRun:
             return make_reply(ReturnCode.ABORT_RUN)
         except:
+            self.logger.error(f"{self.my_info.fqcn}: exception from CB {cb.__name__}")
+            self.logger.error(traceback.format_exc())
             return make_reply(ReturnCode.PROCESS_EXCEPTION)
 
     def process_message(self, endpoint: Endpoint, connection: Connection, app_id: int, message: Message):
         # this is the receiver callback
         try:
-            self._process_received_msg(endpoint, message)
+            self._process_received_msg(endpoint, connection, message)
         except:
-            traceback.print_exc()
+            self.logger.error("error processing received message")
+            self.logger.error(traceback.format_exc())
 
     def _process_request(
             self,
@@ -1483,7 +1441,13 @@ class Cell(MessageReceiver, EndpointMonitor):
 
         assert isinstance(_cb, _CB)
         self.logger.debug(f"{self.my_info.fqcn}: calling registered request CB")
+        cb_start = time.perf_counter()
         reply = self._try_cb(message, _cb.cb, *_cb.args, **_cb.kwargs)
+        cb_end = time.perf_counter()
+        self.req_cb_stats_pool.record_value(
+            category=self._stats_category(message),
+            value=cb_end - cb_start
+        )
         if not reply:
             # the CB doesn't have anything to reply
             self.logger.debug("no reply is returned from the CB")
@@ -1499,13 +1463,15 @@ class Cell(MessageReceiver, EndpointMonitor):
 
     def _add_to_route(self, message: Message):
         route = message.get_header(MessageHeaderKey.ROUTE, None)
-        if route:
-            if not isinstance(route, list):
-                self.logger.error(
-                    format_log_message(self.my_info.fqcn, message,
-                                       "bad route header: expect list but got {type(route)}"))
-            else:
-                route.append(self.my_info.fqcn)
+        if not route:
+            route = []
+            message.set_header(MessageHeaderKey.ROUTE, route)
+        if not isinstance(route, list):
+            self.logger.error(
+                format_log_message(self.my_info.fqcn, message,
+                                   "bad route header: expect list but got {type(route)}"))
+        else:
+            route.append((self.my_info.fqcn, time.time()))
 
     def _forward(self, endpoint: Endpoint, origin: str, destination: str, msg_type: str, message: Message):
         # not for me - need to forward it
@@ -1556,7 +1522,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                     MessageHeaderKey.DESTINATION: origin,
                     MessageHeaderKey.REQ_ID: [req_id],
                     MessageHeaderKey.MSG_TYPE: MessageType.RETURN,
-                    MessageHeaderKey.ROUTE: [self.my_info.fqcn],
+                    MessageHeaderKey.ROUTE: [(self.my_info.fqcn, time.time())],
                     MessageHeaderKey.RETURN_REASON: ReturnReason.CANT_FORWARD
                 }
             )
@@ -1565,6 +1531,12 @@ class Cell(MessageReceiver, EndpointMonitor):
         else:
             # msg_type is either RETURN or REPLY - drop it.
             self.logger.warning(format_log_message(self.my_info.fqcn, message, "dropped forwarded message"))
+
+    @staticmethod
+    def _stats_category(message: Message):
+        channel = message.get_header(MessageHeaderKey.CHANNEL, "")
+        topic = message.get_header(MessageHeaderKey.TOPIC, "")
+        return f"{channel}:{topic}"
 
     def _process_reply(self, origin: str, message: Message, msg_type: str):
         channel = message.get_header(MessageHeaderKey.CHANNEL, "")
@@ -1587,6 +1559,10 @@ class Cell(MessageReceiver, EndpointMonitor):
         req_destination = origin
         if msg_type == MessageType.RETURN:
             self.logger.error(f"{self.my_info.fqcn}: got a RETURN!")
+            self.sent_msg_counter_pool.increment(
+                category=self._stats_category(message),
+                counter_name=_CounterName.RETURN
+            )
             original_headers = message.get_header(MessageHeaderKey.ORIGINAL_HEADERS, None)
             if not original_headers:
                 raise RuntimeError(format_log_message(
@@ -1620,7 +1596,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                 time_taken = now - waiter.send_time
 
                 self.msg_stats_pool.record_value(
-                    category=f"{channel}:{topic}",
+                    category=self._stats_category(message),
                     value=time_taken
                 )
 
@@ -1647,11 +1623,38 @@ class Cell(MessageReceiver, EndpointMonitor):
                     format_log_message(
                         self.my_info.fqcn, message,
                         f"no waiter for req {rid} - the reply is too late"))
+                self.sent_msg_counter_pool.increment(
+                    category=self._stats_category(message),
+                    counter_name=_CounterName.LATE
+                )
 
-    def _process_received_msg(self, endpoint: Endpoint, message: Message):
+    @staticmethod
+    def _msg_size_mbs(message: Message):
+        if message.payload:
+            msg_size = len(message.payload)
+        else:
+            msg_size = 0
+        return msg_size / _ONE_MB
+
+    def _process_received_msg(self, endpoint: Endpoint, connection: Connection, message: Message):
+        route = message.get_header(MessageHeaderKey.ROUTE)
+        if route:
+            origin_name = route[0][0]
+            t0 = route[0][1]
+            time_taken = time.time() - t0
+            self.msg_travel_stats_pool.record_value(
+                category=f"{origin_name}#{self._stats_category(message)}",
+                value=time_taken
+            )
+
         self.logger.debug(f"{self.my_info.fqcn}: received message: {message.headers}")
         message.set_prop(MessagePropKey.ENDPOINT, endpoint)
-        message.set_prop(MessagePropKey.SSL_CERT, endpoint.get_certificate())
+
+        conn_props = connection.get_conn_properties()
+        cn = conn_props.get(DriverParams.PEER_CN.value)
+        if cn:
+            message.set_prop(MessagePropKey.COMMON_NAME, cn)
+
         msg_type = message.get_header(MessageHeaderKey.MSG_TYPE)
         if not msg_type:
             raise RuntimeError(format_log_message(
@@ -1667,6 +1670,11 @@ class Cell(MessageReceiver, EndpointMonitor):
         if not destination:
             raise RuntimeError(format_log_message(
                 self.my_info.fqcn, message, "missing DESTINATION header in received message"))
+
+        self.received_msg_counter_pool.increment(
+            category=self._stats_category(message),
+            counter_name=_CounterName.RECEIVED
+        )
 
         if msg_type == MessageType.REQ and self.message_interceptor is not None:
             reply = self._try_cb(
@@ -1690,7 +1698,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                         MessageHeaderKey.DESTINATION: origin,
                         MessageHeaderKey.REQ_ID: [req_id],
                         MessageHeaderKey.MSG_TYPE: MessageType.RETURN,
-                        MessageHeaderKey.ROUTE: [self.my_info.fqcn],
+                        MessageHeaderKey.ROUTE: [(self.my_info.fqcn, time.time())],
                         MessageHeaderKey.RETURN_REASON: ReturnReason.INTERCEPT
                     }
                 )
@@ -1700,18 +1708,20 @@ class Cell(MessageReceiver, EndpointMonitor):
 
         if destination != self.my_info.fqcn:
             # not for me - need to forward it
+            self.sent_msg_counter_pool.increment(
+                category=self._stats_category(message),
+                counter_name=_CounterName.FORWARD
+            )
+            self.received_msg_counter_pool.increment(
+                category=self._stats_category(message),
+                counter_name=_CounterName.FORWARD
+            )
             self._forward(endpoint, origin, destination, msg_type, message)
             return
 
-        channel = message.get_header(MessageHeaderKey.CHANNEL, "")
-        topic = message.get_header(MessageHeaderKey.TOPIC, "")
-        if message.payload:
-            msg_size = len(message.payload)
-        else:
-            msg_size = 0
-        self.msg_size_pool.record_value(
-            category=f"{msg_type}:{channel}:{topic}",
-            value=msg_size
+        self.received_msg_size_pool.record_value(
+            category=self._stats_category(message),
+            value=self._msg_size_mbs(message)
         )
 
         # this message is for me
@@ -1747,18 +1757,30 @@ class Cell(MessageReceiver, EndpointMonitor):
 
             if not reply:
                 self.logger.debug(f"{self.my_info.fqcn}: don't send response - nothing to send")
+                self.received_msg_counter_pool.increment(
+                    category=self._stats_category(message),
+                    counter_name=_CounterName.REPLY_NONE
+                )
                 return
 
             reply_expected = message.get_header(MessageHeaderKey.REPLY_EXPECTED, False)
             if not reply_expected:
                 # this is fire and forget
                 self.logger.debug(f"{self.my_info.fqcn}: don't send response - request expects no reply")
+                self.received_msg_counter_pool.increment(
+                    category=self._stats_category(message),
+                    counter_name=_CounterName.REPLY_NOT_EXPECTED
+                )
                 return
 
             wait_until = message.get_header(MessageHeaderKey.WAIT_UNTIL, None)
             if isinstance(wait_until, float) and time.time() > wait_until:
                 # no need to reply since peer already gave up waiting by now
                 self.logger.debug(f"{self.my_info.fqcn}: don't send response - reply is too late")
+                self.received_msg_counter_pool.increment(
+                    category=self._stats_category(message),
+                    counter_name=_CounterName.NO_REPLY_LATE
+                )
                 return
 
             # send the reply back
@@ -1777,7 +1799,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                     MessageHeaderKey.TO_CELL: endpoint.name,
                     MessageHeaderKey.REQ_ID: req_id,
                     MessageHeaderKey.MSG_TYPE: MessageType.REPLY,
-                    MessageHeaderKey.ROUTE: [self.my_info.fqcn]
+                    MessageHeaderKey.ROUTE: [(self.my_info.fqcn, time.time())]
                 }
             )
 
@@ -1806,6 +1828,20 @@ class Cell(MessageReceiver, EndpointMonitor):
         err = self._send_to_endpoint(endpoint, reply)
         if err:
             self.logger.error(f"{self.my_info.fqcn}: error sending reply back to {endpoint.name}: {err}")
+            self.received_msg_counter_pool.increment(
+                category=self._stats_category(reply),
+                counter_name=err
+            )
+        else:
+            self.received_msg_counter_pool.increment(
+                category=self._stats_category(reply),
+                counter_name=_CounterName.REPLIED
+            )
+            rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
+            self.received_msg_counter_pool.increment(
+                category=self._stats_category(reply),
+                counter_name=rc
+            )
 
     def _check_bulk(self):
         while not self.asked_to_stop:

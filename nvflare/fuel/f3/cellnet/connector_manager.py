@@ -25,11 +25,17 @@ from .fqcn import FqcnInfo
 
 _KEY_RESOURCES = "resources"
 _KEY_INT = "internal"
-_KEY_EXT = "external"
+_KEY_ADHOC = "adhoc"
 _KEY_SCHEME = "scheme"
 _KEY_HOST = "host"
 _KEY_PORTS = "ports"
-_KEY_ALLOW_ADHOC = "allow_adhoc"
+
+
+class _Defaults:
+
+    ALLOW_ADHOC_CONNECTIONS = False
+    SCHEME_FOR_INTERNAL_CONNECTIONS = "uds"
+    SCHEME_FOR_ADHOC_CONNECTIONS = "tcp"
 
 
 class ConnectorInfo:
@@ -61,15 +67,16 @@ class ConnectorManager:
         self.communicator = communicator
         self.secure = secure
 
+        self.bb_conn_gen = comm_configurator.get_backbone_connection_generation(2)
+
         # set up default drivers
-        self.int_scheme = "tcp"
+        self.int_scheme = comm_configurator.get_internal_connection_scheme(_Defaults.SCHEME_FOR_INTERNAL_CONNECTIONS)
         self.int_resources = {
             _KEY_HOST: "localhost",
-            _KEY_PORTS: ["30000-40000"]  # select a port randomly
         }
-        self.ext_allow_adhoc = False
-        self.ext_scheme = "http"
-        self.ext_resources = {}
+        self.adhoc_allowed = comm_configurator.allow_adhoc_connections(_Defaults.ALLOW_ADHOC_CONNECTIONS)
+        self.adhoc_scheme = comm_configurator.get_adhoc_connection_scheme(_Defaults.SCHEME_FOR_ADHOC_CONNECTIONS)
+        self.adhoc_resources = {}
 
         # load config if any
         comm_config = comm_configurator.get_config()
@@ -79,15 +86,24 @@ class ConnectorManager:
                 self.int_scheme = int_conf.get(_KEY_SCHEME)
                 self.int_resources = int_conf.get(_KEY_RESOURCES)
 
-            ext_conf = self._validate_conn_config(comm_config, _KEY_EXT)
-            if ext_conf:
-                self.ext_scheme = ext_conf.get(_KEY_SCHEME)
-                self.ext_resources = ext_conf.get(_KEY_RESOURCES)
-                self.ext_allow_adhoc = ext_conf.get(_KEY_ALLOW_ADHOC, False)
+            adhoc_conf = self._validate_conn_config(comm_config, _KEY_ADHOC)
+            if adhoc_conf:
+                self.adhoc_scheme = adhoc_conf.get(_KEY_SCHEME)
+                self.adhoc_resources = adhoc_conf.get(_KEY_RESOURCES)
 
         self.logger.debug(f"internal scheme={self.int_scheme}, resources={self.int_resources}")
-        self.logger.debug(f"external scheme={self.ext_scheme}, resources={self.ext_resources}")
+        self.logger.debug(f"adhoc scheme={self.adhoc_scheme}, resources={self.adhoc_resources}")
         self.comm_config = comm_config
+
+    def get_config_info(self):
+        return {
+            "allow_adhoc": self.adhoc_allowed,
+            "adhoc_scheme": self.adhoc_scheme,
+            "adhoc_resources": self.adhoc_resources,
+            "internal_scheme": self.int_scheme,
+            "internal_resources": self.int_resources,
+            "config": self.comm_config if self.comm_config else "none"
+        }
 
     def should_connect_to_server(self, fqcn_info: FqcnInfo) -> bool:
         if fqcn_info.gen == 1:
@@ -103,7 +119,7 @@ class ConnectorManager:
                     else:
                         return fqcn_info.gen == gens
         # use default policy
-        return fqcn_info.gen <= 2
+        return fqcn_info.gen <= self.bb_conn_gen
 
     def is_adhoc_allowed(self, c1: FqcnInfo, c2: FqcnInfo) -> bool:
         """
@@ -115,11 +131,11 @@ class ConnectorManager:
         Returns:
 
         """
-        if c1.root == c2.root:
-            # same family
+        if not self.adhoc_allowed:
             return False
 
-        if not self.ext_allow_adhoc:
+        if c1.root == c2.root:
+            # same family
             return False
 
         # we only allow gen2 (or above) cells to directly connect
@@ -160,7 +176,7 @@ class ConnectorManager:
                 # external
                 if not url:
                     raise RuntimeError("url is required but not provided for external backbone connector/listener!")
-                scheme = self.ext_scheme
+                scheme = self.adhoc_scheme
                 resources = {}
             else:
                 # internal
@@ -170,12 +186,12 @@ class ConnectorManager:
             # ad-hoc - must be external
             if internal:
                 raise RuntimeError("internal ad-hoc connector not supported")
-            scheme = self.ext_scheme
-            resources = self.ext_resources
+            scheme = self.adhoc_scheme
+            resources = self.adhoc_resources
             self.logger.debug(
                 f"{os.getpid()}: creating ad-hoc external listener: "
                 f"active={active} scheme={scheme}, resources={resources}")
-            if not active and not self.ext_allow_adhoc:
+            if not active and not self.adhoc_allowed:
                 # ad-hoc listener is not allowed!
                 return None
 

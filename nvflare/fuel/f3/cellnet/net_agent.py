@@ -11,16 +11,24 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+import copy
 import hashlib
+import logging
 import os
 import random
+import threading
 import time
+
+from abc import ABC, abstractmethod
 
 from .cell import Cell, Message
 from .connector_manager import ConnectorInfo
 from .defs import MessageHeaderKey, ReturnCode
 from .fqcn import FQCN
 from .utils import make_reply, new_message
+
+from nvflare.fuel.f3.mpm import MainProcessMonitor
+from nvflare.fuel.f3.stats_pool import StatsPoolManager
 
 from typing import Union, List
 
@@ -40,8 +48,72 @@ _TOPIC_CHANGE_ROOT = "change_root"
 _TOPIC_BULK_TEST = "bulk_test"
 _TOPIC_BULK_ITEM = "bulk_item"
 _TOPIC_MSG_STATS = "msg_stats"
+_TOPIC_LIST_POOLS = "list_pools"
+_TOPIC_SHOW_POOL = "show_pool"
+_TOPIC_COMM_CONFIG = "comm_config"
+_TOPIC_HEARTBEAT = "heartbeat"
 
 _ONE_K = bytes([1] * 1024)
+
+
+class _Member:
+
+    STATE_UNKNOWN = 0
+    STATE_ONLINE = 1
+    STATE_OFFLINE = 2
+
+    def __init__(self, fqcn):
+        self.fqcn = fqcn
+        self.state = _Member.STATE_UNKNOWN
+        self.last_heartbeat_time = time.time()
+        self.lock = threading.Lock()
+
+
+class SubnetMonitor(ABC):
+
+    def __init__(
+            self,
+            subnet_id: str,
+            member_cells: List[str],
+            trouble_alert_threshold: float
+    ):
+        if not member_cells:
+            raise ValueError("member cells must not be empty")
+        self.agent = None
+        self.subnet_id = subnet_id
+        self.trouble_alert_threshold = trouble_alert_threshold
+        self.lock = threading.Lock()
+        self.members = {}
+        for m in member_cells:
+            self.members[m] = _Member(m)
+
+    def member_online(self, member_cell_fqcn: str):
+        pass
+
+    def member_offline(self, member_cell_fqcn: str):
+        pass
+
+    def put_member_online(self, member: _Member):
+        with self.lock:
+            member.last_heartbeat_time = time.time()
+            current_state = member.state
+            member.state = member.STATE_ONLINE
+            if current_state in [member.STATE_UNKNOWN, member.STATE_OFFLINE]:
+                self.member_online(member.fqcn)
+
+    def put_member_offline(self, member: _Member):
+        with self.lock:
+            if time.time() - member.last_heartbeat_time <= self.trouble_alert_threshold:
+                return
+
+            if member.state in [member.STATE_ONLINE]:
+                self.member_offline(member.fqcn)
+                member.state = member.STATE_OFFLINE
+
+    def stop_subnet(self):
+        if not self.agent:
+            raise RuntimeError("No NetAgent in this monitor. Make sure the monitor is added to a NetAgent.")
+        return self.agent.stop_subnet(self)
 
 
 class NetAgent:
@@ -49,10 +121,11 @@ class NetAgent:
     def __init__(
             self,
             cell: Cell,
-            change_root_cb=None
+            change_root_cb=None,
     ):
         self.cell = cell
         self.change_root_cb = change_root_cb
+        self.logger = logging.getLogger(self.__class__.__name__)
 
         cell.register_request_cb(
             channel=_CHANNEL,
@@ -143,6 +216,152 @@ class NetAgent:
             topic=_TOPIC_MSG_STATS,
             cb=self._do_msg_stats,
         )
+
+        cell.register_request_cb(
+            channel=_CHANNEL,
+            topic=_TOPIC_LIST_POOLS,
+            cb=self._do_list_pools,
+        )
+
+        cell.register_request_cb(
+            channel=_CHANNEL,
+            topic=_TOPIC_SHOW_POOL,
+            cb=self._do_show_pool,
+        )
+
+        cell.register_request_cb(
+            channel=_CHANNEL,
+            topic=_TOPIC_COMM_CONFIG,
+            cb=self._do_comm_config,
+        )
+
+        cell.register_request_cb(
+            channel=_CHANNEL,
+            topic=_TOPIC_HEARTBEAT,
+            cb=self._do_heartbeat,
+        )
+
+        self.heartbeat_thread = None
+        self.monitor_thread = None
+        self.asked_to_close = False
+        self.subnets = {}
+        self.monitors = {}
+        self.hb_lock = threading.Lock()
+        self.monitor_lock = threading.Lock()
+
+    def add_to_subnet(
+            self,
+            subnet_id: str,
+            monitor_fqcn: str = FQCN.ROOT_SERVER
+    ):
+        with self.hb_lock:
+            self.subnets[subnet_id] = monitor_fqcn
+            if self.heartbeat_thread is None:
+                self.heartbeat_thread = threading.Thread(target=self._subnet_heartbeat)
+                self.heartbeat_thread.start()
+
+    def add_subnet_monitor(self, monitor: SubnetMonitor):
+        if not isinstance(monitor, SubnetMonitor):
+            raise ValueError(f"monitor must be SubnetMonitor but got {type(monitor)}")
+        if monitor.subnet_id in self.monitors:
+            raise ValueError(f"monitor for subnet {monitor.subnet_id} already exists")
+        monitor.agent = self
+        with self.monitor_lock:
+            self.monitors[monitor.subnet_id] = monitor
+            if self.monitor_thread is None:
+                self.monitor_thread = threading.Thread(target=self._monitor_subnet)
+                self.monitor_thread.start()
+
+    def stop_subnet(self, monitor: SubnetMonitor):
+        cells_to_stop = []
+        for member_fqcn, member in monitor.members.items():
+            if member.state == member.STATE_ONLINE:
+                cells_to_stop.append(member_fqcn)
+        if cells_to_stop:
+            return self.cell.broadcast_request(
+                channel=_CHANNEL,
+                topic=_TOPIC_STOP_CELL,
+                request=new_message(),
+                targets=cells_to_stop,
+                timeout=1.0
+            )
+        else:
+            return None
+
+    def delete_subnet_monitor(self, subnet_id: str):
+        with self.monitor_lock:
+            self.monitors.pop(subnet_id, None)
+
+    def close(self):
+        if self.asked_to_close:
+            return
+        self.asked_to_close = True
+        if self.heartbeat_thread and self.heartbeat_thread.is_alive():
+            self.heartbeat_thread.join()
+        if self.monitor_thread and self.monitor_thread.is_alive():
+            self.monitor_thread.join()
+
+    def _subnet_heartbeat(self):
+        cc = self.cell.comm_configurator
+        interval = cc.get_subnet_heartbeat_interval(5.0)
+        if interval <= 0:
+            interval = 5.0
+
+        while True:
+            with self.hb_lock:
+                for subnet_id, target in self.subnets.items():
+                    self.cell.fire_and_forget(
+                        channel=_CHANNEL,
+                        topic=_TOPIC_HEARTBEAT,
+                        targets=target,
+                        message=new_message(payload={"subnet_id": subnet_id})
+                    )
+
+            # wait for interval time, but watch for "asked_to_stop" every 0.1 secs
+            start = time.time()
+            while True:
+                time.sleep(0.1)
+                if self.asked_to_close:
+                    return
+                if time.time() - start >= interval:
+                    break
+
+    def _check_monitor(self, m: SubnetMonitor):
+        for member_fqcn, member in m.members.items():
+            m.put_member_offline(member)
+
+    def _monitor_subnet(self):
+        while not self.asked_to_close:
+            with self.monitor_lock:
+                monitors = copy.copy(self.monitors)
+            for _, m in monitors.items():
+                self._check_monitor(m)
+            time.sleep(0.5)
+
+    def _do_heartbeat(
+            self,
+            request: Message
+    ) -> Union[None, Message]:
+        origin = request.get_header(MessageHeaderKey.ORIGIN, "?")
+        if not self.monitors:
+            self.logger.warning(f"got subnet heartbeat from {origin} but no monitors")
+            return
+
+        payload = request.payload
+        assert isinstance(payload, dict)
+        subnet_id = payload.get("subnet_id", "")
+        m = self.monitors.get(subnet_id)
+        if not m:
+            self.logger.warning(f"got subnet heartbeat from {origin} for subnet_id {subnet_id} but no monitor")
+            return
+
+        assert isinstance(m, SubnetMonitor)
+        member = m.members.get(origin)
+        if not member:
+            self.logger.warning(f"got subnet heartbeat from {origin} for subnet_id {subnet_id} but it's not a member")
+            return
+
+        m.put_member_online(member)
 
     def _do_stop(
             self,
@@ -390,7 +609,9 @@ class NetAgent:
     def stop(self):
         # ask all children to stop
         self._broadcast_to_subs(topic=_TOPIC_STOP, timeout=0.0)
-        self.cell.stop()
+        self.close()
+        MainProcessMonitor.add_cleanup_cb(self.cell.stop)
+        MainProcessMonitor.stop()
 
     def stop_cell(self, target: str) -> str:
         if self.cell.get_fqcn() == target:
@@ -721,6 +942,109 @@ class NetAgent:
         }
         return new_message(payload=reply)
 
+    def get_pool_list(self, target: str):
+        if target == self.cell.get_fqcn():
+            headers, rows = StatsPoolManager.get_table()
+            return {
+                "headers": headers,
+                "rows": rows
+            }
+        reply = self.cell.send_request(
+            channel=_CHANNEL,
+            topic=_TOPIC_LIST_POOLS,
+            request=new_message(),
+            timeout=1.0,
+            target=target
+        )
+        rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
+        err = reply.get_header(MessageHeaderKey.ERROR, "")
+        if rc != ReturnCode.OK:
+            return f"{rc}: {err}"
+        return reply.payload
+
+    def _do_list_pools(
+            self,
+            request: Message
+    ) -> Union[None, Message]:
+        headers, rows = StatsPoolManager.get_table()
+        reply = {
+            "headers": headers,
+            "rows": rows
+        }
+        return new_message(payload=reply)
+
+    def show_pool(self, target: str, pool_name: str, mode: str):
+        if target == self.cell.get_fqcn():
+            pool = StatsPoolManager.get_pool(pool_name)
+            if not pool:
+                return f"unknown pool name '{pool_name}'"
+
+            headers, rows = pool.get_table(mode)
+            return {
+                "headers": headers,
+                "rows": rows
+            }
+
+        reply = self.cell.send_request(
+            channel=_CHANNEL,
+            topic=_TOPIC_SHOW_POOL,
+            request=new_message(payload={"mode": mode, "pool": pool_name}),
+            timeout=1.0,
+            target=target
+        )
+        rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
+        if rc != ReturnCode.OK:
+            err = reply.get_header(MessageHeaderKey.ERROR, "")
+            return f"{rc}: {err}"
+        return reply.payload
+
+    def _do_show_pool(
+            self,
+            request: Message
+    ) -> Union[None, Message]:
+        p = request.payload
+        assert isinstance(p, dict)
+        pool_name = p.get('pool', '')
+        mode = p.get('mode', '')
+        pool = StatsPoolManager.get_pool(pool_name)
+        if not pool:
+            return new_message(
+                headers={
+                    MessageHeaderKey.RETURN_CODE: ReturnCode.INVALID_REQUEST,
+                    MessageHeaderKey.ERROR: f"unknown pool '{pool_name}'"
+                }
+            )
+        headers, rows = pool.get_table(mode)
+        reply = {
+            "headers": headers,
+            "rows": rows
+        }
+        return new_message(payload=reply)
+
+    def get_comm_config(self, target: str):
+        if target == self.cell.get_fqcn():
+            return self.cell.connector_manager.get_config_info()
+
+        reply = self.cell.send_request(
+            channel=_CHANNEL,
+            topic=_TOPIC_COMM_CONFIG,
+            request=new_message(),
+            timeout=1.0,
+            target=target
+        )
+        rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
+        if rc != ReturnCode.OK:
+            err = reply.get_header(MessageHeaderKey.ERROR, "")
+            return f"{rc}: {err}"
+        return reply.payload
+
+    def _do_comm_config(
+            self,
+            request: Message
+    ) -> Union[None, Message]:
+        info = self.cell.connector_manager.get_config_info()
+        return new_message(payload=info)
+
     def _broadcast_to_subs(
             self,
             topic: str,
@@ -756,5 +1080,5 @@ class NetAgent:
                     targets=targets,
                     message=message
                 )
-                print(f"============= {self.cell.get_fqcn()}: broadcasted {topic} to {targets}")
+                print(f"============= {self.cell.get_fqcn()}: broadcast {topic} to {targets}")
         return {}

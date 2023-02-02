@@ -231,7 +231,7 @@ class FedAdminServer(AdminServer):
         if not isinstance(req, Message):
             raise TypeError("request must be Message but got {}".format(type(req)))
         reqs = {client_token: req}
-        replies = self.send_requests(reqs, timeout_secs)
+        replies = self.send_requests(reqs, timeout_secs=timeout_secs)
         if replies is None or len(replies) <= 0:
             return None
         else:
@@ -252,7 +252,7 @@ class FedAdminServer(AdminServer):
             for token, _ in requests.items():
                 result[token] = None
 
-            replies = self.send_requests(requests, timeout_secs)
+            replies = self.send_requests(requests, timeout_secs=timeout_secs)
             for r in replies:
                 result[r.client_token] = r.reply
         return result

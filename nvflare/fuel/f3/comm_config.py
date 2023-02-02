@@ -24,7 +24,16 @@ _comm_config_files = [
 
 DEFAULT_MAX_MSG_SIZE = 1000 * 1024 * 1024    # 1000M
 
-_KEY_MAX_MSG_SIZE = "max_message_size"
+
+class VarName:
+
+    MAX_MSG_SIZE = "max_message_size"
+    ALLOW_ADHOC_CONNECTIONS = "allow_adhoc_conns"
+    ADHOC_CONNECTION_SCHEME = "adhoc_conn_scheme"
+    INTERNAL_CONNECTION_SCHEME = "internal_conn_scheme"
+    BACKBONE_CONNECTION_GENERATION = "backbone_conn_gen"
+    SUBNET_HEARTBEAT_INTERVAL = "subnet_heartbeat_interval"
+    SUBNET_TROUBLE_THRESHOLD = "subnet_trouble_threshold"
 
 
 class CommConfigurator:
@@ -49,7 +58,22 @@ class CommConfigurator:
         return self.config
 
     def get_max_message_size(self):
-        if self.config:
-            return self.config.get("max_message_size", DEFAULT_MAX_MSG_SIZE)
-        else:
-            return DEFAULT_MAX_MSG_SIZE
+        return ConfigService.get_int_var(VarName.MAX_MSG_SIZE, self.config, default=DEFAULT_MAX_MSG_SIZE)
+
+    def allow_adhoc_connections(self, default):
+        return ConfigService.get_bool_var(VarName.ALLOW_ADHOC_CONNECTIONS, self.config, default=default)
+
+    def get_adhoc_connection_scheme(self, default):
+        return ConfigService.get_str_var(VarName.ADHOC_CONNECTION_SCHEME, self.config, default=default)
+
+    def get_internal_connection_scheme(self, default):
+        return ConfigService.get_str_var(VarName.INTERNAL_CONNECTION_SCHEME, self.config, default=default)
+
+    def get_backbone_connection_generation(self, default):
+        return ConfigService.get_int_var(VarName.BACKBONE_CONNECTION_GENERATION, self.config, default=default)
+
+    def get_subnet_heartbeat_interval(self, default):
+        return ConfigService.get_int_var(VarName.SUBNET_HEARTBEAT_INTERVAL, self.config, default)
+
+    def get_subnet_trouble_threshold(self, default):
+        return ConfigService.get_int_var(VarName.SUBNET_TROUBLE_THRESHOLD, self.config, default)
