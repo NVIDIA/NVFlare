@@ -1,24 +1,21 @@
 {
+  "allow_adhoc_conns": false,
+  "backbone_conn_gen": 2,
   "internal": {
-    "scheme": "grpc",
+    "scheme": "uds",
     "resources": {
       "host": "localhost"
     }
   },
-  "external": {
+  "adhoc": {
     "scheme": "grpc",
-    "allow_adhoc": false,
     "resources": {
       "host": "localhost",
       "secure": false,
       "ports": [8004]
     }
   },
-  "backbone": {
-    "connect_generation": 2
-  },
   "grpc": {
-    "max_workers": 20,
     "options": [
       [
         "grpc.max_send_message_length", 1073741824

@@ -17,6 +17,7 @@ import logging
 from nvflare.fuel.hci.server.hci import AdminServer
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.net_manager import NetManager
+from nvflare.fuel.f3.mpm import MainProcessMonitor
 from .cell_runner import CellRunner, NetConfig
 
 from nvflare.fuel.hci.server.builtin import new_command_register_with_builtin_module
@@ -67,7 +68,7 @@ class Server(CellRunner):
             port=int(admin_port)
         )
 
-        self.cell.add_cleanup_cb(self._clean_up)
+        MainProcessMonitor.add_cleanup_cb(self._clean_up)
 
     def start(self, start_all=True):
         super().start(start_all)

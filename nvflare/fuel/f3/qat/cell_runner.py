@@ -15,6 +15,7 @@
 from nvflare.fuel.f3.cellnet.cell import Cell, CellAgent, Message, MessageHeaderKey, MessageType
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
+from nvflare.fuel.f3.mpm import MainProcessMonitor
 from .net_config import NetConfig
 
 import os
@@ -97,7 +98,7 @@ class CellRunner:
         self.cell.set_message_interceptor(
             cb=self._inspect_message
         )
-        self.cell.set_run_monitor(self._check_new_root)
+        MainProcessMonitor.add_run_monitor(self._check_new_root)
 
     def _inspect_message(self, message: Message):
         header_name = "inspected_by"
@@ -220,5 +221,5 @@ class CellRunner:
             self.cell.change_server_root(self.new_root_url)
             self.new_root_url = None
 
-    def run(self):
-        self.cell.run()
+    def run(self, name):
+        MainProcessMonitor.run(name)
