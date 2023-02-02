@@ -100,9 +100,7 @@ class ConnectionHandler(BaseRequestHandler):
 
     def handle(self):
 
-        # ThreadingUnixStreamServer doesn't set client_address
         # noinspection PyUnresolvedReferences
-
         conn_props = {DriverParams.LOCAL_ADDR.value: self.server.local_addr}
         if self.client_address:
             if isinstance(self.client_address, tuple):
@@ -110,9 +108,12 @@ class ConnectionHandler(BaseRequestHandler):
             else:
                 peer_addr = self.client_address
         else:
+            # ThreadingUnixStreamServer doesn't set client_address
+            # noinspection PyUnresolvedReferences
             peer_addr = self.server.path
         conn_props[DriverParams.PEER_ADDR.value] = peer_addr
 
+        # noinspection PyUnresolvedReferences
         if self.server.ssl_context:
             cn = get_certificate_common_name(self.request.getpeercert())
             if cn:
