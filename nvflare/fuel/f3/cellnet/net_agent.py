@@ -910,12 +910,6 @@ class NetAgent:
         return None
 
     def get_msg_stats_table(self, target: str, mode: str):
-        if target == self.cell.get_fqcn():
-            headers, rows = self.cell.msg_stats_pool.get_table(mode)
-            return {
-                "headers": headers,
-                "rows": rows
-            }
         reply = self.cell.send_request(
             channel=_CHANNEL,
             topic=_TOPIC_MSG_STATS,
@@ -943,12 +937,6 @@ class NetAgent:
         return new_message(payload=reply)
 
     def get_pool_list(self, target: str):
-        if target == self.cell.get_fqcn():
-            headers, rows = StatsPoolManager.get_table()
-            return {
-                "headers": headers,
-                "rows": rows
-            }
         reply = self.cell.send_request(
             channel=_CHANNEL,
             topic=_TOPIC_LIST_POOLS,
@@ -974,17 +962,6 @@ class NetAgent:
         return new_message(payload=reply)
 
     def show_pool(self, target: str, pool_name: str, mode: str):
-        if target == self.cell.get_fqcn():
-            pool = StatsPoolManager.get_pool(pool_name)
-            if not pool:
-                return f"unknown pool name '{pool_name}'"
-
-            headers, rows = pool.get_table(mode)
-            return {
-                "headers": headers,
-                "rows": rows
-            }
-
         reply = self.cell.send_request(
             channel=_CHANNEL,
             topic=_TOPIC_SHOW_POOL,
@@ -1022,9 +999,6 @@ class NetAgent:
         return new_message(payload=reply)
 
     def get_comm_config(self, target: str):
-        if target == self.cell.get_fqcn():
-            return self.cell.connector_manager.get_config_info()
-
         reply = self.cell.send_request(
             channel=_CHANNEL,
             topic=_TOPIC_COMM_CONFIG,
