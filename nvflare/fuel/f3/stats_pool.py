@@ -12,36 +12,38 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import threading
 from nvflare.fuel.utils.stats_utils import new_time_pool, new_message_size_pool, CounterPool, HistPool
 
 
 class StatsPoolManager:
 
-    POOL_TYPE_TIME = "time"
-    POOL_TYPE_MSG_SIZE = "size"
-
+    lock = threading.Lock()
     pools = {}     # name => pool
 
     @classmethod
-    def add_time_hist_pool(cls, name: str, description: str):
+    def add_time_hist_pool(cls, name: str, description: str, marks=None):
+        name = name.lower()
         if name in cls.pools:
             raise ValueError(f"pool '{name}' is already defined")
 
-        p = new_time_pool(name, description)
+        p = new_time_pool(name, description, marks)
         cls.pools[name] = p
         return p
 
     @classmethod
-    def add_msg_size_pool(cls, name: str, description: str):
+    def add_msg_size_pool(cls, name: str, description: str, marks=None):
+        name = name.lower()
         if name in cls.pools:
             raise ValueError(f"pool '{name}' is already defined")
 
-        p = new_message_size_pool(name, description)
+        p = new_message_size_pool(name, description, marks)
         cls.pools[name] = p
         return p
 
     @classmethod
     def add_counter_pool(cls, name: str, description: str, counter_names: list):
+        name = name.lower()
         if name in cls.pools:
             raise ValueError(f"pool '{name}' is already defined")
 
@@ -51,41 +53,48 @@ class StatsPoolManager:
 
     @classmethod
     def get_pool(cls, name: str):
+        name = name.lower()
         return cls.pools.get(name)
 
     @classmethod
     def delete_pool(cls, name: str):
-        return cls.pools.pop(name, None)
+        with cls.lock:
+            name = name.lower()
+            return cls.pools.pop(name, None)
 
     @classmethod
     def get_table(cls):
-        headers = ['pool', 'type', 'description']
-        rows = []
-        for k, v in cls.pools.items():
-            r = [v.name]
-            if isinstance(v, HistPool):
-                t = 'hist'
-            elif isinstance(v, CounterPool):
-                t = 'counter'
-            else:
-                t = '?'
-            r.append(t)
-            r.append(v.description)
-            rows.append(r)
-        return headers, rows
+        with cls.lock:
+            headers = ['pool', 'type', 'description']
+            rows = []
+            for k in sorted(cls.pools.keys()):
+                v = cls.pools[k]
+                r = [v.name]
+                if isinstance(v, HistPool):
+                    t = 'hist'
+                elif isinstance(v, CounterPool):
+                    t = 'counter'
+                else:
+                    t = '?'
+                r.append(t)
+                r.append(v.description)
+                rows.append(r)
+            return headers, rows
 
     @classmethod
     def to_dict(cls):
-        result = {}
-        for k, v in cls.pools.items():
-            if isinstance(v, HistPool):
-                t = 'hist'
-            elif isinstance(v, CounterPool):
-                t = 'counter'
-            else:
-                raise ValueError(f"unknown type of pool '{k}'")
-            result[k] = {
-                'type': t,
-                'pool': v.to_dict()
-            }
-        return result
+        with cls.lock:
+            result = {}
+            for k in sorted(cls.pools.keys()):
+                v = cls.pools[k]
+                if isinstance(v, HistPool):
+                    t = 'hist'
+                elif isinstance(v, CounterPool):
+                    t = 'counter'
+                else:
+                    raise ValueError(f"unknown type of pool '{k}'")
+                result[k] = {
+                    'type': t,
+                    'pool': v.to_dict()
+                }
+            return result

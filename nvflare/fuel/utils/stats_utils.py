@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import sys
+import threading
 from typing import List, Tuple, Union
 
 _KEY_MAX = "max"
@@ -104,6 +105,9 @@ class StatsPool:
     def to_dict(self) -> dict:
         pass
 
+    def get_table(self, mode):
+        pass
+
     @staticmethod
     def from_dict(d: dict):
         pass
@@ -119,6 +123,7 @@ class HistPool(StatsPool):
             unit: str
     ):
         StatsPool.__init__(self, name, description)
+        self.update_lock = threading.Lock()
         self.unit = unit
         self.marks = marks
         self.cat_bins = {}  # category name => list of bins
@@ -144,72 +149,76 @@ class HistPool(StatsPool):
         self.range_names.append(f">={marks[-1]}")
 
     def record_value(self, category: str, value: float):
-        bins = self.cat_bins.get(category)
-        if bins is None:
-            bins = [None for _ in range(len(self.ranges))]
-            self.cat_bins[category] = bins
+        with self.update_lock:
+            bins = self.cat_bins.get(category)
+            if bins is None:
+                bins = [None for _ in range(len(self.ranges))]
+                self.cat_bins[category] = bins
 
-        for i in range(len(self.ranges)):
-            r = self.ranges[i]
-            if r[0] <= value < r[1]:
-                b = bins[i]
-                if not b:
-                    b = _Bin()
-                    bins[i] = b
-                b.record_value(value)
+            for i in range(len(self.ranges)):
+                r = self.ranges[i]
+                if r[0] <= value < r[1]:
+                    b = bins[i]
+                    if not b:
+                        b = _Bin()
+                        bins[i] = b
+                    b.record_value(value)
 
     def get_table(self, mode=HistMode.COUNT):
-        headers = ["category"]
-        has_values = [False for _ in range(len(self.ranges))]
+        with self.update_lock:
+            headers = ["category"]
+            has_values = [False for _ in range(len(self.ranges))]
 
-        # determine bins that have values in any category
-        for cat_name, bins in self.cat_bins.items():
+            # determine bins that have values in any category
+            for _, bins in self.cat_bins.items():
+                for i in range(len(self.ranges)):
+                    if bins[i]:
+                        has_values[i] = True
+
             for i in range(len(self.ranges)):
-                if bins[i]:
-                    has_values[i] = True
+                if has_values[i]:
+                    headers.append(self.range_names[i])
 
-        for i in range(len(self.ranges)):
-            if has_values[i]:
-                headers.append(self.range_names[i])
+            rows = []
+            for cat_name in sorted(self.cat_bins.keys()):
+                bins = self.cat_bins[cat_name]
+                total_count = 0
+                if mode == HistMode.PERCENT:
+                    for b in bins:
+                        if b:
+                            total_count += b.count
 
-        rows = {}
-        for cat_name, bins in self.cat_bins.items():
-            total_count = 0
-            if mode == HistMode.PERCENT:
-                for b in bins:
-                    if b:
-                        total_count += b.count
+                r = [cat_name]
+                for i in range(len(bins)):
+                    if not has_values[i]:
+                        continue
 
-            r = [cat_name]
-            for i in range(len(bins)):
-                if not has_values[i]:
-                    continue
-
-                b = bins[i]
-                if not b:
-                    r.append("")
-                else:
-                    r.append(b.get_content(mode, total_count))
-            rows[cat_name] = r
-        return headers, rows
+                    b = bins[i]
+                    if not b:
+                        r.append("")
+                    else:
+                        r.append(b.get_content(mode, total_count))
+                rows.append(r)
+            return headers, rows
 
     def to_dict(self):
-        cat_bins = {}
-        for cat, bins in self.cat_bins.items():
-            exp_bins = []
-            for b in bins:
-                if not b:
-                    exp_bins.append("")
-                else:
-                    exp_bins.append(b.to_dict())
-            cat_bins[cat] = exp_bins
-        return {
-            _KEY_NAME: self.name,
-            _KEY_DESC: self.description,
-            _KEY_MARKS: list(self.marks),
-            _KEY_UNIT: self.unit,
-            _KEY_CAT_DATA: cat_bins
-        }
+        with self.update_lock:
+            cat_bins = {}
+            for cat, bins in self.cat_bins.items():
+                exp_bins = []
+                for b in bins:
+                    if not b:
+                        exp_bins.append("")
+                    else:
+                        exp_bins.append(b.to_dict())
+                cat_bins[cat] = exp_bins
+            return {
+                _KEY_NAME: self.name,
+                _KEY_DESC: self.description,
+                _KEY_MARKS: list(self.marks),
+                _KEY_UNIT: self.unit,
+                _KEY_CAT_DATA: cat_bins
+            }
 
     @staticmethod
     def from_dict(d: dict):
@@ -241,46 +250,63 @@ class CounterPool(StatsPool):
             self,
             name: str,
             description: str,
-            counter_names: List[str]
+            counter_names: List[str],
+            dynamic_counter_name=True
     ):
-        if not counter_names:
+        if not counter_names and not dynamic_counter_name:
             raise ValueError("counter_names cannot be empty")
         StatsPool.__init__(self, name, description)
         self.counter_names = counter_names
         self.cat_counters = {}  # dict of cat_name => counter dict (counter_name => int)
+        self.dynamic_counter_name = dynamic_counter_name
+        self.update_lock = threading.Lock()
 
     def increment(self, category: str, counter_name: str, amount=1):
-        if counter_name not in self.counter_names:
-            raise ValueError(f"'{counter_name}' is not defined in pool '{self.name}'")
+        with self.update_lock:
+            if counter_name not in self.counter_names:
+                if self.dynamic_counter_name:
+                    self.counter_names.append(counter_name)
+                else:
+                    raise ValueError(f"'{counter_name}' is not defined in pool '{self.name}'")
 
-        counters = self.cat_counters.get(category)
-        if not counters:
-            counters = {}
-            self.cat_counters[category] = counters
-        c = counters.get(counter_name, 0)
-        c += amount
-        counters[counter_name] = c
+            counters = self.cat_counters.get(category)
+            if not counters:
+                counters = {}
+                self.cat_counters[category] = counters
+            c = counters.get(counter_name, 0)
+            c += amount
+            counters[counter_name] = c
 
-    def get_table(self):
-        headers = ["category"]
-        headers.extend(self.counter_names)
-
-        rows = {}
-        for cat_name, counters in self.cat_counters.items():
-            r = [cat_name]
+    def get_table(self, mode=""):
+        with self.update_lock:
+            headers = ["category"]
+            eff_counter_names = []
             for cn in self.counter_names:
-                value = counters.get(cn, 0)
-                r.append(str(value))
-            rows[cat_name] = r
-        return headers, rows
+                for _, counters in self.cat_counters.items():
+                    v = counters.get(cn, 0)
+                    if v > 0:
+                        eff_counter_names.append(cn)
+                        break
+
+            headers.extend(eff_counter_names)
+            rows = []
+            for cat_name in sorted(self.cat_counters.keys()):
+                counters = self.cat_counters[cat_name]
+                r = [cat_name]
+                for cn in eff_counter_names:
+                    value = counters.get(cn, 0)
+                    r.append(str(value))
+                rows.append(r)
+            return headers, rows
 
     def to_dict(self):
-        return {
-            _KEY_NAME: self.name,
-            _KEY_DESC: self.description,
-            _KEY_COUNTER_NAMES: list(self.counter_names),
-            _KEY_CAT_DATA: self.cat_counters
-        }
+        with self.update_lock:
+            return {
+                _KEY_NAME: self.name,
+                _KEY_DESC: self.description,
+                _KEY_COUNTER_NAMES: list(self.counter_names),
+                _KEY_CAT_DATA: self.cat_counters
+            }
 
     @staticmethod
     def from_dict(d: dict):
@@ -293,8 +319,9 @@ class CounterPool(StatsPool):
         return p
 
 
-def new_time_pool(name: str, description="") -> HistPool:
-    marks = (0.0001, 0.0005, 0.001, 0.002, 0.004, 0.008, 0.01, 0.02, 0.04, 0.08, 0.1, 0.2, 0.4, 0.8, 1.0, 2.0)
+def new_time_pool(name: str, description="", marks=None) -> HistPool:
+    if not marks:
+        marks = (0.0001, 0.0005, 0.001, 0.002, 0.004, 0.008, 0.01, 0.02, 0.04, 0.08, 0.1, 0.2, 0.4, 0.8, 1.0, 2.0)
     return HistPool(
         name=name,
         description=description,
@@ -303,8 +330,9 @@ def new_time_pool(name: str, description="") -> HistPool:
     )
 
 
-def new_message_size_pool(name: str, description="") -> HistPool:
-    marks = (0.01, 0.1, 1, 10, 50, 100, 200, 500, 800, 1000)
+def new_message_size_pool(name: str, description="", marks=None) -> HistPool:
+    if not marks:
+        marks = (0.01, 0.1, 1, 10, 50, 100, 200, 500, 800, 1000)
     return HistPool(
         name=name,
         description=description,

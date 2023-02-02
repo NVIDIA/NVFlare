@@ -53,7 +53,7 @@ class ReturnReason:
 class MessagePropKey:
 
     ENDPOINT = CELLNET_PREFIX + "endpoint"
-    SSL_CERT = CELLNET_PREFIX + "ssl_cert"
+    COMMON_NAME = CELLNET_PREFIX + "common_name"
 
 
 class Encoding:
@@ -79,6 +79,24 @@ class ReturnCode:
     INVALID_SESSION = "invalid_session"
     ABORT_RUN = "abort_run"
     UNAUTHENTICATED = "unauthenticated"
+
+
+ALL_RETURN_CODES = [
+    ReturnCode.OK,
+    ReturnCode.TIMEOUT,
+    ReturnCode.INVALID_TARGET,
+    ReturnCode.TARGET_UNREACHABLE,
+    ReturnCode.COMM_ERROR,
+    ReturnCode.MSG_TOO_BIG,
+    ReturnCode.FILTER_ERROR,
+    ReturnCode.INVALID_REQUEST,
+    ReturnCode.PROCESS_EXCEPTION,
+    ReturnCode.AUTHENTICATION_ERROR,
+    ReturnCode.SERVICE_UNAVAILABLE,
+    ReturnCode.INVALID_SESSION,
+    ReturnCode.ABORT_RUN,
+    ReturnCode.UNAUTHENTICATED
+]
 
 
 class MessageType:

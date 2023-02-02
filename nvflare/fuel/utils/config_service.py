@@ -20,6 +20,7 @@ import os
 
 ENV_VAR_PREFIX = "NVFLARE_"
 
+
 def find_file_in_dir(file_basename, path) -> Union[None, str]:
     """
     Find a file from a directory and return the full path of the file, if found
@@ -69,8 +70,9 @@ class ConfigService:
     _cmd_args = None
     _var_dict = None
 
-    @staticmethod
+    @classmethod
     def initialize(
+            cls,
             section_files: Dict[str, str],
             config_path: List[str],
             parsed_args=None,
@@ -114,23 +116,23 @@ class ConfigService:
             if not os.path.isdir(d):
                 raise ValueError(f"'{d}' is not a valid directory")
 
-        ConfigService._config_path = config_path
+        cls._config_path = config_path
 
         for section, file_basename in section_files.items():
-            ConfigService._sections[section] = ConfigService.load_json(file_basename)
+            cls._sections[section] = cls.load_json(file_basename)
 
-        ConfigService._var_dict = var_dict
+        cls._var_dict = var_dict
         if parsed_args:
             if not isinstance(parsed_args, argparse.Namespace):
                 raise ValueError(f"parsed_args must be argparse.Namespace but got {type(parsed_args)}")
-            ConfigService._cmd_args = dict(parsed_args.__dict__)
+            cls._cmd_args = dict(parsed_args.__dict__)
 
-    @staticmethod
-    def get_section(name: str):
-        return ConfigService._sections.get(name)
+    @classmethod
+    def get_section(cls, name: str):
+        return cls._sections.get(name)
 
-    @staticmethod
-    def add_section(section_name: str, data: dict, overwrite_existing: bool = True):
+    @classmethod
+    def add_section(cls, section_name: str, data: dict, overwrite_existing: bool = True):
         """
         Add a section to the config data.
 
@@ -147,11 +149,11 @@ class ConfigService:
         if not isinstance(data, dict):
             raise TypeError(f"config data must be dict but got {type(data)}")
 
-        if overwrite_existing or section_name not in ConfigService._sections:
-            ConfigService._sections[section_name] = data
+        if overwrite_existing or section_name not in cls._sections:
+            cls._sections[section_name] = data
 
-    @staticmethod
-    def load_json(file_basename: str) -> dict:
+    @classmethod
+    def load_json(cls, file_basename: str) -> dict:
         """
         Load a specified JSON config file
 
@@ -161,14 +163,14 @@ class ConfigService:
         Returns:
 
         """
-        file_path = ConfigService.find_file(file_basename)
+        file_path = cls.find_file(file_basename)
         if not file_path:
             raise FileNotFoundError(
-                f"cannot find file '{file_basename}' from search path '{ConfigService._config_path}'")
+                f"cannot find file '{file_basename}' from search path '{cls._config_path}'")
         return json.load(open(file_path, "rt"))
 
-    @staticmethod
-    def find_file(file_basename: str) -> Union[None, str]:
+    @classmethod
+    def find_file(cls, file_basename: str) -> Union[None, str]:
         """
         Find specified file from the config path.
         Caller is responsible for loading/processing the file. This is useful for non-JSON files.
@@ -181,18 +183,18 @@ class ConfigService:
         """
         if not isinstance(file_basename, str):
             raise TypeError(f"file_basename must be str but got {type(file_basename)}")
-        return search_file(file_basename, ConfigService._config_path)
+        return search_file(file_basename, cls._config_path)
 
-    @staticmethod
-    def get_var(name: str, default=None):
+    @classmethod
+    def _get_var(cls, name: str, conf):
         if not isinstance(name, str):
             raise ValueError(f"var name must be str but got {type(name)}")
 
         # see whether command args have it
-        if ConfigService._cmd_args and name in ConfigService._cmd_args:
-            return ConfigService._cmd_args.get(name)
-        if ConfigService._var_dict and name in ConfigService._var_dict:
-            return ConfigService._var_dict.get(name)
+        if cls._cmd_args and name in cls._cmd_args:
+            return cls._cmd_args.get(name)
+        if cls._var_dict and name in cls._var_dict:
+            return cls._var_dict.get(name)
 
         # check OS env vars
         if not name.startswith(ENV_VAR_PREFIX):
@@ -203,4 +205,40 @@ class ConfigService:
         env_var_name = env_var_name.upper()
         if env_var_name in os.environ:
             return os.environ.get(env_var_name)
-        return default
+
+        if isinstance(conf, dict):
+            return conf.get(name)
+
+    @classmethod
+    def get_int_var(cls, name: str, conf=None, default=None):
+        v = cls._get_var(name, conf)
+        if v is None:
+            return default
+        try:
+            return int(v)
+        except:
+            raise ValueError(f"var {name}'s value {v} cannot be converted to int")
+
+    @classmethod
+    def get_bool_var(cls, name: str, conf=None, default=None):
+        v = cls._get_var(name, conf)
+        if v is None:
+            return default
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, int):
+            return v != 0
+        if isinstance(v, str):
+            v = v.lower()
+            return v in ['true', 't', 'yes', 'y', '1']
+        raise ValueError(f"var {name}'s value {v} cannot be converted to bool")
+
+    @classmethod
+    def get_str_var(cls, name: str, conf=None, default=None):
+        v = cls._get_var(name, conf)
+        if v is None:
+            return default
+        try:
+            return str(v)
+        except:
+            raise ValueError(f"var {name}'s value {v} cannot be converted to str")
