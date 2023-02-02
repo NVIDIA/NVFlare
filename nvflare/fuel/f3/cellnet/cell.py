@@ -1089,7 +1089,7 @@ class Cell(MessageReceiver, EndpointMonitor):
             allow_adhoc = self.connector_manager.is_adhoc_allowed(ti, self.my_info)
             if allow_adhoc and t != ep.name:
                 # Not a direct path since the destination and the next leg are not the same
-                if self.ext_listeners or self.my_info.is_on_server:
+                if self.ext_listeners or self.my_info.is_on_server or self.my_info.fqcn > t:
                     # try to get or create a listener and let the peer know the endpoint
                     listener = self._create_external_listener("")
                     if listener:
@@ -1765,7 +1765,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                 elif msg_type == MessageType.REQ:
                     # see whether we can offer a listener
                     allow_adhoc = self.connector_manager.is_adhoc_allowed(oi, self.my_info)
-                    if allow_adhoc and not oi.is_on_server:
+                    if allow_adhoc and not oi.is_on_server and self.my_info.fqcn > origin:
                         self.logger.debug(f"{self.my_info.fqcn}: trying to offer ad-hoc listener to {origin}")
                         listener = self._create_external_listener("")
                         if listener:
