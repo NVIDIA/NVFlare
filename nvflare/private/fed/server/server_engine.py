@@ -630,6 +630,19 @@ class ServerEngine(ServerEngineInternalSpec):
             errors = {}
         return errors
 
+    def reset_errors(self, job_id) -> str:
+        errors = None
+        try:
+            self.send_command_to_child_runner_process(
+                job_id=job_id,
+                command_name=ServerCommandNames.RESET_ERRORS,
+                command_data={},
+            )
+        except BaseException:
+            self.logger.error(f"Failed to reset_errors for JOB: {job_id}")
+
+        return f"reset the server error stats for job: {job_id}"
+
     def _send_admin_requests(self, requests, timeout_secs=10) -> List[ClientReply]:
         return self.server.admin_server.send_requests(requests, timeout_secs=timeout_secs)
 
