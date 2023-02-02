@@ -18,14 +18,13 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor
 from typing import List, Dict, Optional
 
-import uuid
-
 import msgpack
 
 from nvflare.fuel.f3.comm_error import CommError
-from nvflare.fuel.f3.drivers.connection import Connection, ConnState, FrameReceiver, BytesAlike
+from nvflare.fuel.f3.connection import Connection, ConnState, FrameReceiver, BytesAlike
 from nvflare.fuel.f3.drivers.connnector import Connector, Mode
-from nvflare.fuel.f3.drivers.driver import Driver, ConnMonitor
+from nvflare.fuel.f3.drivers.driver import Driver, ConnMonitor, DriverCap, DriverParams
+from nvflare.fuel.f3.drivers.net_utils import ssl_required
 from nvflare.fuel.f3.drivers.prefix import Prefix, PREFIX_LEN
 from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor, EndpointState
 from nvflare.fuel.f3.message import MessageReceiver, Headers, Message
@@ -37,6 +36,7 @@ FRAME_THREAD_POOL_SIZE = 100
 CONN_THREAD_POOL_SIZE = 16
 INIT_WAIT = 1
 MAX_WAIT = 60
+SELF_ADDR = "0.0.0.0:0"
 
 log = logging.getLogger(__name__)
 
@@ -46,12 +46,15 @@ class ConnManager(ConnMonitor):
     The class is responsible for maintaining state of SFM connections and pumping data through them
     """
 
+    handle_lock = threading.Lock()
+    handle_count = 0
+
     def __init__(self, local_endpoint: Endpoint):
         self.local_endpoint = local_endpoint
         self.stopping = False
 
-        # List of active connectors
-        self.connectors: List[Connector] = []
+        # Active connectors
+        self.connectors: Dict[str, Connector] = {}
 
         # A dict of SFM connections, key is connection name
         self.connections: Dict[str, SfmConnection] = {}
@@ -69,13 +72,25 @@ class ConnManager(ConnMonitor):
         self.conn_mgr_executor = ThreadPoolExecutor(CONN_THREAD_POOL_SIZE, "conn_mgr")
         self.frame_mgr_executor = ThreadPoolExecutor(FRAME_THREAD_POOL_SIZE, "frame_mgr")
         self.lock = threading.Lock()
+        self.null_conn = NullConnection()
 
     def add_connector(self, driver: Driver, params: dict, mode: Mode) -> str:
-        handle = str(uuid.uuid4())
+
+        # Validate parameters
+        capabilities = driver.capabilities()
+        support_ssl = capabilities.get(DriverCap.SUPPORT_SSL, False)
+
+        if ssl_required(params) and not support_ssl:
+            scheme = params.get(DriverParams.SCHEME.value, "Unknown")
+            raise CommError(CommError.BAD_CONFIG,
+                            f"Connector with scheme {scheme} requires SSL but "
+                            f"driver {driver.get_name()} doesn't support it")
+
+        handle = ConnManager._get_connector_handle()
         connector = Connector(handle, driver, params, mode, 0, 0, False, False)
         driver.register_conn_monitor(self)
         with self.lock:
-            self.connectors.append(connector)
+            self.connectors[handle] = connector
 
         log.debug(f"Connector {driver.get_name()}:{handle} Mode: {mode.name} is created")
 
@@ -86,28 +101,31 @@ class ConnManager(ConnMonitor):
 
     def remove_connector(self, handle: str):
         with self.lock:
-            for index, connector in enumerate(self.connectors):
-                if handle == connector.handle:
-                    connector.stopping = True
-                    connector.driver.shutdown()
-                    self.connectors.pop(index)
-                    log.info(f"Connector {connector.driver.get_name()}:{handle} is removed")
-                    return
-
-            log.error(f"Unknown connector handle: {handle}")
+            connector = self.connectors.pop(handle, None)
+            if connector:
+                connector.stopping = True
+                connector.driver.shutdown()
+                log.info(f"Connector {connector.driver.get_name()}:{handle} is removed")
+            else:
+                log.error(f"Unknown connector handle: {handle}")
 
     def start(self):
-        for connector in self.connectors:
-            if not connector.started:
-                self.start_connector(connector)
+        with self.lock:
+            for handle in sorted(self.connectors.keys()):
+                connector = self.connectors[handle]
+                if not connector.started:
+                    self.start_connector(connector)
 
         self.started = True
 
     def stop(self):
         self.stopping = True
 
-        for connector in self.connectors:
-            connector.driver.shutdown()
+        with self.lock:
+            for handle in sorted(self.connectors.keys()):
+                connector = self.connectors[handle]
+                connector.stopping = True
+                connector.driver.shutdown()
 
         self.conn_mgr_executor.shutdown(True)
         self.frame_mgr_executor.shutdown(True)
@@ -144,6 +162,10 @@ class ConnManager(ConnMonitor):
         Raises:
             CommError: If any error happens while sending the data
         """
+
+        if endpoint.name == self.local_endpoint.name:
+            self.send_loopback_message(endpoint, app_id, headers, payload)
+            return
 
         sfm_endpoint = self.endpoints.get(endpoint.name)
         if not sfm_endpoint:
@@ -268,8 +290,7 @@ class ConnManager(ConnMonitor):
                 message = Message(headers, payload)
                 receiver = self.receivers.get(prefix.app_id)
                 if receiver:
-                    # TODO: Need to provide connection in the CB
-                    receiver.process_message(sfm_conn.sfm_endpoint.endpoint, prefix.app_id, message)
+                    receiver.process_message(sfm_conn.sfm_endpoint.endpoint, sfm_conn.conn, prefix.app_id, message)
                 else:
                     log.debug(f"No receiver registered for App ID {prefix.app_id}, message ignored")
 
@@ -361,6 +382,33 @@ class ConnManager(ConnMonitor):
             if old_state != state:
                 self.notify_monitors(sfm_endpoint.endpoint)
 
+    @staticmethod
+    def _get_connector_handle():
+        with ConnManager.handle_lock:
+            ConnManager.handle_count += 1
+
+        return "CH%05d" % ConnManager.handle_count
+
+    def send_loopback_message(self, endpoint: Endpoint, app_id: int, headers: Headers, payload: BytesAlike):
+        """Send message to itself"""
+
+        message = Message(headers, payload)
+
+        # Call receiver in a different thread to avoid deadlock
+        self.frame_mgr_executor.submit(self.loopback_message_task, endpoint, app_id, message)
+
+    def loopback_message_task(self, endpoint: Endpoint, app_id: int, message: Message):
+
+        receiver = self.receivers.get(app_id)
+        if not receiver:
+            log.debug(f"No receiver registered for App ID {app_id}, loopback message ignored")
+            return
+
+        try:
+            receiver.process_message(endpoint, self.null_conn, app_id, message)
+        except BaseException as ex:
+            log.error(f"Loopback message error: {ex}")
+
 
 class SfmFrameReceiver(FrameReceiver):
 
@@ -374,3 +422,23 @@ class SfmFrameReceiver(FrameReceiver):
         except BaseException as ex:
             log.error(f"Error processing frame: {ex}")
             log.debug(traceback.format_exc())
+
+
+class NullConnection(Connection):
+    """A mock connection used for loopback messages"""
+
+    def __init__(self):
+        connector = Connector("Null", None, {}, Mode.ACTIVE, 0, 0, False, False)
+        super().__init__(connector)
+
+    def get_conn_properties(self) -> dict:
+        return {
+            DriverParams.LOCAL_ADDR.value: SELF_ADDR,
+            DriverParams.PEER_ADDR.value: SELF_ADDR
+        }
+
+    def close(self):
+        pass
+
+    def send_frame(self, frame: BytesAlike):
+        raise CommError(CommError.NOT_SUPPORTED, "Can't send data on Null connection")

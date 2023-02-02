@@ -17,7 +17,7 @@ import threading
 import time
 
 from nvflare.fuel.f3.communicator import Communicator
-from nvflare.fuel.f3.demo.callbacks import DemoEndpointMonitor, TimingReceiver, make_message
+from nvflare.fuel.f3.demo.callbacks import DemoEndpointMonitor, TimingReceiver, make_message, LoopbackReceiver
 from nvflare.fuel.f3.drivers.connnector import Mode
 from nvflare.fuel.f3.drivers.driver import DriverParams
 from nvflare.fuel.f3.endpoint import Endpoint
@@ -46,19 +46,20 @@ conn_props = {
 local_endpoint = Endpoint("demo.client", {"test": 123}, conn_props)
 
 communicator = Communicator(local_endpoint)
+communicator.register_message_receiver(10, LoopbackReceiver(communicator))
+communicator.send(communicator.local_endpoint, 10, Message(None, "Test".encode("utf-8")))
 
-connect_url = "uds://tmp/socket"
-handle1 = communicator.add_connector(connect_url, Mode.ACTIVE)
+#connect_url = "uds://tmp/socket?secure=False"
+#handle1 = communicator.add_connector(connect_url, Mode.ACTIVE)
 
-listen_url = "tcp://localhost:1234"
+listen_url = "grpcs://localhost:1234"
 handle2 = communicator.add_connector(listen_url, Mode.PASSIVE)
-
 
 resources = {
     DriverParams.SECURE: False,
     DriverParams.PORTS: "3000-6000",
 }
-handle3, ad_hoc_url = communicator.start_listener("tcp", resources)
+# handle3, ad_hoc_url = communicator.start_listener("tcp", resources)
 
 communicator.register_monitor(DemoEndpointMonitor(local_endpoint.name, endpoints))
 communicator.register_message_receiver(AppIds.CELL_NET, TimingReceiver())
@@ -75,7 +76,7 @@ while count < 5:
         name = endpoints[0].name
         log.info(f"Number of connections before ad-hoc {len(communicator.conn_manager.get_connections(name))}")
         msg1 = make_message(None, "Fire-forget message")
-        communicator.send(endpoints[0], 123, Message(None, ad_hoc_url.encode("utf-8")))
+#        communicator.send(endpoints[0], 123, Message(None, ad_hoc_url.encode("utf-8")))
         communicator.send(endpoints[0], AppIds.CELL_NET, msg1)
         time.sleep(1)
         log.info(f"Number of connections after ad-hoc {len(communicator.conn_manager.get_connections(name))}")
@@ -92,8 +93,8 @@ while count < 5:
     count += 1
 
 time.sleep(10)
-communicator.remove_connector(handle1)
-# communicator.remove_connector(handle2)
+# communicator.remove_connector(handle1)
+communicator.remove_connector(handle2)
 communicator.stop()
 for thread in threading.enumerate():
     print(thread.name)

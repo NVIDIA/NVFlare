@@ -29,11 +29,12 @@ import os
 import random
 import socket
 from socketserver import ThreadingUnixStreamServer, UnixStreamServer
-from typing import List
+from typing import List, Dict, Any
 
 from nvflare.fuel.f3.comm_error import CommError
-from nvflare.fuel.f3.drivers.driver import Driver, DriverParams, Connector
-from nvflare.fuel.f3.drivers.socket_driver import ConnectionHandler, StreamConnection, SocketDriver
+from nvflare.fuel.f3.drivers.base_driver import BaseDriver
+from nvflare.fuel.f3.drivers.driver import Driver, DriverParams, Connector, DriverCap
+from nvflare.fuel.f3.drivers.socket_conn import ConnectionHandler, SocketConnection
 
 log = logging.getLogger(__name__)
 
@@ -44,10 +45,10 @@ class SocketStreamServer(ThreadingUnixStreamServer):
         self.path = path
         self.driver = driver
         self.connector = connector
+        self.ssl_context = None  # SSL is not supported
+        self.local_addr = path
 
         UnixStreamServer.__init__(self, path, ConnectionHandler, False)
-
-        # Wrap SSL here
 
         try:
             self.server_bind()
@@ -58,12 +59,23 @@ class SocketStreamServer(ThreadingUnixStreamServer):
             raise
 
 
-class UdsDriver(SocketDriver):
+class UdsDriver(BaseDriver):
     """Transport driver for Unix Domain Socket"""
+
+    def __init__(self):
+        super().__init__()
+        self.server = None
 
     @staticmethod
     def supported_transports() -> List[str]:
         return ["uds"]
+
+    @staticmethod
+    def capabilities() -> Dict[str, Any]:
+        return {
+            DriverCap.HEARTBEAT.value: False,
+            DriverCap.SUPPORT_SSL.value: False
+        }
 
     def listen(self, connector: Connector):
         self.connector = connector
@@ -85,7 +97,9 @@ class UdsDriver(SocketDriver):
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         sock.connect(socket_path)
 
-        connection = StreamConnection(sock, connector, socket_path)
+        conn_props = {DriverParams.LOCAL_ADDR.value: socket_path,
+                      DriverParams.PEER_ADDR.value: socket_path}
+        connection = SocketConnection(sock, connector, conn_props)
         self.add_connection(connection)
 
         try:
@@ -96,6 +110,11 @@ class UdsDriver(SocketDriver):
         finally:
             if connection:
                 self.close_connection(connection)
+
+    def shutdown(self):
+        self.close_all()
+        if self.server:
+            self.server.shutdown()
 
     @staticmethod
     def get_urls(scheme: str, resources: dict) -> (str, str):
@@ -134,4 +153,3 @@ class UdsDriver(SocketDriver):
             socket_path = "/" + socket_path
 
         return socket_path
-

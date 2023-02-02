@@ -236,7 +236,7 @@ class Communicator:
         )
         end_time = time.time()
         return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
-        self.logger.info(f" SubmitUpdate time: {end_time - start_time} seconds")
+        self.logger.info(f" SubmitUpdate size: {len(task_message.payload)} Bytes. time: {end_time - start_time} seconds")
 
         return return_code
 
@@ -311,7 +311,11 @@ class Communicator:
                 except BaseException as ex:
                     raise FLCommunicationError("error:client_quit", ex)
 
-                time.sleep(30)
+                # time.sleep(30)
+                for i in range(15):
+                    time.sleep(2)
+                    if self.heartbeat_done:
+                        break
             except BaseException as e:
                 self.logger.info(f"Failed to send heartbeat. Will try again. Exception: {secure_format_exception(e)}")
                 time.sleep(5)

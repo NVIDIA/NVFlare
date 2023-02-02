@@ -14,7 +14,7 @@
 from abc import ABC, abstractmethod
 from typing import Any
 
-from nvflare.fuel.f3.drivers.connection import BytesAlike
+from nvflare.fuel.f3.connection import Connection
 from nvflare.fuel.f3.endpoint import Endpoint
 
 
@@ -77,5 +77,5 @@ class Message:
 class MessageReceiver(ABC):
 
     @abstractmethod
-    def process_message(self, endpoint: Endpoint, app_id: int, message: Message):
+    def process_message(self, endpoint: Endpoint, connection: Connection, app_id: int, message: Message):
         pass

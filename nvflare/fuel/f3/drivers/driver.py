@@ -37,10 +37,10 @@
 # limitations under the License.
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import List
+from typing import List, Dict, Any
 from urllib.parse import urlparse, urlencode, parse_qsl
 
-from nvflare.fuel.f3.drivers.connection import ConnState, Connection
+from nvflare.fuel.f3.connection import ConnState, Connection
 from nvflare.fuel.f3.drivers.connnector import Connector
 
 
@@ -66,6 +66,15 @@ class DriverParams(str, Enum):
     SECURE = "secure"
     PORTS = "ports"
     SOCKET = "socket"
+    LOCAL_ADDR = "local_addr"
+    PEER_ADDR = "peer_addr"
+    PEER_CN = "peer_cn"
+
+
+class DriverCap(str, Enum):
+
+    HEARTBEAT = "heartbeat"
+    SUPPORT_SSL = "support_ssl"
 
 
 class ConnMonitor(ABC):
@@ -109,6 +118,12 @@ class Driver(ABC):
         """Return a list of transports supported by this driver, for example
            ["http", "https", "ws", "wss"]
         """
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def capabilities() -> Dict[str, Any]:
+        """Return a dictionary of capabilities of the driver."""
         pass
 
     @abstractmethod

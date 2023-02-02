@@ -19,20 +19,20 @@ import traceback
 import grpc
 import logging
 import threading
-from typing import Union, List
+from typing import Union, List, Dict, Any
 
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.comm_error import CommError
-from nvflare.fuel.f3.drivers.connection import Connection
-from nvflare.fuel.f3.drivers.driver import Connector, DriverParams
-from nvflare.fuel.f3.drivers.socket_driver import SocketDriver
+from nvflare.fuel.f3.connection import Connection
+from nvflare.fuel.f3.drivers.driver import Connector, DriverParams, DriverCap
 from nvflare.fuel.f3.drivers import net_utils
 
 from nvflare.fuel.f3.drivers.grpc.streamer_pb2_grpc import (
     StreamerServicer, add_StreamerServicer_to_server, StreamerStub
 )
+from .base_driver import BaseDriver
 from .grpc.streamer_pb2 import Frame
-
+from .net_utils import get_address, ssl_required
 
 MAX_MSG_SIZE = 1024 * 1024 * 1024    # 1G
 
@@ -44,10 +44,16 @@ GRPC_DEFAULT_OPTIONS = [
 
 class AioContext:
 
+    counter_lock = threading.Lock()
+    thread_count = 0
+
     def __init__(self, name):
         self.closed = False
         self.name = name
-        self.thread = threading.Thread(target=self._run_aio_loop)
+        with AioContext.counter_lock:
+            AioContext.thread_count += 1
+        thread_name = f"aio_ctx_{AioContext.thread_count}"
+        self.thread = threading.Thread(target=self._run_aio_loop, name=thread_name)
         self.loop = None
         self.ready = False
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -95,7 +101,7 @@ class AioStreamSession(Connection):
             side: str,
             aio_ctx: AioContext,
             connector: Connector,
-            peer_address,
+            conn_props: dict,
             context=None,
             channel=None):
         super().__init__(connector)
@@ -107,19 +113,13 @@ class AioStreamSession(Connection):
         self.oq = asyncio.Queue(16)
         self.logger.debug(f"{side}: got queue {id(self.oq)}")
         self.closing = False
-        self.peer_address = peer_address
+        self.conn_props = conn_props
         self.context = context    # for server side
         self.channel = channel    # for client side
         self.lock = threading.Lock()
 
     def get_conn_properties(self) -> dict:
-        addr = self.peer_address
-        if isinstance(addr, tuple):
-            return {"peer_host": addr[0], "peer_port": addr[1]}
-        elif addr:
-            return {"peer_addr": addr}
-        else:
-            return {}
+        return self.conn_props
 
     def close(self):
         self.closing = True
@@ -206,11 +206,18 @@ class Servicer(StreamerServicer):
         ct = threading.current_thread()
         try:
             self.logger.debug(f"SERVER started Stream CB in thread {ct.name}")
+            conn_props = {DriverParams.PEER_ADDR.value: context.peer(),
+                          DriverParams.LOCAL_ADDR.value: get_address(self.server.connector.params)}
+
+            cn_names = context.auth_context().get("x509_common_name")
+            if cn_names:
+                conn_props[DriverParams.PEER_CN.value] = cn_names[0].decode("utf-8")
+
             connection = AioStreamSession(
                 side="SERVER",
                 aio_ctx=self.aio_ctx,
                 connector=self.server.connector,
-                peer_address=context.peer(),
+                conn_props=conn_props,
                 context=context)
             self.logger.debug(f"SERVER created connection in thread {ct.name}")
             self.server.driver.add_connection(connection)
@@ -261,7 +268,14 @@ class Server:
         try:
             self.logger.debug(f"SERVER: connector params: {params}")
             self.logger.debug(f"SERVER: adding insecure port {addr}")
-            self.grpc_server.add_insecure_port(addr)
+
+            secure = ssl_required(params)
+
+            if secure:
+                credentials = AioGrpcDriver.get_grpc_server_credentials(params)
+                self.grpc_server.add_secure_port(addr, server_credentials=credentials)
+            else:
+                self.grpc_server.add_insecure_port(addr)
         except BaseException as ex:
             self.logger.error(f"cannot create SERVER to listen on {addr}: {type(ex)}")
             conn_ctx.error = f"cannot listen on {addr}: {type(ex)}: {ex}"
@@ -279,13 +293,13 @@ class Server:
         await self.grpc_server.stop(grace=0.5)
 
 
-class AioGrpcDriver(SocketDriver):
+class AioGrpcDriver(BaseDriver):
 
     aio_ctx = None
     lock = threading.Lock()
 
     def __init__(self):
-        SocketDriver.__init__(self)
+        super().__init__()
         self.server = None
         self.options = GRPC_DEFAULT_OPTIONS
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -306,7 +320,14 @@ class AioGrpcDriver(SocketDriver):
 
     @staticmethod
     def supported_transports() -> List[str]:
-        return ["grpc"]
+        return ["grpc", "grpcs"]
+
+    @staticmethod
+    def capabilities() -> Dict[str, Any]:
+        return {
+            DriverCap.HEARTBEAT.value: True,
+            DriverCap.SUPPORT_SSL.value: True
+        }
 
     async def _start_server(self, connector: Connector, aio_ctx: AioContext, conn_ctx: _ConnCtx):
         self.connector = connector
@@ -337,21 +358,27 @@ class AioGrpcDriver(SocketDriver):
     async def _start_connect(self, connector: Connector, aio_ctx: AioContext, conn_ctx: _ConnCtx):
         self.logger.debug("Started _start_connect coro")
         params = connector.params
-        host = params.get(DriverParams.HOST.value)
-        port = params.get(DriverParams.PORT.value)
-        address = f"{host}:{port}"
+        address = get_address(params)
 
         self.logger.debug(f"CLIENT: trying to connect {address}")
         try:
-            async with grpc.aio.insecure_channel(address, options=self.options) as channel:
+            secure = ssl_required(params)
+            if secure:
+                grpc_channel = grpc.aio.secure_channel(address, options=self.options,
+                                                       credentials=self.get_grpc_client_credentials(params))
+            else:
+                grpc_channel = grpc.aio.insecure_channel(address, options=self.options)
+
+            async with grpc_channel as channel:
                 self.logger.debug(f"CLIENT: connected to {address}")
                 stub = StreamerStub(channel)
                 self.logger.debug("CLIENT: got stub!")
+                conn_props = {DriverParams.PEER_ADDR.value: address}
                 connection = AioStreamSession(
                     side="CLIENT",
                     aio_ctx=aio_ctx,
                     connector=connector,
-                    peer_address=address,
+                    conn_props=conn_props,
                     channel=channel)
                 self.logger.debug(f"CLIENT: created AioStreamSession {id(connection)}")
                 try:
@@ -400,8 +427,7 @@ class AioGrpcDriver(SocketDriver):
         self.logger.debug(f"CLIENT: connection {id(conn_ctx.conn)} is done")
 
     def shutdown(self):
-        for _, conn in self.connections.items():
-            conn.close()
+        self.close_all()
 
         if self.server:
             aio_ctx = self._initialize_aio("SERVER")
@@ -426,3 +452,35 @@ class AioGrpcDriver(SocketDriver):
         connect_url = f"{scheme}://{host}:{port}"
 
         return connect_url, listening_url
+
+    @staticmethod
+    def get_grpc_client_credentials(params: dict):
+
+        root_cert = AioGrpcDriver.read_file(params.get(DriverParams.CA_CERT.value))
+        cert_chain = AioGrpcDriver.read_file(params.get(DriverParams.CLIENT_CERT))
+        private_key = AioGrpcDriver.read_file(params.get(DriverParams.CLIENT_KEY))
+
+        return grpc.ssl_channel_credentials(
+            certificate_chain=cert_chain, private_key=private_key, root_certificates=root_cert
+        )
+
+    @staticmethod
+    def get_grpc_server_credentials(params: dict):
+
+        root_cert = AioGrpcDriver.read_file(params.get(DriverParams.CA_CERT.value))
+        cert_chain = AioGrpcDriver.read_file(params.get(DriverParams.SERVER_CERT))
+        private_key = AioGrpcDriver.read_file(params.get(DriverParams.SERVER_KEY))
+
+        return grpc.ssl_server_credentials(
+            [(private_key, cert_chain)],
+            root_certificates=root_cert,
+            require_client_auth=True,
+        )
+
+    @staticmethod
+    def read_file(file_name: str):
+        if not file_name:
+            return None
+
+        with open(file_name, "rb") as f:
+            return f.read()
