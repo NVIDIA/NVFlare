@@ -397,24 +397,6 @@ class ProcessExecutor(ClientExecutor):
                 self.logger.debug("abort_task sent")
 
     def _wait_child_process_finish(self, client, job_id, allocated_resource, token, resource_manager):
-        # wait for the listen_command thread to start, and send "start" message to wake up the connection.
-        start = time.time()
-        while True:
-            with self.lock:
-                data = {"command": AdminCommandNames.START_APP, "data": {}}
-                fqcn = FQCN.join([client.client_name, job_id])
-                request = new_cell_message({}, fobs.dumps(data))
-                return_data = client.cell.send_request(
-                    target=fqcn, channel=CellChannel.CLIENT_COMMAND, topic=AdminCommandNames.START_APP, request=request
-                )
-                return_code = return_data.get_header(MessageHeaderKey.RETURN_CODE)
-                if return_code == ReturnCode.OK:
-                    break
-
-            time.sleep(1.0)
-            if time.time() - start > 15:
-                break
-
         self.logger.info(f"run ({job_id}): waiting for child worker process to finish.")
         with self.lock:
             child_process = self.run_processes.get(job_id, {}).get(RunProcessKey.CHILD_PROCESS)
