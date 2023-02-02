@@ -291,6 +291,33 @@ class GetErrorsCommand(CommandProcessor):
         return errors
 
 
+class ResetErrorsCommand(CommandProcessor):
+    """To implement the show_errors command."""
+
+    def get_command_name(self) -> str:
+        """To get the command name.
+
+        Returns: ServerCommandNames.GET_ERRORS
+
+        """
+        return ServerCommandNames.RESET_ERRORS
+
+    def process(self, data: Shareable, fl_ctx: FLContext):
+        """Called to process the abort command.
+
+        Args:
+            data: process data
+            fl_ctx: FLContext
+
+        Returns: Engine run_info
+
+        """
+        engine = fl_ctx.get_engine()
+        collector = engine.get_widget(WidgetID.INFO_COLLECTOR)
+        collector.reset_errors()
+        return None
+
+
 class ByeCommand(CommandProcessor):
     """To implement the ShutdownCommand."""
 
@@ -351,6 +378,7 @@ class ServerCommands(object):
         HandleDeadJobCommand(),
         ShowStatsCommand(),
         GetErrorsCommand(),
+        ResetErrorsCommand(),
         HeartbeatCommand(),
     ]
 
