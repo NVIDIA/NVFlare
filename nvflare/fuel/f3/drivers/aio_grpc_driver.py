@@ -123,6 +123,9 @@ class AioStreamSession(Connection):
                     self.frame_receiver.process_frame(f.data)
                 else:
                     self.logger.error(f"{self.side}: Frame receiver not registered for connection: {self.name}")
+        except grpc.aio._call.AioRpcError:
+            self.logger.debug(f"{self.side}: AioRpcError")
+            self.logger.debug(traceback.format_exc())
         except asyncio.CancelledError:
             self.logger.debug(f"{self.side}: RPC cancelled")
         except BaseException as ex:
