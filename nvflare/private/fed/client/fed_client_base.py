@@ -29,6 +29,7 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import EngineConstant
@@ -158,38 +159,43 @@ class FederatedClientBase:
             scheme = self.servers[project_name].get("scheme", "grpc://")
             location = sp.name + ":" + sp.fl_port
             if server != location:
-                if self.cell:
-                    self.cell.stop()
-
                 self.servers[project_name]["target"] = location
                 self.sp_established = True
 
-                if self.args.job_id:
-                    fqcn = FQCN.join([self.client_name, self.args.job_id])
-                    parent_url = self.args.parent_url
+                if self.cell:
+                    # self.net_agent.close()
+                    # self.cell.stop()
+                    self.cell.change_server_root(scheme + location)
                 else:
-                    fqcn = self.client_name
-                    parent_url = None
-                credentials = {}
-                self.cell = Cell(
-                    fqcn=fqcn,
-                    root_url=scheme + location,
-                    secure=self.secure_train,
-                    credentials=credentials,
-                    create_internal_listener=True,
-                    parent_url=parent_url,
-                )
+                    if self.args.job_id:
+                        fqcn = FQCN.join([self.client_name, self.args.job_id])
+                        parent_url = self.args.parent_url
+                    else:
+                        fqcn = self.client_name
+                        parent_url = None
+                    credentials = {}
+                    self.cell = Cell(
+                        fqcn=fqcn,
+                        root_url=scheme + location,
+                        secure=self.secure_train,
+                        credentials=credentials,
+                        create_internal_listener=True,
+                        parent_url=parent_url,
+                    )
 
-                self.cell.start()
-                self.communicator.cell = self.cell
-                self.net_agent = NetAgent(self.cell)
-                if self.args.job_id:
-                    self.client_runner.engine.cell = self.cell
-                    self.client_runner.command_agent.register_cell_cb()
-                else:
-                    if self.engine:
-                        self.engine.cell = self.cell
-                        self.engine.admin_agent.register_cell_cb()
+                    self.cell.start()
+                    self.communicator.cell = self.cell
+                    self.net_agent = NetAgent(self.cell)
+                    if self.args.job_id:
+                        self.client_runner.engine.cell = self.cell
+                        self.client_runner.command_agent.register_cell_cb()
+                    else:
+                        if self.engine:
+                            self.engine.cell = self.cell
+                            self.engine.admin_agent.register_cell_cb()
+
+                    mpm.add_cleanup_cb(self.net_agent.close)
+                    mpm.add_cleanup_cb(self.cell.stop)
 
                 self.logger.info(f"Got the new primary SP: {scheme + location}")
 

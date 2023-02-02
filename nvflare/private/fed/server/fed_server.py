@@ -48,6 +48,7 @@ from nvflare.private.fed.server.server_runner import ServerRunner
 from nvflare.widgets.fed_event import ServerFedEventRunner
 from nvflare.security.logging import secure_format_exception
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
+from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 
 from .client_manager import ClientManager
@@ -120,8 +121,9 @@ class BaseServer(ABC):
         except RuntimeError:
             self.logger.info("canceling sync locks")
         try:
-            if self.cell:
-                self.cell.stop()
+            # if self.cell:
+            #     self.cell.stop()
+            mpm.stop()
         finally:
             self.logger.info("server off")
             return 0
@@ -148,6 +150,7 @@ class BaseServer(ABC):
         )
 
         self.cell.start()
+        mpm.add_cleanup_cb(self.cell.stop)
 
     def client_cleanup(self):
         while not self.shutdown:
@@ -347,6 +350,8 @@ class FederatedServer(BaseServer):
 
         self.command_agent = ServerCommandAgent(self.engine, cell)
         self.command_agent.start()
+        mpm.add_cleanup_cb(net_agent.close)
+        mpm.add_cleanup_cb(cell.stop)
 
         return cell
 
@@ -581,7 +586,7 @@ class FederatedServer(BaseServer):
             #
             #     time.sleep(3)
 
-            self.wait_engine_run_complete()
+            self.wait_engine_run_complete("Server Job")
 
             if engine_thread.is_alive():
                 engine_thread.join()
@@ -590,8 +595,9 @@ class FederatedServer(BaseServer):
             self.engine.engine_info.status = MachineStatus.STOPPED
             self.run_manager = None
 
-    def wait_engine_run_complete(self):
-        self.cell.run()
+    def wait_engine_run_complete(self, name):
+        # self.cell.run()
+        mpm.run(name)
 
     def create_run_manager(self, workspace, job_id):
         return RunManager(
@@ -622,7 +628,8 @@ class FederatedServer(BaseServer):
         self.engine.engine_info.status = MachineStatus.STOPPED
 
     def stop_run_engine_cell(self):
-        self.cell.stop()
+        # self.cell.stop()
+        mpm.stop()
 
     def deploy(self, args, grpc_args=None, secure_train=False):
         super().deploy(args, grpc_args, secure_train)
