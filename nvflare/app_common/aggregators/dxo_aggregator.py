@@ -126,7 +126,6 @@ class DXOAggregator(FLComponent):
             n_iter = 1.0
         float_n_iter = float(n_iter)
         aggregation_weight = self.aggregation_weights.get(contributor_name)
-        self.log_debug(fl_ctx, f"Aggregator weights: {aggregation_weight}")
         if aggregation_weight is None:
             if self.warning_count.get(contributor_name, 0) <= self.warning_limit:
                 self.log_warning(
@@ -153,7 +152,7 @@ class DXOAggregator(FLComponent):
             DXO: the weighted mean of accepted DXOs from contributors
         """
 
-        self.log_debug(fl_ctx, "Start aggregation")
+        self.log_debug(fl_ctx, f"Start aggregation with weights {self.aggregation_weights}")
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
         self.log_info(fl_ctx, f"aggregating {self.aggregation_helper.get_len()} update(s) at round {current_round}")
         self.log_debug(fl_ctx, f"complete history {self.aggregation_helper.get_len()}")
