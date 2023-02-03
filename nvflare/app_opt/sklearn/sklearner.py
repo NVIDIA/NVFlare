@@ -50,11 +50,11 @@ class SKLearner(FLComponent, ABC):
         pass
 
     @abstractmethod
-    def train(self, curr_round: int, global_param: Optional[dict] = None) -> dict:
+    def train(self, curr_round: int, global_param: Optional[dict] = None) -> Tuple[dict, dict]:
         pass
 
     @abstractmethod
-    def evaluate(self, curr_round: int, global_param: Optional[dict] = None) -> dict:
+    def evaluate(self, curr_round: int, global_param: Optional[dict] = None) -> Tuple[dict, dict]:
         pass
 
     @abstractmethod

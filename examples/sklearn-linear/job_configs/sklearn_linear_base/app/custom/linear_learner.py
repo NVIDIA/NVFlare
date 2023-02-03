@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import copy
-import warnings
 from typing import Optional
 
 import numpy as np
@@ -81,9 +80,7 @@ class LinearLearner(SKLearner):
         # Training starting from global model
         # Note that the parameter update using global model has been performed
         # during global model evaluation
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            self.local_model.fit(x_train, y_train)
+        self.local_model.fit(x_train, y_train)
         if self.local_model.fit_intercept:
             params = {
                 "coef": self.local_model.coef_,

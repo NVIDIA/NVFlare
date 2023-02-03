@@ -25,7 +25,7 @@ Under this setting, federated learning can be formulated as a FedAvg process wit
 ## Data preparation 
 The examples illustrate a binary classification task based on [HIGGS dataset](https://archive.ics.uci.edu/ml/datasets/HIGGS).
 This dataset contains 11 million instances, each with 28 attributes. Download the dataset from the HIGGS link above, which is a single `.csv` file.
-By default, we assume the dataset is downloaded, uncompressed, and stored in `~/dataset/HIGGS.csv`.
+By default, we assume the dataset is downloaded, uncompressed, and stored in `~/dataset/HIGGS.csv`. Note that this `data_path` will be needed in client config `config_fed_client.json`, users can either change it in the config generation script of `prepare_job_config.sh`, or the config json directly.
 
 ## Prepare clients' configs with proper data information 
 For realworld FL applications, the config json files are expected to be specified by each client individually, according to their own local data path and splits for training and validation.
