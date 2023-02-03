@@ -15,12 +15,11 @@
 """Sub_worker process to start the multi-processes client."""
 
 import argparse
-import logging
 import copy
+import logging
 import os
 import sys
 import threading
-import time
 
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_component import FLComponent
@@ -40,6 +39,7 @@ from nvflare.fuel.f3.cellnet.cell import Message as CellMessage
 from nvflare.fuel.f3.cellnet.cell import MessageHeaderKey, make_reply
 from nvflare.fuel.f3.cellnet.defs import ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import SecurityContentService
@@ -152,6 +152,8 @@ class SubWorkerExecutor:
             topic="*",
             cb=self.execute_command,
         )
+        mpm.add_cleanup_cb(net_agent.close)
+        mpm.add_cleanup_cb(self.cell.stop)
 
         self.commands = {
             MultiProcessCommandNames.INITIALIZE: self._initialize,
@@ -262,13 +264,15 @@ class SubWorkerExecutor:
 
     def _close(self, data):
         self.done = True
-        self.cell.stop()
+        # self.cell.stop()
+        mpm.stop()
 
     def run(self):
         self.logger.info("SubWorkerExecutor process started.")
         # while not self.done:
         #     time.sleep(1.0)
-        self.cell.run()
+        # self.cell.run()
+        mpm.run("Client sub_worker")
         self.logger.info("SubWorkerExecutor process shutdown.")
 
 

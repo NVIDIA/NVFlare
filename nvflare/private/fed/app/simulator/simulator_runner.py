@@ -333,6 +333,10 @@ class SimulatorRunner(FLComponent):
                     if not server_thread.is_alive():
                         raise RuntimeError("Could not start the Server App.")
 
+                # Start the client heartbeat calls.
+                for client in self.federated_clients:
+                    client.start_heartbeat()
+
                 if self.args.gpu:
                     gpus = self.args.gpu.split(",")
                     split_clients = self.split_clients(self.federated_clients, gpus)

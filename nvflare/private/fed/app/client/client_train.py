@@ -24,11 +24,11 @@ from nvflare.apis.fl_constant import JobConstants, SiteType, WorkspaceConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.utils.argument_utils import parse_vars
+from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.private.defs import AppFolderConstants, SSLConstants
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger, create_privacy_manager
 from nvflare.private.fed.client.admin import FedAdminAgent
 
-# from nvflare.private.fed.client.admin_msg_sender import AdminMessageSender
 from nvflare.private.fed.client.client_engine import ClientEngine
 from nvflare.private.fed.client.fed_client import FederatedClient
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize, security_init
@@ -108,8 +108,11 @@ def main():
         federated_client.config_folder = config_folder
 
         # if rank == 0:
+        start = time.time()
         while federated_client.cell is None:
             time.sleep(0.1)
+            if time.time() - start > 60.:
+                raise RuntimeError("Could not create the client cell. Failed to start the client.")
 
         federated_client.register()
 
@@ -134,7 +137,8 @@ def main():
 
         # while True:
         #     time.sleep(1.0)
-        federated_client.cell.run()
+        # federated_client.cell.run()
+        mpm.run("Client Main")
 
         deployer.close()
 

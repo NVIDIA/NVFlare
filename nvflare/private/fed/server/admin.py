@@ -21,6 +21,7 @@ from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.cellnet.net_manager import NetManager
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule
+from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.hci.server.audit import CommandAudit
 from nvflare.fuel.hci.server.authz import AuthzFilter
 from nvflare.fuel.hci.server.builtin import new_command_register_with_builtin_module
@@ -159,6 +160,7 @@ class FedAdminServer(AdminServer):
         # )
 
         cmd_reg.register_module(sess_mgr)
+        mpm.add_cleanup_cb(sess_mgr.shutdown)
 
         agent = NetAgent(self.cell)
         net_mgr = NetManager(agent)
