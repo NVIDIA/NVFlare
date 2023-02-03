@@ -590,6 +590,9 @@ class FederatedServer(BaseServer):
 
             self.wait_engine_run_complete("Server Job", cleanup_grace_time=5.0)
 
+            # if engine_thread.is_alive():
+            #     engine_thread.join()
+
         finally:
             self.engine.engine_info.status = MachineStatus.STOPPED
             self.run_manager = None
