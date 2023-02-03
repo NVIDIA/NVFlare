@@ -39,7 +39,8 @@ class BaseDriver(Driver):
         if log.isEnabledFor(logging.DEBUG):
             local_addr = conn_props.get(DriverParams.LOCAL_ADDR, "N/A")
             peer_addr = conn_props.get(DriverParams.PEER_ADDR, "N/A")
-            log.debug(f"Connection created: {self.get_name()}:{conn.name}, Local: {local_addr} Peer: {peer_addr}")
+            log.debug(f"Connection created: {self.get_name()}:{conn.name}, "
+                      f"Local: {local_addr} Peer: {peer_addr} Mode: {self.connector.mode.name}")
 
         with self.conn_lock:
             self.connections[conn.name] = conn

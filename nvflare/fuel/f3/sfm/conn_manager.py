@@ -105,7 +105,7 @@ class ConnManager(ConnMonitor):
             if connector:
                 connector.stopping = True
                 connector.driver.shutdown()
-                log.info(f"Connector {connector.driver.get_name()}:{handle} is removed")
+                log.debug(f"Connector {connector.driver.get_name()}:{handle} is removed")
             else:
                 log.error(f"Unknown connector handle: {handle}")
 
@@ -225,13 +225,13 @@ class ConnManager(ConnMonitor):
             start_time = time.time()
             try:
                 starter(connector)
-                log.debug(f"Driver {name} is terminated without exception")
+                log.debug(f"Driver {name} is terminated")
             except Exception as ex:
                 log.error(f"Connector {name} failed: {ex}")
                 log.debug(traceback.format_exc())
 
             if self.stopping or connector.stopping:
-                log.info(f"Connector {name} has stopped")
+                log.debug(f"Connector {name} has stopped")
                 break
 
             # After a long run, resetting wait

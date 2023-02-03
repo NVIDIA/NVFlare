@@ -41,7 +41,8 @@ class SfmEndpoint:
                 first_conn = self.connections[0]
                 first_conn.conn.close()
                 self.connections.pop(0)
-                log.debug(f"Connection {first_conn.get_name()} is evicted from endpoint {self.endpoint.name}")
+                log.info(f"Connection {first_conn.get_name()} is evicted for {sfm_conn.get_name()} "
+                         f"from endpoint {self.endpoint.name}")
 
             self.connections.append(sfm_conn)
 

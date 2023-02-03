@@ -80,6 +80,7 @@ class TcpDriver(BaseDriver):
         self.server.serve_forever()
 
     def connect(self, connector: Connector):
+        self.connector = connector
         params = connector.params
         host = params.get(DriverParams.HOST.value)
         port = int(params.get(DriverParams.PORT.value))
@@ -105,14 +106,9 @@ class TcpDriver(BaseDriver):
         connection = SocketConnection(sock, connector, conn_props)
         self.add_connection(connection)
 
-        try:
-            connection.read_loop()
-        except BaseException as ex:
-            log.error(f"Active connection {connection.name} closed due to error: {ex}")
+        connection.read_loop()
 
-        finally:
-            if connection:
-                self.close_connection(connection)
+        self.close_connection(connection)
 
     def shutdown(self):
         self.close_all()

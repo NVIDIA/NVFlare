@@ -311,6 +311,7 @@ class AioGrpcDriver(BaseDriver):
 
     def listen(self, connector: Connector):
         self.logger.debug(f"listen called from thread {threading.current_thread().name}")
+        self.connector = connector
         aio_ctx = self._initialize_aio("SERVER")
         conn_ctx = _ConnCtx()
         aio_ctx.run_coro(self._start_server(connector, aio_ctx, conn_ctx))
@@ -325,6 +326,7 @@ class AioGrpcDriver(BaseDriver):
 
     async def _start_connect(self, connector: Connector, aio_ctx: AioContext, conn_ctx: _ConnCtx):
         self.logger.debug("Started _start_connect coro")
+        self.connector = connector
         params = connector.params
         address = get_address(params)
 

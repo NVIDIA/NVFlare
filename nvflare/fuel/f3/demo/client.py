@@ -49,10 +49,10 @@ communicator = Communicator(local_endpoint)
 communicator.register_message_receiver(10, LoopbackReceiver(communicator))
 communicator.send(communicator.local_endpoint, 10, Message(None, "Test".encode("utf-8")))
 
-#connect_url = "uds://tmp/socket?secure=False"
-#handle1 = communicator.add_connector(connect_url, Mode.ACTIVE)
+connect_url = "uds://tmp/socket?secure=False"
+handle1 = communicator.add_connector(connect_url, Mode.ACTIVE)
 
-listen_url = "grpcs://localhost:1234"
+listen_url = "grpc://localhost:1234"
 handle2 = communicator.add_connector(listen_url, Mode.PASSIVE)
 
 resources = {
