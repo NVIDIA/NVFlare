@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from multiprocessing import Lock
+from threading import Lock
 
 from nvflare.apis.client import Client
 from nvflare.apis.fl_component import FLComponent
