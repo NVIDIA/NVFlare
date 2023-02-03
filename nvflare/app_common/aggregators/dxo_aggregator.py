@@ -72,7 +72,7 @@ class DXOAggregator(FLComponent):
             self.log_error(fl_ctx, f"Expected DXO but got {type(dxo)}")
             return False
 
-        if dxo.data_kind not in (DataKind.WEIGHT_DIFF, DataKind.WEIGHTS):
+        if dxo.data_kind not in (DataKind.WEIGHT_DIFF, DataKind.WEIGHTS, DataKind.METRICS):
             self.log_error(fl_ctx, "cannot handle data kind {}".format(dxo.data_kind))
             return False
 
@@ -126,6 +126,7 @@ class DXOAggregator(FLComponent):
             n_iter = 1.0
         float_n_iter = float(n_iter)
         aggregation_weight = self.aggregation_weights.get(contributor_name)
+        self.log_debug(fl_ctx, f"Aggregator weights: {aggregation_weight}")
         if aggregation_weight is None:
             if self.warning_count.get(contributor_name, 0) <= self.warning_limit:
                 self.log_warning(
