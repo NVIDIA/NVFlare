@@ -1,6 +1,6 @@
 n_servers: 1
 n_clients: 2
-jobs_root_dir: ../../examples
+jobs_root_dir: ../../examples/basic
 cleanup: True
 
 
