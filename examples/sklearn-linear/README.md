@@ -27,6 +27,25 @@ The examples illustrate a binary classification task based on [HIGGS dataset](ht
 This dataset contains 11 million instances, each with 28 attributes. Download the dataset from the HIGGS link above, which is a single `.csv` file.
 By default, we assume the dataset is downloaded, uncompressed, and stored in `~/dataset/HIGGS.csv`. Note that this `data_path` will be needed in client config `config_fed_client.json`, users can either change it in the config generation script of `prepare_job_config.sh`, or the config json directly.
 
+## (Optional) Set up a virtual environment
+```
+python3 -m pip install --user --upgrade pip
+python3 -m pip install --user virtualenv
+```
+(If needed) make all shell scripts executable using
+```
+find . -name ".sh" -exec chmod +x {} \;
+```
+initialize virtual environment.
+```
+source ./virtualenv/set_env.sh
+```
+install required packages for training
+```
+pip3 install --upgrade pip
+pip3 install -r ./virtualenv/requirements.txt
+```
+
 ## Prepare clients' configs with proper data information 
 For realworld FL applications, the config json files are expected to be specified by each client individually, according to their own local data path and splits for training and validation.
 
