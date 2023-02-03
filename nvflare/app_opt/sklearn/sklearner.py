@@ -14,7 +14,7 @@
 
 # We will move to this app_common when it gets matured
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Optional, Tuple
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
