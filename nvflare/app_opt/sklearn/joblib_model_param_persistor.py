@@ -44,7 +44,7 @@ class JoblibModelParamPersistor(ModelPersistor):
             os.makedirs(self.log_dir)
         fl_ctx.sync_sticky()
 
-    def load(self, fl_ctx: FLContext) -> ModelLearnable:
+    def load_model(self, fl_ctx: FLContext) -> ModelLearnable:
         """Initialize and load the Model.
 
         Args:
@@ -68,7 +68,7 @@ class JoblibModelParamPersistor(ModelPersistor):
         if event == EventType.START_RUN:
             self._initialize(fl_ctx)
 
-    def save(self, model_learnable: ModelLearnable, fl_ctx: FLContext):
+    def save_model(self, model_learnable: ModelLearnable, fl_ctx: FLContext):
         """Persists the Model object.
 
         Args:
