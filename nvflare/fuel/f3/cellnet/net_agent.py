@@ -27,8 +27,9 @@ from .defs import MessageHeaderKey, ReturnCode
 from .fqcn import FQCN
 from .utils import make_reply, new_message
 
-from nvflare.fuel.f3.mpm import MainProcessMonitor
+from nvflare.fuel.f3.mpm import MainProcessMonitor as Mpm
 from nvflare.fuel.f3.stats_pool import StatsPoolManager
+from nvflare.fuel.utils.config_service import ConfigService
 
 from typing import Union, List
 
@@ -51,6 +52,7 @@ _TOPIC_MSG_STATS = "msg_stats"
 _TOPIC_LIST_POOLS = "list_pools"
 _TOPIC_SHOW_POOL = "show_pool"
 _TOPIC_COMM_CONFIG = "comm_config"
+_TOPIC_CONFIG_VARS = "config_vars"
 _TOPIC_HEARTBEAT = "heartbeat"
 
 _ONE_K = bytes([1] * 1024)
@@ -237,6 +239,12 @@ class NetAgent:
 
         cell.register_request_cb(
             channel=_CHANNEL,
+            topic=_TOPIC_CONFIG_VARS,
+            cb=self._do_config_vars,
+        )
+
+        cell.register_request_cb(
+            channel=_CHANNEL,
             topic=_TOPIC_HEARTBEAT,
             cb=self._do_heartbeat,
         )
@@ -326,7 +334,8 @@ class NetAgent:
                 if time.time() - start >= interval:
                     break
 
-    def _check_monitor(self, m: SubnetMonitor):
+    @staticmethod
+    def _check_monitor(m: SubnetMonitor):
         for member_fqcn, member in m.members.items():
             m.put_member_offline(member)
 
@@ -597,8 +606,8 @@ class NetAgent:
         # ask all children to stop
         self._broadcast_to_subs(topic=_TOPIC_STOP, timeout=0.0)
         self.close()
-        MainProcessMonitor.add_cleanup_cb(self.cell.stop)
-        MainProcessMonitor.stop()
+        Mpm.add_cleanup_cb(self.cell.stop)
+        Mpm.stop()
 
     def stop_cell(self, target: str) -> str:
         # if self.cell.get_fqcn() == target:
@@ -997,11 +1006,32 @@ class NetAgent:
             return f"{rc}: {err}"
         return reply.payload
 
+    def get_config_vars(self, target: str):
+        reply = self.cell.send_request(
+            channel=_CHANNEL,
+            topic=_TOPIC_CONFIG_VARS,
+            request=new_message(),
+            timeout=1.0,
+            target=target
+        )
+        rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
+        if rc != ReturnCode.OK:
+            err = reply.get_header(MessageHeaderKey.ERROR, "")
+            return f"{rc}: {err}"
+        return reply.payload
+
     def _do_comm_config(
             self,
             request: Message
     ) -> Union[None, Message]:
         info = self.cell.connector_manager.get_config_info()
+        return new_message(payload=info)
+
+    def _do_config_vars(
+            self,
+            request: Message
+    ) -> Union[None, Message]:
+        info = ConfigService.get_var_values()
         return new_message(payload=info)
 
     def _broadcast_to_subs(

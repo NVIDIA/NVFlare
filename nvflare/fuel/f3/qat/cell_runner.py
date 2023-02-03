@@ -16,8 +16,10 @@ from nvflare.fuel.f3.cellnet.cell import Cell, CellAgent, Message, MessageHeader
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.mpm import MainProcessMonitor
+from nvflare.fuel.f3.stats_pool import StatsPoolManager
 from .net_config import NetConfig
 
+import json
 import os
 import shlex
 import subprocess
@@ -221,5 +223,13 @@ class CellRunner:
             self.cell.change_server_root(self.new_root_url)
             self.new_root_url = None
 
-    def run(self, name):
-        MainProcessMonitor.run(name)
+    def dump_stats(self):
+        stats_dict = StatsPoolManager.to_dict()
+        json_object = json.dumps(stats_dict, indent=4)
+        with open(f"{self.cell.get_fqcn()}_stats.json", "w") as outfile:
+            outfile.write(json_object)
+
+    def run(self):
+        MainProcessMonitor.add_cleanup_cb(self.dump_stats)
+        MainProcessMonitor.run(self.cell.get_fqcn())
+        os._exit(0)

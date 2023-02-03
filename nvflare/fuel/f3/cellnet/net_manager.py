@@ -134,6 +134,13 @@ class NetManager(CommandModule):
                     visible=True,
                 ),
                 CommandSpec(
+                    name="show_config_vars",
+                    description="show all defined config var values",
+                    usage="show_config_vars target",
+                    handler_func=self._cmd_show_config_vars,
+                    visible=True,
+                ),
+                CommandSpec(
                     name="stop_cell",
                     description="stop a cell and its children",
                     usage="stop_cell target",
@@ -418,6 +425,23 @@ class NetManager(CommandModule):
 
         target = args[1]
         reply = self.agent.get_comm_config(target)
+        if isinstance(reply, str):
+            conn.append_error(reply)
+            return
+
+        if not isinstance(reply, dict):
+            conn.append_error(f"expect dict bt got {type(reply)}")
+            return
+        conn.append_dict(reply)
+
+    def _cmd_show_config_vars(self, conn: Connection, args: [str]):
+        if len(args) < 2:
+            cmd_entry = conn.get_prop(ConnProps.CMD_ENTRY)
+            conn.append_string(f"Usage: {cmd_entry.usage}")
+            return
+
+        target = args[1]
+        reply = self.agent.get_config_vars(target)
         if isinstance(reply, str):
             conn.append_error(reply)
             return
