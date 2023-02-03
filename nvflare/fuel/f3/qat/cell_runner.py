@@ -232,3 +232,4 @@ class CellRunner:
     def run(self):
         MainProcessMonitor.add_cleanup_cb(self.dump_stats)
         MainProcessMonitor.run(self.cell.get_fqcn())
+        os._exit(0)
