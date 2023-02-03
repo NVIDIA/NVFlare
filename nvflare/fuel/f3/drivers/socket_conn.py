@@ -50,9 +50,19 @@ class SocketConnection(Connection):
             raise CommError(CommError.ERROR, f"Error sending frame: {ex}")
 
     def read_loop(self):
+        try:
+            self.read_frame_loop()
+        except CommError:
+            log.info(f"Connection {self.name} is closed by peer")
+        except BaseException as ex:
+            if self.closing:
+                log.debug(f"Connection {self.name} is closed")
+            else:
+                log.error(f"Connection {self.name} is closed due to error: {ex}")
+
+    def read_frame_loop(self):
 
         while not self.closing:
-
             frame = self.read_frame()
 
             if self.frame_receiver:
@@ -100,9 +110,7 @@ class ConnectionHandler(BaseRequestHandler):
 
     def handle(self):
 
-        # ThreadingUnixStreamServer doesn't set client_address
         # noinspection PyUnresolvedReferences
-
         conn_props = {DriverParams.LOCAL_ADDR.value: self.server.local_addr}
         if self.client_address:
             if isinstance(self.client_address, tuple):
@@ -110,9 +118,12 @@ class ConnectionHandler(BaseRequestHandler):
             else:
                 peer_addr = self.client_address
         else:
+            # ThreadingUnixStreamServer doesn't set client_address
+            # noinspection PyUnresolvedReferences
             peer_addr = self.server.path
         conn_props[DriverParams.PEER_ADDR.value] = peer_addr
 
+        # noinspection PyUnresolvedReferences
         if self.server.ssl_context:
             cn = get_certificate_common_name(self.request.getpeercert())
             if cn:
@@ -121,12 +132,9 @@ class ConnectionHandler(BaseRequestHandler):
         # noinspection PyUnresolvedReferences
         connection = SocketConnection(self.request, self.server.connector, conn_props)
         # noinspection PyUnresolvedReferences
-        self.server.driver.add_connection(connection)
+        driver = self.server.driver
+        driver.add_connection(connection)
 
-        try:
-            connection.read_loop()
-        except BaseException as ex:
-            log.error(f"Passive connection {connection.name} closed due to error: {ex}")
-        finally:
-            # noinspection PyUnresolvedReferences
-            self.server.driver.close_connection(connection)
+        connection.read_loop()
+
+        driver.close_connection(connection)

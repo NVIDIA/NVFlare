@@ -218,6 +218,7 @@ class GrpcDriver(BaseDriver):
         self.server.start()
 
     def connect(self, connector: Connector):
+        self.connector = connector
         params = connector.params
         address = get_address(params)
 

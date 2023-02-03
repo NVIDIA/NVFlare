@@ -19,7 +19,6 @@ from nvflare.fuel.f3.communicator import Communicator
 from nvflare.fuel.f3.demo.callbacks import TimingReceiver, DemoEndpointMonitor, make_message, RequestReceiver, \
     AdHocReceiver
 from nvflare.fuel.f3.drivers.connnector import Mode
-from nvflare.fuel.f3.drivers.driver import DriverParams
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.message import AppIds, Message
 
@@ -46,10 +45,10 @@ conn_props = {
 local_endpoint = Endpoint("demo.server", {"test": 456}, conn_props)
 communicator = Communicator(local_endpoint)
 
-#listening_url = "uds://tmp/socket"
-#handle1 = communicator.add_connector(listening_url, Mode.PASSIVE)
+listening_url = "uds://tmp/socket"
+handle1 = communicator.add_connector(listening_url, Mode.PASSIVE)
 
-connect_url = "grpcs://server1:1234"
+connect_url = "grpc://localhost:1234"
 handle2 = communicator.add_connector(connect_url, Mode.ACTIVE)
 
 communicator.register_monitor(DemoEndpointMonitor(local_endpoint.name, endpoints))

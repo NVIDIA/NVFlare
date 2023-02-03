@@ -29,14 +29,14 @@ log = logging.getLogger(__name__)
 class Communicator:
     """FCI main communication API"""
 
+    driver_mgr = DriverManager()
+    # Load all the drivers in the drivers module
+    driver_mgr.register_folder(os.path.dirname(drivers.__file__), drivers.__package__)
+
     def __init__(self, local_endpoint: Endpoint):
         self.local_endpoint = local_endpoint
         self.monitors = []
         self.conn_manager = ConnManager(local_endpoint)
-        self.driver_mgr = DriverManager()
-
-        # Load all the drivers in the drivers module
-        self.driver_mgr.register_folder(os.path.dirname(drivers.__file__), drivers.__package__)
 
     def start(self):
         """Start the communicator and establishing all the connections
@@ -45,7 +45,7 @@ class Communicator:
             CommError: If any error encountered while starting up
         """
         self.conn_manager.start()
-        log.info(f"Communicator is started for local endpoint: {self.local_endpoint.name}")
+        log.debug(f"Communicator for local endpoint: {self.local_endpoint.name} is started")
 
     def stop(self):
         """Stop the communicator and shutdown all the connections
@@ -54,7 +54,7 @@ class Communicator:
             CommError: If any error encountered while shutting down
         """
         self.conn_manager.stop()
-        log.info(f"Communicator is stopped for local endpoint: {self.local_endpoint.name}")
+        log.debug(f"Communicator for local endpoint: {self.local_endpoint.name} has stopped")
 
     def register_monitor(self, monitor: EndpointMonitor):
         """Register a monitor for endpoint lifecycle changes
@@ -101,10 +101,10 @@ class Communicator:
 
          Args:
              app_id: Application ID
-             receiver: The class to process the message
+             receiver: The receiver to process the message
 
          Raises:
-             CommError: If duplicate endpoint/app or responder is of wrong type
+             CommError: If duplicate endpoint/app or receiver is of wrong type
          """
 
         self.conn_manager.register_message_receiver(app_id, receiver)
@@ -166,7 +166,7 @@ class Communicator:
             CommError: If any errors
         """
 
-        handle = self._update_conn_parameters(driver, params, mode)
+        handle = self._add_connector_with_conn_props(driver, params, mode)
         if not start:
             return handle
 
@@ -193,7 +193,7 @@ class Communicator:
 
     # Internal methods
 
-    def _update_conn_parameters(self, driver: Driver, params: dict, mode: Mode):
+    def _add_connector_with_conn_props(self, driver: Driver, params: dict, mode: Mode):
 
         if self.local_endpoint.conn_props:
             params.update(self.local_endpoint.conn_props)
@@ -207,4 +207,4 @@ class Communicator:
             raise CommError(CommError.NOT_SUPPORTED, f"No driver found for URL {url}")
 
         params = Driver.parse_url(url)
-        return self._update_conn_parameters(driver_class(), params, mode)
+        return self._add_connector_with_conn_props(driver_class(), params, mode)

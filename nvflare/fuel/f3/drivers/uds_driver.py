@@ -91,6 +91,7 @@ class UdsDriver(BaseDriver):
         self.server.serve_forever()
 
     def connect(self, connector: Connector):
+        self.connector = connector
 
         socket_path = self.get_socket_path(connector.params)
 
@@ -102,14 +103,9 @@ class UdsDriver(BaseDriver):
         connection = SocketConnection(sock, connector, conn_props)
         self.add_connection(connection)
 
-        try:
-            connection.read_loop()
-        except BaseException as ex:
-            log.error(f"Active connection {connection.name} closed due to error: {ex}")
+        connection.read_loop()
 
-        finally:
-            if connection:
-                self.close_connection(connection)
+        self.close_connection(connection)
 
     def shutdown(self):
         self.close_all()
