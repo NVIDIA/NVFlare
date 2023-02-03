@@ -166,6 +166,9 @@ class FedAdminServer(AdminServer):
         net_mgr = NetManager(agent)
         cmd_reg.register_module(net_mgr)
 
+        mpm.add_cleanup_cb(net_mgr.close)
+        mpm.add_cleanup_cb(agent.close)
+
         if cmd_modules:
             if not isinstance(cmd_modules, list):
                 raise TypeError("cmd_modules must be list but got {}".format(type(cmd_modules)))
