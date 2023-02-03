@@ -134,7 +134,7 @@ class SimulatorServer(FederatedServer):
             handlers=self.runner_config.handlers,
         )
 
-    def wait_engine_run_complete(self, name):
+    def wait_engine_run_complete(self, name, shutdown_grace_time=2.0, cleanup_grace_time=3.0):
         while self.engine.engine_info.status != MachineStatus.STOPPED:
             if self.engine.asked_to_stop:
                 self.engine.engine_info.status = MachineStatus.STOPPED
@@ -143,3 +143,4 @@ class SimulatorServer(FederatedServer):
 
     def stop_run_engine_cell(self):
         self.job_cell.stop()
+        super().stop_run_engine_cell()
