@@ -89,5 +89,7 @@ We can run the FL simulator with 3 clients under uniform data split with
 ```commandline
 bash run_experiment_simulator.sh
 ```
+Note that there will be a warning during training: `ConvergenceWarning: Maximum number of iteration reached before convergence. Consider increasing max_iter to improve the fit.`, which is the expected behavior since every round we perform 1-step training on each client. 
+
 Running with deterministic setting `random_state=0`, the resulting curve for `homogeneity_score` is
 ![linear curve](./figs/linear.png)
