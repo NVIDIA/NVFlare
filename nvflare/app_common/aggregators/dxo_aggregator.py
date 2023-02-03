@@ -72,7 +72,7 @@ class DXOAggregator(FLComponent):
             self.log_error(fl_ctx, f"Expected DXO but got {type(dxo)}")
             return False
 
-        if dxo.data_kind not in (DataKind.WEIGHT_DIFF, DataKind.WEIGHTS):
+        if dxo.data_kind not in (DataKind.WEIGHT_DIFF, DataKind.WEIGHTS, DataKind.METRICS):
             self.log_error(fl_ctx, "cannot handle data kind {}".format(dxo.data_kind))
             return False
 
@@ -152,7 +152,7 @@ class DXOAggregator(FLComponent):
             DXO: the weighted mean of accepted DXOs from contributors
         """
 
-        self.log_debug(fl_ctx, "Start aggregation")
+        self.log_debug(fl_ctx, f"Start aggregation with weights {self.aggregation_weights}")
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
         self.log_info(fl_ctx, f"aggregating {self.aggregation_helper.get_len()} update(s) at round {current_round}")
         self.log_debug(fl_ctx, f"complete history {self.aggregation_helper.get_len()}")
