@@ -110,8 +110,8 @@ class MainProcessMonitor:
                 os.kill(os.getpid(), signal.SIGKILL)
             except:
                 pass
-        else:
-            os._exit(0)
+        # else:
+        #     os._exit(0)
 
     @classmethod
     def _cleanup_one_round(cls, name, cbs):
