@@ -31,6 +31,18 @@ class MainProcessMonitor:
     _logger = None
 
     @classmethod
+    def set_name(cls, name: str):
+        if not name:
+            raise ValueError("name must be specified")
+        if not isinstance(name, str):
+            raise ValueError(f"name must be str but got {type(name)}")
+        cls.name = name
+
+    @classmethod
+    def is_stopping(cls):
+        return cls.stopping
+
+    @classmethod
     def logger(cls):
         if not cls._logger:
             cls._logger = logging.getLogger("MPM")
@@ -77,34 +89,37 @@ class MainProcessMonitor:
         if cls.stopping:
             return
 
-        logger.info(f"=========== {name}: started to run forever")
+        cls.set_name(name)
+        logger.info(f"=========== {cls.name}: started to run forever")
         while not cls.asked_to_stop:
             for m in cls.run_monitors:
                 should_stop = cls._call_cb(m)
                 if should_stop:
-                    logger.info(f"{name}: CB {m[0].__name__} asked to stop!")
+                    logger.info(f"{cls.name}: CB {m[0].__name__} asked to stop!")
                     break
             time.sleep(0.5)
 
-        logger.info(f"=========== {name}: Shutting down. Starting cleanup ...")
+        logger.info(f"=========== {cls.name}: Shutting down. Starting cleanup ...")
         time.sleep(shutdown_grace_time)  # let pending activities to finish
 
         cleanup_waiter = threading.Event()
-        t = threading.Thread(target=cls._do_cleanup, args=(name, cleanup_waiter,))
+        t = threading.Thread(target=cls._do_cleanup, args=(cleanup_waiter,))
         t.start()
 
         if not cleanup_waiter.wait(timeout=cleanup_grace_time):
-            logger.warning(f"======== {name}: Cleanup did not complete within {cleanup_grace_time} secs")
+            logger.warning(f"======== {cls.name}: Cleanup did not complete within {cleanup_grace_time} secs")
+
+        sys.excepthook = my_hook
 
         sys.excepthook = my_hook
 
         num_active_threads = 0
         for thread in threading.enumerate():
             if thread.name != "MainThread" and not thread.daemon:
-                logger.warning(f"#### {name}: still running thread {thread.name}")
+                logger.warning(f"#### {cls.name}: still running thread {thread.name}")
                 num_active_threads += 1
 
-        logger.info(f"{name}: Good Bye!")
+        logger.info(f"{cls.name}: Good Bye!")
         if num_active_threads > 0:
             try:
                 os.kill(os.getpid(), signal.SIGKILL)
@@ -114,23 +129,23 @@ class MainProcessMonitor:
             os._exit(0)
 
     @classmethod
-    def _cleanup_one_round(cls, name, cbs):
+    def _cleanup_one_round(cls, cbs):
         logger = cls.logger()
         for _cb in cbs:
             cb_name = ""
             try:
                 cb_name = _cb[0].__name__
-                logger.info(f"{name}: calling cleanup CB {cb_name}")
+                logger.info(f"{cls.name}: calling cleanup CB {cb_name}")
                 cls._call_cb(_cb)
-                logger.debug(f"{name}: finished cleanup CB {cb_name}")
+                logger.debug(f"{cls.name}: finished cleanup CB {cb_name}")
             except BaseException as ex:
-                logger.warning(f"{name}: exception {ex} from cleanup CB {cb_name}")
+                logger.warning(f"{cls.name}: exception {ex} from cleanup CB {cb_name}")
 
     @classmethod
-    def _do_cleanup(cls, name: str, waiter: threading.Event):
+    def _do_cleanup(cls, waiter: threading.Event):
         max_cleanup_rounds = 10
         logger = cls.logger()
-        logger.debug(f"{name}: Start system cleanup ...")
+        logger.debug(f"{cls.name}: Start system cleanup ...")
         if cls.cleanup_cbs:
             # during cleanup, a cleanup CB can add another cleanup CB
             # we will call cleanup multiple rounds until no more CBs are added or tried max number of rounds
@@ -138,18 +153,18 @@ class MainProcessMonitor:
                 cbs = cls.cleanup_cbs
                 cls.cleanup_cbs = []
                 if cbs:
-                    logger.debug(f"{name}: cleanup round {i + 1}")
-                    cls._cleanup_one_round(name, cbs)
-                    logger.debug(f"{name}: finished cleanup round {i + 1}")
+                    logger.debug(f"{cls.name}: cleanup round {i + 1}")
+                    cls._cleanup_one_round(cbs)
+                    logger.debug(f"{cls.name}: finished cleanup round {i + 1}")
                 else:
                     break
 
             if cls.cleanup_cbs:
-                logger.warning(f"{name}: there are still cleanup CBs after {max_cleanup_rounds} rounds")
+                logger.warning(f"{cls.name}: there are still cleanup CBs after {max_cleanup_rounds} rounds")
         else:
-            logger.debug(f"{name}: nothing to cleanup!")
+            logger.debug(f"{cls.name}: nothing to cleanup!")
 
-        logger.debug(f"{name}: Cleanup Finished!")
+        logger.debug(f"{cls.name}: Cleanup Finished!")
         waiter.set()
 
 

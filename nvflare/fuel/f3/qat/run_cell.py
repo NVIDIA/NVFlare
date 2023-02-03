@@ -55,7 +55,7 @@ def main():
     )
     start_all = not args.self_only
     runner.start(start_all)
-    runner.run(args.name)
+    runner.run()
 
 
 if __name__ == "__main__":

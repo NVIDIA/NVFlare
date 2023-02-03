@@ -50,7 +50,7 @@ def main():
     )
     start_all = not args.self_only
     server.start(start_all)
-    server.run("SERVER")
+    server.run()
 
 
 if __name__ == "__main__":
