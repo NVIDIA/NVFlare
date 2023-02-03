@@ -723,9 +723,9 @@ def server_shutdown(server, touch_file):
         os.utime(touch_file, None)
 
     try:
+        # server.admin_server.stop()
         server.fl_shutdown()
-        server.admin_server.stop()
-        time.sleep(3.0)
+        # time.sleep(3.0)
     finally:
         security_close()
         server.status = ServerStatus.SHUTDOWN

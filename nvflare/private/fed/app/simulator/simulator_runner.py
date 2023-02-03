@@ -48,6 +48,8 @@ from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initia
 from nvflare.security.logging import secure_format_exception
 from nvflare.security.security import EmptyAuthorizer
 
+from nvflare.private.fed.client.client_engine import shutdown_client
+
 
 class SimulatorRunner(FLComponent):
     def __init__(
@@ -356,12 +358,6 @@ class SimulatorRunner(FLComponent):
                 self.logger.error(f"Simulator run error: {secure_format_exception(e)}")
                 run_status = 2
             finally:
-                for client in self.federated_clients:
-                    client.communicator.heartbeat_done = True
-                    # time.sleep(1.)
-                    client.close()
-                    client.cell.stop()
-
                 # self.services.close()
                 self.deployer.close()
         else:
@@ -426,7 +422,9 @@ class SimulatorClientRunner(FLComponent):
         finally:
             for client in self.federated_clients:
                 # client.engine.shutdown()
-                client.close()
+                # client.close()
+                touch_file = os.path.join(client.app_client_root, "shutdown.fl")
+                shutdown_client(client, touch_file)
             # self.deployer.close()
 
     def run_client_thread(self, num_of_threads, gpu, lock):

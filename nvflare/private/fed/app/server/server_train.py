@@ -18,18 +18,17 @@ import argparse
 import logging
 import os
 import sys
-import time
 
 from nvflare.apis.fl_constant import JobConstants, SiteType, WorkspaceConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
+from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.hci.security import hash_password
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import AppFolderConstants, SSLConstants
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger, create_privacy_manager
 from nvflare.private.fed.server.admin import FedAdminServer
 from nvflare.private.fed.server.fed_server import FederatedServer
-from nvflare.private.fed.server.server_status import ServerStatus
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize, security_init
 from nvflare.private.privacy_manager import PrivacyService
 from nvflare.security.logging import secure_format_exception
@@ -126,6 +125,8 @@ def main():
             admin_server.start()
             services.set_admin_server(admin_server)
 
+            mpm.add_cleanup_cb(admin_server.stop)
+
         finally:
             deployer.close()
 
@@ -135,10 +136,10 @@ def main():
         # main thread has exited. Use the ServerStatus.SHUTDOWN to keep the main thread waiting for the gRPC
         # server to be shutdown.
         services.wait_engine_run_complete("Server Main")
-        while services.status != ServerStatus.SHUTDOWN:
-            time.sleep(1.0)
+        # while services.status != ServerStatus.SHUTDOWN:
+        #     time.sleep(1.0)
 
-        services.engine.close()
+        # services.engine.close()
 
     except ConfigError as e:
         logger.exception(f"ConfigError: {secure_format_exception(e)}")

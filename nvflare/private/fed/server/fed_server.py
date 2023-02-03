@@ -40,17 +40,16 @@ from nvflare.fuel.f3.cellnet.cell import make_reply as make_cellnet_reply
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.cellnet.net_agent import NetAgent
+from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.zip_utils import unzip_all_from_bytes
 from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeaderKeys, new_cell_message
-from nvflare.private.fed.server.server_runner import ServerRunner
-from nvflare.widgets.fed_event import ServerFedEventRunner
-from nvflare.security.logging import secure_format_exception
-from nvflare.fuel.f3.cellnet.net_agent import NetAgent
-from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
-
+from nvflare.private.fed.server.server_runner import ServerRunner
+from nvflare.security.logging import secure_format_exception
+from nvflare.widgets.fed_event import ServerFedEventRunner
 from .client_manager import ClientManager
 from .run_manager import RunManager
 from .server_engine import ServerEngine
@@ -273,6 +272,7 @@ class FederatedServer(BaseServer):
         self.snapshot_persistor = snapshot_persistor
 
         # self._register_cellnet_cbs()
+        mpm.add_cleanup_cb(self.engine.close)
 
     def _register_cellnet_cbs(self):
         self.cell.register_request_cb(
@@ -350,6 +350,8 @@ class FederatedServer(BaseServer):
 
         self.command_agent = ServerCommandAgent(self.engine, cell)
         self.command_agent.start()
+
+        mpm.add_cleanup_cb(self.command_agent.shutdown)
         mpm.add_cleanup_cb(net_agent.close)
         mpm.add_cleanup_cb(cell.stop)
 
@@ -586,18 +588,15 @@ class FederatedServer(BaseServer):
             #
             #     time.sleep(3)
 
-            self.wait_engine_run_complete("Server Job")
-
-            if engine_thread.is_alive():
-                engine_thread.join()
+            self.wait_engine_run_complete("Server Job", cleanup_grace_time=5.0)
 
         finally:
             self.engine.engine_info.status = MachineStatus.STOPPED
             self.run_manager = None
 
-    def wait_engine_run_complete(self, name):
+    def wait_engine_run_complete(self, name, shutdown_grace_time=2.0, cleanup_grace_time=3.0):
         # self.cell.run()
-        mpm.run(name)
+        mpm.run(name, shutdown_grace_time=shutdown_grace_time, cleanup_grace_time=cleanup_grace_time)
 
     def create_run_manager(self, workspace, job_id):
         return RunManager(
@@ -652,6 +651,7 @@ class FederatedServer(BaseServer):
         self._register_cellnet_cbs()
 
         self.overseer_agent.start(self.overseer_callback)
+        mpm.add_cleanup_cb(self.overseer_agent.end)
 
     def _init_agent(self, args=None):
         kv_list = parse_vars(args.set)
