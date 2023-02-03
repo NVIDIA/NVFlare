@@ -15,7 +15,7 @@
           "n_classes": 2,
           "learning_rate": "constant",
           "eta0": 1e-4,
-          "loss": "log",
+          "loss": "log_loss",
           "penalty": "l2",
           "fit_intercept": 1
         }
