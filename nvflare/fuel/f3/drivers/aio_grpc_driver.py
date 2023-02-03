@@ -106,7 +106,8 @@ class AioStreamSession(Connection):
             self.aio_ctx.run_coro(self.oq.put(f))
             self.logger.debug(f"{self.side}: queued item to queue {id(self.oq)}")
         except BaseException as ex:
-            raise CommError(CommError.ERROR, f"Error sending frame: {ex}")
+            if not self.closing:
+                raise CommError(CommError.ERROR, f"Error sending frame: {ex}")
 
     async def read_loop(self, msg_iter):
         ct = threading.current_thread()
@@ -122,11 +123,15 @@ class AioStreamSession(Connection):
                     self.frame_receiver.process_frame(f.data)
                 else:
                     self.logger.error(f"{self.side}: Frame receiver not registered for connection: {self.name}")
+        except grpc.aio._call.AioRpcError:
+            self.logger.debug(f"{self.side}: AioRpcError")
+            self.logger.debug(traceback.format_exc())
         except asyncio.CancelledError:
             self.logger.debug(f"{self.side}: RPC cancelled")
         except BaseException as ex:
-            traceback.print_exc()
-            self.logger.error(f"{self.side}: exception {type(ex)} in read_loop")
+            if not self.closing:
+                self.logger.error(f"{self.side}: exception {type(ex)} in read_loop")
+                self.logger.error(traceback.format_exc())
         self.logger.debug(f"{self.side}: in {ct.name}: done read_loop")
 
     async def generate_output(self):
@@ -140,6 +145,8 @@ class AioStreamSession(Connection):
                 yield item
         except BaseException as ex:
             self.logger.debug(f"{self.side}: generate_output exception {type(ex)}")
+            if not self.closing:
+                self.logger.error(traceback.format_exc())
         self.logger.debug(f"{self.side}: done generate_output")
 
 
@@ -269,13 +276,14 @@ class AioGrpcDriver(BaseDriver):
             if my_params:
                 self.options = my_params.get("options")
         self.logger.debug(f"GRPC Config: options={self.options}")
+        self.closing = False
 
-    @staticmethod
-    def _initialize_aio(name: str):
-        with AioGrpcDriver.lock:
-            if not AioGrpcDriver.aio_ctx:
-                AioGrpcDriver.aio_ctx = AioContext(name)
-            return AioGrpcDriver.aio_ctx
+    @classmethod
+    def _initialize_aio(cls, name: str):
+        with cls.lock:
+            if not cls.aio_ctx:
+                cls.aio_ctx = AioContext(name)
+            return cls.aio_ctx
 
     @staticmethod
     def supported_transports() -> List[str]:
@@ -296,7 +304,8 @@ class AioGrpcDriver(BaseDriver):
                 conn_ctx.conn = True
                 await self.server.start(conn_ctx)
             except BaseException as ex:
-                traceback.print_exc()
+                if not self.closing:
+                    self.logger.error(traceback.format_exc())
                 conn_ctx.error = f"failed to start server: {type(ex)}: {ex}"
         conn_ctx.waiter.set()
 
@@ -348,7 +357,8 @@ class AioGrpcDriver(BaseDriver):
                 except asyncio.CancelledError:
                     self.logger.debug(f"CLIENT: RPC cancelled")
                 except BaseException as ex:
-                    traceback.print_exc()
+                    if not self.closing:
+                        self.logger.error(traceback.format_exc())
                     self.logger.info(f"CLIENT: connection done: {type(ex)}")
 
             with connection.lock:
@@ -358,7 +368,8 @@ class AioGrpcDriver(BaseDriver):
         except asyncio.CancelledError:
             self.logger.debug("CLIENT: RPC cancelled")
         except BaseException as ex:
-            traceback.print_exc()
+            if not self.closing:
+                self.logger.error(traceback.format_exc())
             conn_ctx.error = f"connection error: {type(ex)}: {ex}"
         conn_ctx.waiter.set()
 
@@ -386,6 +397,10 @@ class AioGrpcDriver(BaseDriver):
         self.logger.debug(f"CLIENT: connection {id(conn_ctx.conn)} is done")
 
     def shutdown(self):
+        if self.closing:
+            return
+
+        self.closing = True
         self.close_all()
 
         if self.server:

@@ -351,6 +351,7 @@ class Cell(MessageReceiver, EndpointMonitor):
             local_endpoint=ep
         )
 
+        self.endpoint = ep
         self.connector_manager = ConnectorManager(
             communicator=self.communicator,
             secure=secure,
@@ -415,28 +416,48 @@ class Cell(MessageReceiver, EndpointMonitor):
 
         self.cleanup_waiter = None
         self.msg_stats_pool = StatsPoolManager.add_time_hist_pool(
-            "Request_Response", "Request/response time in secs (sender)")
+            "Request_Response",
+            "Request/response time in secs (sender)",
+            scope=self.my_info.fqcn)
+
         self.req_cb_stats_pool = StatsPoolManager.add_time_hist_pool(
-            "Request_Processing", "Time spent (secs) by request processing callbacks (receiver)")
+            "Request_Processing",
+            "Time spent (secs) by request processing callbacks (receiver)",
+            scope=self.my_info.fqcn
+        )
+
         self.msg_travel_stats_pool = StatsPoolManager.add_time_hist_pool(
-            "Msg_Travel", "Time taken (secs) to get here (receiver)")
+            "Msg_Travel",
+            "Time taken (secs) to get here (receiver)",
+            scope=self.my_info.fqcn
+        )
+
         self.sent_msg_size_pool = StatsPoolManager.add_msg_size_pool(
-            "Sent_Msg_sizes", "Sizes of messages sent (MBs)")
+            "Sent_Msg_sizes",
+            "Sizes of messages sent (MBs)",
+            scope=self.my_info.fqcn
+        )
+
         self.received_msg_size_pool = StatsPoolManager.add_msg_size_pool(
-            "Received_Msg_Sizes", "Sizes of messages received (MBs)")
+            "Received_Msg_Sizes",
+            "Sizes of messages received (MBs)",
+            scope=self.my_info.fqcn
+        )
 
         counter_names = [_CounterName.SENT]
         self.sent_msg_counter_pool = StatsPoolManager.add_counter_pool(
             name="Sent_Msg_Counters",
             description="Result counters of sent messages",
-            counter_names=counter_names
+            counter_names=counter_names,
+            scope=self.my_info.fqcn
         )
 
         counter_names = [_CounterName.RECEIVED]
         self.received_msg_counter_pool = StatsPoolManager.add_counter_pool(
             name="Received_Msg_Counters",
             description="Result counters of received messages",
-            counter_names=counter_names
+            counter_names=counter_names,
+            scope=self.my_info.fqcn
         )
 
     def get_root_url_for_child(self):
@@ -922,15 +943,16 @@ class Cell(MessageReceiver, EndpointMonitor):
                 return ReturnCode.TARGET_UNREACHABLE, None
             return "", ep
         except:
-            traceback.print_exc()
+            self.logger.error(traceback.format_exc())
             return ReturnCode.TARGET_UNREACHABLE, None
 
     def _try_find_ep(self, target_fqcn: str) -> Union[None, Endpoint]:
         self.logger.debug(f"{self.my_info.fqcn}: finding path to {target_fqcn}")
         if target_fqcn == self.my_info.fqcn:
             # sending request to myself? Not allowed!
-            self.logger.error(f"{self.my_info.fqcn}: sending message to self is not allowed")
-            return None
+            # self.logger.error(f"{self.my_info.fqcn}: sending message to self is not allowed")
+            # return None
+            return self.endpoint
 
         target_info = FqcnInfo(target_fqcn)
 
@@ -1067,7 +1089,7 @@ class Cell(MessageReceiver, EndpointMonitor):
             allow_adhoc = self.connector_manager.is_adhoc_allowed(ti, self.my_info)
             if allow_adhoc and t != ep.name:
                 # Not a direct path since the destination and the next leg are not the same
-                if self.ext_listeners or self.my_info.is_on_server:
+                if self.ext_listeners or self.my_info.is_on_server or self.my_info.fqcn > t:
                     # try to get or create a listener and let the peer know the endpoint
                     listener = self._create_external_listener("")
                     if listener:
@@ -1743,7 +1765,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                 elif msg_type == MessageType.REQ:
                     # see whether we can offer a listener
                     allow_adhoc = self.connector_manager.is_adhoc_allowed(oi, self.my_info)
-                    if allow_adhoc and not oi.is_on_server:
+                    if allow_adhoc and not oi.is_on_server and self.my_info.fqcn > origin:
                         self.logger.debug(f"{self.my_info.fqcn}: trying to offer ad-hoc listener to {origin}")
                         listener = self._create_external_listener("")
                         if listener:

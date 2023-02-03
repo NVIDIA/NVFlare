@@ -15,8 +15,10 @@
 import logging
 import os
 import signal
+import sys
 import threading
 import time
+import traceback
 
 
 class MainProcessMonitor:
@@ -94,6 +96,8 @@ class MainProcessMonitor:
         if not cleanup_waiter.wait(timeout=cleanup_grace_time):
             logger.warning(f"======== {name}: Cleanup did not complete within {cleanup_grace_time} secs")
 
+        sys.excepthook = my_hook
+
         num_active_threads = 0
         for thread in threading.enumerate():
             if thread.name != "MainThread" and not thread.daemon:
@@ -106,6 +110,8 @@ class MainProcessMonitor:
                 os.kill(os.getpid(), signal.SIGKILL)
             except:
                 pass
+        else:
+            os._exit(0)
 
     @classmethod
     def _cleanup_one_round(cls, name, cbs):
@@ -145,3 +151,7 @@ class MainProcessMonitor:
 
         logger.debug(f"{name}: Cleanup Finished!")
         waiter.set()
+
+
+def my_hook(type, value, tb):
+    traceback.print_exception(type, value, tb)

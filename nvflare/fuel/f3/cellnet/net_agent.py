@@ -19,7 +19,7 @@ import random
 import threading
 import time
 
-from abc import ABC, abstractmethod
+from abc import ABC
 
 from .cell import Cell, Message
 from .connector_manager import ConnectorInfo
@@ -397,19 +397,13 @@ class NetAgent:
         reply_headers, req_headers = self.get_route_info(target_fqcn)
         return new_message(payload={"request": dict(req_headers), "reply": dict(reply_headers)})
 
-    def _get_peers(self) -> List[str]:
-        return list(self.cell.agents.keys())
-
     def _do_peers(
             self,
             request: Message
     ) -> Union[None, Message]:
-        return new_message(payload=self._get_peers())
+        return new_message(payload=list(self.cell.agents.keys()))
 
     def get_peers(self, target_fqcn: str) -> (Union[None, dict], List[str]):
-        if target_fqcn == self.cell.get_fqcn():
-            return None, self._get_peers()
-
         reply = self.cell.send_request(
             channel=_CHANNEL,
             topic=_TOPIC_PEERS,
@@ -468,9 +462,6 @@ class NetAgent:
         return new_message(payload=self._get_connectors())
 
     def get_connectors(self, target_fqcn: str) -> (dict, dict):
-        if target_fqcn == self.cell.get_fqcn():
-            return {}, self._get_connectors()
-
         reply = self.cell.send_request(
             channel=_CHANNEL,
             topic=_TOPIC_CONNS,
@@ -575,28 +566,24 @@ class NetAgent:
         err = ""
         reply_headers = {}
         req_headers = {}
-        if from_fqcn == self.cell.get_fqcn():
-            # from_fqcn not explicitly specified: use server (me)
-            reply_headers, req_headers = self.get_route_info(target_fqcn)
-        else:
-            reply = self.cell.send_request(
-                channel=_CHANNEL,
-                topic=_TOPIC_START_ROUTE,
-                target=from_fqcn,
-                timeout=1.0,
-                request=new_message(payload=target_fqcn)
-            )
-            rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
-            if rc == ReturnCode.OK:
-                result = reply.payload
-                if not isinstance(result, dict):
-                    err = f"reply payload should be dict but got {type(reply.payload)}"
-                else:
-                    reply_headers = result.get("reply")
-                    req_headers = result.get("request")
+        reply = self.cell.send_request(
+            channel=_CHANNEL,
+            topic=_TOPIC_START_ROUTE,
+            target=from_fqcn,
+            timeout=1.0,
+            request=new_message(payload=target_fqcn)
+        )
+        rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
+        if rc == ReturnCode.OK:
+            result = reply.payload
+            if not isinstance(result, dict):
+                err = f"reply payload should be dict but got {type(reply.payload)}"
             else:
-                err = f"error in reply {rc}"
-                reply_headers = reply.headers
+                reply_headers = result.get("reply")
+                req_headers = result.get("request")
+        else:
+            err = f"error in reply {rc}"
+            reply_headers = reply.headers
         return err, reply_headers, req_headers
 
     def _do_report_cells(
@@ -614,9 +601,9 @@ class NetAgent:
         MainProcessMonitor.stop()
 
     def stop_cell(self, target: str) -> str:
-        if self.cell.get_fqcn() == target:
-            self.stop()
-            return ReturnCode.OK
+        # if self.cell.get_fqcn() == target:
+        #     self.stop()
+        #     return ReturnCode.OK
         reply = self.cell.send_request(
             channel=_CHANNEL,
             topic=_TOPIC_STOP_CELL,
@@ -812,23 +799,21 @@ class NetAgent:
         if err:
             return {"error": f"invalid to_fqcn {to_fqcn}: {err}"}
 
-        if from_fqcn == to_fqcn:
-            return {"error": f"from and to FQCNs {from_fqcn} must not be the same"}
+        # if from_fqcn == to_fqcn:
+        #     return {"error": f"from and to FQCNs {from_fqcn} must not be the same"}
 
         result = {}
-        if self.cell.get_fqcn() == from_fqcn:
-            reply = self._request_speed_test(to_fqcn, num_tries, payload_size)
-        else:
-            start = time.perf_counter()
-            reply = self.cell.send_request(
-                channel=_CHANNEL,
-                topic=_TOPIC_SPEED,
-                request=new_message(payload={"to": to_fqcn, "num": num_tries, "size": payload_size}),
-                target=from_fqcn,
-                timeout=100.0
-            )
-            end = time.perf_counter()
-            result['test_time'] = end - start
+
+        start = time.perf_counter()
+        reply = self.cell.send_request(
+            channel=_CHANNEL,
+            topic=_TOPIC_SPEED,
+            request=new_message(payload={"to": to_fqcn, "num": num_tries, "size": payload_size}),
+            target=from_fqcn,
+            timeout=100.0
+        )
+        end = time.perf_counter()
+        result['test_time'] = end - start
         rc = reply.get_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
         if rc != ReturnCode.OK:
             result.update({"error": f"return code {rc}"})
@@ -910,12 +895,6 @@ class NetAgent:
         return None
 
     def get_msg_stats_table(self, target: str, mode: str):
-        if target == self.cell.get_fqcn():
-            headers, rows = self.cell.msg_stats_pool.get_table(mode)
-            return {
-                "headers": headers,
-                "rows": rows
-            }
         reply = self.cell.send_request(
             channel=_CHANNEL,
             topic=_TOPIC_MSG_STATS,
@@ -943,12 +922,6 @@ class NetAgent:
         return new_message(payload=reply)
 
     def get_pool_list(self, target: str):
-        if target == self.cell.get_fqcn():
-            headers, rows = StatsPoolManager.get_table()
-            return {
-                "headers": headers,
-                "rows": rows
-            }
         reply = self.cell.send_request(
             channel=_CHANNEL,
             topic=_TOPIC_LIST_POOLS,
@@ -974,17 +947,6 @@ class NetAgent:
         return new_message(payload=reply)
 
     def show_pool(self, target: str, pool_name: str, mode: str):
-        if target == self.cell.get_fqcn():
-            pool = StatsPoolManager.get_pool(pool_name)
-            if not pool:
-                return f"unknown pool name '{pool_name}'"
-
-            headers, rows = pool.get_table(mode)
-            return {
-                "headers": headers,
-                "rows": rows
-            }
-
         reply = self.cell.send_request(
             channel=_CHANNEL,
             topic=_TOPIC_SHOW_POOL,
@@ -1022,9 +984,6 @@ class NetAgent:
         return new_message(payload=reply)
 
     def get_comm_config(self, target: str):
-        if target == self.cell.get_fqcn():
-            return self.cell.connector_manager.get_config_info()
-
         reply = self.cell.send_request(
             channel=_CHANNEL,
             topic=_TOPIC_COMM_CONFIG,

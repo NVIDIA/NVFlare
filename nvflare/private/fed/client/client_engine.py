@@ -24,15 +24,14 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import MachineStatus, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext, FLContextManager
-from nvflare.apis.shareable import Shareable
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.network_utils import get_open_ports
+from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.private.defs import ERROR_MSG_PREFIX, ClientStatusKey, EngineConstant
 from nvflare.private.event import fire_event
 from nvflare.private.fed.utils.app_deployer import AppDeployer
 from nvflare.private.fed.utils.fed_utils import security_close
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
-
 from .client_engine_internal_spec import ClientEngineInternalSpec
 from .client_executor import ProcessExecutor
 from .client_run_manager import ClientRunInfo
@@ -65,7 +64,6 @@ class ClientEngine(ClientEngineInternalSpec):
         self.client_name = client_name
         self.args = args
         self.rank = rank
-        self.client.process = None
         self.client_executor = ProcessExecutor(client, os.path.join(args.workspace, "startup"))
         self.admin_agent = None
 
@@ -210,7 +208,7 @@ class ClientEngine(ClientEngineInternalSpec):
         touch_file = os.path.join(self.args.workspace, "shutdown.fl")
         self.fire_event(EventType.SYSTEM_END, self.new_context())
 
-        thread = threading.Thread(target=_shutdown_client, args=(self.client, self.admin_agent, touch_file))
+        thread = threading.Thread(target=shutdown_client, args=(self.client, touch_file))
         thread.start()
 
         return "Shutdown the client..."
@@ -219,7 +217,7 @@ class ClientEngine(ClientEngineInternalSpec):
         self.logger.info("Client shutdown...")
         touch_file = os.path.join(self.args.workspace, "restart.fl")
         self.fire_event(EventType.SYSTEM_END, self.new_context())
-        thread = threading.Thread(target=_shutdown_client, args=(self.client, self.admin_agent, touch_file))
+        thread = threading.Thread(target=shutdown_client, args=(self.client, touch_file))
         thread.start()
 
         return "Restart the client..."
@@ -255,7 +253,7 @@ class ClientEngine(ClientEngineInternalSpec):
         return self.client_executor.get_run_processes_keys()
 
 
-def _shutdown_client(federated_client, admin_agent, touch_file):
+def shutdown_client(federated_client, touch_file):
     with open(touch_file, "a"):
         os.utime(touch_file, None)
 
@@ -265,10 +263,8 @@ def _shutdown_client(federated_client, admin_agent, touch_file):
         time.sleep(3)
         federated_client.close()
 
-        if federated_client.process:
-            federated_client.process.terminate()
-
-        federated_client.cell.stop()
+        # federated_client.cell.stop()
+        mpm.stop()
         security_close()
     except BaseException as e:
         secure_log_traceback()

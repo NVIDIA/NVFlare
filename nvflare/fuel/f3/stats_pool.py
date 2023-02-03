@@ -22,31 +22,33 @@ class StatsPoolManager:
     pools = {}     # name => pool
 
     @classmethod
-    def add_time_hist_pool(cls, name: str, description: str, marks=None):
+    def _check_name(cls, name, scope):
         name = name.lower()
-        if name in cls.pools:
-            raise ValueError(f"pool '{name}' is already defined")
+        if not name in cls.pools:
+            return name
+        if scope:
+            name = f"{name}@{scope}"
+            if not name in cls.pools:
+                return name
+        raise ValueError(f"pool '{name}' is already defined")
 
+    @classmethod
+    def add_time_hist_pool(cls, name: str, description: str, marks=None, scope=None):
+        name = cls._check_name(name, scope)
         p = new_time_pool(name, description, marks)
         cls.pools[name] = p
         return p
 
     @classmethod
-    def add_msg_size_pool(cls, name: str, description: str, marks=None):
-        name = name.lower()
-        if name in cls.pools:
-            raise ValueError(f"pool '{name}' is already defined")
-
+    def add_msg_size_pool(cls, name: str, description: str, marks=None, scope=None):
+        name = cls._check_name(name, scope)
         p = new_message_size_pool(name, description, marks)
         cls.pools[name] = p
         return p
 
     @classmethod
-    def add_counter_pool(cls, name: str, description: str, counter_names: list):
-        name = name.lower()
-        if name in cls.pools:
-            raise ValueError(f"pool '{name}' is already defined")
-
+    def add_counter_pool(cls, name: str, description: str, counter_names: list, scope=None):
+        name = cls._check_name(name, scope)
         p = CounterPool(name, description, counter_names)
         cls.pools[name] = p
         return p

@@ -44,8 +44,6 @@ def main():
     )
     parser.add_argument("--app_root", "-r", type=str, help="App Root", required=True)
     parser.add_argument("--job_id", "-n", type=str, help="job id", required=True)
-    # parser.add_argument("--port", "-p", type=str, help="listen port", required=True)
-    # parser.add_argument("--conn", "-c", type=str, help="connection port", required=True)
     parser.add_argument("--root_url", "-u", type=str, help="root_url", required=True)
     parser.add_argument("--parent_url", "-p", type=str, help="parent_url", required=True)
 
@@ -71,7 +69,6 @@ def main():
     if os.path.isdir(app_custom_folder):
         sys.path.append(app_custom_folder)
 
-    command_agent = None
     try:
         os.chdir(args.workspace)
         fobs_initialize()
@@ -110,23 +107,6 @@ def main():
             # create the FL server
             _, server = deployer.create_fl_server(args, secure_train=secure_train)
 
-            # my_fqcn = FQCN.join([FQCN.ROOT_SERVER, args.job_id])
-            # credentials = {}
-            # cell = Cell(
-            #     fqcn=my_fqcn,
-            #     root_url=args.root_url,
-            #     secure=secure_train,
-            #     credentials=credentials,
-            #     create_internal_listener=True,
-            #     parent_url=args.parent_url,
-            # )
-            #
-            # cell.start()
-            # net_agent = NetAgent(cell)
-            # server.cell = cell
-            #
-            # command_agent = ServerCommandAgent(server.engine, cell)
-            # command_agent.start()
             server.cell = server.create_job_cell(args.job_id, args.root_url, args.parent_url, secure_train)
 
             snapshot = None
@@ -136,10 +116,6 @@ def main():
             server_app_runner = ServerAppRunner()
             server_app_runner.start_server_app(workspace, server, args, args.app_root, args.job_id, snapshot, logger)
         finally:
-            # if cell:
-            #     cell.stop()
-            if command_agent:
-                command_agent.shutdown()
             if deployer:
                 deployer.close()
             AuditService.close()

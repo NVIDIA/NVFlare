@@ -16,6 +16,9 @@ import asyncio
 import logging
 import threading
 import time
+import traceback
+
+from nvflare.fuel.f3.mpm import MainProcessMonitor
 
 
 class AioContext:
@@ -35,6 +38,10 @@ class AioContext:
         self.ready = False
         self.logger = logging.getLogger(self.__class__.__name__)
         self.thread.start()
+        MainProcessMonitor.add_cleanup_cb(self._aio_cleanup)
+
+    def _aio_cleanup(self):
+        MainProcessMonitor.add_cleanup_cb(self._aio_shutdown)
 
     def _run_aio_loop(self):
         self.logger.debug(f"{self.name}: started AioContext in thread {threading.current_thread().name}")
@@ -50,3 +57,16 @@ class AioContext:
             time.sleep(0.5)
         self.logger.debug(f"{self.name}: coro loop: {id(self.loop)}")
         asyncio.run_coroutine_threadsafe(coro, self.loop)
+
+    def _aio_shutdown(self):
+        try:
+            self.loop.stop()
+            pending_tasks = asyncio.all_tasks(self.loop)
+            for task in pending_tasks:
+                self.logger.info(f"{self.name}: cancelled a task")
+                task.cancel()
+            # asyncio.sleep(0)
+            # self.loop.close()
+        except:
+            self.logger.error(f"{self.name}: error in _aio_shutdown")
+            self.logger.error(traceback.format_exc())
