@@ -100,7 +100,7 @@ class CellRunner:
         self.cell.set_message_interceptor(
             cb=self._inspect_message
         )
-        MainProcessMonitor.add_run_monitor(self._check_new_root)
+        # MainProcessMonitor.add_run_monitor(self._check_new_root)
 
     def _inspect_message(self, message: Message):
         header_name = "inspected_by"
@@ -216,12 +216,7 @@ class CellRunner:
         self.agent.stop()
 
     def _change_root(self, url: str):
-        self.new_root_url = url
-
-    def _check_new_root(self):
-        if self.new_root_url:
-            self.cell.change_server_root(self.new_root_url)
-            self.new_root_url = None
+        self.cell.change_server_root(url)
 
     def dump_stats(self):
         stats_dict = StatsPoolManager.to_dict()
@@ -232,4 +227,3 @@ class CellRunner:
     def run(self):
         MainProcessMonitor.add_cleanup_cb(self.dump_stats)
         MainProcessMonitor.run(self.cell.get_fqcn())
-        os._exit(0)

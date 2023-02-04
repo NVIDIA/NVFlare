@@ -11,22 +11,24 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-
 import logging
 import os
 import signal
 import threading
 import time
 
+from nvflare.fuel.f3.drivers.aio_context import AioContext
+
 
 class MainProcessMonitor:
 
     cleanup_cbs = []
-    run_monitors = []
-    asked_to_stop = False
     stopping = False
     name = "MPM"
     _logger = None
+    aio_ctx = AioContext("MPM")
+    shutdown_grace_time = 2.0
+    cleanup_grace_time = 3.0
 
     @classmethod
     def set_name(cls, name: str):
@@ -41,6 +43,12 @@ class MainProcessMonitor:
         return cls.stopping
 
     @classmethod
+    def get_aio_context(cls, name):
+        ctx = cls.aio_ctx
+        ctx.name = f"{name}@{cls.name}"
+        return ctx
+
+    @classmethod
     def logger(cls):
         if not cls._logger:
             cls._logger = logging.getLogger("MPM")
@@ -51,12 +59,6 @@ class MainProcessMonitor:
         if not callable(cb):
             raise ValueError(f"specified cleanup_cb {type(cb)} is not callable")
         cls.cleanup_cbs.append((cb, args, kwargs))
-
-    @classmethod
-    def add_run_monitor(cls, cb, *args, **kwargs):
-        if not callable(cb):
-            raise ValueError(f"specified monitor {type(cb)} is not callable")
-        cls.run_monitors.append((cb, args, kwargs))
 
     @classmethod
     def _call_cb(cls, t: tuple):
@@ -71,12 +73,31 @@ class MainProcessMonitor:
     def stop(cls):
         if cls.stopping:
             return
-        else:
-            cls.asked_to_stop = True
+        cls.stopping = True
+
+    @classmethod
+    def _start_shutdown(cls):
+        while not cls.stopping:
+            time.sleep(0.1)
+
+        logger = cls.logger()
+        logger.info(f"=========== {cls.name}: Shutting down. Starting cleanup ...")
+        time.sleep(cls.shutdown_grace_time)  # let pending activities to finish
+
+        cleanup_waiter = threading.Event()
+        t = threading.Thread(target=cls._do_cleanup, args=(cleanup_waiter,))
+        t.start()
+
+        if not cleanup_waiter.wait(timeout=cls.cleanup_grace_time):
+            logger.warning(f"======== {cls.name}: Cleanup did not complete within {cls.cleanup_grace_time} secs")
+
+        cls.aio_ctx.stop_aio_loop()
 
     @classmethod
     def run(cls, name: str, shutdown_grace_time=2.0, cleanup_grace_time=3.0):
         logger = cls.logger()
+        cls.shutdown_grace_time = shutdown_grace_time
+        cls.cleanup_grace_time = cleanup_grace_time
 
         # this method must be called from main method
         t = threading.current_thread()
@@ -88,24 +109,13 @@ class MainProcessMonitor:
             return
 
         cls.set_name(name)
-        logger.info(f"=========== {cls.name}: started to run forever")
-        while not cls.asked_to_stop:
-            for m in cls.run_monitors:
-                should_stop = cls._call_cb(m)
-                if should_stop:
-                    logger.info(f"{cls.name}: CB {m[0].__name__} asked to stop!")
-                    break
-            time.sleep(0.5)
 
-        logger.info(f"=========== {cls.name}: Shutting down. Starting cleanup ...")
-        time.sleep(shutdown_grace_time)  # let pending activities to finish
-
-        cleanup_waiter = threading.Event()
-        t = threading.Thread(target=cls._do_cleanup, args=(cleanup_waiter,))
+        t = threading.Thread(target=cls._start_shutdown)
+        t.daemon = True
         t.start()
 
-        if not cleanup_waiter.wait(timeout=cleanup_grace_time):
-            logger.warning(f"======== {cls.name}: Cleanup did not complete within {cleanup_grace_time} secs")
+        logger.info(f"=========== {cls.name}: started to run forever")
+        cls.aio_ctx.run_aio_loop()
 
         num_active_threads = 0
         for thread in threading.enumerate():
@@ -119,8 +129,6 @@ class MainProcessMonitor:
                 os.kill(os.getpid(), signal.SIGKILL)
             except:
                 pass
-        # else:
-        #     os._exit(0)
 
     @classmethod
     def _cleanup_one_round(cls, cbs):
