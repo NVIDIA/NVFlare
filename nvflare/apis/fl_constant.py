@@ -325,7 +325,7 @@ class WorkspaceConstants:
 
 class JobConstants:
     SERVER_JOB_CONFIG = "config_fed_server.json"
-    CLIENT_JOB_CONFIG = "config_fed_client.json"
+    CLIENT_JOB_CONFIG = "config_fed_client_noinv.json"
     META_FILE = "meta.json"
 
 

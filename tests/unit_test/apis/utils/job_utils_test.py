@@ -27,7 +27,7 @@ def create_fake_app(app_root: Path):
     os.makedirs(app_root)
     os.mkdir(app_root / "config")
     open(app_root / "config" / "config_fed_server.json", "w").close()
-    open(app_root / "config" / "config_fed_client.json", "w").close()
+    open(app_root / "config" / "config_fed_client_noinv.json", "w").close()
     os.mkdir(app_root / "custom")
     open(app_root / "custom" / "c1.py", "w").close()
     open(app_root / "custom" / "c2.py", "w").close()
@@ -47,7 +47,7 @@ def create_fake_app_dir():
     app/
         config/
             config_fed_server.json
-            config_fed_client.json
+            config_fed_client_noinv.json
         custom/
             c1.py
             c2.py
@@ -56,7 +56,7 @@ def create_fake_app_dir():
             app/
                 config/
                     config_fed_server.json
-                    config_fed_client.json
+                    config_fed_client_noinv.json
                 custom/
                     c1.py
                     c2.py
@@ -81,7 +81,7 @@ def create_fake_job_dir():
         app/
             config/
                 config_fed_server.json
-                config_fed_client.json
+                config_fed_client_noinv.json
             custom/
                 c1.py
                 c2.py

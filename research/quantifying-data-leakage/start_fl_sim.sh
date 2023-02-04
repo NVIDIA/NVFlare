@@ -33,7 +33,7 @@ if [[ ${n_clients} -gt 1 ]]
 then
   COMMAND="nvflare simulator ${mmar} -w ${workspace} -n ${n_clients} -t ${n_clients} --gpu ${gpus}"
 else
-  COMMAND="nvflare simulator ${mmar} -w ${workspace} -n ${n_clients} -t ${n_clients}"
+  COMMAND="nvflare simulator ${mmar} -w ${workspace} -n ${n_clients} -t ${n_clients} --clients site-9"
 fi
 
 echo "================================================================================================================="

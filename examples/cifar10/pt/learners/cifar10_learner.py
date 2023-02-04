@@ -122,7 +122,7 @@ class CIFAR10Learner(Learner):  # also supports CIFAR10ScaffoldLearner
         self.best_local_model_file = os.path.join(self.app_root, "best_local_model.pt")
 
         # Select local TensorBoard writer or event-based writer for streaming
-        self.writer = parts.get(self.analytic_sender_id)  # user configured config_fed_client.json for streaming
+        self.writer = parts.get(self.analytic_sender_id)  # user configured config_fed_client_noinv.json for streaming
         if not self.writer:  # use local TensorBoard writer only
             self.writer = SummaryWriter(self.app_root)
 

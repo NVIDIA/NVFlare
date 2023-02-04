@@ -65,7 +65,7 @@ def main():
 
     # update alpha and split data dir
     job_name = os.path.basename(args.job)
-    client_config_filename = os.path.join(args.job, job_name, "config", "config_fed_client.json")
+    client_config_filename = os.path.join(args.job, job_name, "config", "config_fed_client_noinv.json")
     server_config_filename = os.path.join(args.job, job_name, "config", "config_fed_server.json")
     meta_config_filename = os.path.join(args.job, "meta.json")
 

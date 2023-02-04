@@ -2,7 +2,7 @@
     "format_version": 2,
 
     "min_clients": 1,
-    "num_rounds": 3,
+    "num_rounds": 100,
 
     "server": {
         "heart_beat_timeout": 600
