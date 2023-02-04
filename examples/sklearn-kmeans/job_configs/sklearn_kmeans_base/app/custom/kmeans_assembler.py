@@ -16,11 +16,11 @@
 from typing import Dict
 
 import numpy as np
-
 from sklearn.cluster import KMeans
 
 from nvflare.apis.dxo import DataKind
 from nvflare.app_common.aggregators.assembler import Assembler
+
 
 class KMeansAssembler(Assembler):
     def __init__(self):
