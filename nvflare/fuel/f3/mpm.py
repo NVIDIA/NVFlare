@@ -17,7 +17,7 @@ import signal
 import threading
 import time
 
-from nvflare.fuel.f3.drivers.aio_context import AioContext
+from nvflare.fuel.f3.aio_context import AioContext
 
 
 class MainProcessMonitor:
