@@ -1,35 +1,16 @@
 n_servers: 1
 n_clients: 2
-jobs_root_dir: ../../examples/basic
+jobs_root_dir: ./data/apps
 cleanup: True
-
+poll_period: 1
 
 tests:
-  - test_name: "run hello-numpy-sag"
+  - test_name: "run pt"
     event_sequence:
       - "trigger":
           "type": "server_log"
           "data": "Server started"
-        "actions": [ "submit_job hello-numpy-sag" ]
-        "result":
-          "type": "run_state"
-          "data": {}
-      - "trigger":
-          "type": "run_state"
-          "data": { "run_finished": True }
-        "actions": [ "ensure_current_job_done" ]
-        "result":
-          "type": "run_state"
-          "data": { "run_finished": True }
-    validators:
-      - path: tests.integration_test.validators.NumpySAGResultValidator
-        args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
-  - test_name: "run hello-numpy-cross-val"
-    event_sequence:
-      - "trigger":
-          "type": "server_log"
-          "data": "Server started"
-        "actions": [ "submit_job hello-numpy-cross-val" ]
+        "actions": [ "submit_job pt" ]
         "result":
           "type": "run_state"
           "data": { }
@@ -41,7 +22,27 @@ tests:
           "type": "run_state"
           "data": { "run_finished": True }
     validators:
-      - path: tests.integration_test.validators.CrossValResultValidator
-        args: { server_model_names: ["server"] }
-      - path: tests.integration_test.validators.NumpySAGResultValidator
-        args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
+      - path: tests.integration_test.validators.PTModelValidator
+    setup:
+      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/cifar10_data', download=True)"
+    teardown:
+      - rm -rf /tmp/nvflare/cifar10_data
+  - test_name: "run tb_streaming"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job tb_streaming" ]
+        "result":
+          "type": "run_state"
+          "data": { }
+      - "trigger":
+          "type": "run_state"
+          "data": { "run_finished": True }
+        "actions": [ "ensure_current_job_done" ]
+        "result":
+          "type": "run_state"
+          "data": { "run_finished": True }
+    validators:
+      - path: tests.integration_test.validators.TBResultValidator
+        args: { require_result_on_client: True }

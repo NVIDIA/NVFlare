@@ -1,16 +1,16 @@
 n_servers: 1
 n_clients: 2
-jobs_root_dir: ../../examples/basic
+jobs_root_dir: ../../examples/hello-world
 cleanup: True
 
 
 tests:
-  - test_name: "run hello-pt"
+  - test_name: "run hello-cyclic"
     event_sequence:
       - "trigger":
           "type": "server_log"
           "data": "Server started"
-        "actions": [ "submit_job hello-pt" ]
+        "actions": [ "submit_job hello-cyclic" ]
         "result":
           "type": "run_state"
           "data": { }
@@ -22,19 +22,13 @@ tests:
           "type": "run_state"
           "data": { "run_finished": True }
     validators:
-      - path: tests.integration_test.validators.PTModelValidator
-      - path: tests.integration_test.validators.CrossValResultValidator
-        args: { server_model_names: [ "server" ] }
-    setup:
-      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='~/data', download=True)"
-    teardown:
-      - rm -rf ~/data
-  - test_name: "run hello-pt-tb"
+      - path: tests.integration_test.validators.TFModelValidator
+  - test_name: "run hello-tf2"
     event_sequence:
       - "trigger":
           "type": "server_log"
           "data": "Server started"
-        "actions": [ "submit_job hello-pt-tb" ]
+        "actions": [ "submit_job hello-tf2" ]
         "result":
           "type": "run_state"
           "data": { }
@@ -46,10 +40,4 @@ tests:
           "type": "run_state"
           "data": { "run_finished": True }
     validators:
-      - path: tests.integration_test.validators.PTModelValidator
-      - path: tests.integration_test.validators.CrossValResultValidator
-        args: { server_model_names: [ "FL_global_model.pt" ] }
-    setup:
-      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='~/data', download=True)"
-    teardown:
-      - rm -rf ~/data
+      - path: tests.integration_test.validators.TFModelValidator
