@@ -14,7 +14,7 @@
 
 # We will move to this app_common when it gets matured
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import Optional, Tuple
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
@@ -50,11 +50,11 @@ class SKLearner(FLComponent, ABC):
         pass
 
     @abstractmethod
-    def train(self, curr_round: int, global_param: Optional[dict] = None) -> dict:
+    def train(self, curr_round: int, global_param: Optional[dict] = None) -> Tuple[dict, dict]:
         pass
 
     @abstractmethod
-    def evaluate(self, curr_round: int, global_param: Optional[dict] = None) -> dict:
+    def evaluate(self, curr_round: int, global_param: Optional[dict] = None) -> Tuple[dict, dict]:
         pass
 
     @abstractmethod
