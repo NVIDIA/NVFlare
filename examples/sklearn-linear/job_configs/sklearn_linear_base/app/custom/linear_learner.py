@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import copy
-from typing import Optional
+from typing import Optional, Tuple
 
 import numpy as np
 from sklearn.linear_model import SGDClassifier
@@ -56,7 +56,7 @@ class LinearLearner(SKLearner):
         if self.local_model.fit_intercept:
             self.local_model.intercept_ = params["intercept"]
 
-    def train(self, curr_round: int, global_param: Optional[dict] = None) -> dict:
+    def train(self, curr_round: int, global_param: Optional[dict] = None) -> Tuple[dict, dict]:
         (x_train, y_train, train_size) = self.train_data
         if curr_round == 0:
             # initialize model with global_param
@@ -90,7 +90,7 @@ class LinearLearner(SKLearner):
             params = {"coef": self.local_model.coef_}
         return copy.deepcopy(params), self.local_model
 
-    def evaluate(self, curr_round: int, global_param: Optional[dict] = None) -> dict:
+    def evaluate(self, curr_round: int, global_param: Optional[dict] = None) -> Tuple[dict, dict]:
         # set local model with global parameters
         self.set_parameters(global_param)
         # perform validation
