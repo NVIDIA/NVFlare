@@ -187,6 +187,13 @@ class FederatedClientBase:
                     self.communicator.cell = self.cell
                     self.net_agent = NetAgent(self.cell)
                     if self.args.job_id:
+                        start = time.time()
+                        while not self.client_runner:
+                            self.logger.info("Wait for client_runner to be created.")
+                            if time.time() - start > 15:
+                                raise RuntimeError("Failed to set the cell for engine: "
+                                                   "timeout waiting for client_runner to be created.")
+                            time.sleep(0.2)
                         self.client_runner.engine.cell = self.cell
                         self.client_runner.command_agent.register_cell_cb()
                     else:
