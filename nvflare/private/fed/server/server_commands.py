@@ -199,6 +199,8 @@ class SubmitUpdateCommand(CommandProcessor):
         # server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
 
         shared_fl_ctx = data.get_header(ServerCommandKey.PEER_FL_CONTEXT)
+        shared_fl_ctx.set_prop(FLContextKey.SHAREABLE, data, private=True)
+
         client = data.get_header(ServerCommandKey.FL_CLIENT)
         fl_ctx.set_peer_context(shared_fl_ctx)
         contribution_task_name = data.get_header(FLContextKey.TASK_NAME)
