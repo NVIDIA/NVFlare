@@ -337,7 +337,7 @@ class SimulatorRunner(FLComponent):
 
                 # Start the client heartbeat calls.
                 for client in self.federated_clients:
-                    client.start_heartbeat()
+                    client.start_heartbeat(interval=2)
 
                 if self.args.gpu:
                     gpus = self.args.gpu.split(",")
