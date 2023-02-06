@@ -75,6 +75,8 @@ can be run::
     new_job_id = sess.clone_job(job_id)
     print(new_job_id + " was submitted as a clone of " + job_id)
 
+.. _flare_api_monitor_job:
+
 Monitor Job
 ^^^^^^^^^^^
 By default, like in the most basic usage above in :ref:`flare_api_implementation_notes`, ``monitor_job()`` waits until
@@ -106,10 +108,9 @@ monitor_job:
         """
 
 Only the first argument is required, but with additional args, you can customize ``monitor_job()`` to do almost
-anything you want to do. The following is an example from the Jupyter notebooks for the hello-examples where you
-can see the usage of a sample_cb and cb_kwargs. This callback always returns True, keeping the default behavior of
-``monitor_job()`` of waiting until the job specified as the first argument is finished, but you can customize this to
-behave as you want.
+anything you want to do. The following is an example where you can see the usage of a sample_cb and cb_kwargs.
+This callback always returns True, keeping the default behavior of ``monitor_job()`` of waiting until the job specified
+as the first argument is finished, but you can customize this to behave as you want.
 
 .. code:: python
 
@@ -130,31 +131,3 @@ behave as you want.
 
     # Calling monitor_job with the sample_cb above and a cb_kwarg
     sess.monitor_job(job_id, cb=sample_cb, cb_run_counter={"count":0})
-
-
-You can even pass additional args to your custom callback function through ``monitor_job()``.
-
-.. _converting_fladminapi_to_flare_api:
-
-Converting FLAdminAPI Usage to FLARE API
-----------------------------------------
-
-The :ref:`flare_api_initialization` should now be simpler resembling the usage of :class:`FLAdminAPIRunner<nvflare.fuel.hci.client.fl_admin_api_runner.FLAdminAPIRunner>`
-previously with automatic initialization and login of the API.
-
-The main differences deal with error handling and how the responses from the FL Server are handled to simplify dealing with the output of the API. Whereas before something like
-an ``api_command_wrapper()`` was needed to deal with the responses from FLAdminAPI:
-
-.. code:: python
-
-    api_command_wrapper(runner.api.submit_job(args.job))
-
-The new FLARE API will no longer need wrappers with the simpler responses:
-
-.. code:: python
-
-    job_id = sess.submit_job("../../job1")
-
-The new FLARE API will throw an exception if there is an error.
-
-For the usage for individual commands, see the docstrings at: :mod:`FLARE API<nvflare.fuel.flare_api.flare_api>`.
