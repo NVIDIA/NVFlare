@@ -81,6 +81,7 @@ def main():
 
         conf = FLServerStarterConfiger(
             workspace=workspace,
+            args=args,
             kv_list=args.set,
         )
         log_file = workspace.get_app_log_file_path(args.job_id)
@@ -114,7 +115,8 @@ def main():
                 snapshot = server.snapshot_persistor.retrieve_run(args.job_id)
 
             server_app_runner = ServerAppRunner()
-            server_app_runner.start_server_app(workspace, server, args, args.app_root, args.job_id, snapshot, logger)
+            server_app_runner.start_server_app(workspace, server, args, args.app_root, args.job_id,
+                                               snapshot, logger, args.set)
         finally:
             if deployer:
                 deployer.close()

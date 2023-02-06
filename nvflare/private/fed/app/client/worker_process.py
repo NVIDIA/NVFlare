@@ -129,6 +129,7 @@ def main():
 
         conf = FLClientStarterConfiger(
             workspace=workspace,
+            args=args,
             kv_list=args.set,
         )
         conf.configure()

@@ -43,13 +43,15 @@ def _set_up_run_config(workspace: Workspace, server, conf):
 
 
 class ServerAppRunner:
-    def start_server_app(self, workspace: Workspace, server, args, app_root, job_id, snapshot, logger):
+    def start_server_app(self, workspace: Workspace, server, args, app_root, job_id, snapshot, logger, kv_list=None):
 
         try:
             server_config_file_name = os.path.join(app_root, args.server_config)
 
             conf = ServerJsonConfigurator(
                 config_file_name=server_config_file_name,
+                args=args,
+                kv_list=kv_list
             )
             conf.configure()
 
