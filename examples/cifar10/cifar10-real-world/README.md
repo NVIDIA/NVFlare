@@ -60,24 +60,38 @@ cd ..
 ```
 For more information about secure provisioning see the [documentation](https://nvflare.readthedocs.io/en/latest/programming_guide/provisioning_system.html).
 
-### 3.3 Multi-tasking resource management
-In this example, we assume two local GPUs with at least 8 GB of memory are available. 
+### 3.2 Multi-tasking resource management
+In this example, we assume `N_GPU` local GPUs, each with at least 8 GB of 
+memory, are available on the host system. To find the available number of 
+GPUs, run
+```
+export N_GPU=$(nvidia-smi --list-gpus | wc -l)
+echo "There are ${N_GPU} GPUs available."
+```
+We can change the clients' local `GPUResourceManager` configurations to 
+show the available `N_GPU` GPUs at each client.
 
-Hence, we need to change the clients' local `GPUResourceManager` configurations to show two GPUs at each client, 
-each with 1 GB of memory in order to equally distribute 8 clients on each GPU. 
-To do this, we copy `resource.json.default` to `resources.json` and modify as required: 
+Each client needs about 1 GB of GPU memory to run an FL experiment with the 
+CIFAR-10 dataset. Therefore, each client needs to request 1 GB of memory such 
+that 8 can run in parallel on the same GPU.
+
+To request the GPU memory, set the `"mem_per_gpu_in_GiB"` value in the job's 
+`meta.json` file. 
+
+To update the clients' available resources, we copy `resource.json.default` 
+to `resources.json` and modify them as follows: 
 ```
 n_clients=8
 for id in $(eval echo "{1..$n_clients}") 
 do
   client_local_dir=workspaces/secure_workspace/site-${id}/local 
   cp ${client_local_dir}/resources.json.default ${client_local_dir}/resources.json
-  sed -i "s|\"num_of_gpus\": 0|\"num_of_gpus\": 2|g" ${client_local_dir}/resources.json
+  sed -i "s|\"num_of_gpus\": 0|\"num_of_gpus\": ${N_GPU}|g" ${client_local_dir}/resources.json
   sed -i "s|\"mem_per_gpu_in_GiB\": 0|\"mem_per_gpu_in_GiB\": 1|g" ${client_local_dir}/resources.json 
 done
 ```
 In the `meta.json` of each job, we can request 1 GB of memory for each client. 
-Hence, the FL system will schedule at most 2 jobs to be run in parallel.
+Hence, the FL system will schedule at most `N_GPU` jobs to be run in parallel.
 
 ### 3.4 Start FL system
 
@@ -106,12 +120,13 @@ By default, POC will create startup kits at `/tmp/nvflare/poc`.
 
 We can apply the same resource management settings in POC mode as in secure mode above. 
 Note, POC provides the resources.json, so copying the default file is not necessary.
+Either set the available `N_GPU` manually or use the command above.
 ```
 n_clients=8
 for id in $(eval echo "{1..$n_clients}") 
 do
   client_local_dir=/tmp/nvflare/poc/site-${id}/local 
-  sed -i "s|\"num_of_gpus\": 0|\"num_of_gpus\": 2|g" ${client_local_dir}/resources.json
+  sed -i "s|\"num_of_gpus\": 0|\"num_of_gpus\": ${N_GPU}|g" ${client_local_dir}/resources.json
   sed -i "s|\"mem_per_gpu_in_GiB\": 0|\"mem_per_gpu_in_GiB\": 1|g" ${client_local_dir}/resources.json 
 done
 ```
