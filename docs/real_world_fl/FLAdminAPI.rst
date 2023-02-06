@@ -1,3 +1,5 @@
+.. _fladmin_api:
+
 FLAdminAPI
 ==========
 
