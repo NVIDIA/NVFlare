@@ -187,6 +187,13 @@ class FederatedClientBase:
                     self.communicator.cell = self.cell
                     self.net_agent = NetAgent(self.cell)
                     if self.args.job_id:
+                        start = time.time()
+                        while not self.client_runner:
+                            self.logger.info("Wait for client_runner to be created.")
+                            if time.time() - start > 15:
+                                raise RuntimeError("Failed to set the cell for engine: "
+                                                   "timeout waiting for client_runner to be created.")
+                            time.sleep(0.2)
                         self.client_runner.engine.cell = self.cell
                         self.client_runner.command_agent.register_cell_cb()
                     else:
@@ -281,7 +288,7 @@ class FederatedClientBase:
         except FLCommunicationError as e:
             self.logger.info(secure_format_exception(e))
 
-    def send_heartbeat(self, project_name):
+    def send_heartbeat(self, project_name, interval):
         try:
             if self.token:
                 start = time.time()
@@ -290,7 +297,7 @@ class FederatedClientBase:
                     if time.time() - start > 60.:
                         raise RuntimeError(f"No engine created. Failed to start the heartbeat process.")
                 self.communicator.send_heartbeat(
-                    self.servers, project_name, self.token, self.ssid, self.client_name, self.engine
+                    self.servers, project_name, self.token, self.ssid, self.client_name, self.engine, interval
                 )
         except FLCommunicationError:
             self.communicator.heartbeat_done = True
@@ -306,12 +313,12 @@ class FederatedClientBase:
         """
         return self.communicator.quit_remote(self.servers, project_name, self.token, self.ssid, fl_ctx)
 
-    def heartbeat(self):
+    def heartbeat(self, interval):
         """Sends a heartbeat from the client to the server."""
         pool = None
         try:
             pool = ThreadPool(len(self.servers))
-            return pool.map(self.send_heartbeat, tuple(self.servers))
+            return pool.map(partial(self.send_heartbeat, interval=interval), tuple(self.servers))
         finally:
             if pool:
                 pool.terminate()
@@ -358,12 +365,12 @@ class FederatedClientBase:
             if pool:
                 pool.terminate()
 
-    def run_heartbeat(self):
+    def run_heartbeat(self, interval):
         """Periodically runs the heartbeat."""
-        self.heartbeat()
+        self.heartbeat(interval)
 
-    def start_heartbeat(self):
-        heartbeat_thread = threading.Thread(target=self.run_heartbeat)
+    def start_heartbeat(self, interval=30):
+        heartbeat_thread = threading.Thread(target=self.run_heartbeat, args=[interval])
         heartbeat_thread.start()
 
     def logout_client(self, fl_ctx: FLContext):

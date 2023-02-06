@@ -335,3 +335,11 @@ class SiteType:
     SERVER = "server"
     CLIENT = "client"
     ALL = "@ALL"
+
+
+class SystemConfigs:
+    STARTUP_CONF = "start_config"
+    RESOURCES_CONF = "resources_config"
+    APPLICATION_CONF = "application_config"
+
+

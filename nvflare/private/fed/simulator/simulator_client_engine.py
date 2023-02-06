@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.apis.fl_context import FLContextManager
+from nvflare.apis.fl_constant import RunProcessKey
 from nvflare.private.fed.client.client_engine import ClientEngine
+from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 
 
@@ -23,10 +24,15 @@ class SimulatorClientEngine(ClientEngine):
 
 
 class SimulatorParentClientEngine(ClientEngine):
-    def __init__(self, client_name):
-        self.fl_ctx_mgr = FLContextManager(
-            engine=self, identity_name=client_name, job_id="", public_stickers={}, private_stickers={}
-        )
+    def __init__(self, client, client_token, args, rank=0):
+        super().__init__(client, client_token, args, rank)
+
+        self.client_executor.run_processes[SimulatorConstants.JOB_NAME] = {
+            RunProcessKey.LISTEN_PORT: None,
+            RunProcessKey.CONNECTION: None,
+            RunProcessKey.CHILD_PROCESS: None,
+            RunProcessKey.STATUS: ClientStatus.STARTED,
+        }
 
     def get_all_job_ids(self):
         return [SimulatorConstants.JOB_NAME]
