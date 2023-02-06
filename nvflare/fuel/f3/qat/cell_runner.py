@@ -24,6 +24,7 @@ import os
 import shlex
 import subprocess
 import sys
+import threading
 import time
 
 
@@ -50,6 +51,7 @@ class CellRunner:
         self.config_path = config_path
         self.config_file = config_file
         self.log_level = log_level
+        self.waiter = threading.Event()
 
         if not parent_fqcn:
             my_fqcn = my_name
@@ -70,7 +72,11 @@ class CellRunner:
             create_internal_listener=self.create_internal_listener,
             parent_url=parent_url,
         )
-        self.agent = NetAgent(self.cell, self._change_root)
+        self.agent = NetAgent(
+            self.cell,
+            self._change_root,
+            self._agent_closed,
+        )
 
         self.child_runners = {}
         self.client_runners = {}
@@ -213,7 +219,11 @@ class CellRunner:
                 self.client_runners[client_name] = _RunnerInfo(client_name, client_name, p)
 
     def stop(self):
-        self.agent.stop()
+        # self.agent.stop()
+        self.waiter.set()
+
+    def _agent_closed(self):
+        self.stop()
 
     def _change_root(self, url: str):
         self.cell.change_server_root(url)
@@ -225,5 +235,7 @@ class CellRunner:
             outfile.write(json_object)
 
     def run(self):
+        MainProcessMonitor.set_name(self.cell.get_fqcn())
         MainProcessMonitor.add_cleanup_cb(self.dump_stats)
-        MainProcessMonitor.run(self.cell.get_fqcn())
+        MainProcessMonitor.add_cleanup_cb(self.cell.stop)
+        self.waiter.wait()

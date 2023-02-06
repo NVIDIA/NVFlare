@@ -14,6 +14,7 @@
 
 import asyncio
 import logging
+import os
 import threading
 import time
 
@@ -31,6 +32,7 @@ class AioContext:
         self.loop = None
         self.ready = False
         self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger.debug(f"{os.getpid()}: ******** Created AioContext {name}")
 
     def run_aio_loop(self):
         self.logger.debug(f"{self.name}: started AioContext in thread {threading.current_thread().name}")
@@ -49,13 +51,14 @@ class AioContext:
         self.logger.debug(f"{self.name}: AIO Loop Completed!")
 
     def run_coro(self, coro):
+        t = threading.current_thread()
         while not self.ready:
-            self.logger.debug(f"{self.name}: waiting for loop to be ready")
-            time.sleep(0.5)
-        self.logger.debug(f"{self.name}: coro loop: {id(self.loop)}")
+            self.logger.debug(f"{os.getpid()} {t.name}: {self.name}: waiting for loop to be ready")
+            time.sleep(0.1)
+        self.logger.debug(f"{os.getpid()} {t.name}: {self.name}: got loop: {id(self.loop)}")
         asyncio.run_coroutine_threadsafe(coro, self.loop)
 
-    def stop_aio_loop(self):
+    def stop_aio_loop(self, grace=1.0):
         self.logger.debug("Cancelling pending tasks")
         pending_tasks = asyncio.all_tasks(self.loop)
         for task in pending_tasks:
@@ -67,7 +70,14 @@ class AioContext:
 
         self.logger.debug("Stopping AIO loop")
         self.loop.call_soon_threadsafe(self.loop.stop)
+        start = time.time()
         while self.loop.is_running():
             self.logger.debug("looping still running ...")
-            time.sleep(0.5)
-        self.logger.debug("stopped loop!")
+            time.sleep(0.1)
+            if time.time() - start > grace:
+                break
+
+        if self.loop.is_running():
+            self.logger.error("could not stop AIO loop")
+        else:
+            self.logger.debug("stopped loop!")

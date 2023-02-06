@@ -124,9 +124,11 @@ class NetAgent:
             self,
             cell: Cell,
             change_root_cb=None,
+            agent_closed_cb=None
     ):
         self.cell = cell
         self.change_root_cb = change_root_cb
+        self.agent_closed_cb = agent_closed_cb
         self.logger = logging.getLogger(self.__class__.__name__)
 
         cell.register_request_cb(
@@ -308,6 +310,8 @@ class NetAgent:
             self.heartbeat_thread.join()
         if self.monitor_thread and self.monitor_thread.is_alive():
             self.monitor_thread.join()
+        if self.agent_closed_cb:
+            self.agent_closed_cb()
 
     def _subnet_heartbeat(self):
         cc = self.cell.comm_configurator
@@ -606,8 +610,6 @@ class NetAgent:
         # ask all children to stop
         self._broadcast_to_subs(topic=_TOPIC_STOP, timeout=0.0)
         self.close()
-        Mpm.add_cleanup_cb(self.cell.stop)
-        Mpm.stop()
 
     def stop_cell(self, target: str) -> str:
         # if self.cell.get_fqcn() == target:

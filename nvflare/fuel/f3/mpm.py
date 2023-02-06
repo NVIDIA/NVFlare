@@ -22,13 +22,11 @@ from nvflare.fuel.f3.aio_context import AioContext
 
 class MainProcessMonitor:
 
-    cleanup_cbs = []
-    stopping = False
     name = "MPM"
+    _cleanup_cbs = []
+    _stopping = False
     _logger = None
-    aio_ctx = AioContext("MPM")
-    shutdown_grace_time = 2.0
-    cleanup_grace_time = 3.0
+    _aio_ctx = None
 
     @classmethod
     def set_name(cls, name: str):
@@ -40,13 +38,13 @@ class MainProcessMonitor:
 
     @classmethod
     def is_stopping(cls):
-        return cls.stopping
+        return cls._stopping
 
     @classmethod
-    def get_aio_context(cls, name):
-        ctx = cls.aio_ctx
-        ctx.name = f"{name}@{cls.name}"
-        return ctx
+    def get_aio_context(cls, name=None):
+        if name and cls._aio_ctx:
+            cls._aio_ctx.name = name
+        return cls._aio_ctx
 
     @classmethod
     def logger(cls):
@@ -58,7 +56,10 @@ class MainProcessMonitor:
     def add_cleanup_cb(cls, cb, *args, **kwargs):
         if not callable(cb):
             raise ValueError(f"specified cleanup_cb {type(cb)} is not callable")
-        cls.cleanup_cbs.append((cb, args, kwargs))
+        for _cb in cls._cleanup_cbs:
+            if cb == _cb[0]:
+                raise RuntimeError(f"cleanup CB {cb.__name__} is already registered")
+        cls._cleanup_cbs.append((cb, args, kwargs))
 
     @classmethod
     def _call_cb(cls, t: tuple):
@@ -70,65 +71,22 @@ class MainProcessMonitor:
             logger.error(f"exception from CB {cb.__name__}: {type(ex)}")
 
     @classmethod
-    def stop(cls):
-        if cls.stopping:
-            return
-        cls.stopping = True
-
-    @classmethod
-    def _start_shutdown(cls):
-        while not cls.stopping:
-            time.sleep(0.1)
-
+    def _start_shutdown(cls, shutdown_grace_time, cleanup_grace_time):
         logger = cls.logger()
+        if not cls._cleanup_cbs:
+            logger.debug(f"=========== {cls.name}: Nothing to cleanup ...")
+            return
+
         logger.info(f"=========== {cls.name}: Shutting down. Starting cleanup ...")
-        time.sleep(cls.shutdown_grace_time)  # let pending activities to finish
+        time.sleep(shutdown_grace_time)  # let pending activities finish
 
         cleanup_waiter = threading.Event()
         t = threading.Thread(target=cls._do_cleanup, args=(cleanup_waiter,))
-        t.start()
-
-        if not cleanup_waiter.wait(timeout=cls.cleanup_grace_time):
-            logger.warning(f"======== {cls.name}: Cleanup did not complete within {cls.cleanup_grace_time} secs")
-
-        cls.aio_ctx.stop_aio_loop()
-
-    @classmethod
-    def run(cls, name: str, shutdown_grace_time=2.0, cleanup_grace_time=3.0):
-        logger = cls.logger()
-        cls.shutdown_grace_time = shutdown_grace_time
-        cls.cleanup_grace_time = cleanup_grace_time
-
-        # this method must be called from main method
-        t = threading.current_thread()
-        if t.name != "MainThread":
-            raise RuntimeError(
-                f"{name}: the mpm.run() method is called from {t.name}: it must be called from the MainThread")
-
-        if cls.stopping:
-            return
-
-        cls.set_name(name)
-
-        t = threading.Thread(target=cls._start_shutdown)
         t.daemon = True
         t.start()
 
-        logger.info(f"=========== {cls.name}: started to run forever")
-        cls.aio_ctx.run_aio_loop()
-
-        num_active_threads = 0
-        for thread in threading.enumerate():
-            if thread.name != "MainThread" and not thread.daemon:
-                logger.warning(f"#### {cls.name}: still running thread {thread.name}")
-                num_active_threads += 1
-
-        logger.info(f"{cls.name}: Good Bye!")
-        if num_active_threads > 0:
-            try:
-                os.kill(os.getpid(), signal.SIGKILL)
-            except:
-                pass
+        if not cleanup_waiter.wait(timeout=cleanup_grace_time):
+            logger.warning(f"======== {cls.name}: Cleanup did not complete within {cleanup_grace_time} secs")
 
     @classmethod
     def _cleanup_one_round(cls, cbs):
@@ -147,24 +105,69 @@ class MainProcessMonitor:
     def _do_cleanup(cls, waiter: threading.Event):
         max_cleanup_rounds = 10
         logger = cls.logger()
-        logger.debug(f"{cls.name}: Start system cleanup ...")
-        if cls.cleanup_cbs:
-            # during cleanup, a cleanup CB can add another cleanup CB
-            # we will call cleanup multiple rounds until no more CBs are added or tried max number of rounds
-            for i in range(max_cleanup_rounds):
-                cbs = cls.cleanup_cbs
-                cls.cleanup_cbs = []
-                if cbs:
-                    logger.debug(f"{cls.name}: cleanup round {i + 1}")
-                    cls._cleanup_one_round(cbs)
-                    logger.debug(f"{cls.name}: finished cleanup round {i + 1}")
-                else:
-                    break
 
-            if cls.cleanup_cbs:
-                logger.warning(f"{cls.name}: there are still cleanup CBs after {max_cleanup_rounds} rounds")
-        else:
-            logger.debug(f"{cls.name}: nothing to cleanup!")
+        # during cleanup, a cleanup CB can add another cleanup CB
+        # we will call cleanup multiple rounds until no more CBs are added or tried max number of rounds
+        for i in range(max_cleanup_rounds):
+            cbs = cls._cleanup_cbs
+            cls._cleanup_cbs = []
+            if cbs:
+                logger.debug(f"{cls.name}: cleanup round {i + 1}")
+                cls._cleanup_one_round(cbs)
+                logger.debug(f"{cls.name}: finished cleanup round {i + 1}")
+            else:
+                break
+
+        if cls._cleanup_cbs:
+            logger.warning(f"{cls.name}: there are still cleanup CBs after {max_cleanup_rounds} rounds")
 
         logger.debug(f"{cls.name}: Cleanup Finished!")
         waiter.set()
+
+    @classmethod
+    def run(
+            cls,
+            main_func,
+            shutdown_grace_time=2.0,
+            cleanup_grace_time=3.0
+    ):
+        if not callable(main_func):
+            raise ValueError("main_func must be runnable")
+
+        # this method must be called from main method
+        t = threading.current_thread()
+        if t.name != "MainThread":
+            raise RuntimeError(
+                f"{cls.name}: the mpm.run() method is called from {t.name}: it must be called from the MainThread")
+
+        # create AIO context and start a thread to run AIO loop
+        cls._aio_ctx = AioContext(cls.name)
+        aio_thread = threading.Thread(target=cls._aio_ctx.run_aio_loop)
+        aio_thread.daemon = True
+        aio_thread.start()
+
+        # call and wait for the main_func to complete
+        logger = cls.logger()
+        logger.info(f"=========== {cls.name}: started to run forever")
+        main_func()
+
+        # start shutdown process
+        cls._stopping = True
+        cls._start_shutdown(shutdown_grace_time, cleanup_grace_time)
+
+        # We can now stop the AIO loop!
+        cls._aio_ctx.stop_aio_loop()
+
+        logger.info(f"=========== {cls.name}: checking running threads")
+        num_active_threads = 0
+        for thread in threading.enumerate():
+            if thread.name != "MainThread" and not thread.daemon:
+                logger.warning(f"#### {cls.name}: still running thread {thread.name}")
+                num_active_threads += 1
+
+        logger.info(f"{cls.name}: Good Bye!")
+        if num_active_threads > 0:
+            try:
+                os.kill(os.getpid(), signal.SIGKILL)
+            except:
+                pass
