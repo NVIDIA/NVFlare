@@ -187,6 +187,7 @@ class Communicator:
             )
         else:
             task = None
+            self.logger.warning(f"Failed to get_task from {project_name} server. Will try it again.")
             time.sleep(5)
 
         return task
@@ -278,7 +279,8 @@ class Communicator:
 
         return server_message
 
-    def send_heartbeat(self, servers, task_name, token, ssid, client_name, engine: ClientEngineInternalSpec):
+    def send_heartbeat(self, servers, task_name, token, ssid, client_name, engine: ClientEngineInternalSpec, interval):
+        wait_times = int(interval / 2)
         while not self.heartbeat_done:
             try:
                 job_ids = engine.get_all_job_ids()
@@ -311,8 +313,7 @@ class Communicator:
                 except BaseException as ex:
                     raise FLCommunicationError("error:client_quit", ex)
 
-                # time.sleep(30)
-                for i in range(15):
+                for i in range(wait_times):
                     time.sleep(2)
                     if self.heartbeat_done:
                         break
