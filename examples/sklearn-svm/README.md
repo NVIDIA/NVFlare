@@ -33,6 +33,25 @@ bash data_prepare.sh
 ```
 This will load the data, format it properly by removing the header, order the label and feature columns, and save it to a CSV file with comma separation, the default path is `/tmp/nvflare/dataset/sklearn_breast_cancer.csv`. 
 
+## (Optional) Set up a virtual environment
+```
+python3 -m pip install --user --upgrade pip
+python3 -m pip install --user virtualenv
+```
+(If needed) make all shell scripts executable using
+```
+find . -name ".sh" -exec chmod +x {} \;
+```
+initialize virtual environment.
+```
+source ./virtualenv/set_env.sh
+```
+install required packages for training
+```
+pip3 install --upgrade pip
+pip3 install -r ./virtualenv/requirements.txt
+```
+
 ## Prepare clients' configs with proper data information 
 For realworld FL applications, the config json files are expected to be specified by each client individually, according to their own local data path and splits for training and validation.
 
