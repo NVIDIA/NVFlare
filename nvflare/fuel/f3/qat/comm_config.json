@@ -1,0 +1,27 @@
+{
+  "allow_adhoc_conns": false,
+  "backbone_conn_gen": 2,
+  "internal": {
+    "scheme": "tcp",
+    "resources": {
+      "host": "localhost"
+    }
+  },
+  "adhoc": {
+    "scheme": "tcp",
+    "resources": {
+      "host": "localhost",
+      "secure": false
+    }
+  },
+  "grpc": {
+    "options": [
+      [
+        "grpc.max_send_message_length", 1073741824
+      ],
+      [
+        "grpc.max_receive_message_length", 1073741824
+      ]
+    ]
+  }
+}
