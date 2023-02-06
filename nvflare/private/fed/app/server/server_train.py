@@ -77,6 +77,7 @@ def main():
 
         conf = FLServerStarterConfiger(
             workspace=workspace,
+            args=args,
             kv_list=args.set,
         )
         log_level = os.environ.get("FL_LOG_LEVEL", "")
