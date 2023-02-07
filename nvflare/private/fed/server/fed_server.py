@@ -120,9 +120,9 @@ class BaseServer(ABC):
         except RuntimeError:
             self.logger.info("canceling sync locks")
         try:
-            # if self.cell:
-            #     self.cell.stop()
-            mpm.stop()
+            if self.cell:
+                self.cell.stop()
+            # mpm.stop()
         finally:
             self.logger.info("server off")
             return 0
@@ -272,7 +272,7 @@ class FederatedServer(BaseServer):
         self.snapshot_persistor = snapshot_persistor
 
         # self._register_cellnet_cbs()
-        mpm.add_cleanup_cb(self.engine.close)
+        # mpm.add_cleanup_cb(self.engine.close)
 
     def _register_cellnet_cbs(self):
         self.cell.register_request_cb(
@@ -351,7 +351,7 @@ class FederatedServer(BaseServer):
         self.command_agent = ServerCommandAgent(self.engine, cell)
         self.command_agent.start()
 
-        mpm.add_cleanup_cb(self.command_agent.shutdown)
+        # mpm.add_cleanup_cb(self.command_agent.shutdown)
         mpm.add_cleanup_cb(net_agent.close)
         mpm.add_cleanup_cb(cell.stop)
 
@@ -582,13 +582,13 @@ class FederatedServer(BaseServer):
             engine_thread.start()
 
             self.engine.engine_info.status = MachineStatus.STARTED
-            # while self.engine.engine_info.status != MachineStatus.STOPPED:
-            #     if self.engine.asked_to_stop:
-            #         self.engine.engine_info.status = MachineStatus.STOPPED
-            #
-            #     time.sleep(3)
+            while self.engine.engine_info.status != MachineStatus.STOPPED:
+                if self.engine.asked_to_stop:
+                    self.engine.engine_info.status = MachineStatus.STOPPED
 
-            self.wait_engine_run_complete("Server Job", cleanup_grace_time=5.0)
+                time.sleep(3)
+
+            # self.wait_engine_run_complete("Server Job", cleanup_grace_time=5.0)
 
             # if engine_thread.is_alive():
             #     engine_thread.join()
@@ -630,8 +630,8 @@ class FederatedServer(BaseServer):
         self.engine.engine_info.status = MachineStatus.STOPPED
 
     def stop_run_engine_cell(self):
-        # self.cell.stop()
-        mpm.stop()
+        self.cell.stop()
+        # mpm.stop()
 
     def deploy(self, args, grpc_args=None, secure_train=False):
         super().deploy(args, grpc_args, secure_train)
@@ -654,7 +654,7 @@ class FederatedServer(BaseServer):
         self._register_cellnet_cbs()
 
         self.overseer_agent.start(self.overseer_callback)
-        mpm.add_cleanup_cb(self.overseer_agent.end)
+        # mpm.add_cleanup_cb(self.overseer_agent.end)
 
     def _init_agent(self, args=None):
         kv_list = parse_vars(args.set)

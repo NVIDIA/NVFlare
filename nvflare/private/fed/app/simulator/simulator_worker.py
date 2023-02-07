@@ -28,6 +28,7 @@ from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.sec.audit import AuditService
+from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.private.fed.simulator.simulator_audit import SimulatorAuditor
 from nvflare.private.fed.app.client.worker_process import check_parent_alive
 from nvflare.private.fed.app.deployer.base_client_deployer import BaseClientDeployer
@@ -164,6 +165,8 @@ class ClientTaskWorker(FLComponent):
         federated_client.cell = cell
         federated_client.communicator.cell = cell
 
+        mpm.add_cleanup_cb(cell.stop)
+
 
 def _create_connection(listen_port):
     address = ("localhost", int(listen_port))
@@ -225,6 +228,7 @@ if __name__ == "__main__":
     This is the main program of simulator worker process when running the NVFlare Simulator..
     """
 
-    main()
+    # main()
+    mpm.run(main_func=main)
     time.sleep(2)
     # os._exit(0)

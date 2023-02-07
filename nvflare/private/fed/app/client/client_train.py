@@ -30,6 +30,7 @@ from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger, create_priv
 from nvflare.private.fed.client.admin import FedAdminAgent
 
 from nvflare.private.fed.client.client_engine import ClientEngine
+from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.client.fed_client import FederatedClient
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize, security_init
 from nvflare.private.privacy_manager import PrivacyService
@@ -138,8 +139,10 @@ def main():
 
         # while True:
         #     time.sleep(1.0)
+        while federated_client.status != ClientStatus.STOPPED:
+            time.sleep(1.0)
         # federated_client.cell.run()
-        mpm.run("Client Main")
+        # mpm.run("Client Main")
 
         deployer.close()
 
@@ -148,7 +151,7 @@ def main():
     finally:
         pass
 
-    sys.exit(0)
+    # sys.exit(0)
 
 
 def create_admin_agent(
@@ -218,4 +221,5 @@ if __name__ == "__main__":
     # import multiprocessing
     # multiprocessing.set_start_method('spawn')
 
-    main()
+    # main()
+    mpm.run(main_func=main)

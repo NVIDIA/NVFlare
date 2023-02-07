@@ -34,6 +34,7 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.multi_process_executor_constants import CommunicationMetaData
 from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.sec.audit import AuditService
+from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.private.fed.simulator.simulator_audit import SimulatorAuditor
 from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.fuel.utils.zip_utils import split_path, unzip_all_from_bytes, zip_directory_to_bytes
@@ -307,7 +308,10 @@ class SimulatorRunner(FLComponent):
             process = Process(target=self.run_processs, args=(return_dict,))
             process.start()
             process.join()
-            run_status = return_dict["run_status"]
+            if process.exitcode == -9:
+                run_status = process.exitcode
+            else:
+                run_status = return_dict["run_status"]
             return run_status
         except KeyboardInterrupt:
             self.logger.info("KeyboardInterrupt, terminate all the child processes.")
@@ -315,6 +319,13 @@ class SimulatorRunner(FLComponent):
             return -9
 
     def run_processs(self, return_dict):
+        # run_status = self.simulator_run_main()
+        run_status = mpm.run(main_func=self.simulator_run_main, shutdown_grace_time=6, cleanup_grace_time=8)
+
+        return_dict["run_status"] = run_status
+        # os._exit(0)
+
+    def simulator_run_main(self):
         if self.setup():
             try:
                 self.create_clients()
@@ -364,9 +375,7 @@ class SimulatorRunner(FLComponent):
                 self.deployer.close()
         else:
             run_status = 1
-
-        return_dict["run_status"] = run_status
-        os._exit(0)
+        return run_status
 
     def client_run(self, clients, gpu):
         client_runner = SimulatorClientRunner(self.args, clients, self.client_config, self.deploy_args, self.build_ctx)
