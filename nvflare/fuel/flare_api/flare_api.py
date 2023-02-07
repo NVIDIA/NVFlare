@@ -403,12 +403,29 @@ class Session(SessionSpec):
             time.sleep(poll_interval)
 
 
+def basic_cb_with_print(session: Session, job_id: str, job_meta, *cb_args, **cb_kwargs) -> bool:
+    """This is a sample callback to use with monitor_job that demonstrates how a custom callback can
+    be used
+
+    """
+    if job_meta["status"] == "RUNNING":
+        if cb_kwargs["cb_run_counter"]["count"] < 3:
+            print(job_meta)
+        else:
+            print(".", end="")
+    else:
+        print("\n" + str(job_meta))
+
+    cb_kwargs["cb_run_counter"]["count"] += 1
+    return True
+
+
 def new_secure_session(username: str, startup_kit_location: str, debug: bool = False, timeout: float = 10.0) -> Session:
     """Create a new secure session with NVFLARE system
 
     Args:
         username: username assigned to the user
-        startup_kit_location: path to the provisioned startup folder
+        startup_kit_location: path to the provisioned startup folder, the root admin dir containing the startup folder
         debug: enable debug mode
         timeout: how long to try to establish the session
 
