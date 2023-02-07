@@ -18,6 +18,7 @@ import argparse
 import logging
 import os
 import sys
+import time
 
 from nvflare.apis.fl_constant import JobConstants, SiteType, WorkspaceConstants
 from nvflare.apis.workspace import Workspace
@@ -31,6 +32,7 @@ from nvflare.private.fed.server.admin import FedAdminServer
 from nvflare.private.fed.server.fed_server import FederatedServer
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize, security_init
 from nvflare.private.privacy_manager import PrivacyService
+from nvflare.private.fed.server.server_status import ServerStatus
 from nvflare.security.logging import secure_format_exception
 
 
@@ -109,6 +111,7 @@ def main():
         privacy_manager = create_privacy_manager(workspace, names_only=True)
         PrivacyService.initialize(privacy_manager)
 
+        admin_server = None
         try:
             # Deploy the FL server
             services = deployer.deploy(args)
@@ -136,11 +139,11 @@ def main():
         # From Python 3.9 and above, the ThreadPoolExecutor does not allow submit() to create a new thread while the
         # main thread has exited. Use the ServerStatus.SHUTDOWN to keep the main thread waiting for the gRPC
         # server to be shutdown.
-        services.wait_engine_run_complete("Server Main")
-        # while services.status != ServerStatus.SHUTDOWN:
-        #     time.sleep(1.0)
+        # services.wait_engine_run_complete("Server Main")
+        while services.status != ServerStatus.SHUTDOWN:
+            time.sleep(1.0)
 
-        # services.engine.close()
+        services.engine.close()
 
     except ConfigError as e:
         logger.exception(f"ConfigError: {secure_format_exception(e)}")
@@ -190,4 +193,4 @@ if __name__ == "__main__":
     This is the main program when starting the NVIDIA FLARE server process.
     """
 
-    main()
+    mpm.run(main_func=main)

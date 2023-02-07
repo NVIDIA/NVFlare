@@ -263,8 +263,9 @@ def shutdown_client(federated_client, touch_file):
         time.sleep(3)
         federated_client.close()
 
+        federated_client.status = ClientStatus.STOPPED
         # federated_client.cell.stop()
-        mpm.stop()
+        # mpm.stop()
         security_close()
     except BaseException as e:
         secure_log_traceback()
