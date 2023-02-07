@@ -27,6 +27,7 @@ import psutil
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.sec.audit import AuditService
+from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import EngineConstant
@@ -191,4 +192,5 @@ if __name__ == "__main__":
     This is the program when starting the child process for running the NVIDIA FLARE executor.
     """
 
-    main()
+    # main()
+    mpm.run(main_func=main)

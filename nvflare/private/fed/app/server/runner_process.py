@@ -28,6 +28,7 @@ from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
+from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger
 from nvflare.private.fed.server.server_app_runner import ServerAppRunner
@@ -149,7 +150,8 @@ if __name__ == "__main__":
     """
     This is the program when starting the child process for running the NVIDIA FLARE server runner.
     """
-    main()
+    # main()
+    mpm.run(main_func=main)
 
     # ternimate_process()
 

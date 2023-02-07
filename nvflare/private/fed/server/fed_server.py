@@ -120,9 +120,9 @@ class BaseServer(ABC):
         except RuntimeError:
             self.logger.info("canceling sync locks")
         try:
-            # if self.cell:
-            #     self.cell.stop()
-            mpm.stop()
+            if self.cell:
+                self.cell.stop()
+            # mpm.stop()
         finally:
             self.logger.info("server off")
             return 0
@@ -582,13 +582,13 @@ class FederatedServer(BaseServer):
             engine_thread.start()
 
             self.engine.engine_info.status = MachineStatus.STARTED
-            # while self.engine.engine_info.status != MachineStatus.STOPPED:
-            #     if self.engine.asked_to_stop:
-            #         self.engine.engine_info.status = MachineStatus.STOPPED
-            #
-            #     time.sleep(3)
+            while self.engine.engine_info.status != MachineStatus.STOPPED:
+                if self.engine.asked_to_stop:
+                    self.engine.engine_info.status = MachineStatus.STOPPED
 
-            self.wait_engine_run_complete("Server Job", cleanup_grace_time=5.0)
+                time.sleep(3)
+
+            # self.wait_engine_run_complete("Server Job", cleanup_grace_time=5.0)
 
             # if engine_thread.is_alive():
             #     engine_thread.join()
@@ -630,8 +630,8 @@ class FederatedServer(BaseServer):
         self.engine.engine_info.status = MachineStatus.STOPPED
 
     def stop_run_engine_cell(self):
-        # self.cell.stop()
-        mpm.stop()
+        self.cell.stop()
+        # mpm.stop()
 
     def deploy(self, args, grpc_args=None, secure_train=False):
         super().deploy(args, grpc_args, secure_train)

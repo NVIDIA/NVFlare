@@ -729,4 +729,4 @@ def server_shutdown(server, touch_file):
     finally:
         security_close()
         server.status = ServerStatus.SHUTDOWN
-        sys.exit(2)
+        # sys.exit(2)

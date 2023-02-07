@@ -143,6 +143,8 @@ def main():
         while services.status != ServerStatus.SHUTDOWN:
             time.sleep(1.0)
 
+        if admin_server:
+            admin_server.stop()
         services.engine.close()
 
     except ConfigError as e:
