@@ -1,5 +1,0 @@
-##########
-Quickstart
-##########
-
-See :ref:`quickstart`.

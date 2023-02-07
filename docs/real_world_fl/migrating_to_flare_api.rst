@@ -44,7 +44,7 @@ Initializing the FLAdminAPIRunner, which initializes FLAdminAPI with the values 
 :ref:`flare_api_initialization` is similar to :class:`FLAdminAPIRunner<nvflare.fuel.hci.client.fl_admin_api_runner.FLAdminAPIRunner>`
 with :func:`new_secure_session<nvflare.fuel.flare_api.flare_api.new_secure_session>` taking two required arguments of
 the username and the path to the root admin directory containing the startup folder with the admin client's
-certs and keys::
+certs and keys:
 
 .. code:: python
 
@@ -92,7 +92,7 @@ and the new way with FLARE API.
 
 .. csv-table::
     :header: Command for FLAdminAPI,Command for FLARE API,Differences
-    :widths: 15, 15, 30
+    :widths: 15, 15, 30, 30
 
     check_status(),get_system_info(),Simplified and reformatted output, see below for details
     submit_job(),submit_job(),Simplified output, see below for details

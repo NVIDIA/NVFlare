@@ -65,7 +65,9 @@ they can add API calls to Open Provision API to generate required outputs.
 Provisioner
 -----------
 This is the container class that owns all instances of Project, Workspace, Provision Context, Builders and Participants,
-as shown in the above diagram.  A typical usage of this class is like the following::
+as shown in the above diagram.  A typical usage of this class is like the following:
+
+.. code-block:: python
 
     provisioner = Provisioner(workspace_full_path, builders)
 
@@ -74,7 +76,9 @@ as shown in the above diagram.  A typical usage of this class is like the follow
 Project
 -------
 The Project class keeps information about participants.  Therefore, information of any participant can be retrieved from
-the Project instance::
+the Project instance:
+
+.. code-block:: python
 
     class Project(object):
        def __init__(self, name: str, description: str, participants: List[Participant]):
@@ -102,7 +106,9 @@ Participant
 -----------
 Each participant is one entity that communicates with other participants inside the NVIDIA FLARE system during runtime.
 Each participant has the following attributes: type, name, org and props.  The attribute ``props`` is a dictionary and
-stores additional information::
+stores additional information:
+
+.. code-block:: python
 
     class Participant(object):
        def __init__(self, type: str, name: str, org: str, *args, **kwargs):
@@ -145,7 +151,9 @@ builders being called after it will not be able to access the wip folder.
 
 .. note:: The collaboration among all builders is the responsibility of Open Provision API developers.
 
-Every builder has to subclass the Builder class and override one or more of these three methods::
+Every builder has to subclass the Builder class and override one or more of these three methods:
+
+.. code-block:: python
 
     class Builder(ABC):
        def initialize(self, ctx: dict):
@@ -187,14 +195,18 @@ is called before other builders' finalize methods and before other builders' bui
 Case 1: generating additional files
 -----------------------------------
 The developers would like to add a configuration file about a database server to admin participants.  The configuration
-is like this::
+is like this:
+
+.. code-block:: yaml
 
     [database]
     db_server = server name
     db_port = port_number
     user_name = admin's name
 
-As this requires adding one file to every admin participant, the developer can write a DBBuilder as follows::
+As this requires adding one file to every admin participant, the developer can write a DBBuilder as follows:
+
+.. code-block:: python
 
     class DBConfigBuilder(Builder):
        def __init__(self, db_server, db_port):
@@ -210,7 +222,9 @@ As this requires adding one file to every admin participant, the developer can w
                    f.write(f"db_port = {self.db_port}\n")
                    f.write(f"user_name = {admin.name}\n")
 
-And in project.yml, add an entry in the builders section::
+And in project.yml, add an entry in the builders section:
+
+.. code-block:: yaml
 
     - path: byob.DBConfigBuilder
       args:
@@ -221,7 +235,9 @@ Case 2: enhancing an existing builder
 -------------------------------------
 The developer would like to push zip files of each generated folder, to
 a web server via a POST method.  This can be done easily by implementing a new builder as
-follows (after pip install requests)::
+follows (after pip install requests):
+
+.. code-block:: python
 
     class WebPostDistributionBuilder(Builder):
        def __init__(self, url):
@@ -236,14 +252,18 @@ follows (after pip install requests)::
                files = {"upload_file": open(dest_zip_file, "rb")}
                r = requests.post(self.url, files=files)
 
-And just replace the existing one with the new builder under Builders in the project.yml::
+And just replace the existing one with the new builder under Builders in the project.yml:
+
+.. code-block:: yaml
 
     - path: byob.WebPostDistributionBuilder
       args:
         url: https://example.com/nvflare/provision
 
 For the above two cases, if developers opt to use Open Provision API directly instead of project.yml, they can do this
-(some code omitted for clarity)::
+(some code omitted for clarity):
+
+.. code-block:: python
 
     from byob import WebPostDistributionBuilder
     builders = list()
@@ -258,20 +278,26 @@ For the above two cases, if developers opt to use Open Provision API directly in
 Case 3: adding both new builders and participants of new types
 --------------------------------------------------------------
 The developers would like to add participants of type = 'gateway.'  In order to handle this type of participants, a new
-builder is needed to write gateway specific configuration.  First, specify that in project.yml::
+builder is needed to write gateway specific configuration.  First, specify that in project.yml:
+
+.. code-block:: yaml
 
     - name: gateway1
       type: gateway
       org: nvidia
       port: 8102
 
-or in API style::
+or in API style:
+
+.. code-block:: python
 
     participants = list()
     p = Participant(name="gateway1", type="gateway", org="nvidia", port=8102)
     participants.append(p)
 
-A new builder to write 'gateway.conf' can be implemented as follows (for reference)::
+A new builder to write 'gateway.conf' can be implemented as follows (for reference):
+
+.. code-block:: python
 
     class GWConfigBuilder(Builder):
       def build(self, project, ctx):
@@ -288,7 +314,9 @@ A new builder to write 'gateway.conf' can be implemented as follows (for referen
 Case 4: adding a builder for enabling the creation of zip archives for the startup kits
 ---------------------------------------------------------------------------------------
 DistributionBuilder was included in NVIDIA FLARE before version 2.2.1 but has been removed from the
-default builders. You can make this builder available and add it as a builder in project.yml if you want to zip the startup kits::
+default builders. You can make this builder available and add it as a builder in project.yml if you want to zip the startup kits:
+
+.. code-block:: python
 
     import os
     import shutil
@@ -338,7 +366,9 @@ default builders. You can make this builder available and add it as a builder in
                 else:
                     shutil.make_archive(dest_zip_file, "zip", root_dir=os.path.join(wip_dir, dir), base_dir="startup")
 
-If the above code is made available at ``nvflare.lighter.impl.workspace.DistributionBuilder``, add the following to your project.yml at the bottom of the list of builders::
+If the above code is made available at ``nvflare.lighter.impl.workspace.DistributionBuilder``, add the following to your project.yml at the bottom of the list of builders:
+
+.. code-block:: yaml
 
     path: nvflare.lighter.impl.workspace.DistributionBuilder
     args:
@@ -418,7 +448,7 @@ This is the key file that describes the information which provisioning tool will
 If there is no ``project.yml`` in your current working directory, simply run ``provision`` without any option.  It
 will ask you if you would like to have one sample copy of this file created.
 
-.. code-block:: shell
+.. code-block:: console
 
   (nvflare-venv) ~/workspace$ provision
   No project.yml found in current folder.
@@ -436,9 +466,11 @@ Edit the project.yml configuration file to meet your project requirements:
     - "participants" describes the different parties in the FL system, distinguished by type. For all participants, "name"
       should be unique, and "org" should be defined in AuthPolicyBuilder. The "name" of the Overseer and servers should
       be in the format of fully qualified domain names. It is possible to use a unique hostname rather than FQDN, with
-      the IP mapped to the hostname by having it added to ``/etc/hosts``.
+      the IP mapped to the hostname by having it added to ``/etc/hosts``:
+
         - Type "overseer" describes the Overseer, with the "org", "name", "protocol", "api_root", and "port".
-        - Type "server" describes the FL servers, with the "org", "name", "fed_learn_port", "admin_port", and "enable_byoc".
+        - Type "server" describes the FL servers, with the "org", "name", "fed_learn_port", "admin_port", and "enable_byoc":
+
             - "fed_learn_port" is the port number for communication between the FL server and FL clients
             - "admin_port" is the port number for communication between the FL server and FL administration client
         - Type "client" describes the FL clients, with one "org" and "name" for each client as well as "enable_byoc" settings.
