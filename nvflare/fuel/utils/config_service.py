@@ -69,6 +69,7 @@ class ConfigService:
     _config_path = []
     _cmd_args = None
     _var_dict = None
+    _var_values = {}
 
     @classmethod
     def initialize(
@@ -210,17 +211,41 @@ class ConfigService:
             return conf.get(name)
 
     @classmethod
-    def get_int_var(cls, name: str, conf=None, default=None):
+    def _int_var(cls, name: str, conf=None, default=None):
         v = cls._get_var(name, conf)
         if v is None:
             return default
         try:
             return int(v)
         except:
-            raise ValueError(f"var {name}'s value {v} cannot be converted to int")
+            raise ValueError(f"var {name}'s value '{v}' cannot be converted to int")
 
     @classmethod
-    def get_bool_var(cls, name: str, conf=None, default=None):
+    def _any_var(cls, func, name, conf, default):
+        v = func(name, conf, default)
+        cls._var_values[name] = v
+        return v
+
+    @classmethod
+    def get_int_var(cls, name: str, conf=None, default=None):
+        return cls._any_var(cls._int_var, name, conf, default)
+
+    @classmethod
+    def _float_var(cls, name: str, conf=None, default=None):
+        v = cls._get_var(name, conf)
+        if v is None:
+            return default
+        try:
+            return float(v)
+        except:
+            raise ValueError(f"var {name}'s value '{v}' cannot be converted to float")
+
+    @classmethod
+    def get_float_var(cls, name: str, conf=None, default=None):
+        return cls._any_var(cls._float_var, name, conf, default)
+
+    @classmethod
+    def _bool_var(cls, name: str, conf=None, default=None):
         v = cls._get_var(name, conf)
         if v is None:
             return default
@@ -231,14 +256,26 @@ class ConfigService:
         if isinstance(v, str):
             v = v.lower()
             return v in ['true', 't', 'yes', 'y', '1']
-        raise ValueError(f"var {name}'s value {v} cannot be converted to bool")
+        raise ValueError(f"var {name}'s value '{v}' cannot be converted to bool")
 
     @classmethod
-    def get_str_var(cls, name: str, conf=None, default=None):
+    def get_bool_var(cls, name: str, conf=None, default=None):
+        return cls._any_var(cls._bool_var, name, conf, default)
+
+    @classmethod
+    def _str_var(cls, name: str, conf=None, default=None):
         v = cls._get_var(name, conf)
         if v is None:
             return default
         try:
             return str(v)
         except:
-            raise ValueError(f"var {name}'s value {v} cannot be converted to str")
+            raise ValueError(f"var {name}'s value '{v}' cannot be converted to str")
+
+    @classmethod
+    def get_str_var(cls, name: str, conf=None, default=None):
+        return cls._any_var(cls._str_var, name, conf, default)
+
+    @classmethod
+    def get_var_values(cls):
+        return cls._var_values

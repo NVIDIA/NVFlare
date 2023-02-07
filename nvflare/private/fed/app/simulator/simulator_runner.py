@@ -34,6 +34,7 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.multi_process_executor_constants import CommunicationMetaData
 from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.sec.audit import AuditService
+from nvflare.private.fed.simulator.simulator_audit import SimulatorAuditor
 from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.fuel.utils.zip_utils import split_path, unzip_all_from_bytes, zip_directory_to_bytes
 from nvflare.lighter.poc_commands import get_host_gpu_ids
@@ -133,7 +134,8 @@ class SimulatorRunner(FLComponent):
         os.chdir(self.args.workspace)
         fobs_initialize()
         AuthorizationService.initialize(EmptyAuthorizer())
-        AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
+        # AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
+        AuditService.the_auditor = SimulatorAuditor()
 
         self.simulator_root = os.path.join(self.args.workspace, SimulatorConstants.JOB_NAME)
         if os.path.exists(self.simulator_root):
@@ -337,7 +339,7 @@ class SimulatorRunner(FLComponent):
 
                 # Start the client heartbeat calls.
                 for client in self.federated_clients:
-                    client.start_heartbeat()
+                    client.start_heartbeat(interval=2)
 
                 if self.args.gpu:
                     gpus = self.args.gpu.split(",")

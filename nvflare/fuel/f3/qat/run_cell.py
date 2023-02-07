@@ -14,6 +14,8 @@
 
 import argparse
 import logging
+
+from nvflare.fuel.f3.mpm import MainProcessMonitor as Mpm
 from nvflare.fuel.f3.qat.cell_runner import CellRunner
 from nvflare.fuel.utils.config_service import ConfigService
 
@@ -55,8 +57,8 @@ def main():
     )
     start_all = not args.self_only
     runner.start(start_all)
-    runner.run(args.name)
+    runner.run()
 
 
 if __name__ == "__main__":
-    main()
+    Mpm.run(main)

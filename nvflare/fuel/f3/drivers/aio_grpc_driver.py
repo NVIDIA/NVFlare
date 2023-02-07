@@ -21,6 +21,7 @@ import logging
 import threading
 from typing import Union, List, Dict, Any
 
+from nvflare.fuel.f3.mpm import MainProcessMonitor
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.connection import Connection
@@ -30,7 +31,7 @@ from nvflare.fuel.f3.drivers import net_utils
 from nvflare.fuel.f3.drivers.grpc.streamer_pb2_grpc import (
     StreamerServicer, add_StreamerServicer_to_server, StreamerStub
 )
-from .aio_context import AioContext
+from nvflare.fuel.f3.aio_context import AioContext
 from .base_driver import BaseDriver
 from .grpc.streamer_pb2 import Frame
 from .net_utils import get_address, ssl_required
@@ -262,7 +263,6 @@ class Server:
 class AioGrpcDriver(BaseDriver):
 
     aio_ctx = None
-    lock = threading.Lock()
 
     def __init__(self):
         super().__init__()
@@ -280,10 +280,7 @@ class AioGrpcDriver(BaseDriver):
 
     @classmethod
     def _initialize_aio(cls, name: str):
-        with cls.lock:
-            if not cls.aio_ctx:
-                cls.aio_ctx = AioContext(name)
-            return cls.aio_ctx
+        return MainProcessMonitor.get_aio_context(name)
 
     @staticmethod
     def supported_transports() -> List[str]:

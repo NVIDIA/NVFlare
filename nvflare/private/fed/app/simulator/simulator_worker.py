@@ -28,6 +28,7 @@ from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.sec.audit import AuditService
+from nvflare.private.fed.simulator.simulator_audit import SimulatorAuditor
 from nvflare.private.fed.app.client.worker_process import check_parent_alive
 from nvflare.private.fed.app.deployer.base_client_deployer import BaseClientDeployer
 from nvflare.private.fed.client.client_status import ClientStatus
@@ -201,7 +202,8 @@ def main():
     os.chdir(workspace)
     fobs_initialize()
     AuthorizationService.initialize(EmptyAuthorizer())
-    AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
+    # AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
+    AuditService.the_auditor = SimulatorAuditor()
 
     if args.gpu:
         os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"

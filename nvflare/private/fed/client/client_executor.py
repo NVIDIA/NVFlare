@@ -347,7 +347,8 @@ class ProcessExecutor(ClientExecutor):
                         )
                         self.logger.debug("abort sent")
 
-                        threading.Thread(target=self._terminate_process, args=[child_process, job_id]).start()
+                        if child_process:
+                            threading.Thread(target=self._terminate_process, args=[child_process, job_id]).start()
                         self.run_processes.pop(job_id)
                         break
                     except Exception as e:

@@ -49,6 +49,8 @@ class ClientAppRunner:
         client_config_file_name = os.path.join(app_root, args.client_config)
         conf = ClientJsonConfigurator(
             config_file_name=client_config_file_name,
+            args=args,
+            kv_list=args.set
         )
         conf.configure()
         workspace = Workspace(args.workspace, args.client_name, config_folder)

@@ -628,7 +628,8 @@ class Cell(MessageReceiver, EndpointMonitor):
             connector = self.connector_manager.get_external_connector(url, adhoc=True)
             self.adhoc_connectors[to_cell] = connector
             if connector:
-                self.logger.info(f"{self.my_info.fqcn}: created adhoc connector to {url} on {to_cell}")
+                self.logger.info(
+                    f"{self.my_info.fqcn}: created adhoc connector {connector.handle} to {url} on {to_cell}")
             else:
                 self.logger.info(f"{self.my_info.fqcn}: cannot create adhoc connector to {url} on {to_cell}")
             return connector
@@ -668,7 +669,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                         self.logger.info(
                             f"{self.my_info.fqcn}: created backbone external listener for {url}")
                     else:
-                        self.logger.info(f"{self.my_info.fqcn}: created adhoc external listener "
+                        self.logger.info(f"{self.my_info.fqcn}: created adhoc external listener {listener.handle} "
                                          f"for {listener.get_connection_url()}")
                     self.ext_listeners[listener.get_connection_url()] = listener
                 else:
@@ -1089,7 +1090,7 @@ class Cell(MessageReceiver, EndpointMonitor):
             allow_adhoc = self.connector_manager.is_adhoc_allowed(ti, self.my_info)
             if allow_adhoc and t != ep.name:
                 # Not a direct path since the destination and the next leg are not the same
-                if self.ext_listeners or self.my_info.is_on_server or self.my_info.fqcn > t:
+                if not ti.is_on_server and (self.my_info.is_on_server or self.my_info.fqcn > t):
                     # try to get or create a listener and let the peer know the endpoint
                     listener = self._create_external_listener("")
                     if listener:
