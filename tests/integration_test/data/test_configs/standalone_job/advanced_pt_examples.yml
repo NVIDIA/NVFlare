@@ -1,0 +1,33 @@
+n_servers: 1
+n_clients: 2
+jobs_root_dir: ../../examples/advanced
+cleanup: True
+
+
+tests:
+  - test_name: "run tensorboard-streaming"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job tensorboard-streaming" ]
+        "result":
+          "type": "run_state"
+          "data": { }
+      - "trigger":
+          "type": "run_state"
+          "data": { "run_finished": True }
+        "actions": [ "ensure_current_job_done" ]
+        "result":
+          "type": "run_state"
+          "data": { "run_finished": True }
+    validators:
+      - path: tests.integration_test.validators.PTModelValidator
+      - path: tests.integration_test.validators.CrossValResultValidator
+        args: { server_model_names: [ "FL_global_model.pt" ] }
+      - path: tests.integration_test.validators.TBResultValidator
+        args: { require_result_on_client: False }
+    setup:
+      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='~/data', download=True)"
+    teardown:
+      - rm -rf ~/data

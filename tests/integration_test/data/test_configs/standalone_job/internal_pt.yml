@@ -45,3 +45,4 @@ tests:
           "data": { "run_finished": True }
     validators:
       - path: tests.integration_test.validators.TBResultValidator
+        args: { require_result_on_client: True }
