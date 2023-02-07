@@ -272,7 +272,7 @@ class FederatedServer(BaseServer):
         self.snapshot_persistor = snapshot_persistor
 
         # self._register_cellnet_cbs()
-        mpm.add_cleanup_cb(self.engine.close)
+        # mpm.add_cleanup_cb(self.engine.close)
 
     def _register_cellnet_cbs(self):
         self.cell.register_request_cb(
@@ -351,7 +351,7 @@ class FederatedServer(BaseServer):
         self.command_agent = ServerCommandAgent(self.engine, cell)
         self.command_agent.start()
 
-        mpm.add_cleanup_cb(self.command_agent.shutdown)
+        # mpm.add_cleanup_cb(self.command_agent.shutdown)
         mpm.add_cleanup_cb(net_agent.close)
         mpm.add_cleanup_cb(cell.stop)
 
@@ -654,7 +654,7 @@ class FederatedServer(BaseServer):
         self._register_cellnet_cbs()
 
         self.overseer_agent.start(self.overseer_callback)
-        mpm.add_cleanup_cb(self.overseer_agent.end)
+        # mpm.add_cleanup_cb(self.overseer_agent.end)
 
     def _init_agent(self, args=None):
         kv_list = parse_vars(args.set)
