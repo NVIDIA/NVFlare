@@ -108,7 +108,7 @@ class SimulatorDeployer(ServerDeployer):
             "name": "simulator_server",
             "service": {
                 "target": "localhost:" + str(self.open_ports[0]),
-                "scheme": "grpc://",
+                "scheme": "tcp://",
             },
             "admin_host": "localhost",
             "admin_port": self.open_ports[1],
@@ -128,7 +128,7 @@ class SimulatorDeployer(ServerDeployer):
                     "name": "simulator_server",
                     "service": {
                         "target": "localhost:" + str(self.open_ports[0]),
-                        "scheme": "grpc://",
+                        "scheme": "tcp://",
                     },
                 }
             ],

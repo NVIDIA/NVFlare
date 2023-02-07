@@ -336,8 +336,8 @@ class ServerRunner(FLComponent):
 
                 time.sleep(retry_interval)
 
-            # ask client to retry
-            return "", "", None
+        # ask client to retry
+        return "", "", None
 
     def handle_dead_job(self, client_name: str, fl_ctx: FLContext):
         with self.wf_lock:
