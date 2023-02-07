@@ -101,7 +101,7 @@ class PTLearner(Learner):
         )
 
         # Tensorboard streaming setup
-        self.writer = parts.get(self.analytic_sender_id)  # user configuration from config_fed_client_noinv.json
+        self.writer = parts.get(self.analytic_sender_id)  # user configuration from config_fed_client.json
         if not self.writer:  # else use local TensorBoard writer only
             self.writer = SummaryWriter(fl_ctx.get_prop(FLContextKey.APP_ROOT))
 
