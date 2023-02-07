@@ -42,10 +42,7 @@ def job_config_args_parser():
     parser.add_argument("--lr_mode", type=str, default="uniform", help="Whether to use uniform or scaled shrinkage")
     parser.add_argument("--nthread", type=int, default=16, help="nthread for xgboost")
     parser.add_argument(
-        "--tree_method",
-        type=str,
-        default="hist",
-        help="tree_method for xgboost - use hist or gpu_hist for best perf"
+        "--tree_method", type=str, default="hist", help="tree_method for xgboost - use hist or gpu_hist for best perf"
     )
     return parser
 
@@ -131,10 +128,11 @@ def _update_client_config(config: dict, args, lr_scale, site_name: str):
         config["executors"][0]["executor"]["args"]["nthread"] = args.nthread
         config["executors"][0]["executor"]["args"]["tree_method"] = args.tree_method
         config["executors"][0]["executor"]["args"]["training_mode"] = args.training_mode
-        num_client_bagging = 1
+        num_tree_bagging = 1
         if args.training_mode == "bagging":
-            num_client_bagging = args.site_num
-        config["executors"][0]["executor"]["args"]["num_client_bagging"] = num_client_bagging
+            num_tree_bagging = args.site_num
+
+        config["executors"][0]["executor"]["args"]["num_tree_bagging"] = num_tree_bagging
     else:
         config["executors"][0]["executor"]["args"]["data_split_filename"] = data_split_name
         config["executors"][0]["executor"]["args"]["xgboost_params"]["nthread"] = args.nthread
