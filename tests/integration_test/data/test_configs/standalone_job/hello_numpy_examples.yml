@@ -1,16 +1,35 @@
 n_servers: 1
 n_clients: 2
-jobs_root_dir: ../../examples
+jobs_root_dir: ../../examples/hello-world
 cleanup: True
 
 
 tests:
-  - test_name: "run hello-cyclic"
+  - test_name: "run hello-numpy-sag"
     event_sequence:
       - "trigger":
           "type": "server_log"
           "data": "Server started"
-        "actions": [ "submit_job hello-cyclic" ]
+        "actions": [ "submit_job hello-numpy-sag" ]
+        "result":
+          "type": "run_state"
+          "data": {}
+      - "trigger":
+          "type": "run_state"
+          "data": { "run_finished": True }
+        "actions": [ "ensure_current_job_done" ]
+        "result":
+          "type": "run_state"
+          "data": { "run_finished": True }
+    validators:
+      - path: tests.integration_test.validators.NumpySAGResultValidator
+        args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
+  - test_name: "run hello-numpy-cross-val"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job hello-numpy-cross-val" ]
         "result":
           "type": "run_state"
           "data": { }
@@ -22,22 +41,7 @@ tests:
           "type": "run_state"
           "data": { "run_finished": True }
     validators:
-      - path: tests.integration_test.validators.TFModelValidator
-  - test_name: "run hello-tf2"
-    event_sequence:
-      - "trigger":
-          "type": "server_log"
-          "data": "Server started"
-        "actions": [ "submit_job hello-tf2" ]
-        "result":
-          "type": "run_state"
-          "data": { }
-      - "trigger":
-          "type": "run_state"
-          "data": { "run_finished": True }
-        "actions": [ "ensure_current_job_done" ]
-        "result":
-          "type": "run_state"
-          "data": { "run_finished": True }
-    validators:
-      - path: tests.integration_test.validators.TFModelValidator
+      - path: tests.integration_test.validators.CrossValResultValidator
+        args: { server_model_names: ["server"] }
+      - path: tests.integration_test.validators.NumpySAGResultValidator
+        args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
