@@ -6,6 +6,8 @@ This example shows how to use [NVIDIA FLARE](https://nvflare.readthedocs.io/en/m
 It uses [MONAI](https://github.com/Project-MONAI/MONAI),
 which is a PyTorch-based, open-source framework for deep learning in healthcare imaging, part of the PyTorch Ecosystem.
 ### BraTS
+#### Note: currently the official BraTS 2018 web page is off-line, hence the official data resource is inaccessible, we will update the link once we receive an update.
+
 The application shown in this example is volumetric (3D) segmentation of brain tumor subregions from multimodal MRIs based on BraTS 2018 data.
 It uses a deep network model published by [Myronenko 2018](https://arxiv.org/abs/1810.11654) [1].
 
