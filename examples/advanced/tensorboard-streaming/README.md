@@ -15,10 +15,10 @@ pip3 install torch torchvision tensorboard
 
 ### 2. Run the experiment
 
-Use nvflare simulator to run the hello-examples:
+Use nvflare simulator to run the example:
 
 ```
-nvflare simulator -w /tmp/nvflare/ -n 2 -t 2 hello-pt-tb
+nvflare simulator -w /tmp/nvflare/ -n 2 -t 2 tensorboard-streaming
 ```
 
 ### 3. Access the logs and results

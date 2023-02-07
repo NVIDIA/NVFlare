@@ -1,5 +1,5 @@
 {
-  "name": "hello-pt-tb",
+  "name": "tensorboard-streaming",
   "resource_spec": {},
   "min_clients" : 2,
   "deploy_map": {
