@@ -22,7 +22,7 @@ from typing import Union, List, Dict, Any
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.connection import Connection
-from nvflare.fuel.f3.drivers.driver import Connector, DriverParams, DriverCap
+from nvflare.fuel.f3.drivers.driver import Connector
 from nvflare.fuel.f3.drivers import net_utils
 from .base_driver import BaseDriver
 

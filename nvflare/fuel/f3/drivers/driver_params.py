@@ -35,30 +35,37 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from dataclasses import dataclass
 from enum import Enum
 
-from nvflare.fuel.f3.drivers.net_utils import short_url
+
+class DriverParams(str, Enum):
+
+    # URL components. Those parameters are part of the URL, no need to be included in query string
+    # URL = SCHEME://HOST:PORT/PATH;PARAMS?QUERY#FRAG
+    URL = "url"
+    SCHEME = "scheme"
+    HOST = "host"
+    PORT = "port"
+    PATH = "path"
+    PARAMS = "params"
+    FRAG = "frag"
+    QUERY = "query"
+
+    # Other parameters
+    CA_CERT = "ca_cert"
+    SERVER_CERT = "server_cert"
+    SERVER_KEY = "server_key"
+    CLIENT_CERT = "client_cert"
+    CLIENT_KEY = "client_key"
+    SECURE = "secure"
+    PORTS = "ports"
+    SOCKET = "socket"
+    LOCAL_ADDR = "local_addr"
+    PEER_ADDR = "peer_addr"
+    PEER_CN = "peer_cn"
 
 
-class Mode(Enum):
-    ACTIVE = 0
-    PASSIVE = 1
+class DriverCap(str, Enum):
 
-
-@dataclass
-class Connector:
-    """Connector information"""
-    handle: str
-    # noinspection PyUnresolvedReferences
-    driver: 'Driver'
-    params: dict
-    mode: Mode
-    total_conns: int
-    curr_conns: int
-    started: bool
-    stopping: bool
-
-    def __str__(self):
-        url = short_url(self.params)
-        return f"[{self.handle} {self.mode.name} {url}]"
+    HEARTBEAT = "heartbeat"
+    SUPPORT_SSL = "support_ssl"

@@ -23,7 +23,8 @@ import msgpack
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.connection import Connection, ConnState, FrameReceiver, BytesAlike
 from nvflare.fuel.f3.drivers.connnector import Connector, Mode
-from nvflare.fuel.f3.drivers.driver import Driver, ConnMonitor, DriverCap, DriverParams
+from nvflare.fuel.f3.drivers.driver import Driver, ConnMonitor
+from nvflare.fuel.f3.drivers.driver_params import DriverCap, DriverParams
 from nvflare.fuel.f3.drivers.net_utils import ssl_required
 from nvflare.fuel.f3.drivers.prefix import Prefix, PREFIX_LEN
 from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor, EndpointState
@@ -51,7 +52,6 @@ class ConnManager(ConnMonitor):
 
     def __init__(self, local_endpoint: Endpoint):
         self.local_endpoint = local_endpoint
-        self.stopping = False
 
         # Active connectors
         self.connectors: Dict[str, Connector] = {}
@@ -119,7 +119,6 @@ class ConnManager(ConnMonitor):
         self.started = True
 
     def stop(self):
-        self.stopping = True
 
         with self.lock:
             for handle in sorted(self.connectors.keys()):
@@ -203,12 +202,12 @@ class ConnManager(ConnMonitor):
         if connector.started:
             return
 
-        log.info(f"Connector {connector.driver.get_name()}:{connector.handle} is starting in "
-                 f"{connector.mode.name} mode")
+        log.info(f"Connector {connector} is starting")
 
         self.conn_mgr_executor.submit(self.start_connector_task, connector)
 
-    def start_connector_task(self, connector: Connector):
+    @staticmethod
+    def start_connector_task(connector: Connector):
         """Start connector in a new thread
         This function will loop as long as connector is not stopped
         """
@@ -219,28 +218,27 @@ class ConnManager(ConnMonitor):
         else:
             starter = connector.driver.listen
 
-        name = f"{connector.driver.get_name()}:{connector.handle}"
         wait = INIT_WAIT
-        while not (self.stopping or connector.stopping):
+        while not connector.stopping:
             start_time = time.time()
             try:
                 starter(connector)
-                log.debug(f"Driver {name} is terminated")
+                log.debug(f"Driver for {connector} is terminated")
             except Exception as ex:
-                log.error(f"Connector {name} failed: {ex}")
+                log.error(f"Connector {connector} failed: {ex}")
                 log.debug(traceback.format_exc())
 
-            if self.stopping or connector.stopping:
-                log.debug(f"Connector {name} has stopped")
+            if connector.stopping:
+                log.debug(f"Connector {connector} has stopped")
                 break
 
             # After a long run, resetting wait
             run_time = time.time() - start_time
             if run_time > MAX_WAIT:
-                log.debug(f"Driver {name} had a long run ({run_time} sec), resetting wait")
+                log.debug(f"Driver for {connector} had a long run ({run_time} sec), resetting wait")
                 wait = INIT_WAIT
 
-            log.info(f"Retrying {name} in {wait} seconds")
+            log.info(f"Retrying {connector} in {wait} seconds")
             time.sleep(wait)
             # Exponential backoff
             wait *= 2

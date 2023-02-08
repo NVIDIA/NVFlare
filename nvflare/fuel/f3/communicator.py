@@ -19,6 +19,7 @@ from nvflare.fuel.f3 import drivers
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers.driver import Driver
 from nvflare.fuel.f3.drivers.driver_manager import DriverManager
+from nvflare.fuel.f3.drivers.net_utils import parse_url
 from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor
 from nvflare.fuel.f3.message import Message, MessageReceiver
 from nvflare.fuel.f3.sfm.conn_manager import ConnManager, Mode
@@ -144,7 +145,7 @@ class Communicator:
             raise CommError(CommError.NOT_SUPPORTED, f"No driver found for scheme {scheme}")
 
         connect_url, listening_url = driver_class.get_urls(scheme, resources)
-        params = Driver.parse_url(listening_url)
+        params = parse_url(listening_url)
 
         handle = self.add_connector_advanced(driver_class(), Mode.PASSIVE, params, True)
 
@@ -206,5 +207,5 @@ class Communicator:
         if not driver_class:
             raise CommError(CommError.NOT_SUPPORTED, f"No driver found for URL {url}")
 
-        params = Driver.parse_url(url)
+        params = parse_url(url)
         return self._add_connector_with_conn_props(driver_class(), params, mode)

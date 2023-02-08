@@ -19,7 +19,7 @@ import time
 from nvflare.fuel.f3.communicator import Communicator
 from nvflare.fuel.f3.demo.callbacks import DemoEndpointMonitor, TimingReceiver, make_message, LoopbackReceiver
 from nvflare.fuel.f3.drivers.connnector import Mode
-from nvflare.fuel.f3.drivers.driver import DriverParams
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.message import AppIds, Headers, Message
 
@@ -49,10 +49,10 @@ communicator = Communicator(local_endpoint)
 communicator.register_message_receiver(10, LoopbackReceiver(communicator))
 communicator.send(communicator.local_endpoint, 10, Message(None, "Test".encode("utf-8")))
 
-connect_url = "uds://tmp/socket?secure=False"
+connect_url = "otcp://localhost:4321"
 handle1 = communicator.add_connector(connect_url, Mode.ACTIVE)
 
-listen_url = "grpc://localhost:1234"
+listen_url = "otcp://localhost:1234"
 handle2 = communicator.add_connector(listen_url, Mode.PASSIVE)
 
 resources = {

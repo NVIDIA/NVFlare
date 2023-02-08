@@ -17,7 +17,7 @@ from typing import Any, Union
 
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.connection import Connection, BytesAlike
-from nvflare.fuel.f3.drivers.driver import Connector, DriverParams
+from nvflare.fuel.f3.drivers.driver import Connector
 from nvflare.fuel.f3.drivers.prefix import PREFIX_LEN, Prefix
 from nvflare.fuel.hci.security import get_certificate_common_name
 

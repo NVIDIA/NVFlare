@@ -16,7 +16,7 @@ import threading
 from typing import Dict, Optional
 
 from nvflare.fuel.f3.connection import Connection, ConnState
-from nvflare.fuel.f3.drivers.driver import Driver, Connector, DriverParams
+from nvflare.fuel.f3.drivers.driver import Driver, Connector
 
 log = logging.getLogger(__name__)
 

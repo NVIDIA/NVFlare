@@ -21,7 +21,6 @@ from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers import net_utils
 from nvflare.fuel.f3.drivers.base_driver import BaseDriver
 from nvflare.fuel.f3.drivers.driver import Driver, Connector
-from nvflare.fuel.f3.drivers.driver_params import DriverCap, DriverParams
 from nvflare.fuel.f3.drivers.net_utils import get_ssl_context
 from nvflare.fuel.f3.drivers.socket_conn import ConnectionHandler, SocketConnection
 from nvflare.fuel.hci.security import get_certificate_common_name
@@ -29,36 +28,7 @@ from nvflare.fuel.hci.security import get_certificate_common_name
 log = logging.getLogger(__name__)
 
 
-class TcpStreamServer(ThreadingTCPServer):
-
-    TCPServer.allow_reuse_address = True
-
-    def __init__(self, driver: 'Driver', connector: Connector):
-        self.driver = driver
-        self.connector = connector
-
-        params = connector.params
-        self.ssl_context = get_ssl_context(params, ssl_server=True)
-
-        host = params.get(DriverParams.HOST.value)
-        port = int(params.get(DriverParams.PORT.value))
-        self.local_addr = f"{host}:{port}"
-
-        TCPServer.__init__(self, (host, port), ConnectionHandler, False)
-
-        if self.ssl_context:
-            self.socket = self.ssl_context.wrap_socket(self.socket, server_side=True)
-
-        try:
-            self.server_bind()
-            self.server_activate()
-        except BaseException as ex:
-            log.error(f"{os.getpid()}: Error binding to  {host}:{port}: {ex}")
-            self.server_close()
-            raise
-
-
-class TcpDriver(BaseDriver):
+class AsyncioTcpDriver(BaseDriver):
 
     def __init__(self):
         super().__init__()
@@ -66,7 +36,7 @@ class TcpDriver(BaseDriver):
 
     @staticmethod
     def supported_transports() -> List[str]:
-        return ["otcp", "sotcp"]
+        return ["tcp", "stcp"]
 
     @staticmethod
     def capabilities() -> Dict[str, Any]:
