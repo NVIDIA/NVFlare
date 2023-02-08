@@ -81,9 +81,10 @@ This can be done by using the provided template configure files in
 [./job_configs/app_template](./job_configs/app_template).
 ```
 python3 -m nvflare_gradinv.utils.create_job_config --app_folder ./job_configs/app_template \
---job_config ./job_configs/cxr_1client --n_clients 1 --num_rounds 3 \
+--n_clients 1 --num_rounds 3 \
 --data_root=${DATA_ROOT} --dataset_json=${PWD}/data/data_200val+rest_client \
---prior_file=${PWD}/DeepInversion/FLGradientInversion/prior/prior_1.jpg
+--prior_file=${PWD}/DeepInversion/FLGradientInversion/prior/prior_1.jpg \
+--output ./job_configs/cxr_1client
 ```
 
 #### cxr_9clients
@@ -112,10 +113,11 @@ We can modify to client and gradient inversion config files to use the
 downloaded data, above dataset, and prior image using
 ```
 python3 -m nvflare_gradinv.utils.create_job_config --app_folder ./job_configs/app_template \
---job_config ./job_configs/cxr_9clients --n_clients 9 --num_rounds 100 \
+--n_clients 9 --num_rounds 100 \
 --invert_clients 1,5,9 --batch_sizes 4,4,4,4,8,8,8,8,1 \
 --data_root=${DATA_ROOT} --dataset_json=${PWD}/data/data_200val+rest_client \
---prior_file=${PWD}/DeepInversion/FLGradientInversion/prior/prior_1.jpg
+--prior_file=${PWD}/DeepInversion/FLGradientInversion/prior/prior_1.jpg \
+--output ./job_configs/cxr_9clients
 ```
 
 

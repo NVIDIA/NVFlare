@@ -34,7 +34,7 @@ def create_server_config(server_config_file, args):
     server_config["min_clients"] = args.n_clients
     server_config["num_rounds"] = args.num_rounds
 
-    out_server_config_file = os.path.join(args.job_config, "server", "config", "config_fed_server.json")
+    out_server_config_file = os.path.join(args.output, "server", "config", "config_fed_server.json")
     if not os.path.isdir(os.path.dirname(out_server_config_file)):
         os.makedirs(os.path.dirname(out_server_config_file))
 
@@ -57,7 +57,7 @@ def create_client_config(client_config_file, args, client, bs):
     if args.prior_file and "PRIOR_FILE" in client_config:
         client_config["PRIOR_FILE"] = args.prior_file
 
-    out_client_config_file = os.path.join(args.job_config, f"site-{client}", "config", "config_fed_client.json")
+    out_client_config_file = os.path.join(args.output, f"site-{client}", "config", "config_fed_client.json")
     if not os.path.isdir(os.path.dirname(out_client_config_file)):
         os.makedirs(os.path.dirname(out_client_config_file))
 
@@ -75,7 +75,7 @@ def create_gradinv_config(inv_config_file, args, client):
 
     inv_config["img_prior"] = args.prior_file
 
-    out_inv_config_file = os.path.join(args.job_config, f"site-{client}", "config", "config_inversion.json")
+    out_inv_config_file = os.path.join(args.output, f"site-{client}", "config", "config_inversion.json")
     if not os.path.isdir(os.path.dirname(out_inv_config_file)):
         os.makedirs(os.path.dirname(out_inv_config_file))
 
@@ -93,7 +93,7 @@ def create_meta_config(clients, meta_config_file, args):
 
     meta_config["deploy_map"] = deploy_map
 
-    out_meta_config_file = os.path.join(args.job_config, "meta.json")
+    out_meta_config_file = os.path.join(args.output, "meta.json")
     if not os.path.isdir(os.path.dirname(out_meta_config_file)):
         os.makedirs(os.path.dirname(out_meta_config_file))
 
@@ -107,11 +107,10 @@ def main():
     parser.add_argument(
         "--app_folder",
         type=str,
-        default="app_template",
         help="Folder containing app config files in JSON format.",
     )
     parser.add_argument(
-        "--job_config",
+        "--output",
         type=str,
         help="Output folder containing the job config.",
     )
@@ -159,9 +158,9 @@ def main():
     parser.add_argument("--prior_file", type=str, help="Prior image filename")
     args = parser.parse_args()
 
-    if os.path.isdir(args.job_config):
-        print(f"Deleting previous job_config at {args.job_config}")
-        shutil.rmtree(args.job_config)
+    if os.path.isdir(args.output):
+        print(f"Deleting previous job_config at {args.output}")
+        shutil.rmtree(args.output)
 
     invert_clients = [int(x) for x in args.invert_clients.split(",")]
     batch_sizes = [int(x) for x in args.batch_sizes.split(",")]
