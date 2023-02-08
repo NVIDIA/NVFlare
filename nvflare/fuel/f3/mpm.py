@@ -140,23 +140,17 @@ class MainProcessMonitor:
             raise RuntimeError(
                 f"{cls.name}: the mpm.run() method is called from {t.name}: it must be called from the MainThread")
 
-        # create AIO context and start a thread to run AIO loop
-        cls._aio_ctx = AioContext(cls.name)
-        aio_thread = threading.Thread(target=cls._aio_ctx.run_aio_loop)
-        aio_thread.daemon = True
-        aio_thread.start()
-
         # call and wait for the main_func to complete
         logger = cls.logger()
         logger.info(f"=========== {cls.name}: started to run forever")
-        return_value = main_func()
+        rc = main_func()
 
         # start shutdown process
         cls._stopping = True
         cls._start_shutdown(shutdown_grace_time, cleanup_grace_time)
 
         # We can now stop the AIO loop!
-        cls._aio_ctx.stop_aio_loop()
+        AioContext.close_global_context()
 
         logger.info(f"=========== {cls.name}: checking running threads")
         num_active_threads = 0
@@ -171,5 +165,4 @@ class MainProcessMonitor:
                 os.kill(os.getpid(), signal.SIGKILL)
             except:
                 pass
-
-        return return_value
+        return rc
