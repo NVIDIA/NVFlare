@@ -522,7 +522,8 @@ class ServerEngine(ServerEngineInternalSpec):
             with self.new_context() as fl_ctx:
                 execution_error = fl_ctx.get_prop(FLContextKey.FATAL_SYSTEM_ERROR, False)
                 data = {"execution_error": execution_error}
-                request = new_cell_message({}, fobs.dumps(data))
+                job_id = fl_ctx.get_job_id()
+                request = new_cell_message({CellMessageHeaderKeys.JOB_ID: job_id}, fobs.dumps(data))
                 return_data = self.server.cell.fire_and_forget(
                     targets=FQCN.ROOT_SERVER,
                     channel=CellChannel.SERVER_PARENT_LISTENER,
