@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from .cifar10_result_validator import CIFAR10ResultValidator
 from .cross_val_result_validator import (
     CrossValResultValidator,
     CrossValSingleClientResultValidator,

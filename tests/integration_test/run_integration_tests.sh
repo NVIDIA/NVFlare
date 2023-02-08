@@ -8,7 +8,7 @@ usage()
     echo
     echo "Syntax: ./run_integration_tests.sh -m [-c]"
     echo "options:"
-    echo "m     Which backend/test to run (options: numpy, tensorflow, pytorch, ha, auth, overseer, preflight)."
+    echo "m     Which backend/test to run (options: numpy, tensorflow, pytorch, ha, auth, overseer, preflight, cifar)."
     echo "c     Clean up integration test results."
     echo
     exit 1
@@ -20,7 +20,7 @@ while getopts ":m:c" option; do
     case "${option}" in
         m) # framework/backend
             m=${OPTARG}
-            [[ $m == "numpy" || $m == "tensorflow" || $m == "pytorch" || $m == "overseer" || $m == "ha" || $m == "auth" || $m == "preflight" ]] || usage
+            [[ $m == "numpy" || $m == "tensorflow" || $m == "pytorch" || $m == "overseer" || $m == "ha" || $m == "auth" || $m == "preflight" || $m == "cifar" ]] || usage
             prefix="NVFLARE_TEST_FRAMEWORK=$m"
             ;;
         c) # Clean up
@@ -92,6 +92,18 @@ run_auth()
     eval "$cmd"
 }
 
+run_cifar10()
+{
+    echo "Running integration tests using cifar10 related jobs."
+    cmd="$prefix $cmd system_test.py"
+    python -m pip install tensorboard torch torchvision
+    python -c "import torch; print('PyTorch version is ' + torch.__version__)"
+    export PYTHONPATH="${PYTHONPATH}:${PWD}/../../examples/cifar10"
+    echo "PYTHONPATH is " + $PYTHONPATH
+    echo "$cmd"
+    eval "$cmd"
+}
+
 if [[ $m == "numpy" ]]; then
     run_numpy
 elif [[ $m == "tensorflow" ]]; then
@@ -106,4 +118,6 @@ elif [[ $m == "overseer" ]]; then
     run_overseer_test
 elif [[ $m == "preflight" ]]; then
     run_preflight_check_test
+elif [[ $m == "cifar" ]]; then
+    run_cifar10
 fi
