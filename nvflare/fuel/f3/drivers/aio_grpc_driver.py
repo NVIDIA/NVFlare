@@ -21,7 +21,6 @@ import logging
 import threading
 from typing import Union, List, Dict, Any
 
-from nvflare.fuel.f3.mpm import MainProcessMonitor
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.connection import Connection
@@ -279,8 +278,8 @@ class AioGrpcDriver(BaseDriver):
         self.closing = False
 
     @classmethod
-    def _initialize_aio(cls, name: str):
-        return MainProcessMonitor.get_aio_context(name)
+    def _initialize_aio(cls):
+        return AioContext.get_global_context()
 
     @staticmethod
     def supported_transports() -> List[str]:
@@ -309,7 +308,7 @@ class AioGrpcDriver(BaseDriver):
     def listen(self, connector: Connector):
         self.logger.debug(f"listen called from thread {threading.current_thread().name}")
         self.connector = connector
-        aio_ctx = self._initialize_aio("SERVER")
+        aio_ctx = self._initialize_aio()
         conn_ctx = _ConnCtx()
         aio_ctx.run_coro(self._start_server(connector, aio_ctx, conn_ctx))
         while not conn_ctx.conn and not conn_ctx.error:
@@ -374,7 +373,7 @@ class AioGrpcDriver(BaseDriver):
 
     def connect(self, connector: Connector):
         self.logger.debug("CLIENT: connect called")
-        aio_ctx = self._initialize_aio("CLIENT")
+        aio_ctx = self._initialize_aio()
         conn_ctx = _ConnCtx()
         aio_ctx.run_coro(self._start_connect(connector, aio_ctx, conn_ctx))
         time.sleep(0.2)
@@ -403,7 +402,7 @@ class AioGrpcDriver(BaseDriver):
         self.close_all()
 
         if self.server:
-            aio_ctx = self._initialize_aio("SERVER")
+            aio_ctx = self._initialize_aio()
             aio_ctx.run_coro(self.server.shutdown())
 
     @staticmethod
