@@ -19,6 +19,7 @@ import copy
 import logging
 import os
 import sys
+import time
 import threading
 
 from nvflare.apis.executor import Executor
@@ -264,15 +265,15 @@ class SubWorkerExecutor:
 
     def _close(self, data):
         self.done = True
-        # self.cell.stop()
-        mpm.stop()
+        self.cell.stop()
+        # mpm.stop()
 
     def run(self):
         self.logger.info("SubWorkerExecutor process started.")
-        # while not self.done:
-        #     time.sleep(1.0)
+        while not self.done:
+            time.sleep(1.0)
         # self.cell.run()
-        mpm.run("Client sub_worker")
+        # mpm.run("Client sub_worker")
         self.logger.info("SubWorkerExecutor process shutdown.")
 
 
@@ -331,4 +332,5 @@ if __name__ == "__main__":
     """
     This is the program for running rank processes in multi-process mode.
     """
-    main()
+    # main()
+    mpm.run(main_func=main)

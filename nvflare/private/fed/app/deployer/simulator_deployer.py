@@ -17,6 +17,7 @@ import tempfile
 
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.utils.network_utils import get_open_ports
+from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.private.fed.app.server.server_train import create_admin_server
 
 # from nvflare.private.fed.client.admin_msg_sender import AdminMessageSender
@@ -59,6 +60,8 @@ class SimulatorDeployer(ServerDeployer):
         admin_server.start()
         services.set_admin_server(admin_server)
 
+        mpm.add_cleanup_cb(admin_server.stop)
+
         return simulator_server, services
 
     def create_fl_client(self, client_name, args):
@@ -98,12 +101,14 @@ class SimulatorDeployer(ServerDeployer):
         # if self.engine:
         #     self.engine.admin_agent.register_cell_cb()
 
+        mpm.add_cleanup_cb(cell.stop)
+
     def _create_simulator_server_config(self, admin_storage, max_clients):
         simulator_server = {
             "name": "simulator_server",
             "service": {
                 "target": "localhost:" + str(self.open_ports[0]),
-                "scheme": "grpc://",
+                "scheme": "tcp://",
             },
             "admin_host": "localhost",
             "admin_port": self.open_ports[1],
@@ -123,7 +128,7 @@ class SimulatorDeployer(ServerDeployer):
                     "name": "simulator_server",
                     "service": {
                         "target": "localhost:" + str(self.open_ports[0]),
-                        "scheme": "grpc://",
+                        "scheme": "tcp://",
                     },
                 }
             ],

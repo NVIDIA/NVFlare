@@ -160,7 +160,7 @@ class FedAdminServer(AdminServer):
         # )
 
         cmd_reg.register_module(sess_mgr)
-        mpm.add_cleanup_cb(sess_mgr.shutdown)
+        # mpm.add_cleanup_cb(sess_mgr.shutdown)
 
         agent = NetAgent(self.cell)
         net_mgr = NetManager(agent)

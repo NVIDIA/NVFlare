@@ -149,7 +149,7 @@ class MainProcessMonitor:
         # call and wait for the main_func to complete
         logger = cls.logger()
         logger.info(f"=========== {cls.name}: started to run forever")
-        main_func()
+        return_value = main_func()
 
         # start shutdown process
         cls._stopping = True
@@ -171,3 +171,5 @@ class MainProcessMonitor:
                 os.kill(os.getpid(), signal.SIGKILL)
             except:
                 pass
+
+        return return_value

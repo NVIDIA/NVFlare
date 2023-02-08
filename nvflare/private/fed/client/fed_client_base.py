@@ -193,13 +193,20 @@ class FederatedClientBase:
                             if time.time() - start > 15:
                                 raise RuntimeError("Failed to set the cell for engine: "
                                                    "timeout waiting for client_runner to be created.")
-                            time.sleep(0.2)
+                            time.sleep(0.5)
                         self.client_runner.engine.cell = self.cell
                         self.client_runner.command_agent.register_cell_cb()
                     else:
-                        if self.engine:
-                            self.engine.cell = self.cell
-                            self.engine.admin_agent.register_cell_cb()
+                        start = time.time()
+                        while not self.engine:
+                            self.logger.info("Wait for engine to be created.")
+                            if time.time() - start > 15:
+                                raise RuntimeError("Failed to set the cell for engine: "
+                                                   "timeout waiting for engine to be created.")
+                            time.sleep(0.5)
+
+                        self.engine.cell = self.cell
+                        self.engine.admin_agent.register_cell_cb()
 
                     mpm.add_cleanup_cb(self.net_agent.close)
                     mpm.add_cleanup_cb(self.cell.stop)

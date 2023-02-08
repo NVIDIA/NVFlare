@@ -109,6 +109,12 @@ class Communicator:
         )
 
         start = time.time()
+        while not self.cell:
+            self.logger.info("Waiting for the client cell to be created.")
+            if time.time() - start > 15.:
+                raise RuntimeError("Client cell could not be created. Failed to login the client.")
+            time.sleep(0.5)
+
         while not self.cell.is_cell_connected(FQCN.ROOT_SERVER):
             time.sleep(0.1)
             if time.time() - start > 30.:
