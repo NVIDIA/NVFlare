@@ -32,6 +32,7 @@ from nvflare.fuel.f3.drivers.grpc.streamer_pb2_grpc import (
 )
 from nvflare.fuel.f3.aio_context import AioContext
 from .base_driver import BaseDriver
+from .driver_params import DriverParams
 from .grpc.streamer_pb2 import Frame
 from .net_utils import get_address, ssl_required
 

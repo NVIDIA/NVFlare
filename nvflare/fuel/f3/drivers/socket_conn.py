@@ -18,6 +18,7 @@ from typing import Any, Union
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.connection import Connection, BytesAlike
 from nvflare.fuel.f3.drivers.driver import Connector
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.drivers.prefix import PREFIX_LEN, Prefix
 from nvflare.fuel.hci.security import get_certificate_common_name
 
@@ -38,7 +39,6 @@ class SocketConnection(Connection):
         return self.conn_props
 
     def close(self):
-        log.debug(f"Connection {self.name} is closing")
         self.closing = True
         if self.sock:
             self.sock.close()

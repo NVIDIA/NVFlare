@@ -28,11 +28,11 @@ from nvflare.fuel.hci.security import get_certificate_common_name
 log = logging.getLogger(__name__)
 
 
-class AsyncioTcpDriver(BaseDriver):
+class AioTcpDriver(BaseDriver):
 
     def __init__(self):
         super().__init__()
-        self.server = None
+        self.aio_ctx =
 
     @staticmethod
     def supported_transports() -> List[str]:

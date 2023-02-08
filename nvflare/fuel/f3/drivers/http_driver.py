@@ -22,6 +22,7 @@ from nvflare.fuel.f3.drivers import net_utils
 from nvflare.fuel.f3.drivers.base_driver import BaseDriver
 from nvflare.fuel.f3.connection import Connection
 from nvflare.fuel.f3.drivers.driver import Connector
+from nvflare.fuel.f3.drivers.driver_params import DriverCap, DriverParams
 from nvflare.fuel.f3.drivers.prefix import Prefix
 from nvflare.fuel.f3.sfm.conn_manager import Mode
 

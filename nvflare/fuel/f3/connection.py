@@ -16,7 +16,8 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Union
 
-from nvflare.fuel.f3.drivers.connnector import Connector
+from nvflare.fuel.f3.drivers.connnector import Connector, Mode
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
 
 BytesAlike = Union[bytes, bytearray, memoryview]
 
@@ -49,7 +50,7 @@ class Connection(ABC):
     conn_count = 0
 
     def __init__(self, connector: Connector):
-        self.name = Connection._get_connection_name()
+        self.name = self._get_connection_name()
         self.state = ConnState.IDLE
         self.frame_receiver = None
         self.connector = connector
@@ -95,9 +96,21 @@ class Connection(ABC):
         """
         self.frame_receiver = receiver
 
-    @staticmethod
-    def _get_connection_name():
-        with Connection.lock:
-            Connection.conn_count += 1
+    @classmethod
+    def _get_connection_name(cls):
+        with cls.lock:
+            cls.conn_count += 1
 
-        return "CN%05d" % Connection.conn_count
+        return "CN%05d" % cls.conn_count
+
+    def __str__(self):
+
+        if self.state != ConnState.CONNECTED:
+            return f"[{self.name} Not Connected]"
+
+        conn_props = self.get_conn_properties()
+        local_addr = conn_props.get(DriverParams.LOCAL_ADDR, "N/A")
+        peer_addr = conn_props.get(DriverParams.PEER_ADDR, "N/A")
+        direction = "=>" if self.connector.mode == Mode.ACTIVE else "<="
+
+        return f"[{self.name} {local_addr} {direction} {peer_addr}]"

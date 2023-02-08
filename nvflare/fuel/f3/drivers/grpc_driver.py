@@ -25,6 +25,7 @@ from nvflare.fuel.f3.connection import Connection
 from nvflare.fuel.f3.drivers.driver import Connector
 from nvflare.fuel.f3.drivers import net_utils
 from .base_driver import BaseDriver
+from .driver_params import DriverParams, DriverCap
 
 from .grpc.qq import QQ
 from nvflare.fuel.f3.drivers.grpc.streamer_pb2_grpc import (

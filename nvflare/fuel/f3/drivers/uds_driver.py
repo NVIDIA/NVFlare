@@ -34,6 +34,7 @@ from typing import List, Dict, Any
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers.base_driver import BaseDriver
 from nvflare.fuel.f3.drivers.driver import Driver, Connector
+from nvflare.fuel.f3.drivers.driver_params import DriverParams, DriverCap
 from nvflare.fuel.f3.drivers.socket_conn import ConnectionHandler, SocketConnection
 
 log = logging.getLogger(__name__)

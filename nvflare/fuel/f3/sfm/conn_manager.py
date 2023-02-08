@@ -92,7 +92,7 @@ class ConnManager(ConnMonitor):
         with self.lock:
             self.connectors[handle] = connector
 
-        log.debug(f"Connector {driver.get_name()}:{handle} Mode: {mode.name} is created")
+        log.debug(f"Connector {connector} is created")
 
         if self.started:
             self.start_connector(connector)
@@ -105,7 +105,7 @@ class ConnManager(ConnMonitor):
             if connector:
                 connector.stopping = True
                 connector.driver.shutdown()
-                log.debug(f"Connector {connector.driver.get_name()}:{handle} is removed")
+                log.debug(f"Connector {connector} is removed")
             else:
                 log.error(f"Unknown connector handle: {handle}")
 
@@ -223,7 +223,6 @@ class ConnManager(ConnMonitor):
             start_time = time.time()
             try:
                 starter(connector)
-                log.debug(f"Driver for {connector} is terminated")
             except Exception as ex:
                 log.error(f"Connector {connector} failed: {ex}")
                 log.debug(traceback.format_exc())
@@ -251,11 +250,13 @@ class ConnManager(ConnMonitor):
             connector = connection.connector
             if state == ConnState.CONNECTED:
                 self.handle_new_connection(connection)
-                connector.total_conns += 1
-                connector.curr_conns += 1
+                with self.lock:
+                    connector.total_conns += 1
+                    connector.curr_conns += 1
             elif state == ConnState.CLOSED:
                 self.close_connection(connection)
-                connector.curr_conns -= 1
+                with self.lock:
+                    connector.curr_conns -= 1
             else:
                 log.error(f"Unknown state: {state}")
         except BaseException as ex:
