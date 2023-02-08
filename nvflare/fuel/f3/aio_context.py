@@ -21,14 +21,12 @@ import time
 
 class AioContext:
 
-    counter_lock = threading.Lock()
-    thread_count = 0
+    _ctx_lock = threading.Lock()
+    _global_ctx = None
 
     def __init__(self, name):
         self.closed = False
         self.name = name
-        with AioContext.counter_lock:
-            AioContext.thread_count += 1
         self.loop = None
         self.ready = False
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -81,3 +79,20 @@ class AioContext:
             self.logger.error("could not stop AIO loop")
         else:
             self.logger.debug("stopped loop!")
+
+    @classmethod
+    def get_global_context(cls):
+        with cls._ctx_lock:
+            if not cls._global_ctx:
+                cls._global_ctx = AioContext(f"Ctx_{os.getpid()}")
+                t = threading.Thread(target=cls._global_ctx.run_aio_loop)
+                t.daemon = True
+                t.start()
+        return cls._global_ctx
+
+    @classmethod
+    def close_global_context(cls):
+        with cls._ctx_lock:
+            if cls._global_ctx:
+                cls._global_ctx.stop_aio_loop()
+                cls._global_ctx = None
