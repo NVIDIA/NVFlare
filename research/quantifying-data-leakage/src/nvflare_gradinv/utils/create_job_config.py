@@ -119,6 +119,7 @@ def main():
         type=str,
         help="Data root.",
     )
+    parser.add_argument("--prior_file", type=str, help="Prior image filename")
     parser.add_argument(
         "--dataset_json_prefix",
         type=str,
@@ -155,7 +156,6 @@ def main():
         default=0.0,
         help="Noise level for `GaussianPrivacy` filter.",
     )
-    parser.add_argument("--prior_file", type=str, help="Prior image filename")
     args = parser.parse_args()
 
     if os.path.isdir(args.output):
