@@ -25,7 +25,6 @@ from typing import List, Union, Dict
 from urllib.parse import urlparse
 
 from nvflare.fuel.f3.connection import Connection
-from nvflare.fuel.f3.drivers.driver import DriverParams
 from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor, EndpointState
 from nvflare.fuel.f3.communicator import Communicator, MessageReceiver
 from nvflare.fuel.f3.message import Message
@@ -40,7 +39,7 @@ from .defs import (
 )
 from .utils import make_reply, new_message, format_log_message, encode_payload, decode_payload
 from .fqcn import FQCN, FqcnInfo, same_family
-
+from ..drivers.driver_params import DriverParams
 
 _BULK_CHANNEL = "cellnet.bulk"
 _ONE_MB = 1024 * 1024
