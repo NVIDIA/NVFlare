@@ -38,12 +38,14 @@ class FedXGBTreeExecutor(Executor, ABC):
         self,
         training_mode,
         lr_scale,
-        num_tree_bagging: int = 1,
+        num_client_bagging: int = 1,
         lr_mode: str = "uniform",
         local_model_path: str = "model.json",
         global_model_path: str = "model_global.json",
         learning_rate: float = 0.1,
         objective: str = "binary:logistic",
+        num_local_parallel_tree: int = 1,
+        local_subsample: float = 1,
         max_depth: int = 8,
         eval_metric: str = "auc",
         nthread: int = 16,
@@ -55,11 +57,13 @@ class FedXGBTreeExecutor(Executor, ABC):
         self.writer = None
 
         self.training_mode = training_mode
-        self.num_tree_bagging = num_tree_bagging
+        self.num_client_bagging = num_client_bagging
         self.lr = None
         self.lr_scale = lr_scale
         self.base_lr = learning_rate
         self.lr_mode = lr_mode
+        self.num_local_parallel_tree = num_local_parallel_tree
+        self.local_subsample = local_subsample
         self.local_model_path = local_model_path
         self.global_model_path = global_model_path
         self.objective = objective
@@ -68,9 +72,7 @@ class FedXGBTreeExecutor(Executor, ABC):
         self.nthread = nthread
         self.tree_method = tree_method
         self.train_task_name = train_task_name
-        # Currently we support boosting 1 tree per round
-        # could further extend
-        self.trees_per_round = 1
+        self.num_local_round = 1
 
         self.bst = None
         self.global_model_as_dict = None
@@ -129,8 +131,8 @@ class FedXGBTreeExecutor(Executor, ABC):
         if self.training_mode == "bagging":
             # Bagging mode
             if self.lr_mode == "uniform":
-                # uniform lr, global learning_rate scaled by num_tree_bagging for bagging
-                lr = self.base_lr / self.num_tree_bagging
+                # uniform lr, global learning_rate scaled by num_client_bagging for bagging
+                lr = self.base_lr / self.num_client_bagging
             else:
                 # scaled lr, global learning_rate scaled by data size percentage
                 lr = self.base_lr * self.lr_scale
@@ -146,6 +148,8 @@ class FedXGBTreeExecutor(Executor, ABC):
             "max_depth": self.max_depth,
             "eval_metric": self.eval_metric,
             "nthread": self.nthread,
+            "num_parallel_tree": self.num_local_parallel_tree,
+            "subsample": self.local_subsample,
             "tree_method": self.tree_method,
         }
         return param
@@ -156,11 +160,11 @@ class FedXGBTreeExecutor(Executor, ABC):
         )
         self.log_info(fl_ctx, eval_results)
         auc = float(eval_results.split("\t")[2].split(":")[1])
-        for i in range(self.trees_per_round):
+        for i in range(self.num_local_round):
             self.bst.update(self.dmat_train, self.bst.num_boosted_rounds())
 
-        # extract newly added self.trees_per_round using xgboost slicing api
-        bst = self.bst[self.bst.num_boosted_rounds() - self.trees_per_round : self.bst.num_boosted_rounds()]
+        # extract newly added self.num_local_round using xgboost slicing api
+        bst = self.bst[self.bst.num_boosted_rounds() - self.num_local_round : self.bst.num_boosted_rounds()]
 
         self.log_info(
             fl_ctx,
@@ -169,7 +173,7 @@ class FedXGBTreeExecutor(Executor, ABC):
         if self.writer:
             # note: writing auc before current training step, for passed in global model
             self.writer.add_scalar(
-                "AUC", auc, int((self.bst.num_boosted_rounds() - self.trees_per_round - 1) / self.num_tree_bagging)
+                "AUC", auc, int((self.bst.num_boosted_rounds() - self.num_local_round - 1) / self.num_client_bagging)
             )
         return bst
 
@@ -219,7 +223,7 @@ class FedXGBTreeExecutor(Executor, ABC):
                 bst = xgb.train(
                     param,
                     self.dmat_train,
-                    num_boost_round=self.trees_per_round,
+                    num_boost_round=self.num_local_round,
                     evals=[(self.dmat_valid, "validate"), (self.dmat_train, "train")],
                 )
             else:
@@ -227,7 +231,7 @@ class FedXGBTreeExecutor(Executor, ABC):
                 bst = xgb.train(
                     param,
                     self.dmat_train,
-                    num_boost_round=self.trees_per_round,
+                    num_boost_round=self.num_local_round,
                     xgb_model=loadable_model,
                     evals=[(self.dmat_valid, "validate"), (self.dmat_train, "train")],
                 )

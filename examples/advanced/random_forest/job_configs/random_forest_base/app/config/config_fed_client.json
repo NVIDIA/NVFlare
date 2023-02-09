@@ -11,8 +11,10 @@
         "path": "higgs_executor.FedXGBTreeHiggsExecutor",
         "args": {
           "data_split_filename": "data_split.json",
-          "training_mode": "cyclic",
-          "num_client_bagging": 1,
+          "training_mode": "bagging",
+          "num_client_bagging": 5,
+          "num_local_parallel_tree": 5,
+          "local_subsample": 0.8,
           "lr_mode": "scaled",
           "local_model_path": "model.json",
           "global_model_path": "model_global.json",
