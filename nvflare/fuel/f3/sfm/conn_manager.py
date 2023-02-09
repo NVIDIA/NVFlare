@@ -224,7 +224,7 @@ class ConnManager(ConnMonitor):
             try:
                 starter(connector)
             except Exception as ex:
-                log.error(f"Connector {connector} failed: {ex}")
+                log.error(f"Connector {connector} failed with exception {type(ex).__name__}: {ex}")
                 log.debug(traceback.format_exc())
 
             if connector.stopping:

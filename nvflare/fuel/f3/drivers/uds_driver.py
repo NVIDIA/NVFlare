@@ -90,9 +90,7 @@ class UdsDriver(BaseDriver):
                       DriverParams.PEER_ADDR.value: socket_path}
         connection = SocketConnection(sock, connector, conn_props)
         self.add_connection(connection)
-
         connection.read_loop()
-
         self.close_connection(connection)
 
     def shutdown(self):

@@ -339,6 +339,10 @@ class AioGrpcDriver(BaseDriver):
                 stub = StreamerStub(channel)
                 self.logger.debug("CLIENT: got stub!")
                 conn_props = {DriverParams.PEER_ADDR.value: address}
+
+                if secure:
+                    conn_props[DriverParams.PEER_CN.value] = "N/A"
+
                 connection = AioStreamSession(
                     side="CLIENT",
                     aio_ctx=aio_ctx,

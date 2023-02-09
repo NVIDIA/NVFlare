@@ -65,18 +65,40 @@ class AioConnection(Connection):
 
     def send_frame(self, frame: BytesAlike):
         try:
-            self.aio_ctx.run_coro(self.async_send_frame(frame))
+            self.aio_ctx.run_coro(self._async_send_frame(frame))
         except BaseException as ex:
             log.error(f"Error calling send coroutine for connection {self}: {ex}")
 
-    async def async_send_frame(self, frame: BytesAlike):
+    async def read_loop(self):
+        try:
+            while not self.closing:
+                # Reading from websocket and call receiver CB
+                frame = await self._async_read_frame()
+                if log.isEnabledFor(logging.DEBUG):
+                    prefix = Prefix.from_bytes(frame)
+                    log.debug(f"Received frame: {prefix} on {self}")
+
+                if self.frame_receiver:
+                    self.frame_receiver.process_frame(frame)
+                else:
+                    log.error("Frame receiver not registered")
+        except IncompleteReadError:
+            if log.isEnabledFor(logging.DEBUG):
+                closer = "locally" if self.closing else "by peer"
+                log.debug(f"Connection {self} is closed {closer}")
+        except BaseException as ex:
+            log.error(f"Read error for connection {self}: {ex}")
+
+    # Internal methods
+
+    async def _async_send_frame(self, frame: BytesAlike):
         try:
             self.writer.write(frame)
             await self.writer.drain()
         except BaseException as ex:
             log.error(f"Error sending frame for connection {self}: {ex}")
 
-    async def async_read_frame(self):
+    async def _async_read_frame(self):
 
         prefix_buf = await self.reader.readexactly(PREFIX_LEN)
         prefix = Prefix.from_bytes(prefix_buf)
@@ -92,22 +114,4 @@ class AioConnection(Connection):
 
         return prefix_buf + remaining
 
-    async def read_loop(self):
-        try:
-            while not self.closing:
-                # Reading from websocket and call receiver CB
-                frame = await self.async_read_frame()
-                if log.isEnabledFor(logging.DEBUG):
-                    prefix = Prefix.from_bytes(frame)
-                    log.debug(f"Received frame: {prefix} on {self}")
 
-                if self.frame_receiver:
-                    self.frame_receiver.process_frame(frame)
-                else:
-                    log.error("Frame receiver not registered")
-        except IncompleteReadError:
-            if log.isEnabledFor(logging.DEBUG):
-                closer = "locally" if self.closing else "by peer"
-                log.debug(f"Connection {self} is closed {closer}")
-        except BaseException as ex:
-            log.error(f"Read error for connection {self}: {ex}")

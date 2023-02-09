@@ -112,5 +112,6 @@ class Connection(ABC):
         local_addr = conn_props.get(DriverParams.LOCAL_ADDR, "N/A")
         peer_addr = conn_props.get(DriverParams.PEER_ADDR, "N/A")
         direction = "=>" if self.connector.mode == Mode.ACTIVE else "<="
-
-        return f"[{self.name} {local_addr} {direction} {peer_addr}]"
+        peer_cn = conn_props.get(DriverParams.PEER_CN, None)
+        cn = " SSL " + peer_cn if peer_cn else ""
+        return f"[{self.name} {local_addr} {direction} {peer_addr}{cn}]"

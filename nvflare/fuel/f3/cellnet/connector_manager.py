@@ -170,6 +170,7 @@ class ConnectorManager:
         if active and not url:
             raise RuntimeError("url is required by not provided for active connector!")
 
+        ssl_required = False
         if not adhoc:
             # backbone
             if not internal:
@@ -178,6 +179,7 @@ class ConnectorManager:
                     raise RuntimeError("url is required but not provided for external backbone connector/listener!")
                 scheme = self.adhoc_scheme
                 resources = {}
+                ssl_required = secure
             else:
                 # internal
                 scheme = self.int_scheme
@@ -196,7 +198,7 @@ class ConnectorManager:
                 return None
 
         reqs = {
-            ConnectorRequirementKey.SECURE: secure
+            ConnectorRequirementKey.SECURE: ssl_required
         }
         if url:
             reqs[ConnectorRequirementKey.URL] = url
@@ -205,10 +207,10 @@ class ConnectorManager:
 
         try:
             if active:
-                handle = self.communicator.add_connector(url, Mode.ACTIVE)
+                handle = self.communicator.add_connector(url, Mode.ACTIVE, ssl_required)
                 connect_url = url
             elif url:
-                handle = self.communicator.add_connector(url, Mode.PASSIVE)
+                handle = self.communicator.add_connector(url, Mode.PASSIVE, ssl_required)
                 connect_url = url
             else:
                 self.logger.info(f"{os.getpid()}: Try start_listener Listener resources: {reqs}")
