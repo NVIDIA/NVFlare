@@ -59,7 +59,7 @@ resources = {
     DriverParams.SECURE: False,
     DriverParams.PORTS: "3000-6000",
 }
-# handle3, ad_hoc_url = communicator.start_listener("tcp", resources)
+handle3, ad_hoc_url = communicator.start_listener("tcp", resources)
 
 communicator.register_monitor(DemoEndpointMonitor(local_endpoint.name, endpoints))
 communicator.register_message_receiver(AppIds.CELL_NET, TimingReceiver())
