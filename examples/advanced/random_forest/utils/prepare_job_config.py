@@ -21,23 +21,21 @@ import shutil
 from nvflare.apis.fl_constant import JobConstants
 
 JOB_CONFIGS_ROOT = "job_configs"
-MODE_ALGO_MAP = {"bagging": "tree-based", "cyclic": "tree-based", "histogram": "histogram-based"}
+BASE_FOLDER = "random_forest_base"
 
 
 def job_config_args_parser():
     parser = argparse.ArgumentParser(description="generate train configs for HIGGS dataset")
     parser.add_argument(
-        "--data_root",
+        "--data_split_root",
         type=str,
         default="/tmp/nvflare/xgboost_higgs_dataset",
         help="Path to dataset config files for each site",
     )
     parser.add_argument("--site_num", type=int, default=5, help="Total number of sites")
     parser.add_argument("--site_name_prefix", type=str, default="site-", help="Site name prefix")
-    parser.add_argument("--round_num", type=int, default=100, help="Total number of training rounds")
-    parser.add_argument(
-        "--training_mode", type=str, default="bagging", choices=list(MODE_ALGO_MAP.keys()), help="Training mode"
-    )
+    parser.add_argument("--num_local_parallel_tree", type=int, default=20, help="Number of local parallel trees")
+    parser.add_argument("--local_subsample", type=float, default=0.8, help="Local random forest subsample rate")
     parser.add_argument("--split_method", type=str, default="uniform", help="How to split the dataset")
     parser.add_argument("--lr_mode", type=str, default="uniform", help="Whether to use uniform or scaled shrinkage")
     parser.add_argument("--nthread", type=int, default=16, help="nthread for xgboost")
@@ -67,7 +65,7 @@ def _get_job_name(args) -> str:
         "higgs_"
         + str(args.site_num)
         + "_"
-        + args.training_mode
+        + str(args.local_subsample)
         + "_"
         + args.split_method
         + "_split"
@@ -78,16 +76,7 @@ def _get_job_name(args) -> str:
 
 
 def _get_data_split_name(args, site_name: str) -> str:
-    return os.path.join(args.data_root, f"{args.site_num}_{args.split_method}", f"data_{site_name}.json")
-
-
-def _get_src_job_dir(training_mode):
-    base_job_map = {
-        "bagging": "bagging_base",
-        "cyclic": "cyclic_base",
-        "histogram": "base",
-    }
-    return pathlib.Path(MODE_ALGO_MAP[training_mode]) / JOB_CONFIGS_ROOT / base_job_map[training_mode]
+    return os.path.join(args.data_split_root, f"{args.site_num}_{args.split_method}", f"data_{site_name}.json")
 
 
 def _gen_deploy_map(num_sites: int, site_name_prefix: str) -> dict:
@@ -123,30 +112,19 @@ def _get_lr_scale_from_split_json(data_split: dict):
 
 def _update_client_config(config: dict, args, lr_scale, site_name: str):
     data_split_name = _get_data_split_name(args, site_name)
-    if args.training_mode == "bagging" or args.training_mode == "cyclic":
-        # update client config
-        config["executors"][0]["executor"]["args"]["data_split_filename"] = data_split_name
-        config["executors"][0]["executor"]["args"]["lr_scale"] = lr_scale
-        config["executors"][0]["executor"]["args"]["lr_mode"] = args.lr_mode
-        config["executors"][0]["executor"]["args"]["nthread"] = args.nthread
-        config["executors"][0]["executor"]["args"]["tree_method"] = args.tree_method
-        config["executors"][0]["executor"]["args"]["training_mode"] = args.training_mode
-        num_client_bagging = 1
-        if args.training_mode == "bagging":
-            num_client_bagging = args.site_num
-        config["executors"][0]["executor"]["args"]["num_client_bagging"] = num_client_bagging
-    else:
-        config["executors"][0]["executor"]["args"]["data_split_filename"] = data_split_name
-        config["executors"][0]["executor"]["args"]["xgboost_params"]["nthread"] = args.nthread
-        config["executors"][0]["executor"]["args"]["xgboost_params"]["tree_method"] = args.tree_method
+    # update client config
+    config["executors"][0]["executor"]["args"]["data_split_filename"] = data_split_name
+    config["executors"][0]["executor"]["args"]["num_client_bagging"] = args.site_num
+    config["executors"][0]["executor"]["args"]["num_local_parallel_tree"] = args.num_local_parallel_tree
+    config["executors"][0]["executor"]["args"]["local_subsample"] = args.local_subsample
+    config["executors"][0]["executor"]["args"]["lr_scale"] = lr_scale
+    config["executors"][0]["executor"]["args"]["lr_mode"] = args.lr_mode
+    config["executors"][0]["executor"]["args"]["nthread"] = args.nthread
+    config["executors"][0]["executor"]["args"]["tree_method"] = args.tree_method
 
 
 def _update_server_config(config: dict, args):
-    if args.training_mode == "bagging":
-        config["workflows"][0]["args"]["num_rounds"] = args.round_num + 1
-        config["workflows"][0]["args"]["min_clients"] = args.site_num
-    elif args.training_mode == "cyclic":
-        config["workflows"][0]["args"]["num_rounds"] = int(args.round_num / args.site_num)
+    config["workflows"][0]["args"]["min_clients"] = args.site_num
 
 
 def _copy_custom_files(src_job_path, src_app_name, dst_job_path, dst_app_name):
@@ -198,10 +176,10 @@ def main():
     parser = job_config_args_parser()
     args = parser.parse_args()
     job_name = _get_job_name(args)
-    src_job_path = _get_src_job_dir(args.training_mode)
+    src_job_path = pathlib.Path(JOB_CONFIGS_ROOT) / BASE_FOLDER
 
     # create a new job
-    dst_job_path = pathlib.Path(MODE_ALGO_MAP[args.training_mode]) / JOB_CONFIGS_ROOT / job_name
+    dst_job_path = pathlib.Path(JOB_CONFIGS_ROOT) / job_name
     if not os.path.exists(dst_job_path):
         os.makedirs(dst_job_path)
 

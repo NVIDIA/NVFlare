@@ -12,7 +12,7 @@
         "args": {
           "data_split_filename": "data_split.json",
           "training_mode": "bagging",
-          "num_tree_bagging": 5,
+          "num_client_bagging": 5,
           "lr_mode": "scaled",
           "local_model_path": "model.json",
           "global_model_path": "model_global.json",
@@ -26,7 +26,6 @@
       }
     }
   ],
-
   "task_result_filters": [],
   "task_data_filters": [],
   "components": []
