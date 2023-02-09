@@ -52,8 +52,6 @@ class SVMAssembler(Assembler):
             index = svm_global.support_
             self.support_x = global_x[index]
             self.support_y = global_y[index]
-        # The following round directly returns the retained record for global model validation (round 2)
-        # No further training
         params = {"support_x": self.support_x, "support_y": self.support_y}
         return params
 
