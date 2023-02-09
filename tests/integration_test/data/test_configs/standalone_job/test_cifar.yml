@@ -24,3 +24,5 @@ tests:
           "data": { "run_finished": True }
     validators:
       - path: tests.integration_test.validators.CIFAR10ResultValidator
+    setup:
+      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='~/data', download=True)"
