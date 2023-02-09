@@ -1,8 +1,10 @@
 {
     "format_version": 2,
-    "DATA_ROOT": "./data/COVID-19_Radiography_Dataset",
-    "DATASET_JSON": "./data/data_200val+rest_client9.json",
+    "DATA_ROOT": "",
+    "DATASET_JSON": "",
+    "PRIOR_FILE": "prior_1.jpg",
     "BATCH_SIZE": 1,
+    "SIGMA0": 0,
     "executors": [
         {
             "tasks": [
@@ -28,18 +30,8 @@
                 {
                     "path": "nvflare_gradinv.GaussianPrivacy",
                     "args": {
-                        "sigma0": 0,
+                        "sigma0": "{SIGMA0}",
                         "max_percentile": 95
-                    }
-                },
-                {
-                    "path": "nvflare_gradinv.RelativeDataLeakageValueFilter",
-                    "args": {
-                        "data_root": "{DATA_ROOT}",
-                        "dataset_json": "{DATASET_JSON}",
-                        "prior_filename": "prior_1.jpg",
-                        "frequency": 20,
-                        "start_round": 20
                     }
                 }
             ]
@@ -57,22 +49,6 @@
                 "lr": 0.01,
                 "batch_size": "{BATCH_SIZE}",
                 "num_class": 2
-            }
-        },
-        {
-            "id": "grad_inverter",
-            "path": "nvflare_gradinv.GradInversionInverter",
-            "args": {
-                "learner_name": "learner",
-                "cfg_file": "config/config_inversion.json",
-                "bn_momentum": 0.1
-            }
-        },
-        {
-            "id": "sim_metric",
-            "path": "nvflare_gradinv.ImageSimMetric",
-            "args": {
-                "metrics": "ssim"
             }
         }
     ]
