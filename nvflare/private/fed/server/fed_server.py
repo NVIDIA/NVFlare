@@ -620,7 +620,7 @@ class FederatedServer(BaseServer):
     def run_engine(self):
         self.engine.engine_info.status = MachineStatus.STARTED
         try:
-            self.server_runner._run()
+            self.server_runner.run()
         except BaseException as e:
             self.logger.error(f"FL client execution exception: {secure_format_exception(e)}")
         finally:
