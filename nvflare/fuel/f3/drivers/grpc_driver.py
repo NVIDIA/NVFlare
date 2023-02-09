@@ -23,7 +23,6 @@ from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.connection import Connection
 from nvflare.fuel.f3.drivers.driver import Connector
-from nvflare.fuel.f3.drivers import net_utils
 from .base_driver import BaseDriver
 from .driver_params import DriverParams, DriverCap
 
@@ -32,7 +31,7 @@ from nvflare.fuel.f3.drivers.grpc.streamer_pb2_grpc import (
     StreamerServicer, add_StreamerServicer_to_server, StreamerStub
 )
 from .grpc.streamer_pb2 import Frame
-from .net_utils import get_address
+from .net_utils import get_address, get_tcp_urls
 
 MAX_MSG_SIZE = 1024 * 1024 * 1024    # 1G
 
@@ -247,20 +246,5 @@ class GrpcDriver(BaseDriver):
 
     @staticmethod
     def get_urls(scheme: str, resources: dict) -> (str, str):
-        secure = resources.get(DriverParams.SECURE)
-        if secure:
-            scheme = "rpcs"
+        return get_tcp_urls(scheme, resources)
 
-        host = resources.get("host") if resources else None
-        if not host:
-            host = "localhost"
-
-        port = net_utils.get_open_tcp_port(resources)
-        if not port:
-            raise CommError(CommError.BAD_CONFIG, "Can't find an open port in the specified range")
-
-        # Always listen on all interfaces
-        listening_url = f"{scheme}://0:{port}"
-        connect_url = f"{scheme}://{host}:{port}"
-
-        return connect_url, listening_url

@@ -1,4 +1,16 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+#  Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,21 +40,30 @@ class AioContext:
         self.closed = False
         self.name = name
         self.loop = None
-        self.ready = False
+        self.ready = threading.Event()
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger.debug(f"{os.getpid()}: ******** Created AioContext {name}")
+
+    def get_event_loop(self):
+        t = threading.current_thread()
+        if not self.ready.is_set():
+            self.logger.debug(f"{os.getpid()} {t.name}: {self.name}: waiting for loop to be ready")
+            self.ready.wait()
+
+        return self.loop
 
     def run_aio_loop(self):
         self.logger.debug(f"{self.name}: started AioContext in thread {threading.current_thread().name}")
         # self.loop = asyncio.get_event_loop()
         self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
         self.logger.debug(f"{self.name}: got loop: {id(self.loop)}")
-        self.ready = True
+        self.ready.set()
         try:
             self.loop.run_forever()
             self.loop.run_until_complete(self.loop.shutdown_asyncgens())
-        except:
-            self.logger.error("error running aio loop")
+        except BaseException as ex:
+            self.logger.error(f"error running aio loop: {ex}")
         finally:
             self.logger.debug(f"{self.name}: AIO Loop run done!")
             self.loop.close()
@@ -50,11 +71,9 @@ class AioContext:
 
     def run_coro(self, coro):
         t = threading.current_thread()
-        while not self.ready:
-            self.logger.debug(f"{os.getpid()} {t.name}: {self.name}: waiting for loop to be ready")
-            time.sleep(0.1)
-        self.logger.debug(f"{os.getpid()} {t.name}: {self.name}: got loop: {id(self.loop)}")
-        asyncio.run_coroutine_threadsafe(coro, self.loop)
+        event_loop = self.get_event_loop()
+        self.logger.debug(f"{os.getpid()} {t.name}: {self.name}: got loop: {id(event_loop)}")
+        return asyncio.run_coroutine_threadsafe(coro, event_loop)
 
     def stop_aio_loop(self, grace=1.0):
         self.logger.debug("Cancelling pending tasks")

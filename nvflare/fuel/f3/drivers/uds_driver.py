@@ -116,10 +116,6 @@ class UdsDriver(BaseDriver):
     @staticmethod
     def get_urls(scheme: str, resources: dict) -> (str, str):
 
-        secure = resources.get(DriverParams.SECURE)
-        if secure:
-            raise CommError(CommError.NOT_SUPPORTED, "Secure mode not supported by Domain Socket")
-
         socket_path = resources.get("socket")
         if not socket_path:
             prefix = resources.get("socket_prefix")

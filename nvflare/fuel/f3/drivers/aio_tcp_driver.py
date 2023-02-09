@@ -11,19 +11,18 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import asyncio
 import logging
-import os
-import socket
-from socketserver import ThreadingTCPServer, TCPServer
 from typing import List, Dict, Any
 
 from nvflare.fuel.f3.comm_error import CommError
-from nvflare.fuel.f3.drivers import net_utils
+from nvflare.fuel.f3.drivers.aio_context import AioContext
 from nvflare.fuel.f3.drivers.base_driver import BaseDriver
-from nvflare.fuel.f3.drivers.driver import Driver, Connector
-from nvflare.fuel.f3.drivers.net_utils import get_ssl_context
-from nvflare.fuel.f3.drivers.socket_conn import ConnectionHandler, SocketConnection
-from nvflare.fuel.hci.security import get_certificate_common_name
+from nvflare.fuel.f3.drivers.connnector import Mode
+from nvflare.fuel.f3.drivers.driver import Connector
+from nvflare.fuel.f3.drivers.driver_params import DriverCap, DriverParams
+from nvflare.fuel.f3.drivers.aio_connection import AioConnection
+from nvflare.fuel.f3.drivers.tcp_driver import TcpDriver
 
 log = logging.getLogger(__name__)
 
@@ -32,11 +31,12 @@ class AioTcpDriver(BaseDriver):
 
     def __init__(self):
         super().__init__()
-        self.aio_ctx =
+        self.aio_ctx = AioContext.get_global_context()
+        self.server = None
 
     @staticmethod
     def supported_transports() -> List[str]:
-        return ["tcp", "stcp"]
+        return ["atcp", "satcp"]
 
     @staticmethod
     def capabilities() -> Dict[str, Any]:
@@ -47,62 +47,63 @@ class AioTcpDriver(BaseDriver):
 
     def listen(self, connector: Connector):
         self.connector = connector
-        self.server = TcpStreamServer(self, connector)
-        self.server.serve_forever()
+        self.start_event_loop(Mode.PASSIVE)
 
     def connect(self, connector: Connector):
         self.connector = connector
-        params = connector.params
-        host = params.get(DriverParams.HOST.value)
-        port = int(params.get(DriverParams.PORT.value))
-
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-        context = get_ssl_context(params, ssl_server=False)
-        if context:
-            sock = context.wrap_socket(sock)
-
-        sock.connect((host, port))
-
-        peer = sock.getpeername()
-        conn_props = {DriverParams.PEER_ADDR.value: f"{peer[0]}:{peer[1]}"}
-        local = sock.getsockname()
-        conn_props[DriverParams.LOCAL_ADDR.value] = f"{local[0]}:{local[1]}"
-
-        if context:
-            cn = get_certificate_common_name(sock.getpeercert())
-            if cn:
-                conn_props[DriverParams.PEER_CN.value] = cn
-
-        connection = SocketConnection(sock, connector, conn_props)
-        self.add_connection(connection)
-
-        connection.read_loop()
-
-        self.close_connection(connection)
+        self.start_event_loop(Mode.ACTIVE)
 
     def shutdown(self):
         self.close_all()
         if self.server:
-            self.server.shutdown()
+            self.server.close()
 
     @staticmethod
     def get_urls(scheme: str, resources: dict) -> (str, str):
+        return TcpDriver.get_urls(scheme, resources)
 
-        secure = resources.get(DriverParams.SECURE)
-        if secure:
-            scheme = "stcp"
+    # Internal methods
 
-        host = resources.get("host") if resources else None
-        if not host:
-            host = "localhost"
+    def start_event_loop(self, mode: Mode):
+        if mode != self.connector.mode:
+            raise CommError(CommError.ERROR, f"Connector mode doesn't match driver mode for {self.connector}")
 
-        port = net_utils.get_open_tcp_port(resources)
-        if not port:
-            raise CommError(CommError.BAD_CONFIG, "Can't find an open port in the specified range")
+        self.aio_ctx.run_coro(self.event_loop(mode)).result()
 
-        # Always listen on all interfaces
-        listening_url = f"{scheme}://0:{port}"
-        connect_url = f"{scheme}://{host}:{port}"
+    async def event_loop(self, mode: Mode):
 
-        return connect_url, listening_url
+        params = self.connector.params
+        host = params.get(DriverParams.HOST.value)
+        port = params.get(DriverParams.PORT.value)
+
+        if mode == Mode.ACTIVE:
+            coroutine = self.async_connect(host, port)
+        else:
+            coroutine = self.async_listen(host, port)
+
+        await coroutine
+
+    async def async_connect(self, host, port):
+        try:
+            reader, writer = await asyncio.open_connection(host, port)
+            await self.create_connection(reader, writer)
+        except BaseException as ex:
+            log.error(f"Connecting failed for {self.connector}: {ex}")
+
+    async def async_listen(self, host, port):
+        try:
+            self.server = await asyncio.start_server(self.create_connection, host, port)
+            async with self.server:
+                await self.server.serve_forever()
+        except BaseException as ex:
+            log.error(f"Listening failed for {self.connector}: {ex}")
+
+    async def create_connection(self, reader, writer):
+        conn = AioConnection(self.connector, self.aio_ctx, reader, writer)
+        self.add_connection(conn)
+        await conn.read_loop()
+        self.close_connection(conn)
+
+
+
+

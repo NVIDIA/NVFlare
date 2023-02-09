@@ -250,3 +250,31 @@ def short_url(params: dict) -> str:
               {DriverParams.SCHEME.value, DriverParams.HOST.value, DriverParams.PORT.value, DriverParams.PATH.value}}
 
     return encode_url(subset)
+
+
+def get_tcp_urls(scheme: str, resources: dict) -> (str, str):
+    """Generate URL pairs for connecting and listening for TCP-based protocols
+
+    Args:
+        scheme: The transport scheme
+        resources: The resource restrictions like port ranges
+
+    Returns:
+        a tuple with connecting and listening URL
+    Raises:
+        CommError: If any error happens while sending the request
+    """
+
+    host = resources.get("host") if resources else None
+    if not host:
+        host = "localhost"
+
+    port = get_open_tcp_port(resources)
+    if not port:
+        raise CommError(CommError.BAD_CONFIG, "Can't find an open port in the specified range")
+
+    # Always listen on all interfaces
+    listening_url = f"{scheme}://0:{port}"
+    connect_url = f"{scheme}://{host}:{port}"
+
+    return connect_url, listening_url

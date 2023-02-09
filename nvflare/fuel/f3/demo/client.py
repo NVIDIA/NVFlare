@@ -49,11 +49,11 @@ communicator = Communicator(local_endpoint)
 communicator.register_message_receiver(10, LoopbackReceiver(communicator))
 communicator.send(communicator.local_endpoint, 10, Message(None, "Test".encode("utf-8")))
 
-connect_url = "otcp://localhost:4321"
+connect_url = "grpc://localhost:4321"
 handle1 = communicator.add_connector(connect_url, Mode.ACTIVE)
 
-listen_url = "otcp://localhost:1234"
-handle2 = communicator.add_connector(listen_url, Mode.PASSIVE)
+#listen_url = "otcp://localhost:1234"
+#handle2 = communicator.add_connector(listen_url, Mode.PASSIVE)
 
 resources = {
     DriverParams.SECURE: False,
@@ -94,7 +94,7 @@ while count < 5:
 
 time.sleep(10)
 # communicator.remove_connector(handle1)
-communicator.remove_connector(handle2)
+# communicator.remove_connector(handle2)
 communicator.stop()
 for thread in threading.enumerate():
     print(thread.name)
