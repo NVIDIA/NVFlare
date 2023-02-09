@@ -21,7 +21,9 @@ from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers import net_utils
 from nvflare.fuel.f3.drivers.base_driver import BaseDriver
 from nvflare.fuel.f3.connection import Connection
-from nvflare.fuel.f3.drivers.driver import DriverParams, Connector, DriverCap
+from nvflare.fuel.f3.drivers.driver import Connector
+from nvflare.fuel.f3.drivers.driver_params import DriverCap, DriverParams
+from nvflare.fuel.f3.drivers.net_utils import get_tcp_urls
 from nvflare.fuel.f3.drivers.prefix import Prefix
 from nvflare.fuel.f3.sfm.conn_manager import Mode
 
@@ -108,19 +110,7 @@ class HttpDriver(BaseDriver):
         if secure:
             scheme = "https"
 
-        host = resources.get("host") if resources else None
-        if not host:
-            host = "localhost"
-
-        port = net_utils.get_open_tcp_port(resources)
-        if not port:
-            raise CommError(CommError.BAD_CONFIG, "Can't find an open port in the specified range")
-
-        # Always listen on all interfaces
-        listening_url = f"{scheme}://0:{port}"
-        connect_url = f"{scheme}://{host}:{port}"
-
-        return connect_url, listening_url
+        return get_tcp_urls(scheme, resources)
 
     # Internal methods
 

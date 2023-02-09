@@ -25,8 +25,6 @@ class EndpointState(Enum):
 
 class Endpoint:
 
-    CERTIFICATE = "certificate"
-
     def __init__(self, name: str, properties: dict = None, conn_props: dict = None):
         """Construct an endpoint
 
@@ -52,9 +50,6 @@ class Endpoint:
 
     def get_prop(self, key):
         return self.properties.get(key)
-
-    def get_certificate(self) -> dict:
-        return self.conn_props.get(Endpoint.CERTIFICATE)
 
 
 class EndpointMonitor(ABC):

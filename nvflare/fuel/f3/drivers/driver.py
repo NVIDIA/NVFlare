@@ -36,45 +36,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from abc import ABC, abstractmethod
-from enum import Enum
 from typing import List, Dict, Any
-from urllib.parse import urlparse, urlencode, parse_qsl
 
 from nvflare.fuel.f3.connection import ConnState, Connection
 from nvflare.fuel.f3.drivers.connnector import Connector
-
-
-class DriverParams(str, Enum):
-
-    # URL components. Those parameters are part of the URL, no need to be included in query string
-    # URL = SCHEME://HOST:PORT/PATH;PARAMS?QUERY#FRAG
-    URL = "url"
-    SCHEME = "scheme"
-    HOST = "host"
-    PORT = "port"
-    PATH = "path"
-    PARAMS = "params"
-    FRAG = "frag"
-    QUERY = "query"
-
-    # Other parameters
-    CA_CERT = "ca_cert"
-    SERVER_CERT = "server_cert"
-    SERVER_KEY = "server_key"
-    CLIENT_CERT = "client_cert"
-    CLIENT_KEY = "client_key"
-    SECURE = "secure"
-    PORTS = "ports"
-    SOCKET = "socket"
-    LOCAL_ADDR = "local_addr"
-    PEER_ADDR = "peer_addr"
-    PEER_CN = "peer_cn"
-
-
-class DriverCap(str, Enum):
-
-    HEARTBEAT = "heartbeat"
-    SUPPORT_SSL = "support_ssl"
 
 
 class ConnMonitor(ABC):
@@ -180,68 +145,3 @@ class Driver(ABC):
         """Register a monitor for connection state change, including new connections
         """
         self.conn_monitor = monitor
-
-    @staticmethod
-    def parse_url(url: str) -> dict:
-        if not url:
-            return {}
-
-        params = {DriverParams.URL.value: url}
-        parsed_url = urlparse(url)
-        params[DriverParams.SCHEME.value] = parsed_url.scheme
-        parts = parsed_url.netloc.split(":")
-        if len(parts) >= 1:
-            host = parts[0]
-            # Host is required in URL. 0 is used as the placeholder for empty host
-            if host == "0":
-                host = ""
-            params[DriverParams.HOST.value] = host
-        if len(parts) >= 2:
-            params[DriverParams.PORT.value] = parts[1]
-
-        params[DriverParams.PATH.value] = parsed_url.path
-        params[DriverParams.PARAMS.value] = parsed_url.params
-        params[DriverParams.QUERY.value] = parsed_url.query
-        params[DriverParams.FRAG.value] = parsed_url.fragment
-
-        if parsed_url.query:
-            for k, v in parse_qsl(parsed_url.query):
-                # Only last one is saved if duplicate keys
-                params[k] = v
-
-        return params
-
-    @staticmethod
-    def encode_url(params: dict) -> str:
-
-        # Original URL is not needed
-        params.pop(DriverParams.URL.value, None)
-
-        scheme = params.pop(DriverParams.SCHEME.value, None)
-        host = params.pop(DriverParams.HOST.value, None)
-        if not host:
-            host = "0"
-        port = params.pop(DriverParams.PORT.value, None)
-        path = params.pop(DriverParams.PATH.value, None)
-        parameters = params.pop(DriverParams.PARAMS.value, None)
-        # Encoded query is not needed
-        params.pop(DriverParams.QUERY.value, None)
-        frag = params.pop(DriverParams.FRAG.value, None)
-
-        url = f"{scheme}://{host}"
-        if port:
-            url += ":" + str(port)
-
-        if path:
-            url += path
-
-        if parameters:
-            url += ";" + parameters
-
-        if params:
-            url += urlencode(params)
-
-        if frag:
-            url += '#' + frag
-
-        return url

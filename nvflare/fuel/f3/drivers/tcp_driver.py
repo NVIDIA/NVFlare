@@ -17,11 +17,10 @@ import socket
 from socketserver import ThreadingTCPServer, TCPServer
 from typing import List, Dict, Any
 
-from nvflare.fuel.f3.comm_error import CommError
-from nvflare.fuel.f3.drivers import net_utils
 from nvflare.fuel.f3.drivers.base_driver import BaseDriver
-from nvflare.fuel.f3.drivers.driver import Driver, DriverParams, Connector, DriverCap
-from nvflare.fuel.f3.drivers.net_utils import get_ssl_context
+from nvflare.fuel.f3.drivers.driver import Driver, Connector
+from nvflare.fuel.f3.drivers.driver_params import DriverCap, DriverParams
+from nvflare.fuel.f3.drivers.net_utils import get_ssl_context, get_tcp_urls
 from nvflare.fuel.f3.drivers.socket_conn import ConnectionHandler, SocketConnection
 from nvflare.fuel.hci.security import get_certificate_common_name
 
@@ -117,21 +116,8 @@ class TcpDriver(BaseDriver):
 
     @staticmethod
     def get_urls(scheme: str, resources: dict) -> (str, str):
-
         secure = resources.get(DriverParams.SECURE)
         if secure:
-            scheme = "stcp"
+            scheme = "sotcp"
 
-        host = resources.get("host") if resources else None
-        if not host:
-            host = "localhost"
-
-        port = net_utils.get_open_tcp_port(resources)
-        if not port:
-            raise CommError(CommError.BAD_CONFIG, "Can't find an open port in the specified range")
-
-        # Always listen on all interfaces
-        listening_url = f"{scheme}://0:{port}"
-        connect_url = f"{scheme}://{host}:{port}"
-
-        return connect_url, listening_url
+        return get_tcp_urls(scheme, resources)

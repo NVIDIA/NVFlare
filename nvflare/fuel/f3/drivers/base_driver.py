@@ -16,7 +16,8 @@ import threading
 from typing import Dict, Optional
 
 from nvflare.fuel.f3.connection import Connection, ConnState
-from nvflare.fuel.f3.drivers.driver import Driver, Connector, DriverParams
+from nvflare.fuel.f3.drivers.driver import Driver, Connector
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
 
 log = logging.getLogger(__name__)
 
@@ -34,34 +35,29 @@ class BaseDriver(Driver):
         self.conn_lock = threading.Lock()
 
     def add_connection(self, conn: Connection):
-        conn_props = conn.get_conn_properties()
-
-        if log.isEnabledFor(logging.DEBUG):
-            local_addr = conn_props.get(DriverParams.LOCAL_ADDR, "N/A")
-            peer_addr = conn_props.get(DriverParams.PEER_ADDR, "N/A")
-            log.debug(f"Connection created: {self.get_name()}:{conn.name}, "
-                      f"Local: {local_addr} Peer: {peer_addr} Mode: {self.connector.mode.name}")
-
         with self.conn_lock:
             self.connections[conn.name] = conn
 
         conn.state = ConnState.CONNECTED
         self._notify_monitor(conn)
 
-    def close_connection(self, conn: Connection):
-        log.debug(f"Connection removed: {self.get_name()}:{conn.name}")
+        log.debug(f"Connection created: {self.get_name()}:{conn}")
 
-        with self.conn_lock:
-            self.connections.pop(conn.name)
+    def close_connection(self, conn: Connection):
+        log.debug(f"Connection removed: {self.get_name()}:{conn}")
 
         conn.state = ConnState.CLOSED
         self._notify_monitor(conn)
+
+        with self.conn_lock:
+            if not self.connections.pop(conn.name, None):
+                log.debug(f"{conn.name} is already removed from driver")
 
     def close_all(self):
         with self.conn_lock:
             for name in sorted(self.connections.keys()):
                 conn = self.connections[name]
-                log.debug(f"Closing connection: {self.get_name()}:{name}")
+                log.debug(f"Closing connection: {self.get_name()}:{conn}")
                 conn.close()
 
     def _notify_monitor(self, conn: Connection):

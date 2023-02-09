@@ -17,9 +17,10 @@ import socket
 import ssl
 from ssl import SSLContext
 from typing import Any, Optional
+from urllib.parse import urlencode, urlparse, parse_qsl
 
 from nvflare.fuel.f3.comm_error import CommError
-from nvflare.fuel.f3.drivers.driver import DriverParams
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
 
 log = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ SECURE_SCHEMES = {"https", "wss", "grpcs", "stcp"}
 
 
 def bool_value(value) -> bool:
+    """Convert value into bool"""
     if isinstance(value, str):
         return value.lower() in {"true", "yes", "y", "t", "1"}
 
@@ -38,6 +40,7 @@ def bool_value(value) -> bool:
 
 
 def ssl_required(params: dict) -> bool:
+    """Check if SSL is required"""
     scheme = params.get(DriverParams.SCHEME.value, None)
     return scheme in SECURE_SCHEMES or bool_value(params.get(DriverParams.SECURE.value, False))
 
@@ -166,3 +169,112 @@ def get_client_ip():
     finally:
         s.close()
     return ip
+
+
+def parse_url(url: str) -> dict:
+    """Parse URL into a dictionary, saving original URL also"""
+    if not url:
+        return {}
+
+    params = {DriverParams.URL.value: url}
+    parsed_url = urlparse(url)
+    params[DriverParams.SCHEME.value] = parsed_url.scheme
+    parts = parsed_url.netloc.split(":")
+    if len(parts) >= 1:
+        host = parts[0]
+        # Host is required in URL. 0 is used as the placeholder for empty host
+        if host == "0":
+            host = ""
+        params[DriverParams.HOST.value] = host
+    if len(parts) >= 2:
+        params[DriverParams.PORT.value] = parts[1]
+
+    params[DriverParams.PATH.value] = parsed_url.path
+    params[DriverParams.PARAMS.value] = parsed_url.params
+    params[DriverParams.QUERY.value] = parsed_url.query
+    params[DriverParams.FRAG.value] = parsed_url.fragment
+
+    if parsed_url.query:
+        for k, v in parse_qsl(parsed_url.query):
+            # Only last one is saved if duplicate keys
+            params[k] = v
+
+    return params
+
+
+def encode_url(params: dict) -> str:
+
+    temp = params.copy()
+
+    # Original URL is not needed
+    temp.pop(DriverParams.URL.value, None)
+
+    scheme = temp.pop(DriverParams.SCHEME.value, None)
+    host = temp.pop(DriverParams.HOST.value, None)
+    if not host:
+        host = "0"
+    port = temp.pop(DriverParams.PORT.value, None)
+    path = temp.pop(DriverParams.PATH.value, None)
+    parameters = temp.pop(DriverParams.PARAMS.value, None)
+    # Encoded query is not needed
+    temp.pop(DriverParams.QUERY.value, None)
+    frag = temp.pop(DriverParams.FRAG.value, None)
+
+    url = f"{scheme}://{host}"
+    if port:
+        url += ":" + str(port)
+
+    if path:
+        url += path
+
+    if parameters:
+        url += ";" + parameters
+
+    if temp:
+        url += "?" + urlencode(temp)
+
+    if frag:
+        url += '#' + frag
+
+    return url
+
+
+def short_url(params: dict) -> str:
+    """Get a short url to be used in logs"""
+
+    url = params.get(DriverParams.URL.value)
+    if url:
+        return url
+
+    subset = {k: params[k] for k in
+              {DriverParams.SCHEME.value, DriverParams.HOST.value, DriverParams.PORT.value, DriverParams.PATH.value}}
+
+    return encode_url(subset)
+
+
+def get_tcp_urls(scheme: str, resources: dict) -> (str, str):
+    """Generate URL pairs for connecting and listening for TCP-based protocols
+
+    Args:
+        scheme: The transport scheme
+        resources: The resource restrictions like port ranges
+
+    Returns:
+        a tuple with connecting and listening URL
+    Raises:
+        CommError: If any error happens while sending the request
+    """
+
+    host = resources.get("host") if resources else None
+    if not host:
+        host = "localhost"
+
+    port = get_open_tcp_port(resources)
+    if not port:
+        raise CommError(CommError.BAD_CONFIG, "Can't find an open port in the specified range")
+
+    # Always listen on all interfaces
+    listening_url = f"{scheme}://0:{port}"
+    connect_url = f"{scheme}://{host}:{port}"
+
+    return connect_url, listening_url
