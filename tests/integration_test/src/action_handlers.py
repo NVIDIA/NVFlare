@@ -119,17 +119,26 @@ class _SubmitCifarJobHandler(_CmdHandler):
             f.seek(0)
             json.dump(job_meta_json_data, f, indent=4)
             f.truncate()
-        # set the num_rounds in config_fed_server.json
+        # set the num_rounds and TRAIN_SPLIT_ROOT in config_fed_server.json
         with open(
             os.path.join(new_job_folder_path, job_name + "_copy_for_test", "config", "config_fed_server.json"), "r+"
         ) as f:
             config_fed_server_json_data = json.load(f)
-            config_fed_server_json_data["num_rounds"] = 20
+            config_fed_server_json_data["num_rounds"] = 10
+            config_fed_server_json_data["TRAIN_SPLIT_ROOT"] = "~/data"
             f.seek(0)
             json.dump(config_fed_server_json_data, f, indent=4)
             f.truncate()
+        # set TRAIN_SPLIT_ROOT in config_fed_client.json
+        with open(
+            os.path.join(new_job_folder_path, job_name + "_copy_for_test", "config", "config_fed_client.json"), "r+"
+        ) as f:
+            config_fed_client_json_data = json.load(f)
+            config_fed_client_json_data["TRAIN_SPLIT_ROOT"] = "~/data"
+            f.seek(0)
+            json.dump(config_fed_client_json_data, f, indent=4)
+            f.truncate()
         response = admin_api.submit_job(job_name + "_copy_for_test")
-        print(response)
         if response["status"] == APIStatus.ERROR_RUNTIME:
             admin_controller.admin_api_response = response["raw"]["data"]
         elif response["status"] == APIStatus.ERROR_AUTHORIZATION:
@@ -154,7 +163,6 @@ class _SubmitJobHandler(_CmdHandler):
         job_name = str(command_args[0])
 
         response = admin_api.submit_job(job_name)
-        print(response)
         if response["status"] == APIStatus.ERROR_RUNTIME:
             admin_controller.admin_api_response = response["raw"]["data"]
         elif response["status"] == APIStatus.ERROR_AUTHORIZATION:
@@ -187,7 +195,6 @@ class _AbortJobHandler(_CmdHandler):
 class _ListJobHandler(_CmdHandler):
     def handle(self, command_args: list, admin_controller: FLTestDriver, admin_api: FLAdminAPI):
         response = admin_api.list_jobs("-a")
-        print(response)
         assert response["status"] == APIStatus.SUCCESS
 
 
