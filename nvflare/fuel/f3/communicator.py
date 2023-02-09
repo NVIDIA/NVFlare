@@ -169,7 +169,7 @@ class Communicator:
             CommError: If any errors
         """
 
-        handle = self._add_connector_with_conn_props(driver, params, mode)
+        handle = self._add_connector_with_conn_props(driver, params, mode, False)
         if not start:
             return handle
 
