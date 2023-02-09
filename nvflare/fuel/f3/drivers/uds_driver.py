@@ -56,7 +56,7 @@ class UdsDriver(BaseDriver):
 
     @staticmethod
     def supported_transports() -> List[str]:
-        return ["ouds"]
+        return ["uds"]
 
     @staticmethod
     def capabilities() -> Dict[str, Any]:
