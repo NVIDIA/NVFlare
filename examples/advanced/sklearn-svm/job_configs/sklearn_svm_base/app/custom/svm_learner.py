@@ -51,7 +51,6 @@ class SVMLearner(SKLearner):
     def train(self, curr_round: int, global_param: Optional[dict] = None) -> dict:
         if curr_round == 0:
             # only perform training on the first round
-            # the following rounds directly returns the retained records
             (x_train, y_train, train_size) = self.train_data
             self.kernel = global_param["kernel"]
             self.svm = SVC(kernel=self.kernel)
@@ -62,6 +61,8 @@ class SVMLearner(SKLearner):
             local_support_x = x_train[index]
             local_support_y = y_train[index]
             self.params = {"support_x": local_support_x, "support_y": local_support_y}
+        elif curr_round > 1:
+            self.system_panic("Federated SVM only performs training for one round, system exiting.", self.fl_ctx)
         return self.params, self.svm
 
     def evaluate(self, curr_round: int, global_param: Optional[dict] = None) -> dict:

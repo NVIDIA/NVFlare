@@ -19,12 +19,16 @@ Each client is expected to have 1 local data file containing both training and v
 - valid_end: int, end row index for validation set
 
 ### Federated SVM
-The machine learning algorithm shown in this example is [SVM with RBF kernel](https://scikit-learn.org/stable/modules/generated/sklearn.svm.SVC.html).
+The machine learning algorithm shown in this example is [SVM for Classification](https://scikit-learn.org/stable/modules/generated/sklearn.svm.SVC.html).
 Under this setting, federated learning can be formulated in two steps:
 - local training: each client trains a local SVM model with their own data
 - global training: server collects the support vectors from all clients, and train a global SVM model based on them
 
-Note that unlike other iterative federated algorithms, federated SVM only involves these two training steps.
+Note that unlike other iterative federated algorithms, federated SVM only involves these two training steps. Hence, in the server config, we have
+```json
+"num_rounds": 2
+```
+First round is training round, performing local training and global aggregation. Then global model will be sent back to clients for the second round, performing model validation and local model update. If this number is set to a number greater than 2, system will report error and exit.  
 
 ## Data preparation 
 This example uses the breast cancer dataset available from Scikit-learn's dataset API.  
@@ -69,7 +73,7 @@ This step is performed by
 ```commandline
 bash prepare_job_config.sh
 ```
-In this example, we perform experiment with 3 clients under uniform data split. 
+In this example, we chose RBF kernel and perform experiment with 3 clients under uniform data split. 
 
 Below is a sample config for site-1, saved to `/job_configs/sklearn_svm_3_uniform/app_site-1/config/config_fed_client.json`:
 ```json
