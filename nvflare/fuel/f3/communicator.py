@@ -19,6 +19,7 @@ from nvflare.fuel.f3 import drivers
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers.driver import Driver
 from nvflare.fuel.f3.drivers.driver_manager import DriverManager
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.drivers.net_utils import parse_url
 from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor
 from nvflare.fuel.f3.message import Message, MessageReceiver
@@ -110,12 +111,13 @@ class Communicator:
 
         self.conn_manager.register_message_receiver(app_id, receiver)
 
-    def add_connector(self, url: str, mode: Mode) -> str:
+    def add_connector(self, url: str, mode: Mode, secure: bool=False) -> str:
         """Load a connector. The driver is selected based on the URL
 
         Args:
             url: The url to listen on or connect to, like "https://0:443". Use 0 for empty host
             mode: Active for connecting, Passive for listening
+            secure: True if SSL is required.
 
         Returns:
             A handle that can be used to delete connector
@@ -124,7 +126,7 @@ class Communicator:
             CommError: If any errors
         """
 
-        return self._load_driver(url, mode)
+        return self._load_driver(url, mode, secure)
 
     def start_listener(self, scheme: str, resources: dict) -> (str, str):
         """Add and start a connector in passive mode on an address selected by the driver.
@@ -194,18 +196,21 @@ class Communicator:
 
     # Internal methods
 
-    def _add_connector_with_conn_props(self, driver: Driver, params: dict, mode: Mode):
+    def _add_connector_with_conn_props(self, driver: Driver, params: dict, mode: Mode, secure: bool):
 
         if self.local_endpoint.conn_props:
             params.update(self.local_endpoint.conn_props)
 
+        if secure:
+            params[DriverParams.SECURE] = secure
+
         return self.conn_manager.add_connector(driver, params, mode)
 
-    def _load_driver(self, url: str, mode: Mode) -> str:
+    def _load_driver(self, url: str, mode: Mode, secure: bool) -> str:
 
         driver_class = self.driver_mgr.find_driver_class(url)
         if not driver_class:
             raise CommError(CommError.NOT_SUPPORTED, f"No driver found for URL {url}")
 
         params = parse_url(url)
-        return self._add_connector_with_conn_props(driver_class(), params, mode)
+        return self._add_connector_with_conn_props(driver_class(), params, mode, secure)

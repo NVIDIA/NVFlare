@@ -46,7 +46,7 @@ local_endpoint = Endpoint("demo.server", {"test": 456}, conn_props)
 communicator = Communicator(local_endpoint)
 
 listening_url = "grpc://localhost:4321"
-handle1 = communicator.add_connector(listening_url, Mode.PASSIVE)
+handle1 = communicator.add_connector(listening_url, Mode.PASSIVE, True)
 
 #connect_url = "otcp://localhost:1234"
 #handle2 = communicator.add_connector(connect_url, Mode.ACTIVE)
