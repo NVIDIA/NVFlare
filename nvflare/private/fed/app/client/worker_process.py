@@ -123,6 +123,7 @@ def main():
 
     app_root = workspace.get_app_dir(str(args.job_id))
 
+    logger = None
     try:
         # start parent process checking thread
         thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
@@ -156,8 +157,8 @@ def main():
         client_app_runner.start_run(app_root, args, config_folder, federated_client, secure_train)
 
     except BaseException as e:
-        logger = logging.getLogger("worker_process")
-        logger.error(f"FL client execution exception: {secure_format_exception(e)}")
+        if logger:
+            logger.error(f"FL client execution exception: {secure_format_exception(e)}")
         raise e
     finally:
         stop_event.set()

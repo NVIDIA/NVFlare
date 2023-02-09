@@ -630,8 +630,9 @@ class FederatedServer(BaseServer):
         self.engine.engine_info.status = MachineStatus.STOPPED
 
     def stop_run_engine_cell(self):
-        self.cell.stop()
+        # self.cell.stop()
         # mpm.stop()
+        pass
 
     def deploy(self, args, grpc_args=None, secure_train=False):
         super().deploy(args, grpc_args, secure_train)
