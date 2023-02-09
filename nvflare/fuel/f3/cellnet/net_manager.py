@@ -340,8 +340,10 @@ class NetManager(CommandModule):
             return HistMode.COUNT
         elif mode.startswith('a'):
             return HistMode.AVERAGE
+
         if mode not in _VALID_MODES:
             return ""
+        return mode
 
     @staticmethod
     def _show_table_dict(conn: Connection, d: dict):
