@@ -72,7 +72,7 @@ def start(args):
     else:
         print("No additional environment variables set to the launched container.")
     try:
-        container_obj = client.containers._run(
+        container_obj = client.containers.run(
             "nvflare/nvflare",
             entrypoint=["/usr/local/bin/python3", "nvflare/dashboard/wsgi.py"],
             detach=True,

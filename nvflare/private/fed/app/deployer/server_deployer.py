@@ -123,7 +123,7 @@ class ServerDeployer:
         return services
 
     def _start_job_runner(self, job_runner, fl_ctx):
-        job_runner._run(fl_ctx)
+        job_runner.run(fl_ctx)
 
     def close(self):
         """To close the services."""
