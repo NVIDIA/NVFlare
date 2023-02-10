@@ -33,8 +33,8 @@ from tests.integration_test.src.action_handlers import (
     _ShellCommandHandler,
     _SleepHandler,
     _StartHandler,
-    _SubmitJobHandler,
     _SubmitCifarJobHandler,
+    _SubmitJobHandler,
     _TestDoneHandler,
 )
 from tests.integration_test.src.site_launcher import SiteLauncher

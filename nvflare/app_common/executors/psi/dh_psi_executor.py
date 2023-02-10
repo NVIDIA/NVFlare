@@ -18,9 +18,9 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.app_constant import PSIConst
 from nvflare.app_common.executors.client_executor import ClientExecutor
-from nvflare.app_common.psi.dh_psi.dh_psi_client import PsiClient
-from nvflare.app_common.psi.dh_psi.dh_psi_server import PsiServer
 from nvflare.app_common.psi.psi_spec import PSI
+from nvflare.app_opt.psi.dh_psi.dh_psi_client import PsiClient
+from nvflare.app_opt.psi.dh_psi.dh_psi_server import PsiServer
 
 
 class DhPSIExecutor(ClientExecutor):
