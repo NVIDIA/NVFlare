@@ -21,7 +21,7 @@ from typing import List, Optional
 
 from nvflare.apis.filter import Filter
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, ServerCommandKey
+from nvflare.apis.fl_constant import FLContextKey, ServerCommandKey, SecureTrainConst
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.overseer_spec import SP
@@ -29,6 +29,7 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.utils.argument_utils import parse_vars
@@ -173,7 +174,19 @@ class FederatedClientBase:
                     else:
                         fqcn = self.client_name
                         parent_url = None
-                    credentials = {}
+
+                    if self.secure_train:
+                        root_cert = self.client_args[SecureTrainConst.SSL_ROOT_CERT]
+                        ssl_cert = self.client_args[SecureTrainConst.SSL_CERT]
+                        private_key = self.client_args[SecureTrainConst.PRIVATE_KEY]
+
+                        credentials = {
+                            DriverParams.CA_CERT.value: root_cert,
+                            DriverParams.CLIENT_CERT.value: ssl_cert,
+                            DriverParams.CLIENT_KEY.value: private_key,
+                        }
+                    else:
+                        credentials = {}
                     self.cell = Cell(
                         fqcn=fqcn,
                         root_url=scheme + location,

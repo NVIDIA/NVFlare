@@ -20,6 +20,8 @@ import uuid
 from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
+from nvflare.fuel.f3.cellnet.defs import MessagePropKey, CellPropertyKey
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.private.defs import CellMessageHeaderKeys
 
 
@@ -127,20 +129,11 @@ class ClientManager:
         client_name = client_login.get_header(CellMessageHeaderKeys.CLIENT_NAME)
         client = self.clients.get(client_name)
         if not client:
-            # cn_names = context.auth_context().get("x509_common_name")
-            # if cn_names:
-            #     client_name = cn_names[0].decode("utf-8")
-            #     if client_login.client_name:
-            #         if not client_login.client_name == client_name:
-            #             # context.abort(
-            #             #     grpc.StatusCode.UNAUTHENTICATED, "client ID does not match the SSL certificate CN"
-            #             # )
-            #             context.set_prop(FLContextKey.COMMUNICATION_ERROR,
-            #                              "client ID does not match the SSL certificate CN")
-            #
-            #             return None
-            # else:
-            #     client_name = client_login.client_name
+            fqcn = client_login.get_prop(MessagePropKey.ENDPOINT).conn_props.get(DriverParams.PEER_CN.value)
+            if fqcn and fqcn != client_name:
+                context.set_prop(FLContextKey.UNAUTHENTICATED,
+                                 f"Requested fqcn:{fqcn} does not match the client_name: {client_name}", sticky=False)
+                return None
 
             for token, client in self.clients.items():
                 if client.name == client_name:

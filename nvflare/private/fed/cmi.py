@@ -253,56 +253,60 @@ class JobCellMessenger(CellMessageInterface):
         cell = self.engine.get_cell()
         assert isinstance(cell, Cell)
 
-        target_names = []
-        for t in targets:
-            if not isinstance(t, str):
-                raise ValueError(f"invalid target name {t}: expect str but got {type(t)}")
-            if t not in target_names:
-                target_names.append(t)
+        try:
+            target_names = []
+            for t in targets:
+                if not isinstance(t, str):
+                    raise ValueError(f"invalid target name {t}: expect str but got {type(t)}")
+                if t not in target_names:
+                    target_names.append(t)
 
-        target_fqcns = []
-        for name in target_names:
-            target_fqcns.append(FQCN.join([name, job_id]))
+            target_fqcns = []
+            for name in target_names:
+                target_fqcns.append(FQCN.join([name, job_id]))
 
-        cell_msg = self.new_cmi_message(fl_ctx, payload=request)
-        if timeout > 0:
-            cell_replies = cell.broadcast_request(
-                channel=channel,
-                topic=topic,
-                request=cell_msg,
-                targets=target_fqcns,
-                timeout=timeout
-            )
-
-            replies = {}
-            if cell_replies:
-                for k, v in cell_replies.items():
-                    assert isinstance(v, Message)
-                    rc = v.get_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
-                    client_name = FQCN.get_root(k)
-                    if rc == CellReturnCode.OK:
-                        result = v.payload
-                        if not isinstance(result, Shareable):
-                            self.logger.error(f"reply of {channel}:{topic} must be dict but got {type(result)}")
-                            result = make_reply(ReturnCode.ERROR)
-                        replies[client_name] = result
-                    else:
-                        src = self._convert_return_code(rc)
-                        replies[client_name] = make_reply(src)
-            return replies
-        else:
-            if bulk_send:
-                cell.queue_message(
+            cell_msg = self.new_cmi_message(fl_ctx, payload=request)
+            if timeout > 0:
+                cell_replies = cell.broadcast_request(
                     channel=channel,
                     topic=topic,
-                    message=cell_msg,
-                    targets=target_fqcns
-                )
-            else:
-                cell.fire_and_forget(
-                    channel=channel,
-                    topic=topic,
-                    message=cell_msg,
+                    request=cell_msg,
                     targets=target_fqcns,
+                    timeout=timeout
                 )
+
+                replies = {}
+                if cell_replies:
+                    for k, v in cell_replies.items():
+                        assert isinstance(v, Message)
+                        rc = v.get_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
+                        client_name = FQCN.get_root(k)
+                        if rc == CellReturnCode.OK:
+                            result = v.payload
+                            if not isinstance(result, Shareable):
+                                self.logger.error(f"reply of {channel}:{topic} must be dict but got {type(result)}")
+                                result = make_reply(ReturnCode.ERROR)
+                            replies[client_name] = result
+                        else:
+                            src = self._convert_return_code(rc)
+                            replies[client_name] = make_reply(src)
+                return replies
+            else:
+                if bulk_send:
+                    cell.queue_message(
+                        channel=channel,
+                        topic=topic,
+                        message=cell_msg,
+                        targets=target_fqcns
+                    )
+                else:
+                    cell.fire_and_forget(
+                        channel=channel,
+                        topic=topic,
+                        message=cell_msg,
+                        targets=target_fqcns,
+                    )
+                return {}
+        except BaseException as e:
+            self.logger.error(f"Failed to send the message to targets: {targets}")
             return {}
