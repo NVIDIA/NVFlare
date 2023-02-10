@@ -14,6 +14,9 @@
 
 from __future__ import annotations
 
+import json
+import os
+import shutil
 import typing
 
 from nvflare.fuel.hci.client.api_status import APIStatus
@@ -93,6 +96,56 @@ class _SleepHandler(_CmdHandler):
 class _AdminCommandsHandler(_CmdHandler):
     def handle(self, command_args: list, admin_controller: FLTestDriver, admin_api: FLAdminAPI):
         run_admin_api_tests(admin_api)
+
+
+class _SubmitCifarJobHandler(_CmdHandler):
+    def handle(self, command_args: list, admin_controller: FLTestDriver, admin_api: FLAdminAPI):
+        # Create a copy of the job folder
+        job_name = str(command_args[0])
+        job_folder_path = os.path.join(admin_api.upload_dir, job_name)
+        new_job_folder_path = job_folder_path + "_copy_for_test"
+        shutil.copytree(job_folder_path, new_job_folder_path, dirs_exist_ok=True)
+        # rename the app folder within the job to match the copied job name
+        shutil.rmtree(os.path.join(new_job_folder_path, job_name + "_copy_for_test"), ignore_errors=True)
+        shutil.move(
+            os.path.join(new_job_folder_path, job_name), os.path.join(new_job_folder_path, job_name + "_copy_for_test")
+        )
+        # update meta.json with the copied job name and remove the resource_spec
+        with open(os.path.join(new_job_folder_path, "meta.json"), "r+") as f:
+            job_meta_json_data = json.load(f)
+            job_meta_json_data["deploy_map"] = {job_meta_json_data["name"] + "_copy_for_test": ["@ALL"]}
+            job_meta_json_data["name"] = job_meta_json_data["name"] + "_copy_for_test"
+            job_meta_json_data.pop("resource_spec")
+            f.seek(0)
+            json.dump(job_meta_json_data, f, indent=4)
+            f.truncate()
+        # set the num_rounds and TRAIN_SPLIT_ROOT in config_fed_server.json
+        with open(
+            os.path.join(new_job_folder_path, job_name + "_copy_for_test", "config", "config_fed_server.json"), "r+"
+        ) as f:
+            config_fed_server_json_data = json.load(f)
+            config_fed_server_json_data["num_rounds"] = 10
+            config_fed_server_json_data["TRAIN_SPLIT_ROOT"] = "~/data"
+            f.seek(0)
+            json.dump(config_fed_server_json_data, f, indent=4)
+            f.truncate()
+        # set TRAIN_SPLIT_ROOT in config_fed_client.json
+        with open(
+            os.path.join(new_job_folder_path, job_name + "_copy_for_test", "config", "config_fed_client.json"), "r+"
+        ) as f:
+            config_fed_client_json_data = json.load(f)
+            config_fed_client_json_data["TRAIN_SPLIT_ROOT"] = "~/data"
+            f.seek(0)
+            json.dump(config_fed_client_json_data, f, indent=4)
+            f.truncate()
+        response = admin_api.submit_job(job_name + "_copy_for_test")
+        if response["status"] == APIStatus.ERROR_RUNTIME:
+            admin_controller.admin_api_response = response["raw"]["data"]
+        elif response["status"] == APIStatus.ERROR_AUTHORIZATION:
+            admin_controller.admin_api_response = response["details"]
+        if response["status"] == APIStatus.SUCCESS:
+            admin_controller.job_id = response["details"]["job_id"]
+            admin_controller.last_job_name = job_name
 
 
 class _NoopHandler(_CmdHandler):

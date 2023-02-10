@@ -24,3 +24,5 @@ test_configs:
     - ./data/test_configs/standalone_job/hello_pt_examples.yml
     - ./data/test_configs/standalone_job/advanced_pt_examples.yml
     - ./data/test_configs/standalone_job/internal_pt.yml
+  cifar:
+    - ./data/test_configs/standalone_job/test_cifar.yml
