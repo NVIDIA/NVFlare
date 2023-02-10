@@ -143,5 +143,5 @@ class SimulatorServer(FederatedServer):
 
     def stop_run_engine_cell(self):
         self.engine.ask_to_stop()
-        self.job_cell.stop()
+        # self.job_cell.stop()
         # super().stop_run_engine_cell()

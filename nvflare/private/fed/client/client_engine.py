@@ -260,12 +260,11 @@ def shutdown_client(federated_client, touch_file):
     try:
         print("About to shutdown the client...")
         federated_client.communicator.heartbeat_done = True
-        time.sleep(3)
+        # time.sleep(3)
         federated_client.close()
 
         federated_client.status = ClientStatus.STOPPED
         # federated_client.cell.stop()
-        # mpm.stop()
         security_close()
     except BaseException as e:
         secure_log_traceback()
