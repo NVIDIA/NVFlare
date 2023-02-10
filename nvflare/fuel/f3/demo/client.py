@@ -49,7 +49,7 @@ communicator = Communicator(local_endpoint)
 communicator.register_message_receiver(10, LoopbackReceiver(communicator))
 communicator.send(communicator.local_endpoint, 10, Message(None, "Test".encode("utf-8")))
 
-connect_url = "satcp://localhost:2345"
+connect_url = "tcp://localhost:2345"
 handle1 = communicator.add_connector(connect_url, Mode.ACTIVE)
 
 #listen_url = "otcp://localhost:1234"

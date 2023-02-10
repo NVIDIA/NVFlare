@@ -32,6 +32,7 @@ from nvflare.fuel.f3.message import MessageReceiver, Headers, Message
 from nvflare.fuel.f3.sfm.constants import Types, HandshakeKeys
 from nvflare.fuel.f3.sfm.sfm_conn import SfmConnection
 from nvflare.fuel.f3.sfm.sfm_endpoint import SfmEndpoint
+from nvflare.fuel.f3.stats_pool import StatsPoolManager
 
 FRAME_THREAD_POOL_SIZE = 100
 CONN_THREAD_POOL_SIZE = 16
@@ -73,6 +74,10 @@ class ConnManager(ConnMonitor):
         self.frame_mgr_executor = ThreadPoolExecutor(FRAME_THREAD_POOL_SIZE, "frame_mgr")
         self.lock = threading.Lock()
         self.null_conn = NullConnection()
+        self.send_frame_stats = StatsPoolManager.add_time_hist_pool(
+            "sfm_send_frame",
+            "SFM send_frame time in secs",
+            scope=local_endpoint.name)
 
     def add_connector(self, driver: Driver, params: dict, mode: Mode) -> str:
 
@@ -183,7 +188,13 @@ class ConnManager(ConnMonitor):
             raise CommError(CommError.ERROR, f"Endpoint {endpoint.name} has no connection")
 
         # TODO: If multiple connections, should retry a diff connection on errors
+        start = time.perf_counter()
+
         sfm_conn.send_data(app_id, stream_id, headers, payload)
+
+        self.send_frame_stats.record_value(
+            category=sfm_conn.conn.connector.driver.get_name(),
+            value=time.perf_counter()-start)
 
     def register_message_receiver(self, app_id: int, receiver: MessageReceiver):
         if self.receivers.get(app_id):

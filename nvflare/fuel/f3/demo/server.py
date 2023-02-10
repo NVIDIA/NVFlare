@@ -45,7 +45,7 @@ conn_props = {
 local_endpoint = Endpoint("demo.server", {"test": 456}, conn_props)
 communicator = Communicator(local_endpoint)
 
-listening_url = "satcp://localhost:2345"
+listening_url = "tcp://localhost:2345"
 handle1 = communicator.add_connector(listening_url, Mode.PASSIVE)
 
 #connect_url = "otcp://localhost:1234"

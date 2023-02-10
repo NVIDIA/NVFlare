@@ -21,6 +21,8 @@ import time
 
 from abc import ABC
 
+import resource
+
 from .cell import Cell, Message
 from .connector_manager import ConnectorInfo
 from .defs import MessageHeaderKey, ReturnCode
@@ -53,6 +55,7 @@ _TOPIC_LIST_POOLS = "list_pools"
 _TOPIC_SHOW_POOL = "show_pool"
 _TOPIC_COMM_CONFIG = "comm_config"
 _TOPIC_CONFIG_VARS = "config_vars"
+_TOPIC_PROCESS_INFO = "process_info"
 _TOPIC_HEARTBEAT = "heartbeat"
 
 _ONE_K = bytes([1] * 1024)
@@ -245,6 +248,11 @@ class NetAgent:
             cb=self._do_config_vars,
         )
 
+        cell.register_request_cb(
+            channel=_CHANNEL,
+            topic=_TOPIC_PROCESS_INFO,
+            cb=self._do_process_info,
+        )
         cell.register_request_cb(
             channel=_CHANNEL,
             topic=_TOPIC_HEARTBEAT,
@@ -1022,6 +1030,20 @@ class NetAgent:
             return f"{rc}: {err}"
         return reply.payload
 
+    def get_process_info(self, target: str):
+        reply = self.cell.send_request(
+            channel=_CHANNEL,
+            topic=_TOPIC_PROCESS_INFO,
+            request=new_message(),
+            timeout=1.0,
+            target=target
+        )
+        rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
+        if rc != ReturnCode.OK:
+            err = reply.get_header(MessageHeaderKey.ERROR, "")
+            return f"{rc}: {err}"
+        return reply.payload
+
     def _do_comm_config(
             self,
             request: Message
@@ -1035,6 +1057,17 @@ class NetAgent:
     ) -> Union[None, Message]:
         info = ConfigService.get_var_values()
         return new_message(payload=info)
+
+    def _do_process_info(
+            self,
+            request: Message
+    ) -> Union[None, Message]:
+
+        usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        result = " Process ID:   " + str(os.getpid()) + \
+                 " Memory Usage: " + str(usage) + \
+                 " Thread count: " + str(threading.active_count())
+        return new_message(payload=result)
 
     def _broadcast_to_subs(
             self,
