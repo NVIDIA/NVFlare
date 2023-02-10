@@ -60,7 +60,7 @@ class SimulatorDeployer(ServerDeployer):
         admin_server.start()
         services.set_admin_server(admin_server)
 
-        mpm.add_cleanup_cb(admin_server.stop)
+        # mpm.add_cleanup_cb(admin_server.stop)
 
         return simulator_server, services
 

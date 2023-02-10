@@ -409,6 +409,8 @@ class SimulatorRunner(FLComponent):
             time.sleep(0.1)
             if time.time() - start > 30.:
                 break
+                
+        self.services.admin_server.stop()
         self.services.close()
 
 
