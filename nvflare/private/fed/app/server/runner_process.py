@@ -107,9 +107,9 @@ def main():
 
         try:
             # create the FL server
-            _, server = deployer.create_fl_server(args, secure_train=secure_train)
+            server_config, server = deployer.create_fl_server(args, secure_train=secure_train)
 
-            server.cell = server.create_job_cell(args.job_id, args.root_url, args.parent_url, secure_train)
+            server.cell = server.create_job_cell(args.job_id, args.root_url, args.parent_url, secure_train, server_config)
 
             snapshot = None
             if args.snapshot:
