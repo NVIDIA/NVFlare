@@ -320,7 +320,7 @@ class SimulatorRunner(FLComponent):
 
     def run_processs(self, return_dict):
         # run_status = self.simulator_run_main()
-        run_status = mpm.run(main_func=self.simulator_run_main, shutdown_grace_time=6, cleanup_grace_time=8)
+        run_status = mpm.run(main_func=self.simulator_run_main, shutdown_grace_time=3, cleanup_grace_time=6)
 
         return_dict["run_status"] = run_status
         # os._exit(0)
@@ -395,7 +395,8 @@ class SimulatorRunner(FLComponent):
 
         self.services.job_cell = self.services.create_job_cell(SimulatorConstants.JOB_NAME,
                                                                self.services.cell.get_root_url_for_child(),
-                                                               self.services.cell.get_internal_listener_url(), False)
+                                                               self.services.cell.get_internal_listener_url(),
+                                                               False, None)
         server_app_runner = SimulatorServerAppRunner()
         snapshot = None
         server_app_runner.start_server_app(

@@ -31,6 +31,7 @@ from nvflare.apis.fl_constant import (
     ServerCommandNames,
     SnapshotKey,
     WorkspaceConstants,
+    SecureTrainConst
 )
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
@@ -41,6 +42,7 @@ from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.argument_utils import parse_vars
@@ -135,7 +137,18 @@ class BaseServer(ABC):
         scheme = grpc_args["service"].get("scheme", "grpc://")
 
         # grpc_options = grpc_args["service"].get("options", GRPC_DEFAULT_OPTIONS)
-        credentials = {}
+        if secure_train:
+            root_cert = grpc_args[SecureTrainConst.SSL_ROOT_CERT]
+            ssl_cert = grpc_args[SecureTrainConst.SSL_CERT]
+            private_key = grpc_args[SecureTrainConst.PRIVATE_KEY]
+
+            credentials = {
+                DriverParams.CA_CERT.value: root_cert,
+                DriverParams.SERVER_CERT.value: ssl_cert,
+                DriverParams.SERVER_KEY.value: private_key,
+            }
+        else:
+            credentials = {}
         parent_url = None
 
         my_fqcn = FQCN.ROOT_SERVER
@@ -332,9 +345,20 @@ class FederatedServer(BaseServer):
             server=self, args=args, client_manager=self.client_manager, snapshot_persistor=snapshot_persistor
         )
 
-    def create_job_cell(self, job_id, root_url, parent_url, secure_train) -> Cell:
+    def create_job_cell(self, job_id, root_url, parent_url, secure_train, server_config) -> Cell:
         my_fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
-        credentials = {}
+        if secure_train:
+            root_cert = server_config[SecureTrainConst.SSL_ROOT_CERT]
+            ssl_cert = server_config[SecureTrainConst.SSL_CERT]
+            private_key = server_config[SecureTrainConst.PRIVATE_KEY]
+
+            credentials = {
+                DriverParams.CA_CERT.value: root_cert,
+                DriverParams.SERVER_CERT.value: ssl_cert,
+                DriverParams.SERVER_KEY.value: private_key,
+            }
+        else:
+            credentials = {}
         cell = Cell(
             fqcn=my_fqcn,
             root_url=root_url,
