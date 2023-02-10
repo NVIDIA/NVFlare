@@ -12,29 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import copy
+import time
 import traceback
 
-import numpy as np
-
-
-import time
 from nvflare.apis.controller_spec import Task, TaskCompletionStatus
-
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.impl.controller import Task
 from nvflare.apis.signal import Signal
-from nvflare.app_common.abstract.model import model_learnable_to_dxo
-from nvflare.app_common.app_constant import AlgorithmConstants, AppConstants
+from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 
-from nvflare.app_common.abstract.aggregator import Aggregator
-from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
-
-from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 _TASK_KEY_DONE = "___done"
+
 
 class ScatterAndGatherFedSM(ScatterAndGather):
     def __init__(
@@ -94,7 +84,6 @@ class ScatterAndGatherFedSM(ScatterAndGather):
         # client_id to label mapping for selector
         self.client_id_label_mapping = client_id_label_mapping
 
-
     def start_controller(self, fl_ctx: FLContext) -> None:
         super().start_controller(fl_ctx=fl_ctx)
         self.log_info(fl_ctx, "Initializing FedSM-specific workflow components.")
@@ -113,9 +102,13 @@ class ScatterAndGatherFedSM(ScatterAndGather):
         # Validate client info
         for client_id in self.participating_clients:
             if client_id not in self.client_id_label_mapping.keys():
-                self.system_panic("Client {} not found in the id_label mapping. Please double check. ScatterAndGatherFedSM exiting.".format(client_id), fl_ctx)
+                self.system_panic(
+                    "Client {} not found in the id_label mapping. Please double check. ScatterAndGatherFedSM exiting.".format(
+                        client_id
+                    ),
+                    fl_ctx,
+                )
                 return
-
 
     def _wait_for_task(self, task: Task, abort_signal: Signal):
         task.props[_TASK_KEY_DONE] = False
@@ -132,7 +125,6 @@ class ScatterAndGatherFedSM(ScatterAndGather):
             if task_done:
                 break
             time.sleep(self._task_check_period)
-
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext) -> None:
         try:
@@ -174,7 +166,7 @@ class ScatterAndGatherFedSM(ScatterAndGather):
                         # add target id info for checking at client end
                         "target_id": client_id,
                         # add target label for client end selector training
-                        "select_label": client_label
+                        "select_label": client_label,
                     }
                     dxo_collection = DXO(data_kind=DataKind.COLLECTION, data=dxo_dict)
                     data_shareable = dxo_collection.to_shareable()
@@ -226,7 +218,9 @@ class ScatterAndGatherFedSM(ScatterAndGather):
 
                 # update all models using shareable generator for FedSM
                 self.fire_event(AppEventType.BEFORE_SHAREABLE_TO_LEARNABLE, fl_ctx)
-                self._global_weights = self.shareable_gen.shareable_to_learnable(shareable=collection_dxo.to_shareable(), client_ids=self.participating_clients, fl_ctx=fl_ctx)
+                self._global_weights = self.shareable_gen.shareable_to_learnable(
+                    shareable=collection_dxo.to_shareable(), client_ids=self.participating_clients, fl_ctx=fl_ctx
+                )
 
                 # update models
                 fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._global_weights, private=True, sticky=True)

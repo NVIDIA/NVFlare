@@ -17,6 +17,7 @@ import os
 
 import torch
 import torch.optim as optim
+from learners.supervised_learner import SupervisedLearner
 from monai.data import CacheDataset, DataLoader, Dataset, load_decathlon_datalist
 from monai.inferers import SimpleInferer
 from monai.losses import DiceLoss
@@ -34,7 +35,6 @@ from monai.transforms import (
     Resized,
     ScaleIntensityRanged,
 )
-from learners.supervised_learner import SupervisedLearner
 from utils.custom_client_datalist_json_path import custom_client_datalist_json_path
 
 from nvflare.apis.fl_context import FLContext

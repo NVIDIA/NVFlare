@@ -66,8 +66,8 @@ class FullModelShareableFedSMGenerator(ShareableGenerator):
         # selector model is single model, directly provides weights
         dxo_select = dxo.data.get("select_weights")
         if not dxo_select:
-             self.log_error(fl_ctx, "Aggregated selector model weights are missing!")
-             return
+            self.log_error(fl_ctx, "Aggregated selector model weights are missing!")
+            return
         base_select_model = base_model["select_model"]
         if not base_select_model:
             self.system_panic(reason="No base model for selector!", fl_ctx=fl_ctx)
@@ -94,8 +94,8 @@ class FullModelShareableFedSMGenerator(ShareableGenerator):
         # global model is single model, directly provides weights
         dxo_global = dxo.data.get("global_weights")
         if not dxo_global:
-             self.log_error(fl_ctx, "Aggregated global model weights are missing!")
-             return
+            self.log_error(fl_ctx, "Aggregated global model weights are missing!")
+            return
         base_global_model = base_model["global_model"]
         if not base_global_model:
             self.system_panic(reason="No base global model!", fl_ctx=fl_ctx)
@@ -146,7 +146,8 @@ class FullModelShareableFedSMGenerator(ShareableGenerator):
             else:
                 raise ValueError(
                     "data_kind should be either DataKind.WEIGHTS or DataKind.WEIGHT_DIFF, but got {}".format(
-                        dxo.data_kind)
+                        dxo.data_kind
+                    )
                 )
             base_model_person[ModelLearnableKey.META] = dxo_person.get_meta_props()
             base_model[client_id] = base_model_person

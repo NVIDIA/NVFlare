@@ -32,7 +32,14 @@ class _AccuItem(object):
 
 
 class AccumulateWeightedAggregatorPersonalizedSoftPull(Aggregator):
-    def __init__(self, soft_pull_lambda=0.3, exclude_vars_global=None, exclude_vars_person=None, exclude_vars_select=None, aggregation_weights=None):
+    def __init__(
+        self,
+        soft_pull_lambda=0.3,
+        exclude_vars_global=None,
+        exclude_vars_person=None,
+        exclude_vars_select=None,
+        aggregation_weights=None,
+    ):
         """FedSM aggregator.
 
         This aggregator performs two types of aggregation among received shareables from clients:
@@ -71,7 +78,9 @@ class AccumulateWeightedAggregatorPersonalizedSoftPull(Aggregator):
             return False
 
         if dxo.data_kind != self.expected_data_kind:
-            self.log_error(fl_ctx, "FedSM aggregator expect {} but got {}".format(self.expected_data_kind, dxo.data_kind))
+            self.log_error(
+                fl_ctx, "FedSM aggregator expect {} but got {}".format(self.expected_data_kind, dxo.data_kind)
+            )
             return False
 
         processed_algorithm = dxo.get_meta_prop(MetaKey.PROCESSED_ALGORITHM)
@@ -192,7 +201,9 @@ class AccumulateWeightedAggregatorPersonalizedSoftPull(Aggregator):
                     weighted_value = data[v_name] * float_n_iter * aggregation_weight
                     if client_name not in clients_with_messages:
                         if client_name in self.aggregation_weights.keys():
-                            self.log_debug(fl_ctx, f"Client {client_name} use weight {aggregation_weight} for aggregation.")
+                            self.log_debug(
+                                fl_ctx, f"Client {client_name} use weight {aggregation_weight} for aggregation."
+                            )
                         else:
                             self.log_debug(
                                 fl_ctx,
@@ -275,7 +286,12 @@ class AccumulateWeightedAggregatorPersonalizedSoftPull(Aggregator):
                     if aggr_client_name == client_name:
                         weighted_value = data[v_name] * aggregation_weight * self.soft_pull_lambda
                     else:
-                        weighted_value = data[v_name] * aggregation_weight * (1 - self.soft_pull_lambda) / (len(self.accumulator) - 1)
+                        weighted_value = (
+                            data[v_name]
+                            * aggregation_weight
+                            * (1 - self.soft_pull_lambda)
+                            / (len(self.accumulator) - 1)
+                        )
                     np_vars[aggr_client_name].append(weighted_value)
 
             for item in self.accumulator:

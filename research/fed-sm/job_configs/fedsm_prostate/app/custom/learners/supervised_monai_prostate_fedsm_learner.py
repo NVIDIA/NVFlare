@@ -17,11 +17,11 @@ import copy
 import numpy as np
 import torch
 import torch.optim as optim
+from helpers.supervised_pt_fedsm import SupervisedPTFedSMHelper
+from learners.supervised_monai_prostate_learner import SupervisedMonaiProstateLearner
 from monai.losses import DiceLoss
 from monai.networks.nets.unet import UNet
 from networks.vgg import vgg11
-from helpers.supervised_pt_fedsm import SupervisedPTFedSMHelper
-from learners.supervised_monai_prostate_learner import SupervisedMonaiProstateLearner
 
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.fl_constant import ReturnCode
@@ -33,11 +33,11 @@ from nvflare.app_common.app_constant import AppConstants, ValidateType
 
 class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
     def __init__(
-            self,
-            train_config_filename,
-            aggregation_epochs: int = 1,
-            fedsm_select_epochs: int = 1,
-            train_task_name: str = AppConstants.TASK_TRAIN,
+        self,
+        train_config_filename,
+        aggregation_epochs: int = 1,
+        fedsm_select_epochs: int = 1,
+        train_task_name: str = AppConstants.TASK_TRAIN,
     ):
         """Trainer for prostate segmentation task. It inherits from MONAI trainer.
 
@@ -84,9 +84,7 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
         ).to(self.device)
         fedsm_person_criterion = DiceLoss(sigmoid=True)
         fedsm_select_criterion = torch.nn.CrossEntropyLoss()
-        fedsm_person_optimizer = optim.Adam(
-            fedsm_person_model.parameters(), lr=self.lr
-        )
+        fedsm_person_optimizer = optim.Adam(fedsm_person_model.parameters(), lr=self.lr)
         fedsm_select_optimizer = optim.Adam(
             fedsm_select_model.parameters(), lr=self.config_info["learning_rate_select"]
         )
@@ -100,7 +98,7 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
             device=self.device,
             app_dir=app_dir,
             person_model_epochs=self.fedsm_person_model_epochs,
-            select_model_epochs=self.fedsm_select_model_epochs
+            select_model_epochs=self.fedsm_select_model_epochs,
         )
 
     def train(
@@ -192,10 +190,7 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
 
         # local train global model
         self.local_train(
-            fl_ctx=fl_ctx,
-            train_loader=self.train_loader,
-            model_global=model_global,
-            abort_signal=abort_signal
+            fl_ctx=fl_ctx, train_loader=self.train_loader, model_global=model_global, abort_signal=abort_signal
         )
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
@@ -266,7 +261,7 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
         dxo_dict = {
             "global_weights": dxo_global_weights,
             "person_weights": dxo_person_weights,
-            "select_weights": dxo_select_weights
+            "select_weights": dxo_select_weights,
         }
         dxo_collection = DXO(data_kind=DataKind.COLLECTION, data=dxo_dict)
         dxo_collection.set_meta_prop(MetaKey.NUM_STEPS_CURRENT_ROUND, epoch_len)
@@ -335,21 +330,31 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
         if validate_type == ValidateType.BEFORE_TRAIN_VALIDATE:
             # perform valid before local train
             global_metric = self.local_valid(
-                self.model, self.valid_loader, abort_signal, tb_id="val_metric_global_model", record_epoch=self.epoch_global
+                self.model,
+                self.valid_loader,
+                abort_signal,
+                tb_id="val_metric_global_model",
+                record_epoch=self.epoch_global,
             )
             if abort_signal.triggered:
                 return make_reply(ReturnCode.TASK_ABORTED)
             self.log_info(fl_ctx, f"val_metric_global_model ({model_owner}): {global_metric:.4f}")
             select_metric = self.fedsm_helper.local_valid_select(
-                self.valid_loader, select_label, abort_signal,
-                tb_id="val_metric_select_model", writer=self.writer, record_epoch=self.fedsm_helper.select_epoch_global
+                self.valid_loader,
+                select_label,
+                abort_signal,
+                tb_id="val_metric_select_model",
+                writer=self.writer,
+                record_epoch=self.fedsm_helper.select_epoch_global,
             )
             if abort_signal.triggered:
                 return make_reply(ReturnCode.TASK_ABORTED)
             self.log_info(fl_ctx, f"val_metric_select_model ({model_owner}): {select_metric:.4f}")
             # validation metrics will be averaged with weights at server end for best model record
             # on the two models: global and selector
-            metric_dxo = DXO(data_kind=DataKind.METRICS, data={MetaKey.INITIAL_METRICS: [global_metric, select_metric]}, meta={})
+            metric_dxo = DXO(
+                data_kind=DataKind.METRICS, data={MetaKey.INITIAL_METRICS: [global_metric, select_metric]}, meta={}
+            )
             metric_dxo.set_meta_prop(MetaKey.NUM_STEPS_CURRENT_ROUND, len(self.valid_loader))
             return metric_dxo.to_shareable()
         else:

@@ -12,19 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging
 from collections import OrderedDict
 
-import torch
-import torch.nn as nn
-
 from nvflare.apis.dxo import MetaKey
-from nvflare.app_common.abstract.model import (
-    ModelLearnable,
-    ModelLearnableKey,
-    make_model_learnable,
-    validate_model_learnable,
-)
+from nvflare.app_common.abstract.model import ModelLearnableKey, make_model_learnable
 from nvflare.app_common.app_constant import ModelFormat
 
 
@@ -103,7 +94,7 @@ class PTModelPersistenceFormatManagerFedSM(object):
                 if is_processed:
                     weights[k] = v
                 else:
-                    #weights[k] = v.cpu().numpy()
+                    # weights[k] = v.cpu().numpy()
                     weights[k] = v
             model_set[model_id] = weights
         # always use complex format for saving

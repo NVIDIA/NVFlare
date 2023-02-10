@@ -134,8 +134,12 @@ class IntimeModelFedSMSelector(FLComponent):
             self.log_debug(fl_ctx, "nothing accumulated for model_selector")
             return False
 
-        self.val_metric_global = self.validation_mertic_global_weighted_sum / self.validation_metric_global_sum_of_weights
-        self.val_metric_select = self.validation_mertic_select_weighted_sum / self.validation_metric_select_sum_of_weights
+        self.val_metric_global = (
+            self.validation_mertic_global_weighted_sum / self.validation_metric_global_sum_of_weights
+        )
+        self.val_metric_select = (
+            self.validation_mertic_select_weighted_sum / self.validation_metric_select_sum_of_weights
+        )
 
         self.logger.debug(f"weighted validation metric {self.val_metric_global}")
         self.logger.debug(f"weighted validation metric {self.val_metric_select}")
@@ -143,14 +147,20 @@ class IntimeModelFedSMSelector(FLComponent):
         if self.val_metric_global > self.best_val_metric_global:
             self.best_val_metric_global = self.val_metric_global
             current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
-            self.log_info(fl_ctx, f"new best validation metric for global model at round {current_round}: {self.best_val_metric_global}")
+            self.log_info(
+                fl_ctx,
+                f"new best validation metric for global model at round {current_round}: {self.best_val_metric_global}",
+            )
             # Fire event to notify that the current global model is a new best
             self.fire_event("fedsm_best_global_model_available", fl_ctx)
 
         if self.val_metric_select > self.best_val_metric_select:
             self.best_val_metric_select = self.val_metric_select
             current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
-            self.log_info(fl_ctx, f"new best validation metric for selector model at round {current_round}: {self.best_val_metric_select}")
+            self.log_info(
+                fl_ctx,
+                f"new best validation metric for selector model at round {current_round}: {self.best_val_metric_select}",
+            )
             # Fire event to notify that the current global model is a new best
             self.fire_event("fedsm_best_select_model_available", fl_ctx)
 

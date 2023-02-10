@@ -42,17 +42,17 @@ def AccuracyTopK(output, target, topk=(1,)):
 
 class PTFedSMHelper(object):
     def __init__(
-            self,
-            person_model,
-            select_model,
-            person_criterion,
-            select_criterion,
-            person_optimizer,
-            select_optimizer,
-            device,
-            app_dir,
-            person_model_epochs: int = 1,
-            select_model_epochs: int = 1
+        self,
+        person_model,
+        select_model,
+        person_criterion,
+        select_criterion,
+        person_optimizer,
+        select_optimizer,
+        device,
+        app_dir,
+        person_model_epochs: int = 1,
+        select_model_epochs: int = 1,
     ):
         """Helper to be used with FedSM components.
         Implements the functions used for the algorithm proposed in
@@ -89,13 +89,21 @@ class PTFedSMHelper(object):
         if not isinstance(self.select_model, torch.nn.Module):
             raise ValueError(f"select_model component must be torch model. " f"But got: {type(self.select_model)}")
         if not isinstance(self.person_criterion, torch.nn.modules.loss._Loss):
-            raise ValueError(f"person_criterion component must be torch loss. " f"But got: {type(self.person_criterion)}")
+            raise ValueError(
+                f"person_criterion component must be torch loss. " f"But got: {type(self.person_criterion)}"
+            )
         if not isinstance(self.select_criterion, torch.nn.modules.loss._Loss):
-            raise ValueError(f"select_criterion component must be torch loss. " f"But got: {type(self.select_criterion)}")
+            raise ValueError(
+                f"select_criterion component must be torch loss. " f"But got: {type(self.select_criterion)}"
+            )
         if not isinstance(self.person_optimizer, torch.optim.Optimizer):
-            raise ValueError(f"person_optimizer component must be torch optimizer. " f"But got: {type(self.person_optimizer)}")
+            raise ValueError(
+                f"person_optimizer component must be torch optimizer. " f"But got: {type(self.person_optimizer)}"
+            )
         if not isinstance(self.select_optimizer, torch.optim.Optimizer):
-            raise ValueError(f"select_optimizer component must be torch optimizer. " f"But got: {type(self.select_optimizer)}")
+            raise ValueError(
+                f"select_optimizer component must be torch optimizer. " f"But got: {type(self.select_optimizer)}"
+            )
         if not isinstance(self.device, torch.device):
             raise ValueError(f"device component must be torch device. " f"But got: {type(self.device)}")
 
@@ -147,7 +155,9 @@ class PTFedSMHelper(object):
             writer.add_scalar("train_loss_selector", loss.item(), current_step)
         self.select_epoch_of_start_time += self.select_model_epochs
 
-    def local_valid_select(self, valid_loader, select_label, abort_signal: Signal, tb_id=None, writer=None, record_epoch=None):
+    def local_valid_select(
+        self, valid_loader, select_label, abort_signal: Signal, tb_id=None, writer=None, record_epoch=None
+    ):
         # Validate selector model
         self.select_model.eval()
         with torch.no_grad():

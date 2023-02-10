@@ -12,25 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
+import copy
 import os
-import re
 from collections import OrderedDict
 
-import copy
-
 import torch
+from persistors.pt_fed_utils import PTModelPersistenceFormatManagerFedSM
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model import ModelLearnable
+from nvflare.app_common.app_constant import DefaultCheckpointFileName
 from nvflare.app_common.pt.pt_file_model_persistor import PTFileModelPersistor
-from nvflare.app_common.app_constant import AppConstants, DefaultCheckpointFileName, EnvironmentKey
-from nvflare.app_common.app_event_type import AppEventType
-from nvflare.app_common.model_desc import ModelDescriptor
-
-from persistors.pt_fed_utils import PTModelPersistenceFormatManagerFedSM
 
 
 class PTFileFedSMModelPersistor(PTFileModelPersistor):
@@ -62,8 +55,8 @@ class PTFileFedSMModelPersistor(PTFileModelPersistor):
             ValueError: when source_ckpt_file_full_name does not exist
         """
         super().__init__(
-            exclude_vars = exclude_vars,
-            model = model,
+            exclude_vars=exclude_vars,
+            model=model,
             global_model_file_name=model_file_name,
             best_global_model_file_name=best_model_file_name,
             source_ckpt_file_full_name=source_ckpt_file_full_name,
@@ -75,7 +68,7 @@ class PTFileFedSMModelPersistor(PTFileModelPersistor):
         self.log_info(fl_ctx, "FedSM model persistor initialized")
         super()._initialize(fl_ctx=fl_ctx)
 
-        self.best_ckpt_save_path_global = os.path.join(self.log_dir, "global_"+self.best_global_model_file_name)
+        self.best_ckpt_save_path_global = os.path.join(self.log_dir, "global_" + self.best_global_model_file_name)
         self.best_ckpt_save_path_select = os.path.join(self.log_dir, "select_" + self.best_global_model_file_name)
         # First convert str model description to model
         if isinstance(self.model_selector, str):
@@ -148,19 +141,33 @@ class PTFileFedSMModelPersistor(PTFileModelPersistor):
             # if no pretrained model provided, use the generated network weights from APP config
             # note that, if set "determinism" in the config, the init model weights will always be the same
             try:
-                data["model_set_fedsm"]["select_model"] = self.model_set_fedsm["select_model"].state_dict() if self.model_set_fedsm["select_model"] is not None else OrderedDict()
-                data["model_set_fedsm"]["global_model"] = self.model_set_fedsm["global_model"].state_dict() if self.model_set_fedsm["global_model"] is not None else OrderedDict()
+                data["model_set_fedsm"]["select_model"] = (
+                    self.model_set_fedsm["select_model"].state_dict()
+                    if self.model_set_fedsm["select_model"] is not None
+                    else OrderedDict()
+                )
+                data["model_set_fedsm"]["global_model"] = (
+                    self.model_set_fedsm["global_model"].state_dict()
+                    if self.model_set_fedsm["global_model"] is not None
+                    else OrderedDict()
+                )
                 for id in self.client_ids:
-                    data["model_set_fedsm"][id] = self.model_set_fedsm[id].state_dict() if self.model_set_fedsm[id] is not None else OrderedDict()
+                    data["model_set_fedsm"][id] = (
+                        self.model_set_fedsm[id].state_dict() if self.model_set_fedsm[id] is not None else OrderedDict()
+                    )
             except:
                 self.log_exception(fl_ctx, "error getting state_dict from model object")
                 self.system_panic(reason="cannot create state_dict from model object", fl_ctx=fl_ctx)
                 return None
 
         if self.model and self.model_selector:
-            self.default_train_conf = {"train": {"model": type(self.model).__name__, "model_selector": type(self.model_selector).__name__}}
+            self.default_train_conf = {
+                "train": {"model": type(self.model).__name__, "model_selector": type(self.model_selector).__name__}
+            }
 
-        self.persistence_manager = PTModelPersistenceFormatManagerFedSM(data, default_train_conf=self.default_train_conf)
+        self.persistence_manager = PTModelPersistenceFormatManagerFedSM(
+            data, default_train_conf=self.default_train_conf
+        )
         return self.persistence_manager.to_model_learnable(self.exclude_vars)
 
     def handle_event(self, event: str, fl_ctx: FLContext):
