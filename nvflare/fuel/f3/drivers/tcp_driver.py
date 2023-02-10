@@ -92,8 +92,14 @@ class TcpDriver(BaseDriver):
 
         sock.connect((host, port))
 
-        peer = sock.getpeername()
-        conn_props = {DriverParams.PEER_ADDR.value: f"{peer[0]}:{peer[1]}"}
+        try:
+            peer = sock.getpeername()
+            peer_addr = f"{peer[0]}:{peer[1]}"
+        except OSError as ex:
+            peer_addr = "N/A"
+            log.debug("getpeername() error for {connector}: {ex}")
+
+        conn_props = {DriverParams.PEER_ADDR.value: peer_addr}
         local = sock.getsockname()
         conn_props[DriverParams.LOCAL_ADDR.value] = f"{local[0]}:{local[1]}"
 

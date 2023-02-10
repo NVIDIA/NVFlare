@@ -141,6 +141,13 @@ class NetManager(CommandModule):
                     visible=True,
                 ),
                 CommandSpec(
+                    name="process_info",
+                    description="show process information",
+                    usage="process_info target",
+                    handler_func=self._cmd_process_info,
+                    visible=True,
+                ),
+                CommandSpec(
                     name="stop_cell",
                     description="stop a cell and its children",
                     usage="stop_cell target",
@@ -451,6 +458,16 @@ class NetManager(CommandModule):
         if not isinstance(reply, dict):
             conn.append_error(f"expect dict bt got {type(reply)}")
             return
+        conn.append_dict(reply)
+
+    def _cmd_process_info(self, conn: Connection, args: [str]):
+        if len(args) < 2:
+            cmd_entry = conn.get_prop(ConnProps.CMD_ENTRY)
+            conn.append_string(f"Usage: {cmd_entry.usage}")
+            return
+
+        target = args[1]
+        reply = self.agent.get_process_info(target)
         conn.append_dict(reply)
 
     def _cmd_change_root(self, conn: Connection, args: [str]):
