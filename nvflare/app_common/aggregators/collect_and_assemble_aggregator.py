@@ -50,9 +50,9 @@ class CollectAndAssembleAggregator(Aggregator):
         return self._accept_contribution(contributor_name, current_round, data, fl_ctx)
 
     def _accept_contribution(self, contributor: str, current_round: int, data: dict, fl_ctx: FLContext) -> bool:
-        collector = self.assembler.get_collector()
-        if contributor not in collector:
-            collector[contributor] = self.assembler.get_model_params(data)
+        collection = self.assembler.collection
+        if contributor not in collection:
+            collection[contributor] = self.assembler.get_model_params(data)
             accepted = True
         else:
             self.log_info(
@@ -100,11 +100,11 @@ class CollectAndAssembleAggregator(Aggregator):
     def aggregate(self, fl_ctx: FLContext) -> Shareable:
         self.log_debug(fl_ctx, "Start aggregation")
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
-        collector = self.assembler.get_collector()
-        site_num = len(collector)
+        collection = self.assembler.collection
+        site_num = len(collection)
         self.log_info(fl_ctx, f"aggregating {site_num} update(s) at round {current_round}")
 
-        model = self.assembler.assemble(current_round, collector)
+        model = self.assembler.assemble(data=collection, fl_ctx=fl_ctx)
         # Reset assembler for next round
         self.assembler.reset()
         self.log_debug(fl_ctx, "End aggregation")
