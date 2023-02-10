@@ -13,7 +13,7 @@
 # limitations under the License.
 import logging
 from socketserver import BaseRequestHandler
-from typing import Any, Union
+from typing import Any
 
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.connection import Connection, BytesAlike
@@ -43,7 +43,7 @@ class SocketConnection(Connection):
         if self.sock:
             self.sock.close()
 
-    def send_frame(self, frame: Union[bytes, bytearray, memoryview]):
+    def send_frame(self, frame: BytesAlike):
         try:
             self.sock.sendall(frame)
         except BaseException as ex:
@@ -64,11 +64,7 @@ class SocketConnection(Connection):
 
         while not self.closing:
             frame = self.read_frame()
-
-            if self.frame_receiver:
-                self.frame_receiver.process_frame(frame)
-            else:
-                log.error(f"Frame receiver not registered for connection: {self.name}")
+            self.process_frame(frame)
 
     def read_frame(self) -> BytesAlike:
 

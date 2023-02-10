@@ -13,18 +13,17 @@
 # limitations under the License.
 import asyncio
 import logging
-from typing import List, Any, Union, Dict
+from typing import List, Any, Dict
 
 import websockets
 
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers import net_utils
 from nvflare.fuel.f3.drivers.base_driver import BaseDriver
-from nvflare.fuel.f3.connection import Connection
+from nvflare.fuel.f3.connection import Connection, BytesAlike
 from nvflare.fuel.f3.drivers.driver import Connector
 from nvflare.fuel.f3.drivers.driver_params import DriverCap, DriverParams
 from nvflare.fuel.f3.drivers.net_utils import get_tcp_urls
-from nvflare.fuel.f3.drivers.prefix import Prefix
 from nvflare.fuel.f3.sfm.conn_manager import Mode
 
 log = logging.getLogger(__name__)
@@ -54,7 +53,7 @@ class WsConnection(Connection):
         self.closing = True
         asyncio.run_coroutine_threadsafe(self.websocket.close(), self.loop)
 
-    def send_frame(self, frame: Union[bytes, bytearray, memoryview]):
+    def send_frame(self, frame: BytesAlike):
         # Can't do asyncio send directly. Append to the queue
         try:
             asyncio.run_coroutine_threadsafe(self.queue.put(frame), self.loop)
@@ -163,26 +162,18 @@ class HttpDriver(BaseDriver):
         await self.read_write_loop(conn)
         self.close_connection(conn)
 
-    async def reader(self, conn: WsConnection):
+    @staticmethod
+    async def reader(conn: WsConnection):
         while not conn.closing:
             # Reading from websocket and call receiver CB
             frame = await conn.websocket.recv()
-            if log.isEnabledFor(logging.DEBUG):
-                prefix = Prefix.from_bytes(frame)
-                log.debug(f"Received frame: {prefix} on {self.get_name()}:{conn.name}")
+            conn.process_frame(frame)
 
-            if conn.frame_receiver:
-                conn.frame_receiver.process_frame(frame)
-            else:
-                log.error("Frame receiver not registered")
-
-    async def writer(self, conn: WsConnection):
+    @staticmethod
+    async def writer(conn: WsConnection):
         while not conn.closing:
             # Read from queue and send to websocket
             frame = await conn.queue.get()
-            if log.isEnabledFor(logging.DEBUG):
-                prefix = Prefix.from_bytes(frame)
-                log.debug(f"Sending frame: {prefix} on {self.get_name()}:{conn.name}")
 
             await conn.websocket.send(frame)
             # This is to yield control. See bug: https://github.com/aaugustin/websockets/issues/865

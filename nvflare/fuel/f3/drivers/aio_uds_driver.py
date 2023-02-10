@@ -20,31 +20,29 @@ from nvflare.fuel.f3.drivers.aio_context import AioContext
 from nvflare.fuel.f3.drivers.base_driver import BaseDriver
 from nvflare.fuel.f3.drivers.connnector import Mode
 from nvflare.fuel.f3.drivers.driver import Connector
-from nvflare.fuel.f3.drivers.driver_params import DriverCap, DriverParams
+from nvflare.fuel.f3.drivers.driver_params import DriverCap
 from nvflare.fuel.f3.drivers.aio_conn import AioConnection
-from nvflare.fuel.f3.drivers.net_utils import get_ssl_context
-from nvflare.fuel.f3.drivers.tcp_driver import TcpDriver
+from nvflare.fuel.f3.drivers.uds_driver import UdsDriver
 
 log = logging.getLogger(__name__)
 
 
-class AioTcpDriver(BaseDriver):
+class AioUdsDriver(BaseDriver):
 
     def __init__(self):
         super().__init__()
         self.aio_ctx = AioContext.get_global_context()
         self.server = None
-        self.ssl_context = None
 
     @staticmethod
     def supported_transports() -> List[str]:
-        return ["atcp", "satcp"]
+        return ["auds"]
 
     @staticmethod
     def capabilities() -> Dict[str, Any]:
         return {
             DriverCap.HEARTBEAT.value: False,
-            DriverCap.SUPPORT_SSL.value: True
+            DriverCap.SUPPORT_SSL.value: False
         }
 
     def listen(self, connector: Connector):
@@ -61,7 +59,7 @@ class AioTcpDriver(BaseDriver):
 
     @staticmethod
     def get_urls(scheme: str, resources: dict) -> (str, str):
-        return TcpDriver.get_urls(scheme, resources)
+        return UdsDriver.get_urls(scheme, resources)
 
     # Internal methods
 
@@ -74,30 +72,26 @@ class AioTcpDriver(BaseDriver):
 
     async def _async_run(self, mode: Mode):
 
-        params = self.connector.params
-        host = params.get(DriverParams.HOST.value)
-        port = params.get(DriverParams.PORT.value)
+        socket_path = UdsDriver.get_socket_path(self.connector.params)
 
         if mode == Mode.ACTIVE:
-            coroutine = self._tcp_connect(host, port)
+            coroutine = self._uds_connect(socket_path)
         else:
-            coroutine = self._tcp_listen(host, port)
+            coroutine = self._uds_listen(socket_path)
 
         await coroutine
 
-    async def _tcp_connect(self, host, port):
-        self.ssl_context = get_ssl_context(self.connector.params, ssl_server=False)
-        reader, writer = await asyncio.open_connection(host, port, ssl=self.ssl_context)
+    async def _uds_connect(self, socket_path: str):
+        reader, writer = await asyncio.open_unix_connection(socket_path)
         await self._create_connection(reader, writer)
 
-    async def _tcp_listen(self, host, port):
-        self.ssl_context = get_ssl_context(self.connector.params, ssl_server=True)
-        self.server = await asyncio.start_server(self._create_connection, host, port, ssl=self.ssl_context)
+    async def _uds_listen(self, socket_path: str):
+        self.server = await asyncio.start_unix_server(self._create_connection, socket_path)
         async with self.server:
             await self.server.serve_forever()
 
     async def _create_connection(self, reader, writer):
-        conn = AioConnection(self.connector, self.aio_ctx, reader, writer, self.ssl_context is not None)
+        conn = AioConnection(self.connector, self.aio_ctx, reader, writer)
         self.add_connection(conn)
         await conn.read_loop()
         self.close_connection(conn)

@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import logging
 import threading
 from abc import ABC, abstractmethod
 from enum import Enum
@@ -18,6 +19,8 @@ from typing import Union
 
 from nvflare.fuel.f3.drivers.connnector import Connector, Mode
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
+
+log = logging.getLogger(__name__)
 
 BytesAlike = Union[bytes, bytearray, memoryview]
 
@@ -95,6 +98,21 @@ class Connection(ABC):
             CommError: If any error happens while processing the frame
         """
         self.frame_receiver = receiver
+
+    def process_frame(self, frame: BytesAlike):
+        """A convenience function to call frame receiver
+
+        Args:
+            frame: The frame to be processed
+
+        Raises:
+            CommError: If any error happens while processing the frame
+        """
+
+        if self.frame_receiver:
+            self.frame_receiver.process_frame(frame)
+        else:
+            log.error(f"Frame receiver not registered for {self}")
 
     @classmethod
     def _get_connection_name(cls):

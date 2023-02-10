@@ -49,8 +49,8 @@ communicator = Communicator(local_endpoint)
 communicator.register_message_receiver(10, LoopbackReceiver(communicator))
 communicator.send(communicator.local_endpoint, 10, Message(None, "Test".encode("utf-8")))
 
-connect_url = "grpc://localhost:4321"
-handle1 = communicator.add_connector(connect_url, Mode.ACTIVE, True)
+connect_url = "satcp://localhost:2345"
+handle1 = communicator.add_connector(connect_url, Mode.ACTIVE)
 
 #listen_url = "otcp://localhost:1234"
 #handle2 = communicator.add_connector(listen_url, Mode.PASSIVE)
@@ -59,7 +59,7 @@ resources = {
     DriverParams.SECURE: False,
     DriverParams.PORTS: "3000-6000",
 }
-handle3, ad_hoc_url = communicator.start_listener("tcp", resources)
+#handle3, ad_hoc_url = communicator.start_listener("tcp", resources)
 
 communicator.register_monitor(DemoEndpointMonitor(local_endpoint.name, endpoints))
 communicator.register_message_receiver(AppIds.CELL_NET, TimingReceiver())

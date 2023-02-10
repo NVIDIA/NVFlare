@@ -267,6 +267,7 @@ class ConnManager(ConnMonitor):
 
         try:
             prefix = Prefix.from_bytes(frame)
+            log.debug(f"Received frame: {prefix} on {sfm_conn.conn}")
 
             if prefix.header_len == 0:
                 headers = None

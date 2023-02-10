@@ -18,11 +18,11 @@ import traceback
 import grpc
 import logging
 import threading
-from typing import Union, List, Dict, Any
+from typing import List, Dict, Any
 
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.comm_error import CommError
-from nvflare.fuel.f3.connection import Connection
+from nvflare.fuel.f3.connection import Connection, BytesAlike
 from nvflare.fuel.f3.drivers.driver import Connector
 
 from nvflare.fuel.f3.drivers.grpc.streamer_pb2_grpc import (
@@ -94,7 +94,7 @@ class AioStreamSession(Connection):
     #     await self.oq.put(frame)
     #     self.logger.debug(f"{self.side}: sent frame {frame.seq}")
 
-    def send_frame(self, frame: Union[bytes, bytearray, memoryview]):
+    def send_frame(self, frame: BytesAlike):
         try:
             AioStreamSession.seq_num += 1
             seq = AioStreamSession.seq_num
@@ -118,10 +118,8 @@ class AioStreamSession(Connection):
 
                 assert isinstance(f, Frame)
                 self.logger.debug(f"{self.side} in {ct.name}: incoming frame #{f.seq}")
-                if self.frame_receiver:
-                    self.frame_receiver.process_frame(f.data)
-                else:
-                    self.logger.error(f"{self.side}: Frame receiver not registered for connection: {self.name}")
+                self.process_frame(f.data)
+
         except grpc.aio._call.AioRpcError:
             self.logger.debug(f"{self.side}: AioRpcError")
             self.logger.debug(traceback.format_exc())
