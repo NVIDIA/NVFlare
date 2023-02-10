@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import logging
 import threading
 import time
 from typing import Optional
@@ -22,6 +23,8 @@ from nvflare.fuel.f3.drivers.prefix import Prefix, PREFIX_LEN
 from nvflare.fuel.f3.endpoint import Endpoint
 from nvflare.fuel.f3.message import Headers
 from nvflare.fuel.f3.sfm.constants import Types, HandshakeKeys
+
+log = logging.getLogger(__name__)
 
 
 class SfmConnection:
@@ -122,6 +125,7 @@ class SfmConnection:
         if payload:
             buffer[offset:] = payload
 
+        log.debug(f"Sending frame: {prefix} on {self.conn}")
         # Only one thread can send data on a connection. Otherwise, the frames may interleave.
         with self.lock:
             self.conn.send_frame(buffer)

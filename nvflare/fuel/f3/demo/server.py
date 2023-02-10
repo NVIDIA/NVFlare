@@ -45,8 +45,8 @@ conn_props = {
 local_endpoint = Endpoint("demo.server", {"test": 456}, conn_props)
 communicator = Communicator(local_endpoint)
 
-listening_url = "grpc://localhost:4321"
-handle1 = communicator.add_connector(listening_url, Mode.PASSIVE, True)
+listening_url = "satcp://localhost:2345"
+handle1 = communicator.add_connector(listening_url, Mode.PASSIVE)
 
 #connect_url = "otcp://localhost:1234"
 #handle2 = communicator.add_connector(connect_url, Mode.ACTIVE)
@@ -75,7 +75,7 @@ while count < 60:
     time.sleep(1)
     count += 1
 
-time.sleep(10)
+time.sleep(30)
 communicator.remove_connector(handle1)
 # communicator.remove_connector(handle2)
 communicator.stop()

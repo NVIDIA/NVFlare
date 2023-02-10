@@ -28,7 +28,7 @@ LO_PORT = 1025
 HI_PORT = 65535
 MAX_ITER_SIZE = 10
 RANDOM_TRIES = 20
-SECURE_SCHEMES = {"https", "wss", "grpcs", "stcp"}
+SECURE_SCHEMES = {"https", "wss", "grpcs", "stcp", "satcp"}
 
 
 def bool_value(value) -> bool:
