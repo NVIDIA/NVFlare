@@ -122,9 +122,9 @@ class BaseServer(ABC):
         except RuntimeError:
             self.logger.info("canceling sync locks")
         try:
-            if self.cell:
-                self.cell.stop()
-            # mpm.stop()
+            # if self.cell:
+            #     self.cell.stop()
+            pass
         finally:
             self.logger.info("server off")
             return 0

@@ -443,6 +443,7 @@ class SimulatorClientRunner(FLComponent):
                 # client.close()
                 touch_file = os.path.join(client.app_client_root, "shutdown.fl")
                 shutdown_client(client, touch_file)
+                client.communicator.cell.stop()
             # self.deployer.close()
 
     def run_client_thread(self, num_of_threads, gpu, lock):
