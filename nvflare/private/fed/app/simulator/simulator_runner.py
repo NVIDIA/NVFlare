@@ -403,13 +403,13 @@ class SimulatorRunner(FLComponent):
             workspace, self.services, self.args, app_server_root, self.args.job_id, snapshot, self.logger
         )
 
-        start = time.time()
-        while self.services.engine.client_manager.clients:
-            # Wait for the clients to shutdown and quite first.
-            time.sleep(0.1)
-            if time.time() - start > 30.:
-                break
-                
+        # start = time.time()
+        # while self.services.engine.client_manager.clients:
+        #     # Wait for the clients to shutdown and quite first.
+        #     time.sleep(0.1)
+        #     if time.time() - start > 30.:
+        #         break
+
         self.services.admin_server.stop()
         self.services.close()
 
@@ -441,10 +441,14 @@ class SimulatorClientRunner(FLComponent):
             self.logger.error(f"SimulatorClientRunner run error: {secure_format_exception(e)}")
         finally:
             for client in self.federated_clients:
-                # client.engine.shutdown()
-                # client.close()
-                touch_file = os.path.join(client.app_client_root, "shutdown.fl")
-                shutdown_client(client, touch_file)
+                # touch_file = os.path.join(client.app_client_root, "shutdown.fl")
+                # shutdown_client(client, touch_file)
+
+                client.communicator.heartbeat_done = True
+                # time.sleep(3)
+                client.terminate()
+                client.status = ClientStatus.STOPPED
+
                 client.communicator.cell.stop()
             # self.deployer.close()
 

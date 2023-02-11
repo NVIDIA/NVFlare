@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.apis.fl_constant import RunProcessKey
+from nvflare.apis.fl_constant import RunProcessKey, FLContextKey
 from nvflare.private.fed.client.client_engine import ClientEngine
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
@@ -26,6 +26,8 @@ class SimulatorClientEngine(ClientEngine):
 class SimulatorParentClientEngine(ClientEngine):
     def __init__(self, client, client_token, args, rank=0):
         super().__init__(client, client_token, args, rank)
+        fl_ctx = self.new_context()
+        fl_ctx.set_prop(FLContextKey.SIMULATE_MODE, True, private=True, sticky=True)
 
         self.client_executor.run_processes[SimulatorConstants.JOB_NAME] = {
             RunProcessKey.LISTEN_PORT: None,
