@@ -293,6 +293,8 @@ class Communicator:
         return server_message
 
     def send_heartbeat(self, servers, task_name, token, ssid, client_name, engine: ClientEngineInternalSpec, interval):
+        fl_ctx = engine.new_context()
+        simulate_mode = fl_ctx.get_prop(FLContextKey.SIMULATE_MODE, False)
         wait_times = int(interval / 2)
         while not self.heartbeat_done:
             try:
@@ -319,9 +321,13 @@ class Communicator:
                         unauthenticated = result.get_header(MessageHeaderKey.ERROR)
                         raise FLCommunicationError("error:client_quit " + unauthenticated)
 
-                    # server_message = result.get_header(CellMessageHeaderKeys.MESSAGE)
-                    abort_jobs = result.get_header(CellMessageHeaderKeys.ABORT_JOBS, [])
-                    self._clean_up_runs(engine, abort_jobs)
+                    if not simulate_mode:
+                        # server_message = result.get_header(CellMessageHeaderKeys.MESSAGE)
+                        abort_jobs = result.get_header(CellMessageHeaderKeys.ABORT_JOBS, [])
+                        self._clean_up_runs(engine, abort_jobs)
+                    else:
+                        if return_code != ReturnCode.OK:
+                            break
 
                 except BaseException as ex:
                     raise FLCommunicationError("error:client_quit", ex)
