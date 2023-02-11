@@ -468,7 +468,13 @@ class NetManager(CommandModule):
 
         target = args[1]
         reply = self.agent.get_process_info(target)
-        conn.append_dict(reply)
+        if isinstance(reply, str):
+            conn.append_error(reply)
+            return
+        if not isinstance(reply, dict):
+            conn.append_error(f"expect dict bt got {type(reply)}")
+            return
+        self._show_table_dict(conn, reply)
 
     def _cmd_change_root(self, conn: Connection, args: [str]):
         if len(args) < 2:

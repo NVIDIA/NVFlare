@@ -29,7 +29,6 @@ from .defs import MessageHeaderKey, ReturnCode
 from .fqcn import FQCN
 from .utils import make_reply, new_message
 
-from nvflare.fuel.f3.mpm import MainProcessMonitor as Mpm
 from nvflare.fuel.f3.stats_pool import StatsPoolManager
 from nvflare.fuel.utils.config_service import ConfigService
 
@@ -1064,10 +1063,14 @@ class NetAgent:
     ) -> Union[None, Message]:
 
         usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-        result = " Process ID:   " + str(os.getpid()) + \
-                 " Memory Usage: " + str(usage) + \
-                 " Thread count: " + str(threading.active_count())
-        return new_message(payload=result)
+        rows = [["Process ID", str(os.getpid())],
+                ["Memory Usage", str(usage)],
+                ["Thread Count", str(threading.active_count())]]
+
+        for thread in threading.enumerate():
+            rows.append([f"Thread:{thread.ident}", thread.name])
+
+        return new_message(payload={"headers": ["Resource", "Value"], "rows": rows})
 
     def _broadcast_to_subs(
             self,
