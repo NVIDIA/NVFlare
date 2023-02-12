@@ -17,7 +17,6 @@ from typing import Dict, Optional
 
 from nvflare.fuel.f3.connection import Connection, ConnState
 from nvflare.fuel.f3.drivers.driver import Driver, Connector
-from nvflare.fuel.f3.drivers.driver_params import DriverParams
 
 log = logging.getLogger(__name__)
 

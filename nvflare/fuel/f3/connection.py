@@ -21,8 +21,17 @@ from nvflare.fuel.f3.drivers.connnector import Connector, Mode
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 
 log = logging.getLogger(__name__)
+lock = threading.Lock()
+conn_count = 0
 
 BytesAlike = Union[bytes, bytearray, memoryview]
+
+
+def get_connection_name():
+    global lock, conn_count
+    with lock:
+        conn_count += 1
+    return "CN%05d" % conn_count
 
 
 class ConnState(Enum):
@@ -49,11 +58,8 @@ class FrameReceiver(ABC):
 class Connection(ABC):
     """FCI connection spec. A connection is used to transfer opaque frames"""
 
-    lock = threading.Lock()
-    conn_count = 0
-
     def __init__(self, connector: Connector):
-        self.name = self._get_connection_name()
+        self.name = get_connection_name()
         self.state = ConnState.IDLE
         self.frame_receiver = None
         self.connector = connector
@@ -113,13 +119,6 @@ class Connection(ABC):
             self.frame_receiver.process_frame(frame)
         else:
             log.error(f"Frame receiver not registered for {self}")
-
-    @classmethod
-    def _get_connection_name(cls):
-        with cls.lock:
-            cls.conn_count += 1
-
-        return "CN%05d" % cls.conn_count
 
     def __str__(self):
 
