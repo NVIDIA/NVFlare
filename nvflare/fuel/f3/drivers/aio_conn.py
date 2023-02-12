@@ -37,37 +37,10 @@ class AioConnection(Connection):
         self.aio_ctx = aio_ctx
         self.closing = False
         self.secure = secure
+        self.conn_props = self._get_aio_properties()
 
     def get_conn_properties(self) -> dict:
-
-        conn_props = {}
-        if not self.writer:
-            return conn_props
-
-        local_addr = self.writer.get_extra_info("sockname", "")
-        if isinstance(local_addr, tuple):
-            local_addr = f"{local_addr[0]}:{local_addr[1]}"
-
-        peer_addr = self.writer.get_extra_info("peername", "")
-        if isinstance(peer_addr, tuple):
-            peer_addr = f"{peer_addr[0]}:{peer_addr[1]}"
-
-        conn_props[DriverParams.LOCAL_ADDR.value] = local_addr
-        conn_props[DriverParams.PEER_ADDR.value] = peer_addr
-
-        peer_cert = self.writer.get_extra_info("peercert")
-        if peer_cert:
-            cn = get_certificate_common_name(peer_cert)
-        else:
-            if self.secure:
-                cn = "N/A"
-            else:
-                cn = None
-
-        if cn:
-            conn_props[DriverParams.PEER_CN.value] = cn
-
-        return conn_props
+        return self.conn_props
 
     def close(self):
         self.closing = True
@@ -121,3 +94,42 @@ class AioConnection(Connection):
         remaining = await self.reader.readexactly(prefix.length-PREFIX_LEN)
 
         return prefix_buf + remaining
+
+    def _get_aio_properties(self) -> dict:
+
+        conn_props = {}
+        if not self.writer:
+            return conn_props
+
+        fileno = 0
+        local_addr = self.writer.get_extra_info("sockname", "")
+        if isinstance(local_addr, tuple):
+            local_addr = f"{local_addr[0]}:{local_addr[1]}"
+        else:
+            sock = self.writer.get_extra_info("socket", None)
+            if sock:
+                fileno = sock.fileno()
+            local_addr = f"{local_addr}:{fileno}"
+
+        peer_addr = self.writer.get_extra_info("peername", "")
+        if isinstance(peer_addr, tuple):
+            peer_addr = f"{peer_addr[0]}:{peer_addr[1]}"
+        else:
+            peer_addr = f"{peer_addr}:{fileno}"
+
+        conn_props[DriverParams.LOCAL_ADDR.value] = local_addr
+        conn_props[DriverParams.PEER_ADDR.value] = peer_addr
+
+        peer_cert = self.writer.get_extra_info("peercert")
+        if peer_cert:
+            cn = get_certificate_common_name(peer_cert)
+        else:
+            if self.secure:
+                cn = "N/A"
+            else:
+                cn = None
+
+        if cn:
+            conn_props[DriverParams.PEER_CN.value] = cn
+
+        return conn_props

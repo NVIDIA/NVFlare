@@ -22,7 +22,6 @@ from nvflare.fuel.f3.drivers.driver import Driver, Connector
 from nvflare.fuel.f3.drivers.driver_params import DriverCap, DriverParams
 from nvflare.fuel.f3.drivers.net_utils import get_ssl_context, get_tcp_urls
 from nvflare.fuel.f3.drivers.socket_conn import ConnectionHandler, SocketConnection
-from nvflare.fuel.hci.security import get_certificate_common_name
 
 log = logging.getLogger(__name__)
 
@@ -92,23 +91,7 @@ class TcpDriver(BaseDriver):
 
         sock.connect((host, port))
 
-        try:
-            peer = sock.getpeername()
-            peer_addr = f"{peer[0]}:{peer[1]}"
-        except OSError as ex:
-            peer_addr = "N/A"
-            log.debug("getpeername() error for {connector}: {ex}")
-
-        conn_props = {DriverParams.PEER_ADDR.value: peer_addr}
-        local = sock.getsockname()
-        conn_props[DriverParams.LOCAL_ADDR.value] = f"{local[0]}:{local[1]}"
-
-        if context:
-            cn = get_certificate_common_name(sock.getpeercert())
-            if cn:
-                conn_props[DriverParams.PEER_CN.value] = cn
-
-        connection = SocketConnection(sock, connector, conn_props)
+        connection = SocketConnection(sock, connector, bool(context))
         self.add_connection(connection)
         connection.read_loop()
         self.close_connection(connection)

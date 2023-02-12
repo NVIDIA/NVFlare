@@ -42,14 +42,22 @@ SELF_ADDR = "0.0.0.0:0"
 
 log = logging.getLogger(__name__)
 
+handle_lock = threading.Lock()
+handle_count = 0
+
+
+def get_handle():
+    global handle_lock, handle_count
+    with handle_lock:
+        handle_count += 1
+
+    return "CH%05d" % handle_count
+
 
 class ConnManager(ConnMonitor):
     """SFM connection manager
     The class is responsible for maintaining state of SFM connections and pumping data through them
     """
-
-    handle_lock = threading.Lock()
-    handle_count = 0
 
     def __init__(self, local_endpoint: Endpoint):
         self.local_endpoint = local_endpoint
@@ -91,7 +99,7 @@ class ConnManager(ConnMonitor):
                             f"Connector with scheme {scheme} requires SSL but "
                             f"driver {driver.get_name()} doesn't support it")
 
-        handle = ConnManager._get_connector_handle()
+        handle = get_handle()
         connector = Connector(handle, driver, params, mode, 0, 0, False, False)
         driver.register_conn_monitor(self)
         with self.lock:
@@ -392,13 +400,6 @@ class ConnManager(ConnMonitor):
             sfm_endpoint.endpoint.state = state
             if old_state != state:
                 self.notify_monitors(sfm_endpoint.endpoint)
-
-    @staticmethod
-    def _get_connector_handle():
-        with ConnManager.handle_lock:
-            ConnManager.handle_count += 1
-
-        return "CH%05d" % ConnManager.handle_count
 
     def send_loopback_message(self, endpoint: Endpoint, app_id: int, headers: Headers, payload: BytesAlike):
         """Send message to itself"""

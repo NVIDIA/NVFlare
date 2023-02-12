@@ -29,11 +29,12 @@ MAX_FRAME_SIZE = 1024*1024*1024
 
 class SocketConnection(Connection):
 
-    def __init__(self, sock: Any, connector: Connector, conn_props: dict):
+    def __init__(self, sock: Any, connector: Connector, secure: bool = False):
         super().__init__(connector)
         self.sock = sock
+        self.secure = secure
         self.closing = False
-        self.conn_props = conn_props
+        self.conn_props = self._get_socket_properties()
 
     def get_conn_properties(self) -> dict:
         return self.conn_props
@@ -101,6 +102,41 @@ class SocketConnection(Connection):
             view = view[n:]
             remaining -= n
 
+    def _get_socket_properties(self) -> dict:
+        conn_props = {}
+
+        fileno = 0
+        try:
+            peer = self.sock.getpeername()
+            if isinstance(peer, tuple):
+                peer_addr = f"{peer[0]}:{peer[1]}"
+            else:
+                fileno = self.sock.fileno()
+                peer_addr = f"{peer}:{fileno}"
+        except OSError as ex:
+            peer_addr = "N/A"
+            log.debug(f"getpeername() error: {ex}")
+
+        conn_props[DriverParams.PEER_ADDR.value] = peer_addr
+
+        local = self.sock.getsockname()
+        if isinstance(local, tuple):
+            local_addr = f"{local[0]}:{local[1]}"
+        else:
+            local_addr = f"{local}:{fileno}"
+
+        conn_props[DriverParams.LOCAL_ADDR.value] = local_addr
+
+        if self.secure:
+            cert = self.sock.getpeercert()
+            if cert:
+                cn = get_certificate_common_name(cert)
+            else:
+                cn = "N/A"
+            conn_props[DriverParams.PEER_CN.value] = cn
+
+        return conn_props
+
 
 class ConnectionHandler(BaseRequestHandler):
 
@@ -126,7 +162,7 @@ class ConnectionHandler(BaseRequestHandler):
                 conn_props[DriverParams.PEER_CN.value] = cn
 
         # noinspection PyUnresolvedReferences
-        connection = SocketConnection(self.request, self.server.connector, conn_props)
+        connection = SocketConnection(self.request, self.server.connector, self.server.ssl_context)
         # noinspection PyUnresolvedReferences
         driver = self.server.driver
         driver.add_connection(connection)

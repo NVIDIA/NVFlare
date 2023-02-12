@@ -86,9 +86,7 @@ class UdsDriver(BaseDriver):
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         sock.connect(socket_path)
 
-        conn_props = {DriverParams.LOCAL_ADDR.value: socket_path,
-                      DriverParams.PEER_ADDR.value: socket_path}
-        connection = SocketConnection(sock, connector, conn_props)
+        connection = SocketConnection(sock, connector)
         self.add_connection(connection)
         connection.read_loop()
         self.close_connection(connection)
