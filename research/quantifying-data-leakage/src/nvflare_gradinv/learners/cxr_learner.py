@@ -41,7 +41,7 @@ from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.learner_spec import Learner
 from nvflare.app_common.app_constant import AppConstants, ModelName, ValidateType
-from nvflare.app_common.pt.pt_fedproxloss import PTFedProxLoss
+from nvflare.app_opt.pt import PTFedProxLoss
 
 
 class CXRLearner(Learner):
