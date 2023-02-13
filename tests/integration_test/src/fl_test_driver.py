@@ -33,6 +33,7 @@ from tests.integration_test.src.action_handlers import (
     _ShellCommandHandler,
     _SleepHandler,
     _StartHandler,
+    _SubmitCifarJobHandler,
     _SubmitJobHandler,
     _TestDoneHandler,
 )
@@ -190,6 +191,7 @@ class FLTestDriver:
             "mark_test_done": _TestDoneHandler(),
             "run_admin_commands": _AdminCommandsHandler(),
             "submit_job": _SubmitJobHandler(),
+            "submit_job_cifar_test": _SubmitCifarJobHandler(),
             "clone_job": _CloneJobHandler(),
             "abort_job": _AbortJobHandler(),
             "list_job": _ListJobHandler(),

@@ -1,0 +1,31 @@
+{
+  "format_version": 2,
+
+  "executors": [
+    {
+      "tasks": ["train"],
+      "executor": {
+        "id": "Executor",
+        "path": "nvflare.app_opt.sklearn.sklearn_executor.SKLearnExecutor",
+        "args": {
+          "learner_id": "svm_learner"
+        }
+      }
+    }
+  ],
+  "task_result_filters": [],
+  "task_data_filters": [],
+  "components": [
+    {
+      "id": "svm_learner",
+      "path": "svm_learner.SVMLearner",
+      "args": {
+        "data_path": "/tmp/nvflare/sklearn/dataset/svm_dataset.csv",
+        "train_start": 0,
+        "train_end": 0,
+        "valid_start": 0,
+        "valid_end": 0
+      }
+    }
+  ]
+}

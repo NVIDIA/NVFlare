@@ -150,7 +150,7 @@ def gen_server(key, first_server=True):
         if not project.ha_mode:
             _write(
                 os.path.join(dest_dir, get_csp_start_script_name("azure")),
-                utils.sh_replace(get_csp_template("azure", "svr"), {"server_name": entity.name}),
+                utils.sh_replace(get_csp_template("azure", "svr", template), {"server_name": entity.name}),
                 "t",
                 exe=True,
             )
@@ -255,7 +255,7 @@ def gen_client(key, id):
         _write(os.path.join(dest_dir, "rootCA.pem"), project.root_cert, "b", exe=False)
         _write(
             os.path.join(dest_dir, get_csp_start_script_name("azure")),
-            get_csp_template("azure", "cln"),
+            get_csp_template("azure", "cln", template),
             "t",
             exe=True,
         )

@@ -74,41 +74,50 @@ training image and iteration. Therefore, the batch size is 1.
 
 We modify the client's config file to use the downloaded data and use the 
 prepared dataset list for client 9. 
+Furthermore, we need to modify the gradient inversion config file to use 
+the downloaded prior image (part of DeepInversion package).
+
+This can be done by using the provided template configure files in 
+[./job_configs/app_template](./job_configs/app_template).
 ```
-python3 -m nvflare_gradinv.utils.modify_config --config_file \
-./job_configs/cxr_1client/client/config/config_fed_client.json \
---data_root=${DATA_ROOT} \
---dataset_json=${PWD}/data/data_200val+rest_client9.json
+python3 -m nvflare_gradinv.utils.create_job_config --app_folder ./job_configs/app_template \
+--n_clients 1 --num_rounds 3 \
+--data_root=${DATA_ROOT} --dataset_json=${PWD}/data/data_200val+rest_client \
+--prior_file=${PWD}/DeepInversion/FLGradientInversion/prior/prior_1.jpg \
+--output ./job_configs/cxr_1client
 ```
 
 #### cxr_9clients
-To run a full FL experiment, we prepared several clients with different 
-dataset sizes and batch sizes.
+To run a full FL experiment with longer training, we prepared several clients 
+with different dataset sizes and batch sizes. 
+Due to resource limitations (nr. GPUs, memory, etc.), 
+we only run the inversion filter on a subset of the clients 
+that are at higher risk of leaking information due to smaller datasets and 
+batch sizes.
 
-| Client                 | Batch Size | # Training | # Validation |  
-|------------------------|------------|------------|--------------|
-| client 1               | 4          | 8          | 200          |
-| client 2               | 4          | 32         | 200          |
-| client 3               | 4          | 128        | 200          |
-| client 4               | 4          | 512        | 200          |
-| client 5               | 8          | 8          | 200          |
-| client 6               | 8          | 32         | 200          |
-| client 7               | 8          | 128        | 200          |
-| client 8               | 8          | 512        | 200          |
-| client 9 ("high-risk") | 1          | 1          | 200          |
-| Sum                    |            | 1360       | 1600         |
+| Client                 | Batch Size | # Training | # Validation | Invert? |
+|------------------------|------------|------------|--------------|---------|
+| client 1               | 4          | 8          | 200          | x       |
+| client 2               | 4          | 32         | 200          |         |
+| client 3               | 4          | 128        | 200          |         |
+| client 4               | 4          | 512        | 200          |         |
+| client 5               | 8          | 8          | 200          | x       |
+| client 6               | 8          | 32         | 200          |         |
+| client 7               | 8          | 128        | 200          | x       |
+| client 8               | 8          | 512        | 200          |         |
+| client 9 ("high-risk") | 1          | 1          | 200          | x       |
+| Sum                    |            | 1360       | 1600         |         |
 Nr. Testing: 1382
 
-We can modify to client config files to use the downloaded data and above 
-dataset using
+We can modify to client and gradient inversion config files to use the 
+downloaded data, above dataset, and prior image using
 ```
-for i in {1..9}
-do
-  python3 -m nvflare_gradinv.utils.modify_config --config_file \
-  ./job_configs/cxr_9clients/client${i}/config/config_fed_client.json \
-  --data_root=${DATA_ROOT} \
-  --dataset_json=${PWD}/data/data_200val+rest_client${i}.json
-done
+python3 -m nvflare_gradinv.utils.create_job_config --app_folder ./job_configs/app_template \
+--n_clients 9 --num_rounds 100 \
+--invert_clients 1,5,9 --batch_sizes 4,4,4,4,8,8,8,8,1 \
+--data_root=${DATA_ROOT} --dataset_json=${PWD}/data/data_200val+rest_client \
+--prior_file=${PWD}/DeepInversion/FLGradientInversion/prior/prior_1.jpg \
+--output ./job_configs/cxr_9clients
 ```
 
 
@@ -117,29 +126,32 @@ done
 To run the "quick" FL experiment, inverting one client, execute
 ```
 N_CLIENTS=1
-MMAR=./job_configs/cxr_1client
+JOB=./job_configs/cxr_1client
 EXP_NAME=exp1
-./start_fl_sim.sh ${N_CLIENTS} ${MMAR} ${EXP_NAME}
+./start_fl_sim.sh ${N_CLIENTS} ${JOB} ${EXP_NAME} 
 ```
 
 To run the full FL experiment, inverting 3 out of 9 clients, execute
 ```
 N_CLIENTS=9
-MMAR=./job_configs/cxr_9clients
+JOB=./job_configs/cxr_9clients
 EXP_NAME=exp1
-./start_fl_sim.sh ${N_CLIENTS} ${MMAR} ${EXP_NAME}
+./start_fl_sim.sh ${N_CLIENTS} ${JOB} ${EXP_NAME}
 ```
 
 ### 3. Visualize results
 In order to reduce the possibility of data leakage through gradient 
 inversion attacks, we use the [GaussianPrivacy](./src/nvflare_gradinv/filters/gaussian_privacy.py) filter.
-The filter's `sigma0=` argument defines how much noise is to be added to 
+The filter's `sigma0` argument defines how much noise is to be added to 
 the outgoing model updates. In order to compute the added noise adaptively 
 with respect to the model updates, we compute the 95th 
 percentile of absolute model update values and multiply this value by `sigma0` to arrive 
 at the `sigma` used to define Gaussian distribution with zero mean. 
 This Gaussian distribution is then sampled to add calibrated noise to each 
 model update.
+
+> **Note**: You can use `` with the `--sigma0` argument to define a 
+> different noise level for all clients.   
 
 #### Inverted training images
 As an example, we show the reconstruction from **site-9** sending updates 

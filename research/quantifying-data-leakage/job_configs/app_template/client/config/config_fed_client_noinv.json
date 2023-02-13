@@ -1,0 +1,55 @@
+{
+    "format_version": 2,
+    "DATA_ROOT": "",
+    "DATASET_JSON": "",
+    "PRIOR_FILE": "prior_1.jpg",
+    "BATCH_SIZE": 1,
+    "SIGMA0": 0,
+    "executors": [
+        {
+            "tasks": [
+                "train",
+                "submit_model",
+                "validate"
+            ],
+            "executor": {
+                "id": "Executor",
+                "path": "nvflare.app_common.executors.learner_executor.LearnerExecutor",
+                "args": {
+                    "learner_id": "learner"
+                }
+            }
+        }
+    ],
+    "task_result_filters": [
+        {
+            "tasks": [
+                "train"
+            ],
+            "filters": [
+                {
+                    "path": "nvflare_gradinv.GaussianPrivacy",
+                    "args": {
+                        "sigma0": "{SIGMA0}",
+                        "max_percentile": 95
+                    }
+                }
+            ]
+        }
+    ],
+    "task_data_filters": [],
+    "components": [
+        {
+            "id": "learner",
+            "path": "nvflare_gradinv.CXRLearner",
+            "args": {
+                "data_root": "{DATA_ROOT}",
+                "dataset_json": "{DATASET_JSON}",
+                "aggregation_epochs": 1,
+                "lr": 0.01,
+                "batch_size": "{BATCH_SIZE}",
+                "num_class": 2
+            }
+        }
+    ]
+}

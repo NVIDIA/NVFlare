@@ -9,7 +9,7 @@ Before You Start
 Before jumping into this guide, make sure you have an environment
 with `NVIDIA FLARE <https://pypi.org/project/nvflare/>`_ installed.
 
-You can follow the :ref:`installation <installation>` guide on the general concept of setting up a
+You can follow :ref:`getting_started` on the general concept of setting up a
 Python virtual environment (the recommended environment) and how to install NVIDIA FLARE.
 
 Prerequisite
@@ -115,8 +115,8 @@ Application Configuration
 
 Inside the config folder there are two files, ``config_fed_client.json`` and ``config_fed_server.json``.
 
-.. literalinclude:: ../../examples/hello-numpy-cross-val/app/config/config_fed_server.json
-   :language: python
+.. literalinclude:: ../../examples/hello-world/hello-numpy-cross-val/app/config/config_fed_server.json
+   :language: json
    :linenos:
    :caption: config_fed_server.json
 
@@ -126,8 +126,8 @@ The components "model_locator" and "formatter" have been added to work with the 
 and the rest is the same as in :doc:`Hello Scatter and Gather <hello_scatter_and_gather>`.
 
 
-.. literalinclude:: ../../examples/hello-numpy-cross-val/app/config/config_fed_client.json
-   :language: python
+.. literalinclude:: ../../examples/hello-world/hello-numpy-cross-val/app/config/config_fed_client.json
+   :language: json
    :linenos:
    :caption: config_fed_client.json
 

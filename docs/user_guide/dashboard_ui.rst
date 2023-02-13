@@ -120,8 +120,6 @@ the table, then type the client site name in the input box in the table for the 
 outside of the input. Click on the value again to edit it. The fields for NUM GPU (number of GPUs) and MEMORY PER GPU (memory per GPU in GiBs) can
 also be edited here. When done configuring client sites, click ``Next`` below to complete registration, and you will be linked to the User Dashboard.
 
-.. _dashboard_org_admin_user_reg:
-
 Org Admin User Dashboard
 ------------------------
 The User Dashboard for ``Org Admin`` users is the same as for ``Member`` and ``Lead`` users on the top, but below the user information is an
