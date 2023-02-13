@@ -96,7 +96,7 @@ class ModuleScanner:
                             except (ModuleNotFoundError, RuntimeError) as e:
                                 self._logger.warning(
                                     f"Try to import module {module_name}, but failed: {e}. "
-                                    f"Please ignore this if you are not using that file."
+                                    f"Please ignore this if you are not using files in module: {module_name}."
                                 )
                                 pass
 
