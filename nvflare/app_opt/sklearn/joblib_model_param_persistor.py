@@ -53,7 +53,6 @@ class JoblibModelParamPersistor(ModelPersistor):
         Returns:
             ModelLearnable object
         """
-        model = None
         if os.path.exists(self.save_path):
             self.logger.info("Loading server model")
             model = load(self.save_path)

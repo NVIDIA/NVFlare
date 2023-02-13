@@ -13,7 +13,7 @@ Initialization and Usage
 ------------------------
 Initialize the FLARE API with :func:`new_secure_session<nvflare.fuel.flare_api.flare_api.new_secure_session>` by providing
 the username and the path to the startup kit folder of the provisioned user containing the startup folder with the admin client's
-certs and keys::
+certs and keys:
 
 .. code:: python
 

@@ -27,23 +27,23 @@ class Assembler(FLComponent, ABC):
 
     def __init__(self, data_kind: str):
         super().__init__()
-        self.fl_ctx = None
         self.expected_data_kind = data_kind
         self.logger.debug(f"expected data kind: {self.expected_data_kind}")
-        self.collector: dict = {}
+        self._collection: dict = {}
 
     def initialize(self, fl_ctx: FLContext):
-        self.fl_ctx = fl_ctx
+        pass
 
-    def get_collector(self):
-        return self.collector
+    @property
+    def collection(self):
+        return self._collection
 
     def get_expected_data_kind(self):
         return self.expected_data_kind
 
     @abstractmethod
     def get_model_params(self, data: dict) -> dict:
-        """Connects the assembler's collector with CollectAndAssembleAggregator
+        """Connects the assembler's _collection with CollectAndAssembleAggregator
         Get the collected parameters from the main aggregator
         Return:
             A dict of parameters needed for further assembling
@@ -51,7 +51,7 @@ class Assembler(FLComponent, ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def assemble(self, current_round: int, data: Dict[str, dict]) -> dict:
+    def assemble(self, data: Dict[str, dict], fl_ctx: FLContext) -> dict:
         """Assemble the collected submissions.
         This will be specified according to the specific algorithm
         E.g. global svm round on the collected local supporting vectors;
@@ -62,9 +62,8 @@ class Assembler(FLComponent, ABC):
         """
         raise NotImplementedError
 
-    @abstractmethod
     def reset(self) -> None:
         # Reset parameters for next round,
         # This will be performed at the end of each aggregation round,
-        # it can include, but not limited to, clearing the collector
-        raise NotImplementedError
+        # it can include, but not limited to, clearing the _collection
+        self._collection = {}

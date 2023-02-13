@@ -168,7 +168,7 @@ class SupervisedMonaiProstateLearner(SupervisedLearner):
             )
             self.valid_dataset = Dataset(
                 data=valid_list,
-                transform=self.transform_valid,
+                transform=self.transform,
             )
 
         self.train_loader = DataLoader(
