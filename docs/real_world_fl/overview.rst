@@ -203,7 +203,7 @@ issue commands to operate the system so it can be run with a script.
 
 For a complete list of admin commands, see :ref:`operating_nvflare`.
 
-For examples of using the commands to operate a FL system, see the examples in the :ref:`quickstart` section.
+For examples of using the commands to operate a FL system, see the examples in the :ref:`getting_started` section.
 
 ****************************************************
 Internal folder and file structures for NVIDIA FLARE

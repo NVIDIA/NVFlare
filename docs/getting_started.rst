@@ -1,4 +1,4 @@
-.. _quickstart:
+.. _getting_started:
 
 ###############
 Getting Started
@@ -98,34 +98,34 @@ environment.
 
 To get started with a containerized deployment, you will first need to install a supported
 container runtime and the NVIDIA Container Toolkit to enable support for GPUs.  System requirements
-and instructions for this can be found in the `NVIDIA Container Toolkit Install Guide <https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html>`.
+and instructions for this can be found in the `NVIDIA Container Toolkit Install Guide <https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html>`_.
 
 A simple Dockerfile is used to capture the base requirements and dependencies.  In
 this case, we're building an environment that will support PyTorch-based workflows,
 in particular the `Hello PyTorch with Tensorboard Streaming <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-pt-tb>`_
 example. The base for this build is the NGC PyTorch container.  On this base image,
 we will install the necessary dependencies and clone the NVIDIA FLARE GitHub
-source code into the root workspace directory. To create a Dockerfile, create a file named ``Dockerfile``
-using any text editor and include the following:
+source code into the root workspace directory.
 
-.. code-block:: dockerfile
+Let's first create a folder called ``build`` and then create a file inside named ``Dockerfile``:
 
-   ARG PYTORCH_IMAGE=nvcr.io/nvidia/pytorch:22.09-py3
-   FROM ${PYTORCH_IMAGE}
+.. code-block:: shell
 
-   RUN python3 -m pip install -U pip
-   RUN python3 -m pip install -U setuptools
-   RUN python3 -m pip install torch torchvision tensorboard nvflare
+  mkdir build
+  cd build
+  touch Dockerfile
 
-   WORKDIR /workspace/
-   RUN git clone https://github.com/NVIDIA/NVFlare.git
+Using any text editor to edit the Dockerfile and paste the following:
+
+.. literalinclude:: resources/Dockerfile.doc
+    :language: dockerfile
 
 We can then build the new container by running docker build in the directory containing
 this Dockerfile, for example tagging it nvflare-pt:
 
 .. code-block:: shell
 
-  docker build -t nvflare-pt .
+  docker build -t nvflare-pt . -f Dockerfile
 
 This will result in a docker image, ``nvflare-pt:latest``.  You can run this container with Docker,
 in this example mounting a local ``my-workspace`` directory into the container for use as a persistent

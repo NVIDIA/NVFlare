@@ -19,7 +19,9 @@ import numpy as np
 from sklearn.cluster import KMeans
 
 from nvflare.apis.dxo import DataKind
+from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.aggregators.assembler import Assembler
+from nvflare.app_common.app_constant import AppConstants
 
 
 class KMeansAssembler(Assembler):
@@ -34,20 +36,21 @@ class KMeansAssembler(Assembler):
     def get_model_params(self, data: dict):
         return {"center": data["center"], "count": data["count"]}
 
-    def assemble(self, current_round: int, data: Dict[str, dict]) -> dict:
+    def assemble(self, data: Dict[str, dict], fl_ctx: FLContext) -> dict:
+        current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
         if current_round == 0:
             # First round, collect the information regarding n_feature and n_cluster
             # Initialize the aggregated center and count to all zero
-            client_0 = list(self.collector.keys())[0]
-            self.n_cluster = self.collector[client_0]["center"].shape[0]
-            n_feature = self.collector[client_0]["center"].shape[1]
+            client_0 = list(self.collection.keys())[0]
+            self.n_cluster = self.collection[client_0]["center"].shape[0]
+            n_feature = self.collection[client_0]["center"].shape[1]
             self.center = np.zeros([self.n_cluster, n_feature])
             self.count = np.zeros([self.n_cluster])
             # perform one round of KMeans over the submitted centers
             # to be used as the original center points
             # no count for this round
             center_collect = []
-            for client, record in self.collector.items():
+            for _, record in self.collection.items():
                 center_collect.append(record["center"])
             centers = np.concatenate(center_collect)
             kmeans_center_initial = KMeans(n_clusters=self.n_cluster)
@@ -58,7 +61,7 @@ class KMeansAssembler(Assembler):
             for center_idx in range(self.n_cluster):
                 centers_global_rescale = self.center[center_idx] * self.count[center_idx]
                 # Aggregate center, add new center to previous estimate, weighted by counts
-                for client, record in self.collector.items():
+                for _, record in self.collection.items():
                     centers_global_rescale += record["center"][center_idx] * record["count"][center_idx]
                     self.count[center_idx] += record["count"][center_idx]
                 # Rescale to compute mean of all points (old and new combined)
@@ -68,8 +71,3 @@ class KMeansAssembler(Assembler):
                 self.center[center_idx] = centers_global_rescale
         params = {"center": self.center}
         return params
-
-    def reset(self) -> None:
-        # Reset collector for next round,
-        # # but not the center and count, which will be used as the starting point of the next round
-        self.collector = {}

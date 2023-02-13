@@ -187,8 +187,8 @@ occurs, the new SP will restore the FLContext, the Job workspace, and all the co
 depending on when the state is persisted, there is potentially a portion of work that may still be lost when the state
 is restored.
 
-FLCompoent
-==========
+FLComponent
+===========
 Each FLComponent has its implementation to decide what kind of data it needs to persist and migrate, and then how
 to restore from the persisted data.
 
