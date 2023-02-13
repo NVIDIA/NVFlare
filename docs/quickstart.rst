@@ -2,4 +2,4 @@
 Quickstart
 ##########
 
-See :ref:`quickstart`.
+See :ref:`getting_started`.

@@ -23,7 +23,7 @@ The setup of this exercise consists of one **server** and two **clients**.
 
 
 Let's get started. Make sure you have an environment with NVIDIA FLARE installed as described in
-:doc:`quickstart <../quickstart>` guide. First clone the repo:
+:ref:`getting_started`. First clone the repo:
 
 .. code-block:: shell
 
@@ -42,7 +42,7 @@ Adding TensorBoard Streaming to Configurations
 
 Inside the config folder there are two files, ``config_fed_client.json`` and ``config_fed_server.json``.
 
-.. literalinclude:: ../../examples/hello-pt-tb/app/config/config_fed_client.json
+.. literalinclude:: ../../examples/hello-world/hello-pt-tb/app/config/config_fed_client.json
    :language: json
    :linenos:
    :caption: config_fed_client.json
@@ -60,7 +60,7 @@ which converts local events to federated events.
 This changes the event ``analytix_log_stats`` into a fed event ``fed.analytix_log_stats``,
 which will then be streamed from the clients to the server.
 
-.. literalinclude:: ../../examples/hello-pt-tb/app/config/config_fed_server.json
+.. literalinclude:: ../../examples/hello-world/hello-pt-tb/app/config/config_fed_server.json
    :language: json
    :linenos:
    :caption: config_fed_server.json
@@ -83,7 +83,7 @@ In this exercise, all of the TensorBoard code additions will be made in ``pt_lea
 
 First we must initialize our TensorBoard writer to the ``AnalyticsSender`` we defined in the client config:
 
-.. literalinclude:: ../../examples/hello-pt-tb/app/custom/pt_learner.py
+.. literalinclude:: ../../examples/hello-world/hello-pt-tb/app/custom/pt_learner.py
    :language: python
    :lines: 61, 89-92
    :lineno-start: 61
@@ -98,7 +98,7 @@ but we can also define it in the client config to be passed into the constructor
 Now that our TensorBoard writer is set to ``AnalyticsSender``,
 we can write and stream training metrics to the server in ``local_train()``:
 
-.. literalinclude:: ../../examples/hello-pt-tb/app/custom/pt_learner.py
+.. literalinclude:: ../../examples/hello-world/hello-pt-tb/app/custom/pt_learner.py
    :language: python
    :lines: 127-159
    :lineno-start: 127

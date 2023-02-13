@@ -107,7 +107,7 @@ the client config should have the following in order to configure it as an Execu
 
     Configuration of Executor Tasks is ignored here.
 
-Please follow :ref:`quickstart` to learn more.
+Please follow :ref:`getting_started` to learn more.
 
 .. _troubleshooting_byoc:
 
