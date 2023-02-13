@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import copy
 
 import torch
@@ -22,7 +23,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AlgorithmConstants, AppConstants
-from nvflare.app_common.pt.pt_scaffold import PTScaffoldHelper, get_lr_values
+from nvflare.app_opt.pt import PTScaffoldHelper, get_lr_values
 
 
 class CIFAR10ScaffoldLearner(CIFAR10Learner):

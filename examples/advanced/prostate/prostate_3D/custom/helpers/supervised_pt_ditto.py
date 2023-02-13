@@ -16,7 +16,7 @@
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.shareable import make_reply
 from nvflare.apis.signal import Signal
-from nvflare.app_common.pt.pt_ditto import PTDittoHelper
+from nvflare.app_opt.pt import PTDittoHelper
 
 
 class SupervisedPTDittoHelper(PTDittoHelper):

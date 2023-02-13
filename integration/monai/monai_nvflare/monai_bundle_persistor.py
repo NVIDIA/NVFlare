@@ -23,7 +23,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.app_constant import DefaultCheckpointFileName
-from nvflare.app_common.pt.pt_file_model_persistor import PTFileModelPersistor
+from nvflare.app_opt.pt import PTFileModelPersistor
 
 
 class MonaiBundlePersistor(PTFileModelPersistor):
