@@ -166,3 +166,5 @@ audit.log
 __pycache__
 .pyc
 
+# QAT stats file
+qat/*.json
