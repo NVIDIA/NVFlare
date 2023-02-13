@@ -9,7 +9,7 @@ Before You Start
 Before jumping into this guide, make sure you have an environment with
 `NVIDIA FLARE <https://pypi.org/project/nvflare/>`_ installed.
 
-You can follow the :ref:`installation <installation>` guide on the general concept of setting up a
+You can follow :ref:`getting_started` on the general concept of setting up a
 Python virtual environment (the recommended environment) and how to install NVIDIA FLARE.
 
 
@@ -121,12 +121,12 @@ Inside the config folder there are two files, ``config_fed_client.json`` and ``c
 For now, the default configurations are sufficient.
 
 
-.. literalinclude:: ../../examples/hello-numpy-sag/app/config/config_fed_server.json
+.. literalinclude:: ../../examples/hello-world/hello-numpy-sag/app/config/config_fed_server.json
    :language: json
    :linenos:
    :caption: config_fed_server.json
 
-.. literalinclude:: ../../examples/hello-numpy-sag/app/config/config_fed_client.json
+.. literalinclude:: ../../examples/hello-world/hello-numpy-sag/app/config/config_fed_client.json
    :language: json
    :linenos:
    :caption: config_fed_client.json
