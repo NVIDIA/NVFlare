@@ -9,7 +9,7 @@
   "components": [
     {
       "id": "persistor",
-      "path": "nvflare.app_common.pt.pt_file_model_persistor.PTFileModelPersistor",
+      "path": "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor",
       "args": {
         "model": {
           "path": "simple_network.SimpleNetwork"
@@ -30,7 +30,7 @@
     },
     {
       "id": "model_locator",
-      "path": "nvflare.app_common.pt.pt_file_model_locator.PTFileModelLocator",
+      "path": "nvflare.app_opt.pt.file_model_locator.PTFileModelLocator",
       "args": {
         "pt_persistor_id": "persistor"
       }

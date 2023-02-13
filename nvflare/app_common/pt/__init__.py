@@ -11,3 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+import warnings
+
+warnings.warn(
+    f"This module: {__file__} is deprecated. Please use nvflare.app_opt.pt.", category=FutureWarning, stacklevel=2
+)
