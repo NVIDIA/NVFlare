@@ -20,5 +20,5 @@ from .file_model_persistor import PTFileModelPersistor
 from .model_persistence_format_manager import PTModelPersistenceFormatManager
 from .model_reader_writer import PTModelReaderWriter
 from .multi_process_executor import PTMultiProcessExecutor
-from .scaffold import PTScaffoldHelper
+from .scaffold import PTScaffoldHelper, get_lr_values
 from .utils import feed_vars
