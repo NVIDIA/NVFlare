@@ -154,6 +154,12 @@ def gen_server(key, first_server=True):
                 "t",
                 exe=True,
             )
+            _write(
+                os.path.join(dest_dir, get_csp_start_script_name("aws")),
+                utils.sh_replace(get_csp_template("aws", "svr", template), {"server_name": entity.name}),
+                "t",
+                exe=True,
+            )
         signatures = utils.sign_all(dest_dir, deserialize_ca_key(project.root_key))
         json.dump(signatures, open(os.path.join(dest_dir, "signature.json"), "wt"))
 
@@ -256,6 +262,12 @@ def gen_client(key, id):
         _write(
             os.path.join(dest_dir, get_csp_start_script_name("azure")),
             get_csp_template("azure", "cln", template),
+            "t",
+            exe=True,
+        )
+        _write(
+            os.path.join(dest_dir, get_csp_start_script_name("aws")),
+            get_csp_template("aws", "cln", template),
             "t",
             exe=True,
         )

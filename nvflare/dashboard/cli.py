@@ -23,6 +23,8 @@ from nvflare.apis.utils.format_check import name_check
 from nvflare.dashboard.application.blob import _write
 from nvflare.lighter import utils
 
+supported_csp = ("azure", "aws")
+
 
 def start(args):
     cwd = os.getcwd()
@@ -39,7 +41,9 @@ def start(args):
     passphrase = args.passphrase
     if passphrase:
         environment["NVFL_DASHBOARD_PP"] = passphrase
-    if not os.path.exists(os.path.join(folder, "db.sqlite")):
+    if args.cred:
+        environment.update({"NVFL_CREDENTIAL": args.cred})
+    elif not os.path.exists(os.path.join(folder, ".db_init_done")):
         need_email = True
         while need_email:
             answer = input(
@@ -117,7 +121,7 @@ def cloud(args):
     template = utils.load_yaml(os.path.join(lighter_folder, "impl", "master_template.yml"))
     cwd = os.getcwd()
     csp = args.cloud
-    dest = os.path.join(cwd, f"{csp}_start.sh")
+    dest = os.path.join(cwd, f"{csp}_start_dsb.sh")
     _write(
         dest,
         template[f"{csp}_start_dsb_sh"],
@@ -145,7 +149,10 @@ def main():
 
 def define_dashboard_parser(parser):
     parser.add_argument(
-        "--cloud", type=str, default="", help="launch dashboard on cloud service provider (ex: --cloud azure)"
+        "--cloud",
+        type=str,
+        default="",
+        help="launch dashboard on cloud service provider (ex: --cloud azure or --cloud aws)",
     )
     parser.add_argument("--start", action="store_true", help="start dashboard")
     parser.add_argument("--stop", action="store_true", help="stop dashboard")
@@ -157,18 +164,24 @@ def define_dashboard_parser(parser):
         "--passphrase", help="Passphrase to encrypt/decrypt root CA private key.  !!! Do not share it with others. !!!"
     )
     parser.add_argument("-e", "--env", action="append", help="additonal environment variables: var1=value1")
+    parser.add_argument("--cred", help="set credential directly in the form of USER_EMAIL:PASSWORD")
 
 
 def handle_dashboard(args):
-    if has_no_arguments():
-        print("Add -h option to see usage")
-        exit(0)
+    support_csp_string = ", ".join(supported_csp)
     if args.stop:
         stop()
     elif args.start:
         start(args)
-    elif args.cloud == "azure":
-        cloud(args)
+    elif args.cloud:
+        if args.cloud in supported_csp:
+            cloud(args)
+        else:
+            print(
+                f"Currently --cloud support the following options: {support_csp_string}.  However, {args.cloud} is requested."
+            )
+    else:
+        print("Please use -h option to see usage")
 
 
 if __name__ == "__main__":

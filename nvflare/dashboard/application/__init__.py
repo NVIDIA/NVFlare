@@ -23,6 +23,7 @@ jwt = JWTManager()
 
 
 def init_app():
+    os.makedirs("/var/tmp/nvflare/dashboard", exist_ok=True)
     static_folder = os.environ.get("NVFL_DASHBOARD_STATIC_FOLDER", "static")
     app = Flask(__name__, static_url_path="", static_folder=static_folder)
     app.config.from_object("nvflare.dashboard.config.Config")
@@ -41,4 +42,6 @@ def init_app():
             email = credential.split(":")[0]
             pwd = credential.split(":")[1]
             Store.seed_user(email, pwd)
+    with open(os.path.join("/var/tmp/nvflare/dashboard", ".db_init_done"), "ab") as f:
+        f.write(bytes())
     return app
