@@ -43,7 +43,7 @@ def start(args):
         environment["NVFL_DASHBOARD_PP"] = passphrase
     if args.cred:
         environment.update({"NVFL_CREDENTIAL": args.cred})
-    elif not os.path.exists(os.path.join(folder, "db.sqlite")):
+    elif not os.path.exists(os.path.join(folder, ".db_init_done")):
         need_email = True
         while need_email:
             answer = input(
@@ -121,9 +121,6 @@ def cloud(args):
     template = utils.load_yaml(os.path.join(lighter_folder, "impl", "master_template.yml"))
     cwd = os.getcwd()
     csp = args.cloud
-    if csp not in supported_csp:
-        print(f"Currently support either azure or aws, but {csp} is requested.")
-        exit(1)
     dest = os.path.join(cwd, f"{csp}_start_dsb.sh")
     _write(
         dest,
@@ -171,14 +168,20 @@ def define_dashboard_parser(parser):
 
 
 def handle_dashboard(args):
+    support_csp_string = ", ".join(supported_csp)
     if args.stop:
         stop()
     elif args.start:
         start(args)
-    elif args.cloud in supported_csp:
-        cloud(args)
+    elif args.cloud:
+        if args.cloud in supported_csp:
+            cloud(args)
+        else:
+            print(
+                f"Currently --cloud support the following options: {support_csp_string}.  However, {args.cloud} is requested."
+            )
     else:
-        print("Add -h option to see usage")
+        print("Please use -h option to see usage")
 
 
 if __name__ == "__main__":
