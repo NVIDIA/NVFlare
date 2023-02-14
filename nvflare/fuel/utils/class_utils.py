@@ -20,6 +20,8 @@ from typing import List
 
 from nvflare.security.logging import secure_format_exception
 
+DEPRECATED_PACKAGES = ["nvflare.app_common.pt"]
+
 
 def get_class(class_path):
     module_name, class_name = class_path.rsplit(".", 1)
@@ -81,6 +83,8 @@ class ModuleScanner:
 
             for module_info in pkgutil.walk_packages(path=package.__path__, prefix=package.__name__ + "."):
                 module_name = module_info.name
+                if any(module_name.startswith(deprecated_package) for deprecated_package in DEPRECATED_PACKAGES):
+                    continue
                 if module_name.startswith(base):
                     if not self.exclude_libs or (".libs" not in module_name):
                         if any(module_name.startswith(base + "." + name + ".") for name in self.module_names):
