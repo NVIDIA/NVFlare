@@ -157,7 +157,7 @@ class FederatedClientBase:
     def set_sp(self, project_name, sp: SP):
         if sp and sp.primary is True:
             server = self.servers[project_name].get("target")
-            scheme = self.servers[project_name].get("scheme", "grpc://")
+            scheme = self.servers[project_name].get("scheme", "grpc")
             location = sp.name + ":" + sp.fl_port
             if server != location:
                 self.servers[project_name]["target"] = location
@@ -166,7 +166,7 @@ class FederatedClientBase:
                 if self.cell:
                     # self.net_agent.close()
                     # self.cell.stop()
-                    self.cell.change_server_root(scheme + location)
+                    self.cell.change_server_root(scheme + "://" + location)
                 else:
                     if self.args.job_id:
                         fqcn = FQCN.join([self.client_name, self.args.job_id])
@@ -189,7 +189,7 @@ class FederatedClientBase:
                         credentials = {}
                     self.cell = Cell(
                         fqcn=fqcn,
-                        root_url=scheme + location,
+                        root_url=scheme + "://" + location,
                         secure=self.secure_train,
                         credentials=credentials,
                         create_internal_listener=True,

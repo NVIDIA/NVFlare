@@ -403,8 +403,8 @@ class ProcessExecutor(ClientExecutor):
             child_process = self.run_processes.get(job_id, {}).get(RunProcessKey.CHILD_PROCESS)
         if child_process:
             child_process.wait()
-            return_code = child_process.returncode
-            self.logger.info(f"run ({job_id}): child worker process finished with execution code: {return_code}")
+            # return_code = child_process.returncode
+            self.logger.info(f"run ({job_id}): child worker process finished.")
 
         if allocated_resource:
             resource_manager.free_resources(
