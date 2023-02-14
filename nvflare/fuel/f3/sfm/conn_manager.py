@@ -139,7 +139,7 @@ class ConnManager(ConnMonitor):
                 connector.stopping = True
                 connector.driver.shutdown()
 
-        self.conn_mgr_executor.shutdown(False)
+        self.conn_mgr_executor.shutdown(True)
         self.frame_mgr_executor.shutdown(True)
 
     def find_endpoint(self, name: str) -> Optional[Endpoint]:

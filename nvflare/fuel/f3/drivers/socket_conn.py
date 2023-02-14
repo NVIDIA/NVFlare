@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import logging
+import socket
 from socketserver import BaseRequestHandler
 from typing import Any, Union
 
@@ -41,6 +42,7 @@ class SocketConnection(Connection):
     def close(self):
         self.closing = True
         if self.sock:
+            self.sock.shutdown(socket.SHUT_RDWR)
             self.sock.close()
 
     def send_frame(self, frame: BytesAlike):
