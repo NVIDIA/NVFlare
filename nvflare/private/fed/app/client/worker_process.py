@@ -161,13 +161,13 @@ def main():
             logger.error(f"FL client execution exception: {secure_format_exception(e)}")
         raise e
     finally:
-        stop_event.set()
         if client_app_runner:
             client_app_runner.close()
         if deployer:
             deployer.close()
         if federated_client:
             federated_client.terminate()
+        stop_event.set()
         if thread and thread.is_alive():
             thread.join()
         AuditService.close()
