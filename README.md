@@ -19,7 +19,6 @@ pip install nvflare
 ```
 
 ## Quick Start
-
  * [Getting Started](https://nvflare.readthedocs.io/en/main/getting_started.html)
  * [Examples](https://github.com/NVIDIA/NVFlare/tree/main/examples/)
 
