@@ -82,9 +82,12 @@ class ConnManager(ConnMonitor):
         self.frame_mgr_executor = ThreadPoolExecutor(FRAME_THREAD_POOL_SIZE, "frame_mgr")
         self.lock = threading.Lock()
         self.null_conn = NullConnection()
-        self.send_frame_stats = StatsPoolManager.add_time_hist_pool(
-            "sfm_send_frame", "SFM send_frame time in secs", scope=local_endpoint.name
-        )
+        stats = StatsPoolManager.get_pool("sfm_send_frame")
+        if not stats:
+            stats = StatsPoolManager.add_time_hist_pool(
+                "sfm_send_frame", "SFM send_frame time in secs", scope=local_endpoint.name
+            )
+        self.send_frame_stats = stats
 
     def add_connector(self, driver: Driver, params: dict, mode: Mode) -> str:
 
