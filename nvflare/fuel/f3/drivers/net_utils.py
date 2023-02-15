@@ -21,6 +21,7 @@ from urllib.parse import parse_qsl, urlencode, urlparse
 
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.utils.argument_utils import str2bool
 
 log = logging.getLogger(__name__)
 
@@ -32,18 +33,10 @@ BIND_TIME_OUT = 5
 SECURE_SCHEMES = {"https", "wss", "grpcs", "stcp", "satcp"}
 
 
-def bool_value(value) -> bool:
-    """Convert value into bool"""
-    if isinstance(value, str):
-        return value.lower() in {"true", "yes", "y", "t", "1"}
-
-    return value
-
-
 def ssl_required(params: dict) -> bool:
     """Check if SSL is required"""
     scheme = params.get(DriverParams.SCHEME.value, None)
-    return scheme in SECURE_SCHEMES or bool_value(params.get(DriverParams.SECURE.value, False))
+    return scheme in SECURE_SCHEMES or str2bool(params.get(DriverParams.SECURE.value))
 
 
 def get_ssl_context(params: dict, ssl_server: bool) -> Optional[SSLContext]:

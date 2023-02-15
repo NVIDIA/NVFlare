@@ -18,6 +18,7 @@ import pytest
 from nvflare.fuel.f3 import drivers
 from nvflare.fuel.f3.drivers.driver_manager import DriverManager
 from nvflare.fuel.f3.drivers.tcp_driver import TcpDriver
+from nvflare.fuel.f3.drivers.uds_driver import UdsDriver
 
 
 class TestDriverManager:
@@ -32,6 +33,7 @@ class TestDriverManager:
         [
             ("tcp", TcpDriver),
             ("stcp", TcpDriver),
+            ("uds", UdsDriver),
         ],
     )
     def test_driver_loading(self, manager, scheme, expected):

@@ -83,6 +83,7 @@ class TestCommunicator:
         "scheme, port_range",
         [
             ("tcp", "2000-3000"),
+            ("uds", ""),
         ],
     )
     def test_sfm_message(self, comm_a, comm_b, scheme, port_range):
@@ -91,12 +92,13 @@ class TestCommunicator:
         comm_a.start()
 
         # Check port is in the range
-        parts = port_range.split("-")
-        lo = int(parts[0])
-        hi = int(parts[1])
-        params = parse_url(url)
-        port = int(params.get("port"))
-        assert lo <= port <= hi
+        if port_range:
+            parts = port_range.split("-")
+            lo = int(parts[0])
+            hi = int(parts[1])
+            params = parse_url(url)
+            port = int(params.get("port"))
+            assert lo <= port <= hi
 
         comm_b.add_connector(url, Mode.ACTIVE)
         comm_b.start()

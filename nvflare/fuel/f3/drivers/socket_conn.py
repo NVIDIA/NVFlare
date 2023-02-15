@@ -41,8 +41,13 @@ class SocketConnection(Connection):
 
     def close(self):
         self.closing = True
+
         if self.sock:
-            self.sock.shutdown(socket.SHUT_RDWR)
+            try:
+                self.sock.shutdown(socket.SHUT_RDWR)
+            except OSError as error:
+                log.debug(f"Connection {self} is already closed: {error}")
+
             self.sock.close()
 
     def send_frame(self, frame: BytesAlike):
