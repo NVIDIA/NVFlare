@@ -14,10 +14,13 @@
 
 import importlib
 import inspect
+import logging
 import pkgutil
 from typing import List
 
 from nvflare.security.logging import secure_format_exception
+
+DEPRECATED_PACKAGES = ["nvflare.app_common.pt"]
 
 
 def get_class(class_path):
@@ -57,17 +60,6 @@ def instantiate_class(class_path, init_params):
     return instance
 
 
-def get_object_method(obj, method_name):
-    op = getattr(obj, method_name, None)
-    if op is None or not callable(op):
-        return None
-    return op
-
-
-def get_instance_method(instance, method_name):
-    return get_object_method(instance, method_name)
-
-
 class ModuleScanner:
     def __init__(self, base_pkgs: List[str], module_names: List[str], exclude_libs=True):
         """Scanner to look for and load specified module names.
@@ -80,6 +72,8 @@ class ModuleScanner:
         self.base_pkgs = base_pkgs
         self.module_names = module_names
         self.exclude_libs = exclude_libs
+
+        self._logger = logging.getLogger(self.__class__.__name__)
         self._class_table = {}
         self._create_classes_table()
 
@@ -87,17 +81,27 @@ class ModuleScanner:
         for base in self.base_pkgs:
             package = importlib.import_module(base)
 
-            for importer, modname, ispkg in pkgutil.walk_packages(path=package.__path__, prefix=package.__name__ + "."):
-
-                if modname.startswith(base):
-                    if not self.exclude_libs or (".libs" not in modname):
-                        if any(modname.startswith(base + "." + name + ".") for name in self.module_names):
+            for module_info in pkgutil.walk_packages(path=package.__path__, prefix=package.__name__ + "."):
+                module_name = module_info.name
+                if any(module_name.startswith(deprecated_package) for deprecated_package in DEPRECATED_PACKAGES):
+                    continue
+                if module_name.startswith(base):
+                    if not self.exclude_libs or (".libs" not in module_name):
+                        if any(module_name.startswith(base + "." + name + ".") for name in self.module_names):
                             try:
-                                module = importlib.import_module(modname)
+                                module = importlib.import_module(module_name)
                                 for name, obj in inspect.getmembers(module):
-                                    if inspect.isclass(obj) and obj.__module__ == modname:
-                                        self._class_table[name] = modname
-                            except (ModuleNotFoundError, RuntimeError):
+                                    if (
+                                        not name.startswith("_")
+                                        and inspect.isclass(obj)
+                                        and obj.__module__ == module_name
+                                    ):
+                                        self._class_table[name] = module_name
+                            except (ModuleNotFoundError, RuntimeError) as e:
+                                self._logger.warning(
+                                    f"Try to import module {module_name}, but failed: {e}. "
+                                    f"Please ignore this if you are not using files in module: {module_name}."
+                                )
                                 pass
 
     def get_module_name(self, class_name):

@@ -397,8 +397,11 @@ start_cln_sh: |
       azure)
         $DIR/azure_start.sh ${all_arguments}
         ;;
+      aws)
+        $DIR/aws_start.sh ${all_arguments}
+        ;;
       *)
-        echo "Only on-prem or Azure is currently supported."
+        echo "Only on-prem or azure or aws is currently supported."
     esac
   else
     $DIR/sub_start.sh &
@@ -436,8 +439,11 @@ start_svr_sh: |
       azure)
         $DIR/azure_start.sh ${all_arguments}
         ;;
+      aws)
+        $DIR/aws_start.sh ${all_arguments}
+        ;;
       *)
-        echo "Only on-prem or Azure is currently supported."
+        echo "Only on-prem or azure or aws is currently supported."
     esac
   else
     $DIR/sub_start.sh &
@@ -1551,3 +1557,399 @@ adm_notebook: |
   "nbformat": 4,
   "nbformat_minor": 5
   }
+
+aws_start_svr_sh: |
+  #!/usr/bin/env bash
+
+  set +e
+  DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+  cd $DIR/..
+
+  function report_status() {
+    status="$1"
+    if [ "${status}" -ne 0 ]
+    then
+      echo "$2 failed"
+      exit "${status}"
+    fi
+  }
+
+  function check_binary() {
+    echo -n "Checking if $1 exists. => "
+    if ! command -v $1 &> /dev/null
+    then
+      echo "not found. $2"
+      exit 1
+    else
+      echo "found"
+    fi
+  }
+
+  function prompt() {
+    local __default="$1"
+    read -p "$2" ans
+    if [[ ! -z "$ans" ]]
+    then
+      eval $__default="'$ans'"
+    fi
+  }
+
+  # parse arguments
+  while [[ $# -gt 0 ]]
+  do
+    key="$1"
+    case $key in
+      --config)
+        config_file=$2
+        shift
+      ;;
+    esac
+    shift
+  done
+
+  VM_NAME=nvflare_server
+  AMI_IMAGE=ami-04bad3c587fe60d89
+  EC2_TYPE=t2.small
+  SECURITY_GROUP=nvflare_server_sg
+  DEST_FOLDER=/var/tmp/cloud
+  REGION=us-west-2
+  KEY_PAIR=NVFlareServerKeyPair
+  KEY_FILE=${KEY_PAIR}.pem
+
+  echo "This script requires aws (AWS CLI), sshpass and jq.  Now checking if they are installed."
+
+  check_binary aws "Please see https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html on how to install it on your system."
+  check_binary sshpass "Please install it first."
+  check_binary jq "Please install it first."
+
+  while true
+  do
+    prompt AMI_IMAGE "Cloud AMI image, press ENTER to accept default ${AMI_IMAGE}: "
+    prompt EC2_TYPE "Cloud EC2 type, press ENTER to accept default ${EC2_TYPE}: "
+    prompt ans "region = ${REGION}, ami image = ${AMI_IMAGE}, EC2 type = ${EC2_TYPE}, OK? (Y/n) "
+    if [[ $ans = "" ]] || [[ $ans =~ ^(y|Y)$ ]]
+    then
+      break
+    fi
+  done
+
+  echo "If the server requires additional dependencies, please copy the requirements.txt to ${DIR}."
+  prompt ans "Press ENTER when it's done or no additional dependencies. "
+
+  # Generate key pair
+
+  echo "Generating key pair for VM"
+
+  aws ec2 delete-key-pair --key-name $KEY_PAIR > /dev/null 2>&1
+  rm -rf $KEY_FILE
+  aws ec2 create-key-pair --key-name $KEY_PAIR --query 'KeyMaterial' --output text > $KEY_FILE
+  chmod 400 $KEY_FILE
+
+  # Generate Security Group
+
+  aws ec2 delete-security-group --group-name $SECURITY_GROUP > /dev/null 2>&1
+  sleep 10
+  sg_id=$(aws ec2 create-security-group --group-name $SECURITY_GROUP --description "NVFlare security group" | jq -r .GroupId)
+  aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr 0.0.0.0/0 > /tmp/sec_grp.log
+  aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 8002-8003 --cidr 0.0.0.0/0 >> /tmp/sec_grp.log
+
+  # Start provisioning
+
+  echo "Creating VM at region $REGION, may take a few minutes."
+
+  aws ec2 run-instances --region $REGION --image-id $AMI_IMAGE --count 1 --instance-type $EC2_TYPE --key-name $KEY_PAIR --security-group-ids $sg_id > vm_create.json
+  instance_id=$(jq -r .Instances[0].InstanceId vm_create.json)
+
+  aws ec2 wait instance-status-ok --instance-ids $instance_id
+  aws ec2 describe-instances --instance-ids $instance_id > vm_result.json
+
+  IP_ADDRESS=$(jq -r .Reservations[0].Instances[0].PublicIpAddress vm_result.json)
+
+  echo "VM created with IP address: ${IP_ADDRESS}"
+
+  echo "Copying files to $VM_NAME"
+  DEST_SITE=ubuntu@${IP_ADDRESS}
+  DEST=${DEST_SITE}:${DEST_FOLDER}
+  echo "Destination folder is ${DEST}"
+  scp -q -i $KEY_FILE -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $PWD $DEST
+  report_status "$?" "copying startup kits to VM"
+
+  echo "Installing packages in $VM_NAME, may take a few minutes."
+
+  ssh -f -i $KEY_FILE -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEST_SITE} \
+  "pwd && wget -q https://bootstrap.pypa.io/get-pip.py && \
+  python3 get-pip.py && python3 -m pip install nvflare && \
+  touch ${DEST_FOLDER}/startup/requirements.txt && \
+  python3 -m pip install -r ${DEST_FOLDER}/startup/requirements.txt && \
+  nohup ${DEST_FOLDER}/startup/start.sh && sleep 20 && \
+  exit" > /tmp/nvflare.log 2>&1 
+
+  report_status "$?" "installing packages"
+
+  echo "System was provisioned"
+
+aws_start_cln_sh: |
+  #!/usr/bin/env bash
+
+  set +e
+  DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+  cd $DIR/..
+
+  function report_status() {
+    status="$1"
+    if [ "${status}" -ne 0 ]
+    then
+      echo "$2 failed"
+      exit "${status}"
+    fi
+  }
+
+  function check_binary() {
+    echo -n "Checking if $1 exists. => "
+    if ! command -v $1 &> /dev/null
+    then
+      echo "not found. $2"
+      exit 1
+    else
+      echo "found"
+    fi
+  }
+
+  function prompt() {
+    local __default="$1"
+    read -p "$2" ans
+    if [[ ! -z "$ans" ]]
+    then
+      eval $__default="'$ans'"
+    fi
+  }
+
+  # parse arguments
+  while [[ $# -gt 0 ]]
+  do
+    key="$1"
+    case $key in
+      --config)
+        config_file=$2
+        shift
+      ;;
+    esac
+    shift
+  done
+
+  VM_NAME=nvflare_client
+  AMI_IMAGE=ami-04bad3c587fe60d89
+  EC2_TYPE=t2.small
+  SECURITY_GROUP=nvflare_client_sg
+  DEST_FOLDER=/var/tmp/cloud
+  REGION=us-west-2
+  KEY_PAIR=NVFlareClientKeyPair
+  KEY_FILE=${KEY_PAIR}.pem
+
+  echo "This script requires aws (AWS CLI), sshpass and jq.  Now checking if they are installed."
+
+  check_binary aws "Please see https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html on how to install it on your system."
+  check_binary sshpass "Please install it first."
+  check_binary jq "Please install it first."
+
+  while true
+  do
+    prompt AMI_IMAGE "Cloud AMI image, press ENTER to accept default ${AMI_IMAGE}: "
+    prompt EC2_TYPE "Cloud EC2 type, press ENTER to accept default ${EC2_TYPE}: "
+    prompt ans "region = ${REGION}, ami image = ${AMI_IMAGE}, EC2 type = ${EC2_TYPE}, OK? (Y/n) "
+    if [[ $ans = "" ]] || [[ $ans =~ ^(y|Y)$ ]]
+    then
+      break
+    fi
+  done
+
+  echo "If the client requires additional dependencies, please copy the requirements.txt to ${DIR}."
+  prompt ans "Press ENTER when it's done or no additional dependencies. "
+
+  # Generate key pair
+
+  echo "Generating key pair for VM"
+
+  aws ec2 delete-key-pair --key-name $KEY_PAIR > /dev/null 2>&1
+  rm -rf $KEY_FILE
+  aws ec2 create-key-pair --key-name $KEY_PAIR --query 'KeyMaterial' --output text > $KEY_FILE
+  chmod 400 $KEY_FILE
+
+  # Generate Security Group
+
+  aws ec2 delete-security-group --group-name $SECURITY_GROUP > /dev/null 2>&1
+  sleep 10
+  sg_id=$(aws ec2 create-security-group --group-name $SECURITY_GROUP --description "NVFlare security group" | jq -r .GroupId)
+  aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr 0.0.0.0/0 > /tmp/sec_grp.log
+
+  # Start provisioning
+
+  echo "Creating VM at region $REGION, may take a few minutes."
+
+  aws ec2 run-instances --region $REGION --image-id $AMI_IMAGE --count 1 --instance-type $EC2_TYPE --key-name $KEY_PAIR --security-group-ids $sg_id > vm_create.json
+  instance_id=$(jq -r .Instances[0].InstanceId vm_create.json)
+
+  aws ec2 wait instance-status-ok --instance-ids $instance_id
+  aws ec2 describe-instances --instance-ids $instance_id > vm_result.json
+
+  IP_ADDRESS=$(jq -r .Reservations[0].Instances[0].PublicIpAddress vm_result.json)
+
+  echo "VM created with IP address: ${IP_ADDRESS}"
+
+  echo "Copying files to $VM_NAME"
+  DEST_SITE=ubuntu@${IP_ADDRESS}
+  DEST=${DEST_SITE}:${DEST_FOLDER}
+  echo "Destination folder is ${DEST}"
+  scp -q -i $KEY_FILE -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $PWD $DEST
+  report_status "$?" "copying startup kits to VM"
+
+  echo "Installing packages in $VM_NAME, may take a few minutes."
+
+  ssh -f -i $KEY_FILE -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEST_SITE} \
+  "pwd && wget -q https://bootstrap.pypa.io/get-pip.py && \
+  python3 get-pip.py && python3 -m pip install nvflare && \
+  touch ${DEST_FOLDER}/startup/requirements.txt && \
+  python3 -m pip install -r ${DEST_FOLDER}/startup/requirements.txt && \
+  nohup ${DEST_FOLDER}/startup/start.sh && sleep 20 && \
+  exit" > /tmp/nvflare.log 2>&1 
+
+  report_status "$?" "installing packages"
+
+  echo "System was provisioned"
+
+aws_start_dsb_sh: |
+  #!/usr/bin/env bash
+
+  function report_status() {
+    status="$1"
+    if [ "${status}" -ne 0 ]
+    then
+      echo "$2 failed"
+      exit "${status}"
+    fi
+  }
+
+  function check_binary() {
+    echo -n "Checking if $1 exists. => "
+    if ! command -v $1 &> /dev/null
+    then
+      echo "not found $2"
+      exit 1
+    else
+      echo "found"
+    fi
+  }
+  
+  function prompt() {
+  local __default="$1"
+  read -p "$2" ans
+  if [[ ! -z "$ans" ]]
+  then
+    eval $__default="'$ans'"
+  fi
+  }
+
+  VM_NAME=nvflare_dashboard
+  AMI_IMAGE=ami-04bad3c587fe60d89
+  EC2_TYPE=t2.small
+  SECURITY_GROUP=nvflare_dashboard_sg
+  REGION=us-west-2
+  ADMIN_USERNAME=ubuntu
+  DEST_FOLDER=/home/${ADMIN_USERNAME}
+  KEY_PAIR=NVFlareDashboardKeyPair
+  KEY_FILE=${KEY_PAIR}.pem
+  
+  echo "This script requires aws (AWS CLI), sshpass and jq.  Now checking if they are installed."
+
+  check_binary aws "Please see https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html on how to install it on your system."
+  check_binary sshpass "Please install it first."
+  check_binary jq "Please install it first."
+
+  while true
+  do
+    prompt AMI_IMAGE "Cloud AMI image, press ENTER to accept default ${AMI_IMAGE}: "
+    prompt EC2_TYPE "Cloud EC2 type, press ENTER to accept default ${EC2_TYPE}: "
+    prompt ans "region = ${REGION}, ami image = ${AMI_IMAGE}, EC2 type = ${EC2_TYPE}, OK? (Y/n) "
+    if [[ $ans = "" ]] || [[ $ans =~ ^(y|Y)$ ]]
+    then
+      break
+    fi
+  done
+
+
+  echo "One initial user will be created when starting dashboard."
+  echo "Please enter the email address for this user."
+  read email
+  credential="${email}:$RANDOM"
+
+  # Generate key pair
+
+  echo "Generating key pair for VM"
+
+  aws ec2 delete-key-pair --key-name $KEY_PAIR > /dev/null 2>&1
+  rm -rf $KEY_FILE
+  aws ec2 create-key-pair --key-name $KEY_PAIR --query 'KeyMaterial' --output text > $KEY_FILE
+  chmod 400 $KEY_FILE
+
+  # Generate Security Group
+
+  aws ec2 delete-security-group --group-name $SECURITY_GROUP > /dev/null 2>&1
+  sleep 10  
+  sg_id=$(aws ec2 create-security-group --group-name $SECURITY_GROUP --description "NVFlare security group" | jq -r .GroupId)
+  echo "Security group id: ${sg_id}"
+  aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr 0.0.0.0/0 > /tmp/sec_grp.log
+  aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 443 --cidr 0.0.0.0/0 >> /tmp/sec_grp.log
+
+  # Start provisioning
+
+  echo "Creating VM at region $REGION, may take a few minutes."
+
+  aws ec2 run-instances --region $REGION --image-id $AMI_IMAGE --count 1 --instance-type $EC2_TYPE --key-name $KEY_PAIR --security-group-ids $sg_id > vm_create.json
+  instance_id=$(jq -r .Instances[0].InstanceId vm_create.json)
+
+  aws ec2 wait instance-status-ok --instance-ids $instance_id
+  aws ec2 describe-instances --instance-ids $instance_id > vm_result.json
+
+  IP_ADDRESS=$(jq -r .Reservations[0].Instances[0].PublicIpAddress vm_result.json)
+
+  echo "VM created with IP address: ${IP_ADDRESS}"
+
+  echo "Installing docker engine in $VM_NAME, may take a few minutes."
+  DEST_SITE=${ADMIN_USERNAME}@${IP_ADDRESS}
+  ssh -t -i $KEY_FILE -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEST_SITE} \
+    "sudo apt-get update && \
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl gnupg lsb-release && \
+    sudo mkdir -p /etc/apt/keyrings && \
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
+    echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable\" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null && \
+    sudo apt-get update && \
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io && \
+    sudo usermod -aG docker $ADMIN_USERNAME && exit" > /tmp/docker_engine.log
+  report_status "$?" "installing docker engine"
+
+  echo "Installing nvflare in $VM_NAME, may take a few minutes."
+  ssh -i $KEY_FILE -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEST_SITE} \
+    "export PATH=/home/ubuntu/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin && \
+    wget -q https://bootstrap.pypa.io/get-pip.py && python3 get-pip.py && \
+    python3 -m pip install nvflare && \
+    mkdir -p ./cert && \
+    exit" > /tmp/nvflare.json
+  report_status "$?" "installing nvflare"
+
+  echo "Checking if certificate (web.crt) and private key (web.key) are available"
+  if [[ -f "web.crt" && -f "web.key" ]]; then
+    CERT_FOLDER=${DEST_SITE}:${DEST_FOLDER}/cert
+    echo "Cert folder is ${CERT_FOLDER}"
+    scp -i $KEY_FILE -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null web.{crt,key} $CERT_FOLDER
+    report_status "$?" "copying cert/key to VM ${CERT_FOLDER} folder"
+  else
+    echo "No web.crt and web.key found"
+  fi
+
+  echo "Starting dashboard"
+  ssh -i $KEY_FILE -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEST_SITE} \
+    "export PATH=/home/ubuntu/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin && \
+    python3 -m nvflare.dashboard.cli --start -f ${DEST_FOLDER} --cred ${credential}" > /tmp/dashboard.json
+
+  echo "Dashboard running at IP adress ${IP_ADDRESS}, listening to port 443."
+  echo "Project admin credential (username:password) is ${credential} ."
