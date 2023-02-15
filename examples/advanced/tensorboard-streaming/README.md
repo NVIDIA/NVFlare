@@ -6,11 +6,11 @@ Example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.htm
 
 ### 1. Install NVIDIA FLARE
 
-Follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions.
+Follow the [Installation](https://nvflare.readthedocs.io/en/main/getting_started.html) instructions.
 Install additional requirements:
 
 ```
-pip3 install torch torchvision tensorboard
+pip3 install -r requirements.txt
 ```
 
 ### 2. Run the experiment
@@ -18,7 +18,7 @@ pip3 install torch torchvision tensorboard
 Use nvflare simulator to run the example:
 
 ```
-nvflare simulator -w /tmp/nvflare/ -n 2 -t 2 tensorboard-streaming
+nvflare simulator -w /tmp/nvflare/ -n 2 -t 2 ./job_configs/tensorboard-streaming
 ```
 
 ### 3. Access the logs and results
@@ -50,7 +50,7 @@ tensorboard --logdir=/tmp/nvflare/simulate_job/tb_events
 Note: if the server is running on a remote machine, use port forwarding to view the TensorBoard dashboard in a browser.
 For example:
 ```
-ssh -L {local_machine_port}:127.0.0.1:6006 user@server_ip)
+ssh -L {local_machine_port}:127.0.0.1:6006 user@server_ip
 ```
 
-> **_NOTE:_** For a more in-depth guide about the TensorBoard streaming feature, see [Quickstart (PyTorch with TensorBoard)](https://nvflare.readthedocs.io/en/main/examples/hello_pt_tb.html).
+> **_NOTE:_** For a more in-depth guide about the TensorBoard streaming feature, see [PyTorch with TensorBoard](https://nvflare.readthedocs.io/en/main/examples/hello_pt_tb.html).
