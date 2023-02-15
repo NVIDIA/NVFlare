@@ -19,7 +19,9 @@ import numpy as np
 from sklearn.svm import SVC
 
 from nvflare.apis.dxo import DataKind
+from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.aggregators.assembler import Assembler
+from nvflare.app_common.app_constant import AppConstants
 
 
 class SVMAssembler(Assembler):
@@ -34,13 +36,14 @@ class SVMAssembler(Assembler):
     def get_model_params(self, data: dict):
         return {"support_x": data["support_x"], "support_y": data["support_y"]}
 
-    def assemble(self, current_round: int, data: Dict[str, dict]) -> dict:
+    def assemble(self, data: Dict[str, dict], fl_ctx: FLContext) -> dict:
+        current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
         if current_round == 0:
             # First round, collect all support vectors from clients
             support_x = []
             support_y = []
-            for client in self.collector:
-                client_model = self.collector[client]
+            for client in self.collection:
+                client_model = self.collection[client]
                 support_x.append(client_model["support_x"])
                 support_y.append(client_model["support_y"])
             global_x = np.concatenate(support_x)
@@ -54,8 +57,3 @@ class SVMAssembler(Assembler):
             self.support_y = global_y[index]
         params = {"support_x": self.support_x, "support_y": self.support_y}
         return params
-
-    def reset(self) -> None:
-        # Reset accumulator for next round,
-        # # but not the center and count, which will be used as the starting point of the next round
-        self.collector = {}

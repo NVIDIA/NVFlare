@@ -20,10 +20,11 @@ from sklearn.linear_model import SGDClassifier
 from sklearn.metrics import roc_auc_score
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_opt.sklearn.sklearner import SKLearner
+from nvflare.app_common.abstract.learner_spec import Learner
+from nvflare.app_opt.sklearn.data_loader import load_data_for_range
 
 
-class LinearLearner(SKLearner):
+class LinearLearner(Learner):
     def __init__(
         self,
         data_path: str,
@@ -33,12 +34,24 @@ class LinearLearner(SKLearner):
         valid_end: int,
         random_state: int = None,
     ):
-        super().__init__(data_path, train_start, train_end, valid_start, valid_end)
+        super().__init__()
+        self.fl_ctx = None
+        self.data_path = data_path
+        self.train_start = train_start
+        self.train_end = train_end
+        self.valid_start = valid_start
+        self.valid_end = valid_end
+
         self.random_state = random_state
         self.train_data = None
         self.valid_data = None
         self.n_samples = None
         self.local_model = None
+
+    def load_data(self) -> dict:
+        train_data = load_data_for_range(self.data_path, self.train_start, self.train_end)
+        valid_data = load_data_for_range(self.data_path, self.valid_start, self.valid_end)
+        return {"train": train_data, "valid": valid_data}
 
     def initialize(self, fl_ctx: FLContext):
         self.fl_ctx = fl_ctx
@@ -90,7 +103,7 @@ class LinearLearner(SKLearner):
             params = {"coef": self.local_model.coef_}
         return copy.deepcopy(params), self.local_model
 
-    def evaluate(self, curr_round: int, global_param: Optional[dict] = None) -> Tuple[dict, dict]:
+    def validate(self, curr_round: int, global_param: Optional[dict] = None) -> Tuple[dict, dict]:
         # set local model with global parameters
         self.set_parameters(global_param)
         # perform validation

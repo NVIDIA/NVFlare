@@ -18,10 +18,11 @@ from sklearn.metrics import roc_auc_score
 from sklearn.svm import SVC
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_opt.sklearn.sklearner import SKLearner
+from nvflare.app_common.abstract.learner_spec import Learner
+from nvflare.app_opt.sklearn.data_loader import load_data_for_range
 
 
-class SVMLearner(SKLearner):
+class SVMLearner(Learner):
     def __init__(
         self,
         data_path: str,
@@ -30,13 +31,25 @@ class SVMLearner(SKLearner):
         valid_start: int,
         valid_end: int,
     ):
-        super().__init__(data_path, train_start, train_end, valid_start, valid_end)
+        super().__init__()
+        self.fl_ctx = None
+        self.data_path = data_path
+        self.train_start = train_start
+        self.train_end = train_end
+        self.valid_start = valid_start
+        self.valid_end = valid_end
+
         self.train_data = None
         self.valid_data = None
         self.n_samples = None
         self.svm = None
         self.kernel = None
         self.params = {}
+
+    def load_data(self) -> dict:
+        train_data = load_data_for_range(self.data_path, self.train_start, self.train_end)
+        valid_data = load_data_for_range(self.data_path, self.valid_start, self.valid_end)
+        return {"train": train_data, "valid": valid_data}
 
     def initialize(self, fl_ctx: FLContext):
         self.fl_ctx = fl_ctx
@@ -65,7 +78,7 @@ class SVMLearner(SKLearner):
             self.system_panic("Federated SVM only performs training for one round, system exiting.", self.fl_ctx)
         return self.params, self.svm
 
-    def evaluate(self, curr_round: int, global_param: Optional[dict] = None) -> dict:
+    def validate(self, curr_round: int, global_param: Optional[dict] = None) -> dict:
         # local validation with global support vectors
         # fit a standalone SVM with the global support vectors
         svm_global = SVC(kernel=self.kernel)
