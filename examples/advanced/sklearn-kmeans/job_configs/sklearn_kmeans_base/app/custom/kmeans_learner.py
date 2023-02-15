@@ -18,10 +18,11 @@ from sklearn.cluster import KMeans, MiniBatchKMeans, kmeans_plusplus
 from sklearn.metrics import homogeneity_score
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_opt.sklearn.sklearner import SKLearner
+from nvflare.app_common.abstract.learner_spec import Learner
+from nvflare.app_opt.sklearn.data_loader import load_data_for_range
 
 
-class KMeansLearner(SKLearner):
+class KMeansLearner(Learner):
     def __init__(
         self,
         data_path: str,
@@ -34,7 +35,14 @@ class KMeansLearner(SKLearner):
         n_init: int = 1,
         reassignment_ratio: int = 0,
     ):
-        super().__init__(data_path, train_start, train_end, valid_start, valid_end)
+        super().__init__()
+        self.fl_ctx = None
+        self.data_path = data_path
+        self.train_start = train_start
+        self.train_end = train_end
+        self.valid_start = valid_start
+        self.valid_end = valid_end
+
         self.random_state = random_state
         self.max_iter = max_iter
         self.n_init = n_init
@@ -43,6 +51,11 @@ class KMeansLearner(SKLearner):
         self.valid_data = None
         self.n_samples = None
         self.n_clusters = None
+
+    def load_data(self) -> dict:
+        train_data = load_data_for_range(self.data_path, self.train_start, self.train_end)
+        valid_data = load_data_for_range(self.data_path, self.valid_start, self.valid_end)
+        return {"train": train_data, "valid": valid_data}
 
     def initialize(self, fl_ctx: FLContext):
         self.fl_ctx = fl_ctx
@@ -84,7 +97,7 @@ class KMeansLearner(SKLearner):
             params = {"center": center_local, "count": count_local}
         return params, kmeans
 
-    def evaluate(self, curr_round: int, global_param: Optional[dict] = None) -> Tuple[dict, dict]:
+    def validate(self, curr_round: int, global_param: Optional[dict] = None) -> Tuple[dict, dict]:
         # local validation with global center
         # fit a standalone KMeans with just the given center
         center_global = global_param["center"]

@@ -74,10 +74,10 @@ class SKLearnExecutor(Executor):
 
         return dxo.to_shareable()
 
-    def evaluate(self, current_round, global_param) -> Shareable:
+    def validate(self, current_round, global_param) -> Shareable:
         # retrieve current global center download from server's shareable
         self._msg_log(f"Client {self.client_id} perform local evaluation")
-        metrics, model = self.learner.evaluate(current_round, global_param)
+        metrics, model = self.learner.validate(current_round, global_param)
         self.save_model_global(model)
         for key, value in metrics.items():
             self.log_value(key, value, current_round)
@@ -102,7 +102,7 @@ class SKLearnExecutor(Executor):
                 if current_round > 0:
                     # first round for parameter initialization
                     # no model evaluation
-                    self.evaluate(current_round, global_params)
+                    self.validate(current_round, global_params)
                 return self.train(current_round, global_params)
             else:
                 self.log_error(fl_ctx, f"Could not handle task: {task_name}")
