@@ -150,28 +150,6 @@ def get_open_tcp_port(resources: dict) -> Optional[int]:
     return None
 
 
-def get_client_ip():
-    """Return localhost IP.
-
-    More robust than ``socket.gethostbyname(socket.gethostname())``. See
-    https://stackoverflow.com/questions/166506/finding-local-ip-addresses-using-pythons-stdlib/28950776#28950776
-    for more details.
-
-    Returns:
-        The host IP
-
-    """
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        s.connect(("10.255.255.255", 1))  # doesn't even have to be reachable
-        ip = s.getsockname()[0]
-    except Exception:
-        ip = "127.0.0.1"
-    finally:
-        s.close()
-    return ip
-
-
 def parse_url(url: str) -> dict:
     """Parse URL into a dictionary, saving original URL also"""
     if not url:
