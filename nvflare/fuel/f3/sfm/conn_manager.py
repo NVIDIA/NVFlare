@@ -206,7 +206,7 @@ class ConnManager(ConnMonitor):
 
     def register_message_receiver(self, app_id: int, receiver: MessageReceiver):
         if self.receivers.get(app_id):
-            raise CommError(CommError.BAD_DATA, f"Receiver for app {app_id} is already registered")
+            raise CommError(CommError.BAD_CONFIG, f"Receiver for app {app_id} is already registered")
 
         self.receivers[app_id] = receiver
 
