@@ -1,6 +1,6 @@
 {
   "format_version": 2,
-  "min_clients": 3,
+  "min_clients": 6,
   "num_rounds": 100,
   "server": {
     "heart_beat_timeout": 600000
@@ -15,7 +15,10 @@
         "client_ids": [
           "client_I2CVB",
           "client_MSD",
-          "client_NCI_ISBI_3T"
+          "client_NCI_ISBI_3T",
+          "client_NCI_ISBI_Dx",
+          "client_Promise12",
+          "client_PROSTATEx"
         ],
         "model": {
           "path": "monai.networks.nets.unet.UNet",
@@ -42,7 +45,7 @@
         "model_selector": {
           "path": "networks.vgg.vgg11",
           "args": {
-            "num_classes": 3
+            "num_classes": 6
           }
         }
       }
@@ -73,7 +76,10 @@
         "client_id_label_mapping": {
           "client_I2CVB": 0,
           "client_MSD": 1,
-          "client_NCI_ISBI_3T": 2
+          "client_NCI_ISBI_3T": 2,
+          "client_NCI_ISBI_Dx": 3,
+          "client_Promise12": 4,
+          "client_PROSTATEx": 5
         },
         "min_clients": "{min_clients}",
         "num_rounds": "{num_rounds}",

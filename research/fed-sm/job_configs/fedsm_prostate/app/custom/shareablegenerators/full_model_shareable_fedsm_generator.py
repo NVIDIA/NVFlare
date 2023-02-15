@@ -15,13 +15,19 @@
 from nvflare.apis.dxo import DataKind, from_shareable
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, model_learnable_to_dxo
+from nvflare.app_common.abstract.model import (
+    ModelLearnable,
+    ModelLearnableKey,
+    model_learnable_to_dxo,
+)
 from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 
 
 class FullModelShareableFedSMGenerator(ShareableGenerator):
-    def learnable_to_shareable(self, model_learnable: ModelLearnable, fl_ctx: FLContext) -> Shareable:
+    def learnable_to_shareable(
+        self, model_learnable: ModelLearnable, fl_ctx: FLContext
+    ) -> Shareable:
         """Convert ModelLearnable to Shareable.
 
         Args:
@@ -34,7 +40,55 @@ class FullModelShareableFedSMGenerator(ShareableGenerator):
         dxo = model_learnable_to_dxo(model_learnable)
         return dxo.to_shareable()
 
-    def shareable_to_learnable(self, shareable: Shareable, client_ids: list, fl_ctx: FLContext) -> ModelLearnable:
+    def update_single_model(
+        self, dxo_single_model, base_model_set, model_id, fl_ctx: FLContext
+    ):
+        if not dxo_single_model:
+            self.log_error(
+                fl_ctx, "Aggregated model weights for {} are missing!".format(model_id)
+            )
+            return
+        # get base_model from the base_model_set
+        base_model = base_model_set[model_id]
+        if not base_model:
+            self.system_panic(
+                reason="No base personalized model for {}!".format(model_id),
+                fl_ctx=fl_ctx,
+            )
+            return base_model
+        weights = base_model[ModelLearnableKey.WEIGHTS]
+        # update with aggregated dxo
+        if dxo_single_model.data_kind == DataKind.WEIGHT_DIFF:
+            # add aggregated weight_diff from aggregator record to the base model weights
+            if dxo_single_model is not None:
+                model_diff = dxo_single_model.data
+                for v_name in model_diff.keys():
+                    weights[v_name] = weights[v_name] + model_diff[v_name]
+        elif dxo_single_model.data_kind == DataKind.WEIGHTS:
+            # update weights directly
+            weights_new = dxo_single_model.data
+            if not weights_new:
+                self.log_info(
+                    fl_ctx,
+                    "No model weights for {} found. Model will not be updated.".format(
+                        model_id
+                    ),
+                )
+            else:
+                base_model[ModelLearnableKey.WEIGHTS] = weights_new
+        else:
+            raise ValueError(
+                "data_kind should be either DataKind.WEIGHTS or DataKind.WEIGHT_DIFF, but got {}".format(
+                    dxo_single_model.data_kind
+                )
+            )
+        # set meta and set base_model_set
+        base_model[ModelLearnableKey.META] = dxo_single_model.get_meta_props()
+        base_model_set[model_id] = base_model
+
+    def shareable_to_learnable(
+        self, shareable: Shareable, client_ids: list, fl_ctx: FLContext
+    ) -> ModelLearnable:
         """Convert Shareable to ModelLearnable.
 
         Supporting TYPE == TYPE_WEIGHT_DIFF or TYPE_WEIGHTS
@@ -52,104 +106,34 @@ class FullModelShareableFedSMGenerator(ShareableGenerator):
             ValueError: if data_kind is not `DataKind.WEIGHTS` and is not `DataKind.WEIGHT_DIFF`
         """
         if not isinstance(shareable, Shareable):
-            raise TypeError("shareable must be Shareable, but got {}.".format(type(shareable)))
+            raise TypeError(
+                "shareable must be Shareable, but got {}.".format(type(shareable))
+            )
 
-        # base_model is contains several models with ids "select_model", "global_model", and client_ids
-        base_model = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
-        if not base_model:
-            self.system_panic(reason="No FedSM base model!", fl_ctx=fl_ctx)
-            return base_model
-        # dxo are organized as ['global_weights', 'select_weights', 'person_weights']
-        # where 'person_weights' is a dxo collection containing dxo for each client_id
+        # base_model_set is a "flattened set", containing all models with ids
+        # "select_weights", "select_exp_avg", "select_exp_avg_sq", "global_weights", and client_ids
+        base_model_set = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
+        if not base_model_set:
+            self.system_panic(reason="No FedSM base model set!", fl_ctx=fl_ctx)
+            return base_model_set
+
+        # dxo from aggregator is hierarchically organized as ["select_weights", "global_weights", "person_weights"]
+        # "global_weights" is a dxo for global model
+        # "person_weights" is a dxo collection containing dxo for each client_id
+        # "select_weights" is a dxo collection containing dxo for ["select_weights", "exp_avg", "exp_avg_sq"]
         dxo = from_shareable(shareable)
 
-        # selector model is single model, directly provides weights
-        dxo_select = dxo.data.get("select_weights")
-        if not dxo_select:
-            self.log_error(fl_ctx, "Aggregated selector model weights are missing!")
-            return
-        base_select_model = base_model["select_model"]
-        if not base_select_model:
-            self.system_panic(reason="No base model for selector!", fl_ctx=fl_ctx)
-            return base_select_model
-        weights = base_select_model[ModelLearnableKey.WEIGHTS]
-        if dxo_select.data_kind == DataKind.WEIGHT_DIFF:
-            if dxo_select.data is not None:
-                model_diff = dxo_select.data
-                for v_name, v_value in model_diff.items():
-                    weights[v_name] = weights[v_name] + v_value
-        elif dxo_select.data_kind == DataKind.WEIGHTS:
-            weights = dxo_select.data
-            if not weights:
-                self.log_info(fl_ctx, "No model weights found. Model will not be updated.")
-            else:
-                base_select_model[ModelLearnableKey.WEIGHTS] = weights
-        else:
-            raise ValueError(
-                "data_kind should be either DataKind.WEIGHTS or DataKind.WEIGHT_DIFF, but got {}".format(dxo.data_kind)
-            )
-        base_select_model[ModelLearnableKey.META] = dxo_select.get_meta_props()
-        base_model["select_model"] = base_select_model
-
-        # global model is single model, directly provides weights
         dxo_global = dxo.data.get("global_weights")
-        if not dxo_global:
-            self.log_error(fl_ctx, "Aggregated global model weights are missing!")
-            return
-        base_global_model = base_model["global_model"]
-        if not base_global_model:
-            self.system_panic(reason="No base global model!", fl_ctx=fl_ctx)
-            return base_global_model
-        weights = base_global_model[ModelLearnableKey.WEIGHTS]
-        if dxo_global.data_kind == DataKind.WEIGHT_DIFF:
-            if dxo_global.data is not None:
-                model_diff = dxo_global.data
-                for v_name, v_value in model_diff.items():
-                    weights[v_name] = weights[v_name] + v_value
-        elif dxo_global.data_kind == DataKind.WEIGHTS:
-            weights = dxo_global.data
-            if not weights:
-                self.log_info(fl_ctx, "No model weights found. Model will not be updated.")
-            else:
-                base_global_model[ModelLearnableKey.WEIGHTS] = weights
-        else:
-            raise ValueError(
-                "data_kind should be either DataKind.WEIGHTS or DataKind.WEIGHT_DIFF, but got {}".format(dxo.data_kind)
-            )
-        base_global_model[ModelLearnableKey.META] = dxo_global.get_meta_props()
-        base_model["global_model"] = base_global_model
+        self.update_single_model(dxo_global, base_model_set, "global_weights", fl_ctx)
 
-        # personalized weights is a set of models, provides each weights under client_ids
         dxo_person = dxo.data.get("person_weights")
-        for client_id in client_ids:
-            dxo_person_single = dxo_person.data.get(client_id)
-            if not dxo_person_single:
-                self.log_error(fl_ctx, "Aggregated personalized model weights for {} are missing!".format(client_id))
-                return
-            base_model_person = base_model[client_id]
-            if not base_model_person:
-                self.system_panic(reason="No base personalized model for {}!".format(client_id), fl_ctx=fl_ctx)
-                return base_model_person
-            weights = base_model_person[ModelLearnableKey.WEIGHTS]
-            if dxo_person.data_kind == DataKind.WEIGHT_DIFF:
-                if dxo_person_single is not None:
-                    model_diff = dxo_person_single
-                    # add corresponding weight_diff from aggregator record
-                    for v_name in model_diff.keys():
-                        weights[v_name] = weights[v_name] + model_diff[v_name]
-            elif dxo_person.data_kind == DataKind.WEIGHTS:
-                weights = dxo_person_single
-                if not weights:
-                    self.log_info(fl_ctx, "No model weights found. Model will not be updated.")
-                else:
-                    base_model_person[ModelLearnableKey.WEIGHTS] = weights
-            else:
-                raise ValueError(
-                    "data_kind should be either DataKind.WEIGHTS or DataKind.WEIGHT_DIFF, but got {}".format(
-                        dxo.data_kind
-                    )
-                )
-            base_model_person[ModelLearnableKey.META] = dxo_person.get_meta_props()
-            base_model[client_id] = base_model_person
+        for model_id in client_ids:
+            dxo_single = dxo_person.get(model_id)
+            self.update_single_model(dxo_single, base_model_set, model_id, fl_ctx)
 
-        return base_model
+        dxo_select = dxo.data.get("select_weights")
+        for model_id in ["select_weights", "select_exp_avg", "select_exp_avg_sq"]:
+            dxo_single = dxo_select.get(model_id)
+            self.update_single_model(dxo_single, base_model_set, model_id, fl_ctx)
+
+        return base_model_set

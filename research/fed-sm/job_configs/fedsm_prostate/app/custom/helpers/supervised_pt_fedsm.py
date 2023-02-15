@@ -15,7 +15,6 @@
 
 # from nvflare.app_common.pt.pt_fedsm import PTFedSMHelper
 from helpers.pt_fedsm import PTFedSMHelper
-
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.shareable import make_reply
 from nvflare.apis.signal import Signal

@@ -17,13 +17,12 @@ import os
 from collections import OrderedDict
 
 import torch
-from persistors.pt_fed_utils import PTModelPersistenceFormatManagerFedSM
-
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model import ModelLearnable
 from nvflare.app_common.app_constant import DefaultCheckpointFileName
 from nvflare.app_common.pt.pt_file_model_persistor import PTFileModelPersistor
+from persistors.pt_fed_utils import PTModelPersistenceFormatManagerFedSM
 
 
 class PTFileFedSMModelPersistor(PTFileModelPersistor):
@@ -68,8 +67,12 @@ class PTFileFedSMModelPersistor(PTFileModelPersistor):
         self.log_info(fl_ctx, "FedSM model persistor initialized")
         super()._initialize(fl_ctx=fl_ctx)
 
-        self.best_ckpt_save_path_global = os.path.join(self.log_dir, "global_" + self.best_global_model_file_name)
-        self.best_ckpt_save_path_select = os.path.join(self.log_dir, "select_" + self.best_global_model_file_name)
+        self.best_ckpt_save_path_global = os.path.join(
+            self.log_dir, "global_" + self.best_global_model_file_name
+        )
+        self.best_ckpt_save_path_select = os.path.join(
+            self.log_dir, "select_" + self.best_global_model_file_name
+        )
         # First convert str model description to model
         if isinstance(self.model_selector, str):
             # treat it as model component ID
@@ -77,7 +80,12 @@ class PTFileFedSMModelPersistor(PTFileModelPersistor):
             engine = fl_ctx.get_engine()
             self.model_selector = engine.get_component(model_component_id)
             if not self.model_selector:
-                self.system_panic(reason="cannot find model component '{}'".format(model_component_id), fl_ctx=fl_ctx)
+                self.system_panic(
+                    reason="cannot find model component '{}'".format(
+                        model_component_id
+                    ),
+                    fl_ctx=fl_ctx,
+                )
                 return
             if not isinstance(self.model_selector, torch.nn.Module):
                 self.system_panic(
@@ -87,9 +95,14 @@ class PTFileFedSMModelPersistor(PTFileModelPersistor):
                     fl_ctx=fl_ctx,
                 )
                 return
-        elif self.model_selector and not isinstance(self.model_selector, torch.nn.Module):
+        elif self.model_selector and not isinstance(
+            self.model_selector, torch.nn.Module
+        ):
             self.system_panic(
-                reason="expect model to be torch.nn.Module but got {}".format(type(self.model)), fl_ctx=fl_ctx
+                reason="expect model to be torch.nn.Module but got {}".format(
+                    type(self.model)
+                ),
+                fl_ctx=fl_ctx,
             )
             return
 
@@ -101,8 +114,11 @@ class PTFileFedSMModelPersistor(PTFileModelPersistor):
         # {client_id}: personalized models with same structure as global model
         self.model_set_fedsm = {}
         # initialize all models
-        self.model_set_fedsm["select_model"] = copy.deepcopy(self.model_selector)
-        self.model_set_fedsm["global_model"] = copy.deepcopy(self.model)
+        self.model_set_fedsm["select_weights"] = copy.deepcopy(self.model_selector)
+        self.model_set_fedsm["select_exp_avg"] = OrderedDict()
+        self.model_set_fedsm["select_exp_avg_sq"] = OrderedDict()
+        self.model_set_fedsm["select_weights"] = copy.deepcopy(self.model_selector)
+        self.model_set_fedsm["global_weights"] = copy.deepcopy(self.model)
         for id in self.client_ids:
             self.model_set_fedsm[id] = copy.deepcopy(self.model)
 
@@ -125,7 +141,7 @@ class PTFileFedSMModelPersistor(PTFileModelPersistor):
 
         # data is a dict of FedSM model set with other training-related items,
         # FedSM model set under a dict "model_set_fedsm"
-        # containing select_model, global_model, and personal models under each client_id
+        # containing select_weights, global_weights, and personal models under each client_id
         data = {"model_set_fedsm": {}}
         if src_file_name:
             try:
@@ -134,35 +150,46 @@ class PTFileFedSMModelPersistor(PTFileModelPersistor):
                 # checkpoint may contain a dict "model_set_fedsm" of models indexed with model ids
                 # 'optimizer', 'lr_scheduler', etc.
             except:
-                self.log_exception(fl_ctx, "error loading checkpoint from {}".format(src_file_name))
+                self.log_exception(
+                    fl_ctx, "error loading checkpoint from {}".format(src_file_name)
+                )
                 self.system_panic(reason="cannot load model checkpoint", fl_ctx=fl_ctx)
                 return None
         else:
             # if no pretrained model provided, use the generated network weights from APP config
             # note that, if set "determinism" in the config, the init model weights will always be the same
             try:
-                data["model_set_fedsm"]["select_model"] = (
-                    self.model_set_fedsm["select_model"].state_dict()
-                    if self.model_set_fedsm["select_model"] is not None
+                data["model_set_fedsm"]["select_weights"] = (
+                    self.model_set_fedsm["select_weights"].state_dict()
+                    if self.model_set_fedsm["select_weights"] is not None
                     else OrderedDict()
                 )
-                data["model_set_fedsm"]["global_model"] = (
-                    self.model_set_fedsm["global_model"].state_dict()
-                    if self.model_set_fedsm["global_model"] is not None
+                data["model_set_fedsm"]["select_exp_avg"] = OrderedDict()
+                data["model_set_fedsm"]["select_exp_avg_sq"] = OrderedDict()
+                data["model_set_fedsm"]["global_weights"] = (
+                    self.model_set_fedsm["global_weights"].state_dict()
+                    if self.model_set_fedsm["global_weights"] is not None
                     else OrderedDict()
                 )
                 for id in self.client_ids:
                     data["model_set_fedsm"][id] = (
-                        self.model_set_fedsm[id].state_dict() if self.model_set_fedsm[id] is not None else OrderedDict()
+                        self.model_set_fedsm[id].state_dict()
+                        if self.model_set_fedsm[id] is not None
+                        else OrderedDict()
                     )
             except:
                 self.log_exception(fl_ctx, "error getting state_dict from model object")
-                self.system_panic(reason="cannot create state_dict from model object", fl_ctx=fl_ctx)
+                self.system_panic(
+                    reason="cannot create state_dict from model object", fl_ctx=fl_ctx
+                )
                 return None
 
         if self.model and self.model_selector:
             self.default_train_conf = {
-                "train": {"model": type(self.model).__name__, "model_selector": type(self.model_selector).__name__}
+                "train": {
+                    "model": type(self.model).__name__,
+                    "model_selector": type(self.model_selector).__name__,
+                }
             }
 
         self.persistence_manager = PTModelPersistenceFormatManagerFedSM(
@@ -199,8 +226,12 @@ class PTFileFedSMModelPersistor(PTFileModelPersistor):
             device = "cpu"
             location = os.path.join(self.log_dir, model_file)
             data = torch.load(location, map_location=device)
-            persistence_manager = PTModelPersistenceFormatManagerFedSM(data, default_train_conf=self.default_train_conf)
+            persistence_manager = PTModelPersistenceFormatManagerFedSM(
+                data, default_train_conf=self.default_train_conf
+            )
             return persistence_manager.to_model_learnable(self.exclude_vars)
         except BaseException as e:
-            self.log_exception(fl_ctx, "error loading checkpoint from {}".format(model_file))
+            self.log_exception(
+                fl_ctx, "error loading checkpoint from {}".format(model_file)
+            )
             return {}

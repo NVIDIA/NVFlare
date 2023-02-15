@@ -17,7 +17,6 @@ from abc import abstractmethod
 
 import numpy as np
 import torch
-
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.shareable import make_reply
 from nvflare.apis.signal import Signal
@@ -85,27 +84,40 @@ class PTFedSMHelper(object):
         self.select_model_epochs = select_model_epochs
         # check criterion, model, and optimizer type
         if not isinstance(self.person_model, torch.nn.Module):
-            raise ValueError(f"person_model component must be torch model. " f"But got: {type(self.person_model)}")
+            raise ValueError(
+                f"person_model component must be torch model. "
+                f"But got: {type(self.person_model)}"
+            )
         if not isinstance(self.select_model, torch.nn.Module):
-            raise ValueError(f"select_model component must be torch model. " f"But got: {type(self.select_model)}")
+            raise ValueError(
+                f"select_model component must be torch model. "
+                f"But got: {type(self.select_model)}"
+            )
         if not isinstance(self.person_criterion, torch.nn.modules.loss._Loss):
             raise ValueError(
-                f"person_criterion component must be torch loss. " f"But got: {type(self.person_criterion)}"
+                f"person_criterion component must be torch loss. "
+                f"But got: {type(self.person_criterion)}"
             )
         if not isinstance(self.select_criterion, torch.nn.modules.loss._Loss):
             raise ValueError(
-                f"select_criterion component must be torch loss. " f"But got: {type(self.select_criterion)}"
+                f"select_criterion component must be torch loss. "
+                f"But got: {type(self.select_criterion)}"
             )
         if not isinstance(self.person_optimizer, torch.optim.Optimizer):
             raise ValueError(
-                f"person_optimizer component must be torch optimizer. " f"But got: {type(self.person_optimizer)}"
+                f"person_optimizer component must be torch optimizer. "
+                f"But got: {type(self.person_optimizer)}"
             )
         if not isinstance(self.select_optimizer, torch.optim.Optimizer):
             raise ValueError(
-                f"select_optimizer component must be torch optimizer. " f"But got: {type(self.select_optimizer)}"
+                f"select_optimizer component must be torch optimizer. "
+                f"But got: {type(self.select_optimizer)}"
             )
         if not isinstance(self.device, torch.device):
-            raise ValueError(f"device component must be torch device. " f"But got: {type(self.device)}")
+            raise ValueError(
+                f"device component must be torch device. "
+                f"But got: {type(self.device)}"
+            )
 
         # initialize other recording related parameters
         # save personalized model to local file
@@ -116,7 +128,9 @@ class PTFedSMHelper(object):
         self.select_epoch_of_start_time = 0
         self.person_best_metric = 0
         self.person_model_file_path = os.path.join(app_dir, "personalized_model.pt")
-        self.best_person_model_file_path = os.path.join(app_dir, "best_personalized_model.pt")
+        self.best_person_model_file_path = os.path.join(
+            app_dir, "best_personalized_model.pt"
+        )
 
     def save_person_model(self, is_best=False):
         # save personalized model locally
@@ -128,7 +142,9 @@ class PTFedSMHelper(object):
         else:
             torch.save(save_dict, self.person_model_file_path)
 
-    def local_train_select(self, train_loader, select_label, abort_signal: Signal, writer):
+    def local_train_select(
+        self, train_loader, select_label, abort_signal: Signal, writer
+    ):
         # Train selector model in full batch manner, and keep track of curves
         for epoch in range(self.select_model_epochs):
             if abort_signal.triggered:
@@ -143,20 +159,26 @@ class PTFedSMHelper(object):
                 # construct vector of selector label
                 labels = np.ones(inputs.size()[0], dtype=np.int64) * select_label
                 labels = torch.tensor(labels).to(self.device)
-
                 # forward + backward
                 outputs = self.select_model(inputs)
                 loss = self.select_criterion(outputs, labels)
                 loss.backward()
+                current_epoch = self.select_epoch_global + epoch
+                current_step = epoch_len * current_epoch + i
+                writer.add_scalar("train_loss_selector", loss.item(), current_step)
             # Full batch training, 1 step per epoch
-            self.select_optimizer.zero_grad()
             self.select_optimizer.step()
-            current_step = self.select_epoch_global + epoch
-            writer.add_scalar("train_loss_selector", loss.item(), current_step)
+            self.select_optimizer.zero_grad()
         self.select_epoch_of_start_time += self.select_model_epochs
 
     def local_valid_select(
-        self, valid_loader, select_label, abort_signal: Signal, tb_id=None, writer=None, record_epoch=None
+        self,
+        valid_loader,
+        select_label,
+        abort_signal: Signal,
+        tb_id=None,
+        writer=None,
+        record_epoch=None,
     ):
         # Validate selector model
         self.select_model.eval()
