@@ -133,5 +133,5 @@ class PTModelPersistenceFormatManager(object):
             self.var_dict[k] = v
 
     @staticmethod
-    def get_persist_model_format(self):
+    def get_persist_model_format():
         return ModelFormat.PT_CHECKPOINT
