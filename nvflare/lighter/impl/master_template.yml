@@ -1420,8 +1420,10 @@ azure_start_dsb_sh: |
     echo "Destination folder is ${DEST}"
     sshpass -p $PASSWORD scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null web.{crt,key} $DEST
     report_status "$?" "copying cert/key to VM ${DEST} folder"
+    secure=true
   else
     echo "No web.crt and web.key found"
+    secure=false
   fi
 
   echo "Starting dashboard"
@@ -1436,8 +1438,15 @@ azure_start_dsb_sh: |
 
   credential=$(jq -r .value[0].message /tmp/dashboard.json | grep "Project admin")
   # echo "The VM was created with user: ${ADMIN_USERNAME} and password: ${PASSWORD}"
-  echo "Dashboard: ${credential}, running at IP adress ${IP_ADDRESS}"
-  echo "To stop it, run az group delete -n ${RESOURCE_GROUP}"
+  echo "Dashboard: ${credential}, running at IP address ${IP_ADDRESS}"
+  echo "To stop the dashboard, run az group delete -n ${RESOURCE_GROUP}"
+  if [ "$secure" = true ]
+  then
+    echo "URL is https://${IP_ADDRESS}"
+  else
+    echo "URL is http://${IP_ADDRESS}:443"
+  fi
+  echo "Note: you may need to configure DNS server with your DNS hostname and the above IP address."
 
 adm_notebook: |
   {
@@ -1942,8 +1951,10 @@ aws_start_dsb_sh: |
     echo "Cert folder is ${CERT_FOLDER}"
     scp -i $KEY_FILE -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null web.{crt,key} $CERT_FOLDER
     report_status "$?" "copying cert/key to VM ${CERT_FOLDER} folder"
+    secure=true
   else
     echo "No web.crt and web.key found"
+    secure=false
   fi
 
   echo "Starting dashboard"
@@ -1951,5 +1962,12 @@ aws_start_dsb_sh: |
     "export PATH=/home/ubuntu/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin && \
     python3 -m nvflare.dashboard.cli --start -f ${DEST_FOLDER} --cred ${credential}" > /tmp/dashboard.json
 
-  echo "Dashboard running at IP adress ${IP_ADDRESS}, listening to port 443."
+  echo "Dashboard url is running at IP address ${IP_ADDRESS}, listening to port 443."
+  if [ "$secure" = true ]
+  then
+    echo "URL is https://${IP_ADDRESS}"
+  else
+    echo "URL is http://${IP_ADDRESS}:443"
+  fi
+  echo "Note: you may need to configure DNS server with your DNS hostname and the above IP address."
   echo "Project admin credential (username:password) is ${credential} ."
