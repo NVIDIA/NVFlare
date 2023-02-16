@@ -52,7 +52,7 @@ class PackageChecker(ABC):
         pass
 
     def stop_dry_run(self, force: bool = True):
-        # todo: add gracefully shutdown command, currently
+        # todo: add gracefully shutdown command
         print("killing dry run process")
         command = self.get_dry_run_command()
         cmd = f"pkill -9 -f '{command}'"
@@ -80,7 +80,7 @@ class PackageChecker(ABC):
                             all_passed = False
                             break
 
-            # check if server can run
+            # check dry run
             if all_passed:
                 ret_code = self.check_dry_run()
             return ret_code
