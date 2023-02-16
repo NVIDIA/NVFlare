@@ -17,8 +17,8 @@ from nvflare.apis.dxo import DataKind
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.executors.client_executor import ClientExecutor
 from nvflare.app_common.executors.common_executor import CommonExecutor
-from nvflare.app_common.executors.psi.dh_psi_executor import DhPSIExecutor
 from nvflare.app_common.utils.component_utils import check_component_type
+from nvflare.app_opt.psi.dh_psi.dh_psi_executor import DhPSIExecutor
 
 
 class PSIExecutor(CommonExecutor):

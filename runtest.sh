@@ -31,6 +31,10 @@ function install_deps {
         echo "pip installing development dependencies"
         python3 -m pip install -r requirements-dev.txt
         echo "dependencies installed" > /tmp/.flare_deps_installed
+        echo "pip installing optional dependencies"
+#       python3 -c "import configparser; c = configparser.ConfigParser(); c.read('setup.cfg'); print(c['options.extras_require']['HE'])" | xargs pip install
+        python3 -c "import configparser; c = configparser.ConfigParser(); c.read('setup.cfg'); print(c['options.extras_require']['PSI'])" | xargs pip install
+        echo "dependencies installed" > /tmp/.flare_deps_installed
     else
 	echo "dependencies installed"
     fi
