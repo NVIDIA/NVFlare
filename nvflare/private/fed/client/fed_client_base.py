@@ -21,7 +21,7 @@ from typing import List, Optional
 
 from nvflare.apis.filter import Filter
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, ServerCommandKey, SecureTrainConst
+from nvflare.apis.fl_constant import FLContextKey, SecureTrainConst, ServerCommandKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.overseer_spec import SP
@@ -29,9 +29,9 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
-from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import EngineConstant
 from nvflare.security.logging import secure_format_exception
@@ -204,8 +204,10 @@ class FederatedClientBase:
                         while not self.client_runner:
                             self.logger.info("Wait for client_runner to be created.")
                             if time.time() - start > 15:
-                                raise RuntimeError("Failed to set the cell for engine: "
-                                                   "timeout waiting for client_runner to be created.")
+                                raise RuntimeError(
+                                    "Failed to set the cell for engine: "
+                                    "timeout waiting for client_runner to be created."
+                                )
                             time.sleep(0.5)
                         self.client_runner.engine.cell = self.cell
                         self.client_runner.command_agent.register_cell_cb()
@@ -214,8 +216,9 @@ class FederatedClientBase:
                         while not self.engine:
                             self.logger.info("Wait for engine to be created.")
                             if time.time() - start > 15:
-                                raise RuntimeError("Failed to set the cell for engine: "
-                                                   "timeout waiting for engine to be created.")
+                                raise RuntimeError(
+                                    "Failed to set the cell for engine: " "timeout waiting for engine to be created."
+                                )
                             time.sleep(0.5)
 
                         self.engine.cell = self.cell
@@ -314,7 +317,7 @@ class FederatedClientBase:
                 start = time.time()
                 while not self.engine:
                     time.sleep(1.0)
-                    if time.time() - start > 60.:
+                    if time.time() - start > 60.0:
                         raise RuntimeError(f"No engine created. Failed to start the heartbeat process.")
                 self.communicator.send_heartbeat(
                     self.servers, project_name, self.token, self.ssid, self.client_name, self.engine, interval

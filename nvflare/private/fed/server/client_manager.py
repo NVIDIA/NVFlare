@@ -20,7 +20,7 @@ import uuid
 from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.fuel.f3.cellnet.defs import MessagePropKey, CellPropertyKey
+from nvflare.fuel.f3.cellnet.defs import CellPropertyKey, MessagePropKey
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.private.defs import CellMessageHeaderKeys
 
@@ -84,7 +84,9 @@ class ClientManager:
     def login_client(self, client_login, context):
         if not self.is_valid_task(client_login.get_header(CellMessageHeaderKeys.PROJECT_NAME)):
             # context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Requested task does not match the current server task")
-            context.set_prop(FLContextKey.UNAUTHENTICATED, "Requested task does not match the current server task", sticky=False)
+            context.set_prop(
+                FLContextKey.UNAUTHENTICATED, "Requested task does not match the current server task", sticky=False
+            )
         return self.authenticated_client(client_login, context)
 
     def validate_client(self, request, fl_ctx: FLContext, allow_new=False):
@@ -106,7 +108,9 @@ class ClientManager:
             client = None
         elif not self.is_valid_task(request.get_header(CellMessageHeaderKeys.PROJECT_NAME)):
             # context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Requested task does not match the current server task")
-            fl_ctx.set_prop(FLContextKey.UNAUTHENTICATED, "Requested task does not match the current server task", sticky=False)
+            fl_ctx.set_prop(
+                FLContextKey.UNAUTHENTICATED, "Requested task does not match the current server task", sticky=False
+            )
             client = None
         elif not (allow_new or self.is_from_authorized_client(token)):
             # context.abort(grpc.StatusCode.UNAUTHENTICATED, "Unknown client identity")
@@ -131,8 +135,11 @@ class ClientManager:
         if not client:
             fqcn = client_login.get_prop(MessagePropKey.ENDPOINT).conn_props.get(DriverParams.PEER_CN.value)
             if fqcn and fqcn != client_name:
-                context.set_prop(FLContextKey.UNAUTHENTICATED,
-                                 f"Requested fqcn:{fqcn} does not match the client_name: {client_name}", sticky=False)
+                context.set_prop(
+                    FLContextKey.UNAUTHENTICATED,
+                    f"Requested fqcn:{fqcn} does not match the client_name: {client_name}",
+                    sticky=False,
+                )
                 return None
 
             for token, client in self.clients.items():
@@ -144,8 +151,9 @@ class ClientManager:
                     # return None
                     with self.lock:
                         self.clients.pop(token)
-                        self.logger.info(f"Client: {client_name} already registered. Re-login the client "
-                                         f"with a new token.")
+                        self.logger.info(
+                            f"Client: {client_name} already registered. Re-login the client " f"with a new token."
+                        )
                         break
 
             client = Client(client_name, str(uuid.uuid4()))
@@ -197,7 +205,8 @@ class ClientManager:
                         # )
                         fl_ctx.set_prop(
                             FLContextKey.COMMUNICATION_ERROR,
-                            "Client ID already registered as a client: {}".format(client_name), sticky=False
+                            "Client ID already registered as a client: {}".format(client_name),
+                            sticky=False,
                         )
                         self.logger.info(
                             "Failed to re-activate the client:{} with token: {}. Client already exist.".format(

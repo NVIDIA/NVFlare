@@ -111,13 +111,13 @@ class Communicator:
         start = time.time()
         while not self.cell:
             self.logger.info("Waiting for the client cell to be created.")
-            if time.time() - start > 15.:
+            if time.time() - start > 15.0:
                 raise RuntimeError("Client cell could not be created. Failed to login the client.")
             time.sleep(0.5)
 
         while not self.cell.is_cell_connected(FQCN.ROOT_SERVER):
             time.sleep(0.1)
-            if time.time() - start > 30.:
+            if time.time() - start > 30.0:
                 raise FLCommunicationError("error:Could not connect to the server for client_registration.")
 
         while True:
@@ -250,7 +250,9 @@ class Communicator:
         )
         end_time = time.time()
         return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
-        self.logger.info(f" SubmitUpdate size: {len(task_message.payload)} Bytes. time: {end_time - start_time} seconds")
+        self.logger.info(
+            f" SubmitUpdate size: {len(task_message.payload)} Bytes. time: {end_time - start_time} seconds"
+        )
 
         return return_code
 
