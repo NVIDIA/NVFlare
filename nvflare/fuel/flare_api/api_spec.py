@@ -33,6 +33,10 @@ class SessionClosed(BaseException):
     pass
 
 
+class InvalidArgumentError(BaseException):
+    pass
+
+
 class InvalidJobDefinition(BaseException):
     pass
 
