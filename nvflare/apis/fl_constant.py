@@ -141,6 +141,8 @@ class FLContextKey(object):
     SCOPE_PROPERTIES = "__scope_props__"
     SCOPE_OBJECT = "__scope_object__"
     FATAL_SYSTEM_ERROR = ReservedKey.FATAL_SYSTEM_ERROR
+    COMMUNICATION_ERROR = "Flare_communication_error__"
+    UNAUTHENTICATED = "Flare_authenticated__"
     CLIENT_RESOURCE_SPECS = "__client_resource_specs"
     JOB_PARTICIPANTS = "__job_participants"
     JOB_BLOCK_REASON = "__job_block_reason"  # why the job should be blocked from scheduling
@@ -199,6 +201,7 @@ class ServerCommandNames(object):
     AUX_SEND = "aux_send"
     SHOW_STATS = "show_stats"
     GET_ERRORS = "get_errors"
+    RESET_ERRORS = "reset_errors"
     UPDATE_RUN_STATUS = "update_run_status"
     HANDLE_DEAD_JOB = "handle_dead_job"
 
@@ -332,3 +335,16 @@ class JobConstants:
 class SiteType:
     SERVER = "server"
     CLIENT = "client"
+    ALL = "@ALL"
+
+
+class SystemConfigs:
+    STARTUP_CONF = "start_config"
+    RESOURCES_CONF = "resources_config"
+    APPLICATION_CONF = "application_config"
+
+
+class SecureTrainConst:
+    SSL_ROOT_CERT = "ssl_root_cert"
+    SSL_CERT = "ssl_cert"
+    PRIVATE_KEY = "ssl_private_key"
