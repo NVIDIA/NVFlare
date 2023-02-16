@@ -189,8 +189,6 @@ class TestPreflightCheck:
         try:
             if not is_dummy_overseer:
                 site_launcher.start_overseer()
-            site_launcher.start_servers()
-            time.sleep(SERVER_START_TIME)
 
             # preflight-check on clients
             for client_name, client_props in site_launcher.client_properties.items():
