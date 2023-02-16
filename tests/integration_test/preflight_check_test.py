@@ -156,7 +156,6 @@ class TestPreflightCheck:
         finally:
             site_launcher.cleanup()
 
-
     def test_run_check_on_server_after_overseer_start(self, setup_system):
         site_launcher, is_dummy_overseer, _ = setup_system
         try:
@@ -189,11 +188,15 @@ class TestPreflightCheck:
         try:
             if not is_dummy_overseer:
                 site_launcher.start_overseer()
+            site_launcher.start_servers()
+            time.sleep(SERVER_START_TIME)
 
             # preflight-check on clients
             for client_name, client_props in site_launcher.client_properties.items():
                 output = run_preflight_check_command_in_pseudo_terminal(package_path=client_props.root_dir)
                 assert _filter_output(output) == CLIENT_OUTPUT_PASSED.splitlines()
+        except Exception:
+            raise
         finally:
             site_launcher.stop_all_sites()
             site_launcher.cleanup()
@@ -209,6 +212,8 @@ class TestPreflightCheck:
             # preflight-check on admin
             output = run_preflight_check_command_in_pseudo_terminal(package_path=admin_folder_root)
             assert _filter_output(output) == CLIENT_OUTPUT_PASSED.splitlines()
+        except Exception:
+            raise
         finally:
             site_launcher.stop_all_sites()
             site_launcher.cleanup()
