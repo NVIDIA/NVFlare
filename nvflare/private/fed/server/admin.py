@@ -150,15 +150,6 @@ class FedAdminServer(AdminServer):
         self.file_upload_dir = file_upload_dir
         self.file_download_dir = file_download_dir
 
-        # YC: no need to register FileTransferModule any more
-        # since upload/download functions are to be implemented by other modules.
-        # cmd_reg.register_module(
-        #     FileTransferModule(
-        #         upload_dir=file_upload_dir,
-        #         download_dir=file_download_dir
-        #     )
-        # )
-
         cmd_reg.register_module(sess_mgr)
         # mpm.add_cleanup_cb(sess_mgr.shutdown)
 

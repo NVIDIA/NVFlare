@@ -207,13 +207,13 @@ class BaseServer(ABC):
         """
         pass
 
-    def fl_shutdown(self):
+    def fl_shutdown(self, shutdown_period=30.0):
         self.shutdown = True
         start = time.time()
         while self.client_manager.clients:
             # Wait for the clients to shutdown and quite first.
             time.sleep(0.1)
-            if time.time() - start > 30.0:
+            if time.time() - start > shutdown_period:
                 self.logger.info("There are still clients connected. But shutdown the server after timeout.")
                 break
         self.close()
@@ -647,7 +647,7 @@ class FederatedServer(BaseServer):
         try:
             self.server_runner.run()
         except BaseException as e:
-            self.logger.error(f"FL client execution exception: {secure_format_exception(e)}")
+            self.logger.error(f"FL server execution exception: {secure_format_exception(e)}")
         finally:
             self.engine.update_job_run_status()
             self.stop_run_engine_cell()
@@ -752,11 +752,11 @@ class FederatedServer(BaseServer):
         self.status = ServerStatus.STOPPED
         self.logger.info("Server app stopped.\n\n")
 
-    def fl_shutdown(self):
+    def fl_shutdown(self, shutdown_period=30.0):
         self.engine.stop_all_jobs()
         self.engine.fire_event(EventType.SYSTEM_END, self.engine.new_context())
 
-        super().fl_shutdown()
+        super().fl_shutdown(shutdown_period)
 
     def close(self):
         """Shutdown the server."""

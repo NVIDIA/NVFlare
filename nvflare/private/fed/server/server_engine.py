@@ -837,7 +837,7 @@ def server_shutdown(server, touch_file):
         os.utime(touch_file, None)
 
     try:
-        server.fl_shutdown()
+        server.fl_shutdown(shutdown_period=30.0)
         server.admin_server.stop()
         time.sleep(3.0)
     finally:
