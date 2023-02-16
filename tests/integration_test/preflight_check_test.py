@@ -145,11 +145,15 @@ def setup_system(request):
 class TestPreflightCheck:
     def test_run_check_on_overseer(self, setup_system):
         site_launcher, is_dummy_overseer, _ = setup_system
-        # preflight-check on overseer
-        if is_dummy_overseer:
-            return
-        output = run_preflight_check_command_in_pseudo_terminal(package_path=site_launcher.overseer_properties.root_dir)
-        assert _filter_output(output) == OVERSEER_OUTPUT_PASSED.splitlines()
+        try:
+            # preflight-check on overseer
+            if is_dummy_overseer:
+                return
+            output = run_preflight_check_command_in_pseudo_terminal(package_path=site_launcher.overseer_properties.root_dir)
+            assert _filter_output(output) == OVERSEER_OUTPUT_PASSED.splitlines()
+        finally:
+            site_launcher.cleanup()
+
 
     def test_run_check_on_server_after_overseer_start(self, setup_system):
         site_launcher, is_dummy_overseer, _ = setup_system
