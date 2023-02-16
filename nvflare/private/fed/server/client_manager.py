@@ -20,7 +20,7 @@ import uuid
 from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.fuel.f3.cellnet.defs import CellPropertyKey, MessagePropKey
+from nvflare.fuel.f3.cellnet.defs import MessagePropKey
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.private.defs import CellMessageHeaderKeys
 

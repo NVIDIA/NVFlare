@@ -21,7 +21,7 @@ import threading
 import time
 from abc import ABC, abstractmethod
 
-from nvflare.apis.fl_constant import AdminCommandNames, ReturnCode, RunProcessKey
+from nvflare.apis.fl_constant import AdminCommandNames, RunProcessKey
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
 from nvflare.fuel.f3.cellnet.cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
