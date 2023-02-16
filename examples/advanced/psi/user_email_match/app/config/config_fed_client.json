@@ -7,7 +7,7 @@
       ],
       "executor": {
         "id": "Executor",
-        "path": "nvflare.app_common.executors.psi.psi_executor.PSIExecutor",
+        "path": "nvflare.app_opt.psi.psi_executor.PSIExecutor",
         "args": {
           "local_psi_id": "local_psi"
         }
