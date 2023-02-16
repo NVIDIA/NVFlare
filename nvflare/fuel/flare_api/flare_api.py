@@ -296,8 +296,6 @@ class Session(SessionSpec):
         result = self._do_command(command)
         meta = result[ResultKey.META]
         jobs_list = meta.get(MetaKey.JOBS, None)
-        print("GOT JOBS LIST BACK:")
-        print(jobs_list)
         return jobs_list
 
     def download_job_result(self, job_id: str) -> str:
