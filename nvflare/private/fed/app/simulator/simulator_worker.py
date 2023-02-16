@@ -24,14 +24,17 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, WorkspaceConstants
 from nvflare.fuel.common.multi_process_executor_constants import CommunicationMetaData
+from nvflare.fuel.f3.cellnet.cell import Cell
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.sec.audit import AuditService
-from nvflare.private.fed.app.utils import check_parent_alive
-from nvflare.private.fed.client.admin import FedAdminAgent
-from nvflare.private.fed.client.admin_msg_sender import AdminMessageSender
-from nvflare.private.fed.client.client_req_processors import ClientRequestProcessors
+from nvflare.private.fed.app.client.worker_process import check_parent_alive
+from nvflare.private.fed.app.deployer.base_client_deployer import BaseClientDeployer
+from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.client.fed_client import FederatedClient
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorClientAppRunner
+from nvflare.private.fed.simulator.simulator_audit import SimulatorAuditor
 from nvflare.private.fed.simulator.simulator_client_engine import SimulatorClientEngine
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize
@@ -40,26 +43,12 @@ from nvflare.security.security import EmptyAuthorizer
 
 
 class ClientTaskWorker(FLComponent):
-    def create_admin_agent(self, server_args, federated_client: FederatedClient, args, rank=0):
-        sender = AdminMessageSender(
-            client_name=federated_client.token,
-            server_args=server_args,
-            secure=False,
-        )
-        client_engine = SimulatorClientEngine(federated_client, federated_client.token, sender, args, rank)
-        admin_agent = FedAdminAgent(
-            client_name="admin_agent",
-            sender=sender,
-            app_ctx=client_engine,
-        )
-        admin_agent.app_ctx.set_agent(admin_agent)
+    def create_client_engine(self, federated_client: FederatedClient, args, rank=0):
+        client_engine = SimulatorClientEngine(federated_client, federated_client.token, args, rank)
         federated_client.set_client_engine(client_engine)
-        for processor in ClientRequestProcessors.request_processors:
-            admin_agent.register_processor(processor)
+        federated_client.run_manager = None
 
         client_engine.fire_event(EventType.SYSTEM_START, client_engine.new_context())
-
-        return admin_agent
 
     def create_client_runner(self, client):
         """Create the ClientRunner for the client to run the ClientApp.
@@ -75,6 +64,7 @@ class ClientTaskWorker(FLComponent):
 
         client_app_runner = SimulatorClientAppRunner()
         client_runner = client_app_runner.create_client_runner(app_client_root, args, args.config_folder, client, False)
+        client_runner.engine.cell = client.cell
         client_runner.init_run(app_client_root, args)
 
     def do_one_task(self, client):
@@ -101,26 +91,28 @@ class ClientTaskWorker(FLComponent):
         with client.run_manager.new_context() as fl_ctx:
             self.fire_event(EventType.SWAP_OUT, fl_ctx)
 
-            client.run_manager.aux_runner.abort_signal.trigger("True")
+            # client.run_manager.aux_runner.abort_signal.trigger("True")
 
             fl_ctx.set_prop(FLContextKey.RUNNER, None, private=True)
         self.logger.info(f"Clean up ClientRunner for : {client.client_name} ")
 
     def run(self, args, conn):
         admin_agent = None
+        client = None
         try:
             data = conn.recv()
-            client = data[SimulatorConstants.CLIENT]
             client_config = data[SimulatorConstants.CLIENT_CONFIG]
             deploy_args = data[SimulatorConstants.DEPLOY_ARGS]
+            build_ctx = data[SimulatorConstants.BUILD_CTX]
+
+            client = self._create_client(args, build_ctx, deploy_args)
 
             app_root = os.path.join(args.workspace, SimulatorConstants.JOB_NAME, "app_" + client.client_name)
             app_custom_folder = os.path.join(app_root, "custom")
             sys.path.append(app_custom_folder)
 
-            servers = [{t["name"]: t["service"]} for t in client_config.get("servers")]
-            admin_agent = self.create_admin_agent(sorted(servers)[0], client, deploy_args)
-            admin_agent.start()
+            self.create_client_engine(client, deploy_args)
+
             while True:
                 interval, stop_run = self.do_one_task(client)
                 conn.send(stop_run)
@@ -134,8 +126,45 @@ class ClientTaskWorker(FLComponent):
         except BaseException as e:
             self.logger.error(f"ClientTaskWorker run error: {secure_format_exception(e)}")
         finally:
+            if client:
+                client.cell.stop()
             if admin_agent:
                 admin_agent.shutdown()
+
+    def _create_client(self, args, build_ctx, deploy_args):
+        deployer = BaseClientDeployer()
+        deployer.build(build_ctx)
+        client = deployer.create_fed_client(deploy_args)
+
+        client.token = args.token
+        self._set_client_status(client, deploy_args, args.simulator_root)
+        self._create_client_cell(client, args.root_url, args.parent_url)
+        return client
+
+    def _set_client_status(self, client, deploy_args, simulator_root):
+        app_client_root = os.path.join(simulator_root, "app_" + client.client_name)
+        client.app_client_root = app_client_root
+        client.args = deploy_args
+        # self.create_client_runner(client)
+        client.simulate_running = False
+        client.status = ClientStatus.STARTED
+
+    def _create_client_cell(self, federated_client, root_url, parent_url):
+        fqcn = FQCN.join([federated_client.client_name, SimulatorConstants.JOB_NAME])
+        credentials = {}
+        cell = Cell(
+            fqcn=fqcn,
+            root_url=root_url,
+            secure=False,
+            credentials=credentials,
+            create_internal_listener=True,
+            parent_url=parent_url,
+        )
+        cell.start()
+        federated_client.cell = cell
+        federated_client.communicator.cell = cell
+
+        mpm.add_cleanup_cb(cell.stop)
 
 
 def _create_connection(listen_port):
@@ -149,9 +178,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", "-o", type=str, help="WORKSPACE folder", required=True)
     parser.add_argument("--client", type=str, help="Client name", required=True)
+    parser.add_argument("--token", type=str, help="Client token", required=True)
     parser.add_argument("--port", type=str, help="Listen port", required=True)
     parser.add_argument("--gpu", "-g", type=str, help="gpu index number")
     parser.add_argument("--parent_pid", type=int, help="parent process pid", required=True)
+    parser.add_argument("--simulator_root", "-root", type=str, help="Simulator root folder")
+    parser.add_argument("--root_url", "-r", type=str, help="cellnet root_url")
+    parser.add_argument("--parent_url", "-p", type=str, help="cellnet parent_url")
     args = parser.parse_args()
 
     # start parent process checking thread
@@ -171,7 +204,8 @@ def main():
     os.chdir(workspace)
     fobs_initialize()
     AuthorizationService.initialize(EmptyAuthorizer())
-    AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
+    # AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
+    AuditService.the_auditor = SimulatorAuditor()
 
     if args.gpu:
         os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
@@ -193,6 +227,7 @@ if __name__ == "__main__":
     This is the main program of simulator worker process when running the NVFlare Simulator..
     """
 
-    main()
+    # main()
+    mpm.run(main_func=main)
     time.sleep(2)
     # os._exit(0)
