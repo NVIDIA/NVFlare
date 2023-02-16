@@ -78,7 +78,7 @@ class BaseServer(ABC):
         max_num_clients=10,
         heart_beat_timeout=600,
         handlers: Optional[List[FLComponent]] = None,
-        shutdown_period=30.,
+        shutdown_period=30.0,
     ):
         """Base server that provides the clients management and server deployment."""
         self.project_name = project_name
@@ -236,8 +236,8 @@ class FederatedServer(BaseServer):
         secure_train=False,
         snapshot_persistor=None,
         overseer_agent=None,
-        shutdown_period=30.,
-        check_engine_frequency=3.,
+        shutdown_period=30.0,
+        check_engine_frequency=3.0,
     ):
         """Federated server services.
 
