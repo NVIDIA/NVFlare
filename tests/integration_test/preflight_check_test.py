@@ -102,17 +102,19 @@ def _filter_output(output):
 
 def run_preflight_check_command_in_subprocess(package_path: str):
     command = f"{sys.executable} -m {PREFLIGHT_CHECK_SCRIPT} -p {package_path}"
+    print(f"Executing command {command} in subprocess")
     output = subprocess.check_output(shlex.split(command))
     return output
 
 
 def run_preflight_check_command_in_pseudo_terminal(package_path: str):
     command = f"{sys.executable} -m {PREFLIGHT_CHECK_SCRIPT} -p {package_path}"
+    print(f"Executing command {command} in pty")
 
     with BytesIO() as output:
 
         def read(fd):
-            data = os.read(fd, 8192 * 8192)
+            data = os.read(fd, 1024 * 1024 * 1024)
             output.write(data)
             return data
 
