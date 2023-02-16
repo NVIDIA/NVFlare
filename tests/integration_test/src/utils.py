@@ -164,7 +164,7 @@ def cleanup_job_and_snapshot(workspace: str, server_name: str):
 
 def get_job_meta(admin_api: FLAdminAPI, job_id: str) -> dict:
     response = admin_api.do_command(f"get_job_meta {job_id}")
-    return response["meta"].get("job_meta", {})
+    return response.get("meta", {}).get("job_meta", {})
 
 
 def check_job_done(job_id: str, admin_api: FLAdminAPI):
