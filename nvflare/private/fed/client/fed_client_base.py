@@ -318,7 +318,7 @@ class FederatedClientBase:
                 while not self.engine:
                     time.sleep(1.0)
                     if time.time() - start > 60.0:
-                        raise RuntimeError(f"No engine created. Failed to start the heartbeat process.")
+                        raise RuntimeError("No engine created. Failed to start the heartbeat process.")
                 self.communicator.send_heartbeat(
                     self.servers, project_name, self.token, self.ssid, self.client_name, self.engine, interval
                 )
