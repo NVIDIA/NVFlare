@@ -16,7 +16,7 @@ import importlib
 import inspect
 import logging
 import pkgutil
-from typing import List
+from typing import Dict, List, Optional
 
 from nvflare.security.logging import secure_format_exception
 
@@ -60,9 +60,24 @@ def instantiate_class(class_path, init_params):
     return instance
 
 
+class _ModuleScanResult:
+    """Data class for ModuleScanner."""
+
+    def __init__(self, class_name: str):
+        self.class_name = class_name
+        # a list of modules that contain the class
+        self.modules = []
+
+    def add_module(self, module_name: str):
+        self.modules.append(module_name)
+
+    def __str__(self):
+        return f"{self.class_name}:{self.modules}"
+
+
 class ModuleScanner:
     def __init__(self, base_pkgs: List[str], module_names: List[str], exclude_libs=True):
-        """Scanner to look for and load specified module names.
+        """Loads specified modules from base packages and then constructs a class to module name mapping.
 
         Args:
             base_pkgs: base packages to look for modules in
@@ -74,7 +89,7 @@ class ModuleScanner:
         self.exclude_libs = exclude_libs
 
         self._logger = logging.getLogger(self.__class__.__name__)
-        self._class_table = {}
+        self._class_table: Dict[str, _ModuleScanResult] = {}
         self._create_classes_table()
 
     def _create_classes_table(self):
@@ -96,13 +111,31 @@ class ModuleScanner:
                                         and inspect.isclass(obj)
                                         and obj.__module__ == module_name
                                     ):
-                                        self._class_table[name] = module_name
+                                        scan_result = self._class_table.get(name, _ModuleScanResult(class_name=name))
+                                        scan_result.add_module(module_name)
+                                        self._class_table[name] = scan_result
                             except (ModuleNotFoundError, RuntimeError) as e:
-                                self._logger.warning(
+                                self._logger.debug(
                                     f"Try to import module {module_name}, but failed: {e}. "
-                                    f"Please ignore this if you are not using files in module: {module_name}."
+                                    f"Can't use name in config to refer to classes in module: {module_name}."
                                 )
                                 pass
 
-    def get_module_name(self, class_name):
-        return self._class_table.get(class_name, None)
+    def get_module_name(self, class_name) -> Optional[str]:
+        """Gets the name of the module that contains this class.
+
+        Args:
+            class_name: The name of the class
+
+        Returns:
+            The module name if found.
+        """
+        if class_name not in self._class_table:
+            return None
+        scan_result = self._class_table[class_name]
+        module_name = scan_result.modules[0]
+        if len(scan_result.modules) != 1:
+            self._logger.warning(
+                f"More than 1 module contains class {class_name}. The first module: {module_name} is used."
+            )
+        return module_name
