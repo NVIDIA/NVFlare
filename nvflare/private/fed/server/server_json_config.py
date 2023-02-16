@@ -23,7 +23,7 @@ from nvflare.private.json_configer import ConfigContext, ConfigError
 from .server_runner import ServerRunnerConfig
 
 FL_PACKAGES = ["nvflare"]
-FL_MODULES = ["apis", "app_common", "widgets"]
+FL_MODULES = ["apis", "app_common", "widgets", "app_opt"]
 
 
 class WorkFlow:
