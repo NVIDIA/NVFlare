@@ -28,7 +28,7 @@ log = logging.getLogger(__name__)
 
 
 class SocketStreamServer(ThreadingUnixStreamServer):
-    def __init__(self, path: str, driver: "Driver", connector: ConnectorInfo):
+    def __init__(self, path: str, driver: Driver, connector: ConnectorInfo):
         self.path = path
         self.driver = driver
         self.connector = connector
