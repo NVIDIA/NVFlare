@@ -27,11 +27,11 @@ from nvflare.apis.fl_constant import (
     FLContextKey,
     MachineStatus,
     RunProcessKey,
+    SecureTrainConst,
     ServerCommandKey,
     ServerCommandNames,
     SnapshotKey,
     WorkspaceConstants,
-    SecureTrainConst
 )
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
@@ -52,6 +52,7 @@ from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.server.server_runner import ServerRunner
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.fed_event import ServerFedEventRunner
+
 from .client_manager import ClientManager
 from .run_manager import RunManager
 from .server_engine import ServerEngine
@@ -212,7 +213,7 @@ class BaseServer(ABC):
         while self.client_manager.clients:
             # Wait for the clients to shutdown and quite first.
             time.sleep(0.1)
-            if time.time() - start > 30.:
+            if time.time() - start > 30.0:
                 self.logger.info("There are still clients connected. But shutdown the server after timeout.")
                 break
         self.close()
