@@ -16,7 +16,6 @@ import json
 from typing import List
 
 from nvflare.apis.workspace import Workspace
-from nvflare.fuel.hci.proto import MetaStatusValue, make_meta
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.lighter.utils import verify_folder_signature
 from nvflare.private.admin_defs import Message, error_reply, ok_reply
@@ -69,7 +68,7 @@ class AbortTaskProcessor(RequestProcessor):
         result = engine.abort_task(job_id)
         if not result:
             result = "OK"
-        return ok_reply(topic=f"reply_{req.topic}", body=result, meta=make_meta(MetaStatusValue.OK, result))
+        return ok_reply(topic=f"reply_{req.topic}", body=result)
 
 
 class ShutdownClientProcessor(RequestProcessor):
