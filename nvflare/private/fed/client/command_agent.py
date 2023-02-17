@@ -12,18 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import logging
-import threading
 
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.security.logging import secure_format_exception
+from nvflare.apis.utils.fl_context_utils import get_serializable_data
+from nvflare.fuel.f3.cellnet.cell import Message as CellMessage
+from nvflare.fuel.f3.cellnet.cell import MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.cell import make_reply as make_cellnet_reply
+from nvflare.fuel.utils import fobs
+from nvflare.private.defs import CellChannel, new_cell_message
 
-from ..utils.fed_utils import listen_command
 from .admin_commands import AdminCommands
 
 
 class CommandAgent(object):
-    def __init__(self, federated_client, listen_port, client_runner) -> None:
+    def __init__(self, federated_client, client_runner) -> None:
         """To init the CommandAgent.
 
         Args:
@@ -32,7 +37,6 @@ class CommandAgent(object):
             client_runner: ClientRunner object
         """
         self.federated_client = federated_client
-        self.listen_port = int(listen_port)
         self.client_runner = client_runner
         self.thread = None
         self.asked_to_stop = False
@@ -41,33 +45,59 @@ class CommandAgent(object):
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def start(self, fl_ctx: FLContext):
-        engine = fl_ctx.get_engine()
-        self.thread = threading.Thread(
-            target=listen_command, args=[self.listen_port, engine, self.execute_command, self.logger]
-        )
-        self.thread.start()
+        self.engine = fl_ctx.get_engine()
+        self.register_cell_cb()
 
-    def execute_command(self, conn, engine):
-        while not self.asked_to_stop:
-            try:
-                if conn.poll(1.0):
-                    msg = conn.recv()
-                    command_name = msg.get("command")
-                    data = msg.get("data")
-                    command = AdminCommands.get_command(command_name)
-                    if command:
-                        with engine.new_context() as new_fl_ctx:
-                            reply = command.process(data=data, fl_ctx=new_fl_ctx)
-                            if reply:
-                                conn.send(reply)
-            except EOFError:
-                self.logger.info("listener communication terminated.")
-                break
-            except Exception as e:
-                self.logger.error(f"Process communication error: {self.listen_port}: {secure_format_exception(e)}.")
+    def register_cell_cb(self):
+        self.federated_client.cell.register_request_cb(
+            channel=CellChannel.CLIENT_COMMAND,
+            topic="*",
+            cb=self.execute_command,
+        )
+        self.federated_client.cell.register_request_cb(
+            channel=CellChannel.AUX_COMMUNICATION,
+            topic="*",
+            cb=self.aux_communication,
+        )
+
+    def execute_command(self, request: CellMessage) -> CellMessage:
+
+        assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
+
+        command_name = request.get_header(MessageHeaderKey.TOPIC)
+        data = fobs.loads(request.payload)
+
+        command = AdminCommands.get_command(command_name)
+        if command:
+            with self.engine.new_context() as new_fl_ctx:
+                reply = command.process(data=data, fl_ctx=new_fl_ctx)
+                if reply is not None:
+                    return_message = new_cell_message({}, fobs.dumps(reply))
+                    return_message.set_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
+                else:
+                    return_message = new_cell_message({}, None)
+                return return_message
+        return make_cellnet_reply(ReturnCode.INVALID_REQUEST, "", None)
+
+    def aux_communication(self, request: CellMessage) -> CellMessage:
+
+        assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
+        shareable = request.payload
+
+        with self.engine.new_context() as fl_ctx:
+            topic = request.get_header(MessageHeaderKey.TOPIC)
+            reply = self.engine.dispatch(topic=topic, request=shareable, fl_ctx=fl_ctx)
+
+            shared_fl_ctx = FLContext()
+            shared_fl_ctx.set_public_props(copy.deepcopy(get_serializable_data(fl_ctx).get_all_public_props()))
+            reply.set_header(key=FLContextKey.PEER_CONTEXT, value=shared_fl_ctx)
+
+            if reply is not None:
+                return_message = new_cell_message({}, reply)
+                return_message.set_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
+            else:
+                return_message = new_cell_message({}, None)
+            return return_message
 
     def shutdown(self):
         self.asked_to_stop = True
-
-        if self.thread and self.thread.is_alive():
-            self.thread.join()
