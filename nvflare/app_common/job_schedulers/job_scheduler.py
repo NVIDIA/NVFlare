@@ -155,7 +155,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         job_participants = [fl_ctx.get_identity_name(default="server")]
         job_participants.extend(applicable_sites)
 
-        fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id, private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id, private=True)
         fl_ctx.set_prop(FLContextKey.CLIENT_RESOURCE_SPECS, resource_reqs, private=True, sticky=False)
         fl_ctx.set_prop(FLContextKey.JOB_PARTICIPANTS, job_participants, private=True, sticky=False)
         self.fire_event(EventType.BEFORE_CHECK_CLIENT_RESOURCES, fl_ctx)
