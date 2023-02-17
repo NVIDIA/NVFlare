@@ -125,6 +125,13 @@ def run_preflight_check_command_in_pseudo_terminal(package_path: str):
         return output.getvalue()
 
 
+def run_preflight_check_command(package_path: str, method: str = "subprocess"):
+    if method == "subprocess":
+        return run_preflight_check_command_in_subprocess(package_path)
+    else:
+        return run_preflight_check_command_in_pseudo_terminal(package_path)
+
+
 @pytest.fixture(
     params=TEST_CASES,
 )
@@ -153,7 +160,9 @@ class TestPreflightCheck:
             # preflight-check on overseer
             if is_dummy_overseer:
                 return
-            output = run_preflight_check_command_in_pseudo_terminal(package_path=site_launcher.overseer_properties.root_dir)
+            output = run_preflight_check_command_in_pseudo_terminal(
+                package_path=site_launcher.overseer_properties.root_dir
+            )
             assert _filter_output(output) == OVERSEER_OUTPUT_PASSED.splitlines()
         finally:
             site_launcher.cleanup()
