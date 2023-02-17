@@ -134,8 +134,7 @@ Below is a sample config for site-1, saved to `./job_configs/sklearn_kmeans_3_un
 ```
 
 ## Run experiment with FL simulator
-The [FL simulator](https://nvflare.readthedocs.
-io/en/latest/user_guide/fl_simulator.html) simulates FL experiments or debugging codes, 
+The [FL simulator](https://nvflare.readthedocs.io/en/latest/user_guide/fl_simulator.html) simulates FL experiments or debugging codes,
 not for real-world FL deployment.
 We can run the FL simulator with 3 clients under the uniform data split with
 ```commandline
