@@ -83,7 +83,7 @@ class SKLearnExecutor(Executor):
             self.log_value(key, value, current_round)
 
     def finalize(self, fl_ctx: FLContext):
-        self.learner.finalize()
+        self.learner.finalize(fl_ctx)
 
     def execute(
         self,
