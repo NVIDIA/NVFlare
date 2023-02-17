@@ -23,12 +23,13 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import JobConstants, SiteType, WorkspaceConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
+from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.argument_utils import parse_vars
-from nvflare.private.defs import AppFolderConstants, SSLConstants
+from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger, create_privacy_manager
 from nvflare.private.fed.client.admin import FedAdminAgent
-from nvflare.private.fed.client.admin_msg_sender import AdminMessageSender
 from nvflare.private.fed.client.client_engine import ClientEngine
+from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.client.fed_client import FederatedClient
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize, security_init
 from nvflare.private.privacy_manager import PrivacyService
@@ -56,6 +57,7 @@ def main():
     args.env = os.path.join("config", AppFolderConstants.CONFIG_ENV)
     args.train_config = os.path.join("config", AppFolderConstants.CONFIG_TRAIN)
     args.log_config = None
+    args.job_id = None
 
     workspace = Workspace(root_dir=args.workspace)
 
@@ -76,6 +78,7 @@ def main():
 
         conf = FLClientStarterConfiger(
             workspace=workspace,
+            args=args,
             kv_list=args.set,
         )
         conf.configure()
@@ -105,8 +108,14 @@ def main():
         federated_client.use_gpu = False
         federated_client.config_folder = config_folder
 
-        if rank == 0:
-            federated_client.register()
+        start = time.time()
+        cell_timeout = kv_list.get("cell_timeout", 60.0)
+        while federated_client.cell is None:
+            time.sleep(0.1)
+            if time.time() - start > cell_timeout:
+                raise RuntimeError("Could not create the client cell. Failed to start the client.")
+
+        federated_client.register()
 
         if not federated_client.token:
             print("The client could not register to server. ")
@@ -125,7 +134,9 @@ def main():
             deployer.multi_gpu,
             rank,
         )
-        admin_agent.start()
+
+        while federated_client.status != ClientStatus.STOPPED:
+            time.sleep(1.0)
 
         deployer.close()
 
@@ -134,7 +145,7 @@ def main():
     finally:
         pass
 
-    sys.exit(0)
+    # sys.exit(0)
 
 
 def create_admin_agent(
@@ -162,23 +173,11 @@ def create_admin_agent(
     Returns:
         A FedAdminAgent.
     """
-    root_cert = client_args[SSLConstants.ROOT_CERT] if secure_train else None
-    ssl_cert = client_args[SSLConstants.CERT] if secure_train else None
-    private_key = client_args[SSLConstants.PRIVATE_KEY] if secure_train else None
-    sender = AdminMessageSender(
-        client_name=federated_client.token,
-        root_cert=root_cert,
-        ssl_cert=ssl_cert,
-        private_key=private_key,
-        server_args=server_args,
-        secure=secure_train,
-        is_multi_gpu=is_multi_gpu,
-        rank=rank,
-    )
-    client_engine = ClientEngine(federated_client, federated_client.token, sender, args, rank)
+    client_engine = ClientEngine(federated_client, federated_client.token, args, rank)
     admin_agent = FedAdminAgent(
         client_name="admin_agent",
-        sender=sender,
+        # sender=sender,
+        cell=federated_client.cell,
         app_ctx=client_engine,
     )
     client_engine.set_agent(admin_agent)
@@ -203,4 +202,5 @@ if __name__ == "__main__":
     # import multiprocessing
     # multiprocessing.set_start_method('spawn')
 
-    main()
+    # main()
+    mpm.run(main_func=main)

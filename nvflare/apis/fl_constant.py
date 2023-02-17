@@ -142,7 +142,7 @@ class FLContextKey(object):
     SCOPE_OBJECT = "__scope_object__"
     FATAL_SYSTEM_ERROR = ReservedKey.FATAL_SYSTEM_ERROR
     COMMUNICATION_ERROR = "Flare_communication_error__"
-    UNAUTHENTICATED = "Flare_authenticated__"
+    UNAUTHENTICATED = "Flare_unauthenticated__"
     CLIENT_RESOURCE_SPECS = "__client_resource_specs"
     JOB_PARTICIPANTS = "__job_participants"
     JOB_BLOCK_REASON = "__job_block_reason"  # why the job should be blocked from scheduling

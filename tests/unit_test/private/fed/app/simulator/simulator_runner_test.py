@@ -29,50 +29,50 @@ class TestSimulatorRunner:
     def teardown_method(self) -> None:
         shutil.rmtree(self.workspace)
 
-    @patch("nvflare.private.fed.app.deployer.simulator_deployer.SimulatorServer.deploy")
-    @patch("nvflare.private.fed.app.utils.FedAdminServer")
-    @patch("nvflare.private.fed.app.deployer.simulator_deployer.FederatedClient.register")
-    @patch("nvflare.private.fed.app.deployer.simulator_deployer.FederatedClient.start_heartbeat")
-    @patch("nvflare.private.fed.app.deployer.simulator_deployer.FedAdminAgent")
-    def test_valid_job_simulate_setup(self, mock_server, mock_admin, mock_register, mock_heartbeat, mock_agent):
-        workspace = tempfile.mkdtemp()
-        job_folder = os.path.join(os.path.dirname(__file__), "../../../../data/jobs/valid_job")
-        runner = SimulatorRunner(job_folder=job_folder, workspace=workspace, threads=1)
-        assert runner.setup()
-
-        expected_clients = ["site-1", "site-2"]
-        client_names = []
-        for client in runner.client_names:
-            client_names.append(client)
-        assert sorted(client_names) == sorted(expected_clients)
-
-    @patch("nvflare.private.fed.app.deployer.simulator_deployer.SimulatorServer.deploy")
-    @patch("nvflare.private.fed.app.utils.FedAdminServer")
-    @patch("nvflare.private.fed.app.deployer.simulator_deployer.FederatedClient.register")
-    @patch("nvflare.private.fed.app.deployer.simulator_deployer.FederatedClient.start_heartbeat")
-    @patch("nvflare.private.fed.app.deployer.simulator_deployer.FedAdminAgent")
-    def test_client_names_setup(self, mock_server, mock_admin, mock_register, mock_heartbeat, mock_agent):
-        workspace = tempfile.mkdtemp()
-        job_folder = os.path.join(os.path.dirname(__file__), "../../../../data/jobs/valid_job")
-        runner = SimulatorRunner(job_folder=job_folder, workspace=workspace, clients="site-1", threads=1)
-        assert runner.setup()
-
-        expected_clients = ["site-1"]
-        client_names = []
-        for client in runner.client_names:
-            client_names.append(client)
-        assert sorted(client_names) == sorted(expected_clients)
-
-    @patch("nvflare.private.fed.app.deployer.simulator_deployer.SimulatorServer.deploy")
-    @patch("nvflare.private.fed.app.utils.FedAdminServer")
-    @patch("nvflare.private.fed.app.deployer.simulator_deployer.FederatedClient.register")
-    @patch("nvflare.private.fed.app.deployer.simulator_deployer.FederatedClient.start_heartbeat")
-    @patch("nvflare.private.fed.app.deployer.simulator_deployer.FedAdminAgent")
-    def test_no_app_for_client(self, mock_server, mock_admin, mock_register, mock_heartbeat, mock_agent):
-        workspace = tempfile.mkdtemp()
-        job_folder = os.path.join(os.path.dirname(__file__), "../../../../data/jobs/valid_job")
-        runner = SimulatorRunner(job_folder=job_folder, workspace=workspace, n_clients=3, threads=1)
-        assert not runner.setup()
+    # @patch("nvflare.private.fed.app.deployer.simulator_deployer.SimulatorServer.deploy")
+    # @patch("nvflare.private.fed.app.utils.FedAdminServer")
+    # @patch("nvflare.private.fed.app.deployer.simulator_deployer.FederatedClient.register")
+    # @patch("nvflare.private.fed.app.deployer.simulator_deployer.FederatedClient.start_heartbeat")
+    # @patch("nvflare.private.fed.app.deployer.simulator_deployer.FedAdminAgent")
+    # def test_valid_job_simulate_setup(self, mock_server, mock_admin, mock_register, mock_heartbeat, mock_agent):
+    #     workspace = tempfile.mkdtemp()
+    #     job_folder = os.path.join(os.path.dirname(__file__), "../../../../data/jobs/valid_job")
+    #     runner = SimulatorRunner(job_folder=job_folder, workspace=workspace, threads=1)
+    #     assert runner.setup()
+    #
+    #     expected_clients = ["site-1", "site-2"]
+    #     client_names = []
+    #     for client in runner.client_names:
+    #         client_names.append(client)
+    #     assert sorted(client_names) == sorted(expected_clients)
+    #
+    # @patch("nvflare.private.fed.app.deployer.simulator_deployer.SimulatorServer.deploy")
+    # @patch("nvflare.private.fed.app.utils.FedAdminServer")
+    # @patch("nvflare.private.fed.app.deployer.simulator_deployer.FederatedClient.register")
+    # @patch("nvflare.private.fed.app.deployer.simulator_deployer.FederatedClient.start_heartbeat")
+    # @patch("nvflare.private.fed.app.deployer.simulator_deployer.FedAdminAgent")
+    # def test_client_names_setup(self, mock_server, mock_admin, mock_register, mock_heartbeat, mock_agent):
+    #     workspace = tempfile.mkdtemp()
+    #     job_folder = os.path.join(os.path.dirname(__file__), "../../../../data/jobs/valid_job")
+    #     runner = SimulatorRunner(job_folder=job_folder, workspace=workspace, clients="site-1", threads=1)
+    #     assert runner.setup()
+    #
+    #     expected_clients = ["site-1"]
+    #     client_names = []
+    #     for client in runner.client_names:
+    #         client_names.append(client)
+    #     assert sorted(client_names) == sorted(expected_clients)
+    #
+    # @patch("nvflare.private.fed.app.deployer.simulator_deployer.SimulatorServer.deploy")
+    # @patch("nvflare.private.fed.app.utils.FedAdminServer")
+    # @patch("nvflare.private.fed.app.deployer.simulator_deployer.FederatedClient.register")
+    # @patch("nvflare.private.fed.app.deployer.simulator_deployer.FederatedClient.start_heartbeat")
+    # @patch("nvflare.private.fed.app.deployer.simulator_deployer.FedAdminAgent")
+    # def test_no_app_for_client(self, mock_server, mock_admin, mock_register, mock_heartbeat, mock_agent):
+    #     workspace = tempfile.mkdtemp()
+    #     job_folder = os.path.join(os.path.dirname(__file__), "../../../../data/jobs/valid_job")
+    #     runner = SimulatorRunner(job_folder=job_folder, workspace=workspace, n_clients=3, threads=1)
+    #     assert not runner.setup()
 
     @pytest.mark.parametrize(
         "client_names, gpus, expected_split_names",

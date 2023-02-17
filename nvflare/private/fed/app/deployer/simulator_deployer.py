@@ -15,14 +15,13 @@
 import shutil
 import tempfile
 
-from nvflare.apis.event_type import EventType
+from nvflare.fuel.f3.cellnet.cell import Cell
+from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.network_utils import get_open_ports
-from nvflare.private.fed.app.utils import create_admin_server
-from nvflare.private.fed.client.admin import FedAdminAgent
-from nvflare.private.fed.client.admin_msg_sender import AdminMessageSender
-from nvflare.private.fed.client.client_req_processors import ClientRequestProcessors
-from nvflare.private.fed.client.fed_client import FederatedClient
-from nvflare.private.fed.simulator.simulator_client_engine import SimulatorClientEngine, SimulatorParentClientEngine
+from nvflare.private.fed.app.server.server_train import create_admin_server
+
+# from nvflare.private.fed.client.admin_msg_sender import AdminMessageSender
+from nvflare.private.fed.simulator.simulator_client_engine import SimulatorParentClientEngine
 from nvflare.private.fed.simulator.simulator_server import SimulatorServer
 
 from .base_client_deployer import BaseClientDeployer
@@ -40,7 +39,7 @@ class SimulatorDeployer(ServerDeployer):
 
         heart_beat_timeout = simulator_server.get("heart_beat_timeout", 600)
 
-        self.services = SimulatorServer(
+        services = SimulatorServer(
             project_name=simulator_server.get("name", ""),
             max_num_clients=simulator_server.get("max_num_clients", 100),
             cmd_modules=self.cmd_modules,
@@ -50,17 +49,20 @@ class SimulatorDeployer(ServerDeployer):
             overseer_agent=self.overseer_agent,
             heart_beat_timeout=heart_beat_timeout,
         )
+        services.deploy(args, grpc_args=simulator_server)
 
         admin_server = create_admin_server(
-            self.services,
+            services,
             server_conf=simulator_server,
             args=args,
             secure_train=False,
         )
         admin_server.start()
-        self.services.set_admin_server(admin_server)
+        services.set_admin_server(admin_server)
 
-        return simulator_server, self.services
+        # mpm.add_cleanup_cb(admin_server.stop)
+
+        return simulator_server, services
 
     def create_fl_client(self, client_name, args):
         client_config, build_ctx = self._create_simulator_client_config(client_name)
@@ -69,44 +71,44 @@ class SimulatorDeployer(ServerDeployer):
         deployer.build(build_ctx)
         federated_client = deployer.create_fed_client(args)
 
-        client_engine = SimulatorParentClientEngine()
-        federated_client.set_client_engine(client_engine)
+        self._create_client_cell(client_config, client_name, federated_client)
+
         federated_client.register()
-        federated_client.start_heartbeat()
+
+        client_engine = SimulatorParentClientEngine(federated_client, federated_client.token, args)
+        federated_client.set_client_engine(client_engine)
+        # federated_client.start_heartbeat()
         federated_client.run_manager = None
 
-        return federated_client, client_config, args
+        return federated_client, client_config, args, build_ctx
 
-    def create_admin_agent(self, server_args, federated_client: FederatedClient, args, rank=0):
-        sender = AdminMessageSender(
-            client_name=federated_client.token,
-            server_args=server_args,
-            secure=False,
+    def _create_client_cell(self, client_config, client_name, federated_client):
+        target = client_config["servers"][0].get("service").get("target")
+        scheme = client_config["servers"][0].get("service").get("scheme", "grpc")
+        credentials = {}
+        parent_url = None
+        cell = Cell(
+            fqcn=client_name,
+            root_url=scheme + "://" + target,
+            secure=self.secure_train,
+            credentials=credentials,
+            create_internal_listener=True,
+            parent_url=parent_url,
         )
-        client_engine = SimulatorClientEngine(federated_client, federated_client.token, sender, args, rank)
-        admin_agent = FedAdminAgent(
-            client_name="admin_agent",
-            sender=sender,
-            app_ctx=client_engine,
-        )
-        admin_agent.app_ctx.set_agent(admin_agent)
-        federated_client.set_client_engine(client_engine)
-        for processor in ClientRequestProcessors.request_processors:
-            admin_agent.register_processor(processor)
+        cell.start()
+        federated_client.cell = cell
+        federated_client.communicator.cell = cell
+        # if self.engine:
+        #     self.engine.admin_agent.register_cell_cb()
 
-        client_engine.fire_event(EventType.SYSTEM_START, client_engine.new_context())
-
-        return admin_agent
+        mpm.add_cleanup_cb(cell.stop)
 
     def _create_simulator_server_config(self, admin_storage, max_clients):
         simulator_server = {
             "name": "simulator_server",
             "service": {
                 "target": "localhost:" + str(self.open_ports[0]),
-                "options": [
-                    ["grpc.max_send_message_length", 2147483647],
-                    ["grpc.max_receive_message_length", 2147483647],
-                ],
+                "scheme": "tcp",
             },
             "admin_host": "localhost",
             "admin_port": self.open_ports[1],
@@ -126,10 +128,7 @@ class SimulatorDeployer(ServerDeployer):
                     "name": "simulator_server",
                     "service": {
                         "target": "localhost:" + str(self.open_ports[0]),
-                        "options": [
-                            ["grpc.max_send_message_length", 2147483647],
-                            ["grpc.max_receive_message_length", 2147483647],
-                        ],
+                        "scheme": "tcp",
                     },
                 }
             ],

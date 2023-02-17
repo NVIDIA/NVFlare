@@ -78,6 +78,7 @@ class BaseServer(ABC):
         max_num_clients=10,
         heart_beat_timeout=600,
         handlers: Optional[List[FLComponent]] = None,
+        shutdown_period=30.0,
     ):
         """Base server that provides the clients management and server deployment."""
         self.project_name = project_name
@@ -99,6 +100,7 @@ class BaseServer(ABC):
         self.snapshot_lock = Lock()
         self.fl_ctx = FLContext()
         self.platform = None
+        self.shutdown_period = shutdown_period
 
         self.shutdown = False
         self.status = ServerStatus.NOT_STARTED
@@ -207,13 +209,13 @@ class BaseServer(ABC):
         """
         pass
 
-    def fl_shutdown(self, shutdown_period=30.0):
+    def fl_shutdown(self):
         self.shutdown = True
         start = time.time()
         while self.client_manager.clients:
             # Wait for the clients to shutdown and quite first.
             time.sleep(0.1)
-            if time.time() - start > shutdown_period:
+            if time.time() - start > self.shutdown_period:
                 self.logger.info("There are still clients connected. But shutdown the server after timeout.")
                 break
         self.close()
@@ -234,6 +236,8 @@ class FederatedServer(BaseServer):
         secure_train=False,
         snapshot_persistor=None,
         overseer_agent=None,
+        shutdown_period=30.0,
+        check_engine_frequency=3.0,
     ):
         """Federated server services.
 
@@ -254,6 +258,7 @@ class FederatedServer(BaseServer):
             max_num_clients=max_num_clients,
             heart_beat_timeout=heart_beat_timeout,
             handlers=handlers,
+            shutdown_period=shutdown_period,
         )
 
         self.contributed_clients = {}
@@ -274,6 +279,7 @@ class FederatedServer(BaseServer):
         self.run_manager = None
         self.server_runner = None
         self.command_agent = None
+        self.check_engine_frequency = check_engine_frequency
 
         self.processors = {}
         self.runner_config = None
@@ -611,7 +617,7 @@ class FederatedServer(BaseServer):
                 if self.engine.asked_to_stop:
                     self.engine.engine_info.status = MachineStatus.STOPPED
 
-                time.sleep(3)
+                time.sleep(self.check_engine_frequency)
 
             # self.wait_engine_run_complete("Server Job", cleanup_grace_time=5.0)
 
@@ -752,11 +758,11 @@ class FederatedServer(BaseServer):
         self.status = ServerStatus.STOPPED
         self.logger.info("Server app stopped.\n\n")
 
-    def fl_shutdown(self, shutdown_period=30.0):
+    def fl_shutdown(self):
         self.engine.stop_all_jobs()
         self.engine.fire_event(EventType.SYSTEM_END, self.engine.new_context())
 
-        super().fl_shutdown(shutdown_period)
+        super().fl_shutdown()
 
     def close(self):
         """Shutdown the server."""
