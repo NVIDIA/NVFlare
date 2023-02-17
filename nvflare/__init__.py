@@ -15,3 +15,5 @@
 from . import _version
 
 __version__ = _version.get_versions()["version"]
+
+from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner

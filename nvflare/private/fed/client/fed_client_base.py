@@ -41,8 +41,6 @@ from .communicator import Communicator
 
 
 def _check_progress(remote_tasks):
-    # if remote_tasks[0] is not None:
-    #     return True, remote_tasks[0].task_name
     if remote_tasks[0] is not None:
         # shareable = fobs.loads(remote_tasks[0].payload)
         shareable = remote_tasks[0].payload
@@ -95,6 +93,8 @@ class FederatedClientBase:
         self.cell = cell
         self.net_agent = None
         self.args = args
+        self.engine_create_timeout = client_args.get("engine_create_timeout", 15.)
+        self.cell_check_frequency = client_args.get("cell_check_frequency", 0.5)
 
         self.communicator = Communicator(
             ssl_args=client_args,
@@ -168,64 +168,7 @@ class FederatedClientBase:
                     # self.cell.stop()
                     self.cell.change_server_root(scheme + "://" + location)
                 else:
-                    if self.args.job_id:
-                        fqcn = FQCN.join([self.client_name, self.args.job_id])
-                        parent_url = self.args.parent_url
-                    else:
-                        fqcn = self.client_name
-                        parent_url = None
-
-                    if self.secure_train:
-                        root_cert = self.client_args[SecureTrainConst.SSL_ROOT_CERT]
-                        ssl_cert = self.client_args[SecureTrainConst.SSL_CERT]
-                        private_key = self.client_args[SecureTrainConst.PRIVATE_KEY]
-
-                        credentials = {
-                            DriverParams.CA_CERT.value: root_cert,
-                            DriverParams.CLIENT_CERT.value: ssl_cert,
-                            DriverParams.CLIENT_KEY.value: private_key,
-                        }
-                    else:
-                        credentials = {}
-                    self.cell = Cell(
-                        fqcn=fqcn,
-                        root_url=scheme + "://" + location,
-                        secure=self.secure_train,
-                        credentials=credentials,
-                        create_internal_listener=True,
-                        parent_url=parent_url,
-                    )
-
-                    self.cell.start()
-                    self.communicator.cell = self.cell
-                    self.net_agent = NetAgent(self.cell)
-                    if self.args.job_id:
-                        start = time.time()
-                        while not self.client_runner:
-                            self.logger.info("Wait for client_runner to be created.")
-                            if time.time() - start > 15:
-                                raise RuntimeError(
-                                    "Failed to set the cell for engine: "
-                                    "timeout waiting for client_runner to be created."
-                                )
-                            time.sleep(0.5)
-                        self.client_runner.engine.cell = self.cell
-                        self.client_runner.command_agent.register_cell_cb()
-                    else:
-                        start = time.time()
-                        while not self.engine:
-                            self.logger.info("Wait for engine to be created.")
-                            if time.time() - start > 15:
-                                raise RuntimeError(
-                                    "Failed to set the cell for engine: " "timeout waiting for engine to be created."
-                                )
-                            time.sleep(0.5)
-
-                        self.engine.cell = self.cell
-                        self.engine.admin_agent.register_cell_cb()
-
-                    mpm.add_cleanup_cb(self.net_agent.close)
-                    mpm.add_cleanup_cb(self.cell.stop)
+                    self._create_cell(location, scheme)
 
                 self.logger.info(f"Got the new primary SP: {scheme + location}")
 
@@ -233,6 +176,63 @@ class FederatedClientBase:
                 self.ssid = sp.service_session_id
                 thread = threading.Thread(target=self._switch_ssid)
                 thread.start()
+
+    def _create_cell(self, location, scheme):
+        if self.args.job_id:
+            fqcn = FQCN.join([self.client_name, self.args.job_id])
+            parent_url = self.args.parent_url
+        else:
+            fqcn = self.client_name
+            parent_url = None
+        if self.secure_train:
+            root_cert = self.client_args[SecureTrainConst.SSL_ROOT_CERT]
+            ssl_cert = self.client_args[SecureTrainConst.SSL_CERT]
+            private_key = self.client_args[SecureTrainConst.PRIVATE_KEY]
+
+            credentials = {
+                DriverParams.CA_CERT.value: root_cert,
+                DriverParams.CLIENT_CERT.value: ssl_cert,
+                DriverParams.CLIENT_KEY.value: private_key,
+            }
+        else:
+            credentials = {}
+        self.cell = Cell(
+            fqcn=fqcn,
+            root_url=scheme + "://" + location,
+            secure=self.secure_train,
+            credentials=credentials,
+            create_internal_listener=True,
+            parent_url=parent_url,
+        )
+        self.cell.start()
+        self.communicator.cell = self.cell
+        self.net_agent = NetAgent(self.cell)
+        if self.args.job_id:
+            start = time.time()
+            while not self.client_runner:
+                self.logger.info("Wait for client_runner to be created.")
+                if time.time() - start > self.engine_create_timeout:
+                    raise RuntimeError(
+                        "Failed to set the cell for engine: "
+                        "timeout waiting for client_runner to be created."
+                    )
+                time.sleep(self.cell_check_frequency)
+            self.client_runner.engine.cell = self.cell
+            self.client_runner.command_agent.register_cell_cb()
+        else:
+            start = time.time()
+            while not self.engine:
+                self.logger.info("Wait for engine to be created.")
+                if time.time() - start > self.engine_create_timeout:
+                    raise RuntimeError(
+                        "Failed to set the cell for engine: " "timeout waiting for engine to be created."
+                    )
+                time.sleep(self.cell_check_frequency)
+
+            self.engine.cell = self.cell
+            self.engine.admin_agent.register_cell_cb()
+        mpm.add_cleanup_cb(self.net_agent.close)
+        mpm.add_cleanup_cb(self.cell.stop)
 
     def _switch_ssid(self):
         if self.engine:
@@ -276,7 +276,7 @@ class FederatedClientBase:
         """
         try:
             self.logger.debug("Starting to fetch execute task.")
-            task = self.communicator.get_task(self.servers, project_name, self.token, self.ssid, fl_ctx)
+            task = self.communicator.pull_task(self.servers, project_name, self.token, self.ssid, fl_ctx)
 
             return task
         except FLCommunicationError as e:

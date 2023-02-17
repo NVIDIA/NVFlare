@@ -144,11 +144,6 @@ class ClientManager:
 
             for token, client in self.clients.items():
                 if client.name == client_name:
-                    # context.set_prop(
-                    #     FLContextKey.COMMUNICATION_ERROR,
-                    #     "Client ID already registered as a client: {}".format(client_name),
-                    # )
-                    # return None
                     with self.lock:
                         self.clients.pop(token)
                         self.logger.info(

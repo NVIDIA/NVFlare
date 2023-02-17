@@ -108,7 +108,6 @@ def main():
         federated_client.use_gpu = False
         federated_client.config_folder = config_folder
 
-        # if rank == 0:
         start = time.time()
         while federated_client.cell is None:
             time.sleep(0.1)
@@ -134,14 +133,9 @@ def main():
             deployer.multi_gpu,
             rank,
         )
-        # admin_agent.start()
 
-        # while True:
-        #     time.sleep(1.0)
         while federated_client.status != ClientStatus.STOPPED:
             time.sleep(1.0)
-        # federated_client.cell.run()
-        # mpm.run("Client Main")
 
         deployer.close()
 
@@ -178,19 +172,6 @@ def create_admin_agent(
     Returns:
         A FedAdminAgent.
     """
-    root_cert = client_args[SSLConstants.ROOT_CERT] if secure_train else None
-    ssl_cert = client_args[SSLConstants.CERT] if secure_train else None
-    private_key = client_args[SSLConstants.PRIVATE_KEY] if secure_train else None
-    # sender = AdminMessageSender(
-    #     client_name=federated_client.token,
-    #     root_cert=root_cert,
-    #     ssl_cert=ssl_cert,
-    #     private_key=private_key,
-    #     server_args=server_args,
-    #     secure=secure_train,
-    #     is_multi_gpu=is_multi_gpu,
-    #     rank=rank,
-    # )
     client_engine = ClientEngine(federated_client, federated_client.token, args, rank)
     admin_agent = FedAdminAgent(
         client_name="admin_agent",

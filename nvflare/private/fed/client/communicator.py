@@ -145,7 +145,7 @@ class Communicator:
 
         return token, ssid
 
-    def get_task(self, servers, project_name, token, ssid, fl_ctx: FLContext):
+    def pull_task(self, servers, project_name, token, ssid, fl_ctx: FLContext):
         """Get a task from server.
 
         Args:
