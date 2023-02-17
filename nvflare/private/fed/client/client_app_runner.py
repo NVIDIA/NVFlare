@@ -39,7 +39,7 @@ class ClientAppRunner:
         while federated_client.communicator.cell is None:
             time.sleep(1.0)
             if time.time() - start > 60.0:
-                raise RuntimeError(f"No cell created for communicator. Failed to start the ClientAppRunner.")
+                raise RuntimeError("No cell created for communicator. Failed to start the ClientAppRunner.")
         federated_client.status = ClientStatus.STARTED
         client_runner.run(app_root, args)
 
@@ -101,7 +101,7 @@ class ClientAppRunner:
         while federated_client.cell is None:
             time.sleep(0.1)
             if time.time() - start > 60.0:
-                raise RuntimeError(f"No cell created. Failed to start the command_agent for ClientAppRunner.")
+                raise RuntimeError("No cell created. Failed to start the command_agent for ClientAppRunner.")
 
         # Start the command agent
         # self.command_agent = CommandAgent(federated_client, int(args.listen_port), client_runner)
