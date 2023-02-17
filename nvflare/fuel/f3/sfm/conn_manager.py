@@ -399,7 +399,7 @@ class ConnManager(ConnMonitor):
             old_state = sfm_endpoint.endpoint.state
             sfm_endpoint.remove_connection(sfm_conn)
 
-            state = EndpointState.READY if sfm_endpoint.sfm_conns else EndpointState.DISCONNECTED
+            state = EndpointState.READY if sfm_endpoint.connections else EndpointState.DISCONNECTED
             sfm_endpoint.endpoint.state = state
             if old_state != state:
                 self.notify_monitors(sfm_endpoint.endpoint)
