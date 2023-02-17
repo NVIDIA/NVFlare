@@ -275,7 +275,6 @@ class Session(SessionSpec):
         Returns: a dict of job meta data
 
         """
-        print("ASFDASLFKJAD")
         command = AdminCommandNames.LIST_JOBS
         if detailed:
             command = command + " -d"
