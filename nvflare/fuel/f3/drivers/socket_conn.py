@@ -53,7 +53,7 @@ class SocketConnection(Connection):
     def send_frame(self, frame: BytesAlike):
         try:
             self.sock.sendall(frame)
-        except BaseException as ex:
+        except Exception as ex:
             raise CommError(CommError.ERROR, f"Error sending frame: {ex}")
 
     def read_loop(self):
@@ -64,7 +64,7 @@ class SocketConnection(Connection):
                 log.info(f"Connection {self.name} is closed by peer")
             else:
                 log.error(f"Connection {self.name} is closed due to error: {error}")
-        except BaseException as ex:
+        except Exception as ex:
             if self.closing:
                 log.debug(f"Connection {self.name} is closed")
             else:

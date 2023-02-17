@@ -49,7 +49,7 @@ class TcpStreamServer(ThreadingTCPServer):
         try:
             self.server_bind()
             self.server_activate()
-        except BaseException as ex:
+        except Exception as ex:
             log.error(f"{os.getpid()}: Error binding to  {host}:{port}: {ex}")
             self.server_close()
             raise

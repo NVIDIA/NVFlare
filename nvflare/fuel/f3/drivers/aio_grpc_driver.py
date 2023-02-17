@@ -86,7 +86,7 @@ class AioStreamSession(Connection):
             seq = AioStreamSession.seq_num
             f = Frame(seq=seq, data=bytes(frame))
             self.aio_ctx.run_coro(self.oq.put(f))
-        except BaseException as ex:
+        except Exception as ex:
             if not self.closing:
                 raise CommError(CommError.ERROR, f"Error sending frame: {ex}")
 
@@ -104,7 +104,7 @@ class AioStreamSession(Connection):
             self.logger.debug(traceback.format_exc())
         except asyncio.CancelledError:
             self.logger.debug(f"{self}: RPC cancelled")
-        except BaseException as ex:
+        except Exception as ex:
             if not self.closing:
                 self.logger.error(f"{self}: exception {type(ex)} in read_loop: {ex}")
                 self.logger.debug(traceback.format_exc())
@@ -118,7 +118,7 @@ class AioStreamSession(Connection):
             while True:
                 item = await self.oq.get()
                 yield item
-        except BaseException as ex:
+        except Exception as ex:
             if self.closing:
                 self.logger.debug(f"{self}: connected closed by {type(ex)}: {ex}")
             else:
@@ -140,7 +140,7 @@ class Servicer(StreamerServicer):
             while True:
                 f = await connection.oq.get()
                 await grpc_context.write(f)
-        except BaseException as ex:
+        except Exception as ex:
             self.logger.error(f"_write_loop except: {type(ex)}: {ex}")
         self.logger.debug("finished _write_loop")
 
@@ -170,11 +170,11 @@ class Servicer(StreamerServicer):
                 await asyncio.gather(self._write_loop(connection, context), connection.read_loop(request_iterator))
             except asyncio.CancelledError:
                 self.logger.debug("SERVER: RPC cancelled")
-            except BaseException as ex:
+            except Exception as ex:
                 self.logger.error(f"await gather except: {type(ex)}: {ex}")
             self.logger.debug(f"SERVER: done await gather in thread {ct.name}")
 
-        except BaseException as ex:
+        except Exception as ex:
             self.logger.error(f"Connection closed due to error: {ex}")
         finally:
             if connection:
@@ -208,7 +208,7 @@ class Server:
                 self.grpc_server.add_secure_port(addr, server_credentials=credentials)
             else:
                 self.grpc_server.add_insecure_port(addr)
-        except BaseException as ex:
+        except Exception as ex:
             conn_ctx.error = f"cannot listen on {addr}: {type(ex)}: {ex}"
             self.logger.error(conn_ctx.error)
 
@@ -217,7 +217,7 @@ class Server:
         try:
             await self.grpc_server.start()
             await self.grpc_server.wait_for_termination()
-        except BaseException as ex:
+        except Exception as ex:
             conn_ctx.error = f"cannot start server: {type(ex)}: {ex}"
             raise ex
 
@@ -258,7 +258,7 @@ class AioGrpcDriver(BaseDriver):
             try:
                 conn_ctx.conn = True
                 await self.server.start(conn_ctx)
-            except BaseException as ex:
+            except Exception as ex:
                 if not self.closing:
                     self.logger.error(traceback.format_exc())
                 conn_ctx.error = f"failed to start server: {type(ex)}: {ex}"
@@ -315,7 +315,7 @@ class AioGrpcDriver(BaseDriver):
                     await connection.read_loop(msg_iter)
                 except asyncio.CancelledError as error:
                     self.logger.debug(f"CLIENT: RPC cancelled: {error}")
-                except BaseException as ex:
+                except Exception as ex:
                     if self.closing:
                         self.logger.debug(f"Connection {connection} closed by {type(ex)}: {ex}")
                     else:
@@ -327,7 +327,7 @@ class AioGrpcDriver(BaseDriver):
             connection.close()
         except asyncio.CancelledError:
             self.logger.debug("CLIENT: RPC cancelled")
-        except BaseException as ex:
+        except Exception as ex:
             conn_ctx.error = f"connection {connection} error: {type(ex)}: {ex}"
             if self.closing:
                 self.logger.debug(conn_ctx.error)
