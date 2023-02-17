@@ -57,10 +57,18 @@ class PackageChecker(ABC):
         command = self.get_dry_run_command()
         cmd = f"pkill -9 -f '{command}'"
         process = run_command_in_subprocess(cmd)
-        process.wait()
+        out, err = process.communicate()
+        print(f"killed dry run process output: {out}")
+        print(f"killed dry run process err: {err}")
 
     def check(self) -> int:
-        """Checks if the package is runnable on the current system."""
+        """Checks if the package is runnable on the current system.
+
+        Returns:
+            0: if no dry-run process started.
+            1: if the dry-run process is started and return code is 0.
+            2: if the dry-run process is started and return code is not 0.
+        """
         ret_code = 0
         try:
             all_passed = True
@@ -83,19 +91,27 @@ class PackageChecker(ABC):
             # check dry run
             if all_passed:
                 ret_code = self.check_dry_run()
-            return ret_code
         except Exception as e:
             self.add_report(
                 "Package Error",
                 f"Exception happens in checking: {e}, this package is not in correct format.",
                 "Please download a new package.",
             )
+        finally:
             return ret_code
 
     def check_dry_run(self) -> int:
+        """Runs dry run command.
+
+        Returns:
+            0: if no process started.
+            1: if the process is started and return code is 0.
+            2: if the process is started and return code is not 0.
+        """
         command = self.get_dry_run_command()
-        process = run_command_in_subprocess(command)
+        process = None
         try:
+            process = run_command_in_subprocess(command)
             out, _ = process.communicate(timeout=self.dry_run_timeout)
             ret_code = process.returncode
             if ret_code == 0:

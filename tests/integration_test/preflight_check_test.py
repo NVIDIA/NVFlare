@@ -94,6 +94,8 @@ def _filter_output(output):
             continue
         elif "killing dry run process" in line:
             continue
+        elif "killed dry run process" in line:
+            continue
         elif not line:
             continue
         lines.append(line)
@@ -114,7 +116,7 @@ def run_preflight_check_command_in_pseudo_terminal(package_path: str):
     with BytesIO() as output:
 
         def read(fd):
-            data = os.read(fd, 1024 * 1024 * 1024 * 1024)
+            data = os.read(fd, 1024 * 1024 * 1024)
             output.write(data)
             return data
 
