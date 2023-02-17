@@ -93,7 +93,7 @@ class FederatedClientBase:
         self.cell = cell
         self.net_agent = None
         self.args = args
-        self.engine_create_timeout = client_args.get("engine_create_timeout", 15.)
+        self.engine_create_timeout = client_args.get("engine_create_timeout", 15.0)
         self.cell_check_frequency = client_args.get("cell_check_frequency", 0.5)
 
         self.communicator = Communicator(
@@ -213,8 +213,7 @@ class FederatedClientBase:
                 self.logger.info("Wait for client_runner to be created.")
                 if time.time() - start > self.engine_create_timeout:
                     raise RuntimeError(
-                        "Failed to set the cell for engine: "
-                        "timeout waiting for client_runner to be created."
+                        "Failed to set the cell for engine: " "timeout waiting for client_runner to be created."
                     )
                 time.sleep(self.cell_check_frequency)
             self.client_runner.engine.cell = self.cell
