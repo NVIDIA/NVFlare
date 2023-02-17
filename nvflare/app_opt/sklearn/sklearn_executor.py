@@ -59,13 +59,13 @@ class SKLearnExecutor(Executor):
         fl_ctx.set_prop(AppConstants.CURRENT_ROUND, current_round)
         return current_round, dxo.data
 
-    def train(self, current_round, global_param) -> Shareable:
+    def train(self, current_round, global_param, fl_ctx: FLContext) -> Shareable:
         self._msg_log(f"Client {self.client_id} perform local train")
         # sklearn algorithms usually needs two different processing schemes
         # one for first round (generate initial centers for clustering, regular training for svm)
         # the other for following rounds (regular training for clustering, no further training for svm)
         # hence the current round is fed to learner to distinguish the two
-        params, model = self.learner.train(current_round, global_param)
+        params, model = self.learner.train(current_round, global_param, fl_ctx)
         # save model and return dxo containing the params
         self.save_model_local(model)
         dxo = DXO(data_kind=DataKind.WEIGHTS, data=params)
@@ -74,10 +74,10 @@ class SKLearnExecutor(Executor):
 
         return dxo.to_shareable()
 
-    def validate(self, current_round, global_param) -> Shareable:
+    def validate(self, current_round, global_param, fl_ctx: FLContext) -> Shareable:
         # retrieve current global center download from server's shareable
         self._msg_log(f"Client {self.client_id} perform local evaluation")
-        metrics, model = self.learner.validate(current_round, global_param)
+        metrics, model = self.learner.validate(current_round, global_param, fl_ctx)
         self.save_model_global(model)
         for key, value in metrics.items():
             self.log_value(key, value, current_round)
@@ -102,8 +102,8 @@ class SKLearnExecutor(Executor):
                 if current_round > 0:
                     # first round for parameter initialization
                     # no model evaluation
-                    self.validate(current_round, global_params)
-                return self.train(current_round, global_params)
+                    self.validate(current_round, global_params, fl_ctx)
+                return self.train(current_round, global_params, fl_ctx)
             else:
                 self.log_error(fl_ctx, f"Could not handle task: {task_name}")
                 return make_reply(ReturnCode.TASK_UNKNOWN)

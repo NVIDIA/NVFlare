@@ -36,7 +36,6 @@ class KMeansLearner(Learner):
         reassignment_ratio: int = 0,
     ):
         super().__init__()
-        self.fl_ctx = None
         self.data_path = data_path
         self.train_start = train_start
         self.train_end = train_end
@@ -58,7 +57,6 @@ class KMeansLearner(Learner):
         return {"train": train_data, "valid": valid_data}
 
     def initialize(self, fl_ctx: FLContext):
-        self.fl_ctx = fl_ctx
         data = self.load_data()
         self.train_data = data["train"]
         self.valid_data = data["valid"]
@@ -68,7 +66,7 @@ class KMeansLearner(Learner):
         # note that the model needs to be created every round
         # due to the available API for center initialization
 
-    def train(self, curr_round: int, global_param: Optional[dict] = None) -> Tuple[dict, dict]:
+    def train(self, curr_round: int, global_param: Optional[dict], fl_ctx: FLContext) -> Tuple[dict, dict]:
         # get training data, note that clustering is unsupervised
         # so only x_train will be used
         (x_train, y_train, train_size) = self.train_data
@@ -97,7 +95,7 @@ class KMeansLearner(Learner):
             params = {"center": center_local, "count": count_local}
         return params, kmeans
 
-    def validate(self, curr_round: int, global_param: Optional[dict] = None) -> Tuple[dict, dict]:
+    def validate(self, curr_round: int, global_param: Optional[dict], fl_ctx: FLContext) -> Tuple[dict, dict]:
         # local validation with global center
         # fit a standalone KMeans with just the given center
         center_global = global_param["center"]
@@ -110,8 +108,8 @@ class KMeansLearner(Learner):
         metrics = {"Homogeneity": homo}
         return metrics, kmeans_global
 
-    def finalize(self) -> None:
+    def finalize(self, fl_ctx: FLContext) -> None:
         # freeing resources in finalize
         del self.train_data
         del self.valid_data
-        self.log_info(self.fl_ctx, "Freed training resources")
+        self.log_info(fl_ctx, "Freed training resources")
