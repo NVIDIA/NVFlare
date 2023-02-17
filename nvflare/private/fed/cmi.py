@@ -15,11 +15,12 @@
 from abc import abstractmethod
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import ReturnCode, FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable, ReservedHeaderKey, make_reply
-from nvflare.fuel.f3.cellnet.cell import new_message, Message, ReturnCode as CellReturnCode, Cell, FQCN, \
-    MessageHeaderKey
+from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
+from nvflare.fuel.f3.cellnet.cell import FQCN, Cell, Message, MessageHeaderKey
+from nvflare.fuel.f3.cellnet.cell import ReturnCode as CellReturnCode
+from nvflare.fuel.f3.cellnet.cell import new_message
 from nvflare.private.defs import CellMessageHeaderKeys
 
 
@@ -44,51 +45,32 @@ class CellMessageInterface(FLComponent):
         CellReturnCode.INVALID_REQUEST: CellReturnCode.INVALID_REQUEST,
         CellReturnCode.INVALID_SESSION: CellReturnCode.INVALID_SESSION,
         CellReturnCode.AUTHENTICATION_ERROR: CellReturnCode.UNAUTHENTICATED,
-        CellReturnCode.SERVICE_UNAVAILABLE: CellReturnCode.SERVICE_UNAVAILABLE
+        CellReturnCode.SERVICE_UNAVAILABLE: CellReturnCode.SERVICE_UNAVAILABLE,
     }
 
     def __init__(
-            self,
-            engine,
+        self,
+        engine,
     ):
         FLComponent.__init__(self)
         self.engine = engine
         self.cell = engine.get_cell()
         self.ready = False
 
-        self.cell.add_incoming_request_filter(
-            channel="*",
-            topic="*",
-            cb=self._filter_incoming_request
-        )
+        self.cell.add_incoming_request_filter(channel="*", topic="*", cb=self._filter_incoming_request)
 
-        self.cell.add_outgoing_reply_filter(
-            channel="*",
-            topic="*",
-            cb=self._filter_outgoing_message
-        )
+        self.cell.add_outgoing_reply_filter(channel="*", topic="*", cb=self._filter_outgoing_message)
 
-        self.cell.add_outgoing_request_filter(
-            channel="*",
-            topic="*",
-            cb=self._filter_outgoing_message
-        )
+        self.cell.add_outgoing_request_filter(channel="*", topic="*", cb=self._filter_outgoing_message)
 
-        self.cell.add_incoming_reply_filter(
-            channel="*",
-            topic="*",
-            cb=self._filter_incoming_message
-        )
+        self.cell.add_incoming_reply_filter(channel="*", topic="*", cb=self._filter_incoming_message)
 
     def new_cmi_message(self, fl_ctx: FLContext, headers=None, payload=None):
         msg = new_message(headers, payload)
         msg.set_prop(self.PROP_KEY_FL_CTX, fl_ctx)
         return msg
 
-    def _filter_incoming_message(
-            self,
-            message: Message
-    ):
+    def _filter_incoming_message(self, message: Message):
         public_props = message.get_header(self.HEADER_KEY_PEER_PROPS)
         if public_props:
             peer_ctx = self._make_peer_ctx(public_props)
@@ -98,10 +80,7 @@ class CellMessageInterface(FLComponent):
             if public_props:
                 shareable.set_peer_props(public_props)
 
-    def _filter_incoming_request(
-            self,
-            message: Message
-    ):
+    def _filter_incoming_request(self, message: Message):
         self._filter_incoming_message(message)
         fl_ctx = self.engine.new_context()
         peer_ctx = message.get_prop(self.PROP_KEY_PEER_CTX)
@@ -110,10 +89,7 @@ class CellMessageInterface(FLComponent):
             fl_ctx.set_peer_context(peer_ctx)
         message.set_prop(self.PROP_KEY_FL_CTX, fl_ctx)
 
-    def _filter_outgoing_message(
-            self,
-            message: Message
-    ):
+    def _filter_outgoing_message(self, message: Message):
         fl_ctx = message.get_prop(self.PROP_KEY_FL_CTX)
         if fl_ctx:
             assert isinstance(fl_ctx, FLContext)
@@ -144,73 +120,46 @@ class CellMessageInterface(FLComponent):
 
     @abstractmethod
     def send_to_cell(
-            self,
-            targets: [],
-            channel: str,
-            topic: str,
-            request: Shareable,
-            timeout: float,
-            fl_ctx: FLContext,
-            bulk_send=False
+        self,
+        targets: [],
+        channel: str,
+        topic: str,
+        request: Shareable,
+        timeout: float,
+        fl_ctx: FLContext,
+        bulk_send=False,
     ) -> dict:
         pass
 
 
 class JobCellMessenger(CellMessageInterface):
-
-    def __init__(
-            self,
-            engine,
-            job_id: str
-    ):
+    def __init__(self, engine, job_id: str):
         super().__init__(engine)
 
         self.job_id = job_id
 
-        self.cell.add_incoming_request_filter(
-            channel="*",
-            topic="*",
-            cb=self._filter_incoming
-        )
-        self.cell.add_incoming_reply_filter(
-            channel="*",
-            topic="*",
-            cb=self._filter_incoming
-        )
-        self.cell.add_outgoing_request_filter(
-            channel="*",
-            topic="*",
-            cb=self._filter_outgoing
-        )
-        self.cell.add_outgoing_reply_filter(
-            channel="*",
-            topic="*",
-            cb=self._filter_outgoing
-        )
+        self.cell.add_incoming_request_filter(channel="*", topic="*", cb=self._filter_incoming)
+        self.cell.add_incoming_reply_filter(channel="*", topic="*", cb=self._filter_incoming)
+        self.cell.add_outgoing_request_filter(channel="*", topic="*", cb=self._filter_outgoing)
+        self.cell.add_outgoing_reply_filter(channel="*", topic="*", cb=self._filter_outgoing)
 
-    def _filter_incoming(
-            self,
-            message: Message
-    ):
+    def _filter_incoming(self, message: Message):
         job_id = message.get_header(self.HEADER_JOB_ID)
         if job_id and job_id != self.job_id:
             self.logger.error(f"received job id {job_id} != my job id {self.job_id}")
 
-    def _filter_outgoing(
-            self,
-            message: Message
-    ):
+    def _filter_outgoing(self, message: Message):
         message.set_header(self.HEADER_JOB_ID, self.job_id)
 
     def send_to_cell(
-            self,
-            targets: [],
-            channel: str,
-            topic: str,
-            request: Shareable,
-            timeout: float,
-            fl_ctx: FLContext,
-            bulk_send=False
+        self,
+        targets: [],
+        channel: str,
+        topic: str,
+        request: Shareable,
+        timeout: float,
+        fl_ctx: FLContext,
+        bulk_send=False,
     ) -> dict:
         """Send request to the job cells of other target sites.
         Args:
@@ -268,11 +217,7 @@ class JobCellMessenger(CellMessageInterface):
             cell_msg = self.new_cmi_message(fl_ctx, payload=request)
             if timeout > 0:
                 cell_replies = cell.broadcast_request(
-                    channel=channel,
-                    topic=topic,
-                    request=cell_msg,
-                    targets=target_fqcns,
-                    timeout=timeout
+                    channel=channel, topic=topic, request=cell_msg, targets=target_fqcns, timeout=timeout
                 )
 
                 replies = {}
@@ -293,12 +238,7 @@ class JobCellMessenger(CellMessageInterface):
                 return replies
             else:
                 if bulk_send:
-                    cell.queue_message(
-                        channel=channel,
-                        topic=topic,
-                        message=cell_msg,
-                        targets=target_fqcns
-                    )
+                    cell.queue_message(channel=channel, topic=topic, message=cell_msg, targets=target_fqcns)
                 else:
                     cell.fire_and_forget(
                         channel=channel,

@@ -23,6 +23,7 @@ from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.json_scanner import Node
 from nvflare.private.fed_json_config import FedJsonConfigurator
 from nvflare.private.json_configer import ConfigContext, ConfigError
+
 from .client_runner import ClientRunnerConfig
 
 
@@ -135,7 +136,9 @@ class ClientJsonConfigurator(FedJsonConfigurator):
             default_task_fetch_interval=self._default_task_fetch_interval,
         )
 
-        ConfigService.initialize(section_files={SystemConfigs.APPLICATION_CONF: os.path.basename(self.config_files[0])},
-                                 config_path=[self.args.workspace],
-                                 parsed_args=self.args,
-                                 var_dict=self.cmd_vars)
+        ConfigService.initialize(
+            section_files={SystemConfigs.APPLICATION_CONF: os.path.basename(self.config_files[0])},
+            config_path=[self.args.workspace],
+            parsed_args=self.args,
+            var_dict=self.cmd_vars,
+        )

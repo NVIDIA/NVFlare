@@ -38,7 +38,7 @@ class ClientAppRunner:
         start = time.time()
         while federated_client.communicator.cell is None:
             time.sleep(1.0)
-            if time.time() - start > 60.:
+            if time.time() - start > 60.0:
                 raise RuntimeError(f"No cell created for communicator. Failed to start the ClientAppRunner.")
         federated_client.status = ClientStatus.STARTED
         client_runner.run(app_root, args)
@@ -47,11 +47,7 @@ class ClientAppRunner:
 
     def create_client_runner(self, app_root, args, config_folder, federated_client, secure_train):
         client_config_file_name = os.path.join(app_root, args.client_config)
-        conf = ClientJsonConfigurator(
-            config_file_name=client_config_file_name,
-            args=args,
-            kv_list=args.set
-        )
+        conf = ClientJsonConfigurator(config_file_name=client_config_file_name, args=args, kv_list=args.set)
         conf.configure()
         workspace = Workspace(args.workspace, args.client_name, config_folder)
         app_custom_folder = workspace.get_client_custom_dir()
@@ -104,7 +100,7 @@ class ClientAppRunner:
         start = time.time()
         while federated_client.cell is None:
             time.sleep(0.1)
-            if time.time() - start > 60.:
+            if time.time() - start > 60.0:
                 raise RuntimeError(f"No cell created. Failed to start the command_agent for ClientAppRunner.")
 
         # Start the command agent

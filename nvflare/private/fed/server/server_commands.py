@@ -388,7 +388,7 @@ class ServerCommands(object):
     client_request_commands_names = [
         ServerCommandNames.GET_TASK,
         ServerCommandNames.SUBMIT_UPDATE,
-        ServerCommandNames.AUX_COMMUNICATE
+        ServerCommandNames.AUX_COMMUNICATE,
     ]
 
     @staticmethod

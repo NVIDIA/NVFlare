@@ -25,10 +25,10 @@ import psutil
 from nvflare.apis.fl_constant import JobConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
+from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
-from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger
 from nvflare.private.fed.server.server_app_runner import ServerAppRunner
@@ -109,15 +109,18 @@ def main():
             # create the FL server
             server_config, server = deployer.create_fl_server(args, secure_train=secure_train)
 
-            server.cell = server.create_job_cell(args.job_id, args.root_url, args.parent_url, secure_train, server_config)
+            server.cell = server.create_job_cell(
+                args.job_id, args.root_url, args.parent_url, secure_train, server_config
+            )
 
             snapshot = None
             if args.snapshot:
                 snapshot = server.snapshot_persistor.retrieve_run(args.job_id)
 
             server_app_runner = ServerAppRunner()
-            server_app_runner.start_server_app(workspace, server, args, args.app_root, args.job_id,
-                                               snapshot, logger, args.set)
+            server_app_runner.start_server_app(
+                workspace, server, args, args.app_root, args.job_id, snapshot, logger, args.set
+            )
         finally:
             if deployer:
                 deployer.close()
@@ -154,4 +157,3 @@ if __name__ == "__main__":
     mpm.run(main_func=main)
 
     # ternimate_process()
-

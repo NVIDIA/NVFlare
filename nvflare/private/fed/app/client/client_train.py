@@ -123,15 +123,10 @@ def main():
 
         federated_client.start_heartbeat()
 
-        servers = [{t["name"]: t["service"]} for t in deployer.server_config]
         admin_agent = create_admin_agent(
-            deployer.client_config,
             deployer.req_processors,
-            deployer.secure_train,
-            sorted(servers)[0],
             federated_client,
             args,
-            deployer.multi_gpu,
             rank,
         )
 
@@ -142,32 +137,22 @@ def main():
 
     except ConfigError as e:
         print(f"ConfigError: {secure_format_exception(e)}")
-    finally:
-        pass
 
     # sys.exit(0)
 
 
 def create_admin_agent(
-    client_args,
     req_processors,
-    secure_train,
-    server_args,
     federated_client: FederatedClient,
     args,
-    is_multi_gpu,
     rank,
 ):
     """Creates an admin agent.
 
     Args:
-        client_args: start client command args
         req_processors: request processors
-        secure_train: True/False
-        server_args: FL server args
         federated_client: FL client object
         args: command args
-        is_multi_gpu: True/False
         rank: client rank process number
 
     Returns:
@@ -176,7 +161,6 @@ def create_admin_agent(
     client_engine = ClientEngine(federated_client, federated_client.token, args, rank)
     admin_agent = FedAdminAgent(
         client_name="admin_agent",
-        # sender=sender,
         cell=federated_client.cell,
         app_ctx=client_engine,
     )

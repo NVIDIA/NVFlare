@@ -27,4 +27,3 @@ class FLCommunicationError(Exception):
         if exception:
             self.__dict__.update(exception.__dict__)
         self.message = message
-

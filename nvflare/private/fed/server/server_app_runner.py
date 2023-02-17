@@ -48,11 +48,7 @@ class ServerAppRunner:
         try:
             server_config_file_name = os.path.join(app_root, args.server_config)
 
-            conf = ServerJsonConfigurator(
-                config_file_name=server_config_file_name,
-                args=args,
-                kv_list=kv_list
-            )
+            conf = ServerJsonConfigurator(config_file_name=server_config_file_name, args=args, kv_list=kv_list)
             conf.configure()
 
             _set_up_run_config(workspace, server, conf)

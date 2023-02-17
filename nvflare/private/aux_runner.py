@@ -16,7 +16,7 @@ from threading import Lock
 
 from nvflare.apis.client import Client
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import ReturnCode, FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
@@ -25,7 +25,6 @@ from nvflare.private.fed.cmi import JobCellMessenger
 
 
 class AuxRunner(FLComponent):
-
     def __init__(self, engine):
         """To init the AuxRunner."""
         FLComponent.__init__(self)
@@ -77,8 +76,7 @@ class AuxRunner(FLComponent):
             return make_reply(ReturnCode.TOPIC_UNKNOWN)
 
         if not isinstance(request, Shareable):
-            self.log_error(fl_ctx,
-                           f"received invalid aux request: expects a Shareable but got {type(request)}")
+            self.log_error(fl_ctx, f"received invalid aux request: expects a Shareable but got {type(request)}")
             return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
         peer_props = request.get_peer_props()
@@ -117,13 +115,7 @@ class AuxRunner(FLComponent):
         return valid_reply
 
     def send_aux_request(
-            self,
-            targets: list,
-            topic: str,
-            request: Shareable,
-            timeout: float,
-            fl_ctx: FLContext,
-            bulk_send: bool = False
+        self, targets: list, topic: str, request: Shareable, timeout: float, fl_ctx: FLContext, bulk_send: bool = False
     ) -> dict:
         job_id = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
         cmi = JobCellMessenger(self.engine, job_id)
@@ -165,5 +157,5 @@ class AuxRunner(FLComponent):
             request=request,
             timeout=timeout,
             fl_ctx=fl_ctx,
-            bulk_send=bulk_send
+            bulk_send=bulk_send,
         )

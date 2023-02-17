@@ -374,9 +374,7 @@ class JobRunner(FLComponent):
                                 )
 
                             if failed_clients:
-                                deployable_clients = {
-                                    k: v for k, v in client_sites.items() if k not in failed_clients
-                                }
+                                deployable_clients = {k: v for k, v in client_sites.items() if k not in failed_clients}
                             else:
                                 deployable_clients = client_sites
 

@@ -15,15 +15,16 @@
 import copy
 import logging
 
-from nvflare.apis.fl_constant import ServerCommandKey, FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, ServerCommandKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.fuel.f3.cellnet.cell import Cell
-from nvflare.fuel.f3.cellnet.cell import Message as CellMessage, make_reply
-from nvflare.fuel.f3.cellnet.cell import MessageHeaderKey, ReturnCode
+from nvflare.fuel.f3.cellnet.cell import Message as CellMessage
+from nvflare.fuel.f3.cellnet.cell import MessageHeaderKey, ReturnCode, make_reply
 from nvflare.fuel.utils import fobs
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, new_cell_message
+
 from .server_commands import ServerCommands
 
 

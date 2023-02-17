@@ -136,7 +136,7 @@ class Communicator:
                 token = result.get_header(CellMessageHeaderKeys.TOKEN)
                 ssid = result.get_header(CellMessageHeaderKeys.SSID)
                 if not token and not self.should_stop:
-                    time.sleep(5)
+                    time.sleep(2)
                 else:
                     break
 
