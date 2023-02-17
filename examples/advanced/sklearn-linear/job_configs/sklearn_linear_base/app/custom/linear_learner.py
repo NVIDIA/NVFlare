@@ -35,7 +35,6 @@ class LinearLearner(Learner):
         random_state: int = None,
     ):
         super().__init__()
-        self.fl_ctx = None
         self.data_path = data_path
         self.train_start = train_start
         self.train_end = train_end
@@ -47,6 +46,7 @@ class LinearLearner(Learner):
         self.valid_data = None
         self.n_samples = None
         self.local_model = None
+        self.n_features = None
 
     def load_data(self) -> dict:
         train_data = load_data_for_range(self.data_path, self.train_start, self.train_end)
@@ -54,7 +54,6 @@ class LinearLearner(Learner):
         return {"train": train_data, "valid": valid_data}
 
     def initialize(self, fl_ctx: FLContext):
-        self.fl_ctx = fl_ctx
         data = self.load_data()
         self.train_data = data["train"]
         self.valid_data = data["valid"]
@@ -62,7 +61,7 @@ class LinearLearner(Learner):
         # NUM_STEPS_CURRENT_ROUND for potential aggregation
         self.n_samples = data["train"][-1]
         self.n_features = data["train"][0].shape[1]
-        # model will be created after receiving gobal parameters
+        # model will be created after receiving global parameters
 
     def set_parameters(self, params):
         self.local_model.coef_ = params["coef"]
@@ -85,8 +84,8 @@ class LinearLearner(Learner):
                 warm_start=True,
                 random_state=self.random_state,
             )
-            n_classes = global_param["n_classes"]  # Binary classification
-            self.local_model.classes_ = np.array([i for i in range(n_classes)])
+            n_classes = global_param["n_classes"]
+            self.local_model.classes_ = np.array(list(range(n_classes)))
             self.local_model.coef_ = np.zeros((1, self.n_features))
             if fit_intercept:
                 self.local_model.intercept_ = np.zeros((1,))
@@ -113,8 +112,8 @@ class LinearLearner(Learner):
         metrics = {"AUC": auc}
         return metrics, self.local_model
 
-    def finalize(self) -> None:
+    def finalize(self, fl_ctx: FLContext):
         # freeing resources in finalize
         del self.train_data
         del self.valid_data
-        self.log_info(self.fl_ctx, "Freed training resources")
+        self.log_info(fl_ctx, "Freed training resources")

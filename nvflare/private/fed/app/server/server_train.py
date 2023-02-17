@@ -23,10 +23,13 @@ import time
 from nvflare.apis.fl_constant import JobConstants, SiteType, WorkspaceConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
+from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
+from nvflare.fuel.hci.security import hash_password
 from nvflare.fuel.utils.argument_utils import parse_vars
-from nvflare.private.defs import AppFolderConstants
+from nvflare.private.defs import AppFolderConstants, SSLConstants
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger, create_privacy_manager
-from nvflare.private.fed.app.utils import create_admin_server
+from nvflare.private.fed.server.admin import FedAdminServer
+from nvflare.private.fed.server.fed_server import FederatedServer
 from nvflare.private.fed.server.server_status import ServerStatus
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize, security_init
 from nvflare.private.privacy_manager import PrivacyService
@@ -76,6 +79,7 @@ def main():
 
         conf = FLServerStarterConfiger(
             workspace=workspace,
+            args=args,
             kv_list=args.set,
         )
         log_level = os.environ.get("FL_LOG_LEVEL", "")
@@ -107,6 +111,7 @@ def main():
         privacy_manager = create_privacy_manager(workspace, names_only=True)
         PrivacyService.initialize(privacy_manager)
 
+        admin_server = None
         try:
             # Deploy the FL server
             services = deployer.deploy(args)
@@ -124,6 +129,8 @@ def main():
             admin_server.start()
             services.set_admin_server(admin_server)
 
+            # mpm.add_cleanup_cb(admin_server.stop)
+
         finally:
             deployer.close()
 
@@ -132,9 +139,12 @@ def main():
         # From Python 3.9 and above, the ThreadPoolExecutor does not allow submit() to create a new thread while the
         # main thread has exited. Use the ServerStatus.SHUTDOWN to keep the main thread waiting for the gRPC
         # server to be shutdown.
+        # services.wait_engine_run_complete("Server Main")
         while services.status != ServerStatus.SHUTDOWN:
             time.sleep(1.0)
 
+        if admin_server:
+            admin_server.stop()
         services.engine.close()
 
     except ConfigError as e:
@@ -142,9 +152,47 @@ def main():
         raise e
 
 
+def create_admin_server(fl_server: FederatedServer, server_conf=None, args=None, secure_train=False):
+    """To create the admin server.
+
+    Args:
+        fl_server: fl_server
+        server_conf: server config
+        args: command args
+        secure_train: True/False
+
+    Returns:
+        A FedAdminServer.
+    """
+    users = {}
+    # Create a default user admin:admin for the POC insecure use case.
+    if not secure_train:
+        users = {"admin": hash_password("admin")}
+
+    root_cert = server_conf[SSLConstants.ROOT_CERT] if secure_train else None
+    server_cert = server_conf[SSLConstants.CERT] if secure_train else None
+    server_key = server_conf[SSLConstants.PRIVATE_KEY] if secure_train else None
+    admin_server = FedAdminServer(
+        cell=fl_server.cell,
+        fed_admin_interface=fl_server.engine,
+        users=users,
+        cmd_modules=fl_server.cmd_modules,
+        file_upload_dir=os.path.join(args.workspace, server_conf.get("admin_storage", "tmp")),
+        file_download_dir=os.path.join(args.workspace, server_conf.get("admin_storage", "tmp")),
+        host=server_conf.get("admin_host", "localhost"),
+        port=server_conf.get("admin_port", 5005),
+        ca_cert_file_name=root_cert,
+        server_cert_file_name=server_cert,
+        server_key_file_name=server_key,
+        accepted_client_cns=None,
+        download_job_url=server_conf.get("download_job_url", "http://"),
+    )
+    return admin_server
+
+
 if __name__ == "__main__":
     """
     This is the main program when starting the NVIDIA FLARE server process.
     """
 
-    main()
+    mpm.run(main_func=main)

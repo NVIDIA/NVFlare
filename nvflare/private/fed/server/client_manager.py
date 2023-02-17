@@ -17,9 +17,12 @@ import threading
 import time
 import uuid
 
-import grpc
-
 from nvflare.apis.client import Client
+from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_context import FLContext
+from nvflare.fuel.f3.cellnet.defs import MessagePropKey
+from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.private.defs import CellMessageHeaderKeys
 
 
 class ClientManager:
@@ -45,20 +48,22 @@ class ClientManager:
         if not client:
             return None
 
-        client_ip = context.peer().split(":")[1]
+        # client_ip = context.peer().split(":")[1]
+        client_ip = request.get_header(CellMessageHeaderKeys.CLIENT_IP)
 
         if len(self.clients) >= self.max_num_clients:
-            context.abort(grpc.StatusCode.RESOURCE_EXHAUSTED, "Maximum number of clients reached")
+            # context.abort(grpc.StatusCode.RESOURCE_EXHAUSTED, "Maximum number of clients reached")
+            context.set_prop(FLContextKey.COMMUNICATION_ERROR, "Maximum number of clients reached", sticky=False)
 
         # new client will join the current round immediately
         with self.lock:
             self.clients.update({client.token: client})
             self.logger.info(
                 "Client: New client {} joined. Sent token: {}.  Total clients: {}".format(
-                    request.client_name + "@" + client_ip, client.token, len(self.clients)
+                    client.name + "@" + client_ip, client.token, len(self.clients)
                 )
             )
-        return client.token
+        return client
 
     def remove_client(self, token):
         """Remove a registered client.
@@ -77,30 +82,39 @@ class ClientManager:
             return client
 
     def login_client(self, client_login, context):
-        if not self.is_valid_task(client_login.meta.project):
-            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Requested task does not match the current server task")
+        if not self.is_valid_task(client_login.get_header(CellMessageHeaderKeys.PROJECT_NAME)):
+            # context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Requested task does not match the current server task")
+            context.set_prop(
+                FLContextKey.UNAUTHENTICATED, "Requested task does not match the current server task", sticky=False
+            )
         return self.authenticated_client(client_login, context)
 
-    def validate_client(self, client_state, context, allow_new=False):
+    def validate_client(self, request, fl_ctx: FLContext, allow_new=False):
         """Validate the client state message.
 
         Args:
             client_state: A ClientState message received by server
-            context: gRPC connection context
+            fl_ctx: FLContext
             allow_new: whether to allow new client. Note that its task should still match server's.
 
         Returns:
              client id if it's a valid client
         """
-        token = client_state.token
+        # token = client_state.token
+        token = request.get_header(CellMessageHeaderKeys.TOKEN)
         if not token:
-            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Could not read client uid from the payload")
+            # context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Could not read client uid from the payload")
+            fl_ctx.set_prop(FLContextKey.UNAUTHENTICATED, "Could not read client uid from the payload", sticky=False)
             client = None
-        elif not self.is_valid_task(client_state.meta.project):
-            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Requested task does not match the current server task")
+        elif not self.is_valid_task(request.get_header(CellMessageHeaderKeys.PROJECT_NAME)):
+            # context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Requested task does not match the current server task")
+            fl_ctx.set_prop(
+                FLContextKey.UNAUTHENTICATED, "Requested task does not match the current server task", sticky=False
+            )
             client = None
         elif not (allow_new or self.is_from_authorized_client(token)):
-            context.abort(grpc.StatusCode.UNAUTHENTICATED, "Unknown client identity")
+            # context.abort(grpc.StatusCode.UNAUTHENTICATED, "Unknown client identity")
+            fl_ctx.set_prop(FLContextKey.UNAUTHENTICATED, "Unknown client identity", sticky=False)
             client = None
         else:
             client = self.clients.get(token)
@@ -110,33 +124,32 @@ class ClientManager:
         """Use SSL certificate for authenticate the client.
 
         Args:
-            client_login: client login request
-            context: gRPC connection context
+            client_login: client login request Message
+            context: FL_Context
 
         Returns:
             Client object.
         """
-        client = self.clients.get(client_login.token)
+        client_name = client_login.get_header(CellMessageHeaderKeys.CLIENT_NAME)
+        client = self.clients.get(client_name)
         if not client:
-            cn_names = context.auth_context().get("x509_common_name")
-            if cn_names:
-                client_name = cn_names[0].decode("utf-8")
-                if client_login.client_name:
-                    if not client_login.client_name == client_name:
-                        context.abort(
-                            grpc.StatusCode.UNAUTHENTICATED, "client ID does not match the SSL certificate CN"
-                        )
-                        return None
-            else:
-                client_name = client_login.client_name
+            fqcn = client_login.get_prop(MessagePropKey.ENDPOINT).conn_props.get(DriverParams.PEER_CN.value)
+            if fqcn and fqcn != client_name:
+                context.set_prop(
+                    FLContextKey.UNAUTHENTICATED,
+                    f"Requested fqcn:{fqcn} does not match the client_name: {client_name}",
+                    sticky=False,
+                )
+                return None
 
             for token, client in self.clients.items():
                 if client.name == client_name:
-                    context.abort(
-                        grpc.StatusCode.FAILED_PRECONDITION,
-                        "Client ID already registered as a client: {}".format(client_name),
-                    )
-                    return None
+                    with self.lock:
+                        self.clients.pop(token)
+                        self.logger.info(
+                            f"Client: {client_name} already registered. Re-login the client " f"with a new token."
+                        )
+                        break
 
             client = Client(client_name, str(uuid.uuid4()))
         return client
@@ -158,15 +171,15 @@ class ClientManager:
         Returns:
             True if task name is the same as server's project name.
         """
-        return task.name == self.project_name
+        return task == self.project_name
 
-    def heartbeat(self, token, client_name, context):
+    def heartbeat(self, token, client_name, fl_ctx):
         """Update the heartbeat of the client.
 
         Args:
             token: client token
             client_name: client name
-            context: grpc context
+            fl_ctx: FLContext
 
         Returns:
             If a new client needs to be created.
@@ -181,12 +194,17 @@ class ClientManager:
             else:
                 for _token, _client in self.clients.items():
                     if _client.name == client_name:
-                        context.abort(
-                            grpc.StatusCode.FAILED_PRECONDITION,
+                        # context.abort(
+                        #     grpc.StatusCode.FAILED_PRECONDITION,
+                        #     "Client ID already registered as a client: {}".format(client_name),
+                        # )
+                        fl_ctx.set_prop(
+                            FLContextKey.COMMUNICATION_ERROR,
                             "Client ID already registered as a client: {}".format(client_name),
+                            sticky=False,
                         )
                         self.logger.info(
-                            "Failed to re-activate dead client:{} with token: {}. Client already exist.".format(
+                            "Failed to re-activate the client:{} with token: {}. Client already exist.".format(
                                 client_name, _token
                             )
                         )
@@ -196,7 +214,7 @@ class ClientManager:
                 client.last_connect_time = time.time()
                 # self._set_instance_name(client)
                 self.clients.update({token: client})
-                self.logger.info("Re-activate dead client:{} with token: {}".format(client_name, token))
+                self.logger.info("Re-activate the client:{} with token: {}".format(client_name, token))
 
                 return True
 

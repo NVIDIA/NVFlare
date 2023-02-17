@@ -84,6 +84,8 @@ class ServerDeployer:
             secure_train=secure_train,
             snapshot_persistor=self.snapshot_persistor,
             overseer_agent=self.overseer_agent,
+            shutdown_period=first_server.get("shutdown_period", 30.0),
+            check_engine_frequency=first_server.get("check_engine_frequency", 3.0),
         )
         return first_server, services
 

@@ -13,15 +13,16 @@
 # limitations under the License.
 
 
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, patch
 
-import nvflare.private.fed.protos.federated_pb2 as fed_msg
+from nvflare.private.defs import CellMessageHeaderKeys, new_cell_message
 from nvflare.private.fed.server.fed_server import FederatedServer
 
 
 class TestFederatedServer:
     def test_heart_beat_abort_jobs(self):
         with patch("nvflare.private.fed.server.fed_server.ServerEngine") as mock_engine:
+
             server = FederatedServer(
                 project_name="project_name",
                 min_num_clients=1,
@@ -34,7 +35,16 @@ class TestFederatedServer:
                 overseer_agent=MagicMock(),
             )
 
-            request = Mock(token="token", jobs=["extra_job"])
-            context = MagicMock()
-            expected = fed_msg.FederatedSummary(abort_jobs=["extra_job"])
-            assert server.Heartbeat(request, context) == expected
+            request = new_cell_message(
+                {
+                    CellMessageHeaderKeys.TOKEN: "token",
+                    CellMessageHeaderKeys.SSID: "ssid",
+                    CellMessageHeaderKeys.CLIENT_NAME: "client_name",
+                    CellMessageHeaderKeys.PROJECT_NAME: "task_name",
+                    CellMessageHeaderKeys.JOB_IDS: ["extra_job"],
+                }
+            )
+
+            result = server.client_heartbeat(request)
+            expected = ["extra_job"]
+            assert result.get_header(CellMessageHeaderKeys.ABORT_JOBS, []) == expected
