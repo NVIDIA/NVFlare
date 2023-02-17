@@ -25,6 +25,7 @@ clone NVFLARE repo to get examples, switch main branch (latest stable branch)
 .. code-block:: shell
 
   $ git clone https://github.com/NVIDIA/NVFlare.git
+  $ cd NVFlare
   $ git switch main
 
 #. **Quick start with CLI**
@@ -33,13 +34,13 @@ clone NVFLARE repo to get examples, switch main branch (latest stable branch)
 
 .. code-block:: shell
   $ mkdir -p /tmp/nvflare
-  $ python3 -m pip install -r NVFlare/examples/hello-world/hello-numpy-sag/requirements.txt
+  $ python3 -m pip install -r examples/hello-world/hello-numpy-sag/requirements.txt
 
    * **Quick Start with Simulator**
 
 .. code-block:: shell
 
-   nvflare simulator -w /tmp/nvflare/ -n 2 -t 2 hello-numpy-sag
+   nvflare simulator -w /tmp/nvflare/ -n 2 -t 2 examples/hello-world/hello-numpy-sag
 
    watch the simulator run two clients (n = 2) with two threads (t = 2) and logs are saved in the /tmp/nvflare workspace
 
