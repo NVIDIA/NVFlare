@@ -82,25 +82,25 @@ $ nvflare poc --stop
 
 ### Release 2.3.0
 
-* Cloud Deployment Support
+* **Cloud Deployment Support**
 
   we expand the user support for cloud deployments in both Azure and AWS. 
 
-* Python version Support
+* **Python version Support**
 
   Flare expand the python version support to include 3.9 and 3.10. We also dropped the Python 3.7 support
   
-* Flare API 
+* **Flare API** 
   
   To add an improved version of Admin API to make it easier to use in notebook env. The current admin APIs still work.
   we potentially could deprecate the old Admin API in the future. FLARE API currently support selected commands of admin APIs 
 
-* sign custom code
+* **Sign custom code**
   Before a job is submitted to the server, the submitter's private key is used to sign
   each file's digest.  Each folder has one signature file, which maps file names to signatures
   of all files inside that folder.  The verification is performed at deployment time. 
 
-* Support client-site model initialization
+* **Support client-site model initialization**
   In most of federated deep learning Scatter and Gather pattern (SAG) workflow pattern, 
   we requires all the clients starts with global initial mode. Prior to FLARE 2.3.0, the model initialization is performed 
   on the server-side, where the model file or custom model initiation code is performed on FL server.
@@ -110,7 +110,7 @@ $ nvflare poc --stop
   FLARE 2.3.0, allows user to initialize model on the client side, the Flare server will either can select the initial model based
   on user-choose strategy (random one or some aggregation)
 
-* Tradition Machine Learning Examples 
+* **Tradition Machine Learning Examples** 
   We add several examples to support federated learning using traditional machine learning algorithms. 
   In particular, 
   * scikit-learn linear model ( linea and logistics regression )
@@ -118,15 +118,15 @@ $ nvflare poc --stop
   * scikit-learn K-Means
   * XGBoost Random Forest
 
-* Vertical Learning
-  * Private-Set Intersection -- support multi-party private set intersection 
-  * Split-Learning 
+* **Vertical Learning**
+  * **Private-Set Intersection** -- support multi-party private set intersection 
+  * **Split-Learning** 
 
-* Research Area
+* **Research Area**
   * FedSM 
   * Data privacy detection tool
 
-* FLARE Communication
+* **FLARE Communication**
   * we laid some ground work in FLARE communication layer. The new communication will be ready in next release.   
   
     
