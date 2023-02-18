@@ -44,7 +44,7 @@ class CommConfigurator:
             except FileNotFoundError:
                 self.logger.debug(f"config file {file_name} not found from config path")
                 config = None
-            except BaseException as ex:
+            except Exception as ex:
                 self.logger.error(f"failed to load config file {file_name}: {ex}")
                 config = None
         self.config = config
