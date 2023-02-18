@@ -1,6 +1,13 @@
 **NV**IDIA **F**ederated **L**earning **A**pplication **R**untime **E**nvironment
 
 
+## Mission
+
+Bring privacy preserved compute& Machine learning to data in a federated setting, keep it simple and production ready
+
+----
+
+
 [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) enables researchers to collaborate and build AI models without sharing private data. 
 
 NVIDIA FLARE is a standalone python library designed to enable federated learning amongst different parties using their local secure protected data for client-side training, at the same time it includes capabilities to coordinate and exchange progressing of results across all sites to achieve better global model while preserving data privacy. The participating clients can be in any part of the world. 
