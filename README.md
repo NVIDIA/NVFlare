@@ -1,11 +1,11 @@
-**NV**IDIA **F**ederated **L**earning **A**pplication **R**untime **E**nvironment
-
 
 ## Mission
 
 Bring privacy preserved compute& Machine learning to data in a federated setting, keep it simple and production ready
 
 ----
+
+**NV**IDIA **F**ederated **L**earning **A**pplication **R**untime **E**nvironment
 
 
 [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) enables researchers to collaborate and build AI models without sharing private data. 
