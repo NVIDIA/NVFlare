@@ -93,7 +93,7 @@ class AioContext:
         with cls._ctx_lock:
             if not cls._global_ctx:
                 cls._global_ctx = AioContext(f"Ctx_{os.getpid()}")
-                t = threading.Thread(target=cls._global_ctx.run_aio_loop)
+                t = threading.Thread(target=cls._global_ctx.run_aio_loop, name="aio_ctx")
                 t.daemon = True
                 t.start()
         return cls._global_ctx
