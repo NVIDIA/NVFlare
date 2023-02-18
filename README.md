@@ -21,7 +21,7 @@ pip install nvflare
 ## Quick Start
 The quick start guide means to help the user get FLARE up & running quickly without introducing any advanced concepts. For more details, refer to [Getting Started](https://nvflare.readthedocs.io/en/main/getting_started.html)
 Since FLARE offers different modes of running the system, we only cover the simplest approaches here. This quick start guide uses the examples/hello-world/hello-numpy-sag as an example. You will find the details in the example's README.md file.
-We also assume you have worked with Python, already set up the virtual env. If you are new to this, please refer :ref:`getting_started`.
+We also assume you have worked with Python, already set up the virtual env. If you are new to this, please refer [Getting Started](https://nvflare.readthedocs.io/en/main/getting_started.html).
 
 #### Install NVFLARE
 ```
