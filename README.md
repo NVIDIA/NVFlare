@@ -5,7 +5,7 @@ Bring privacy preserved compute& Machine learning to data in a federated setting
 
 ----
 
-## **NV**IDIA **F**ederated **L**earning **A**pplication **R**untime **E**nvironment
+**NV**IDIA **F**ederated **L**earning **A**pplication **R**untime **E**nvironment
 
 
 [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) enables researchers to collaborate and build AI models without sharing private data. 
