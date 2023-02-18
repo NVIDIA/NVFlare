@@ -89,10 +89,11 @@ class ModuleScanner:
         self.exclude_libs = exclude_libs
 
         self._logger = logging.getLogger(self.__class__.__name__)
-        self._class_table: Dict[str, _ModuleScanResult] = {}
+        self._class_table: Dict[str, str] = {}
         self._create_classes_table()
 
     def _create_classes_table(self):
+        scan_result_table = {}
         for base in self.base_pkgs:
             package = importlib.import_module(base)
 
@@ -111,15 +112,27 @@ class ModuleScanner:
                                         and inspect.isclass(obj)
                                         and obj.__module__ == module_name
                                     ):
-                                        scan_result = self._class_table.get(name, _ModuleScanResult(class_name=name))
+                                        scan_result = scan_result_table.get(name, _ModuleScanResult(class_name=name))
                                         scan_result.add_module(module_name)
-                                        self._class_table[name] = scan_result
+                                        scan_result_table[name] = scan_result
                             except (ModuleNotFoundError, RuntimeError) as e:
                                 self._logger.debug(
                                     f"Try to import module {module_name}, but failed: {e}. "
                                     f"Can't use name in config to refer to classes in module: {module_name}."
                                 )
                                 pass
+        self._class_table = self._get_class_table_from_scan_result(scan_result_table)
+
+    @staticmethod
+    def _get_class_table_from_scan_result(scan_result_table: Dict[str, _ModuleScanResult]) -> Dict[str, str]:
+        class_table = {}
+        for class_name, scan_result in scan_result_table.items():
+            if len(scan_result.modules) != 1:
+                for module_name in scan_result.modules:
+                    class_table[f"{module_name}.{class_name}"] = module_name
+            else:
+                class_table[class_name] = scan_result.modules[0]
+        return class_table
 
     def get_module_name(self, class_name) -> Optional[str]:
         """Gets the name of the module that contains this class.
@@ -130,12 +143,4 @@ class ModuleScanner:
         Returns:
             The module name if found.
         """
-        if class_name not in self._class_table:
-            return None
-        scan_result = self._class_table[class_name]
-        module_name = scan_result.modules[0]
-        if len(scan_result.modules) != 1:
-            self._logger.warning(
-                f"More than 1 module contains class {class_name}. The first module: {module_name} is used."
-            )
-        return module_name
+        return self._class_table.get(class_name, None)
