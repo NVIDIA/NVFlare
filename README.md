@@ -1,7 +1,7 @@
 
 ## Mission
 
-Bring privacy preserved compute& Machine learning to data in a federated setting, keep it simple and production ready
+Bring privacy preserved compute and Machine learning to data in a federated setting, keep it simple and production ready
 
 ----
 
@@ -95,7 +95,7 @@ $ nvflare poc --stop
 
 * **Python version Support**
 
-  Flare expand the python version support to include 3.9 and 3.10. We also dropped the Python 3.7 support
+  Flare expand the python version support and dropped the Python 3.7 support, FLARE 2.3.0 will support 3.8, 3.9, 3.10
   
 * **Flare API** 
   
@@ -108,13 +108,11 @@ $ nvflare poc --stop
   of all files inside that folder.  The verification is performed at deployment time. 
 
 * **Support client-site model initialization**
-  In most of federated deep learning Scatter and Gather pattern (SAG) workflow pattern, 
-  we requires all the clients starts with global initial mode. Prior to FLARE 2.3.0, the model initialization is performed 
-  on the server-side, where the model file or custom model initiation code is performed on FL server.
-  Pre-defining a model file seems to be a hassle. Many choose to run a custom model initialization code on server. 
-  But this, to some customers, could be a security risk.
+  Prior to FLARE 2.3.0, the model initialization is performed on the server-side.
+  The model is either initialized via model file or custom model initiation code. Pre-defining a model file means to pre-generate and save the model file and then send over to the server.  
+  Many users choose to run a custom model initialization code on server. But this, to some customers, could be a security risk.
   
-  FLARE 2.3.0, allows user to initialize model on the client side, the Flare server will either can select the initial model based
+  FLARE 2.3.0, introduce another way to initialize model on the client side, the Flare server will either can select the initial model based
   on user-choose strategy (random one or some aggregation)
 
 * **Tradition Machine Learning Examples** 
