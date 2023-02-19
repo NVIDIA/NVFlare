@@ -90,7 +90,6 @@ There are two way of provisions: CLI and Flare Dashboard (UI Application), we ar
 
 
 * **provision**
----------------
 
 ```shell
 $ cd /tmp
