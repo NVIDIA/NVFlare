@@ -98,7 +98,7 @@ You can use poc command to shutdown clients and server
 **Quick start with Production Mode**
 ====================================
 
-   Before you can experiment with production mode, you need to first **provision**, a process to generate **startup kit**.
+   Before you work in production mode, you need to first **provision**, a process to generate **startup kit**.
    Startup kits are set of start scripts, configuration and certificates associated with different sites and server.
    In this quick guide, we only show None-HA (non high availability mode), we will only have one FL server.
 

@@ -80,6 +80,78 @@ You can use poc command to shutdown clients and server
 $ nvflare poc --stop  
 ``` 
 
+#### **Quick start with Production Mode**
+
+Before you work in production mode, you need to first **provision**: a process to generate **startup kit**.
+Startup kits are set of start scripts, configuration and certificates associated with different user, sites, server.
+In this quick guide, we only show None-HA (non high availability mode), we will only have one FL server.
+
+There are two way of provisions: CLI and Flare Dashboard (UI Application), we are going to use CLI here.
+
+
+* **provision**
+---------------
+
+```shell
+$ cd /tmp
+$ nvflare provision
+```
+
+select 2 for non-HA mode.  If you will generate a project.yml in the current directory. This will be the base configuration
+files for provision. By default, the project.yml will have one server and two clients pre-defined
+
+* server1
+* site-1
+* site-2
+
+Now we are ready to provision,
+
+```shell
+$ cd /tmp
+$ nvflare provision -p project.yml
+```
+
+it will generate startup kits in the following directory
+
+```
+/tmp/workspace/example_project/prod_00
+```
+
+* **start Flare Server, Clients, Flare Console**
+
+First start FL Server, open a new **terminal** for server
+
+```shell
+$ cd /tmp/workspace/example_project/prod_00
+$ ./server1/startup/start.sh
+```
+
+
+Next start Site-1 and Site-2, open a new **terminal** for each site
+in site-1 terminal:
+
+```shell
+$ cd /tmp/workspace/example_project/prod_00
+$ ./site-1/startup/start.sh
+```
+
+in site-2 terminal:
+
+```shell
+$ cd /tmp/workspace/example_project/prod_00
+$ ./site-2/startup/start.sh
+```
+
+Next finally for Flare console, open a new **terminal**
+
+```shell
+$ cd /tmp/workspace/example_project/prod_00
+$ ./admin@nvidia.com/startup/fl_admin.sh
+``` 
+Once console started, you can use check-status command just like POC mode
+
+
+
 ## Getting Started
  For understand the concepts, details of above commands, examples, you can look into the following topics
  * [Getting Started](https://nvflare.readthedocs.io/en/main/getting_started.html)
