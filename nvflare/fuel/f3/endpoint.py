@@ -24,13 +24,17 @@ class EndpointState(IntEnum):
 
 
 class Endpoint:
+    """Endpoint represents a logical party in the SFM network. For each communicator,
+    there is only one local endpoint. There may be multiple remote endpoints.
+    A remote endpoint may be reachable through multiple connections"""
+
     def __init__(self, name: str, properties: dict = None, conn_props: dict = None):
         """Construct an endpoint
 
         Args:
             name: The endpoint name
             properties: Public properties exchanged with peer
-            conn_props: Connection related properties
+            conn_props: Connection properties and local credentials like certificates
 
         Raises:
             CommError: If any error happens while sending the request

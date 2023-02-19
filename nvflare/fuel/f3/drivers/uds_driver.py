@@ -40,7 +40,7 @@ class SocketStreamServer(ThreadingUnixStreamServer):
         try:
             self.server_bind()
             self.server_activate()
-        except BaseException as ex:
+        except Exception as ex:
             log.error(f"Error binding to the path {path}: {ex}")
             self.server_close()
             raise ex
