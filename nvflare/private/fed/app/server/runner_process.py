@@ -17,10 +17,7 @@
 import argparse
 import logging
 import os
-import signal
 import sys
-
-import psutil
 
 from nvflare.apis.fl_constant import JobConstants
 from nvflare.apis.workspace import Workspace
