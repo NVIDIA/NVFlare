@@ -17,6 +17,7 @@ from abc import abstractmethod
 
 import numpy as np
 import torch
+
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.shareable import make_reply
 from nvflare.apis.signal import Signal
@@ -84,74 +85,53 @@ class PTFedSMHelper(object):
         self.select_model_epochs = select_model_epochs
         # check criterion, model, and optimizer type
         if not isinstance(self.person_model, torch.nn.Module):
-            raise ValueError(
-                f"person_model component must be torch model. "
-                f"But got: {type(self.person_model)}"
-            )
+            raise ValueError(f"person_model component must be torch model. " f"But got: {type(self.person_model)}")
         if not isinstance(self.select_model, torch.nn.Module):
-            raise ValueError(
-                f"select_model component must be torch model. "
-                f"But got: {type(self.select_model)}"
-            )
+            raise ValueError(f"select_model component must be torch model. " f"But got: {type(self.select_model)}")
         if not isinstance(self.person_criterion, torch.nn.modules.loss._Loss):
             raise ValueError(
-                f"person_criterion component must be torch loss. "
-                f"But got: {type(self.person_criterion)}"
+                f"person_criterion component must be torch loss. " f"But got: {type(self.person_criterion)}"
             )
         if not isinstance(self.select_criterion, torch.nn.modules.loss._Loss):
             raise ValueError(
-                f"select_criterion component must be torch loss. "
-                f"But got: {type(self.select_criterion)}"
+                f"select_criterion component must be torch loss. " f"But got: {type(self.select_criterion)}"
             )
         if not isinstance(self.person_optimizer, torch.optim.Optimizer):
             raise ValueError(
-                f"person_optimizer component must be torch optimizer. "
-                f"But got: {type(self.person_optimizer)}"
+                f"person_optimizer component must be torch optimizer. " f"But got: {type(self.person_optimizer)}"
             )
         if not isinstance(self.select_optimizer, torch.optim.Optimizer):
             raise ValueError(
-                f"select_optimizer component must be torch optimizer. "
-                f"But got: {type(self.select_optimizer)}"
+                f"select_optimizer component must be torch optimizer. " f"But got: {type(self.select_optimizer)}"
             )
         if not isinstance(self.device, torch.device):
-            raise ValueError(
-                f"device component must be torch device. "
-                f"But got: {type(self.device)}"
-            )
+            raise ValueError(f"device component must be torch device. " f"But got: {type(self.device)}")
 
         # initialize other recording related parameters
         # save personalized model to local file
         # note: global and selector model saved on server
-        self.person_epoch_global = 0
-        self.person_epoch_of_start_time = 0
-        self.select_epoch_global = 0
-        self.select_epoch_of_start_time = 0
         self.person_best_metric = 0
         self.person_model_file_path = os.path.join(app_dir, "personalized_model.pt")
-        self.best_person_model_file_path = os.path.join(
-            app_dir, "best_personalized_model.pt"
-        )
+        self.best_person_model_file_path = os.path.join(app_dir, "best_personalized_model.pt")
 
-    def save_person_model(self, is_best=False):
+    def save_person_model(self, current_round, is_best=False):
         # save personalized model locally
         model_weights = self.person_model.state_dict()
-        save_dict = {"model": model_weights, "epoch": self.person_epoch_global}
+        save_dict = {"model": model_weights, "epoch": current_round}
         if is_best:
             save_dict.update({"best_metric": self.person_best_metric})
             torch.save(save_dict, self.best_person_model_file_path)
         else:
             torch.save(save_dict, self.person_model_file_path)
 
-    def local_train_select(
-        self, train_loader, select_label, abort_signal: Signal, writer
-    ):
+    def local_train_select(self, train_loader, select_label, abort_signal: Signal, writer, current_round):
         # Train selector model in full batch manner, and keep track of curves
         for epoch in range(self.select_model_epochs):
             if abort_signal.triggered:
                 return make_reply(ReturnCode.TASK_ABORTED)
             self.select_model.train()
             epoch_len = len(train_loader)
-            self.select_epoch_global = self.select_epoch_of_start_time + epoch
+            epoch_global = current_round * self.select_model_epochs + epoch
             for i, batch_data in enumerate(train_loader):
                 if abort_signal.triggered:
                     return make_reply(ReturnCode.TASK_ABORTED)
@@ -163,13 +143,11 @@ class PTFedSMHelper(object):
                 outputs = self.select_model(inputs)
                 loss = self.select_criterion(outputs, labels)
                 loss.backward()
-                current_epoch = self.select_epoch_global + epoch
-                current_step = epoch_len * current_epoch + i
+                current_step = epoch_len * epoch_global + i
                 writer.add_scalar("train_loss_selector", loss.item(), current_step)
             # Full batch training, 1 step per epoch
             self.select_optimizer.step()
             self.select_optimizer.zero_grad()
-        self.select_epoch_of_start_time += self.select_model_epochs
 
     def local_valid_select(
         self,
@@ -178,7 +156,7 @@ class PTFedSMHelper(object):
         abort_signal: Signal,
         tb_id=None,
         writer=None,
-        record_epoch=None,
+        current_round=None,
     ):
         # Validate selector model
         self.select_model.eval()
@@ -201,14 +179,14 @@ class PTFedSMHelper(object):
             metric /= len(valid_loader)
             # tensorboard record id, add to record if provided
             if tb_id:
-                writer.add_scalar(tb_id, metric, record_epoch)
+                writer.add_scalar(tb_id, metric, current_round)
         return metric
 
-    def update_metric_save_person_model(self, metric):
-        self.save_person_model(is_best=False)
+    def update_metric_save_person_model(self, current_round, metric):
+        self.save_person_model(current_round, is_best=False)
         if metric > self.person_best_metric:
             self.person_best_metric = metric
-            self.save_person_model(is_best=True)
+            self.save_person_model(current_round, is_best=True)
 
     @abstractmethod
     def local_train_person(self, train_loader, abort_signal: Signal, writer):

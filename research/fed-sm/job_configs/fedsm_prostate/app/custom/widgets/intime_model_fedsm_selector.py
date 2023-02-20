@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import numpy as np
+
 from nvflare.apis.dxo import DataKind, MetaKey, from_shareable
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
@@ -126,13 +127,9 @@ class IntimeModelFedSMSelector(FLComponent):
         aggregation_weights = self.aggregation_weights.get(client_name, 1.0)
         self.log_debug(fl_ctx, f"aggregation weight: {aggregation_weights}")
 
-        self.validation_mertic_global_weighted_sum += (
-            validation_metric[0] * n_iter * aggregation_weights
-        )
+        self.validation_mertic_global_weighted_sum += validation_metric[0] * n_iter * aggregation_weights
         self.validation_metric_global_sum_of_weights += n_iter
-        self.validation_mertic_select_weighted_sum += (
-            validation_metric[1] * n_iter * aggregation_weights
-        )
+        self.validation_mertic_select_weighted_sum += validation_metric[1] * n_iter * aggregation_weights
         self.validation_metric_select_sum_of_weights += n_iter
         return True
 
@@ -145,12 +142,10 @@ class IntimeModelFedSMSelector(FLComponent):
             return False
 
         self.val_metric_global = (
-            self.validation_mertic_global_weighted_sum
-            / self.validation_metric_global_sum_of_weights
+            self.validation_mertic_global_weighted_sum / self.validation_metric_global_sum_of_weights
         )
         self.val_metric_select = (
-            self.validation_mertic_select_weighted_sum
-            / self.validation_metric_select_sum_of_weights
+            self.validation_mertic_select_weighted_sum / self.validation_metric_select_sum_of_weights
         )
 
         self.logger.debug(f"weighted validation metric {self.val_metric_global}")

@@ -15,19 +15,13 @@
 from nvflare.apis.dxo import DataKind, from_shareable
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-from nvflare.app_common.abstract.model import (
-    ModelLearnable,
-    ModelLearnableKey,
-    model_learnable_to_dxo,
-)
+from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, model_learnable_to_dxo
 from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 
 
 class FullModelShareableFedSMGenerator(ShareableGenerator):
-    def learnable_to_shareable(
-        self, model_learnable: ModelLearnable, fl_ctx: FLContext
-    ) -> Shareable:
+    def learnable_to_shareable(self, model_learnable: ModelLearnable, fl_ctx: FLContext) -> Shareable:
         """Convert ModelLearnable to Shareable.
 
         Args:
@@ -40,13 +34,9 @@ class FullModelShareableFedSMGenerator(ShareableGenerator):
         dxo = model_learnable_to_dxo(model_learnable)
         return dxo.to_shareable()
 
-    def update_single_model(
-        self, dxo_single_model, base_model_set, model_id, fl_ctx: FLContext
-    ):
+    def update_single_model(self, dxo_single_model, base_model_set, model_id, fl_ctx: FLContext):
         if not dxo_single_model:
-            self.log_error(
-                fl_ctx, "Aggregated model weights for {} are missing!".format(model_id)
-            )
+            self.log_error(fl_ctx, "Aggregated model weights for {} are missing!".format(model_id))
             return
         # get base_model from the base_model_set
         base_model = base_model_set[model_id]
@@ -70,9 +60,7 @@ class FullModelShareableFedSMGenerator(ShareableGenerator):
             if not weights_new:
                 self.log_info(
                     fl_ctx,
-                    "No model weights for {} found. Model will not be updated.".format(
-                        model_id
-                    ),
+                    "No model weights for {} found. Model will not be updated.".format(model_id),
                 )
             else:
                 base_model[ModelLearnableKey.WEIGHTS] = weights_new
@@ -86,9 +74,7 @@ class FullModelShareableFedSMGenerator(ShareableGenerator):
         base_model[ModelLearnableKey.META] = dxo_single_model.get_meta_props()
         base_model_set[model_id] = base_model
 
-    def shareable_to_learnable(
-        self, shareable: Shareable, client_ids: list, fl_ctx: FLContext
-    ) -> ModelLearnable:
+    def shareable_to_learnable(self, shareable: Shareable, client_ids: list, fl_ctx: FLContext) -> ModelLearnable:
         """Convert Shareable to ModelLearnable.
 
         Supporting TYPE == TYPE_WEIGHT_DIFF or TYPE_WEIGHTS
@@ -106,9 +92,7 @@ class FullModelShareableFedSMGenerator(ShareableGenerator):
             ValueError: if data_kind is not `DataKind.WEIGHTS` and is not `DataKind.WEIGHT_DIFF`
         """
         if not isinstance(shareable, Shareable):
-            raise TypeError(
-                "shareable must be Shareable, but got {}.".format(type(shareable))
-            )
+            raise TypeError("shareable must be Shareable, but got {}.".format(type(shareable)))
 
         # base_model_set is a "flattened set", containing all models with ids
         # "select_weights", "select_exp_avg", "select_exp_avg_sq", "global_weights", and client_ids

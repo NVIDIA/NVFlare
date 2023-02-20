@@ -22,6 +22,7 @@ from learners.supervised_monai_prostate_learner import SupervisedMonaiProstateLe
 from monai.losses import DiceLoss
 from monai.networks.nets.unet import UNet
 from networks.vgg import vgg11
+
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
@@ -41,7 +42,7 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
         """Trainer for prostate segmentation task. It inherits from MONAI trainer.
 
         Args:
-            train_config_filename: directory of config file.
+            train_config_filename: directory of config_3 file.
             fedsm_select_epochs: the number of training epochs of selector model. Defaults to 1.
             aggregation_epochs: the number of training epochs of both global and personalized models for a round. Defaults to 1.
             train_task_name: name of the task to train the model.
@@ -118,9 +119,7 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
         # get round information
         current_round = shareable.get_header(AppConstants.CURRENT_ROUND)
         total_rounds = shareable.get_header(AppConstants.NUM_ROUNDS)
-        self.log_info(
-            fl_ctx, f"Current/Total Round: {current_round + 1}/{total_rounds}"
-        )
+        self.log_info(fl_ctx, f"Current/Total Round: {current_round + 1}/{total_rounds}")
         self.log_info(fl_ctx, f"Client identity: {fl_ctx.get_identity_name()}")
 
         # update local model weights with received weights for all three models
@@ -142,17 +141,11 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
                 weights = global_weights[var_name]
                 try:
                     # reshape global weights to compute difference later on
-                    global_weights[var_name] = np.reshape(
-                        weights, local_var_dict[var_name].shape
-                    )
+                    global_weights[var_name] = np.reshape(weights, local_var_dict[var_name].shape)
                     # update the local dict
                     local_var_dict[var_name] = torch.as_tensor(global_weights[var_name])
                 except Exception as e:
-                    raise ValueError(
-                        "Convert weight from {} failed with error: {}".format(
-                            var_name, str(e)
-                        )
-                    )
+                    raise ValueError("Convert weight from {} failed with error: {}".format(var_name, str(e)))
         self.model.load_state_dict(local_var_dict)
 
         # Loading personalized model weights
@@ -163,17 +156,11 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
                 weights = person_weights[var_name]
                 try:
                     # reshape global weights to compute difference later on
-                    person_weights[var_name] = np.reshape(
-                        weights, local_var_dict[var_name].shape
-                    )
+                    person_weights[var_name] = np.reshape(weights, local_var_dict[var_name].shape)
                     # update the local dict
                     local_var_dict[var_name] = torch.as_tensor(person_weights[var_name])
                 except Exception as e:
-                    raise ValueError(
-                        "Convert weight from {} failed with error: {}".format(
-                            var_name, str(e)
-                        )
-                    )
+                    raise ValueError("Convert weight from {} failed with error: {}".format(var_name, str(e)))
         self.fedsm_helper.person_model.load_state_dict(local_var_dict)
 
         # Loading selector model weights
@@ -184,17 +171,11 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
                 weights = select_weights[var_name]
                 try:
                     # reshape global weights to compute difference later on
-                    select_weights[var_name] = np.reshape(
-                        weights, local_var_dict[var_name].shape
-                    )
+                    select_weights[var_name] = np.reshape(weights, local_var_dict[var_name].shape)
                     # update the local dict
                     local_var_dict[var_name] = torch.as_tensor(select_weights[var_name])
                 except Exception as e:
-                    raise ValueError(
-                        "Convert weight from {} failed with error: {}".format(
-                            var_name, str(e)
-                        )
-                    )
+                    raise ValueError("Convert weight from {} failed with error: {}".format(var_name, str(e)))
         self.fedsm_helper.select_model.load_state_dict(local_var_dict)
 
         if current_round > 0:
@@ -207,12 +188,8 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
             # load parameters to optimizer
             local_optim_state_dict = self.fedsm_helper.select_optimizer.state_dict()
             for name in local_optim_state_dict["state"]:
-                local_optim_state_dict["state"][name]["exp_avg"] = torch.as_tensor(
-                    global_exp_avg[str(name)]
-                )
-                local_optim_state_dict["state"][name]["exp_avg_sq"] = torch.as_tensor(
-                    global_exp_avg_sq[str(name)]
-                )
+                local_optim_state_dict["state"][name]["exp_avg"] = torch.as_tensor(global_exp_avg[str(name)])
+                local_optim_state_dict["state"][name]["exp_avg_sq"] = torch.as_tensor(global_exp_avg_sq[str(name)])
             self.fedsm_helper.select_optimizer.load_state_dict(local_optim_state_dict)
 
         # local steps
@@ -231,10 +208,10 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
             train_loader=self.train_loader,
             model_global=model_global,
             abort_signal=abort_signal,
+            current_round=current_round,
         )
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
-        self.epoch_of_start_time += self.aggregation_epochs
 
         # local train selector and personalized models
         self.fedsm_helper.local_train_select(
@@ -242,6 +219,7 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
             select_label=select_label,
             abort_signal=abort_signal,
             writer=self.writer,
+            current_round=current_round,
         )
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
@@ -249,6 +227,7 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
             train_loader=self.train_loader,
             abort_signal=abort_signal,
             writer=self.writer,
+            current_round=current_round,
         )
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
@@ -259,13 +238,13 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
             self.valid_loader,
             abort_signal,
             tb_id="val_metric_per_model",
-            record_epoch=self.fedsm_helper.person_epoch_global,
+            current_round=current_round,
         )
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
         self.log_info(fl_ctx, f"val_metric_per_model: {metric:.4f}")
         # save model
-        self.fedsm_helper.update_metric_save_person_model(metric=metric)
+        self.fedsm_helper.update_metric_save_person_model(current_round=current_round, metric=metric)
 
         # compute delta models, initial models has the primary key set
         local_weights = self.model.state_dict()
@@ -273,9 +252,7 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
         for name in global_weights:
             if name not in local_weights:
                 continue
-            model_diff_global[name] = (
-                local_weights[name].cpu().numpy() - global_weights[name]
-            )
+            model_diff_global[name] = local_weights[name].cpu().numpy() - global_weights[name]
             if np.any(np.isnan(model_diff_global[name])):
                 self.system_panic(f"{name} weights became NaN...", fl_ctx)
                 return make_reply(ReturnCode.EXECUTION_EXCEPTION)
@@ -285,9 +262,7 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
         for name in person_weights:
             if name not in local_weights:
                 continue
-            model_diff_person[name] = (
-                local_weights[name].cpu().numpy() - person_weights[name]
-            )
+            model_diff_person[name] = local_weights[name].cpu().numpy() - person_weights[name]
             if np.any(np.isnan(model_diff_person[name])):
                 self.system_panic(f"{name} weights became NaN...", fl_ctx)
                 return make_reply(ReturnCode.EXECUTION_EXCEPTION)
@@ -297,9 +272,7 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
         for name in select_weights:
             if name not in local_weights:
                 continue
-            model_diff_select[name] = (
-                local_weights[name].cpu().numpy() - select_weights[name]
-            )
+            model_diff_select[name] = local_weights[name].cpu().numpy() - select_weights[name]
             if np.any(np.isnan(model_diff_select[name])):
                 self.system_panic(f"{name} weights became NaN...", fl_ctx)
                 return make_reply(ReturnCode.EXECUTION_EXCEPTION)
@@ -331,9 +304,7 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
         self.log_info(fl_ctx, "Local epochs finished. Returning shareable")
         return dxo_collection.to_shareable()
 
-    def validate(
-        self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal
-    ) -> Shareable:
+    def validate(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         """Validation task pipeline for FedSM
         Get global/selector model weights (potentially with HE)
         Validation the two models on local data (personalized model evaluated at end of each round)
@@ -341,6 +312,9 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
         """
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
+
+        # get round information
+        current_round = shareable.get_header(AppConstants.CURRENT_ROUND)
 
         # validation on models from server
         # renamed to "models_from_server" to avoid confusion with "global_model"
@@ -365,21 +339,13 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
                 weights = torch.as_tensor(global_weights[var_name], device=self.device)
                 try:
                     # update the local dict
-                    local_var_dict[var_name] = torch.as_tensor(
-                        torch.reshape(weights, local_var_dict[var_name].shape)
-                    )
+                    local_var_dict[var_name] = torch.as_tensor(torch.reshape(weights, local_var_dict[var_name].shape))
                     n_loaded += 1
                 except Exception as e:
-                    raise ValueError(
-                        "Convert weight from {} failed with error: {}".format(
-                            var_name, str(e)
-                        )
-                    )
+                    raise ValueError("Convert weight from {} failed with error: {}".format(var_name, str(e)))
         self.model.load_state_dict(local_var_dict)
         if n_loaded == 0:
-            raise ValueError(
-                f"No global weights loaded for validation! Received weight dict is {global_weights}"
-            )
+            raise ValueError(f"No global weights loaded for validation! Received weight dict is {global_weights}")
         # Loading selector model weights
         local_var_dict = self.fedsm_helper.select_model.state_dict()
         model_keys = select_weights.keys()
@@ -389,21 +355,13 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
                 weights = torch.as_tensor(select_weights[var_name], device=self.device)
                 try:
                     # update the local dict
-                    local_var_dict[var_name] = torch.as_tensor(
-                        torch.reshape(weights, local_var_dict[var_name].shape)
-                    )
+                    local_var_dict[var_name] = torch.as_tensor(torch.reshape(weights, local_var_dict[var_name].shape))
                     n_loaded += 1
                 except Exception as e:
-                    raise ValueError(
-                        "Convert weight from {} failed with error: {}".format(
-                            var_name, str(e)
-                        )
-                    )
+                    raise ValueError("Convert weight from {} failed with error: {}".format(var_name, str(e)))
         self.fedsm_helper.select_model.load_state_dict(local_var_dict)
         if n_loaded == 0:
-            raise ValueError(
-                f"No selector weights loaded for validation! Received weight dict is {select_weights}"
-            )
+            raise ValueError(f"No selector weights loaded for validation! Received weight dict is {select_weights}")
 
         # before_train_validate only, can extend to other validate types
         validate_type = shareable.get_header(AppConstants.VALIDATE_TYPE)
@@ -414,26 +372,22 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
                 self.valid_loader,
                 abort_signal,
                 tb_id="val_metric_global_model",
-                record_epoch=self.epoch_global,
+                current_round=current_round,
             )
             if abort_signal.triggered:
                 return make_reply(ReturnCode.TASK_ABORTED)
-            self.log_info(
-                fl_ctx, f"val_metric_global_model ({model_owner}): {global_metric:.4f}"
-            )
+            self.log_info(fl_ctx, f"val_metric_global_model ({model_owner}): {global_metric:.4f}")
             select_metric = self.fedsm_helper.local_valid_select(
                 self.valid_loader,
                 select_label,
                 abort_signal,
                 tb_id="val_metric_select_model",
                 writer=self.writer,
-                record_epoch=self.fedsm_helper.select_epoch_global,
+                current_round=current_round,
             )
             if abort_signal.triggered:
                 return make_reply(ReturnCode.TASK_ABORTED)
-            self.log_info(
-                fl_ctx, f"val_metric_select_model ({model_owner}): {select_metric:.4f}"
-            )
+            self.log_info(fl_ctx, f"val_metric_select_model ({model_owner}): {select_metric:.4f}")
             # validation metrics will be averaged with weights at server end for best model record
             # on the two models: global and selector
             metric_dxo = DXO(
@@ -441,9 +395,7 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
                 data={MetaKey.INITIAL_METRICS: [global_metric, select_metric]},
                 meta={},
             )
-            metric_dxo.set_meta_prop(
-                MetaKey.NUM_STEPS_CURRENT_ROUND, len(self.valid_loader)
-            )
+            metric_dxo.set_meta_prop(MetaKey.NUM_STEPS_CURRENT_ROUND, len(self.valid_loader))
             return metric_dxo.to_shareable()
         else:
             return make_reply(ReturnCode.VALIDATE_TYPE_UNKNOWN)

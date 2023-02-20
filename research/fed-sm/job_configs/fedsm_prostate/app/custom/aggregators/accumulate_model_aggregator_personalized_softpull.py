@@ -15,6 +15,7 @@
 import re
 
 import numpy as np
+
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.fl_constant import ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
@@ -58,15 +59,9 @@ class AccumulateWeightedAggregatorPersonalizedSoftPull(Aggregator):
         """
         super().__init__()
         self.soft_pull_lambda = soft_pull_lambda
-        self.exclude_vars_global = (
-            re.compile(exclude_vars_global) if exclude_vars_global else None
-        )
-        self.exclude_vars_person = (
-            re.compile(exclude_vars_person) if exclude_vars_person else None
-        )
-        self.exclude_vars_select = (
-            re.compile(exclude_vars_select) if exclude_vars_select else None
-        )
+        self.exclude_vars_global = re.compile(exclude_vars_global) if exclude_vars_global else None
+        self.exclude_vars_person = re.compile(exclude_vars_person) if exclude_vars_person else None
+        self.exclude_vars_select = re.compile(exclude_vars_select) if exclude_vars_select else None
         self.aggregation_weights = aggregation_weights or {}
         self.logger.debug(f"aggregation weights control: {aggregation_weights}")
         # FedSM aggregator expects "COLLECTION" DXO containing all three models.
@@ -85,24 +80,18 @@ class AccumulateWeightedAggregatorPersonalizedSoftPull(Aggregator):
         if dxo.data_kind != self.expected_data_kind:
             self.log_error(
                 fl_ctx,
-                "FedSM aggregator expect {} but got {}".format(
-                    self.expected_data_kind, dxo.data_kind
-                ),
+                "FedSM aggregator expect {} but got {}".format(self.expected_data_kind, dxo.data_kind),
             )
             return False
 
         processed_algorithm = dxo.get_meta_prop(MetaKey.PROCESSED_ALGORITHM)
         if processed_algorithm is not None:
-            self.log_error(
-                fl_ctx, f"unable to accept shareable processed by {processed_algorithm}"
-            )
+            self.log_error(fl_ctx, f"unable to accept shareable processed by {processed_algorithm}")
             return False
 
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
         self.log_debug(fl_ctx, f"current_round: {current_round}")
-        client_name = shareable.get_peer_prop(
-            key=ReservedKey.IDENTITY_NAME, default="?"
-        )
+        client_name = shareable.get_peer_prop(key=ReservedKey.IDENTITY_NAME, default="?")
         contribution_round = shareable.get_header(AppConstants.CONTRIBUTION_ROUND)
 
         rc = shareable.get_return_code()
@@ -157,9 +146,7 @@ class AccumulateWeightedAggregatorPersonalizedSoftPull(Aggregator):
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
         self.log_info(
             fl_ctx,
-            "aggregating {} updates at round {}".format(
-                len(self.accumulator), current_round
-            ),
+            "aggregating {} updates at round {}".format(len(self.accumulator), current_round),
         )
 
         aggregated_model_dict = {}
@@ -182,9 +169,7 @@ class AccumulateWeightedAggregatorPersonalizedSoftPull(Aggregator):
             elif model_id == "select_weights":
                 exclude_vars = self.exclude_vars_select
             vars_to_aggregate = (
-                [g_var for g_var in acc_vars if not exclude_vars.search(g_var)]
-                if exclude_vars
-                else acc_vars
+                [g_var for g_var in acc_vars if not exclude_vars.search(g_var)] if exclude_vars else acc_vars
             )
 
             clients_with_messages = []
@@ -205,9 +190,7 @@ class AccumulateWeightedAggregatorPersonalizedSoftPull(Aggregator):
                                 f" This kind of message will show {self.warning_limit} times at most.",
                             )
                             if client_name in self.warning_count:
-                                self.warning_count[client_name] = (
-                                    self.warning_count[client_name] + 1
-                                )
+                                self.warning_count[client_name] = self.warning_count[client_name] + 1
                             else:
                                 self.warning_count[client_name] = 0
                         n_iter = 1.0
@@ -224,9 +207,7 @@ class AccumulateWeightedAggregatorPersonalizedSoftPull(Aggregator):
                                 f" This kind of message will show {self.warning_limit} times at most.",
                             )
                             if client_name in self.warning_count:
-                                self.warning_count[client_name] = (
-                                    self.warning_count[client_name] + 1
-                                )
+                                self.warning_count[client_name] = self.warning_count[client_name] + 1
                             else:
                                 self.warning_count[client_name] = 0
                         aggregation_weight = 1.0
@@ -274,9 +255,7 @@ class AccumulateWeightedAggregatorPersonalizedSoftPull(Aggregator):
         acc_vars = set.union(*acc_vars) if acc_vars else acc_vars
         exclude_vars = self.exclude_vars_select
         vars_to_aggregate = (
-            [g_var for g_var in acc_vars if not exclude_vars.search(g_var)]
-            if exclude_vars
-            else acc_vars
+            [g_var for g_var in acc_vars if not exclude_vars.search(g_var)] if exclude_vars else acc_vars
         )
         # SoftPull aggregation, weighted without step size
         clients_with_messages = []
@@ -305,9 +284,7 @@ class AccumulateWeightedAggregatorPersonalizedSoftPull(Aggregator):
                             f" This kind of message will show {self.warning_limit} times at most.",
                         )
                         if client_name in self.warning_count:
-                            self.warning_count[client_name] = (
-                                self.warning_count[client_name] + 1
-                            )
+                            self.warning_count[client_name] = self.warning_count[client_name] + 1
                         else:
                             self.warning_count[client_name] = 0
                     aggregation_weight = 1.0
@@ -334,9 +311,7 @@ class AccumulateWeightedAggregatorPersonalizedSoftPull(Aggregator):
                 for aggr_item in self.accumulator:
                     aggr_client_name = aggr_item.client
                     if aggr_client_name == client_name:
-                        weighted_value = (
-                            data[v_name] * aggregation_weight * self.soft_pull_lambda
-                        )
+                        weighted_value = data[v_name] * aggregation_weight * self.soft_pull_lambda
                     else:
                         weighted_value = (
                             data[v_name]

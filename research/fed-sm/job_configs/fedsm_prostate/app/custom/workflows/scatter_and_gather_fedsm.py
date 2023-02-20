@@ -86,9 +86,7 @@ class ScatterAndGatherFedSM(ScatterAndGather):
         self.log_info(fl_ctx, "Initializing FedSM-specific workflow components.")
         self.log_info(
             fl_ctx,
-            "Client_ID to selector label mapping: {}".format(
-                self.client_id_label_mapping
-            ),
+            "Client_ID to selector label mapping: {}".format(self.client_id_label_mapping),
         )
         # get engine
         engine = fl_ctx.get_engine()
@@ -99,9 +97,7 @@ class ScatterAndGatherFedSM(ScatterAndGather):
         # Get all clients
         clients = engine.get_clients()
         self.participating_clients = [c.name for c in clients]
-        self.log_info(
-            fl_ctx, "Participating clients: {}".format(self.participating_clients)
-        )
+        self.log_info(fl_ctx, "Participating clients: {}".format(self.participating_clients))
 
         # Validate client info
         for client_id in self.participating_clients:
@@ -120,21 +116,15 @@ class ScatterAndGatherFedSM(ScatterAndGather):
             self._phase = AppConstants.PHASE_TRAIN
 
             fl_ctx.set_prop(AppConstants.PHASE, self._phase, private=True, sticky=False)
-            fl_ctx.set_prop(
-                AppConstants.NUM_ROUNDS, self._num_rounds, private=True, sticky=False
-            )
+            fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self._num_rounds, private=True, sticky=False)
             self.fire_event(AppEventType.TRAINING_STARTED, fl_ctx)
 
-            for self._current_round in range(
-                self._start_round, self._start_round + self._num_rounds
-            ):
+            for self._current_round in range(self._start_round, self._start_round + self._num_rounds):
                 if self._check_abort_signal(fl_ctx, abort_signal):
                     return
 
                 self.log_info(fl_ctx, "Round {} started.".format(self._current_round))
-                self.log_info(
-                    fl_ctx, "Models in fl_ctx: {}".format(self._global_weights.keys())
-                )
+                self.log_info(fl_ctx, "Models in fl_ctx: {}".format(self._global_weights.keys()))
 
                 fl_ctx.set_prop(
                     AppConstants.GLOBAL_MODEL,
@@ -159,25 +149,15 @@ class ScatterAndGatherFedSM(ScatterAndGather):
                     client_label = self.client_id_label_mapping[client_id]
 
                     # add all three models using a DXO collection
-                    dxo_select_weights = DXO(
-                        data_kind=DataKind.WEIGHT_DIFF, data=select_weight
-                    )
-                    dxo_global_weights = DXO(
-                        data_kind=DataKind.WEIGHT_DIFF, data=global_weight
-                    )
-                    dxo_person_weights = DXO(
-                        data_kind=DataKind.WEIGHT_DIFF, data=client_weight
-                    )
+                    dxo_select_weights = DXO(data_kind=DataKind.WEIGHT_DIFF, data=select_weight)
+                    dxo_global_weights = DXO(data_kind=DataKind.WEIGHT_DIFF, data=global_weight)
+                    dxo_person_weights = DXO(data_kind=DataKind.WEIGHT_DIFF, data=client_weight)
                     # add Adam parameter sets
                     if self._current_round > 0:
                         select_exp_avg = self._global_weights["select_exp_avg"]
                         select_exp_avg_sq = self._global_weights["select_exp_avg_sq"]
-                        dxo_select_exp_avg = DXO(
-                            data_kind=DataKind.WEIGHTS, data=select_exp_avg
-                        )
-                        dxo_select_exp_avg_sq = DXO(
-                            data_kind=DataKind.WEIGHTS, data=select_exp_avg_sq
-                        )
+                        dxo_select_exp_avg = DXO(data_kind=DataKind.WEIGHTS, data=select_exp_avg)
+                        dxo_select_exp_avg_sq = DXO(data_kind=DataKind.WEIGHTS, data=select_exp_avg_sq)
                     else:
                         dxo_select_exp_avg = None
                         dxo_select_exp_avg_sq = None
@@ -199,13 +179,9 @@ class ScatterAndGatherFedSM(ScatterAndGather):
                     data_shareable = dxo_collection.to_shareable()
 
                     # add meta information
-                    data_shareable.set_header(
-                        AppConstants.CURRENT_ROUND, self._current_round
-                    )
+                    data_shareable.set_header(AppConstants.CURRENT_ROUND, self._current_round)
                     data_shareable.set_header(AppConstants.NUM_ROUNDS, self._num_rounds)
-                    data_shareable.add_cookie(
-                        AppConstants.CONTRIBUTION_ROUND, self._current_round
-                    )
+                    data_shareable.add_cookie(AppConstants.CONTRIBUTION_ROUND, self._current_round)
 
                     # create task
                     train_task = Task(

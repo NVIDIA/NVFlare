@@ -17,6 +17,8 @@ from abc import abstractmethod
 
 import numpy as np
 import torch
+from torch.utils.tensorboard import SummaryWriter
+
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
@@ -24,7 +26,6 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.learner_spec import Learner
 from nvflare.app_common.app_constant import AppConstants, ValidateType
-from torch.utils.tensorboard import SummaryWriter
 
 
 class SupervisedLearner(Learner):
@@ -40,7 +41,7 @@ class SupervisedLearner(Learner):
             Enabled both FedAvg and FedProx
 
         Args:
-            train_config_filename: directory of config file.
+            train_config_filename: directory of config_3 file.
             aggregation_epochs: the number of training epochs for a round. Defaults to 1.
             train_task_name: name of the task to train the model.
 
@@ -53,9 +54,6 @@ class SupervisedLearner(Learner):
         self.aggregation_epochs = aggregation_epochs
         self.train_task_name = train_task_name
         self.best_metric = 0.0
-        # Epoch counter
-        self.epoch_of_start_time = 0
-        self.epoch_global = 0
         # FedProx related
         self.fedproxloss_mu = 0.0
         self.criterion_prox = None
@@ -114,6 +112,7 @@ class SupervisedLearner(Learner):
         train_loader,
         model_global,
         abort_signal: Signal,
+        current_round,
     ):
         """Typical training logic
         Total local epochs: self.aggregation_epochs
@@ -128,7 +127,7 @@ class SupervisedLearner(Learner):
                 return make_reply(ReturnCode.TASK_ABORTED)
             self.model.train()
             epoch_len = len(train_loader)
-            self.epoch_global = self.epoch_of_start_time + epoch
+            epoch_global = current_round * self.aggregation_epochs + epoch
             self.log_info(
                 fl_ctx,
                 f"Local epoch {self.client_id}: {epoch + 1}/{self.aggregation_epochs} (lr={self.lr})",
@@ -151,7 +150,7 @@ class SupervisedLearner(Learner):
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
-                current_step = epoch_len * self.epoch_global + i
+                current_step = epoch_len * epoch_global + i
                 self.writer.add_scalar("train_loss", loss.item(), current_step)
 
     def local_valid(
@@ -160,7 +159,7 @@ class SupervisedLearner(Learner):
         valid_loader,
         abort_signal: Signal,
         tb_id=None,
-        record_epoch=None,
+        current_round=None,
     ):
         """Typical validation logic
         Load data pairs from train_loader: image / label
@@ -187,7 +186,7 @@ class SupervisedLearner(Learner):
             metric /= len(valid_loader)
             # tensorboard record id, add to record if provided
             if tb_id:
-                self.writer.add_scalar(tb_id, metric, record_epoch)
+                self.writer.add_scalar(tb_id, metric, current_round)
         return metric
 
     def train(
@@ -208,9 +207,7 @@ class SupervisedLearner(Learner):
         # get round information
         current_round = shareable.get_header(AppConstants.CURRENT_ROUND)
         total_rounds = shareable.get_header(AppConstants.NUM_ROUNDS)
-        self.log_info(
-            fl_ctx, f"Current/Total Round: {current_round + 1}/{total_rounds}"
-        )
+        self.log_info(fl_ctx, f"Current/Total Round: {current_round + 1}/{total_rounds}")
         self.log_info(fl_ctx, f"Client identity: {fl_ctx.get_identity_name()}")
 
         # update local model weights with received weights
@@ -225,17 +222,11 @@ class SupervisedLearner(Learner):
                 weights = global_weights[var_name]
                 try:
                     # reshape global weights to compute difference later on
-                    global_weights[var_name] = np.reshape(
-                        weights, local_var_dict[var_name].shape
-                    )
+                    global_weights[var_name] = np.reshape(weights, local_var_dict[var_name].shape)
                     # update the local dict
                     local_var_dict[var_name] = torch.as_tensor(global_weights[var_name])
                 except Exception as e:
-                    raise ValueError(
-                        "Convert weight from {} failed with error: {}".format(
-                            var_name, str(e)
-                        )
-                    )
+                    raise ValueError("Convert weight from {} failed with error: {}".format(var_name, str(e)))
         self.model.load_state_dict(local_var_dict)
 
         # local steps
@@ -259,7 +250,6 @@ class SupervisedLearner(Learner):
         )
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
-        self.epoch_of_start_time += self.aggregation_epochs
 
         # compute delta model, global model has the primary key set
         local_weights = self.model.state_dict()
@@ -279,9 +269,7 @@ class SupervisedLearner(Learner):
         self.log_info(fl_ctx, "Local epochs finished. Returning shareable")
         return dxo.to_shareable()
 
-    def validate(
-        self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal
-    ) -> Shareable:
+    def validate(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         """Typical validation task pipeline with potential HE functionality
         Get global model weights (potentially with HE)
         Validation on local data
@@ -289,6 +277,9 @@ class SupervisedLearner(Learner):
         """
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
+
+        # get round information
+        current_round = shareable.get_header(AppConstants.CURRENT_ROUND)
 
         # validation on global model
         model_owner = "global_model"
@@ -306,21 +297,13 @@ class SupervisedLearner(Learner):
                 weights = torch.as_tensor(global_weights[var_name], device=self.device)
                 try:
                     # update the local dict
-                    local_var_dict[var_name] = torch.as_tensor(
-                        torch.reshape(weights, local_var_dict[var_name].shape)
-                    )
+                    local_var_dict[var_name] = torch.as_tensor(torch.reshape(weights, local_var_dict[var_name].shape))
                     n_loaded += 1
                 except Exception as e:
-                    raise ValueError(
-                        "Convert weight from {} failed with error: {}".format(
-                            var_name, str(e)
-                        )
-                    )
+                    raise ValueError("Convert weight from {} failed with error: {}".format(var_name, str(e)))
         self.model.load_state_dict(local_var_dict)
         if n_loaded == 0:
-            raise ValueError(
-                f"No weights loaded for validation! Received weight dict is {global_weights}"
-            )
+            raise ValueError(f"No weights loaded for validation! Received weight dict is {global_weights}")
 
         # before_train_validate only, can extend to other validate types
         validate_type = shareable.get_header(AppConstants.VALIDATE_TYPE)
@@ -331,22 +314,18 @@ class SupervisedLearner(Learner):
                 self.valid_loader,
                 abort_signal,
                 tb_id="val_metric_global_model",
-                record_epoch=self.epoch_global,
+                current_round=current_round,
             )
             if abort_signal.triggered:
                 return make_reply(ReturnCode.TASK_ABORTED)
-            self.log_info(
-                fl_ctx, f"val_metric_global_model ({model_owner}): {global_metric:.4f}"
-            )
+            self.log_info(fl_ctx, f"val_metric_global_model ({model_owner}): {global_metric:.4f}")
             # validation metrics will be averaged with weights at server end for best model record
             metric_dxo = DXO(
                 data_kind=DataKind.METRICS,
                 data={MetaKey.INITIAL_METRICS: global_metric},
                 meta={},
             )
-            metric_dxo.set_meta_prop(
-                MetaKey.NUM_STEPS_CURRENT_ROUND, len(self.valid_loader)
-            )
+            metric_dxo.set_meta_prop(MetaKey.NUM_STEPS_CURRENT_ROUND, len(self.valid_loader))
             return metric_dxo.to_shareable()
         else:
             return make_reply(ReturnCode.VALIDATE_TYPE_UNKNOWN)
