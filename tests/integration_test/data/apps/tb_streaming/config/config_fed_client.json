@@ -23,7 +23,7 @@
     },
     {
       "id": "tb_analytics_receive",
-      "path": "nvflare.app_opt.tracking.tensorboard.tb_receiver.TBAnalyticsReceiver",
+      "name": "TBAnalyticsReceiver",
       "args": {"events": ["analytix_log_stats"]}
     },
     {

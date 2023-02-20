@@ -1,5 +1,0 @@
--r requirements.txt
-sphinx>=4.1.1
-sphinx_rtd_theme
-recommonmark
-sphinx-copybutton
