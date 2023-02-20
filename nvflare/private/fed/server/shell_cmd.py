@@ -90,7 +90,7 @@ class _CommandExecutor(object):
         engine = conn.app_ctx
         if not isinstance(engine, ServerEngineInternalSpec):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
-        clients, invalid_inputs = engine.validate_clients([target])
+        clients, invalid_inputs = engine.validate_targets([target])
         if len(invalid_inputs) > 0:
             conn.append_error("invalid client: {}".format(target))
             return

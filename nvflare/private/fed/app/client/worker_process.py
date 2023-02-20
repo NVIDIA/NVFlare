@@ -130,7 +130,7 @@ def main():
         federated_client.fl_ctx.set_prop(EngineConstant.FL_TOKEN, args.token, private=False)
         federated_client.fl_ctx.set_prop(FLContextKey.WORKSPACE_ROOT, args.workspace, private=True)
 
-        client_app_runner = ClientAppRunner()
+        client_app_runner = ClientAppRunner(time_out=kv_list.get("app_runner_timeout", 60.0))
         client_app_runner.start_run(app_root, args, config_folder, federated_client, secure_train)
 
     except BaseException as e:

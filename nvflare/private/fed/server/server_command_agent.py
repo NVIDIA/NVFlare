@@ -19,9 +19,8 @@ from nvflare.apis.fl_constant import FLContextKey, ServerCommandKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
-from nvflare.fuel.f3.cellnet.cell import Cell
-from nvflare.fuel.f3.cellnet.cell import Message as CellMessage
-from nvflare.fuel.f3.cellnet.cell import MessageHeaderKey, ReturnCode, make_reply
+from nvflare.fuel.f3.cellnet.cell import Cell, MessageHeaderKey, ReturnCode, make_reply
+from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.utils import fobs
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, new_cell_message
 
@@ -36,8 +35,6 @@ class ServerCommandAgent(object):
             listen_port: port to listen the command
         """
         self.logger = logging.getLogger(self.__class__.__name__)
-        # self.listen_port = int(listen_port)
-        # self.thread = None
         self.asked_to_stop = False
         self.engine = engine
         self.cell = cell
@@ -53,11 +50,12 @@ class ServerCommandAgent(object):
             topic="*",
             cb=self.aux_communicate,
         )
-        self.logger.info(f"ServerCommandAgent cell start: {self.cell.get_fqcn()}")
+        self.logger.info(f"ServerCommandAgent cell register_request_cb: {self.cell.get_fqcn()}")
 
     def execute_command(self, request: CellMessage) -> CellMessage:
 
-        assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
+        if not isinstance(request, CellMessage):
+            raise RuntimeError("request must be CellMessage but got {}".format(type(request)))
 
         command_name = request.get_header(MessageHeaderKey.TOPIC)
         data = fobs.loads(request.payload)
@@ -65,7 +63,7 @@ class ServerCommandAgent(object):
         token = request.get_header(CellMessageHeaderKeys.TOKEN, None)
         client = None
         if token:
-            client = self.engine.server.client_manager.clients.get(token)
+            client = self._get_client(token)
             if client:
                 data.set_header(ServerCommandKey.FL_CLIENT, client)
         if command_name in ServerCommands.client_request_commands_names and not client:
@@ -81,6 +79,12 @@ class ServerCommandAgent(object):
                 else:
                     return_message = make_reply(ReturnCode.PROCESS_EXCEPTION, "No process results", fobs.dumps(None))
                 return return_message
+
+    def _get_client(self, token):
+        fl_server = self.engine.server
+        client_manager = fl_server.client_manager
+        clients = client_manager.clients
+        return clients.get(token)
 
     def aux_communicate(self, request: CellMessage) -> CellMessage:
 

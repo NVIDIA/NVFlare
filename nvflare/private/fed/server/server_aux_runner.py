@@ -85,7 +85,7 @@ class ServerAuxRunner(AuxRunner):
             if name not in target_names:
                 target_names.append(t)
 
-        clients, invalid_names = engine.validate_clients(target_names)
+        clients, invalid_names = engine.validate_targets(target_names)
         if invalid_names:
             raise ValueError("invalid target(s): {}".format(invalid_names))
         valid_tokens = []

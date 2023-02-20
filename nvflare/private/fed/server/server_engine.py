@@ -162,8 +162,8 @@ class ServerEngine(ServerEngineInternalSpec):
     def get_clients(self) -> [Client]:
         return list(self.client_manager.get_clients().values())
 
-    def validate_clients(self, client_names: List[str]) -> Tuple[List[Client], List[str]]:
-        return self._get_all_clients_from_inputs(client_names)
+    def validate_targets(self, client_names: List[str]) -> Tuple[List[Client], List[str]]:
+        return self.client_manager.get_all_clients_from_inputs(client_names)
 
     def start_app_on_server(self, run_number: str, job: Job = None, job_clients=None, snapshot=None) -> str:
         if run_number in self.run_processes.keys():
@@ -361,30 +361,8 @@ class ServerEngine(ServerEngineInternalSpec):
         else:
             return ""
 
-    def get_all_clients(self):
-        return list(self.server.client_manager.clients.keys())
-
     def get_client_from_name(self, client_name):
-        for c in self.get_clients():
-            if client_name == c.name:
-                return c
-        return None
-
-    def _get_all_clients_from_inputs(self, inputs):
-        clients = []
-        invalid_inputs = []
-        for item in inputs:
-            client = self.client_manager.clients.get(item)
-            # if item in self.get_all_clients():
-            if client:
-                clients.append(client)
-            else:
-                client = self.get_client_from_name(item)
-                if client:
-                    clients.append(client)
-                else:
-                    invalid_inputs.append(item)
-        return clients, invalid_inputs
+        return self.client_manager.get_client_from_name(client_name)
 
     def get_app_data(self, app_name: str) -> Tuple[str, object]:
         fullpath_src = os.path.join(self.server.admin_server.file_upload_dir, app_name)

@@ -107,7 +107,7 @@ class CommandUtil(object):
             # get all clients
             clients = engine.get_clients()
         else:
-            clients, invalid_inputs = engine.validate_clients(client_names)
+            clients, invalid_inputs = engine.validate_targets(client_names)
             if invalid_inputs:
                 return "invalid client(s): {}".format(" ".join(invalid_inputs))
 

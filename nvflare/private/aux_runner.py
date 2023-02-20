@@ -146,16 +146,20 @@ class AuxRunner(FLComponent):
         if not target_names:
             return {}
 
-        clients, invalid_names = self.engine.validate_clients(target_names)
+        _, invalid_names = self.engine.validate_targets(target_names)
         if invalid_names:
             raise ValueError(f"invalid target(s): {invalid_names}")
 
-        return cmi.send_to_cell(
-            targets=targets,
-            channel=CellChannel.AUX_COMMUNICATION,
-            topic=topic,
-            request=request,
-            timeout=timeout,
-            fl_ctx=fl_ctx,
-            bulk_send=bulk_send,
-        )
+        try:
+            return cmi.send_to_cell(
+                targets=targets,
+                channel=CellChannel.AUX_COMMUNICATION,
+                topic=topic,
+                request=request,
+                timeout=timeout,
+                fl_ctx=fl_ctx,
+                bulk_send=bulk_send,
+            )
+        except BaseException as e:
+            self.logger.error(f"Failed to send the message to targets: {targets}")
+            return {}

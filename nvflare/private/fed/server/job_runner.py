@@ -36,7 +36,7 @@ from nvflare.security.logging import secure_format_exception
 
 
 def _send_to_clients(admin_server, client_sites: List[str], engine, message):
-    clients, invalid_inputs = engine.validate_clients(client_sites)
+    clients, invalid_inputs = engine.validate_targets(client_sites)
     if invalid_inputs:
         raise RuntimeError(f"invalid clients: {invalid_inputs}.")
     requests = {}
@@ -143,7 +143,7 @@ class JobRunner(FLComponent):
 
             if client_sites:
                 message = self._make_deploy_message(job, app_data, app_name)
-                clients, invalid_inputs = engine.validate_clients(client_sites)
+                clients, invalid_inputs = engine.validate_targets(client_sites)
 
                 if invalid_inputs:
                     deploy_detail.append("invalid_clients: {}".format(",".join(invalid_inputs)))
@@ -390,7 +390,8 @@ class JobRunner(FLComponent):
                         except BaseException as e:
                             if job_id:
                                 if job_id in self.running_jobs:
-                                    del self.running_jobs[job_id]
+                                    with self.lock:
+                                        del self.running_jobs[job_id]
                                 self._stop_run(job_id, fl_ctx)
                             job_manager.set_status(ready_job.job_id, RunStatus.FAILED_TO_RUN, fl_ctx)
 

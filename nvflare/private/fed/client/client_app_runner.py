@@ -29,8 +29,9 @@ from nvflare.private.privacy_manager import PrivacyService
 
 
 class ClientAppRunner:
-    def __init__(self) -> None:
+    def __init__(self, time_out=60.0) -> None:
         self.command_agent = None
+        self.timeout = time_out
 
     def start_run(self, app_root, args, config_folder, federated_client, secure_train):
         client_runner = self.create_client_runner(app_root, args, config_folder, federated_client, secure_train)
@@ -38,7 +39,7 @@ class ClientAppRunner:
         start = time.time()
         while federated_client.communicator.cell is None:
             time.sleep(1.0)
-            if time.time() - start > 60.0:
+            if time.time() - start > self.timeout:
                 raise RuntimeError("No cell created for communicator. Failed to start the ClientAppRunner.")
         federated_client.status = ClientStatus.STARTED
         client_runner.run(app_root, args)
@@ -100,7 +101,7 @@ class ClientAppRunner:
         start = time.time()
         while federated_client.cell is None:
             time.sleep(0.1)
-            if time.time() - start > 60.0:
+            if time.time() - start > self.timeout:
                 raise RuntimeError("No cell created. Failed to start the command_agent for ClientAppRunner.")
 
         # Start the command agent

@@ -17,6 +17,7 @@ from abc import ABC, abstractmethod
 from typing import List, Union
 
 from nvflare.apis.client_engine_spec import ClientEngineSpec
+from nvflare.apis.engine_spec import EngineSpec
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.workspace import Workspace
@@ -41,7 +42,7 @@ class TaskAssignment(object):
         self.receive_time = time.time()
 
 
-class ClientEngineExecutorSpec(ClientEngineSpec, ABC):
+class ClientEngineExecutorSpec(ClientEngineSpec, EngineSpec, ABC):
     """The ClientEngineExecutorSpec defines the ClientEngine APIs running in the child process."""
 
     @abstractmethod
@@ -62,17 +63,6 @@ class ClientEngineExecutorSpec(ClientEngineSpec, ABC):
 
     @abstractmethod
     def get_all_components(self) -> dict:
-        pass
-
-    def validate_clients(self, target_names) -> ([], []):
-        """To validate the target names.
-
-        Args:
-            target_names: input target names
-
-        Returns: (valid_names, invalid_names)
-
-        """
         pass
 
     @abstractmethod

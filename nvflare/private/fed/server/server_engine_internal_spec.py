@@ -37,6 +37,7 @@ class EngineInfo(object):
 
 
 class ServerEngineInternalSpec(ServerEngineSpec, ABC):
+    @abstractmethod
     def get_engine_info(self) -> EngineInfo:
         """Get general info of the engine."""
         pass
@@ -204,20 +205,8 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def get_client_name_from_token(self, token: str) -> str:
-        """Get the registered client name from communication token.
-
-        Args:
-            token: communication token
-
-        Returns:
-            Client name
-        """
-        pass
-
-    @abstractmethod
     def get_client_from_name(self, client_name: str) -> Client:
-        """Get the registered client token from client_name.
+        """Get the registered client from client_name.
 
         Args:
             client_name: client name

@@ -31,6 +31,7 @@ from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.authz import AuthorizationService
 from nvflare.fuel.sec.security_content_service import LoadResult, SecurityContentService
 from nvflare.private.defs import SSLConstants
+from nvflare.private.fed.utils.decomposers import private_decomposers
 from nvflare.private.privacy_manager import PrivacyManager, PrivacyService
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 from nvflare.security.security import EmptyAuthorizer, FLAuthorizer
@@ -212,3 +213,4 @@ def get_scope_info():
 def fobs_initialize():
     flare_decomposers.register()
     common_decomposers.register()
+    private_decomposers.register()

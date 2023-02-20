@@ -16,6 +16,7 @@ import time
 from typing import List, Optional, Tuple
 
 from nvflare.apis.client import Client
+from nvflare.apis.engine_spec import EngineSpec
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import MachineStatus
 from nvflare.apis.fl_context import FLContext, FLContextManager
@@ -37,7 +38,7 @@ class RunInfo(object):
         self.status = MachineStatus.STOPPED.value
 
 
-class RunManager:
+class RunManager(EngineSpec):
     def __init__(
         self,
         server_name,
@@ -64,7 +65,6 @@ class RunManager:
 
         self.client_manager = client_manager
         self.handlers = handlers
-        # self.aux_runner = ServerAuxRunner(self)
         self.aux_runner = AuxRunner(self)
         self.add_handler(self.aux_runner)
 
@@ -113,33 +113,8 @@ class RunManager:
     def get_cell(self):
         return self.cell
 
-    def validate_clients(self, client_names: List[str]) -> Tuple[List[Client], List[str]]:
-        return self._get_all_clients_from_inputs(client_names)
-
-    def _get_all_clients_from_inputs(self, inputs):
-        clients = []
-        invalid_inputs = []
-        for item in inputs:
-            client = self.client_manager.clients.get(item)
-            # if item in self.get_all_clients():
-            if client:
-                clients.append(client)
-            else:
-                client = self.get_client_from_name(item)
-                if client:
-                    clients.append(client)
-                else:
-                    invalid_inputs.append(item)
-        return clients, invalid_inputs
-
-    def get_client_from_name(self, client_name):
-        for c in self.get_clients():
-            if client_name == c.name:
-                return c
-        return None
-
-    def get_clients(self) -> [Client]:
-        return list(self.client_manager.get_clients().values())
+    def validate_targets(self, client_names: List[str]) -> Tuple[List[Client], List[str]]:
+        return self.client_manager.get_all_clients_from_inputs(client_names)
 
     def create_job_processing_context_properties(self, workspace, job_id):
         return create_job_processing_context_properties(workspace, job_id)

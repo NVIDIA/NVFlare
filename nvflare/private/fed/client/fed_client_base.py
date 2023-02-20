@@ -99,10 +99,10 @@ class FederatedClientBase:
         self.communicator = Communicator(
             ssl_args=client_args,
             secure_train=secure_train,
-            retry_timeout=retry_timeout,
             client_state_processors=client_state_processors,
             compression=compression,
             cell=cell,
+            client_register_interval=client_args.get("client_register_interval", 2.0),
         )
 
         self.secure_train = secure_train

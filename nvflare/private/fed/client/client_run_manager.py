@@ -147,7 +147,7 @@ class ClientRunManager(ClientEngineExecutorSpec):
     def get_all_components(self) -> dict:
         return self.components
 
-    def validate_clients(self, inputs) -> ([], []):
+    def validate_targets(self, inputs) -> ([], []):
         valid_inputs = []
         invalid_inputs = []
         if not self.all_clients:
