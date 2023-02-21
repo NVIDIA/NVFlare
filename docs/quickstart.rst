@@ -174,3 +174,14 @@ Next finally for Flare console, open a new **terminal**
 Once console started, you can use check-status command just like POC mode
 
 
+* **Provision and distributing startup kits via Flare Dashboard UI**
+--------------------------------------------------------------------
+
+Start the dashboard, then following the instructions. Once Dashboard started, you can setup project, invite users
+to participate, once user add the sites, you can approve the user and sites, then freeze the project. The user can download
+the startup kits from the UI.
+
+.. code-block:: shell
+
+ nvflare dashboard --start
+
