@@ -12,13 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import time
 from typing import List, Optional, Tuple
 
 from nvflare.apis.client import Client
 from nvflare.apis.engine_spec import EngineSpec
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import MachineStatus
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.workspace import Workspace
@@ -27,15 +25,7 @@ from nvflare.private.event import fire_event
 from nvflare.private.fed.utils.fed_utils import create_job_processing_context_properties
 
 from .client_manager import ClientManager
-
-
-class RunInfo(object):
-    def __init__(self, job_id, app_path):
-        """Information for a run."""
-        self.job_id = job_id
-        self.start_time = time.time()
-        self.app_path = app_path
-        self.status = MachineStatus.STOPPED.value
+from .run_info import RunInfo
 
 
 class RunManager(EngineSpec):

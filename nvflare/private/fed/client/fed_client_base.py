@@ -418,6 +418,11 @@ class FederatedClientBase:
     def set_client_runner(self, client_runner):
         self.client_runner = client_runner
 
+    def stop_cell(self):
+        """Stop the cell communication"""
+        if self.communicator.cell:
+            self.communicator.cell.stop()
+
     def close(self):
         """Quit the remote federated server, close the local session."""
         self.terminate()

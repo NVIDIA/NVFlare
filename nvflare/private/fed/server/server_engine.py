@@ -48,6 +48,7 @@ from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.cell import FQCN, Cell
 from nvflare.fuel.utils import fobs
+from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
 from nvflare.private.admin_defs import Message, MsgHeader
@@ -62,7 +63,8 @@ from nvflare.widgets.widget import Widget, WidgetID
 from .client_manager import ClientManager
 from .job_runner import JobRunner
 from .message_send import ClientReply
-from .run_manager import RunInfo, RunManager
+from .run_info import RunInfo
+from .run_manager import RunManager
 from .server_engine_internal_spec import EngineInfo, ServerEngineInternalSpec
 from .server_status import ServerStatus
 
@@ -115,9 +117,10 @@ class ServerEngine(ServerEngineInternalSpec):
 
         self.asked_to_stop = False
         self.snapshot_persistor = snapshot_persistor
-        self.parent_conn_lock = Lock()
         self.job_runner = None
         self.job_def_manager = None
+
+        self.kv_list = parse_vars(args.set)
 
     def _get_server_app_folder(self):
         return WorkspaceConstants.APP_PREFIX + "server"
@@ -476,12 +479,12 @@ class ServerEngine(ServerEngineInternalSpec):
             self.logger.error(f"Failed to send the aux_message: {topic} with exception: {secure_format_exception(e)}.")
 
     def sync_clients_from_main_process(self):
-        with self.parent_conn_lock:
-            return_data = self._get_clients_data(self.args.job_id)
-            clients = return_data.get(ServerCommandKey.CLIENTS)
-            self.client_manager.clients = clients
+        return_data = self._get_clients_data(self.args.job_id)
+        clients = return_data.get(ServerCommandKey.CLIENTS)
+        self.client_manager.clients = clients
 
     def _get_clients_data(self, job_id):
+        start = time.time()
         request = new_cell_message({CellMessageHeaderKeys.JOB_ID: job_id}, fobs.dumps({}))
         return_data = self.server.cell.send_request(
             target=FQCN.ROOT_SERVER,
@@ -493,22 +496,23 @@ class ServerEngine(ServerEngineInternalSpec):
         if data.get(ServerCommandKey.CLIENTS):
             return data
         else:
+            if time.time() - start > self.kv_list.get("get_client_timeout", 10.0):
+                raise RuntimeError("Could not get the participants from parent process.")
             time.sleep(1.0)
             return self._get_clients_data(job_id)
 
     def update_job_run_status(self):
-        with self.parent_conn_lock:
-            with self.new_context() as fl_ctx:
-                execution_error = fl_ctx.get_prop(FLContextKey.FATAL_SYSTEM_ERROR, False)
-                data = {"execution_error": execution_error}
-                job_id = fl_ctx.get_job_id()
-                request = new_cell_message({CellMessageHeaderKeys.JOB_ID: job_id}, fobs.dumps(data))
-                return_data = self.server.cell.fire_and_forget(
-                    targets=FQCN.ROOT_SERVER,
-                    channel=CellChannel.SERVER_PARENT_LISTENER,
-                    topic=ServerCommandNames.UPDATE_RUN_STATUS,
-                    message=request,
-                )
+        with self.new_context() as fl_ctx:
+            execution_error = fl_ctx.get_prop(FLContextKey.FATAL_SYSTEM_ERROR, False)
+            data = {"execution_error": execution_error}
+            job_id = fl_ctx.get_job_id()
+            request = new_cell_message({CellMessageHeaderKeys.JOB_ID: job_id}, fobs.dumps(data))
+            return_data = self.server.cell.fire_and_forget(
+                targets=FQCN.ROOT_SERVER,
+                channel=CellChannel.SERVER_PARENT_LISTENER,
+                topic=ServerCommandNames.UPDATE_RUN_STATUS,
+                message=request,
+            )
 
     def send_command_to_child_runner_process(self, job_id: str, command_name: str, command_data, return_result=True):
         result = None

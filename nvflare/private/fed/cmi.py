@@ -169,7 +169,7 @@ class JobCellMessenger(CellMessageInterface):
             request (Shareable): request
             timeout (float): how long to wait for result. 0 means fire-and-forget
             fl_ctx (FLContext): the FL context
-            bulk_send: whether to bulk send this request
+            bulk_send: whether to bulk send this request (only applies in the fire-and-forget situation)
         Returns:
             A dict of Shareables
         """

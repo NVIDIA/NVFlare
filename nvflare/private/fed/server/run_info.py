@@ -11,25 +11,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Decomposers for objects used by NVFlare platform privately
 
-This module contains all the decomposers used to run NVFlare.
-The decomposers are registered at server/client startup.
+import time
 
-"""
-
-from nvflare.fuel.utils import fobs
-from nvflare.private.admin_defs import Message
-from nvflare.private.fed.server.run_info import RunInfo
+from nvflare.apis.fl_constant import MachineStatus
 
 
-def register():
-    if register.registered:
-        return
-
-    fobs.register_data_classes(Message, RunInfo)
-
-    register.registered = True
-
-
-register.registered = False
+class RunInfo(object):
+    def __init__(self, job_id, app_path):
+        """Information for a run."""
+        self.job_id = job_id
+        self.start_time = time.time()
+        self.app_path = app_path
+        self.status = MachineStatus.STOPPED.value

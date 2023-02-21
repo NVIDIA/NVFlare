@@ -44,7 +44,7 @@ class ClientAppRunner:
         federated_client.status = ClientStatus.STARTED
         client_runner.run(app_root, args)
 
-        federated_client.communicator.cell.stop()
+        federated_client.stop_cell()
 
     def create_client_runner(self, app_root, args, config_folder, federated_client, secure_train):
         client_config_file_name = os.path.join(app_root, args.client_config)

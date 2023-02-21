@@ -79,6 +79,8 @@ class ServerCommandAgent(object):
                 else:
                     return_message = make_reply(ReturnCode.PROCESS_EXCEPTION, "No process results", fobs.dumps(None))
                 return return_message
+        else:
+            return make_reply(ReturnCode.INVALID_REQUEST, "No server command found", fobs.dumps(None))
 
     def _get_client(self, token):
         fl_server = self.engine.server

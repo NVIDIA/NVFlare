@@ -312,8 +312,6 @@ class ResetErrorsCommand(CommandProcessor):
             data: process data
             fl_ctx: FLContext
 
-        Returns: Engine run_info
-
         """
         engine = fl_ctx.get_engine()
         collector = engine.get_widget(WidgetID.INFO_COLLECTOR)
@@ -346,24 +344,22 @@ class ByeCommand(CommandProcessor):
 
 
 class HeartbeatCommand(CommandProcessor):
-    """To implement the ShutdownCommand."""
+    """To implement the HEARTBEATCommand."""
 
     def get_command_name(self) -> str:
         """To get the command name.
 
-        Returns: AdminCommandNames.SHUTDOWN
+        Returns: AdminCommandNames.HEARTBEAT
 
         """
         return ServerCommandNames.HEARTBEAT
 
     def process(self, data: Shareable, fl_ctx: FLContext):
-        """Called to process the Shutdown command.
+        """Called to process the HEARTBEAT command.
 
         Args:
             data: process data
             fl_ctx: FLContext
-
-        Returns: Shutdown command message
 
         """
         return None
