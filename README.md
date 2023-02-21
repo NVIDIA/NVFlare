@@ -156,7 +156,7 @@ to participate, once user add the sites, you can approve the user and sites, the
 the startup kits from the UI. 
 
 ```shell
- nvflare dashard --start
+ nvflare dashboard --start
 ```
 
 
