@@ -63,16 +63,12 @@ def instantiate_class(class_path, init_params):
 class _ModuleScanResult:
     """Data class for ModuleScanner."""
 
-    def __init__(self, class_name: str):
+    def __init__(self, class_name: str, module_name: str):
         self.class_name = class_name
-        # a list of modules that contain the class
-        self.modules = []
-
-    def add_module(self, module_name: str):
-        self.modules.append(module_name)
+        self.module_name = module_name
 
     def __str__(self):
-        return f"{self.class_name}:{self.modules}"
+        return f"{self.class_name}:{self.module_name}"
 
 
 class ModuleScanner:
@@ -112,27 +108,23 @@ class ModuleScanner:
                                         and inspect.isclass(obj)
                                         and obj.__module__ == module_name
                                     ):
-                                        scan_result = scan_result_table.get(name, _ModuleScanResult(class_name=name))
-                                        scan_result.add_module(module_name)
-                                        scan_result_table[name] = scan_result
+                                        # same class name exists in multiple modules
+                                        if name in scan_result_table:
+                                            scan_result = scan_result_table[name]
+                                            if name in self._class_table:
+                                                self._class_table.pop(name)
+                                                self._class_table[f"{scan_result.module_name}.{name}"] = module_name
+                                            self._class_table[f"{module_name}.{name}"] = module_name
+                                        else:
+                                            scan_result = _ModuleScanResult(class_name=name, module_name=module_name)
+                                            scan_result_table[name] = scan_result
+                                            self._class_table[name] = module_name
                             except (ModuleNotFoundError, RuntimeError) as e:
                                 self._logger.debug(
                                     f"Try to import module {module_name}, but failed: {e}. "
                                     f"Can't use name in config to refer to classes in module: {module_name}."
                                 )
                                 pass
-        self._class_table = self._get_class_table_from_scan_result(scan_result_table)
-
-    @staticmethod
-    def _get_class_table_from_scan_result(scan_result_table: Dict[str, _ModuleScanResult]) -> Dict[str, str]:
-        class_table = {}
-        for class_name, scan_result in scan_result_table.items():
-            if len(scan_result.modules) != 1:
-                for module_name in scan_result.modules:
-                    class_table[f"{module_name}.{class_name}"] = module_name
-            else:
-                class_table[class_name] = scan_result.modules[0]
-        return class_table
 
     def get_module_name(self, class_name) -> Optional[str]:
         """Gets the name of the module that contains this class.
