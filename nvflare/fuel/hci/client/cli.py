@@ -122,7 +122,7 @@ class AdminClient(cmd.Cmd):
             poc=poc,
             session_event_cb=self.handle_session_event,
             session_timeout_interval=session_timeout_interval,
-            session_status_check_interval=10,  # check server for session status every 10 seconds
+            session_status_check_interval=1800,  # check server for session status every 30 minutes
         )
         # signal.signal(signal.SIGUSR1, partial(self.session_signal_handler))
         signal.signal(signal.SIGUSR1, self.session_signal_handler)

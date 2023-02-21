@@ -23,7 +23,6 @@ from typing import List
 
 from nvflare.apis.app_validation import AppValidator
 from nvflare.apis.fl_constant import FLContextKey, SiteType, WorkspaceConstants
-from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.apis.workspace import Workspace
@@ -31,38 +30,13 @@ from nvflare.app_common.decomposers import common_decomposers
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.authz import AuthorizationService
 from nvflare.fuel.sec.security_content_service import LoadResult, SecurityContentService
-from nvflare.fuel.utils import fobs
 from nvflare.private.defs import SSLConstants
-from nvflare.private.fed.protos.federated_pb2 import ModelData
-from nvflare.private.fed.utils.numproto import bytes_to_proto
+from nvflare.private.fed.utils.decomposers import private_decomposers
 from nvflare.private.privacy_manager import PrivacyManager, PrivacyService
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 from nvflare.security.security import EmptyAuthorizer, FLAuthorizer
 
 from .app_authz import AppAuthzService
-
-
-def shareable_to_modeldata(shareable, fl_ctx):
-    # make_init_proto message
-    model_data = ModelData()  # create an empty message
-
-    model_data.params["data"].CopyFrom(make_shareable_data(shareable))
-
-    context_data = make_context_data(fl_ctx)
-    model_data.params["fl_context"].CopyFrom(context_data)
-    return model_data
-
-
-def make_shareable_data(shareable):
-    return bytes_to_proto(shareable.to_bytes())
-
-
-def make_context_data(fl_ctx):
-    shared_fl_ctx = FLContext()
-    shared_fl_ctx.set_public_props(fl_ctx.get_all_public_props())
-    props = fobs.dumps(shared_fl_ctx)
-    context_data = bytes_to_proto(props)
-    return context_data
 
 
 def add_logfile_handler(log_file):
@@ -239,3 +213,4 @@ def get_scope_info():
 def fobs_initialize():
     flare_decomposers.register()
     common_decomposers.register()
+    private_decomposers.register()

@@ -53,7 +53,6 @@ class ClientEngine(ClientEngineInternalSpec):
         Args:
             client: FL client object
             client_name: client name
-            sender: sender object
             args: command args
             rank: local process rank
             workers: number of workers
