@@ -12,4 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""FL Server application packagee."""
+import time
+
+from nvflare.apis.fl_constant import MachineStatus
+
+
+class RunInfo(object):
+    def __init__(self, job_id, app_path):
+        """Information for a run."""
+        self.job_id = job_id
+        self.start_time = time.time()
+        self.app_path = app_path
+        self.status = MachineStatus.STOPPED.value

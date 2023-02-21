@@ -281,7 +281,7 @@ class ConnManager(ConnMonitor):
                     connector.curr_conns -= 1
             else:
                 log.error(f"Unknown state: {state}")
-        except BaseException as ex:
+        except Exception as ex:
             log.error(f"Error handling state change: {ex}")
             log.debug(traceback.format_exc())
 
@@ -318,7 +318,7 @@ class ConnManager(ConnMonitor):
 
             else:
                 log.error(f"Received unsupported frame type {prefix.type} on {sfm_conn.get_name()}")
-        except BaseException as ex:
+        except Exception as ex:
             log.error(f"Error processing frame: {ex}")
             log.debug(traceback.format_exc())
 
@@ -419,7 +419,7 @@ class ConnManager(ConnMonitor):
 
         try:
             receiver.process_message(endpoint, self.null_conn, app_id, Message(headers, payload))
-        except BaseException as ex:
+        except Exception as ex:
             log.error(f"Loopback message error: {ex}")
 
 
@@ -431,7 +431,7 @@ class SfmFrameReceiver(FrameReceiver):
     def process_frame(self, frame: BytesAlike):
         try:
             self.conn_manager.process_frame(self.conn, frame)
-        except BaseException as ex:
+        except Exception as ex:
             log.error(f"Error processing frame: {ex}")
             log.debug(traceback.format_exc())
 

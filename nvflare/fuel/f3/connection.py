@@ -98,9 +98,6 @@ class Connection(ABC):
 
         Args:
             receiver: The frame receiver
-
-        Raises:
-            CommError: If any error happens while processing the frame
         """
         self.frame_receiver = receiver
 

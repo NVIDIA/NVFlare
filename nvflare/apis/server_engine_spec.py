@@ -19,12 +19,13 @@ from nvflare.apis.shareable import Shareable
 from nvflare.widgets.widget import Widget
 
 from .client import Client
+from .engine_spec import EngineSpec
 from .fl_context import FLContext
 from .fl_snapshot import RunSnapshot
 from .workspace import Workspace
 
 
-class ServerEngineSpec(ABC):
+class ServerEngineSpec(EngineSpec, ABC):
     @abstractmethod
     def fire_event(self, event_type: str, fl_ctx: FLContext):
         pass
@@ -45,18 +46,6 @@ class ServerEngineSpec(ABC):
     @abstractmethod
     def update_job_run_status(self):
         """To update the job run status to parent process."""
-        pass
-
-    @abstractmethod
-    def validate_clients(self, client_names: List[str]) -> Tuple[List[Client], List[str]]:
-        """Validate specified client names.
-
-        Args:
-            client_names: list of names to be validated
-
-        Returns: a list of validate clients  and a list of invalid client names
-
-        """
         pass
 
     @abstractmethod

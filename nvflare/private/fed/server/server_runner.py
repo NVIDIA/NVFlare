@@ -163,14 +163,15 @@ class ServerRunner(FLComponent):
                 with self.engine.new_context() as fl_ctx:
                     self.fire_event(EventType.ABOUT_TO_END_RUN, fl_ctx)
                     self.log_info(fl_ctx, "ABOUT_TO_END_RUN fired")
+
+                    # ask all clients to end run!
+                    self.engine.send_aux_request(
+                        targets=None, topic=ReservedTopic.END_RUN, request=Shareable(), timeout=0.0, fl_ctx=fl_ctx
+                    )
+
                     self.fire_event(EventType.END_RUN, fl_ctx)
                     self.log_info(fl_ctx, "END_RUN fired")
                     self.engine.persist_components(fl_ctx, completed=True)
-
-            # ask all clients to end run!
-            self.engine.send_aux_request(
-                targets=None, topic=ReservedTopic.END_RUN, request=Shareable(), timeout=0.0, fl_ctx=fl_ctx
-            )
 
             self.log_info(fl_ctx, "Server runner finished.")
 
@@ -335,8 +336,8 @@ class ServerRunner(FLComponent):
 
                 time.sleep(retry_interval)
 
-            # ask client to retry
-            return "", "", None
+        # ask client to retry
+        return "", "", None
 
     def handle_dead_job(self, client_name: str, fl_ctx: FLContext):
         with self.wf_lock:

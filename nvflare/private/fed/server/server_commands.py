@@ -23,14 +23,12 @@ from nvflare.apis.fl_constant import (
     AdminCommandNames,
     FLContextKey,
     MachineStatus,
-    ReservedKey,
     ServerCommandKey,
     ServerCommandNames,
 )
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
-from nvflare.fuel.utils import fobs
 from nvflare.private.defs import SpecialTaskName, TaskConstant
 from nvflare.widgets.widget import WidgetID
 
@@ -147,13 +145,28 @@ class GetTaskCommand(CommandProcessor):
             shareable.set_header(TaskConstant.WAIT_TIME, 1.0)
         else:
             taskname, task_id, shareable = server_runner.process_task_request(client, fl_ctx)
-        data = {
-            ServerCommandKey.TASK_NAME: taskname,
-            ServerCommandKey.TASK_ID: task_id,
-            ServerCommandKey.SHAREABLE: shareable,
-            ServerCommandKey.FL_CONTEXT: copy.deepcopy(get_serializable_data(fl_ctx).props),
-        }
-        return fobs.dumps(data)
+        # data = {
+        #     ServerCommandKey.TASK_NAME: taskname,
+        #     ServerCommandKey.TASK_ID: task_id,
+        #     ServerCommandKey.SHAREABLE: shareable,
+        #     ServerCommandKey.FL_CONTEXT: copy.deepcopy(get_serializable_data(fl_ctx).props),
+        # }
+
+        # we need TASK_ID back as a cookie
+        if not shareable:
+            shareable = Shareable()
+        shareable.add_cookie(name=FLContextKey.TASK_ID, data=task_id)
+
+        # we also need to make TASK_ID available to the client
+        shareable.set_header(key=FLContextKey.TASK_ID, value=task_id)
+
+        shareable.set_header(key=ServerCommandKey.TASK_NAME, value=taskname)
+        shared_fl_ctx = FLContext()
+        shared_fl_ctx.set_public_props(copy.deepcopy(get_serializable_data(fl_ctx).get_all_public_props()))
+        shareable.set_header(key=FLContextKey.PEER_CONTEXT, value=shared_fl_ctx)
+
+        # return fobs.dumps(data)
+        return shareable
 
 
 class SubmitUpdateCommand(CommandProcessor):
@@ -177,16 +190,25 @@ class SubmitUpdateCommand(CommandProcessor):
         Returns:
 
         """
-        shareable = data.get(ReservedKey.SHAREABLE)
-        shared_fl_ctx = data.get(ReservedKey.SHARED_FL_CONTEXT)
-        client = shareable.get_header(ServerCommandKey.FL_CLIENT)
-        fl_ctx.set_peer_context(shared_fl_ctx)
-        contribution_task_name = shareable.get_header(ServerCommandKey.TASK_NAME)
-        task_id = shareable.get_cookie(FLContextKey.TASK_ID)
-        server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
-        server_runner.process_submission(client, contribution_task_name, task_id, shareable, fl_ctx)
+        # shareable = data.get(ReservedKey.SHAREABLE)
+        # shared_fl_ctx = data.get(ReservedKey.SHARED_FL_CONTEXT)
+        # client = shareable.get_header(ServerCommandKey.FL_CLIENT)
+        # fl_ctx.set_peer_context(shared_fl_ctx)
+        # contribution_task_name = shareable.get_header(ServerCommandKey.TASK_NAME)
+        # task_id = shareable.get_cookie(FLContextKey.TASK_ID)
+        # server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
 
-        return None
+        shared_fl_ctx = data.get_header(ServerCommandKey.PEER_FL_CONTEXT)
+        shared_fl_ctx.set_prop(FLContextKey.SHAREABLE, data, private=True)
+
+        client = data.get_header(ServerCommandKey.FL_CLIENT)
+        fl_ctx.set_peer_context(shared_fl_ctx)
+        contribution_task_name = data.get_header(FLContextKey.TASK_NAME)
+        task_id = data.get_cookie(FLContextKey.TASK_ID)
+        server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
+        server_runner.process_submission(client, contribution_task_name, task_id, data, fl_ctx)
+
+        return ""
 
 
 class HandleDeadJobCommand(CommandProcessor):
@@ -212,30 +234,9 @@ class HandleDeadJobCommand(CommandProcessor):
         """
         client_name = data.get_header(ServerCommandKey.FL_CLIENT)
         server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
-        server_runner.handle_dead_job(client_name, fl_ctx)
+        if server_runner:
+            server_runner.handle_dead_job(client_name, fl_ctx)
         return ""
-
-
-class AuxCommunicateCommand(CommandProcessor):
-    """Server AuxCommunicate command."""
-
-    def get_command_name(self) -> str:
-        return ServerCommandNames.AUX_COMMUNICATE
-
-    def process(self, data: Shareable, fl_ctx: FLContext):
-        shared_fl_ctx = data.get_header(ServerCommandKey.PEER_FL_CONTEXT)
-        topic = data.get_header(ServerCommandKey.TOPIC)
-        shareable = data.get_header(ServerCommandKey.SHAREABLE)
-        fl_ctx.set_peer_context(shared_fl_ctx)
-
-        engine = fl_ctx.get_engine()
-        reply = engine.dispatch(topic=topic, request=shareable, fl_ctx=fl_ctx)
-
-        data = {
-            ServerCommandKey.AUX_REPLY: reply,
-            ServerCommandKey.FL_CONTEXT: copy.deepcopy(get_serializable_data(fl_ctx).props),
-        }
-        return data
 
 
 class ShowStatsCommand(CommandProcessor):
@@ -293,6 +294,31 @@ class GetErrorsCommand(CommandProcessor):
         return errors
 
 
+class ResetErrorsCommand(CommandProcessor):
+    """To implement the show_errors command."""
+
+    def get_command_name(self) -> str:
+        """To get the command name.
+
+        Returns: ServerCommandNames.GET_ERRORS
+
+        """
+        return ServerCommandNames.RESET_ERRORS
+
+    def process(self, data: Shareable, fl_ctx: FLContext):
+        """Called to process the abort command.
+
+        Args:
+            data: process data
+            fl_ctx: FLContext
+
+        """
+        engine = fl_ctx.get_engine()
+        collector = engine.get_widget(WidgetID.INFO_COLLECTOR)
+        collector.reset_errors()
+        return None
+
+
 class ByeCommand(CommandProcessor):
     """To implement the ShutdownCommand."""
 
@@ -317,6 +343,28 @@ class ByeCommand(CommandProcessor):
         return None
 
 
+class HeartbeatCommand(CommandProcessor):
+    """To implement the HEARTBEATCommand."""
+
+    def get_command_name(self) -> str:
+        """To get the command name.
+
+        Returns: AdminCommandNames.HEARTBEAT
+
+        """
+        return ServerCommandNames.HEARTBEAT
+
+    def process(self, data: Shareable, fl_ctx: FLContext):
+        """Called to process the HEARTBEAT command.
+
+        Args:
+            data: process data
+            fl_ctx: FLContext
+
+        """
+        return None
+
+
 class ServerCommands(object):
     """AdminCommands contains all the commands for processing the commands from the parent process."""
 
@@ -327,9 +375,16 @@ class ServerCommands(object):
         GetTaskCommand(),
         SubmitUpdateCommand(),
         HandleDeadJobCommand(),
-        AuxCommunicateCommand(),
         ShowStatsCommand(),
         GetErrorsCommand(),
+        ResetErrorsCommand(),
+        HeartbeatCommand(),
+    ]
+
+    client_request_commands_names = [
+        ServerCommandNames.GET_TASK,
+        ServerCommandNames.SUBMIT_UPDATE,
+        ServerCommandNames.AUX_COMMUNICATE,
     ]
 
     @staticmethod

@@ -22,6 +22,7 @@ import threading
 
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.workspace import Workspace
+from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
@@ -43,8 +44,9 @@ def main():
     parser.add_argument("--ssid", "-d", type=str, help="ssid", required=True)
     parser.add_argument("--job_id", "-n", type=str, help="job_id", required=True)
     parser.add_argument("--client_name", "-c", type=str, help="client name", required=True)
-    parser.add_argument("--listen_port", "-p", type=str, help="listen port", required=True)
+    # parser.add_argument("--listen_port", "-p", type=str, help="listen port", required=True)
     parser.add_argument("--sp_target", "-g", type=str, help="Sp target", required=True)
+    parser.add_argument("--parent_url", "-p", type=str, help="parent_url", required=True)
 
     parser.add_argument(
         "--fed_client", "-s", type=str, help="an aggregation server specification json file", required=True
@@ -98,6 +100,7 @@ def main():
 
     app_root = workspace.get_app_dir(str(args.job_id))
 
+    logger = None
     try:
         # start parent process checking thread
         thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
@@ -105,6 +108,7 @@ def main():
 
         conf = FLClientStarterConfiger(
             workspace=workspace,
+            args=args,
             kv_list=args.set,
         )
         conf.configure()
@@ -115,7 +119,8 @@ def main():
         logger.info("Worker_process started.")
 
         deployer = conf.base_deployer
-        federated_client = deployer.create_fed_client(args, args.sp_target)
+        # federated_client = deployer.create_fed_client(args, args.sp_target)
+        federated_client = deployer.create_fed_client(args)
         federated_client.status = ClientStatus.STARTING
 
         federated_client.token = args.token
@@ -125,21 +130,21 @@ def main():
         federated_client.fl_ctx.set_prop(EngineConstant.FL_TOKEN, args.token, private=False)
         federated_client.fl_ctx.set_prop(FLContextKey.WORKSPACE_ROOT, args.workspace, private=True)
 
-        client_app_runner = ClientAppRunner()
+        client_app_runner = ClientAppRunner(time_out=kv_list.get("app_runner_timeout", 60.0))
         client_app_runner.start_run(app_root, args, config_folder, federated_client, secure_train)
 
     except BaseException as e:
-        logger = logging.getLogger("worker_process")
-        logger.error(f"FL client execution exception: {secure_format_exception(e)}")
+        if logger:
+            logger.error(f"FL client execution exception: {secure_format_exception(e)}")
         raise e
     finally:
-        stop_event.set()
         if client_app_runner:
             client_app_runner.close()
         if deployer:
             deployer.close()
         if federated_client:
             federated_client.terminate()
+        stop_event.set()
         if thread and thread.is_alive():
             thread.join()
         AuditService.close()
@@ -165,4 +170,5 @@ if __name__ == "__main__":
     This is the program when starting the child process for running the NVIDIA FLARE executor.
     """
 
-    main()
+    # main()
+    mpm.run(main_func=main)

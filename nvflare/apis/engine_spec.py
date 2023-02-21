@@ -12,4 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""FL Server application packagee."""
+from abc import ABC, abstractmethod
+from typing import List, Tuple
+
+
+class EngineSpec(ABC):
+    @abstractmethod
+    def validate_targets(self, target_names: List[str]) -> Tuple[List, List[str]]:
+        """Validate specified target names.
+
+        Args:
+            target_names: list of names to be validated
+
+        Returns: a list of validate targets  and a list of invalid target names
+
+        """
+        pass

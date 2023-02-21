@@ -12,10 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 import re
 
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_component import FLComponent
+from nvflare.apis.fl_constant import SystemConfigs
+from nvflare.fuel.utils.argument_utils import parse_vars
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.json_scanner import Node
 from nvflare.private.fed_json_config import FedJsonConfigurator
 from nvflare.private.json_configer import ConfigContext, ConfigError
@@ -34,13 +38,15 @@ FL_MODULES = ["apis", "app_common", "widgets", "app_opt"]
 
 
 class ClientJsonConfigurator(FedJsonConfigurator):
-    def __init__(self, config_file_name: str, exclude_libs=True):
+    def __init__(self, config_file_name: str, args, kv_list=None, exclude_libs=True):
         """To init the ClientJsonConfigurator.
 
         Args:
             config_file_name: config file name
             exclude_libs: True/False to exclude the libs folder
         """
+        self.args = args
+
         base_pkgs = FL_PACKAGES
         module_names = FL_MODULES
 
@@ -51,6 +57,13 @@ class ClientJsonConfigurator(FedJsonConfigurator):
             module_names=module_names,
             exclude_libs=exclude_libs,
         )
+
+        if kv_list:
+            assert isinstance(kv_list, list), "cmd_vars must be list, but got {}".format(type(kv_list))
+            self.cmd_vars = parse_vars(kv_list)
+        else:
+            self.cmd_vars = {}
+        self.config_files = [config_file_name]
 
         self.runner_config = None
         self.executors = []
@@ -121,4 +134,11 @@ class ClientJsonConfigurator(FedJsonConfigurator):
             components=self.components,
             handlers=self.handlers,
             default_task_fetch_interval=self._default_task_fetch_interval,
+        )
+
+        ConfigService.initialize(
+            section_files={SystemConfigs.APPLICATION_CONF: os.path.basename(self.config_files[0])},
+            config_path=[self.args.workspace],
+            parsed_args=self.args,
+            var_dict=self.cmd_vars,
         )
