@@ -149,6 +149,16 @@ $ ./admin@nvidia.com/startup/fl_admin.sh
 ``` 
 Once console started, you can use check-status command just like POC mode
 
+* **Provision and distributing startup kits via Flare Dashboard UI**
+
+Start the dashboard, then following the instructions. Once Dashboard started, you can setup project, invite users 
+to participate, once user add the sites, you can approve the user and sites, then freeze the project. The user can download
+the startup kits from the UI. 
+
+```shell
+ nvflare dashard --start
+```
+
 
 
 ## Getting Started
