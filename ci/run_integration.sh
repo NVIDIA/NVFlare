@@ -31,7 +31,7 @@ fi
 
 init_pipenv() {
     echo "initializing pip environment"
-    pipenv install -e .[all]
+    pipenv install -e .[dev]
     export PYTHONPATH=$PWD
 }
 
@@ -56,7 +56,7 @@ integration_test_pt() {
 integration_test_tf() {
     echo "Run TF integration test..."
     # not using pipenv because we need tensorflow package from the container
-    python -m pip install -e .[all]
+    python -m pip install -e .[dev]
     export PYTHONPATH=$PWD
     testFolder="tests/integration_test"
     clean_up_snapshot_and_job

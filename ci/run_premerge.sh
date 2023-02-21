@@ -31,7 +31,7 @@ fi
 
 init_pipenv() {
     echo "initializing pip environment"
-    pipenv install -e .[all]
+    pipenv install -e .[dev]
     export PYTHONPATH=$PWD
 }
 
