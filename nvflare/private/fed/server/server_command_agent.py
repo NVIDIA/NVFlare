@@ -12,60 +12,107 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import logging
-import threading
 
-from nvflare.apis.fl_constant import ServerCommandKey
+from nvflare.apis.fl_constant import FLContextKey, ServerCommandKey
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.shareable import ReservedHeaderKey
+from nvflare.apis.utils.fl_context_utils import get_serializable_data
+from nvflare.fuel.f3.cellnet.cell import Cell, MessageHeaderKey, ReturnCode, make_reply
+from nvflare.fuel.f3.message import Message as CellMessage
 from nvflare.fuel.utils import fobs
-from nvflare.private.fed.utils.fed_utils import listen_command
-from nvflare.security.logging import secure_format_exception
+from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, new_cell_message
 
 from .server_commands import ServerCommands
 
 
 class ServerCommandAgent(object):
-    def __init__(self, listen_port) -> None:
+    def __init__(self, engine, cell: Cell) -> None:
         """To init the CommandAgent.
 
         Args:
             listen_port: port to listen the command
         """
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.listen_port = int(listen_port)
-        self.thread = None
         self.asked_to_stop = False
+        self.engine = engine
+        self.cell = cell
 
-    def start(self, engine):
-        self.thread = threading.Thread(
-            target=listen_command, args=[self.listen_port, engine, self.execute_command, self.logger]
+    def start(self):
+        self.cell.register_request_cb(
+            channel=CellChannel.SERVER_COMMAND,
+            topic="*",
+            cb=self.execute_command,
         )
-        self.thread.start()
-        self.logger.info(f"ServerCommandAgent listening on port: {self.listen_port}")
+        self.cell.register_request_cb(
+            channel=CellChannel.AUX_COMMUNICATION,
+            topic="*",
+            cb=self.aux_communicate,
+        )
+        self.logger.info(f"ServerCommandAgent cell register_request_cb: {self.cell.get_fqcn()}")
 
-    def execute_command(self, conn, engine):
-        while not self.asked_to_stop:
-            try:
-                if conn.poll(1.0):
-                    msg = conn.recv()
-                    msg = fobs.loads(msg)
-                    command_name = msg.get(ServerCommandKey.COMMAND)
-                    data = msg.get(ServerCommandKey.DATA)
-                    command = ServerCommands.get_command(command_name)
-                    if command:
-                        with engine.new_context() as new_fl_ctx:
-                            reply = command.process(data=data, fl_ctx=new_fl_ctx)
-                            if reply is not None:
-                                conn.send(reply)
-            except EOFError:
-                self.logger.info("listener communication terminated.")
-                break
-            except Exception as e:
-                self.logger.error(
-                    f"IPC Communication error on the port: {self.listen_port}: {secure_format_exception(e)}."
-                )
+    def execute_command(self, request: CellMessage) -> CellMessage:
+
+        if not isinstance(request, CellMessage):
+            raise RuntimeError("request must be CellMessage but got {}".format(type(request)))
+
+        command_name = request.get_header(MessageHeaderKey.TOPIC)
+        data = fobs.loads(request.payload)
+
+        token = request.get_header(CellMessageHeaderKeys.TOKEN, None)
+        client = None
+        if token:
+            client = self._get_client(token)
+            if client:
+                data.set_header(ServerCommandKey.FL_CLIENT, client)
+        if command_name in ServerCommands.client_request_commands_names and not client:
+            return make_reply(ReturnCode.AUTHENTICATION_ERROR, "Request from invalid client", fobs.dumps(None))
+        command = ServerCommands.get_command(command_name)
+
+        if command:
+            with self.engine.new_context() as new_fl_ctx:
+                reply = command.process(data=data, fl_ctx=new_fl_ctx)
+                if reply is not None:
+                    return_message = new_cell_message({}, fobs.dumps(reply))
+                    return_message.set_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
+                else:
+                    return_message = make_reply(ReturnCode.PROCESS_EXCEPTION, "No process results", fobs.dumps(None))
+                return return_message
+        else:
+            return make_reply(ReturnCode.INVALID_REQUEST, "No server command found", fobs.dumps(None))
+
+    def _get_client(self, token):
+        fl_server = self.engine.server
+        client_manager = fl_server.client_manager
+        clients = client_manager.clients
+        return clients.get(token)
+
+    def aux_communicate(self, request: CellMessage) -> CellMessage:
+
+        assert isinstance(request, CellMessage), "request must be CellMessage but got {}".format(type(request))
+        data = request.payload
+
+        topic = request.get_header(MessageHeaderKey.TOPIC)
+        with self.engine.new_context() as fl_ctx:
+            shared_fl_ctx = data.get_header(ReservedHeaderKey.PEER_PROPS)
+            # shared_fl_ctx.set_prop(FLContextKey.SHAREABLE, data, private=True)
+
+            fl_ctx.set_peer_context(shared_fl_ctx)
+
+            engine = fl_ctx.get_engine()
+            reply = engine.dispatch(topic=topic, request=data, fl_ctx=fl_ctx)
+
+            shared_fl_ctx = FLContext()
+            shared_fl_ctx.set_public_props(copy.deepcopy(get_serializable_data(fl_ctx).get_all_public_props()))
+            reply.set_header(key=FLContextKey.PEER_CONTEXT, value=shared_fl_ctx)
+
+            if reply is not None:
+                return_message = new_cell_message({}, reply)
+                return_message.set_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
+            else:
+                return_message = new_cell_message({}, None)
+            return return_message
 
     def shutdown(self):
         self.asked_to_stop = True
-
-        if self.thread and self.thread.is_alive():
-            self.thread.join()

@@ -256,7 +256,9 @@ class _TryLogin(State):
         result = api.auto_login()
         if result[ResultKey.STATUS] == APIStatus.SUCCESS:
             api.server_sess_active = True
-            api.fire_session_event(SessionEventType.LOGIN_SUCCESS, f"Logged into server at {api.host}:{api.port}")
+            api.fire_session_event(
+                SessionEventType.LOGIN_SUCCESS, f"Logged into server at {api.host}:{api.port} with SSID: {api.ssid}"
+            )
             return _STATE_NAME_OPERATE
 
         details = result.get(ResultKey.DETAILS, "")

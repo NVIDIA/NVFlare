@@ -58,17 +58,16 @@ class Communicator:
         self,
         ssl_args=None,
         secure_train=False,
-        retry_timeout=30,
         client_state_processors: Optional[List[Filter]] = None,
         compression=None,
         cell: Cell = None,
+        client_register_interval=2,
     ):
         """To init the Communicator.
 
         Args:
             ssl_args: SSL args
             secure_train: True/False to indicate if secure train
-            retry_timeout: retry timeout in seconds
             client_state_processors: Client state processor filters
             compression: communicate compression algorithm
         """
@@ -79,10 +78,9 @@ class Communicator:
         self.verbose = False
         self.should_stop = False
         self.heartbeat_done = False
-        # TODO: should we change this back?
-        self.retry = 1
         self.client_state_processors = client_state_processors
         self.compression = compression
+        self.client_register_interval = client_register_interval
 
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -136,7 +134,7 @@ class Communicator:
                 token = result.get_header(CellMessageHeaderKeys.TOKEN)
                 ssid = result.get_header(CellMessageHeaderKeys.SSID)
                 if not token and not self.should_stop:
-                    time.sleep(5)
+                    time.sleep(self.client_register_interval)
                 else:
                     break
 

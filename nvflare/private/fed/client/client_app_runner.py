@@ -14,6 +14,7 @@
 
 import os
 import sys
+import time
 
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.workspace import Workspace
@@ -28,19 +29,26 @@ from nvflare.private.privacy_manager import PrivacyService
 
 
 class ClientAppRunner:
-    def __init__(self) -> None:
+    def __init__(self, time_out=60.0) -> None:
         self.command_agent = None
+        self.timeout = time_out
 
     def start_run(self, app_root, args, config_folder, federated_client, secure_train):
         client_runner = self.create_client_runner(app_root, args, config_folder, federated_client, secure_train)
+        federated_client.set_client_runner(client_runner)
+        start = time.time()
+        while federated_client.communicator.cell is None:
+            time.sleep(1.0)
+            if time.time() - start > self.timeout:
+                raise RuntimeError("No cell created for communicator. Failed to start the ClientAppRunner.")
         federated_client.status = ClientStatus.STARTED
         client_runner.run(app_root, args)
 
+        federated_client.stop_cell()
+
     def create_client_runner(self, app_root, args, config_folder, federated_client, secure_train):
         client_config_file_name = os.path.join(app_root, args.client_config)
-        conf = ClientJsonConfigurator(
-            config_file_name=client_config_file_name,
-        )
+        conf = ClientJsonConfigurator(config_file_name=client_config_file_name, args=args, kv_list=args.set)
         conf.configure()
         workspace = Workspace(args.workspace, args.client_name, config_folder)
         app_custom_folder = workspace.get_client_custom_dir()
@@ -69,6 +77,7 @@ class ClientAppRunner:
             fl_ctx.set_prop(FLContextKey.APP_ROOT, app_root, private=True, sticky=True)
             fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True)
             fl_ctx.set_prop(FLContextKey.SECURE_MODE, secure_train, private=True, sticky=True)
+            fl_ctx.set_prop(FLContextKey.CURRENT_RUN, args.job_id, private=False, sticky=True)
 
             client_runner = ClientRunner(config=conf.runner_config, job_id=args.job_id, engine=run_manager)
             run_manager.add_handler(client_runner)
@@ -89,9 +98,17 @@ class ClientAppRunner:
         )
 
     def start_command_agent(self, args, client_runner, federated_client, fl_ctx):
+        start = time.time()
+        while federated_client.cell is None:
+            time.sleep(0.1)
+            if time.time() - start > self.timeout:
+                raise RuntimeError("No cell created. Failed to start the command_agent for ClientAppRunner.")
+
         # Start the command agent
-        self.command_agent = CommandAgent(federated_client, int(args.listen_port), client_runner)
+        # self.command_agent = CommandAgent(federated_client, int(args.listen_port), client_runner)
+        self.command_agent = CommandAgent(federated_client, client_runner)
         self.command_agent.start(fl_ctx)
+        client_runner.command_agent = self.command_agent
 
     def close(self):
         if self.command_agent:

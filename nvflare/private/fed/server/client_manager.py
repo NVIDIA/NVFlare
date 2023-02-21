@@ -231,3 +231,26 @@ class ClientManager:
 
     def get_max_clients(self):
         return self.max_num_clients
+
+    def get_all_clients_from_inputs(self, inputs):
+        clients = []
+        invalid_inputs = []
+        for item in inputs:
+            client = self.clients.get(item)
+            # if item in self.get_all_clients():
+            if client:
+                clients.append(client)
+            else:
+                client = self.get_client_from_name(item)
+                if client:
+                    clients.append(client)
+                else:
+                    invalid_inputs.append(item)
+        return clients, invalid_inputs
+
+    def get_client_from_name(self, client_name):
+        clients = list(self.get_clients().values())
+        for c in clients:
+            if client_name == c.name:
+                return c
+        return None
