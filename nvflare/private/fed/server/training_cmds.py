@@ -314,7 +314,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             else:
                 table.add_row([client_name, app_name, job_id, "No Reply"])
 
-    def _add_scope_info(self, table, site_name, scope_names: [str], default_scope: str):
+    def _add_scope_info(self, table, site_name, scope_names: List[str], default_scope: str):
         if not scope_names:
             names = ""
         else:
