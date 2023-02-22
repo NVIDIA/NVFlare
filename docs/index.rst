@@ -8,6 +8,7 @@ NVIDIA FLARE
 
    flare_overview
    key_features
+   quickstart
    getting_started
    example_applications_algorithms
    real_world_fl
