@@ -76,7 +76,7 @@ $ nvflare poc --stop
 ``` 
 
 #### **Quick Start Advanced Topics**
-<details><summary>Quick start with Production Mode</summary>
+<details><summary>Quick start with production mode</summary>
 
 Before you work in production mode, you need to first **provision**: a process to generate **startup kit**.
 Startup kits are set of start scripts, configuration and certificates associated with different user, sites, server.
