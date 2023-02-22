@@ -15,7 +15,7 @@
 import warnings
 
 warnings.warn(
-    f"This module: {__file__} is deprecated. Please use nvflare.app_opt.homomorphic_encryption.",
+    f"This module: {__file__} is deprecated. Please use nvflare.app_opt.he.",
     category=FutureWarning,
     stacklevel=2,
 )
