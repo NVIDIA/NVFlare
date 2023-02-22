@@ -8,7 +8,8 @@ It uses [MONAI](https://github.com/Project-MONAI/MONAI),
 which is a PyTorch-based, open-source framework for deep learning in healthcare imaging, part of the PyTorch Ecosystem.
 
 ### FedSM
-This example illustrates the personalized federated learning algorithm [FedSM](https://arxiv.org/abs/2203.10144) accpeted to [CVPR2022](https://cvpr2022.thecvf.com/). It bridges the different data distributions across clients via a SoftPull mechanism and a Super Model setting. 
+This example illustrates the personalized federated learning algorithm [FedSM](https://arxiv.org/abs/2203.10144) accepted to [CVPR2022](https://cvpr2022.thecvf.com/). 
+It bridges the different data distributions across clients via a SoftPull mechanism and utilizes a Super Model. 
 
 ## (Optional) 1. Set up a virtual environment
 ```
@@ -19,11 +20,11 @@ python3 -m pip install --user virtualenv
 ```
 find . -name ".sh" -exec chmod +x {} \;
 ```
-initialize virtual environment.
+Initialize virtual environment.
 ```
 source ./virtualenv/set_env.sh
 ```
-install required packages for training
+Install required packages for training.
 ```
 pip3 install --upgrade pip
 pip3 install -r ./virtualenv/min-requirements.txt
@@ -40,7 +41,9 @@ Please refer to [Prostate Example](https://github.com/NVIDIA/NVFlare/tree/dev/ex
 ## 3. Run automated experiments
 We use the NVFlare simulator to run FL training automatically, the 6 clients are named `client_I2CVB, client_MSD, client_NCI_ISBI_3T, client_NCI_ISBI_Dx, client_Promise12, client_PROSTATEx`
 ### 3.1 Prepare local configs
-First, we add the image directory root to `config_train.json` files for generating the absolute path to dataset and datalist. In the current folder structure, it will be `${PWD}/..`, it can be any arbitary path where the data locates.  
+First, we add the image directory root to `config_train.json` files for generating the absolute path to dataset and datalist. 
+In the current folder structure, it will be `${PWD}/..`. 
+It can be any arbitrary path where the data locates.  
 ```
 for job in fedsm_prostate
 do
@@ -48,11 +51,12 @@ do
 done
 ```
 ### Use NVFlare simulator to run the experiments
-NWe use NVFlare simulator to run the FL training experiments, following the pattern:
+We use NVFlare simulator to run the FL training experiments, following the pattern:
 ```
 nvflare simulator job_configs/[job] -w ${PWD}/workspaces/[job] -c [clients] -gpu [gpu] -t [thread]
 ```
-`[job]` is the experiment job that will be submitted for the FL training, in this example, this is `fedsm_prostate`.  
+`[job]` is the experiment job that will be submitted for the FL training. 
+In this example, this is `fedsm_prostate`.  
 The combination of `-c` and `-gpu`/`-t` controls the resource allocation. 
 
 ## 4. Results on three clients for FedSM
@@ -62,16 +66,17 @@ In this example, we run three clients on 1 GPU with three threads `-t 3`. The mi
 In this example, each client computes their validation scores using their own
 validation set. 
 
-We provide a script for plotting the tensorboard records, running
+We provide a script for plotting the TensorBoard records:
 ```
 python3 ./result_stat/plot_tensorboard_events.py
 ```
-The TensorBoard curves (smoothed with weight 0.8) for validation Dice for the 100 epochs (100 rounds, 1 local epochs per round) during training are shown below:
+The TensorBoard curves (smoothed with weight 0.8) for validation Dice for the 100 epochs (100 rounds, 1 local epoch per round) during training are shown below:
 ![All training curve](./figs/all_training.png)
 
 ### Testing score
 The testing score is computed based on the Super Model for FedSM.
-We provide a script for performing validation on testing data split, please add the correct paths and job_ids, and run
+We provide a script for performing validation on testing data split. 
+Please add the correct paths and job_ids, and run:
 
 ```
 bash ./result_stat/testing_models_2d.sh
@@ -86,3 +91,19 @@ The Dice results for the above run are:
 | prostate_fedavg  |   0.8324   | 
 | prostate_fedprox |   0.8131   | 
 | prostate_ditto   | 	0.8474	 |
+
+
+## Citation
+
+> Xu, An, et al. "Closing the generalization gap of cross-silo federated medical image segmentation." Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. 2022.
+
+BibTeX
+```
+@inproceedings{xu2022closing,
+  title={Closing the generalization gap of cross-silo federated medical image segmentation},
+  author={Xu, An and Li, Wenqi and Guo, Pengfei and Yang, Dong and Roth, Holger R and Hatamizadeh, Ali and Zhao, Can and Xu, Daguang and Huang, Heng and Xu, Ziyue},
+  booktitle={Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition},
+  pages={20866--20875},
+  year={2022}
+}
+```
