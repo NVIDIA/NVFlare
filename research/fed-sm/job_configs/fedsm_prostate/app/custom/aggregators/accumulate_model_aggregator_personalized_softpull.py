@@ -302,12 +302,6 @@ class AccumulateWeightedAggregatorPersonalizedSoftPull(Aggregator):
                         )
                     clients_with_messages.append(client_name)
 
-                # print(acc.client)
-                # print(acc.steps)
-                # print(acc.data.keys())
-                # print(acc.data[model_id].data.keys())
-                # print(self.soft_pull_lambda)
-                # print(len(self.accumulator) - 1)
                 for aggr_item in self.accumulator:
                     aggr_client_name = aggr_item.client
                     if aggr_client_name == client_name:

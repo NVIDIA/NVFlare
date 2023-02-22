@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import copy
 from abc import abstractmethod
 
 import numpy as np
@@ -38,7 +37,7 @@ class SupervisedLearner(Learner):
             This provides the basic functionality of a local learner: perform before-train validation on
             global model at the beginning of each round, perform local training, and send the updated weights.
             No model will be saved locally, tensorboard record for local loss and global model validation score.
-            Enabled both FedAvg and FedProx
+            Enabled FedAvg
 
         Args:
             train_config_filename: directory of config_3 file.
@@ -54,9 +53,6 @@ class SupervisedLearner(Learner):
         self.aggregation_epochs = aggregation_epochs
         self.train_task_name = train_task_name
         self.best_metric = 0.0
-        # FedProx related
-        self.fedproxloss_mu = 0.0
-        self.criterion_prox = None
 
     def initialize(self, parts: dict, fl_ctx: FLContext):
         # when a run starts, this is where the actual settings get initialized for trainer
@@ -86,7 +82,6 @@ class SupervisedLearner(Learner):
         as long as they are made available for further training and validation
         some potential items include but not limited to:
         self.lr
-        self.fedproxloss_mu
         self.model
         self.device
         self.optimizer
@@ -110,7 +105,6 @@ class SupervisedLearner(Learner):
         self,
         fl_ctx,
         train_loader,
-        model_global,
         abort_signal: Signal,
         current_round,
     ):
@@ -119,7 +113,6 @@ class SupervisedLearner(Learner):
         Load data pairs from train_loader: image / label
         Compute outputs with self.model
         Compute loss with self.criterion
-        Add fedprox loss
         Update model
         """
         for epoch in range(self.aggregation_epochs):
@@ -141,11 +134,6 @@ class SupervisedLearner(Learner):
                 # forward + backward + optimize
                 outputs = self.model(inputs)
                 loss = self.criterion(outputs, labels)
-
-                # FedProx loss term
-                if self.fedproxloss_mu > 0:
-                    fed_prox_loss = self.criterion_prox(self.model, model_global)
-                    loss += fed_prox_loss
 
                 self.optimizer.zero_grad()
                 loss.backward()
@@ -195,9 +183,8 @@ class SupervisedLearner(Learner):
         fl_ctx: FLContext,
         abort_signal: Signal,
     ) -> Shareable:
-        """Typical training task pipeline with potential HE and fedprox functionalities
+        """Typical training task pipeline with potential HE functionality
         Get global model weights (potentially with HE)
-        Prepare for fedprox loss
         Local training
         Return updated weights (model_diff)
         """
@@ -233,19 +220,10 @@ class SupervisedLearner(Learner):
         epoch_len = len(self.train_loader)
         self.log_info(fl_ctx, f"Local steps per epoch: {epoch_len}")
 
-        # make a copy of model_global as reference for potential FedProx loss
-        if self.fedproxloss_mu > 0:
-            model_global = copy.deepcopy(self.model)
-            for param in model_global.parameters():
-                param.requires_grad = False
-        else:
-            model_global = None
-
         # local train
         self.local_train(
             fl_ctx=fl_ctx,
             train_loader=self.train_loader,
-            model_global=model_global,
             abort_signal=abort_signal,
         )
         if abort_signal.triggered:

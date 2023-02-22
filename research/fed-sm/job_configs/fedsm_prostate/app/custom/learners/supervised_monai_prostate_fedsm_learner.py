@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import copy
-
 import numpy as np
 import torch
 import torch.optim as optim
@@ -196,17 +194,10 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
         epoch_len = len(self.train_loader)
         self.log_info(fl_ctx, f"Local steps per epoch: {epoch_len}")
 
-        # make a copy of model_global as reference for
-        # potential FedProx loss of global model
-        model_global = copy.deepcopy(self.model)
-        for param in model_global.parameters():
-            param.requires_grad = False
-
         # local train global model
         self.local_train(
             fl_ctx=fl_ctx,
             train_loader=self.train_loader,
-            model_global=model_global,
             abort_signal=abort_signal,
             current_round=current_round,
         )

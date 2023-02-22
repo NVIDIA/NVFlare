@@ -39,7 +39,6 @@ from utils.custom_client_datalist_json_path import custom_client_datalist_json_p
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.pt.pt_fedproxloss import PTFedProxLoss
 
 
 class SupervisedMonaiProstateLearner(SupervisedLearner):
@@ -87,7 +86,6 @@ class SupervisedMonaiProstateLearner(SupervisedLearner):
 
         # Get the config_info
         self.lr = self.config_info["learning_rate"]
-        self.fedproxloss_mu = self.config_info["fedproxloss_mu"]
         cache_rate = self.config_info["cache_dataset"]
         dataset_base_dir = self.config_info["dataset_base_dir"]
         datalist_json_path = self.config_info["datalist_json_path"]
@@ -125,10 +123,6 @@ class SupervisedMonaiProstateLearner(SupervisedLearner):
         ).to(self.device)
         self.optimizer = optim.Adam(self.model.parameters(), lr=self.lr)
         self.criterion = DiceLoss(sigmoid=True)
-
-        if self.fedproxloss_mu > 0:
-            self.log_info(fl_ctx, f"using FedProx loss with mu {self.fedproxloss_mu}")
-            self.criterion_prox = PTFedProxLoss(mu=self.fedproxloss_mu)
 
         self.transform = Compose(
             [
