@@ -60,10 +60,10 @@ class InfoCollectorCommandModule(JobCommandModule, CommandUtil):
                 ),
                 CommandSpec(
                     name=AdminCommandNames.RESET_ERRORS,
-                    description="reset errors",
+                    description="reset error stats for an actively running job",
                     usage="reset_errors",
                     handler_func=self.reset_errors,
-                    authz_func=self.command_authz_required,
+                    authz_func=self.authorize_info_collection,
                     visible=True,
                 ),
             ],
@@ -94,6 +94,10 @@ class InfoCollectorCommandModule(JobCommandModule, CommandUtil):
         conn.set_prop(self.CONN_KEY_COLLECTOR, collector)
 
         job_id = conn.get_prop(self.JOB_ID)
+        if job_id not in engine.run_processes:
+            conn.append_error(f"Job_id: {job_id} is not running.")
+            return PreAuthzReturnCode.ERROR
+
         run_info = engine.get_app_run_info(job_id)
         if not run_info:
             conn.append_string(
@@ -132,13 +136,25 @@ class InfoCollectorCommandModule(JobCommandModule, CommandUtil):
             conn.append_any(result)
         elif target_type == self.TARGET_TYPE_CLIENT:
             message = new_message(conn, topic=InfoCollectorTopic.SHOW_ERRORS, body="", require_authz=True)
+            message.set_header(RequestHeader.JOB_ID, job_id)
             replies = self.send_request_to_clients(conn, message)
             self._process_stats_replies(conn, replies)
 
     def reset_errors(self, conn: Connection, args: List[str]):
-        collector = conn.get_prop(self.CONN_KEY_COLLECTOR)
-        collector.reset_errors()
-        conn.append_string("errors reset")
+        engine = conn.app_ctx
+        if not isinstance(engine, ServerEngineInternalSpec):
+            raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
+
+        job_id = conn.get_prop(self.JOB_ID)
+        target_type = args[2]
+        if target_type == self.TARGET_TYPE_SERVER:
+            result = engine.reset_errors(job_id)
+            conn.append_any(result)
+        elif target_type == self.TARGET_TYPE_CLIENT:
+            message = new_message(conn, topic=InfoCollectorTopic.RESET_ERRORS, body="", require_authz=True)
+            message.set_header(RequestHeader.JOB_ID, job_id)
+            replies = self.send_request_to_clients(conn, message)
+            self._process_stats_replies(conn, replies)
 
     def _process_stats_replies(self, conn, replies):
         if not replies:
