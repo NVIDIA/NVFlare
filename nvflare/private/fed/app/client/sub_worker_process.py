@@ -194,6 +194,20 @@ class SubWorkerExecutor:
             )
 
         job_id = self.args.job_id
+        self._get_client_run_manager(job_id)
+
+        parent_fqcn = FQCN.join([self.args.client_name, self.args.job_id])
+        relayer = EventRelayer(self.cell, parent_fqcn, self.local_rank)
+        self.run_manager.add_handler(relayer)
+        self.run_manager.components[CommunicationMetaData.RELAYER] = relayer
+
+        with self.run_manager.new_context() as fl_ctx:
+            fl_ctx.set_prop(FLContextKey.RANK_NUMBER, self.local_rank, private=True, sticky=True)
+            fl_ctx.set_prop(FLContextKey.NUM_OF_PROCESSES, self.num_of_processes, private=True, sticky=True)
+
+        return make_reply(ReturnCode.OK, "", None)
+
+    def _get_client_run_manager(self, job_id):
         if self.args.simulator_engine.lower() == "true":
             self.run_manager = SimulatorClientRunManager(
                 client_name=self.args.client_name,
@@ -214,17 +228,6 @@ class SubWorkerExecutor:
                 handlers=self.handlers,
                 conf=None,
             )
-
-        parent_fqcn = FQCN.join([self.args.client_name, self.args.job_id])
-        relayer = EventRelayer(self.cell, parent_fqcn, self.local_rank)
-        self.run_manager.add_handler(relayer)
-        self.run_manager.components[CommunicationMetaData.RELAYER] = relayer
-
-        with self.run_manager.new_context() as fl_ctx:
-            fl_ctx.set_prop(FLContextKey.RANK_NUMBER, self.local_rank, private=True, sticky=True)
-            fl_ctx.set_prop(FLContextKey.NUM_OF_PROCESSES, self.num_of_processes, private=True, sticky=True)
-
-        return make_reply(ReturnCode.OK, "", None)
 
     def _execute_task(self, data):
         """To execute the event task and pass to worker_process.

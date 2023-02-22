@@ -163,9 +163,9 @@ class MultiProcessExecutor(Executor):
             client_name = fl_ctx.get_identity_name()
             job_id = fl_ctx.get_job_id()
 
-            engine = fl_ctx.get_engine()
+            self.engine = fl_ctx.get_engine()
             simulate_mode = fl_ctx.get_prop(FLContextKey.SIMULATE_MODE, False)
-            cell = engine.client.cell
+            cell = self.engine.client.cell
             command = (
                 self.get_multi_process_command()
                 + " -m nvflare.private.fed.app.client.sub_worker_process"
