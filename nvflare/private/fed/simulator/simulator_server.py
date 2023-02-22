@@ -12,16 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import time
 from typing import List, Optional
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, MachineStatus, ReservedKey, ServerCommandKey
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ServerCommandKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, make_reply
 from nvflare.private.fed.server.run_manager import RunManager
 from nvflare.private.fed.server.server_state import HotState
-
 from ..server.fed_server import FederatedServer
 from ..server.server_engine import ServerEngine
 
