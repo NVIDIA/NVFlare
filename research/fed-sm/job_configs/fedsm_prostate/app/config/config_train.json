@@ -3,6 +3,6 @@
   "learning_rate_select": 1e-3,
   "cache_dataset": 1.0,
   "select_num_classes": 3,
-  "dataset_base_dir": "/media/ziyuexu/Research/Experiment/NVFlare/Exp_FedSM/Data/dataset_2D",
-  "datalist_json_path": "/media/ziyuexu/Research/Experiment/NVFlare/Exp_FedSM/Data/datalist_2D"
+  "dataset_base_dir": "DATASET_ROOT/dataset_2D",
+  "datalist_json_path": "DATASET_ROOT/datalist_2D"
 }

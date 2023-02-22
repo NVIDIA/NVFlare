@@ -36,10 +36,10 @@ pip install -r ./virtualenv/plot-requirements.txt
 ## 2. Multi-source Prostate Segmentation
 This example uses 2D (axial slices) segmentation of the prostate in T2-weighted MRIs based on multiple datasets.
 
-Please refer to [Prostate Example](https://github.com/NVIDIA/NVFlare/tree/dev/examples/advanced/prostate) for details of data preparation and task specs. In the following, we assume the data has been prepared in the same way to `./data_preparation`.
+Please refer to [Prostate Example](https://github.com/NVIDIA/NVFlare/tree/dev/examples/advanced/prostate) for details of data preparation and task specs. In the following, we assume the data has been prepared in the same way to `${PWD}/data_preparation`. The dataset is saved to `${PWD}/data_preparation/dataset_2D`, and datalists are saved to `${PWD}/data_preparation/datalist_2D`.
 
 ## 3. Run automated experiments
-We use the NVFlare simulator to run FL training automatically, the 6 clients are named `client_I2CVB, client_MSD, client_NCI_ISBI_3T, client_NCI_ISBI_Dx, client_Promise12, client_PROSTATEx`
+We use the NVFlare simulator to run FL training automatically, the 3 clients are named `client_I2CVB, client_MSD, client_NCI_ISBI_3T`
 ### 3.1 Prepare local configs
 First, we add the image directory root to `config_train.json` files for generating the absolute path to dataset and datalist. 
 In the current folder structure, it will be `${PWD}/..`. 
@@ -81,17 +81,6 @@ Please add the correct paths and job_ids, and run:
 ```
 bash ./result_stat/testing_models_2d.sh
 ```
-
-The Dice results for the above run are:
-
-| Config	          | 	Val Dice	 | 
-|------------------|------------|
-| fedsm_prostate | |
-| prostate_central | 	0.8590	 | 
-| prostate_fedavg  |   0.8324   | 
-| prostate_fedprox |   0.8131   | 
-| prostate_ditto   | 	0.8474	 |
-
 
 ## Citation
 
