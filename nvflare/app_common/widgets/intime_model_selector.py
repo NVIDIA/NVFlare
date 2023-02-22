@@ -16,7 +16,7 @@ import numpy as np
 
 from nvflare.apis.dxo import DataKind, MetaKey, from_shareable
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.app_constant import AppConstants
@@ -80,7 +80,7 @@ class IntimeModelSelector(Widget):
             return False
 
         contribution_round = shareable.get_cookie(AppConstants.CONTRIBUTION_ROUND)
-        client_name = shareable.get_peer_prop(ReservedKey.IDENTITY_NAME, default="?")
+        client_name = peer_ctx.get_identity_name(default="?")
 
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
 
