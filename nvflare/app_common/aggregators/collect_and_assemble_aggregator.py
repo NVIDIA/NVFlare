@@ -85,7 +85,7 @@ class CollectAndAssembleAggregator(Aggregator):
             )
             return None
 
-        contribution_round = shareable.get_header(AppConstants.CONTRIBUTION_ROUND)
+        contribution_round = shareable.get_cookie(AppConstants.CONTRIBUTION_ROUND)
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
         if contribution_round != current_round:
             self.log_warning(
