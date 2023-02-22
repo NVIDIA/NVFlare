@@ -12,16 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import time
 from typing import List, Optional
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey, RunProcessKey, ServerCommandKey
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ServerCommandKey, MachineStatus
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
+from nvflare.apis.shareable import ReturnCode, make_reply
 from nvflare.private.fed.server.run_manager import RunManager
 from nvflare.private.fed.server.server_state import HotState
-from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
-
 from ..server.fed_server import FederatedServer
 from ..server.server_engine import ServerEngine
 
@@ -33,10 +32,8 @@ class SimulatorServerEngine(ServerEngine):
     def sync_clients_from_main_process(self):
         pass
 
-    def parent_aux_send(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
-        replies = self.aux_send(targets=targets, topic=topic, request=request, timeout=timeout, fl_ctx=fl_ctx)
-
-        return replies
+    def update_job_run_status(self):
+        pass
 
 
 class SimulatorRunManager(RunManager):
@@ -73,14 +70,15 @@ class SimulatorServer(FederatedServer):
             overseer_agent,
         )
 
-        self.engine.run_processes[SimulatorConstants.JOB_NAME] = {
-            RunProcessKey.LISTEN_PORT: None,
-            RunProcessKey.CONNECTION: None,
-            RunProcessKey.CHILD_PROCESS: None,
-            RunProcessKey.JOB_ID: SimulatorConstants.JOB_NAME,
-            # RunProcessKey.PARTICIPANTS: job_clients,
-        }
+        # self.engine.run_processes[SimulatorConstants.JOB_NAME] = {
+        #     RunProcessKey.LISTEN_PORT: None,
+        #     RunProcessKey.CONNECTION: None,
+        #     RunProcessKey.CHILD_PROCESS: None,
+        #     RunProcessKey.JOB_ID: SimulatorConstants.JOB_NAME,
+        #     # RunProcessKey.PARTICIPANTS: job_clients,
+        # }
 
+        self.job_cell = None
         self.server_state = HotState()
 
     def _process_task_request(self, client, fl_ctx, shared_fl_ctx: FLContext):
@@ -119,6 +117,7 @@ class SimulatorServer(FederatedServer):
 
     def deploy(self, args, grpc_args=None, secure_train=False):
         super(FederatedServer, self).deploy(args, grpc_args, secure_train)
+        self._register_cellnet_cbs()
 
     def stop_training(self):
         self.engine.run_processes.clear()
@@ -134,3 +133,15 @@ class SimulatorServer(FederatedServer):
             client_manager=self.client_manager,
             handlers=self.runner_config.handlers,
         )
+
+    def wait_engine_run_complete(self, name, shutdown_grace_time=2.0, cleanup_grace_time=3.0):
+        while self.engine.engine_info.status != MachineStatus.STOPPED:
+            if self.engine.asked_to_stop:
+                self.engine.engine_info.status = MachineStatus.STOPPED
+
+            time.sleep(3)
+
+    def stop_run_engine_cell(self):
+        self.engine.ask_to_stop()
+        # self.job_cell.stop()
+        # super().stop_run_engine_cell()

@@ -15,7 +15,9 @@
 """Federated Simulator launching script."""
 
 import argparse
+import os
 import sys
+from sys import platform
 
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
 
@@ -51,8 +53,17 @@ if __name__ == "__main__":
     create the SimulatorRunner object, do a setup(), then calls the run().
     """
 
-    if sys.version_info < (3, 7):
-        raise RuntimeError("Please use Python 3.7 or above.")
+    # For MacOS, it needs to use 'spawn' for creating multi-process.
+    if platform == "linux" or platform == "linux2":
+        # linux: use the default method
+        pass
+    elif platform == "darwin":
+        # OS X
+        import multiprocessing
+        multiprocessing.set_start_method('spawn')
+
+    if sys.version_info < (3, 8):
+        raise RuntimeError("Please use Python 3.8 or above.")
 
     parser = argparse.ArgumentParser()
     define_simulator_parser(parser)
