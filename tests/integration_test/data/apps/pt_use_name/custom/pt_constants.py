@@ -12,14 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.private.admin_defs import Message
-from nvflare.private.fed.utils.messageproto import message_to_proto, proto_to_message
 
-
-class TestMessageProto:
-    def test_message_proto_convert(self):
-        message = Message(topic="topic", body="{'id': 100}")
-        message.set_header("Content-Type", "application/json")
-        message_proto = message_to_proto(message)
-        new_message = proto_to_message(message_proto)
-        assert new_message.__dict__ == message.__dict__
+class PTConstants:
+    PTServerName = "server"
+    PTFileModelName = "FL_global_model.pt"
+    PTLocalModelName = "local_model.pt"

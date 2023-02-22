@@ -1,0 +1,32 @@
+{
+  "format_version": 2,
+
+  "executors": [
+    {
+      "tasks": ["train", "submit_model"],
+      "executor": {
+        "path": "cifar10trainer.Cifar10Trainer",
+        "args": {
+          "lr": 0.01,
+          "epochs": 1,
+          "data_path": "/tmp/nvflare/cifar10_data"
+        }
+      }
+    },
+    {
+      "tasks": ["validate"],
+      "executor": {
+        "path": "cifar10validator.Cifar10Validator",
+        "args": {
+          "data_path": "/tmp/nvflare/cifar10_data"
+        }
+      }
+    }
+  ],
+  "task_result_filters": [
+  ],
+  "task_data_filters": [
+  ],
+  "components": [
+  ]
+}

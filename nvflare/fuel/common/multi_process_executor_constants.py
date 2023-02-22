@@ -37,3 +37,11 @@ class CommunicateData(object):
     CLOSE = "close"
     SUB_WORKER_PROCESS = "sub_worker_process"
     MULTI_PROCESS_EXECUTOR = "multi_process_executor"
+
+
+class MultiProcessCommandNames:
+    INITIALIZE = "initialize"
+    TASK_EXECUTION = "task_execution"
+    FIRE_EVENT = "fire_event"
+    EXECUTE_RESULT = "execute_result"
+    CLOSE = "close"
