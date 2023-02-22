@@ -29,7 +29,6 @@ class ServerDeployer:
 
     def __init__(self):
         """Init the ServerDeployer."""
-        self.services = None
         self.cmd_modules = ServerCommandModules.cmd_modules
         self.server_config = None
         self.secure_train = None
@@ -130,5 +129,4 @@ class ServerDeployer:
 
     def close(self):
         """To close the services."""
-        if self.services:
-            self.services.close()
+        pass

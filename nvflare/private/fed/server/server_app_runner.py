@@ -43,14 +43,12 @@ def _set_up_run_config(workspace: Workspace, server, conf):
 
 
 class ServerAppRunner:
-    def start_server_app(self, workspace: Workspace, server, args, app_root, job_id, snapshot, logger):
+    def start_server_app(self, workspace: Workspace, server, args, app_root, job_id, snapshot, logger, kv_list=None):
 
         try:
             server_config_file_name = os.path.join(app_root, args.server_config)
 
-            conf = ServerJsonConfigurator(
-                config_file_name=server_config_file_name,
-            )
+            conf = ServerJsonConfigurator(config_file_name=server_config_file_name, args=args, kv_list=kv_list)
             conf.configure()
 
             _set_up_run_config(workspace, server, conf)
@@ -66,13 +64,12 @@ class ServerAppRunner:
             logger.exception(f"FL server execution exception: {secure_format_exception(e)}")
             raise e
         finally:
-            self.update_job_run_status(server)
+            # self.update_job_run_status(server)
             server.status = ServerStatus.STOPPED
             server.engine.engine_info.status = MachineStatus.STOPPED
             server.stop_training()
 
     def sync_up_parents_process(self, args, server):
-        server.engine.create_parent_connection(int(args.conn))
         server.engine.sync_clients_from_main_process()
 
     def update_job_run_status(self, server):

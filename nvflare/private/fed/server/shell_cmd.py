@@ -31,7 +31,8 @@ from nvflare.fuel.hci.shell_cmd_val import (
 )
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import SysCommandTopic
-from nvflare.private.fed.server.admin import ClientReply, new_message
+from nvflare.private.fed.server.admin import new_message
+from nvflare.private.fed.server.message_send import ClientReply
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
 
 
@@ -89,7 +90,7 @@ class _CommandExecutor(object):
         engine = conn.app_ctx
         if not isinstance(engine, ServerEngineInternalSpec):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
-        clients, invalid_inputs = engine.validate_clients([target])
+        clients, invalid_inputs = engine.validate_targets([target])
         if len(invalid_inputs) > 0:
             conn.append_error("invalid client: {}".format(target))
             return

@@ -130,12 +130,6 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             # means some clients can not be shutdown
             result = False
 
-        if clients_to_be_removed:
-            # needs to remove all the clients that can be removed
-            err = engine.remove_clients(clients_to_be_removed)
-            if err:
-                conn.append_error(err)
-                result = False
         return result
 
     def shutdown(self, conn: Connection, args: List[str]):
@@ -189,7 +183,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
         message = new_message(conn, topic=TrainingTopic.RESTART, body="", require_authz=True)
         replies = self.send_request_to_clients(conn, message)
-        engine.remove_clients(clients)
+        # engine.remove_clients(clients)
         return self._process_replies_to_string(conn, replies)
 
     def restart(self, conn: Connection, args: List[str]):
