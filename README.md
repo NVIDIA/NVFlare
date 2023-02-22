@@ -14,8 +14,6 @@ Learn more - [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html).
 
 Bring privacy preserved compute and Machine learning to data in a federated setting, keep it simple and production ready
 
-----
-
 ## Installation
 
 To install [the current release](https://pypi.org/project/nvflare), you can simply run:
