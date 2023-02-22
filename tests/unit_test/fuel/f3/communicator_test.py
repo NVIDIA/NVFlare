@@ -85,6 +85,7 @@ class TestCommunicator:
             ("tcp", "2000-3000"),
             ("uds", ""),
             ("grpc", "3000-4000"),
+            ("http", "4000-5000"),
         ],
     )
     def test_sfm_message(self, comm_a, comm_b, scheme, port_range):
