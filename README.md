@@ -75,15 +75,15 @@ You can use poc command to shutdown clients and server
 $ nvflare poc --stop  
 ``` 
 
-#### **Quick start Advanced Topics**
-<details><summary>**Quick start with Production Mode**</summary>
+#### **Quick Start Advanced Topics**
+<details><summary>Quick start with Production Mode</summary>
 
 Before you work in production mode, you need to first **provision**: a process to generate **startup kit**.
 Startup kits are set of start scripts, configuration and certificates associated with different user, sites, server.
 In this quick guide, we only show None-HA (non high availability mode), we will only have one FL server.
 
 #### **provision**
-<details><summary>provision via CLI</summary>
+<details><summary>Provision via CLI</summary>
 ```shell
 $ cd /tmp
 $ nvflare provision
@@ -111,7 +111,7 @@ it will generate startup kits in the following directory
 </details>
 
 #### **start Flare Server, Clients, Flare Console**
-<details><summary>starting different sub-systems</summary>
+<details><summary>Starting different sub-systems</summary>
 First start FL Server, open a new **terminal** for server
 
 ```shell
@@ -144,7 +144,7 @@ Once console started, you can use check-status command just like POC mode
 </details>
 
 #### **Provision and distributing startup kits via Flare Dashboard UI**
-<details><summary>starting FLARE Dashboard</summary>
+<details><summary>Starting FLARE Dashboard</summary>
 
 Start the dashboard, then following the instructions. Once Dashboard started, you can setup project, invite users 
 to participate, once user add the sites, you can approve the user and sites, then freeze the project. The user can download
