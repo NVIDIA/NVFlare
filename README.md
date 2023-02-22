@@ -46,7 +46,7 @@ $ python3 -m pip install -r examples/hello-world/hello-numpy-sag/requirements.tx
 ```
 nvflare simulator -w /tmp/nvflare/hello-numpy-sag -n 2 -t 2 examples/hello-world/hello-numpy-sag
 ```
-Now you can watch the simulator run two clients (n=2) with two threads (t=2) and logs are saved in the /tmp/nvflare workspace.
+Now you can watch the simulator run two clients (n=2) with two threads (t=2) and logs are saved in the /tmp/nvflare/hello-numpy-sag workspace.
 
 #### **Quick start with POC mode**
 

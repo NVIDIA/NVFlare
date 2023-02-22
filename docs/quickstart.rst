@@ -29,31 +29,27 @@ Clone NVFLARE repo to get examples, switch main branch (latest stable branch)
   $ git switch main
 
 
-**Quick start with CLI**
-========================
-
-Create a temp directory as workspace and install requirements/dependencies:
+Install requirements/dependencies:
 
 .. code-block:: shell
 
-  $ mkdir -p /tmp/nvflare
   $ python3 -m pip install -r examples/hello-world/hello-numpy-sag/requirements.txt
 
 
-* **Quick Start with Simulator**
---------------------------------
+**Quick Start with Simulator**
+==============================
 
 
 .. code-block:: shell
 
-   nvflare simulator -w /tmp/nvflare/ -n 2 -t 2 examples/hello-world/hello-numpy-sag
+   nvflare simulator -w /tmp/nvflare/hello-numpy-sag -n 2 -t 2 examples/hello-world/hello-numpy-sag
 
 Now you can watch the simulator run two clients (n=2) with two threads (t=2)
-and logs are saved in the `/tmp/nvflare` workspace.
+and logs are saved in the `/tmp/nvflare/hello-numpy-sag` workspace.
 
 
-* **Quick start with POC mode**
--------------------------------
+**Quick start with POC mode**
+=============================
 
 
 Instead of using the simulator, you can simulate the real deployment with
@@ -105,7 +101,7 @@ You can use poc command to shutdown clients and server
    There are two way of provisions: CLI and Flare Dashboard (UI Application), we are going to use CLI here.
 
 
-* **provision**
+**provision with CLI**
 ---------------
 
 
@@ -136,7 +132,7 @@ it will generate startup kits in the following directory
   /tmp/workspace/example_project/prod_00
 
 
-* **start Flare Server, Clients, Flare Console**
+**Start Flare Server, Clients, Flare Console**
 ------------------------------------------------
 
 
@@ -174,7 +170,7 @@ Next finally for Flare console, open a new **terminal**
 Once console started, you can use check-status command just like POC mode
 
 
-* **Provision and distributing startup kits via Flare Dashboard UI**
+**Provision and distributing startup kits via Flare Dashboard UI**
 --------------------------------------------------------------------
 
 Start the dashboard, then following the instructions. Once Dashboard started, you can setup project, invite users
