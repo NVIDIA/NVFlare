@@ -35,7 +35,7 @@ pip install -r ./virtualenv/plot-requirements.txt
 ## 2. Multi-source Prostate Segmentation
 This example uses 2D (axial slices) segmentation of the prostate in T2-weighted MRIs based on multiple datasets.
 
-Please refer to [Prostate Example](../prostate) for details of data preparation and task specs. In the following, we assume the data has been prepared in the same way to `./data_preparation`.
+Please refer to [Prostate Example](https://github.com/NVIDIA/NVFlare/tree/dev/examples/advanced/prostate) for details of data preparation and task specs. In the following, we assume the data has been prepared in the same way to `./data_preparation`.
 
 ## 3. Run automated experiments
 We use the NVFlare simulator to run FL training automatically, the 6 clients are named `client_I2CVB, client_MSD, client_NCI_ISBI_3T, client_NCI_ISBI_Dx, client_Promise12, client_PROSTATEx`
@@ -53,34 +53,29 @@ NWe use NVFlare simulator to run the FL training experiments, following the patt
 nvflare simulator job_configs/[job] -w ${PWD}/workspaces/[job] -c [clients] -gpu [gpu] -t [thread]
 ```
 `[job]` is the experiment job that will be submitted for the FL training, in this example, this is `fedsm_prostate`.  
-The combination of `-c` and `-gpu`/`-t` controls the resource allocation. In this example, we run six clients on two GPUs, three clients for each GPU with 12 GB memory, each in a separate thread. 
+The combination of `-c` and `-gpu`/`-t` controls the resource allocation. 
 
-Note that since the current experiments are performed on a light 2D dataset, we used [`CacheDataset`](https://docs.monai.io/en/stable/data.html#cachedataset) and set cache rate to 1.0 to accelerate the training process. Please adjust the cache rate if memory resource is limited on your system.
+## 4. Results on three clients for FedSM
+In this example, we run three clients on 1 GPU with three threads `-t 3`. The minimum GPU memory requirement is 12 GB. 
 
-## 5. Results on 6 clients for FedSM and compare with other algorithms
-We compute the result of FedSM and compare it with other algorithms from [Prostate 2D Example](../prostate/prostate_2D), including Central/FedAvg/FedProx/Ditto.
-For FedSM, the Super Model will be used for evaluation. For Central/FedAvg/FedProx, only the global model gets evaluated at each round, and saved as the final model. For Ditto, each client will have its own personalized model, which is validated and saved locally.
 ### Validation curve on each site
-
-Let's summarize the result of the experiments run above. We compare the validation scores of 
-the global model for Central/FedAvg/FedProx, and personalized models for FedSM/Ditto. In this example, each client computes their validation scores using their own
-validation set, and the centralized model computes the validation score using the combined validation set. 
+In this example, each client computes their validation scores using their own
+validation set. 
 
 We provide a script for plotting the tensorboard records, running
 ```
 python3 ./result_stat/plot_tensorboard_events.py
 ```
-The TensorBoard curves (smoothed with weight 0.8) for validation Dice for the 150 epochs (150 rounds, 1 local epochs per round) during training are shown below:
+The TensorBoard curves (smoothed with weight 0.8) for validation Dice for the 100 epochs (100 rounds, 1 local epochs per round) during training are shown below:
 ![All training curve](./figs/all_training.png)
 
 ### Testing score
-The testing score is computed based on the super model for FedSM, the best global model for Central/FedAvg/FedProx, and the six best personalized models for Ditto.
+The testing score is computed based on the Super Model for FedSM.
 We provide a script for performing validation on testing data split, please add the correct paths and job_ids, and run
 
 ```
 bash ./result_stat/testing_models_2d.sh
 ```
-Note that for FedSM/Ditto, the score is the average Dice among all 6 personalized models evaluated on their own testing data weighted by testing data size.
 
 The Dice results for the above run are:
 

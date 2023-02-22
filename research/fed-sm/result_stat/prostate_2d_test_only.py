@@ -14,6 +14,7 @@
 
 import argparse
 
+import numpy as np
 import torch
 from monai.data import CacheDataset, DataLoader, load_decathlon_datalist
 from monai.inferers import SimpleInferer
@@ -31,12 +32,16 @@ from monai.transforms import (
     Resized,
     ScaleIntensityRanged,
 )
+from vgg import vgg11
+
+client_id_labels = ["client_I2CVB", "client_MSD", "client_NCI_ISBI_3T"]
 
 
 def main():
     parser = argparse.ArgumentParser(description="Model Testing")
     parser.add_argument("--model_path", type=str)
-    parser.add_argument("--cache_rate", default=1.0, type=float)
+    parser.add_argument("--cache_rate", default=0.0, type=float)
+    parser.add_argument("--select_threshold", default=0.9, type=float)
     parser.add_argument("--dataset_base_dir", default="../data_preparation/dataset_2D", type=str)
     parser.add_argument("--datalist_json_path", default="../data_preparation/datalist_2D/client_All.json", type=str)
     args = parser.parse_args()
@@ -46,7 +51,7 @@ def main():
     datalist_json_path = args.datalist_json_path
     model_path = args.model_path
     cache_rate = args.cache_rate
-
+    select_threshold = args.select_threshold
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     # Set datalists
@@ -59,7 +64,9 @@ def main():
     print(f"Testing Size: {len(test_list)}")
 
     # Network, optimizer, and loss
-    model = UNet(
+    num_site = len(client_id_labels)
+    model_select = vgg11(num_classes=num_site).to(device)
+    model_global = UNet(
         spatial_dims=2,
         in_channels=1,
         out_channels=1,
@@ -67,12 +74,37 @@ def main():
         strides=(2, 2, 2, 2),
         num_res_units=2,
     ).to(device)
-    model_weights = torch.load(model_path)
-    model_weights = model_weights["model"]
-    model.load_state_dict(model_weights)
+    model_person = []
+    for site in range(num_site):
+        model_person.append(
+            UNet(
+                spatial_dims=2,
+                in_channels=1,
+                out_channels=1,
+                channels=(16, 32, 64, 128, 256),
+                strides=(2, 2, 2, 2),
+                num_res_units=2,
+            ).to(device)
+        )
+
+    model_set = torch.load(model_path)
+    model_set = model_set["model_set_fedsm"]
+    model_list = ["select_weights", "global_weights"] + client_id_labels
+    for model_id in model_list:
+        for var_name in model_set[model_id]:
+            model_set[model_id][var_name] = torch.as_tensor(model_set[model_id][var_name])
+
+    model_select.load_state_dict(model_set["select_weights"])
+    model_select.eval()
+    model_global.load_state_dict(model_set["global_weights"])
+    model_global.eval()
+    for site in range(num_site):
+        model_person[site].load_state_dict(model_set[client_id_labels[site]])
+        model_person[site].eval()
 
     # Inferer, evaluation metric
-    inferer = SimpleInferer()
+    inferer_select = SimpleInferer()
+    inferer_segment = SimpleInferer()
     valid_metric = DiceMetric(include_background=False, reduction="mean", get_not_nans=False)
 
     transform = Compose(
@@ -101,18 +133,30 @@ def main():
         num_workers=1,
     )
 
-    # Train
-    model.eval()
+    model_select.eval()
     with torch.no_grad():
         metric = 0
         for i, batch_data in enumerate(test_loader):
             images = batch_data["image"].to(device)
             labels = batch_data["label"].to(device)
             # Inference
-            outputs = inferer(images, model)
-            outputs = transform_post(outputs)
+            # get the selector result
+            outputs_select = inferer_select(images, model_select)
+            score = torch.nn.functional.softmax(outputs_select).cpu().numpy()
+            score = np.squeeze(score)
+            max_index = np.argmax(score)
+            max_score = score[max_index]
+            # get max score and determine which model to use
+            if max_score > select_threshold:
+                # model_segment = model_person[max_index]
+                model_segment = model_global
+            else:
+                model_segment = model_global
+            # segmentation inference
+            outputs_segment = inferer_segment(images, model_segment)
+            outputs_segment = transform_post(outputs_segment)
             # Compute metric
-            metric_score = valid_metric(y_pred=outputs, y=labels)
+            metric_score = valid_metric(y_pred=outputs_segment, y=labels)
             metric += metric_score.item()
         # compute mean dice over whole validation set
         metric /= len(test_loader)
