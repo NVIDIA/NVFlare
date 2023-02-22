@@ -15,7 +15,8 @@
 import numpy as np
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_opt.pt import PTModelReaderWriter, feed_vars
+from nvflare.app_opt.pt.model_reader_writer import PTModelReaderWriter
+from nvflare.app_opt.pt.utils import feed_vars
 from nvflare.security.logging import secure_format_exception
 
 
