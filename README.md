@@ -37,10 +37,7 @@ $ git clone https://github.com/NVIDIA/NVFlare.git
 $ cd NVFlare
 $ git switch main
 ```
-install requirements/dependencies:
-```
-$ python3 -m pip install -r examples/hello-world/hello-numpy-sag/requirements.txt
-```
+
 #### **Quick Start with Simulator**
 
 ```

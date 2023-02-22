@@ -29,13 +29,6 @@ Clone NVFLARE repo to get examples, switch main branch (latest stable branch)
   $ git switch main
 
 
-Install requirements/dependencies:
-
-.. code-block:: shell
-
-  $ python3 -m pip install -r examples/hello-world/hello-numpy-sag/requirements.txt
-
-
 **Quick Start with Simulator**
 ==============================
 
