@@ -27,7 +27,7 @@ fi
 
 
 function install_deps {
-    python3 -m pip install -e .[all]
+    python3 -m pip install -e .[dev]
     echo "dependencies installed"
 }
 
