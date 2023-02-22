@@ -19,8 +19,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model import model_learnable_to_dxo
 from nvflare.app_common.abstract.model_locator import ModelLocator
-
-from .file_model_persistor import PTFileModelPersistor
+from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
 
 
 class PTFileModelLocator(ModelLocator):

@@ -27,17 +27,8 @@ fi
 
 
 function install_deps {
-    if [[ ! -f /tmp/.flare_deps_installed ]]; then
-        echo "pip installing development dependencies"
-        python3 -m pip install -r requirements-dev.txt
-        echo "dependencies installed" > /tmp/.flare_deps_installed
-        echo "pip installing optional dependencies"
-#       python3 -c "import configparser; c = configparser.ConfigParser(); c.read('setup.cfg'); print(c['options.extras_require']['HE'])" | xargs pip install
-        python3 -c "import configparser; c = configparser.ConfigParser(); c.read('setup.cfg'); print(c['options.extras_require']['PSI'])" | xargs pip install
-        echo "dependencies installed" > /tmp/.flare_deps_installed
-    else
-	echo "dependencies installed"
-    fi
+    python3 -m pip install -e .[dev]
+    echo "dependencies installed"
 }
 
 function clean {
@@ -66,11 +57,6 @@ function clean {
     find "${WORK_DIR}" -depth -maxdepth 1 -type d -name ".coverage" -exec rm -r "{}" \;
     find "${WORK_DIR}" -depth -maxdepth 1 -type f -name ".coverage.*" -exec rm -r "{}" \;
     find "${WORK_DIR}" -depth -maxdepth 1 -type d -name "__pycache__" -exec rm -r "{}" \;
-}
-
-function torch_validate {
-    echo "validate torch installation"
-    python3 -c 'import torch; print(torch.__version__); print(torch.rand(5,3))'
 }
 
 function print_error_msg() {
@@ -226,7 +212,7 @@ function help() {
     echo "    -f | --fix-format             : auto fix style formats, import"
     echo "    -u | --unit-tests             : unit tests"
     echo "    -r | --test-report            : used with -u command, turn on unit test report flag. It has no effect without -u "
-    echo "    -p | --dependencies           : install dependencies"
+    echo "    -p | --dependencies           : only install dependencies"
     echo "    -c | --coverage               : used with -u command, turn on coverage flag,  It has no effect without -u "
     echo "    -d | --dry-run                : set dry run flag, print out command"
     echo "         --clean                  : clean py and other artifacts generated, clean flag to allow re-install dependencies"
@@ -275,6 +261,7 @@ do
 
         -p|--dependencies)
             dependencies=true
+	    cmd=" "
         ;;
 
         -r|--test-report)
@@ -283,7 +270,7 @@ do
         ;;
 
         -u |--unit*)
-            cmd_prefix="torch_validate; python3 -m pytest --numprocesses=auto "
+            cmd_prefix="python3 -m pytest --numprocesses=auto "
 
             echo "coverage_report=" ${coverage_report}
             if [ "${coverage_report}" == true ]; then
@@ -333,12 +320,6 @@ echo "        $cmd"
 echo "                 "
 if [[ $dry_run_flag = "true" ]]; then
     dry_run "$cmd"
-elif [[ $dependencies == "true"  ]]; then
-    echo "installing dependencies"
-    if [[ -f /tmp/.flare_deps_installed ]]; then
-        rm /tmp/.flare_deps_installed
-    fi
-    install_deps
 else
     install_deps
     eval "$cmd"

@@ -16,9 +16,8 @@ import logging
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model_processor import ModelProcessor
+from nvflare.app_opt.pt.utils import feed_vars
 from nvflare.security.logging import secure_format_exception
-
-from .utils import feed_vars
 
 
 class PTModelReaderWriter(ModelProcessor):
