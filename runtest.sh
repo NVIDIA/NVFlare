@@ -226,6 +226,7 @@ function help() {
     echo "    -f | --fix-format             : auto fix style formats, import"
     echo "    -u | --unit-tests             : unit tests"
     echo "    -r | --test-report            : used with -u command, turn on unit test report flag. It has no effect without -u "
+    echo "    -p | --dependencies           : install dependencies"
     echo "    -c | --coverage               : used with -u command, turn on coverage flag,  It has no effect without -u "
     echo "    -d | --dry-run                : set dry run flag, print out command"
     echo "         --clean                  : clean py and other artifacts generated, clean flag to allow re-install dependencies"
@@ -270,6 +271,10 @@ do
         ;;
         -c|--coverage)
             coverage_report=true
+        ;;
+
+        -p|--dependencies)
+            dependencies=true
         ;;
 
         -r|--test-report)
@@ -328,6 +333,12 @@ echo "        $cmd"
 echo "                 "
 if [[ $dry_run_flag = "true" ]]; then
     dry_run "$cmd"
+elif [[ $dependencies == "true"  ]]; then
+    echo "installing dependencies"
+    if [[ -f /tmp/.flare_deps_installed ]]; then
+        rm /tmp/.flare_deps_installed
+    fi
+    install_deps
 else
     install_deps
     eval "$cmd"

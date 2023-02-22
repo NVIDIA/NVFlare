@@ -526,7 +526,7 @@ class Cell(MessageReceiver, EndpointMonitor):
             self.logger.debug(f"{self.my_info.fqcn}: removing bb_ext_connector ...")
             try:
                 self.communicator.remove_connector(self.bb_ext_connector.handle)
-            except BaseException as ex:
+            except Exception as ex:
                 self.logger.error(f"{self.my_info.fqcn}: error removing bb_ext_connector {ex}")
             self.bb_ext_connector = None
 
@@ -543,7 +543,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                 if connector:
                     try:
                         self.communicator.remove_connector(connector.handle)
-                    except BaseException as ex:
+                    except Exception as ex:
                         self.logger.error(f"{self.my_info.fqcn}: error removing adhoc connector {ex}")
 
     def drop_agents(self):
@@ -1111,7 +1111,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                     self.logger.error(f"{self.my_info.fqcn}: timeout on REQ {waiter.id} after {timeout} secs")
                     with self.stats_lock:
                         self.num_timeout_reqs += 1
-        except BaseException as ex:
+        except Exception as ex:
             raise ex
         finally:
             self.waiters.pop(waiter.id, None)

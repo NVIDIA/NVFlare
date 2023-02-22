@@ -67,7 +67,7 @@ class MainProcessMonitor:
         cb, args, kwargs = t[0], t[1], t[2]
         try:
             return cb(*args, **kwargs)
-        except BaseException as ex:
+        except Exception as ex:
             cls.logger().error(f"exception from CB {cb.__name__}: {type(ex)}")
 
     @classmethod
@@ -98,7 +98,7 @@ class MainProcessMonitor:
                 logger.info(f"{cls.name}: calling cleanup CB {cb_name}")
                 cls._call_cb(_cb)
                 logger.debug(f"{cls.name}: finished cleanup CB {cb_name}")
-            except BaseException as ex:
+            except Exception as ex:
                 logger.warning(f"{cls.name}: exception {ex} from cleanup CB {cb_name}")
 
     @classmethod

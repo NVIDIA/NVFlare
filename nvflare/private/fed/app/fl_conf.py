@@ -18,9 +18,10 @@ import os
 import re
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import SiteType
+from nvflare.apis.fl_constant import SiteType, SystemConfigs
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.argument_utils import parse_vars
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.json_scanner import Node
 from nvflare.fuel.utils.wfconf import ConfigContext, ConfigError
 from nvflare.private.defs import SSLConstants
@@ -39,13 +40,15 @@ FL_MODULES = ["server", "client", "app_common", "private", "app_opt"]
 class FLServerStarterConfiger(JsonConfigurator):
     """FL Server startup configer."""
 
-    def __init__(self, workspace: Workspace, kv_list=None):
+    def __init__(self, workspace: Workspace, args, kv_list=None):
         """Init the FLServerStarterConfiger.
 
         Args:
             workspace: the workspace object
             kv_list: key value pair list
         """
+        self.args = args
+
         base_pkgs = FL_PACKAGES
         module_names = FL_MODULES
 
@@ -183,17 +186,29 @@ class FLServerStarterConfiger(JsonConfigurator):
         self.deployer = deployer
         self.site_org = build_ctx["site_org"]
 
+        ConfigService.initialize(
+            section_files={
+                SystemConfigs.STARTUP_CONF: os.path.basename(self.server_config_file_names[0]),
+                SystemConfigs.RESOURCES_CONF: os.path.basename(self.server_config_file_names[1]),
+            },
+            config_path=[self.args.workspace],
+            parsed_args=self.args,
+            var_dict=self.cmd_vars,
+        )
+
 
 class FLClientStarterConfiger(JsonConfigurator):
     """FL Client startup configer."""
 
-    def __init__(self, workspace: Workspace, kv_list=None):
+    def __init__(self, workspace: Workspace, args, kv_list=None):
         """Init the FLClientStarterConfiger.
 
         Args:
             workspace: the workspace object
             kv_list: key value pair list
         """
+        self.args = args
+
         base_pkgs = FL_PACKAGES
         module_names = FL_MODULES
 
@@ -314,6 +329,16 @@ class FLClientStarterConfiger(JsonConfigurator):
         self.site_org = build_ctx["site_org"]
         self.base_deployer = BaseClientDeployer()
         self.base_deployer.build(build_ctx)
+
+        ConfigService.initialize(
+            section_files={
+                SystemConfigs.STARTUP_CONF: os.path.basename(self.client_config_file_names[0]),
+                SystemConfigs.RESOURCES_CONF: os.path.basename(self.client_config_file_names[1]),
+            },
+            config_path=[self.args.workspace],
+            parsed_args=self.args,
+            var_dict=self.cmd_vars,
+        )
 
 
 class FLAdminClientStarterConfigurator(JsonConfigurator):

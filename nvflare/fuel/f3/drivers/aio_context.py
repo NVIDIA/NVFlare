@@ -50,7 +50,7 @@ class AioContext:
         try:
             self.loop.run_forever()
             self.loop.run_until_complete(self.loop.shutdown_asyncgens())
-        except BaseException as ex:
+        except Exception as ex:
             self.logger.error(f"error running aio loop: {ex}")
             raise ex
         finally:
@@ -71,7 +71,7 @@ class AioContext:
             self.logger.debug(f"{self.name}: cancelled a task")
             try:
                 task.cancel()
-            except BaseException as ex:
+            except Exception as ex:
                 self.logger.debug(f"{self.name}: error cancelling task {type(ex)}")
 
         self.logger.debug("Stopping AIO loop")
@@ -93,7 +93,7 @@ class AioContext:
         with cls._ctx_lock:
             if not cls._global_ctx:
                 cls._global_ctx = AioContext(f"Ctx_{os.getpid()}")
-                t = threading.Thread(target=cls._global_ctx.run_aio_loop)
+                t = threading.Thread(target=cls._global_ctx.run_aio_loop, name="aio_ctx")
                 t.daemon = True
                 t.start()
         return cls._global_ctx

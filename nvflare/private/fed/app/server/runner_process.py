@@ -22,13 +22,13 @@ import sys
 from nvflare.apis.fl_constant import JobConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
+from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger
 from nvflare.private.fed.server.server_app_runner import ServerAppRunner
-from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
@@ -42,8 +42,8 @@ def main():
     )
     parser.add_argument("--app_root", "-r", type=str, help="App Root", required=True)
     parser.add_argument("--job_id", "-n", type=str, help="job id", required=True)
-    parser.add_argument("--port", "-p", type=str, help="listen port", required=True)
-    parser.add_argument("--conn", "-c", type=str, help="connection port", required=True)
+    parser.add_argument("--root_url", "-u", type=str, help="root_url", required=True)
+    parser.add_argument("--parent_url", "-p", type=str, help="parent_url", required=True)
 
     parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
 
@@ -67,7 +67,6 @@ def main():
     if os.path.isdir(app_custom_folder):
         sys.path.append(app_custom_folder)
 
-    command_agent = None
     try:
         os.chdir(args.workspace)
         fobs_initialize()
@@ -80,6 +79,7 @@ def main():
 
         conf = FLServerStarterConfiger(
             workspace=workspace,
+            args=args,
             kv_list=args.set,
         )
         log_file = workspace.get_app_log_file_path(args.job_id)
@@ -104,20 +104,21 @@ def main():
 
         try:
             # create the FL server
-            _, server = deployer.create_fl_server(args, secure_train=secure_train)
+            server_config, server = deployer.create_fl_server(args, secure_train=secure_train)
 
-            command_agent = ServerCommandAgent(int(args.port))
-            command_agent.start(server.engine)
+            server.cell = server.create_job_cell(
+                args.job_id, args.root_url, args.parent_url, secure_train, server_config
+            )
 
             snapshot = None
             if args.snapshot:
                 snapshot = server.snapshot_persistor.retrieve_run(args.job_id)
 
             server_app_runner = ServerAppRunner()
-            server_app_runner.start_server_app(workspace, server, args, args.app_root, args.job_id, snapshot, logger)
+            server_app_runner.start_server_app(
+                workspace, server, args, args.app_root, args.job_id, snapshot, logger, args.set
+            )
         finally:
-            if command_agent:
-                command_agent.shutdown()
             if deployer:
                 deployer.close()
             AuditService.close()
@@ -133,4 +134,5 @@ if __name__ == "__main__":
     """
     This is the program when starting the child process for running the NVIDIA FLARE server runner.
     """
-    main()
+    # main()
+    mpm.run(main_func=main)
