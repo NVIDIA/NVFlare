@@ -1,10 +1,3 @@
-
-## Mission
-
-Bring privacy preserved compute and Machine learning to data in a federated setting, keep it simple and production ready
-
-----
-
 **NV**IDIA **F**ederated **L**earning **A**pplication **R**untime **E**nvironment
 
 
@@ -16,6 +9,12 @@ NVIDIA FLARE builds on a flexible and modular architecture and is abstracted thr
 
 Learn more - [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html).
 
+
+## Mission
+
+Bring privacy preserved compute and Machine learning to data in a federated setting, keep it simple and production ready
+
+----
 
 ## Installation
 
@@ -40,20 +39,18 @@ $ git clone https://github.com/NVIDIA/NVFlare.git
 $ cd NVFlare
 $ git switch main
 ```
-#### Quick start with CLI
-Create a temp directory as workspace and install requirements/dependencies:
+install requirements/dependencies:
 ```
-$ mkdir -p /tmp/nvflare
 $ python3 -m pip install -r examples/hello-world/hello-numpy-sag/requirements.txt
 ```
-* **Quick Start with Simulator**
+#### **Quick Start with Simulator**
 
 ```
-nvflare simulator -w /tmp/nvflare/ -n 2 -t 2 examples/hello-world/hello-numpy-sag
+nvflare simulator -w /tmp/nvflare/hello-numpy-sag -n 2 -t 2 examples/hello-world/hello-numpy-sag
 ```
 Now you can watch the simulator run two clients (n=2) with two threads (t=2) and logs are saved in the /tmp/nvflare workspace.
 
-* **Quick start with POC mode**
+#### **Quick start with POC mode**
 
 Instead of using the simulator, you can simulate the real deployment with multiple processes via POC mode:
 ```shell
@@ -80,17 +77,15 @@ You can use poc command to shutdown clients and server
 $ nvflare poc --stop  
 ``` 
 
-#### **Quick start with Production Mode**
+#### **Quick start Advanced Topics**
+<details><summary>**Quick start with Production Mode**</summary>
 
 Before you work in production mode, you need to first **provision**: a process to generate **startup kit**.
 Startup kits are set of start scripts, configuration and certificates associated with different user, sites, server.
 In this quick guide, we only show None-HA (non high availability mode), we will only have one FL server.
 
-There are two way of provisions: CLI and Flare Dashboard (UI Application), we are going to use CLI here.
-
-
-* **provision**
-
+#### **provision**
+<details><summary>provision via CLI</summary>
 ```shell
 $ cd /tmp
 $ nvflare provision
@@ -115,16 +110,16 @@ it will generate startup kits in the following directory
 ```
 /tmp/workspace/example_project/prod_00
 ```
+</details>
 
-* **start Flare Server, Clients, Flare Console**
-
+#### **start Flare Server, Clients, Flare Console**
+<details><summary>starting different sub-systems</summary>
 First start FL Server, open a new **terminal** for server
 
 ```shell
 $ cd /tmp/workspace/example_project/prod_00
 $ ./server1/startup/start.sh
 ```
-
 
 Next start Site-1 and Site-2, open a new **terminal** for each site
 in site-1 terminal:
@@ -148,8 +143,10 @@ $ cd /tmp/workspace/example_project/prod_00
 $ ./admin@nvidia.com/startup/fl_admin.sh
 ``` 
 Once console started, you can use check-status command just like POC mode
+</details>
 
-* **Provision and distributing startup kits via Flare Dashboard UI**
+#### **Provision and distributing startup kits via Flare Dashboard UI**
+<details><summary>starting FLARE Dashboard</summary>
 
 Start the dashboard, then following the instructions. Once Dashboard started, you can setup project, invite users 
 to participate, once user add the sites, you can approve the user and sites, then freeze the project. The user can download
@@ -158,8 +155,9 @@ the startup kits from the UI.
 ```shell
  nvflare dashboard --start
 ```
+</details>
 
-
+</details>
 
 ## Getting Started
  For understand the concepts, details of above commands, examples, you can look into the following topics
