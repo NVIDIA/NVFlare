@@ -15,7 +15,6 @@
 """Federated Simulator launching script."""
 
 import argparse
-import os
 import sys
 from sys import platform
 
