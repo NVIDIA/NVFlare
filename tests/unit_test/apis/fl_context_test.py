@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.apis.fl_context import FLContext
+from nvflare.apis.fl_context import FLContext, FLContextManager
 
 
 class TestFLContext:
@@ -77,3 +77,13 @@ class TestFLContext:
         assert fl_ctx.set_prop("y", 20, private=True)
 
         assert fl_ctx.get_prop("y") == 20
+
+    def test_sticky_prop(self):
+        mgr = FLContextManager()
+        ctx1 = mgr.new_context()
+        ctx2 = mgr.new_context()
+        ctx1.set_prop(key="x", value=1, private=True, sticky=True)
+        assert ctx2.get_prop("x") == 1
+        ctx2.set_prop(key="x", value=2, private=True, sticky=True)
+        assert ctx2.get_prop("x") == 2
+        assert ctx1.get_prop("x") == 2
