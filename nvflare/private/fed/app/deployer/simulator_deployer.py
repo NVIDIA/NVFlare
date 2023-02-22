@@ -18,7 +18,7 @@ import tempfile
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.network_utils import get_open_ports
-from nvflare.private.fed.app.server.server_train import create_admin_server
+from nvflare.private.fed.app.utils import create_admin_server
 
 # from nvflare.private.fed.client.admin_msg_sender import AdminMessageSender
 from nvflare.private.fed.simulator.simulator_client_engine import SimulatorParentClientEngine

@@ -16,17 +16,16 @@ from nvflare.fuel.sec.audit import Auditor
 
 
 class SimulatorAuditor(Auditor):
-
     def __init__(self):
         pass
 
     def add_event(self, user: str, action: str, ref: str = "", msg: str = "") -> str:
         pass
 
-    def add_job_event(self, job_id: str, scope_name: str = "", task_name: str = "", task_id: str = "", ref: str = "",
-                      msg: str = "") -> str:
+    def add_job_event(
+        self, job_id: str, scope_name: str = "", task_name: str = "", task_id: str = "", ref: str = "", msg: str = ""
+    ) -> str:
         pass
 
     def close(self):
         pass
-

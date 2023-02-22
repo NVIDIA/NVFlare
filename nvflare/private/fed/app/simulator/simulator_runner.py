@@ -27,30 +27,29 @@ from multiprocessing import Manager, Process
 from multiprocessing.connection import Client
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import JobConstants, MachineStatus, WorkspaceConstants, RunProcessKey
+from nvflare.apis.fl_constant import JobConstants, MachineStatus, RunProcessKey, WorkspaceConstants
 from nvflare.apis.job_def import ALL_SITES, JobMetaKey
 from nvflare.apis.utils.job_utils import convert_legacy_zipped_app_to_job
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.multi_process_executor_constants import CommunicationMetaData
+from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.sec.audit import AuditService
-from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
-from nvflare.private.fed.simulator.simulator_audit import SimulatorAuditor
 from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.fuel.utils.zip_utils import split_path, unzip_all_from_bytes, zip_directory_to_bytes
 from nvflare.lighter.poc_commands import get_host_gpu_ids
 from nvflare.private.defs import AppFolderConstants
-from nvflare.private.fed.app.utils import kill_child_processes
 from nvflare.private.fed.app.deployer.simulator_deployer import SimulatorDeployer
+from nvflare.private.fed.app.utils import kill_child_processes
+from nvflare.private.fed.client.client_engine import shutdown_client
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorServerAppRunner
+from nvflare.private.fed.simulator.simulator_audit import SimulatorAuditor
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize
 from nvflare.security.logging import secure_format_exception
 from nvflare.security.security import EmptyAuthorizer
-
-from nvflare.private.fed.client.client_engine import shutdown_client
 
 
 class SimulatorRunner(FLComponent):
@@ -283,7 +282,9 @@ class SimulatorRunner(FLComponent):
         # Deploy the FL clients
         self.logger.info("Create the simulate clients.")
         for client_name in self.client_names:
-            client, self.client_config, self.deploy_args, self.build_ctx = self.deployer.create_fl_client(client_name, self.args)
+            client, self.client_config, self.deploy_args, self.build_ctx = self.deployer.create_fl_client(
+                client_name, self.args
+            )
             self.federated_clients.append(client)
             app_root = os.path.join(self.simulator_root, "app_" + client_name)
             app_custom_folder = os.path.join(app_root, "custom")
@@ -393,10 +394,13 @@ class SimulatorRunner(FLComponent):
         os.makedirs(local, exist_ok=True)
         workspace = Workspace(root_dir=self.args.workspace, site_name="server")
 
-        self.services.job_cell = self.services.create_job_cell(SimulatorConstants.JOB_NAME,
-                                                               self.services.cell.get_root_url_for_child(),
-                                                               self.services.cell.get_internal_listener_url(),
-                                                               False, None)
+        self.services.job_cell = self.services.create_job_cell(
+            SimulatorConstants.JOB_NAME,
+            self.services.cell.get_root_url_for_child(),
+            self.services.cell.get_internal_listener_url(),
+            False,
+            None,
+        )
         server_app_runner = SimulatorServerAppRunner()
         snapshot = None
         server_app_runner.start_server_app(
@@ -533,7 +537,7 @@ class SimulatorClientRunner(FLComponent):
                 address = ("localhost", open_port)
                 conn = Client(address, authkey=CommunicationMetaData.CHILD_PASSWORD.encode())
             except BaseException:
-                if time.time() - start > 60.:
+                if time.time() - start > 60.0:
                     raise RuntimeError(f"Failed to create connection to the child process in {self.__class__.__name__}")
                 time.sleep(1.0)
                 pass

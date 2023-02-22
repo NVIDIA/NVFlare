@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.apis.fl_constant import RunProcessKey, FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, RunProcessKey
 from nvflare.private.fed.client.client_engine import ClientEngine
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants

@@ -60,7 +60,8 @@ if __name__ == "__main__":
     elif platform == "darwin":
         # OS X
         import multiprocessing
-        multiprocessing.set_start_method('spawn')
+
+        multiprocessing.set_start_method("spawn")
 
     if sys.version_info < (3, 8):
         raise RuntimeError("Please use Python 3.8 or above.")
