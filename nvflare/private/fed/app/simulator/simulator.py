@@ -53,10 +53,7 @@ if __name__ == "__main__":
     """
 
     # For MacOS, it needs to use 'spawn' for creating multi-process.
-    if platform == "linux" or platform == "linux2":
-        # linux: use the default method
-        pass
-    elif platform == "darwin":
+    if platform == "darwin":
         # OS X
         import multiprocessing
 

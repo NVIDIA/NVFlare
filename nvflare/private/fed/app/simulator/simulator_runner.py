@@ -35,6 +35,7 @@ from nvflare.fuel.common.multi_process_executor_constants import CommunicationMe
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.sec.audit import AuditService
+from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.fuel.utils.zip_utils import split_path, unzip_all_from_bytes, zip_directory_to_bytes
 from nvflare.lighter.poc_commands import get_host_gpu_ids
@@ -133,7 +134,6 @@ class SimulatorRunner(FLComponent):
         os.chdir(self.args.workspace)
         fobs_initialize()
         AuthorizationService.initialize(EmptyAuthorizer())
-        # AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
         AuditService.the_auditor = SimulatorAuditor()
 
         self.simulator_root = os.path.join(self.args.workspace, SimulatorConstants.JOB_NAME)
@@ -323,13 +323,11 @@ class SimulatorRunner(FLComponent):
         run_status = mpm.run(main_func=self.simulator_run_main, shutdown_grace_time=3, cleanup_grace_time=6)
 
         return_dict["run_status"] = run_status
-        # os._exit(0)
 
     def simulator_run_main(self):
         if self.setup():
             try:
                 self.create_clients()
-                # self.services.engine.run_processes[SimulatorConstants.JOB_NAME][RunProcessKey.PARTICIPANTS] =
                 self.services.engine.run_processes[SimulatorConstants.JOB_NAME] = {
                     RunProcessKey.LISTEN_PORT: None,
                     RunProcessKey.CONNECTION: None,
@@ -428,6 +426,7 @@ class SimulatorClientRunner(FLComponent):
         self.client_config = client_config
         self.deploy_args = deploy_args
         self.build_ctx = build_ctx
+        self.kv_list = parse_vars(args.set)
 
     def run(self, gpu):
         try:
@@ -435,8 +434,9 @@ class SimulatorClientRunner(FLComponent):
             self.logger.info("Start the clients run simulation.")
             executor = ThreadPoolExecutor(max_workers=self.args.threads)
             lock = threading.Lock()
+            timeout = self.kv_list.get("simulator_worker_timeout", 60.0)
             for i in range(self.args.threads):
-                executor.submit(lambda p: self.run_client_thread(*p), [self.args.threads, gpu, lock])
+                executor.submit(lambda p: self.run_client_thread(*p), [self.args.threads, gpu, lock, timeout])
 
             # wait for the server and client running thread to finish.
             executor.shutdown()
@@ -455,7 +455,7 @@ class SimulatorClientRunner(FLComponent):
                 client.communicator.cell.stop()
             # self.deployer.close()
 
-    def run_client_thread(self, num_of_threads, gpu, lock):
+    def run_client_thread(self, num_of_threads, gpu, lock, timeout=60):
         stop_run = False
         interval = 1
         client_to_run = None  # indicates the next client to run
@@ -470,13 +470,13 @@ class SimulatorClientRunner(FLComponent):
                         client = client_to_run
 
                 client.simulate_running = True
-                stop_run, client_to_run = self.do_one_task(client, num_of_threads, gpu, lock)
+                stop_run, client_to_run = self.do_one_task(client, num_of_threads, gpu, lock, timeout=timeout)
 
                 client.simulate_running = False
         except BaseException as e:
             self.logger.error(f"run_client_thread error: {secure_format_exception(e)}")
 
-    def do_one_task(self, client, num_of_threads, gpu, lock):
+    def do_one_task(self, client, num_of_threads, gpu, lock, timeout=60.0):
         open_port = get_open_ports(1)[0]
         command = (
             sys.executable
@@ -501,7 +501,7 @@ class SimulatorClientRunner(FLComponent):
             command += " --gpu " + str(gpu)
         _ = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=os.environ.copy())
 
-        conn = self._create_connection(open_port)
+        conn = self._create_connection(open_port, timeout=timeout)
 
         self.build_ctx["client_name"] = client.client_name
         data = {
@@ -528,7 +528,7 @@ class SimulatorClientRunner(FLComponent):
 
         return stop_run, next_client
 
-    def _create_connection(self, open_port):
+    def _create_connection(self, open_port, timeout=60.0):
         conn = None
         start = time.time()
         while not conn:
@@ -536,8 +536,11 @@ class SimulatorClientRunner(FLComponent):
                 address = ("localhost", open_port)
                 conn = Client(address, authkey=CommunicationMetaData.CHILD_PASSWORD.encode())
             except BaseException:
-                if time.time() - start > 60.0:
-                    raise RuntimeError(f"Failed to create connection to the child process in {self.__class__.__name__}")
+                if time.time() - start > timeout:
+                    raise RuntimeError(
+                        f"Failed to create connection to the child process in {self.__class__.__name__},"
+                        f" timeout: {timeout}"
+                    )
                 time.sleep(1.0)
                 pass
         return conn

@@ -24,9 +24,6 @@ class SimulatorClientRunManager(ClientRunManager):
 
 
 class SimulatorClientAppRunner(ClientAppRunner):
-    # def start_command_agent(self, args, client_runner, federated_client, fl_ctx):
-    #     super().start_command_agent(args, client_runner, federated_client, fl_ctx)
-
     def start_command_agent(self, args, client_runner, federated_client, fl_ctx):
         # pass
         super().start_command_agent(args, client_runner, federated_client, fl_ctx)

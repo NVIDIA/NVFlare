@@ -18,11 +18,6 @@ from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 
 
-class SimulatorClientEngine(ClientEngine):
-    def __init__(self, client, client_name, args, rank, workers=5):
-        super().__init__(client, client_name, args, rank, workers)
-
-
 class SimulatorParentClientEngine(ClientEngine):
     def __init__(self, client, client_token, args, rank=0):
         super().__init__(client, client_token, args, rank)

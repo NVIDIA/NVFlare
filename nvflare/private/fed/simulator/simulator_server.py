@@ -71,14 +71,6 @@ class SimulatorServer(FederatedServer):
             overseer_agent,
         )
 
-        # self.engine.run_processes[SimulatorConstants.JOB_NAME] = {
-        #     RunProcessKey.LISTEN_PORT: None,
-        #     RunProcessKey.CONNECTION: None,
-        #     RunProcessKey.CHILD_PROCESS: None,
-        #     RunProcessKey.JOB_ID: SimulatorConstants.JOB_NAME,
-        #     # RunProcessKey.PARTICIPANTS: job_clients,
-        # }
-
         self.job_cell = None
         self.server_state = HotState()
 
@@ -140,7 +132,7 @@ class SimulatorServer(FederatedServer):
             if self.engine.asked_to_stop:
                 self.engine.engine_info.status = MachineStatus.STOPPED
 
-            time.sleep(3)
+            time.sleep(cleanup_grace_time)
 
     def stop_run_engine_cell(self):
         self.engine.ask_to_stop()
