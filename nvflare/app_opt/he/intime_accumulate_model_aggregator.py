@@ -25,11 +25,8 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_opt.homomorphic_encryption.constant import HE_ALGORITHM_CKKS
-from nvflare.app_opt.homomorphic_encryption.homomorphic_encrypt import (
-    count_encrypted_layers,
-    load_tenseal_context_from_workspace,
-)
+from nvflare.app_opt.he.constant import HE_ALGORITHM_CKKS
+from nvflare.app_opt.he.homomorphic_encrypt import count_encrypted_layers, load_tenseal_context_from_workspace
 
 
 class HEInTimeAccumulateWeightedAggregator(Aggregator):
