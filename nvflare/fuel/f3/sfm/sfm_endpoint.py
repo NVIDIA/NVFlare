@@ -62,7 +62,7 @@ class SfmEndpoint:
                 (index for index, conn in enumerate(self.connections) if conn.get_name() == sfm_conn.get_name()), None
             )
 
-            if found_index:
+            if found_index is not None:
                 self.connections.pop(found_index)
                 log.debug(f"Connection {sfm_conn.get_name()} is removed from endpoint {self.endpoint.name}")
             else:
