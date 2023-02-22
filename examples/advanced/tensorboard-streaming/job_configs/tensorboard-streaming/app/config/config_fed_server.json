@@ -9,7 +9,7 @@
   "components": [
     {
       "id": "persistor",
-      "path": "nvflare.app_opt.pt.file_model_persistor.PTFileModelPersistor",
+      "name": "PTFileModelPersistor",
       "args": {
         "model": {
           "path": "simple_network.SimpleNetwork"
@@ -30,7 +30,7 @@
     },
     {
       "id": "model_locator",
-      "path": "nvflare.app_opt.pt.file_model_locator.PTFileModelLocator",
+      "name": "PTFileModelLocator",
       "args": {
         "pt_persistor_id": "persistor"
       }
@@ -42,7 +42,7 @@
     },
     {
       "id": "tb_analytics_receiver",
-      "path": "nvflare.app_opt.tracking.tensorboard.tb_receiver.TBAnalyticsReceiver",
+      "name": "TBAnalyticsReceiver",
       "args": {"events": ["fed.analytix_log_stats"]}
     }
   ],
