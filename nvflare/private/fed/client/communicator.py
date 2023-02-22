@@ -315,7 +315,6 @@ class Communicator:
                         channel=CellChannel.SERVER_MAIN,
                         topic=CellChannelTopic.HEART_BEAT,
                         request=heartbeat_message,
-                        timeout=5.0,
                     )
                     return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
                     if return_code == ReturnCode.UNAUTHENTICATED:
