@@ -60,7 +60,7 @@ If one’s use case demands a different strategy, then you can implement a new m
 
 
 Looking at the job workflow, we have defined three workflows in config_fed_server.json
-  * pre_train ( get_weights )  with _InitializeGlobalWeights_ controller
+  * pre_train ( model initialization )  with _InitializeGlobalWeights_ controller
   * scatter_and_gather (train) with _ScatterAndGather_ controller
   * cross_site_validate (cross validation) with _CrossSiteModelEval_
 
