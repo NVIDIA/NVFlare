@@ -99,11 +99,15 @@ class AioStreamSession(Connection):
                     return
                 self.process_frame(f.data)
 
-        except grpc.aio.AioRpcError:
-            self.logger.error(f"{self}: AioRpcError")
-            self.logger.debug(traceback.format_exc())
-        except asyncio.CancelledError:
-            self.logger.debug(f"{self}: RPC cancelled")
+        except grpc.aio.AioRpcError as error:
+            if not self.closing:
+                if error.code() == grpc.StatusCode.CANCELLED:
+                    self.logger.debug(f"Connection {self} is closed by peer")
+                else:
+                    self.logger.error(f"Connection {self} Error: {error.details()}")
+                    self.logger.debug(traceback.format_exc())
+            else:
+                self.logger.debug(f"Connection {self} is closed locally")
         except Exception as ex:
             if not self.closing:
                 self.logger.error(f"{self}: exception {type(ex)} in read_loop: {ex}")
@@ -120,7 +124,7 @@ class AioStreamSession(Connection):
                 yield item
         except Exception as ex:
             if self.closing:
-                self.logger.debug(f"{self}: connected closed by {type(ex)}: {ex}")
+                self.logger.debug(f"{self}: connection closed by {type(ex)}: {ex}")
             else:
                 self.logger.error(f"{self}: generate_output exception {type(ex)}: {ex}")
             self.logger.debug(traceback.format_exc())
