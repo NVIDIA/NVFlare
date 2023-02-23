@@ -31,11 +31,11 @@ from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.private.fed.app.client.worker_process import check_parent_alive
 from nvflare.private.fed.app.deployer.base_client_deployer import BaseClientDeployer
+from nvflare.private.fed.client.client_engine import ClientEngine
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.client.fed_client import FederatedClient
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorClientAppRunner
 from nvflare.private.fed.simulator.simulator_audit import SimulatorAuditor
-from nvflare.private.fed.simulator.simulator_client_engine import SimulatorClientEngine
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize
 from nvflare.security.logging import secure_format_exception
@@ -44,7 +44,7 @@ from nvflare.security.security import EmptyAuthorizer
 
 class ClientTaskWorker(FLComponent):
     def create_client_engine(self, federated_client: FederatedClient, args, rank=0):
-        client_engine = SimulatorClientEngine(federated_client, federated_client.token, args, rank)
+        client_engine = ClientEngine(federated_client, federated_client.token, args, rank)
         federated_client.set_client_engine(client_engine)
         federated_client.run_manager = None
 

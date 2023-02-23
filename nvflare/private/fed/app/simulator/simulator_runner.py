@@ -27,13 +27,15 @@ from multiprocessing import Manager, Process
 from multiprocessing.connection import Client
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import JobConstants, MachineStatus, WorkspaceConstants
+from nvflare.apis.fl_constant import JobConstants, MachineStatus, RunProcessKey, WorkspaceConstants
 from nvflare.apis.job_def import ALL_SITES, JobMetaKey
 from nvflare.apis.utils.job_utils import convert_legacy_zipped_app_to_job
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.multi_process_executor_constants import CommunicationMetaData
+from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.sec.audit import AuditService
+from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.fuel.utils.zip_utils import split_path, unzip_all_from_bytes, zip_directory_to_bytes
 from nvflare.lighter.poc_commands import get_host_gpu_ids
@@ -43,6 +45,7 @@ from nvflare.private.fed.app.utils import kill_child_processes
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorServerAppRunner
+from nvflare.private.fed.simulator.simulator_audit import SimulatorAuditor
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize
 from nvflare.security.logging import secure_format_exception
@@ -72,6 +75,7 @@ class SimulatorRunner(FLComponent):
         self.federated_clients = []
         self.client_config = None
         self.deploy_args = None
+        self.build_ctx = None
 
     def _generate_args(
         self, job_folder: str, workspace: str, clients=None, n_clients=None, threads=None, gpu=None, max_clients=100
@@ -130,7 +134,7 @@ class SimulatorRunner(FLComponent):
         os.chdir(self.args.workspace)
         fobs_initialize()
         AuthorizationService.initialize(EmptyAuthorizer())
-        AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
+        AuditService.the_auditor = SimulatorAuditor()
 
         self.simulator_root = os.path.join(self.args.workspace, SimulatorConstants.JOB_NAME)
         if os.path.exists(self.simulator_root):
@@ -194,7 +198,7 @@ class SimulatorRunner(FLComponent):
             # Deploy the FL server
             self.logger.info("Create the Simulator Server.")
             simulator_server, self.services = self.deployer.create_fl_server(self.args)
-            self.services.deploy(self.args, grpc_args=simulator_server)
+            # self.services.deploy(self.args, grpc_args=simulator_server)
 
             self.logger.info("Deploy the Apps.")
             self._deploy_apps(job_name, data_bytes, meta)
@@ -277,7 +281,9 @@ class SimulatorRunner(FLComponent):
         # Deploy the FL clients
         self.logger.info("Create the simulate clients.")
         for client_name in self.client_names:
-            client, self.client_config, self.deploy_args = self.deployer.create_fl_client(client_name, self.args)
+            client, self.client_config, self.deploy_args, self.build_ctx = self.deployer.create_fl_client(
+                client_name, self.args
+            )
             self.federated_clients.append(client)
             app_root = os.path.join(self.simulator_root, "app_" + client_name)
             app_custom_folder = os.path.join(app_root, "custom")
@@ -302,7 +308,10 @@ class SimulatorRunner(FLComponent):
             process = Process(target=self.run_processs, args=(return_dict,))
             process.start()
             process.join()
-            run_status = return_dict["run_status"]
+            if process.exitcode == -9:
+                run_status = process.exitcode
+            else:
+                run_status = return_dict["run_status"]
             return run_status
         except KeyboardInterrupt:
             self.logger.info("KeyboardInterrupt, terminate all the child processes.")
@@ -310,9 +319,22 @@ class SimulatorRunner(FLComponent):
             return -9
 
     def run_processs(self, return_dict):
+        # run_status = self.simulator_run_main()
+        run_status = mpm.run(main_func=self.simulator_run_main, shutdown_grace_time=3, cleanup_grace_time=6)
+
+        return_dict["run_status"] = run_status
+
+    def simulator_run_main(self):
         if self.setup():
             try:
                 self.create_clients()
+                self.services.engine.run_processes[SimulatorConstants.JOB_NAME] = {
+                    RunProcessKey.LISTEN_PORT: None,
+                    RunProcessKey.CONNECTION: None,
+                    RunProcessKey.CHILD_PROCESS: None,
+                    RunProcessKey.JOB_ID: SimulatorConstants.JOB_NAME,
+                    RunProcessKey.PARTICIPANTS: self.services.engine.client_manager.clients,
+                }
 
                 self.logger.info("Deploy and start the Server App.")
                 server_thread = threading.Thread(target=self.start_server_app, args=[])
@@ -323,6 +345,10 @@ class SimulatorRunner(FLComponent):
                     time.sleep(1.0)
                     if not server_thread.is_alive():
                         raise RuntimeError("Could not start the Server App.")
+
+                # Start the client heartbeat calls.
+                for client in self.federated_clients:
+                    client.start_heartbeat(interval=2)
 
                 if self.args.gpu:
                     gpus = self.args.gpu.split(",")
@@ -343,15 +369,14 @@ class SimulatorRunner(FLComponent):
                 self.logger.error(f"Simulator run error: {secure_format_exception(e)}")
                 run_status = 2
             finally:
+                # self.services.close()
                 self.deployer.close()
         else:
             run_status = 1
-
-        return_dict["run_status"] = run_status
-        os._exit(0)
+        return run_status
 
     def client_run(self, clients, gpu):
-        client_runner = SimulatorClientRunner(self.args, clients, self.client_config, self.deploy_args)
+        client_runner = SimulatorClientRunner(self.args, clients, self.client_config, self.deploy_args, self.build_ctx)
         client_runner.run(gpu)
 
     def start_server_app(self):
@@ -365,15 +390,33 @@ class SimulatorRunner(FLComponent):
         local = os.path.join(self.args.workspace, WorkspaceConstants.SITE_FOLDER_NAME)
         os.makedirs(local, exist_ok=True)
         workspace = Workspace(root_dir=self.args.workspace, site_name="server")
+
+        self.services.job_cell = self.services.create_job_cell(
+            SimulatorConstants.JOB_NAME,
+            self.services.cell.get_root_url_for_child(),
+            self.services.cell.get_internal_listener_url(),
+            False,
+            None,
+        )
         server_app_runner = SimulatorServerAppRunner()
         snapshot = None
         server_app_runner.start_server_app(
             workspace, self.services, self.args, app_server_root, self.args.job_id, snapshot, self.logger
         )
 
+        # start = time.time()
+        # while self.services.engine.client_manager.clients:
+        #     # Wait for the clients to shutdown and quite first.
+        #     time.sleep(0.1)
+        #     if time.time() - start > 30.:
+        #         break
+
+        self.services.admin_server.stop()
+        self.services.close()
+
 
 class SimulatorClientRunner(FLComponent):
-    def __init__(self, args, clients: [], client_config, deploy_args):
+    def __init__(self, args, clients: [], client_config, deploy_args, build_ctx):
         super().__init__()
         self.args = args
         self.federated_clients = clients
@@ -382,6 +425,8 @@ class SimulatorClientRunner(FLComponent):
         self.simulator_root = os.path.join(self.args.workspace, SimulatorConstants.JOB_NAME)
         self.client_config = client_config
         self.deploy_args = deploy_args
+        self.build_ctx = build_ctx
+        self.kv_list = parse_vars(args.set)
 
     def run(self, gpu):
         try:
@@ -389,8 +434,9 @@ class SimulatorClientRunner(FLComponent):
             self.logger.info("Start the clients run simulation.")
             executor = ThreadPoolExecutor(max_workers=self.args.threads)
             lock = threading.Lock()
+            timeout = self.kv_list.get("simulator_worker_timeout", 60.0)
             for i in range(self.args.threads):
-                executor.submit(lambda p: self.run_client_thread(*p), [self.args.threads, gpu, lock])
+                executor.submit(lambda p: self.run_client_thread(*p), [self.args.threads, gpu, lock, timeout])
 
             # wait for the server and client running thread to finish.
             executor.shutdown()
@@ -398,11 +444,18 @@ class SimulatorClientRunner(FLComponent):
             self.logger.error(f"SimulatorClientRunner run error: {secure_format_exception(e)}")
         finally:
             for client in self.federated_clients:
-                # client.engine.shutdown()
-                client.close()
+                # touch_file = os.path.join(client.app_client_root, "shutdown.fl")
+                # shutdown_client(client, touch_file)
+
+                client.communicator.heartbeat_done = True
+                # time.sleep(3)
+                client.terminate()
+                client.status = ClientStatus.STOPPED
+
+                client.communicator.cell.stop()
             # self.deployer.close()
 
-    def run_client_thread(self, num_of_threads, gpu, lock):
+    def run_client_thread(self, num_of_threads, gpu, lock, timeout=60):
         stop_run = False
         interval = 1
         client_to_run = None  # indicates the next client to run
@@ -417,13 +470,13 @@ class SimulatorClientRunner(FLComponent):
                         client = client_to_run
 
                 client.simulate_running = True
-                stop_run, client_to_run = self.do_one_task(client, num_of_threads, gpu, lock)
+                stop_run, client_to_run = self.do_one_task(client, num_of_threads, gpu, lock, timeout=timeout)
 
                 client.simulate_running = False
         except BaseException as e:
             self.logger.error(f"run_client_thread error: {secure_format_exception(e)}")
 
-    def do_one_task(self, client, num_of_threads, gpu, lock):
+    def do_one_task(self, client, num_of_threads, gpu, lock, timeout=60.0):
         open_port = get_open_ports(1)[0]
         command = (
             sys.executable
@@ -431,21 +484,31 @@ class SimulatorClientRunner(FLComponent):
             + self.args.workspace
             + " --client "
             + client.client_name
+            + " --token "
+            + client.token
             + " --port "
             + str(open_port)
             + " --parent_pid "
             + str(os.getpid())
+            + " --simulator_root "
+            + self.simulator_root
+            + " --root_url "
+            + str(client.cell.get_root_url_for_child())
+            + " --parent_url "
+            + str(client.cell.get_internal_listener_url())
         )
         if gpu:
             command += " --gpu " + str(gpu)
         _ = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=os.environ.copy())
 
-        conn = self._create_connection(open_port)
+        conn = self._create_connection(open_port, timeout=timeout)
 
+        self.build_ctx["client_name"] = client.client_name
         data = {
-            SimulatorConstants.CLIENT: client,
+            # SimulatorConstants.CLIENT: client,
             SimulatorConstants.CLIENT_CONFIG: self.client_config,
             SimulatorConstants.DEPLOY_ARGS: self.deploy_args,
+            SimulatorConstants.BUILD_CTX: self.build_ctx,
         }
         conn.send(data)
 
@@ -465,13 +528,19 @@ class SimulatorClientRunner(FLComponent):
 
         return stop_run, next_client
 
-    def _create_connection(self, open_port):
+    def _create_connection(self, open_port, timeout=60.0):
         conn = None
+        start = time.time()
         while not conn:
             try:
                 address = ("localhost", open_port)
                 conn = Client(address, authkey=CommunicationMetaData.CHILD_PASSWORD.encode())
             except BaseException:
+                if time.time() - start > timeout:
+                    raise RuntimeError(
+                        f"Failed to create connection to the child process in {self.__class__.__name__},"
+                        f" timeout: {timeout}"
+                    )
                 time.sleep(1.0)
                 pass
         return conn

@@ -24,8 +24,8 @@ from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.shareablegenerators.full_model_shareable_generator import FullModelShareableGenerator
-from nvflare.app_opt.homomorphic_encryption.constant import HE_ALGORITHM_CKKS
-from nvflare.app_opt.homomorphic_encryption.homomorphic_encrypt import load_tenseal_context_from_workspace
+from nvflare.app_opt.he.constant import HE_ALGORITHM_CKKS
+from nvflare.app_opt.he.homomorphic_encrypt import load_tenseal_context_from_workspace
 from nvflare.security.logging import secure_format_exception
 
 
