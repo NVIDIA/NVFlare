@@ -62,6 +62,7 @@ class Communicator:
         compression=None,
         cell: Cell = None,
         client_register_interval=2,
+        timeout=5.,
     ):
         """To init the Communicator.
 
@@ -81,6 +82,7 @@ class Communicator:
         self.client_state_processors = client_state_processors
         self.compression = compression
         self.client_register_interval = client_register_interval
+        self.timeout = timeout
 
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -125,6 +127,7 @@ class Communicator:
                     channel=CellChannel.SERVER_MAIN,
                     topic=CellChannelTopic.Register,
                     request=login_message,
+                    timeout=self.timeout
                 )
                 return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
                 if return_code == ReturnCode.UNAUTHENTICATED:
@@ -174,7 +177,8 @@ class Communicator:
 
         fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
         task = self.cell.send_request(
-            target=fqcn, channel=CellChannel.SERVER_COMMAND, topic=ServerCommandNames.GET_TASK, request=task_message
+            target=fqcn, channel=CellChannel.SERVER_COMMAND, topic=ServerCommandNames.GET_TASK, request=task_message,
+            timeout=self.timeout
         )
         end_time = time.time()
         return_code = task.get_header(MessageHeaderKey.RETURN_CODE)
@@ -245,6 +249,7 @@ class Communicator:
             channel=CellChannel.SERVER_COMMAND,
             topic=ServerCommandNames.SUBMIT_UPDATE,
             request=task_message,
+            timeout=self.timeout
         )
         end_time = time.time()
         return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
@@ -280,6 +285,7 @@ class Communicator:
                 channel=CellChannel.SERVER_MAIN,
                 topic=CellChannelTopic.Quit,
                 request=quit_message,
+                timeout=self.timeout
             )
             return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
             if return_code == ReturnCode.UNAUTHENTICATED:
@@ -315,6 +321,7 @@ class Communicator:
                         channel=CellChannel.SERVER_MAIN,
                         topic=CellChannelTopic.HEART_BEAT,
                         request=heartbeat_message,
+                        timeout=self.timeout
                     )
                     return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
                     if return_code == ReturnCode.UNAUTHENTICATED:
