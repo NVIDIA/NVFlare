@@ -28,8 +28,8 @@ from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import AppFolderConstants
-from nvflare.private.fed.app.utils import check_parent_alive
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger
+from nvflare.private.fed.app.utils import check_parent_alive
 from nvflare.private.fed.server.server_app_runner import ServerAppRunner
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
