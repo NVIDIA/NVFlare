@@ -64,7 +64,7 @@ These items could be user_ids or feature names depending on your use case.
       ],
       "executor": {
         "id": "Executor",
-        "path": "nvflare.app_common.executors.psi.psi_executor.PSIExecutor",
+        "path": "nvflare.app_opt.psi.psi_executor.PSIExecutor",
         "args": {
           "local_psi_id": "local_psi"
         }
@@ -136,15 +136,15 @@ class LocalPSI(PSI):
 
 **prepare data**
 ```
-mkdir /tmp/nvflare/psi     
-cp -r examples/psi/user_email_match/data /tmp/nvflare/psi/.
+mkdir -p /tmp/nvflare/psi     
+cp -r user_email_match/data /tmp/nvflare/psi/.
 ```   
 **import note**
    The items must be unique. duplicate items can result incorrect intersection result
 
 **run job** 
 ```
-nvflare simulator -w /tmp/nvflare/psi -n 3 -t 3 examples/psi/user_email_match
+nvflare simulator -w /tmp/nvflare/psi -n 3 -t 3 examples/advanced/psi/user_email_match
 ```
 Once job completed and succeed, you should be able to find the intersection for different sites at
 

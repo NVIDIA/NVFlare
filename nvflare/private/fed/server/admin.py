@@ -16,6 +16,10 @@ import threading
 import time
 from typing import List, Optional
 
+from nvflare.fuel.f3.cellnet.cell import Cell
+from nvflare.fuel.f3.cellnet.net_agent import NetAgent
+from nvflare.fuel.f3.cellnet.net_manager import NetManager
+from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule
 from nvflare.fuel.hci.server.audit import CommandAudit
@@ -27,6 +31,7 @@ from nvflare.fuel.hci.server.login import LoginModule, SessionManager, SimpleAut
 from nvflare.fuel.sec.audit import Auditor, AuditService
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import ERROR_MSG_PREFIX, RequestHeader
+from nvflare.private.fed.server.message_send import ClientReply, send_requests
 
 
 def new_message(conn: Connection, topic, body, require_authz: bool) -> Message:
@@ -55,97 +60,17 @@ def new_message(conn: Connection, topic, body, require_authz: bool) -> Message:
     return msg
 
 
-class _Waiter(object):
-    def __init__(self, req: Message):
-        self.req = req
-        self.reply = None
-        self.reply_time = None
-
-
 class _Client(object):
-    def __init__(self, token):
+    def __init__(self, token, name):
         self.token = token
+        self.name = name
         self.last_heard_time = None
-        self.outgoing_reqs = []
-        self.fnf_reqs = []  # fire-and-forget requests
-        self.waiters = {}  # ref => waiter
-        self.req_lock = threading.Lock()
-        self.waiter_lock = threading.Lock()
-
-    def send(self, req: Message):
-        waiter = _Waiter(req)
-        with self.req_lock:
-            self.outgoing_reqs.append(req)
-
-        with self.waiter_lock:
-            self.waiters[req.id] = waiter
-
-        return waiter
-
-    def fire_and_forget(self, reqs: [Message]):
-        with self.req_lock:
-            for r in reqs:
-                self.fnf_reqs.append(r)
-
-    def get_outgoing_requests(self, max_num_reqs=0) -> [Message]:
-        result = []
-        with self.req_lock:
-            # reqs in outgoing_reqs have higher priority
-            q = self.outgoing_reqs
-            if len(self.outgoing_reqs) <= 0:
-                # no regular reqs - take fire-and-forget reqs
-                q = self.fnf_reqs
-
-            if max_num_reqs <= 0:
-                num_reqs = len(q)
-            else:
-                num_reqs = min(max_num_reqs, len(q))
-
-            for i in range(num_reqs):
-                result.append(q.pop(0))
-
-        return result
-
-    def accept_reply(self, reply: Message):
-        self.last_heard_time = time.time()
-        ref_id = reply.get_ref_id()
-        with self.waiter_lock:
-            w = self.waiters.pop(ref_id, None)
-
-        if w:
-            w.reply = reply
-            w.reply_time = time.time()
-
-    def cancel_waiter(self, waiter: _Waiter):
-        req = waiter.req
-        with self.waiter_lock:
-            waiter = self.waiters.pop(req.id, None)
-
-        if waiter:
-            with self.req_lock:
-                if req in self.outgoing_reqs:
-                    self.outgoing_reqs.remove(req)
-
-
-class ClientReply(object):
-    def __init__(self, client_token: str, req: Message, reply: Message):
-        """Client reply.
-
-        Args:
-            client_token (str): client token
-            req (Message): request
-            reply (Message): reply
-        """
-        self.client_token = client_token
-        self.request = req
-        self.reply = reply
 
 
 class _ClientReq(object):
     def __init__(self, client, req: Message):
         self.client = client
         self.req = req
-        self.waiter = None
 
 
 def check_client_replies(replies: List[ClientReply], client_sites: List[str], command: str):
@@ -166,6 +91,7 @@ def check_client_replies(replies: List[ClientReply], client_sites: List[str], co
 class FedAdminServer(AdminServer):
     def __init__(
         self,
+        cell: Cell,
         fed_admin_interface,
         users,
         cmd_modules,
@@ -197,6 +123,8 @@ class FedAdminServer(AdminServer):
         """
         cmd_reg = new_command_register_with_builtin_module(app_ctx=fed_admin_interface)
         self.sai = fed_admin_interface
+        self.cell = cell
+        self.client_lock = threading.Lock()
 
         authenticator = SimpleAuthenticator(users)
         sess_mgr = SessionManager()
@@ -222,16 +150,15 @@ class FedAdminServer(AdminServer):
         self.file_upload_dir = file_upload_dir
         self.file_download_dir = file_download_dir
 
-        # YC: need to register FileTransferModule any more
-        # since upload/download functions are to be implemented by other modules.
-        # cmd_reg.register_module(
-        #     FileTransferModule(
-        #         upload_dir=file_upload_dir,
-        #         download_dir=file_download_dir
-        #     )
-        # )
-
         cmd_reg.register_module(sess_mgr)
+        # mpm.add_cleanup_cb(sess_mgr.shutdown)
+
+        agent = NetAgent(self.cell)
+        net_mgr = NetManager(agent)
+        cmd_reg.register_module(net_mgr)
+
+        mpm.add_cleanup_cb(net_mgr.close)
+        mpm.add_cleanup_cb(agent.close)
 
         if cmd_modules:
             if not isinstance(cmd_modules, list):
@@ -259,14 +186,14 @@ class FedAdminServer(AdminServer):
         )
 
         self.clients = {}  # token => _Client
-        self.client_lock = threading.Lock()
         self.timeout = 10.0
 
-    def client_heartbeat(self, token):
+    def client_heartbeat(self, token, name: str):
         """Receive client heartbeat.
 
         Args:
             token: the session token of the client
+            name: client name
 
         Returns:
             Client.
@@ -274,7 +201,7 @@ class FedAdminServer(AdminServer):
         with self.client_lock:
             client = self.clients.get(token)
             if not client:
-                client = _Client(token)
+                client = _Client(token, name)
                 self.clients[token] = client
             client.last_heard_time = time.time()
             return client
@@ -300,7 +227,7 @@ class FedAdminServer(AdminServer):
         if not isinstance(req, Message):
             raise TypeError("request must be Message but got {}".format(type(req)))
         reqs = {client_token: req}
-        replies = self.send_requests(reqs, timeout_secs)
+        replies = self.send_requests(reqs, timeout_secs=timeout_secs)
         if replies is None or len(replies) <= 0:
             return None
         else:
@@ -310,7 +237,7 @@ class FedAdminServer(AdminServer):
         """Send requests to clients
 
         Args:
-            requests: A dict of requests: {client token: request}
+            requests: A dict of requests: {client token: Message}
             timeout_secs: how long to wait for reply before timeout
 
         Returns:
@@ -321,7 +248,7 @@ class FedAdminServer(AdminServer):
             for token, _ in requests.items():
                 result[token] = None
 
-            replies = self.send_requests(requests, timeout_secs)
+            replies = self.send_requests(requests, timeout_secs=timeout_secs)
             for r in replies:
                 result[r.client_token] = r.reply
         return result
@@ -343,122 +270,9 @@ class FedAdminServer(AdminServer):
             A list of ClientReply
         """
 
-        if not isinstance(requests, dict):
-            raise TypeError("requests must be a dict but got {}".format(type(requests)))
-
-        if len(requests) == 0:
-            return []
-
-        if timeout_secs <= 0.0:
-            # this is fire-and-forget!
-            for token, r in requests.items():
-                client = self.clients.get(token)
-                if not client:
-                    continue
-
-                if isinstance(r, list):
-                    reqs = r
-                else:
-                    reqs = [r]
-
-                client.fire_and_forget(reqs)
-            # No replies
-            return []
-
-        # Regular requests
-        client_reqs = []
-        with self.client_lock:
-            for token, r in requests.items():
-                client = self.clients.get(token)
-                if not client:
-                    continue
-
-                if isinstance(r, list):
-                    reqs = r
-                else:
-                    reqs = [r]
-
-                for req in reqs:
-                    if not isinstance(req, Message):
-                        raise TypeError("request must be a Message but got {}".format(type(req)))
-                    client_reqs.append(_ClientReq(client, req))
-
-        return self._send_client_reqs(client_reqs, timeout_secs)
-
-    def _send_client_reqs(self, client_reqs, timeout_secs) -> [ClientReply]:
-        result = []
-        if len(client_reqs) <= 0:
-            return result
-
-        for cr in client_reqs:
-            cr.waiter = cr.client.send(cr.req)
-
-        start_time = time.time()
-        while True:
-            all_received = True
-            for cr in client_reqs:
-                if cr.waiter.reply_time is None:
-                    all_received = False
-                    break
-
-            if all_received:
-                break
-
-            if time.time() - start_time > timeout_secs:
-                # timeout
-                break
-
-            time.sleep(0.1)
-
-        for cr in client_reqs:
-            result.append(ClientReply(client_token=cr.client.token, req=cr.waiter.req, reply=cr.waiter.reply))
-
-            if cr.waiter.reply_time is None:
-                # this client timed out
-                cr.client.cancel_waiter(cr.waiter)
-
-        return result
-
-    def accept_reply(self, client_token, reply: Message):
-        """Accept client reply.
-
-        NOTE::
-            This method is to be called by the FL Engine after a client's reply is received.
-            Hence, it is called from the FL Engine's message processing thread.
-
-        Args:
-            client_token: session token of the client
-            reply: the reply message
-        """
-        client = self.client_heartbeat(client_token)
-
-        ref_id = reply.get_ref_id()
-        if ref_id is None:
-            raise RuntimeError("protocol error: missing ref_id in reply from client {}".format(client_token))
-
-        client.accept_reply(reply)
-
-    def get_outgoing_requests(self, client_token, max_reqs=0):
-        """Get outgoing request from a client.
-
-        NOTE::
-            This method is called by FL Engine to get outgoing messages to the client, so it
-            can send them to the client.
-
-        Args:
-            client_token: session token of the client
-            max_reqs: max number of requests. 0 means unlimited.
-
-        Returns:
-            outgoing requests. A list of Message.
-        """
-        with self.client_lock:
-            client = self.clients.get(client_token)
-
-        if client:
-            return client.get_outgoing_requests(max_reqs)
-        else:
-            return []
+        return send_requests(
+            cell=self.cell, command="admin", requests=requests, clients=self.clients, timeout_secs=timeout_secs
+        )
 
     def stop(self):
         super().stop()

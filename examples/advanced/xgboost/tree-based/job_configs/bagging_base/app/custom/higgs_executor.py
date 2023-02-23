@@ -39,7 +39,7 @@ class FedXGBTreeHiggsExecutor(FedXGBTreeExecutor):
         data_split_filename,
         training_mode,
         lr_scale,
-        num_tree_bagging: int = 1,
+        num_client_bagging: int = 1,
         lr_mode: str = "uniform",
         local_model_path: str = "model.json",
         global_model_path: str = "model_global.json",
@@ -53,7 +53,7 @@ class FedXGBTreeHiggsExecutor(FedXGBTreeExecutor):
     ):
         super().__init__(
             training_mode=training_mode,
-            num_tree_bagging=num_tree_bagging,
+            num_client_bagging=num_client_bagging,
             lr_scale=lr_scale,
             lr_mode=lr_mode,
             local_model_path=local_model_path,

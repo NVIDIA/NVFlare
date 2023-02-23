@@ -39,7 +39,7 @@ from utils.custom_client_datalist_json_path import custom_client_datalist_json_p
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.pt.pt_fedproxloss import PTFedProxLoss
+from nvflare.app_opt.pt import PTFedProxLoss
 
 
 class SupervisedMonaiProstateLearner(SupervisedLearner):
@@ -168,7 +168,7 @@ class SupervisedMonaiProstateLearner(SupervisedLearner):
             )
             self.valid_dataset = Dataset(
                 data=valid_list,
-                transform=self.transform_valid,
+                transform=self.transform,
             )
 
         self.train_loader = DataLoader(

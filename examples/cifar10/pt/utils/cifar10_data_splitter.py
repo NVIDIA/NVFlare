@@ -41,23 +41,11 @@ import json
 import os
 
 import numpy as np
-import torchvision.datasets as datasets
+from cifar10_data_utils import get_site_class_summary, load_cifar10_data
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
-
-CIFAR10_ROOT = "/tmp/cifar10"  # will be used for all CIFAR-10 experiments
-
-
-def _get_site_class_summary(train_label, site_idx):
-    class_sum = {}
-
-    for site, data_idx in site_idx.items():
-        unq, unq_cnt = np.unique(train_label[data_idx], return_counts=True)
-        tmp = {int(unq[i]): int(unq_cnt[i]) for i in range(len(unq))}
-        class_sum[site] = tmp
-    return class_sum
 
 
 class Cifar10DataSplitter(FLComponent):
@@ -68,8 +56,10 @@ class Cifar10DataSplitter(FLComponent):
         self.alpha = alpha
         self.seed = seed
 
+        if self.split_dir is None:
+            raise ValueError("You need to define a valid `split_dir` when splitting the data.")
         if alpha < 0.0:
-            raise ValueError(f"Alpha should be larger 0.0 but was {alpha}!")
+            raise ValueError(f"Alpha should be larger or equal 0.0 but was" f" {alpha}!")
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
@@ -85,8 +75,6 @@ class Cifar10DataSplitter(FLComponent):
         site_idx, class_sum = self._partition_data()
 
         # write to files
-        if self.split_dir is None:
-            raise ValueError("You need to define a valid `split_dir` when splitting the data.")
         if not os.path.isdir(self.split_dir):
             os.makedirs(self.split_dir)
         sum_file_name = os.path.join(self.split_dir, "summary.txt")
@@ -101,16 +89,8 @@ class Cifar10DataSplitter(FLComponent):
             site_file_name = site_file_path + str(site + 1) + ".npy"
             np.save(site_file_name, np.array(site_idx[site]))
 
-    def load_cifar10_data(self):
-        # download data
-        train_dataset = datasets.CIFAR10(root=CIFAR10_ROOT, train=True, download=True)
-
-        # only training label is needed for doing split
-        train_label = np.array(train_dataset.targets)
-        return train_label
-
     def _partition_data(self):
-        train_label = self.load_cifar10_data()
+        train_label = load_cifar10_data()
 
         min_size = 0
         K = 10
@@ -140,6 +120,6 @@ class Cifar10DataSplitter(FLComponent):
             site_idx[j] = idx_batch[j]
 
         # collect class summary
-        class_sum = _get_site_class_summary(train_label, site_idx)
+        class_sum = get_site_class_summary(train_label, site_idx)
 
         return site_idx, class_sum

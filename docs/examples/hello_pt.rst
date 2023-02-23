@@ -11,7 +11,7 @@ to learn more about the specifics of `NVIDIA FLARE <https://pypi.org/project/nvf
 
 Make sure you have an environment with NVIDIA FLARE installed.
 
-You can follow the :ref:`installation <installation>` guide on the general concept of setting up a
+You can follow :ref:`getting_started` on the general concept of setting up a
 Python virtual environment (the recommended environment) and how to install NVIDIA FLARE.
 
 
@@ -77,11 +77,8 @@ architecture are modified from
 
 Let's see what an extremely simplified CIFAR10 training looks like:
 
-.. literalinclude:: ../../examples/hello-pt/app/custom/simple_network.py
+.. literalinclude:: ../../examples/hello-world/hello-pt/app/custom/simple_network.py
    :language: python
-   :lines: 15-
-   :lineno-start: 15
-   :linenos:
    :caption: simple_network.py
 
 This ``SimpleNetwork`` class is your convolutional neural network to train with the CIFAR10 dataset.
@@ -101,11 +98,8 @@ You can think of all of this code as part of your local training loop, as every 
 Since you will encapsulate every training-related step in the ``Cifar10Trainer`` class,
 let's put this preparation stage into the ``__init__`` method:
 
-.. literalinclude:: ../../examples/hello-pt/app/custom/cifar10trainer.py
+.. literalinclude:: ../../examples/hello-world/hello-pt/app/custom/cifar10trainer.py
    :language: python
-   :lines: 37-82
-   :lineno-start: 37
-   :linenos:
 
 
 Local Train
@@ -114,7 +108,7 @@ Local Train
 Now that you have your network and dataset setup, in the ``Cifar10Trainer`` class.
 Let's also implement a local training loop in a method called ``local_train``:
 
-.. literalinclude:: ../../examples/hello-pt/app/custom/cifar10trainer.py
+.. literalinclude:: ../../examples/hello-world/hello-pt/app/custom/cifar10trainer.py
    :language: python
    :pyobject: Cifar10Trainer.local_train
 
@@ -144,7 +138,7 @@ We can then call our local train inside the ``execute`` method.
 
 Take a look at the following code:
 
-.. literalinclude:: ../../examples/hello-pt/app/custom/cifar10trainer.py
+.. literalinclude:: ../../examples/hello-world/hello-pt/app/custom/cifar10trainer.py
    :language: python
    :pyobject: Cifar10Trainer.execute
 
@@ -187,7 +181,7 @@ Application Configuration
 
 Inside the config folder there are two files, ``config_fed_client.json`` and ``config_fed_server.json``.
 
-.. literalinclude:: ../../examples/hello-pt/app/config/config_fed_client.json
+.. literalinclude:: ../../examples/hello-world/hello-pt/app/config/config_fed_client.json
    :language: json
    :linenos:
    :caption: config_fed_client.json
@@ -205,7 +199,7 @@ The "validate" task for ``Cifar10Validator`` and the "submit_model" task are use
 so we will be addressing that in a later example.
 
 
-.. literalinclude:: ../../examples/hello-pt/app/config/config_fed_server.json
+.. literalinclude:: ../../examples/hello-world/hello-pt/app/config/config_fed_server.json
    :language: json
    :linenos:
    :caption: config_fed_server.json

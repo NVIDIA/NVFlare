@@ -32,7 +32,7 @@ class TestOverseer:
             psp = oa_launcher.get_primary_sp(client_agent_list[0])
             assert psp.name == "server00"
             oa_launcher.pause_server(server_agent_list[0])
-            time.sleep(15)
+            time.sleep(20)
             psp = oa_launcher.get_primary_sp(client_agent_list[0])
             assert psp.name == "server01"
             oa_launcher.resume_server(server_agent_list[0])

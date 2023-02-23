@@ -1,0 +1,28 @@
+ha: True
+jobs_root_dir: ../../examples/cifar10/cifar10-real-world/job_configs
+cleanup: False
+project_yaml: ./data/projects/cifar.yml
+poll_period: 0.5
+
+
+tests:
+  - test_name: "run cifar10_fedavg_stream_tb"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job_cifar_test cifar10_fedavg_stream_tb" ]
+        "result":
+          "type": "run_state"
+          "data": {}
+      - "trigger":
+          "type": "run_state"
+          "data": { "run_finished": True }
+        "actions": [ "ensure_current_job_done" ]
+        "result":
+          "type": "run_state"
+          "data": { "run_finished": True }
+    validators:
+      - path: tests.integration_test.validators.CIFAR10ResultValidator
+    setup:
+      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='~/data', download=True)"

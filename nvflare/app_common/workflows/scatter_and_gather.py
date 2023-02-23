@@ -330,8 +330,6 @@ class ScatterAndGather(Controller):
     def _accept_train_result(self, client_name: str, result: Shareable, fl_ctx: FLContext) -> bool:
 
         rc = result.get_return_code()
-        contribution_round = result.get_cookie(AppConstants.CONTRIBUTION_ROUND)
-        result.set_header(AppConstants.CONTRIBUTION_ROUND, contribution_round)
 
         # Raise errors if bad peer context or execution exception.
         if rc and rc != ReturnCode.OK:
@@ -357,7 +355,6 @@ class ScatterAndGather(Controller):
 
         fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=False)
         fl_ctx.set_prop(AppConstants.TRAINING_RESULT, result, private=True, sticky=False)
-        fl_ctx.set_prop(AppConstants.CONTRIBUTION_ROUND, contribution_round, private=True, sticky=False)
         self.fire_event(AppEventType.BEFORE_CONTRIBUTION_ACCEPT, fl_ctx)
 
         accepted = self.aggregator.accept(result, fl_ctx)
