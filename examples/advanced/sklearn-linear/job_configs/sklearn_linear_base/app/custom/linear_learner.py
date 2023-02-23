@@ -68,7 +68,7 @@ class LinearLearner(Learner):
         if self.local_model.fit_intercept:
             self.local_model.intercept_ = params["intercept"]
 
-    def train(self, curr_round: int, global_param: Optional[dict] = None) -> Tuple[dict, dict]:
+    def train(self, curr_round: int, global_param: Optional[dict], fl_ctx: FLContext) -> Tuple[dict, dict]:
         (x_train, y_train, train_size) = self.train_data
         if curr_round == 0:
             # initialize model with global_param
@@ -102,7 +102,7 @@ class LinearLearner(Learner):
             params = {"coef": self.local_model.coef_}
         return copy.deepcopy(params), self.local_model
 
-    def validate(self, curr_round: int, global_param: Optional[dict] = None) -> Tuple[dict, dict]:
+    def validate(self, curr_round: int, global_param: Optional[dict], fl_ctx: FLContext) -> Tuple[dict, dict]:
         # set local model with global parameters
         self.set_parameters(global_param)
         # perform validation

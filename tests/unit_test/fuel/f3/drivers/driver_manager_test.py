@@ -19,6 +19,7 @@ from nvflare.fuel.f3 import drivers
 from nvflare.fuel.f3.drivers.aio_grpc_driver import AioGrpcDriver
 from nvflare.fuel.f3.drivers.aio_http_driver import AioHttpDriver
 from nvflare.fuel.f3.drivers.aio_tcp_driver import AioTcpDriver
+from nvflare.fuel.f3.drivers.aio_uds_driver import AioUdsDriver
 from nvflare.fuel.f3.drivers.driver_manager import DriverManager
 from nvflare.fuel.f3.drivers.tcp_driver import TcpDriver
 from nvflare.fuel.f3.drivers.uds_driver import UdsDriver
@@ -45,6 +46,7 @@ class TestDriverManager:
             ("wss", AioHttpDriver),
             ("atcp", AioTcpDriver),
             ("satcp", AioTcpDriver),
+            ("auds", AioUdsDriver),
         ],
     )
     def test_driver_loading(self, manager, scheme, expected):
