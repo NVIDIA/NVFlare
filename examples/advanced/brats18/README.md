@@ -6,8 +6,6 @@ This example shows how to use [NVIDIA FLARE](https://nvflare.readthedocs.io/en/m
 It uses [MONAI](https://github.com/Project-MONAI/MONAI),
 which is a PyTorch-based, open-source framework for deep learning in healthcare imaging, part of the PyTorch Ecosystem.
 ### BraTS
-#### Note: currently the official BraTS 2018 web page is off-line, hence the official data resource is inaccessible, we will update the link once we receive an update.
-
 The application shown in this example is volumetric (3D) segmentation of brain tumor subregions from multimodal MRIs based on BraTS 2018 data.
 It uses a deep network model published by [Myronenko 2018](https://arxiv.org/abs/1810.11654) [1].
 
@@ -19,7 +17,7 @@ The model is trained to segment 3 nested subregions of primary brain tumors (gli
 - The TC describes the bulk of the tumor, which is what is typically resected. The TC entails the ET, as well as the necrotic (fluid-filled) and the non-enhancing (solid) parts of the tumor. 
 - The WT describes the complete extent of the disease, as it entails the TC and the peritumoral edema (ED), which is typically depicted by hyper-intense signal in FLAIR.
 
-To run this example, please make sure you have downloaded BraTS 2018 data, which can be obtained from [Multimodal Brain Tumor Segmentation Challenge (BraTS) 2018](https://www.med.upenn.edu/sbia/brats2018/data.html) [2-6]. Please download the data to [./dataset_brats18/dataset](./dataset_brats18/dataset). It should result in a sub-folder `./dataset_brats18/dataset/training`.
+To run this example, please make sure you have downloaded BraTS 2018 data, which can be obtained from [Multimodal Brain Tumor Segmentation Challenge (BraTS) 2018](https://www.med.upenn.edu/cbica/brats2018.html) [2-6]. Please download the data to [./dataset_brats18/dataset](./dataset_brats18/dataset). It should result in a sub-folder `./dataset_brats18/dataset/training`.
 In this example, we split BraTS18 dataset into [4 subsets](./dataset_brats18/datalist) for 4 clients. Each client requires at least a 12 GB GPU to run. 
 ### Differential Privacy (DP)
 [Differential Privacy (DP)](https://arxiv.org/abs/1910.00962) [7] is method for ensuring that Federated Learning (FL) preserves privacy by obfuscating the model updates sent from clients to the central server.
