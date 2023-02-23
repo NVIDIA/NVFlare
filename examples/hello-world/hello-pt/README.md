@@ -56,7 +56,7 @@ In this example,we use _InitializeGlobalWeights_ controller, which have implemen
 * Weight_method = "first" , then use the weights reported from the first client;
 * weight_method = "client", then only use the weights reported from the specified client.
 
-If one’s use case demands a different strategy, then you can implement a new controller.
+If one’s use case demands a different strategy, then you can implement a new model initialization controller.
 
 
 Looking at the job workflow, we have defined three workflows in config_fed_server.json
