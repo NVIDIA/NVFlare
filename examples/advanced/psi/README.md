@@ -136,7 +136,8 @@ class LocalPSI(PSI):
 
 **prepare data**
 ```
-mkdir -p /tmp/nvflare/psi     
+mkdir -p /tmp/nvflare/psi    
+cd examples/advanced/psi 
 cp -r user_email_match/data /tmp/nvflare/psi/.
 ```   
 **import note**

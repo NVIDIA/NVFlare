@@ -468,7 +468,7 @@ def new_insecure_session(startup_kit_location: str, debug: bool = False, timeout
     The username for insecure session is always "admin"
 
     """
-    session = Session(startup_path=startup_kit_location, secure_mode=False, debug=debug)
+    session = Session(username="admin", startup_path=startup_kit_location, secure_mode=False, debug=debug)
 
     session.try_connect(timeout)
     return session

@@ -54,6 +54,7 @@ class LinearLearner(Learner):
         return {"train": train_data, "valid": valid_data}
 
     def initialize(self, fl_ctx: FLContext):
+        self.log_info(fl_ctx, f"Loading data from {self.data_path}")
         data = self.load_data()
         self.train_data = data["train"]
         self.valid_data = data["valid"]
@@ -68,7 +69,7 @@ class LinearLearner(Learner):
         if self.local_model.fit_intercept:
             self.local_model.intercept_ = params["intercept"]
 
-    def train(self, curr_round: int, global_param: Optional[dict] = None) -> Tuple[dict, dict]:
+    def train(self, curr_round: int, global_param: Optional[dict], fl_ctx: FLContext) -> Tuple[dict, dict]:
         (x_train, y_train, train_size) = self.train_data
         if curr_round == 0:
             # initialize model with global_param
@@ -102,13 +103,14 @@ class LinearLearner(Learner):
             params = {"coef": self.local_model.coef_}
         return copy.deepcopy(params), self.local_model
 
-    def validate(self, curr_round: int, global_param: Optional[dict] = None) -> Tuple[dict, dict]:
+    def validate(self, curr_round: int, global_param: Optional[dict], fl_ctx: FLContext) -> Tuple[dict, dict]:
         # set local model with global parameters
         self.set_parameters(global_param)
         # perform validation
         (x_valid, y_valid, valid_size) = self.valid_data
         y_pred = self.local_model.predict(x_valid)
         auc = roc_auc_score(y_valid, y_pred)
+        self.log_info(fl_ctx, f"AUC {auc:.4f}")
         metrics = {"AUC": auc}
         return metrics, self.local_model
 
