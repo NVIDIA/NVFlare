@@ -771,11 +771,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                 targets = [peer_name for peer_name in self.agents.keys()]
                 self.logger.debug(f"broadcasting goodbye to {targets}")
                 self.broadcast_request(
-                    channel=_CHANNEL,
-                    topic=_TOPIC_BYE,
-                    targets=targets,
-                    request=new_message(),
-                    timeout=1.0
+                    channel=_CHANNEL, topic=_TOPIC_BYE, targets=targets, request=new_message(), timeout=1.0
                 )
 
         self.logger.debug(f"{self.my_info.fqcn}: Closing Cell")
