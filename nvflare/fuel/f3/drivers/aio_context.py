@@ -59,9 +59,7 @@ class AioContext:
         self.logger.debug(f"{self.name}: AIO Loop Completed!")
 
     def run_coro(self, coro):
-        t = threading.current_thread()
         event_loop = self.get_event_loop()
-        self.logger.debug(f"{os.getpid()} {t.name}: {self.name}: got loop: {id(event_loop)}")
         return asyncio.run_coroutine_threadsafe(coro, event_loop)
 
     def stop_aio_loop(self, grace=1.0):
@@ -76,7 +74,7 @@ class AioContext:
 
         self.logger.debug("Stopping AIO loop")
         try:
-            self.loop.call_soon_threadsafe(self.loop.stop).result()
+            self.loop.call_soon_threadsafe(self.loop.stop)
         except Exception as ex:
             self.logger.debug(f"Loop stopping error: {ex}")
 
