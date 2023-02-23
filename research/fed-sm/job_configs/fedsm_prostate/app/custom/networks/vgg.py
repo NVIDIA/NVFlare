@@ -70,6 +70,7 @@ class VGG(nn.Module):
 
 def make_layers(cfg: List[Union[str, int]], batch_norm: bool = False) -> nn.Sequential:
     layers: List[nn.Module] = []
+    # single channel input
     in_channels = 1
     for v in cfg:
         if v == "M":

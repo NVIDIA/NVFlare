@@ -80,13 +80,14 @@ class ScatterAndGatherFedSM(ScatterAndGather):
         # extras for FedSM
         # client_id to label mapping for selector
         self.client_id_label_mapping = client_id_label_mapping
+        self.participating_clients = None
 
     def start_controller(self, fl_ctx: FLContext) -> None:
         super().start_controller(fl_ctx=fl_ctx)
         self.log_info(fl_ctx, "Initializing FedSM-specific workflow components.")
         self.log_info(
             fl_ctx,
-            "Client_ID to selector label mapping: {}".format(self.client_id_label_mapping),
+            f"Client_ID to selector label mapping: {self.client_id_label_mapping}",
         )
         # get engine
         engine = fl_ctx.get_engine()
@@ -97,15 +98,13 @@ class ScatterAndGatherFedSM(ScatterAndGather):
         # Get all clients
         clients = engine.get_clients()
         self.participating_clients = [c.name for c in clients]
-        self.log_info(fl_ctx, "Participating clients: {}".format(self.participating_clients))
+        self.log_info(fl_ctx, f"Participating clients: {self.participating_clients}")
 
         # Validate client info
         for client_id in self.participating_clients:
             if client_id not in self.client_id_label_mapping.keys():
                 self.system_panic(
-                    "Client {} not found in the id_label mapping. Please double check. ScatterAndGatherFedSM exiting.".format(
-                        client_id
-                    ),
+                    f"Client {client_id} not found in the id_label mapping. Please double check. ScatterAndGatherFedSM exiting.",
                     fl_ctx,
                 )
                 return
@@ -123,8 +122,8 @@ class ScatterAndGatherFedSM(ScatterAndGather):
                 if self._check_abort_signal(fl_ctx, abort_signal):
                     return
 
-                self.log_info(fl_ctx, "Round {} started.".format(self._current_round))
-                self.log_info(fl_ctx, "Models in fl_ctx: {}".format(self._global_weights.keys()))
+                self.log_info(fl_ctx, f"Round {self._current_round} started.")
+                self.log_info(fl_ctx, f"Models in fl_ctx: {self._global_weights.keys()}")
 
                 fl_ctx.set_prop(
                     AppConstants.GLOBAL_MODEL,

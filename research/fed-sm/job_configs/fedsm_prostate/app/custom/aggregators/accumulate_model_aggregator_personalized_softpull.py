@@ -78,10 +78,7 @@ class AccumulateWeightedAggregatorPersonalizedSoftPull(Aggregator):
             return False
 
         if dxo.data_kind != self.expected_data_kind:
-            self.log_error(
-                fl_ctx,
-                "FedSM aggregator expect {} but got {}".format(self.expected_data_kind, dxo.data_kind),
-            )
+            self.log_error(fl_ctx, f"FedSM aggregator expect {self.expected_data_kind} but got {dxo.data_kind}")
             return False
 
         processed_algorithm = dxo.get_meta_prop(MetaKey.PROCESSED_ALGORITHM)
@@ -121,10 +118,8 @@ class AccumulateWeightedAggregatorPersonalizedSoftPull(Aggregator):
         else:
             self.log_info(
                 fl_ctx,
-                "Discarded the contribution from {} for round: {}. Current round is: {}".format(
-                    client_name, contribution_round, current_round
-                ),
-            )
+                f"Discarded the contribution from {client_name} for round: {contribution_round}. Current round is: {current_round}",
+            ),
             accepted = False
         return accepted
 
@@ -144,10 +139,7 @@ class AccumulateWeightedAggregatorPersonalizedSoftPull(Aggregator):
             Shareable: Return True to indicates the current model is the best model so far.
         """
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
-        self.log_info(
-            fl_ctx,
-            "aggregating {} updates at round {}".format(len(self.accumulator), current_round),
-        )
+        self.log_info(fl_ctx, f"aggregating {len(self.accumulator)} updates at round {current_round}")
 
         aggregated_model_dict = {}
 

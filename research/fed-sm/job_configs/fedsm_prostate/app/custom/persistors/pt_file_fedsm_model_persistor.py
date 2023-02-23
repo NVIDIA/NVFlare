@@ -78,21 +78,19 @@ class PTFileFedSMModelPersistor(PTFileModelPersistor):
             self.model_selector = engine.get_component(model_component_id)
             if not self.model_selector:
                 self.system_panic(
-                    reason="cannot find model component '{}'".format(model_component_id),
+                    reason=f"cannot find model component '{model_component_id}'",
                     fl_ctx=fl_ctx,
                 )
                 return
             if not isinstance(self.model_selector, torch.nn.Module):
                 self.system_panic(
-                    reason="expect model component '{}' to be torch.nn.Module but got {}".format(
-                        model_component_id, type(self.model_selector)
-                    ),
+                    reason=f"expect model component '{model_component_id}' to be torch.nn.Module but got {type(self.model_selector)}",
                     fl_ctx=fl_ctx,
                 )
                 return
         elif self.model_selector and not isinstance(self.model_selector, torch.nn.Module):
             self.system_panic(
-                reason="expect model to be torch.nn.Module but got {}".format(type(self.model)),
+                reason=f"expect model to be torch.nn.Module but got {type(self.model)}",
                 fl_ctx=fl_ctx,
             )
             return
@@ -141,7 +139,7 @@ class PTFileFedSMModelPersistor(PTFileModelPersistor):
                 # checkpoint may contain a dict "model_set_fedsm" of models indexed with model ids
                 # 'optimizer', 'lr_scheduler', etc.
             except:
-                self.log_exception(fl_ctx, "error loading checkpoint from {}".format(src_file_name))
+                self.log_exception(fl_ctx, f"error loading checkpoint from {src_file_name}")
                 self.system_panic(reason="cannot load model checkpoint", fl_ctx=fl_ctx)
                 return None
         else:
@@ -214,5 +212,5 @@ class PTFileFedSMModelPersistor(PTFileModelPersistor):
             persistence_manager = PTModelPersistenceFormatManagerFedSM(data, default_train_conf=self.default_train_conf)
             return persistence_manager.to_model_learnable(self.exclude_vars)
         except BaseException:
-            self.log_exception(fl_ctx, "error loading checkpoint from {}".format(model_file))
+            self.log_exception(fl_ctx, f"error loading checkpoint from {model_file}")
             return {}

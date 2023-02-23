@@ -53,6 +53,8 @@ class SupervisedLearner(Learner):
         self.aggregation_epochs = aggregation_epochs
         self.train_task_name = train_task_name
         self.best_metric = 0.0
+        self.client_id = None
+        self.writer = None
 
     def initialize(self, parts: dict, fl_ctx: FLContext):
         # when a run starts, this is where the actual settings get initialized for trainer
@@ -213,7 +215,7 @@ class SupervisedLearner(Learner):
                     # update the local dict
                     local_var_dict[var_name] = torch.as_tensor(global_weights[var_name])
                 except Exception as e:
-                    raise ValueError("Convert weight from {} failed with error: {}".format(var_name, str(e)))
+                    raise ValueError(f"Convert weight from {var_name} failed with error: {str(e)}")
         self.model.load_state_dict(local_var_dict)
 
         # local steps
@@ -278,7 +280,7 @@ class SupervisedLearner(Learner):
                     local_var_dict[var_name] = torch.as_tensor(torch.reshape(weights, local_var_dict[var_name].shape))
                     n_loaded += 1
                 except Exception as e:
-                    raise ValueError("Convert weight from {} failed with error: {}".format(var_name, str(e)))
+                    raise ValueError(f"Convert weight from {var_name} failed with error: {str(e)}")
         self.model.load_state_dict(local_var_dict)
         if n_loaded == 0:
             raise ValueError(f"No weights loaded for validation! Received weight dict is {global_weights}")

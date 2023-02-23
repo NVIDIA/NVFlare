@@ -36,7 +36,7 @@ class PTModelPersistenceFormatManagerFedSM(object):
             TypeError: when data is not a dictionary
         """
         if not isinstance(data, dict):
-            raise TypeError("data must be a dict but got {}".format(type(data)))
+            raise TypeError(f"data must be a dict but got {type(data)}")
 
         self.meta = None
         self.train_conf = None

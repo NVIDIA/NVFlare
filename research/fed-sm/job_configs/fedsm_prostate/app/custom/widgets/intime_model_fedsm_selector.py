@@ -81,7 +81,7 @@ class IntimeModelFedSMSelector(FLComponent):
             DataKind.WEIGHTS,
             DataKind.COLLECTION,
         ):
-            self.log_debug(fl_ctx, "I cannot handle {}".format(dxo.data_kind))
+            self.log_debug(fl_ctx, f"I cannot handle {dxo.data_kind}")
             return False
 
         if dxo.data is None:

@@ -65,6 +65,17 @@ class SupervisedMonaiProstateLearner(SupervisedLearner):
         )
         self.train_config_filename = train_config_filename
         self.config_info = None
+        self.lr = None
+        self.model = None
+        self.device = None
+        self.optimizer = None
+        self.criterion = None
+        self.transform = None
+        self.transform_post = None
+        self.train_loader = None
+        self.valid_loader = None
+        self.inferer = None
+        self.valid_metric = None
 
     def train_config(self, fl_ctx: FLContext):
         """MONAI traning configuration
@@ -143,36 +154,36 @@ class SupervisedMonaiProstateLearner(SupervisedLearner):
 
         # Set dataset
         if cache_rate > 0.0:
-            self.train_dataset = CacheDataset(
+            train_dataset = CacheDataset(
                 data=train_list,
                 transform=self.transform,
                 cache_rate=cache_rate,
                 num_workers=0,
             )
-            self.valid_dataset = CacheDataset(
+            valid_dataset = CacheDataset(
                 data=valid_list,
                 transform=self.transform,
                 cache_rate=cache_rate,
                 num_workers=0,
             )
         else:
-            self.train_dataset = Dataset(
+            train_dataset = Dataset(
                 data=train_list,
                 transform=self.transform,
             )
-            self.valid_dataset = Dataset(
+            valid_dataset = Dataset(
                 data=valid_list,
                 transform=self.transform,
             )
 
         self.train_loader = DataLoader(
-            self.train_dataset,
+            train_dataset,
             batch_size=1,
             shuffle=True,
             num_workers=0,
         )
         self.valid_loader = DataLoader(
-            self.valid_dataset,
+            valid_dataset,
             batch_size=1,
             shuffle=False,
             num_workers=0,

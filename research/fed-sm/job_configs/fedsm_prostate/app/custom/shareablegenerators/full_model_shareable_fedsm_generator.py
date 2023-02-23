@@ -36,13 +36,13 @@ class FullModelShareableFedSMGenerator(ShareableGenerator):
 
     def update_single_model(self, dxo_single_model, base_model_set, model_id, fl_ctx: FLContext):
         if not dxo_single_model:
-            self.log_error(fl_ctx, "Aggregated model weights for {} are missing!".format(model_id))
+            self.log_error(fl_ctx, f"Aggregated model weights for {model_id} are missing!")
             return
         # get base_model from the base_model_set
         base_model = base_model_set[model_id]
         if not base_model:
             self.system_panic(
-                reason="No base personalized model for {}!".format(model_id),
+                reason=f"No base personalized model for {model_id}!",
                 fl_ctx=fl_ctx,
             )
             return base_model
@@ -60,15 +60,13 @@ class FullModelShareableFedSMGenerator(ShareableGenerator):
             if not weights_new:
                 self.log_info(
                     fl_ctx,
-                    "No model weights for {} found. Model will not be updated.".format(model_id),
+                    f"No model weights for {model_id} found. Model will not be updated.",
                 )
             else:
                 base_model[ModelLearnableKey.WEIGHTS] = weights_new
         else:
             raise ValueError(
-                "data_kind should be either DataKind.WEIGHTS or DataKind.WEIGHT_DIFF, but got {}".format(
-                    dxo_single_model.data_kind
-                )
+                f"data_kind should be either DataKind.WEIGHTS or DataKind.WEIGHT_DIFF, but got {dxo_single_model.data_kind}"
             )
         # set meta and set base_model_set
         base_model[ModelLearnableKey.META] = dxo_single_model.get_meta_props()
@@ -92,7 +90,7 @@ class FullModelShareableFedSMGenerator(ShareableGenerator):
             ValueError: if data_kind is not `DataKind.WEIGHTS` and is not `DataKind.WEIGHT_DIFF`
         """
         if not isinstance(shareable, Shareable):
-            raise TypeError("shareable must be Shareable, but got {}.".format(type(shareable)))
+            raise TypeError(f"shareable must be Shareable, but got {type(shareable)}.")
 
         # base_model_set is a "flattened set", containing all models with ids
         # "select_weights", "select_exp_avg", "select_exp_avg_sq", "global_weights", and client_ids

@@ -85,27 +85,23 @@ class PTFedSMHelper(object):
         self.select_model_epochs = select_model_epochs
         # check criterion, model, and optimizer type
         if not isinstance(self.person_model, torch.nn.Module):
-            raise ValueError(f"person_model component must be torch model. " f"But got: {type(self.person_model)}")
+            raise ValueError(f"person_model component must be torch model. But got: {type(self.person_model)}")
         if not isinstance(self.select_model, torch.nn.Module):
-            raise ValueError(f"select_model component must be torch model. " f"But got: {type(self.select_model)}")
+            raise ValueError(f"select_model component must be torch model. But got: {type(self.select_model)}")
         if not isinstance(self.person_criterion, torch.nn.modules.loss._Loss):
-            raise ValueError(
-                f"person_criterion component must be torch loss. " f"But got: {type(self.person_criterion)}"
-            )
+            raise ValueError(f"person_criterion component must be torch loss. But got: {type(self.person_criterion)}")
         if not isinstance(self.select_criterion, torch.nn.modules.loss._Loss):
-            raise ValueError(
-                f"select_criterion component must be torch loss. " f"But got: {type(self.select_criterion)}"
-            )
+            raise ValueError(f"select_criterion component must be torch loss. But got: {type(self.select_criterion)}")
         if not isinstance(self.person_optimizer, torch.optim.Optimizer):
             raise ValueError(
-                f"person_optimizer component must be torch optimizer. " f"But got: {type(self.person_optimizer)}"
+                f"person_optimizer component must be torch optimizer. But got: {type(self.person_optimizer)}"
             )
         if not isinstance(self.select_optimizer, torch.optim.Optimizer):
             raise ValueError(
-                f"select_optimizer component must be torch optimizer. " f"But got: {type(self.select_optimizer)}"
+                f"select_optimizer component must be torch optimizer. But got: {type(self.select_optimizer)}"
             )
         if not isinstance(self.device, torch.device):
-            raise ValueError(f"device component must be torch device. " f"But got: {type(self.device)}")
+            raise ValueError(f"device component must be torch device. But got: {type(self.device)}")
 
         # initialize other recording related parameters
         # save personalized model to local file

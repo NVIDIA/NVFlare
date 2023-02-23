@@ -13,7 +13,6 @@
 # limitations under the License.
 
 
-# from nvflare.app_common.pt.pt_fedsm import PTFedSMHelper
 from helpers.pt_fedsm import PTFedSMHelper
 
 from nvflare.apis.fl_constant import ReturnCode
