@@ -75,7 +75,11 @@ class AioContext:
                 self.logger.debug(f"{self.name}: error cancelling task {type(ex)}")
 
         self.logger.debug("Stopping AIO loop")
-        self.loop.call_soon_threadsafe(self.loop.stop)
+        try:
+            self.loop.call_soon_threadsafe(self.loop.stop).result()
+        except Exception as ex:
+            self.logger.debug(f"Loop stopping error: {ex}")
+
         start = time.time()
         while self.loop.is_running():
             self.logger.debug("looping still running ...")

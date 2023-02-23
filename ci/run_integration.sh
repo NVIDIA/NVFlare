@@ -30,8 +30,8 @@ elif [[ $# -gt 1 ]]; then
 fi
 
 init_pipenv() {
-    echo "initializing pip environment: $1"
-    pipenv install -r "$1"
+    echo "initializing pip environment"
+    pipenv install -e .[dev]
     export PYTHONPATH=$PWD
 }
 
@@ -43,7 +43,7 @@ remove_pipenv() {
 
 integration_test_pt() {
     echo "Run PT integration test..."
-    init_pipenv requirements-dev.txt
+    init_pipenv
     testFolder="tests/integration_test"
     clean_up_snapshot_and_job
     pushd ${testFolder}
@@ -56,7 +56,7 @@ integration_test_pt() {
 integration_test_tf() {
     echo "Run TF integration test..."
     # not using pipenv because we need tensorflow package from the container
-    python -m pip install -r requirements-dev.txt
+    python -m pip install -e .[dev]
     export PYTHONPATH=$PWD
     testFolder="tests/integration_test"
     clean_up_snapshot_and_job
@@ -83,7 +83,7 @@ clean_up_snapshot_and_job() {
 
 integration_test() {
     echo "Run integration test..."
-    init_pipenv requirements-dev.txt
+    init_pipenv
     add_dns_entries
     testFolder="tests/integration_test"
     clean_up_snapshot_and_job

@@ -286,9 +286,14 @@ class JobCommandModule(CommandModule, CommandUtil):
             parser.add_argument("job_id", nargs="?", help="Job ID prefix")
             parser.add_argument("-d", action="store_true", help="Show detailed list")
             parser.add_argument(
-                "-a", action="store_true", help="List all jobs, default is filtered to jobs submitted by the same user"
+                "-a",
+                action="store_true",
+                help="List all jobs, default is filtered to jobs submitted by the same user and limit to last 5 jobs by submit time",
             )
             parser.add_argument("-n", help="Filter by job name prefix")
+            parser.add_argument(
+                "-m", default=5, help="Limit maximum number of jobs returned to the specified number, default is 5"
+            )
             parsed_args = parser.parse_args(args[1:])
 
             engine = conn.app_ctx
@@ -303,6 +308,7 @@ class JobCommandModule(CommandModule, CommandUtil):
             if jobs:
                 id_prefix = parsed_args.job_id
                 name_prefix = parsed_args.n
+                max_jobs_listed = int(parsed_args.m)
                 if parsed_args.a:
                     user_name = None
                 else:
@@ -310,10 +316,13 @@ class JobCommandModule(CommandModule, CommandUtil):
 
                 filtered_jobs = [job for job in jobs if self._job_match(job.meta, id_prefix, name_prefix, user_name)]
                 if not filtered_jobs:
-                    conn.append_error("No jobs matching the searching criteria")
+                    conn.append_string("No jobs matching the specified criteria.")
                     return
 
                 filtered_jobs.sort(key=lambda job: job.meta.get(JobMetaKey.SUBMIT_TIME.value, 0.0))
+
+                if not parsed_args.a:
+                    filtered_jobs = filtered_jobs[:max_jobs_listed]
 
                 if parsed_args.d:
                     self._send_detail_list(conn, filtered_jobs)
@@ -321,7 +330,7 @@ class JobCommandModule(CommandModule, CommandUtil):
                     self._send_summary_list(conn, filtered_jobs)
 
             else:
-                conn.append_string("No jobs.")
+                conn.append_string("No jobs found.")
         except Exception as e:
             conn.append_error(secure_format_exception(e))
             return

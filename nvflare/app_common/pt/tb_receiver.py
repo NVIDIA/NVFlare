@@ -15,10 +15,10 @@
 import warnings
 
 warnings.warn(
-    f"This module: {__file__} is deprecated. Please use nvflare.app_opt.tracking.tensorboard.tb_receiver.",
+    f"This module: {__file__} is deprecated. Please use nvflare.app_opt.pt.",
     category=FutureWarning,
     stacklevel=2,
 )
 
 # flake8: noqa: F401
-from nvflare.app_opt.tracking.tensorboard.tb_receiver import TBAnalyticsReceiver
+from nvflare.app_opt.pt import TBAnalyticsReceiver
