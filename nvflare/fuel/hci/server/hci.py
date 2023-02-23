@@ -166,10 +166,6 @@ class AdminServer(socketserver.ThreadingTCPServer):
     def stop(self):
         self.shutdown()
         self.cmd_reg.close()
-
-        if self._thread.is_alive():
-            self._thread.join()
-
         logger.info(f"Admin Server {self.host} on Port {self.port} shutdown!")
 
     def set_command_registry(self, cmd_reg: ServerCommandRegister):
@@ -184,6 +180,7 @@ class AdminServer(socketserver.ThreadingTCPServer):
     def start(self):
         if self._thread is None:
             self._thread = threading.Thread(target=self._run, args=())
+            self._thread.daemon = True
 
         if not self._thread.is_alive():
             self._thread.start()

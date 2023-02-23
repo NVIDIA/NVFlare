@@ -57,6 +57,7 @@ class SessionManager(CommandModule):
         self.monitor_interval = monitor_interval
         self.asked_to_stop = False
         self.monitor = threading.Thread(target=self.monitor_sessions)
+        self.monitor.daemon = True
         self.monitor.start()
 
     def monitor_sessions(self):
