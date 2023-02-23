@@ -33,13 +33,15 @@ app_server  app_site-1  app_site-2  log.txt
 
 ### 4. Global Model Initialization Approaches
 
-There are multiple approaches to initialize a global model, either on FL server side or on the client side. 
+There are multiple approaches to initialize a global model, either on FL server side or on the client side. Users can decide which model initialization approaches depends on their own use cases. 
 
 When the model is initialized at the FL **server-side**, the initialized global model will then be broadcast to all the FL clients.
 Clients will take this initial model and start training. The benefits of the server-side model initialization 
 allows the model to only initialize once in one place (server) and then distributed to all clients, 
 so all clients have the same initial model. The potential issue with server-side model initialization might
 involve security risk of running custom-python code on server. leveraging a predefined model file as initialization model can be another server-side approach. 
+
+The ScatterAndGather controller is using server-side model initialization. 
 
 In this example, we are using **client-side** model initialization approach. 
 
