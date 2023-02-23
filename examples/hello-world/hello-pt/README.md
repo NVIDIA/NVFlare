@@ -33,15 +33,15 @@ app_server  app_site-1  app_site-2  log.txt
 
 ### 4. Global Model Initialization Approaches
 
-There are multiple approaches to initialize a global model, either on FL server side or on the client side. Users can decide which model initialization approaches depends on their own use cases. 
+There are various methods for initializing a global model in federated learning, which can be done either on the FL server or on the client side. The choice of model initialization approach depends on the specific use case of the user.
 
-When the model is initialized at the FL **server-side**, the initialized global model will then be broadcast to all the FL clients.
-Clients will take this initial model and start training. The benefits of the server-side model initialization 
-allows the model to only initialize once in one place (server) and then distributed to all clients, 
-so all clients have the same initial model. The potential issue with server-side model initialization might
-involve security risk of running custom-python code on server. leveraging a predefined model file as initialization model can be another server-side approach. 
-
-The ScatterAndGather controller is using server-side model initialization. 
+When the global model is initialized on the FL server-side, it is then broadcasted to all the FL clients. 
+The clients can use this initial model as a starting point for training. 
+The advantage of server-side model initialization is that the model only needs to be initialized once in one location 
+(the server), and then distributed to all clients, ensuring that all clients have the same initial model. 
+However, it is important to note that server-side model initialization may present potential security risks 
+if custom Python code is run on the server. An alternative approach for server-side initialization is to use 
+a predefined model file as the initialization model. The ScatterAndGather controller is using persistor to reads / init model from server-side. 
 
 In this example, we are using **client-side** model initialization approach. 
 
@@ -57,7 +57,6 @@ In this example,we use _InitializeGlobalWeights_ controller, which have implemen
 * weight_method = "client", then only use the weights reported from the specified client.
 
 If one’s use case demands a different strategy, then you can implement a new model initialization controller.
-
 
 Looking at the job workflow, we have defined three workflows in config_fed_server.json
   * pre_train ( model initialization )  with _InitializeGlobalWeights_ controller
@@ -89,6 +88,9 @@ Looking at the job workflow, we have defined three workflows in config_fed_serve
       }
   ]
 ```
+
+Once the global model is initialized, it is set to the fl_ctx as property and then pass to the 
+next controller (Scatter and Gather) in the training step. 
  
 
 
