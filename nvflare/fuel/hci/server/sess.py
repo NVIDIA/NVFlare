@@ -86,7 +86,7 @@ class SessionManager(CommandModule):
 
     def shutdown(self):
         self.asked_to_stop = True
-        self.monitor.join(timeout=10)
+        # self.monitor.join(timeout=10)
 
     def create_session(self, user_name, user_org, user_role):
         """Creates new session with a new session token.
