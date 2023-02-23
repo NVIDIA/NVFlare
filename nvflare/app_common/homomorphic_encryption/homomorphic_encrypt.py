@@ -12,43 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import tenseal as ts
+import warnings
 
-from nvflare.apis.fl_constant import FLContextKey
-from nvflare.apis.fl_context import FLContext
-from nvflare.fuel.sec.security_content_service import LoadResult, SecurityContentService
+warnings.warn(
+    f"This module: {__file__} is deprecated. Please use nvflare.app_opt.he.",
+    category=FutureWarning,
+    stacklevel=2,
+)
 
-
-def load_tenseal_context_from_workspace(ctx_file_name: str, fl_ctx: FLContext):
-    """Loads homomorphic encryption (HE) context from TenSEAL (https://github.com/OpenMined/TenSEAL) containing encryption keys and parameters.
-
-    Args:
-        ctx_file_name: filepath of TensSEAL context file
-        fl_ctx: FL context
-
-    Returns:
-        TenSEAL context
-
-    """
-    is_secure_mode = fl_ctx.get_prop(FLContextKey.SECURE_MODE, True)
-    data, rc = SecurityContentService.load_content(ctx_file_name)
-
-    bad_rcs = [LoadResult.INVALID_CONTENT, LoadResult.NO_SUCH_CONTENT]
-    if is_secure_mode:
-        bad_rcs.extend([LoadResult.INVALID_SIGNATURE, LoadResult.NOT_SIGNED])
-
-    if rc in bad_rcs:
-        raise ValueError("Cannot load tenseal_context {}: {}".format(ctx_file_name, rc))
-
-    context = ts.context_from(data)
-    return context
-
-
-def count_encrypted_layers(encrypted_layers: dict):
-    """Count number of encrypted layers homomorphic encryption (HE) layers/variables."""
-    n_total = len(encrypted_layers)
-    n_encrypted = 0
-    for e in encrypted_layers.keys():
-        if encrypted_layers[e]:
-            n_encrypted += 1
-    return n_encrypted, n_total
+# flake8: noqa: F401
+from nvflare.app_opt.he import count_encrypted_layers, load_tenseal_context_from_workspace

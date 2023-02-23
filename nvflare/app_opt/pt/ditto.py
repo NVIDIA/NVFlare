@@ -18,8 +18,7 @@ from abc import abstractmethod
 import torch
 
 from nvflare.apis.signal import Signal
-
-from .fedproxloss import PTFedProxLoss
+from nvflare.app_opt.pt.fedproxloss import PTFedProxLoss
 
 
 class PTDittoHelper(object):

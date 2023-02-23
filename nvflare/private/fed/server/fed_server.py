@@ -619,18 +619,12 @@ class FederatedServer(BaseServer):
 
                 time.sleep(self.check_engine_frequency)
 
-            # self.wait_engine_run_complete("Server Job", cleanup_grace_time=5.0)
-
             # if engine_thread.is_alive():
             #     engine_thread.join()
 
         finally:
             self.engine.engine_info.status = MachineStatus.STOPPED
             self.run_manager = None
-
-    def wait_engine_run_complete(self, name, shutdown_grace_time=2.0, cleanup_grace_time=3.0):
-        # self.cell.run()
-        mpm.run(name, shutdown_grace_time=shutdown_grace_time, cleanup_grace_time=cleanup_grace_time)
 
     def create_run_manager(self, workspace, job_id):
         return RunManager(
