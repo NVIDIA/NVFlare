@@ -41,7 +41,8 @@ The advantage of server-side model initialization is that the model only needs t
 (the server), and then distributed to all clients, ensuring that all clients have the same initial model. 
 However, it is important to note that server-side model initialization may present potential security risks 
 if custom Python code is run on the server. An alternative approach for server-side initialization is to use 
-a predefined model file as the initialization model. The ScatterAndGather controller is using persistor to reads / init model from server-side. 
+a predefined model file as the initialization model. The ScatterAndGather controller is using persistor to reads / init
+model from server-side. 
 
 In this example, we are using **client-side** model initialization approach. 
 
@@ -89,8 +90,11 @@ Looking at the job workflow, we have defined three workflows in config_fed_serve
   ]
 ```
 
-Once the global model is initialized, it is set to the fl_ctx as property and then pass to the 
-next controller (Scatter and Gather) in the training step. 
+Once the global model is initialized, it is set to the fl_ctx as sticky property and then pass to the 
+next controller (ScatterAndGather) in the training step. The sticky property allows properties pass cross controllers. 
+The ScatterAndGather still leverage _persistor_ to load the initial global model, but since there is no model file 
+or server-side initialized model, the ScatterAndGather then try to load the model from fl_ctx's _"global_model"_ property, 
+which is initialized from the client-side and set by the previous controller in the workflow. 
  
 
 
