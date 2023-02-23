@@ -160,9 +160,7 @@ class TestPreflightCheck:
             # preflight-check on overseer
             if is_dummy_overseer:
                 return
-            output = _run_preflight_check_command(
-                package_path=site_launcher.overseer_properties.root_dir
-            )
+            output = _run_preflight_check_command(package_path=site_launcher.overseer_properties.root_dir)
             assert _filter_output(output) == OVERSEER_OUTPUT_PASSED.splitlines()
         finally:
             site_launcher.cleanup()
@@ -212,7 +210,7 @@ class TestPreflightCheck:
             site_launcher.stop_all_sites()
             site_launcher.cleanup()
 
-    def test_run_check_on_admin(self, setup_system):
+    def test_run_check_on_admin_console(self, setup_system):
         site_launcher, is_dummy_overseer, admin_folder_root = setup_system
         try:
             if not is_dummy_overseer:
@@ -220,7 +218,7 @@ class TestPreflightCheck:
             site_launcher.start_servers()
             time.sleep(SERVER_START_TIME)
 
-            # preflight-check on admin
+            # preflight-check on admin console
             output = _run_preflight_check_command(package_path=admin_folder_root)
             assert _filter_output(output) == CLIENT_OUTPUT_PASSED.splitlines()
         except Exception:

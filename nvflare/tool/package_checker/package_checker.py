@@ -49,7 +49,11 @@ class PackageChecker(ABC):
 
     @abstractmethod
     def get_dry_run_command(self) -> str:
+        """Returns dry run command."""
         pass
+
+    def get_dry_run_inputs(self):
+        return None
 
     def stop_dry_run(self, force: bool = True):
         # todo: add gracefully shutdown command
@@ -109,10 +113,14 @@ class PackageChecker(ABC):
             2: if the process is started and return code is not 0.
         """
         command = self.get_dry_run_command()
+        dry_run_input = self.get_dry_run_inputs()
         process = None
         try:
             process = run_command_in_subprocess(command)
-            out, _ = process.communicate(timeout=self.dry_run_timeout)
+            if dry_run_input is not None:
+                out, _ = process.communicate(input=dry_run_input, timeout=self.dry_run_timeout)
+            else:
+                out, _ = process.communicate(timeout=self.dry_run_timeout)
             ret_code = process.returncode
             if ret_code == 0:
                 self.add_report(
