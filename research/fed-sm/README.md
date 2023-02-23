@@ -1,6 +1,6 @@
 # Personalized Federated Learning with FedSM Algorithm
 
-## Introduction to MONAI, and FedSM
+## Introduction to MONAI and FedSM
 
 ### MONAI
 This example shows how to use [NVIDIA FLARE](https://nvidia.github.io/NVFlare) on medical image applications.
@@ -11,36 +11,14 @@ which is a PyTorch-based, open-source framework for deep learning in healthcare 
 This example illustrates the personalized federated learning algorithm [FedSM](https://arxiv.org/abs/2203.10144) accepted to [CVPR2022](https://cvpr2022.thecvf.com/). 
 It bridges the different data distributions across clients via a SoftPull mechanism and utilizes a Super Model. 
 
-## (Optional) 1. Set up a virtual environment
-```
-python3 -m pip install --user --upgrade pip
-python3 -m pip install --user virtualenv
-```
-(If needed) make all shell scripts executable using
-```
-find . -name ".sh" -exec chmod +x {} \;
-```
-Initialize virtual environment.
-```
-source ./virtualenv/set_env.sh
-```
-Install required packages for training.
-```
-pip3 install --upgrade pip
-pip3 install -r ./virtualenv/min-requirements.txt
-```
-(optional) if you would like to plot the TensorBoard event files as shown below, please also install
-```
-pip install -r ./virtualenv/plot-requirements.txt
-```
-## 2. Multi-source Prostate Segmentation
+## Multi-source Prostate Segmentation
 This example uses 2D (axial slices) segmentation of the prostate in T2-weighted MRIs based on multiple datasets.
 
 Please refer to [Prostate Example](https://github.com/NVIDIA/NVFlare/tree/dev/examples/advanced/prostate) for details of data preparation and task specs. In the following, we assume the data has been prepared in the same way to `${PWD}/data_preparation`. The dataset is saved to `${PWD}/data_preparation/dataset_2D`, and datalists are saved to `${PWD}/data_preparation/datalist_2D`.
 
-## 3. Run automated experiments
+## Run automated experiments
 We use the NVFlare simulator to run FL training automatically, the 3 clients are named `client_I2CVB, client_MSD, client_NCI_ISBI_3T`
-### 3.1 Prepare local configs
+### Prepare local configs
 First, we add the image directory root to `config_train.json` files for generating the absolute path to dataset and datalist. 
 In the current folder structure, it will be `${PWD}/..`. 
 It can be any arbitrary path where the data locates.  
@@ -59,7 +37,7 @@ nvflare simulator job_configs/[job] -w ${PWD}/workspaces/[job] -c [clients] -gpu
 In this example, this is `fedsm_prostate`.  
 The combination of `-c` and `-gpu`/`-t` controls the resource allocation. 
 
-## 4. Results on three clients for FedSM
+## Results on three clients for FedSM
 In this example, we run three clients on 1 GPU with three threads `-t 3`. The minimum GPU memory requirement is 12 GB. 
 
 ### Validation curve on each site
