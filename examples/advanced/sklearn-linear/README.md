@@ -26,15 +26,6 @@ Under this setting, federated learning can be formulated as a [FedAvg](https://a
 This can be achieved by setting the `warm_start` flag of SGDClassifier to 
 `True` in order to allow repeated fitting of the classifiers to the local data.
 
-## Data preparation 
-The examples illustrate a binary classification task based on [HIGGS dataset](https://archive.ics.uci.edu/ml/datasets/HIGGS).
-This dataset contains 11 million instances, each with 28 attributes. Download the dataset from the HIGGS link above, containing a single `.csv` file.
-By default, we assume the dataset is downloaded, uncompressed, and stored 
-in `~/dataset/HIGGS.csv`. Note that this `data_path` will be needed in 
-the client config file (`config_fed_client.json`).
-Users can either change it in the config generation script of 
-`prepare_job_config.sh` or the config JSON directly.
-
 ## (Optional) Set up a virtual environment
 ```
 python3 -m pip install --user --upgrade pip
@@ -48,11 +39,20 @@ Initialize a virtual environment.
 ```
 source ./virtualenv/set_env.sh
 ```
-Install required packages for training
+Install required packages for training.
 ```
 pip3 install --upgrade pip
 pip3 install -r ./virtualenv/requirements.txt
 ```
+
+## Data preparation 
+The examples illustrate a binary classification task based on [HIGGS dataset](https://archive.ics.uci.edu/ml/datasets/HIGGS).
+This dataset contains 11 million instances, each with 28 attributes. Download the dataset from the HIGGS link above, containing a single `.csv` file.
+By default, we assume the dataset is downloaded, uncompressed, and stored 
+in `~/dataset/HIGGS.csv`. Note that this `data_path` will be needed in 
+the client config file (`config_fed_client.json`).
+Users can either change it in the config generation script of 
+`prepare_job_config.sh` or the config JSON directly.
 
 ## Prepare clients' configs with proper data information 
 For real-world FL applications, the config JSON files are expected to be 
