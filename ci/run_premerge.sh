@@ -30,8 +30,8 @@ elif [[ $# -gt 1 ]]; then
 fi
 
 init_pipenv() {
-    echo "initializing pip environment: $1"
-    pipenv install -r $1
+    echo "initializing pip environment"
+    pipenv install -e .[dev]
     export PYTHONPATH=$PWD
 }
 
@@ -43,15 +43,15 @@ remove_pipenv() {
 
 unit_test() {
     echo "Run unit test..."
-    init_pipenv requirements-dev.txt
+    init_pipenv
     pipenv run ./runtest.sh
     remove_pipenv
 }
 
 wheel_build() {
     echo "Run wheel build..."
-    init_pipenv requirements-dev.txt
-    pipenv install build twine torch torchvision
+    init_pipenv
+    pipenv install build twine
     pipenv run python -m build --wheel
     remove_pipenv
 }
@@ -69,7 +69,7 @@ remove_dns_entries() {
 
 integration_test() {
     echo "Run integration test..."
-    init_pipenv requirements-dev.txt
+    init_pipenv
     add_dns_entries
     testFolder="tests/integration_test"
     rm -rf /tmp/nvflare*

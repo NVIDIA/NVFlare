@@ -53,13 +53,13 @@ class TestSimulatorDeploy(unittest.TestCase):
             assert isinstance(server, SimulatorServer)
             server.cell.stop()
 
-    # @patch("nvflare.private.fed.client.fed_client.FederatedClient.register")
-    # # @patch("nvflare.private.fed.app.deployer.simulator_deployer.FederatedClient.start_heartbeat")
-    # # @patch("nvflare.private.fed.app.deployer.simulator_deployer.FedAdminAgent")
-    # def test_create_client(self, mock_register):
-    #     workspace = tempfile.mkdtemp()
-    #     parser = self._create_parser()
-    #     args = parser.parse_args(["job_folder", "-w" + workspace, "-n 2", "-t 1"])
-    #     client, _, _, _ = self.deployer.create_fl_client("client0", args)
-    #     assert isinstance(client, FederatedClient)
-    #     client.cell.stop()
+    @patch("nvflare.private.fed.client.fed_client.FederatedClient.register")
+    # @patch("nvflare.private.fed.app.deployer.simulator_deployer.FederatedClient.start_heartbeat")
+    # @patch("nvflare.private.fed.app.deployer.simulator_deployer.FedAdminAgent")
+    def test_create_client(self, mock_register):
+        workspace = tempfile.mkdtemp()
+        parser = self._create_parser()
+        args = parser.parse_args(["job_folder", "-w" + workspace, "-n 2", "-t 1"])
+        client, _, _, _ = self.deployer.create_fl_client("client0", args)
+        assert isinstance(client, FederatedClient)
+        client.cell.stop()

@@ -65,14 +65,12 @@ class UdsDriver(BaseDriver):
         self.connector = connector
 
         socket_path = self.get_socket_path(connector.params)
-        try:
-            os.unlink(socket_path)
-        except OSError:
-            if os.path.exists(socket_path):
-                raise CommError(CommError.ERROR, f"Can't remove existing socket file: {socket_path}")
+        if not self.remove_socket_file(socket_path):
+            raise CommError(CommError.ERROR, f"Can't remove existing socket file: {socket_path}")
 
         self.server = SocketStreamServer(socket_path, self, connector)
         self.server.serve_forever()
+        self.remove_socket_file(socket_path)
 
     def connect(self, connector: ConnectorInfo):
         self.connector = connector
@@ -86,6 +84,7 @@ class UdsDriver(BaseDriver):
         self.add_connection(connection)
         connection.read_loop()
         self.close_connection(connection)
+        self.remove_socket_file(socket_path)
 
     def shutdown(self):
         self.close_all()
@@ -125,3 +124,13 @@ class UdsDriver(BaseDriver):
             socket_path = "/" + socket_path
 
         return socket_path
+
+    @staticmethod
+    def remove_socket_file(socket_path: str) -> bool:
+        try:
+            os.unlink(socket_path)
+        except OSError as error:
+            log.debug(f"Removing {socket_path} : {error}")
+
+        # return True if file is removed
+        return not os.path.exists(socket_path)
