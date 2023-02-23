@@ -91,7 +91,7 @@ class MockServerEngine(ServerEngineSpec):
     def sync_clients_from_main_process(self):
         pass
 
-    def validate_clients(self, client_names: List[str]):
+    def validate_targets(self, client_names: List[str]):
         pass
 
     def new_context(self):

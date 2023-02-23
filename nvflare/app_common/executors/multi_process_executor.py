@@ -19,7 +19,6 @@ import subprocess
 import threading
 import time
 from abc import abstractmethod
-from multiprocessing.connection import Client, Listener
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
@@ -29,10 +28,20 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
-from nvflare.fuel.common.multi_process_executor_constants import CommunicateData, CommunicationMetaData
+from nvflare.fuel.common.multi_process_executor_constants import (
+    CommunicateData,
+    CommunicationMetaData,
+    MultiProcessCommandNames,
+)
+from nvflare.fuel.f3.cellnet.cell import Message as CellMessage
+from nvflare.fuel.f3.cellnet.cell import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.cell import ReturnCode as F3ReturnCode
+from nvflare.fuel.f3.cellnet.cell import make_reply as F3make_reply
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.utils.class_utils import ModuleScanner
 from nvflare.fuel.utils.component_builder import ComponentBuilder
-from nvflare.fuel.utils.network_utils import get_open_ports
+from nvflare.private.defs import CellChannel, CellChannelTopic, new_cell_message
+from nvflare.security.logging import secure_format_exception
 
 
 class WorkerComponentBuilder(ComponentBuilder):
@@ -60,6 +69,7 @@ class MultiProcessExecutor(Executor):
         super().__init__()
         self.executor_id = executor_id
 
+        self.components_conf = components
         self.components = {}
         self.handlers = []
         self._build_components(components)
@@ -70,11 +80,13 @@ class MultiProcessExecutor(Executor):
             raise ValueError(f"{num_of_processes} must >= 1.")
         self.num_of_processes = num_of_processes
         self.executor = None
+        self.execute_result = None
+        self.execute_complete = None
+        self.engine = None
 
         self.logger = logging.getLogger(self.__class__.__name__)
         self.conn_clients = []
         self.exe_process = None
-        self.open_ports = []
 
         self.stop_execute = False
         self.relay_threads = []
@@ -112,26 +124,30 @@ class MultiProcessExecutor(Executor):
     def _pass_event_to_rank_processes(self, event_type: str, fl_ctx: FLContext):
         event_site = fl_ctx.get_prop(FLContextKey.EVENT_ORIGIN_SITE)
 
-        if event_site != CommunicateData.SUB_WORKER_PROCESS:
-            with self.event_lock:
-                try:
-                    data = {
-                        CommunicationMetaData.COMMAND: CommunicateData.HANDLE_EVENT,
-                        CommunicationMetaData.FL_CTX: get_serializable_data(fl_ctx),
-                        CommunicationMetaData.EVENT_TYPE: event_type,
-                    }
-                    # send the init data to all the child processes
-                    for conn_client in self.conn_clients:
-                        conn_client[CommunicationMetaData.HANDLE_CONN].send(data)
-
-                    return_data = self.conn_clients[0][CommunicationMetaData.HANDLE_CONN].recv()
-                    # update the fl_ctx from the child process return data.
-                    fl_ctx.props.update(return_data[CommunicationMetaData.FL_CTX].props)
-                except BaseException:
-                    # Warning: Have to set fire_event=False, otherwise it will cause dead loop on the event handling!!!
-                    self.log_warning(
-                        fl_ctx, f"Failed to relay the event to child processes. Event: {event_type}", fire_event=False
-                    )
+        if self.engine:
+            if event_site != CommunicateData.SUB_WORKER_PROCESS:
+                with self.event_lock:
+                    try:
+                        data = {
+                            CommunicationMetaData.COMMAND: CommunicateData.HANDLE_EVENT,
+                            CommunicationMetaData.FL_CTX: get_serializable_data(fl_ctx),
+                            CommunicationMetaData.EVENT_TYPE: event_type,
+                        }
+                        # send the init data to all the child processes
+                        request = new_cell_message({}, data)
+                        self.engine.client.cell.fire_and_forget(
+                            targets=self.targets,
+                            channel=CellChannel.CLIENT_SUB_WORKER_COMMAND,
+                            topic=MultiProcessCommandNames.FIRE_EVENT,
+                            message=request,
+                        )
+                    except BaseException:
+                        # Warning: Have to set fire_event=False, otherwise it will cause dead loop on the event handling!!!
+                        self.log_warning(
+                            fl_ctx,
+                            f"Failed to relay the event to child processes. Event: {event_type}",
+                            fire_event=False,
+                        )
 
     def initialize(self, fl_ctx: FLContext):
         self.executor = self.components.get(self.executor_id, None)
@@ -144,11 +160,12 @@ class MultiProcessExecutor(Executor):
     def _initialize_multi_process(self, fl_ctx: FLContext):
 
         try:
-            self.open_ports = get_open_ports(self.num_of_processes * 3)
             client_name = fl_ctx.get_identity_name()
             job_id = fl_ctx.get_job_id()
 
+            self.engine = fl_ctx.get_engine()
             simulate_mode = fl_ctx.get_prop(FLContextKey.SIMULATE_MODE, False)
+            cell = self.engine.client.cell
             command = (
                 self.get_multi_process_command()
                 + " -m nvflare.private.fed.app.client.sub_worker_process"
@@ -158,116 +175,103 @@ class MultiProcessExecutor(Executor):
                 + client_name
                 + " -n "
                 + job_id
-                + " --ports "
-                + "-".join([str(i) for i in self.open_ports])
+                + " --num_processes "
+                + str(self.num_of_processes)
                 + " --simulator_engine "
                 + str(simulate_mode)
                 + " --parent_pid "
                 + str(os.getpid())
+                + " --root_url "
+                + str(cell.get_root_url_for_child())
+                + " --parent_url "
+                + str(cell.get_internal_listener_url())
             )
             self.logger.info(f"multi_process_executor command: {command}")
             # use os.setsid to create new process group ID
             self.exe_process = subprocess.Popen(shlex.split(command, " "), preexec_fn=os.setsid, env=os.environ.copy())
 
-            for i in range(self.num_of_processes):
-                listen_port = self.open_ports[i * 3 + 2]
-                thread = threading.Thread(target=self._relay_fire_event, args=(listen_port, fl_ctx))
-                self.relay_threads.append(thread)
-                thread.start()
-
-                open_port = self.open_ports[i * 3]
-                exe_conn = self._create_connection(open_port)
-
-                open_port = self.open_ports[i * 3 + 1]
-                handle_conn = self._create_connection(open_port)
-
-                self.conn_clients.append(
-                    {CommunicationMetaData.EXE_CONN: exe_conn, CommunicationMetaData.HANDLE_CONN: handle_conn}
-                )
-            self.logger.info(f"Created the connections to child processes on ports: {str(self.open_ports)}")
-
-            data = {
-                CommunicationMetaData.FL_CTX: get_serializable_data(fl_ctx),
-                CommunicationMetaData.COMPONENTS: self.components,
-                CommunicationMetaData.HANDLERS: self.handlers,
-                CommunicationMetaData.LOCAL_EXECUTOR: self.executor,
-            }
-
             # send the init data to all the child processes
-            responses = []
-            for conn_client in self.conn_clients:
-                conn_client[CommunicationMetaData.EXE_CONN].send(data)
-                responses.append(False)
+            cell.register_request_cb(
+                channel=CellChannel.MULTI_PROCESS_EXECUTOR,
+                topic=CellChannelTopic.EXECUTE_RESULT,
+                cb=self.receive_execute_result,
+            )
+            cell.register_request_cb(
+                channel=CellChannel.MULTI_PROCESS_EXECUTOR,
+                topic=CellChannelTopic.FIRE_EVENT,
+                cb=self._relay_fire_event,
+            )
 
-            while True:
-                run_abort_signal = fl_ctx.get_run_abort_signal()
-                if run_abort_signal and run_abort_signal.triggered:
-                    self.finalize(fl_ctx)
-                    break
+            self.targets = []
+            for i in range(self.num_of_processes):
+                fqcn = FQCN.join([cell.get_fqcn(), str(i)])
+                start = time.time()
+                while not cell.is_cell_reachable(fqcn):
+                    time.sleep(1.0)
+                    if time.time() - start > 60.0:
+                        raise RuntimeError(f"Could not reach the communication cell: {fqcn}")
+                self.targets.append(fqcn)
+            request = new_cell_message(
+                {},
+                {
+                    CommunicationMetaData.FL_CTX: get_serializable_data(fl_ctx),
+                    CommunicationMetaData.COMPONENTS: self.components_conf,
+                    CommunicationMetaData.LOCAL_EXECUTOR: self.executor_id,
+                },
+            )
+            replies = cell.broadcast_request(
+                targets=self.targets,
+                channel=CellChannel.CLIENT_SUB_WORKER_COMMAND,
+                topic=MultiProcessCommandNames.INITIALIZE,
+                request=request,
+            )
+            for name, reply in replies.items():
+                if reply.get_header(MessageHeaderKey.RETURN_CODE) != F3ReturnCode.OK:
+                    self.log_exception(fl_ctx, "error initializing multi_process executor")
+                    raise ValueError(reply.get_header(MessageHeaderKey.ERROR))
+        except BaseException as e:
+            self.log_exception(fl_ctx, f"error initializing multi_process executor: {secure_format_exception(e)}")
 
-                # Make sure to receive responses from all rank processes.
-                index = 0
-                received_all = True
-                for conn_client in self.conn_clients:
-                    received_all = received_all and responses[index]
-                    if not responses[index]:
-                        if conn_client[CommunicationMetaData.EXE_CONN].poll(0.2):
-                            conn_client[CommunicationMetaData.EXE_CONN].recv()
-                            responses[index] = True
-                    index += 1
-                if received_all:
-                    break
-        except:
-            self.log_exception(fl_ctx, "error initializing multi_process executor")
+    def receive_execute_result(self, request: CellMessage) -> CellMessage:
+        return_data = request.payload
+        with self.engine.new_context() as fl_ctx:
+            fl_ctx.props.update(return_data[CommunicationMetaData.FL_CTX].props)
+            self.execute_result = return_data[CommunicationMetaData.SHAREABLE]
 
-    def _relay_fire_event(self, listen_port, fl_ctx: FLContext):
-        address = ("localhost", int(listen_port))
-        listener = Listener(address, authkey=CommunicationMetaData.PARENT_PASSWORD.encode())
-        conn = listener.accept()
+        self.execute_complete = True
+        return F3make_reply(ReturnCode.OK, "", None)
 
-        while not self.stop_execute:
-            try:
-                if conn.poll(0.1):
-                    data = conn.recv()
-                    event_type = data[CommunicationMetaData.EVENT_TYPE]
-                    rank_number = data[CommunicationMetaData.RANK_NUMBER]
+    def _relay_fire_event(self, request: CellMessage) -> CellMessage:
+        data = request.payload
+        with self.engine.new_context() as fl_ctx:
+            event_type = data[CommunicationMetaData.EVENT_TYPE]
+            rank_number = data[CommunicationMetaData.RANK_NUMBER]
 
-                    with self.relay_lock:
-                        fl_ctx.props.update(data[CommunicationMetaData.FL_CTX].props)
+            with self.relay_lock:
+                fl_ctx.props.update(data[CommunicationMetaData.FL_CTX].props)
 
-                        fl_ctx.set_prop(FLContextKey.FROM_RANK_NUMBER, rank_number, private=True, sticky=False)
-                        fl_ctx.set_prop(
-                            FLContextKey.EVENT_ORIGIN_SITE,
-                            CommunicateData.SUB_WORKER_PROCESS,
-                            private=True,
-                            sticky=False,
-                        )
-                        engine = fl_ctx.get_engine()
-                        engine.fire_event(event_type, fl_ctx)
-
-                        return_data = {CommunicationMetaData.FL_CTX: get_serializable_data(fl_ctx)}
-                    conn.send(return_data)
-            except:
-                self.logger.warning("Failed to relay the fired events from rank_processes.")
-
-    def _create_connection(self, open_port):
-        conn = None
-        while not conn:
-            try:
-                address = ("localhost", open_port)
-                conn = Client(address, authkey=CommunicationMetaData.CHILD_PASSWORD.encode())
-            except BaseException:
-                time.sleep(1.0)
-                pass
-        return conn
+                fl_ctx.set_prop(FLContextKey.FROM_RANK_NUMBER, rank_number, private=True, sticky=False)
+                fl_ctx.set_prop(
+                    FLContextKey.EVENT_ORIGIN_SITE,
+                    CommunicateData.SUB_WORKER_PROCESS,
+                    private=True,
+                    sticky=False,
+                )
+                self.engine.fire_event(event_type, fl_ctx)
+                return_data = {CommunicationMetaData.FL_CTX: get_serializable_data(fl_ctx)}
+                return F3make_reply(ReturnCode.OK, "", return_data)
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         if not self.executor:
             raise RuntimeError("There's no executor for task {}".format(task_name))
 
-        return self._execute_multi_process(
-            task_name=task_name, shareable=shareable, fl_ctx=fl_ctx, abort_signal=abort_signal
-        )
+        self.execute_complete = False
+
+        self._execute_multi_process(task_name=task_name, shareable=shareable, fl_ctx=fl_ctx, abort_signal=abort_signal)
+
+        while not self.execute_complete:
+            time.sleep(0.2)
+        return self.execute_result
 
     def _execute_multi_process(
         self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal
@@ -277,6 +281,7 @@ class MultiProcessExecutor(Executor):
             self.finalize(fl_ctx)
             return make_reply(ReturnCode.OK)
 
+        self.engine = fl_ctx.get_engine()
         try:
             data = {
                 CommunicationMetaData.COMMAND: CommunicateData.EXECUTE,
@@ -285,21 +290,13 @@ class MultiProcessExecutor(Executor):
                 CommunicationMetaData.FL_CTX: get_serializable_data(fl_ctx),
             }
 
-            # send the execute command to all the child processes
-            for conn_client in self.conn_clients:
-                conn_client[CommunicationMetaData.EXE_CONN].send(data)
-
-            while True:
-                if abort_signal.triggered:
-                    self.finalize(fl_ctx)
-                    return make_reply(ReturnCode.OK)
-
-                if self.conn_clients[0][CommunicationMetaData.EXE_CONN].poll(1.0):
-                    # Only need to receive the Shareable and FLContext update from rank 0 process.
-                    return_data = self.conn_clients[0][CommunicationMetaData.EXE_CONN].recv()
-                    shareable = return_data[CommunicationMetaData.SHAREABLE]
-                    fl_ctx.props.update(return_data[CommunicationMetaData.FL_CTX].props)
-                    return shareable
+            request = new_cell_message({}, data)
+            self.engine.client.cell.fire_and_forget(
+                targets=self.targets,
+                channel=CellChannel.CLIENT_SUB_WORKER_COMMAND,
+                topic=MultiProcessCommandNames.TASK_EXECUTION,
+                message=request,
+            )
         except BaseException:
             self.log_error(fl_ctx, "Multi-Process Execution error.")
             return make_reply(ReturnCode.EXECUTION_RESULT_ERROR)
@@ -312,14 +309,14 @@ class MultiProcessExecutor(Executor):
         self.finalized = True
         self.stop_execute = True
 
-        data = {CommunicationMetaData.COMMAND: CommunicateData.CLOSE}
-        for conn_client in self.conn_clients:
-            try:
-                conn_client[CommunicationMetaData.EXE_CONN].send(data)
-                conn_client[CommunicationMetaData.HANDLE_CONN].send(data)
-                self.logger.info("close command sent to rank processes.")
-            except:
-                self.logger.warning("Failed to send the close command. ")
+        request = new_cell_message({}, None)
+        self.engine.client.cell.fire_and_forget(
+            targets=self.targets,
+            channel=CellChannel.CLIENT_SUB_WORKER_COMMAND,
+            topic=MultiProcessCommandNames.CLOSE,
+            message=request,
+        )
+
         try:
             os.killpg(os.getpgid(self.exe_process.pid), 9)
             self.logger.debug("kill signal sent")

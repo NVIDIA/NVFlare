@@ -29,7 +29,6 @@ class ServerDeployer:
 
     def __init__(self):
         """Init the ServerDeployer."""
-        self.services = None
         self.cmd_modules = ServerCommandModules.cmd_modules
         self.server_config = None
         self.secure_train = None
@@ -84,6 +83,8 @@ class ServerDeployer:
             secure_train=secure_train,
             snapshot_persistor=self.snapshot_persistor,
             overseer_agent=self.overseer_agent,
+            shutdown_period=first_server.get("shutdown_period", 30.0),
+            check_engine_frequency=first_server.get("check_engine_frequency", 3.0),
         )
         return first_server, services
 
@@ -128,5 +129,4 @@ class ServerDeployer:
 
     def close(self):
         """To close the services."""
-        if self.services:
-            self.services.close()
+        pass

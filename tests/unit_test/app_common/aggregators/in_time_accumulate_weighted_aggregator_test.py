@@ -133,7 +133,7 @@ class TestInTimeAccumulateWeightedAggregator:
         fl_ctx = FLContext()
         s = Shareable()
         s.set_peer_props({ReservedKey.IDENTITY_NAME: client_name})
-        s.set_header(AppConstants.CONTRIBUTION_ROUND, contribution_round)
+        s.add_cookie(AppConstants.CONTRIBUTION_ROUND, contribution_round)
         fl_ctx.set_prop(AppConstants.CURRENT_ROUND, current_round)
         dxo = DXO(
             DataKind.WEIGHT_DIFF,
@@ -205,7 +205,7 @@ class TestInTimeAccumulateWeightedAggregator:
 
             s = Shareable()
             s.set_peer_props({ReservedKey.IDENTITY_NAME: k})
-            s.set_header(AppConstants.CONTRIBUTION_ROUND, 0)
+            s.add_cookie(AppConstants.CONTRIBUTION_ROUND, 0)
             agg.accept(dxo.update_shareable(s), fl_ctx)
 
         result = agg.aggregate(fl_ctx)
@@ -225,7 +225,7 @@ class TestInTimeAccumulateWeightedAggregator:
             weights = np.random.random(shape)
             s = Shareable()
             s.set_peer_props({ReservedKey.IDENTITY_NAME: client_name})
-            s.set_header(AppConstants.CONTRIBUTION_ROUND, 0)
+            s.add_cookie(AppConstants.CONTRIBUTION_ROUND, 0)
             dxo = DXO(
                 DataKind.WEIGHT_DIFF,
                 data={"var1": weights},
@@ -282,7 +282,7 @@ class TestInTimeAccumulateWeightedAggregator:
             dxo_collection = DXO(data_kind=DataKind.COLLECTION, data=dxo_collection_data)
             s = Shareable()
             s.set_peer_props({ReservedKey.IDENTITY_NAME: client_name})
-            s.set_header(AppConstants.CONTRIBUTION_ROUND, 0)
+            s.add_cookie(AppConstants.CONTRIBUTION_ROUND, 0)
             agg.accept(dxo_collection.update_shareable(s), fl_ctx)
 
         result = agg.aggregate(fl_ctx)

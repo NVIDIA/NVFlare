@@ -21,6 +21,7 @@ from urllib.parse import parse_qsl, urlencode, urlparse
 
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.utils.argument_utils import str2bool
 
 log = logging.getLogger(__name__)
 
@@ -32,18 +33,10 @@ BIND_TIME_OUT = 5
 SECURE_SCHEMES = {"https", "wss", "grpcs", "stcp", "satcp"}
 
 
-def bool_value(value) -> bool:
-    """Convert value into bool"""
-    if isinstance(value, str):
-        return value.lower() in {"true", "yes", "y", "t", "1"}
-
-    return value
-
-
 def ssl_required(params: dict) -> bool:
     """Check if SSL is required"""
     scheme = params.get(DriverParams.SCHEME.value, None)
-    return scheme in SECURE_SCHEMES or bool_value(params.get(DriverParams.SECURE.value, False))
+    return scheme in SECURE_SCHEMES or str2bool(params.get(DriverParams.SECURE.value))
 
 
 def get_ssl_context(params: dict, ssl_server: bool) -> Optional[SSLContext]:
@@ -148,28 +141,6 @@ def get_open_tcp_port(resources: dict) -> Optional[int]:
                     return port
 
     return None
-
-
-def get_client_ip():
-    """Return localhost IP.
-
-    More robust than ``socket.gethostbyname(socket.gethostname())``. See
-    https://stackoverflow.com/questions/166506/finding-local-ip-addresses-using-pythons-stdlib/28950776#28950776
-    for more details.
-
-    Returns:
-        The host IP
-
-    """
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        s.connect(("10.255.255.255", 1))  # doesn't even have to be reachable
-        ip = s.getsockname()[0]
-    except Exception:
-        ip = "127.0.0.1"
-    finally:
-        s.close()
-    return ip
 
 
 def parse_url(url: str) -> dict:

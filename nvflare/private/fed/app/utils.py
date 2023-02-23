@@ -66,6 +66,7 @@ def create_admin_server(fl_server: FederatedServer, server_conf=None, args=None,
     server_cert = server_conf[SSLConstants.CERT] if secure_train else None
     server_key = server_conf[SSLConstants.PRIVATE_KEY] if secure_train else None
     admin_server = FedAdminServer(
+        cell=fl_server.cell,
         fed_admin_interface=fl_server.engine,
         users=users,
         cmd_modules=fl_server.cmd_modules,

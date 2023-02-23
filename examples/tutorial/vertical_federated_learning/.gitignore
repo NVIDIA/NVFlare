@@ -1,0 +1,11 @@
+# ide
+.idea/
+.ipynb_checkpoints/
+
+# python
+__pycache__
+.pyc
+
+# virtual environments
+nvflare_cifar10
+

@@ -1,16 +1,19 @@
 # Hello PyTorch with Tensorboard Streaming
 
-Example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) to train an image classifier using federated averaging ([FedAvg]([FedAvg](https://arxiv.org/abs/1602.05629))) and [PyTorch](https://pytorch.org/) as the deep learning training framework. This example also highlights the TensorBoard streaming capability from the clients to the server.
+Example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) to train an image classifier
+using federated averaging ([FedAvg]([FedAvg](https://arxiv.org/abs/1602.05629))) and [PyTorch](https://pytorch.org/)
+as the deep learning training framework.
+
+This example also highlights the TensorBoard streaming capability from the clients to the server.
 
 > **_NOTE:_** This example uses the [CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html) dataset and will load its data within the trainer code.
 
-### 1. Install NVIDIA FLARE
+### 1. Install requirements
 
-Follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions.
 Install additional requirements:
 
 ```
-pip3 install torch torchvision tensorboard
+python -m pip install -r requirements.txt
 ```
 
 ### 2. Run the experiment
@@ -18,7 +21,7 @@ pip3 install torch torchvision tensorboard
 Use nvflare simulator to run the example:
 
 ```
-nvflare simulator -w /tmp/nvflare/ -n 2 -t 2 tensorboard-streaming
+nvflare simulator -w /tmp/nvflare/ -n 2 -t 2 ./job_configs/tensorboard-streaming
 ```
 
 ### 3. Access the logs and results
@@ -50,7 +53,7 @@ tensorboard --logdir=/tmp/nvflare/simulate_job/tb_events
 Note: if the server is running on a remote machine, use port forwarding to view the TensorBoard dashboard in a browser.
 For example:
 ```
-ssh -L {local_machine_port}:127.0.0.1:6006 user@server_ip)
+ssh -L {local_machine_port}:127.0.0.1:6006 user@server_ip
 ```
 
-> **_NOTE:_** For a more in-depth guide about the TensorBoard streaming feature, see [Quickstart (PyTorch with TensorBoard)](https://nvflare.readthedocs.io/en/main/examples/hello_pt_tb.html).
+> **_NOTE:_** For a more in-depth guide about the TensorBoard streaming feature, see [PyTorch with TensorBoard](https://nvflare.readthedocs.io/en/main/examples/hello_pt_tb.html).

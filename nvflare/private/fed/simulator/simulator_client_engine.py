@@ -12,26 +12,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.apis.shareable import ReservedHeaderKey, Shareable
+from nvflare.apis.fl_constant import FLContextKey, RunProcessKey
 from nvflare.private.fed.client.client_engine import ClientEngine
+from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 
 
-class SimulatorClientEngine(ClientEngine):
-    def __init__(self, client, client_name, sender, args, rank, workers=5):
-        super().__init__(client, client_name, sender, args, rank, workers)
-
-    def send_aux_command(self, shareable: Shareable, job_id):
-        run_manager = self.client.run_manager
-        if run_manager:
-            with run_manager.new_context() as fl_ctx:
-                topic = shareable.get_header(ReservedHeaderKey.TOPIC)
-                return run_manager.dispatch(topic=topic, request=shareable, fl_ctx=fl_ctx)
-
-
 class SimulatorParentClientEngine(ClientEngine):
-    def __init__(self):
-        pass
+    def __init__(self, client, client_token, args, rank=0):
+        super().__init__(client, client_token, args, rank)
+        fl_ctx = self.new_context()
+        fl_ctx.set_prop(FLContextKey.SIMULATE_MODE, True, private=True, sticky=True)
+
+        self.client_executor.run_processes[SimulatorConstants.JOB_NAME] = {
+            RunProcessKey.LISTEN_PORT: None,
+            RunProcessKey.CONNECTION: None,
+            RunProcessKey.CHILD_PROCESS: None,
+            RunProcessKey.STATUS: ClientStatus.STARTED,
+        }
 
     def get_all_job_ids(self):
         return [SimulatorConstants.JOB_NAME]

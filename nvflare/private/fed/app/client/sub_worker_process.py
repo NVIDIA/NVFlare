@@ -16,34 +16,47 @@
 
 import argparse
 import copy
+import logging
 import os
 import sys
 import threading
 import time
-from multiprocessing.connection import Client, Listener
 
+from nvflare.apis.executor import Executor
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
-from nvflare.fuel.common.multi_process_executor_constants import CommunicateData, CommunicationMetaData
+from nvflare.app_common.executors.multi_process_executor import WorkerComponentBuilder
+from nvflare.fuel.common.multi_process_executor_constants import (
+    CommunicateData,
+    CommunicationMetaData,
+    MultiProcessCommandNames,
+)
+from nvflare.fuel.f3.cellnet.cell import Cell
+from nvflare.fuel.f3.cellnet.cell import Message as CellMessage
+from nvflare.fuel.f3.cellnet.cell import MessageHeaderKey, make_reply
+from nvflare.fuel.f3.cellnet.defs import ReturnCode
+from nvflare.fuel.f3.cellnet.fqcn import FQCN
+from nvflare.fuel.f3.cellnet.net_agent import NetAgent
+from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import SecurityContentService
+from nvflare.private.defs import CellChannel, CellChannelTopic, new_cell_message
+from nvflare.private.fed.app.client.worker_process import check_parent_alive
 from nvflare.private.fed.app.fl_conf import create_privacy_manager
-from nvflare.private.fed.app.utils import check_parent_alive
 from nvflare.private.fed.client.client_run_manager import ClientRunManager
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorClientRunManager
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, configure_logging, fobs_initialize
 from nvflare.private.privacy_manager import PrivacyService
-from nvflare.security.logging import secure_log_traceback
 
 
 class EventRelayer(FLComponent):
     """To relay the event from the worker_process."""
 
-    def __init__(self, conn, local_rank):
+    def __init__(self, cell, parent_fqcn, local_rank):
         """To init the EventRelayer.
 
         Args:
@@ -51,7 +64,8 @@ class EventRelayer(FLComponent):
             local_rank: process local rank
         """
         super().__init__()
-        self.conn = conn
+        self.cell = cell
+        self.parent_fqcn = parent_fqcn
         self.local_rank = local_rank
 
         self.event_lock = threading.Lock()
@@ -93,33 +107,195 @@ class EventRelayer(FLComponent):
                         CommunicationMetaData.RANK_NUMBER: self.local_rank,
                         CommunicationMetaData.FL_CTX: new_fl_ctx,
                     }
-                    self.conn.send(data)
 
-                    return_data = self.conn.recv()
+                    request = new_cell_message({}, data)
+                    return_data = self.cell.send_request(
+                        target=self.parent_fqcn,
+                        channel=CellChannel.MULTI_PROCESS_EXECUTOR,
+                        topic=CellChannelTopic.FIRE_EVENT,
+                        request=request,
+                    )
                     # update the fl_ctx from the child process return data.
-                    fl_ctx.props.update(return_data[CommunicationMetaData.FL_CTX].props)
+                    fl_ctx.props.update(return_data.payload[CommunicationMetaData.FL_CTX].props)
                 except BaseException:
                     self.log_warning(
                         fl_ctx, f"Failed to relay the event to parent process. Event: {event_type}", fire_event=False
                     )
 
 
+class SubWorkerExecutor:
+    def __init__(self, args, workspace, num_of_processes, local_rank) -> None:
+        self.args = args
+        self.workspace = workspace
+        self.components = {}
+        self.handlers = []
+        self.executor = None
+        self.run_manager = None
+        self.num_of_processes = num_of_processes
+        self.local_rank = local_rank
+
+        self.done = False
+
+        fqcn = FQCN.join([args.client_name, args.job_id, str(local_rank)])
+        credentials = {}
+        self.cell = Cell(
+            fqcn=fqcn,
+            root_url=args.root_url,
+            secure=False,
+            credentials=credentials,
+            create_internal_listener=True,
+            parent_url=args.parent_url,
+        )
+        self.cell.start()
+        net_agent = NetAgent(self.cell)
+        self.cell.register_request_cb(
+            channel=CellChannel.CLIENT_SUB_WORKER_COMMAND,
+            topic="*",
+            cb=self.execute_command,
+        )
+        mpm.add_cleanup_cb(net_agent.close)
+        mpm.add_cleanup_cb(self.cell.stop)
+
+        self.commands = {
+            MultiProcessCommandNames.INITIALIZE: self._initialize,
+            MultiProcessCommandNames.TASK_EXECUTION: self._execute_task,
+            MultiProcessCommandNames.FIRE_EVENT: self._handle_event,
+            MultiProcessCommandNames.CLOSE: self._close,
+        }
+
+        self.logger = logging.getLogger(self.__class__.__name__)
+
+    def execute_command(self, request: CellMessage) -> CellMessage:
+        command_name = request.get_header(MessageHeaderKey.TOPIC)
+        data = request.payload
+
+        if command_name not in self.commands:
+            return make_reply(ReturnCode.INVALID_REQUEST, "", None)
+        return self.commands[command_name](data)
+
+    def _initialize(self, data):
+        executor_id = data[CommunicationMetaData.LOCAL_EXECUTOR]
+        components_conf = data[CommunicationMetaData.COMPONENTS]
+        component_builder = WorkerComponentBuilder()
+        for item in components_conf:
+            cid = item.get("id", None)
+            if not cid:
+                raise TypeError("missing component id")
+            self.components[cid] = component_builder.build_component(item)
+            if isinstance(self.components[cid], FLComponent):
+                self.handlers.append(self.components[cid])
+
+        self.executor = self.components.get(executor_id, None)
+        if not isinstance(self.executor, Executor):
+            make_reply(
+                ReturnCode.INVALID_REQUEST,
+                "invalid executor {}: expect Executor but got {}".format(executor_id, type(self.executor)),
+                None,
+            )
+
+        job_id = self.args.job_id
+        self._get_client_run_manager(job_id)
+
+        parent_fqcn = FQCN.join([self.args.client_name, self.args.job_id])
+        relayer = EventRelayer(self.cell, parent_fqcn, self.local_rank)
+        self.run_manager.add_handler(relayer)
+        self.run_manager.components[CommunicationMetaData.RELAYER] = relayer
+
+        with self.run_manager.new_context() as fl_ctx:
+            fl_ctx.set_prop(FLContextKey.RANK_NUMBER, self.local_rank, private=True, sticky=True)
+            fl_ctx.set_prop(FLContextKey.NUM_OF_PROCESSES, self.num_of_processes, private=True, sticky=True)
+
+        return make_reply(ReturnCode.OK, "", None)
+
+    def _get_client_run_manager(self, job_id):
+        if self.args.simulator_engine.lower() == "true":
+            self.run_manager = SimulatorClientRunManager(
+                client_name=self.args.client_name,
+                job_id=job_id,
+                workspace=self.workspace,
+                client=None,
+                components=self.components,
+                handlers=self.handlers,
+                conf=None,
+            )
+        else:
+            self.run_manager = ClientRunManager(
+                client_name=self.args.client_name,
+                job_id=job_id,
+                workspace=self.workspace,
+                client=None,
+                components=self.components,
+                handlers=self.handlers,
+                conf=None,
+            )
+
+    def _execute_task(self, data):
+        """To execute the event task and pass to worker_process.
+
+        Args:
+
+        """
+        with self.run_manager.new_context() as fl_ctx:
+            abort_signal = Signal()
+
+            task_name = data[CommunicationMetaData.TASK_NAME]
+            shareable = data[CommunicationMetaData.SHAREABLE]
+            fl_ctx.props.update(data[CommunicationMetaData.FL_CTX].props)
+
+            shareable = self.executor.execute(
+                task_name=task_name, shareable=shareable, fl_ctx=fl_ctx, abort_signal=abort_signal
+            )
+
+            if self.local_rank == 0:
+                return_data = {
+                    CommunicationMetaData.SHAREABLE: shareable,
+                    CommunicationMetaData.FL_CTX: get_serializable_data(fl_ctx),
+                }
+                request = new_cell_message({}, return_data)
+                fqcn = FQCN.join([self.args.client_name, self.args.job_id])
+                self.cell.send_request(
+                    target=fqcn,
+                    channel=CellChannel.MULTI_PROCESS_EXECUTOR,
+                    topic=CellChannelTopic.EXECUTE_RESULT,
+                    request=request,
+                )
+
+    def _handle_event(self, data):
+        """To handle the event.
+
+        Args:
+
+        """
+        event_relayer = self.run_manager.get_component(CommunicationMetaData.RELAYER)
+        event_relayer.relay_event(self.run_manager, data)
+
+    def _close(self, data):
+        self.done = True
+        self.cell.stop()
+        # mpm.stop()
+
+    def run(self):
+        self.logger.info("SubWorkerExecutor process started.")
+        while not self.done:
+            time.sleep(1.0)
+        # self.cell.run()
+        # mpm.run("Client sub_worker")
+        self.logger.info("SubWorkerExecutor process shutdown.")
+
+
 def main():
     """Sub_worker process program."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
-    # parser.add_argument("--parent_port", type=str, help="Parent listen port", required=True)
-    parser.add_argument("--ports", type=str, help="Listen ports", required=True)
-    # parser.add_argument("--local_rank", type=int, default=0)
+    parser.add_argument("--num_processes", type=str, help="Listen ports", required=True)
     parser.add_argument("--job_id", "-n", type=str, help="job_id", required=True)
     parser.add_argument("--client_name", "-c", type=str, help="client name", required=True)
     parser.add_argument("--simulator_engine", "-s", type=str, help="simulator engine", required=True)
     parser.add_argument("--parent_pid", type=int, help="parent process pid", required=True)
+    parser.add_argument("--root_url", type=str, help="root cell url", required=True)
+    parser.add_argument("--parent_url", type=str, help="parent cell url", required=True)
 
     args = parser.parse_args()
-    listen_ports = list(map(int, args.ports.split("-")))
-    # parent_port = args.parent_port
-
     workspace = Workspace(args.workspace, args.client_name)
     app_custom_folder = workspace.get_client_custom_dir()
     if os.path.isdir(app_custom_folder):
@@ -141,13 +317,8 @@ def main():
 
     # local_rank = args.local_rank
     local_rank = int(os.environ["LOCAL_RANK"])
-    listen_port = listen_ports[local_rank * 3]
-    exe_conn = _create_connection(listen_port)
-
-    listen_port = listen_ports[local_rank * 3 + 1]
-    handle_conn = _create_connection(listen_port)
-
-    listen_port = listen_ports[local_rank * 3 + 2]
+    num_of_processes = int(args.num_processes)
+    sub_executor = SubWorkerExecutor(args, workspace, num_of_processes, local_rank)
 
     # start parent process checking thread
     parent_pid = args.parent_pid
@@ -155,150 +326,17 @@ def main():
     thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
     thread.start()
 
-    event_conn = None
-    while not event_conn:
-        try:
-            address = ("localhost", listen_port)
-            event_conn = Client(address, authkey=CommunicationMetaData.PARENT_PASSWORD.encode())
-        except Exception:
-            time.sleep(1.0)
-            pass
-
-    data = exe_conn.recv()
-
-    # client_name = data[CommunicationMetaData.FL_CTX].get_prop(FLContextKey.CLIENT_NAME)
-    # job_id = data[CommunicationMetaData.FL_CTX].get_prop(FLContextKey.CURRENT_RUN)
-    # workspace = data[CommunicationMetaData.FL_CTX].get_prop(FLContextKey.WORKSPACE_OBJECT)
     job_id = args.job_id
-
-    if args.simulator_engine.lower() == "true":
-        run_manager = SimulatorClientRunManager(
-            client_name=args.client_name,
-            job_id=job_id,
-            workspace=workspace,
-            client=None,
-            components=data[CommunicationMetaData.COMPONENTS],
-            handlers=data[CommunicationMetaData.HANDLERS],
-            conf=None,
-        )
-    else:
-        run_manager = ClientRunManager(
-            client_name=args.client_name,
-            job_id=job_id,
-            workspace=workspace,
-            client=None,
-            components=data[CommunicationMetaData.COMPONENTS],
-            handlers=data[CommunicationMetaData.HANDLERS],
-            conf=None,
-        )
-
     log_file = workspace.get_app_log_file_path(job_id)
     add_logfile_handler(log_file)
 
-    relayer = EventRelayer(event_conn, local_rank)
-    run_manager.add_handler(relayer)
-    run_manager.components[CommunicationMetaData.RELAYER] = relayer
-
-    executor = data[CommunicationMetaData.LOCAL_EXECUTOR]
-    exe_conn.send({CommunicationMetaData.RANK_PROCESS_STARTED: True})
-
-    exe_thread = threading.Thread(target=execute, args=(run_manager, local_rank, exe_conn, executor))
-    exe_thread.start()
-
-    event_thread = threading.Thread(target=handle_event, args=(run_manager, local_rank, handle_conn))
-    event_thread.start()
-
-    with run_manager.new_context() as fl_ctx:
-        fl_ctx.set_prop(FLContextKey.RANK_NUMBER, local_rank, private=True, sticky=True)
-        num_of_processes = int(len(listen_ports) / 3)
-        fl_ctx.set_prop(FLContextKey.NUM_OF_PROCESSES, num_of_processes, private=True, sticky=True)
-
-    exe_thread.join()
-    event_thread.join()
+    sub_executor.run()
     AuditService.close()
-
-
-def _create_connection(listen_port):
-    address = ("localhost", int(listen_port))
-    listener = Listener(address, authkey=CommunicationMetaData.CHILD_PASSWORD.encode())
-    conn = listener.accept()
-    return conn
-
-
-def execute(run_manager, local_rank, exe_conn, executor):
-    """To execute the event task and pass to worker_process.
-
-    Args:
-        run_manager: Client_Run_Manager
-        local_rank: provcess local rank
-        exe_conn: execution connection
-        executor: local executor
-
-    """
-    try:
-        abort_signal = None
-        while True:
-            data = exe_conn.recv()
-
-            command = data[CommunicationMetaData.COMMAND]
-            if command == CommunicateData.EXECUTE:
-                with run_manager.new_context() as fl_ctx:
-                    abort_signal = Signal()
-
-                    task_name = data[CommunicationMetaData.TASK_NAME]
-                    shareable = data[CommunicationMetaData.SHAREABLE]
-                    fl_ctx.props.update(data[CommunicationMetaData.FL_CTX].props)
-
-                    shareable = executor.execute(
-                        task_name=task_name, shareable=shareable, fl_ctx=fl_ctx, abort_signal=abort_signal
-                    )
-                    if local_rank == 0:
-                        return_data = {
-                            CommunicationMetaData.SHAREABLE: shareable,
-                            CommunicationMetaData.FL_CTX: get_serializable_data(fl_ctx),
-                        }
-                        exe_conn.send(return_data)
-
-            elif command == CommunicateData.CLOSE:
-                if abort_signal:
-                    abort_signal.trigger(True)
-                break
-    except Exception:
-        secure_log_traceback()
-        print("If you abort client you can ignore this exception.")
-
-
-def handle_event(run_manager, local_rank, exe_conn):
-    """To handle the event.
-
-    Args:
-        run_manager: Client_run_manager
-        local_rank: process local rank
-        exe_conn: execute connection
-
-    """
-    try:
-        while True:
-            data = exe_conn.recv()
-
-            command = data[CommunicationMetaData.COMMAND]
-            if command == CommunicateData.HANDLE_EVENT:
-                event_relayer = run_manager.get_component(CommunicationMetaData.RELAYER)
-                event_relayer.relay_event(run_manager, data)
-
-                fl_ctx = data[CommunicationMetaData.FL_CTX]
-                if local_rank == 0:
-                    return_data = {CommunicationMetaData.FL_CTX: get_serializable_data(fl_ctx)}
-                    exe_conn.send(return_data)
-            elif command == CommunicateData.CLOSE:
-                break
-    except Exception:
-        secure_log_traceback()
-        print("If you abort client you can ignore this exception.")
 
 
 if __name__ == "__main__":
     """
     This is the program for running rank processes in multi-process mode.
     """
-    main()
+    # main()
+    mpm.run(main_func=main)

@@ -82,9 +82,12 @@ class ConnManager(ConnMonitor):
         self.frame_mgr_executor = ThreadPoolExecutor(FRAME_THREAD_POOL_SIZE, "frame_mgr")
         self.lock = threading.Lock()
         self.null_conn = NullConnection()
-        self.send_frame_stats = StatsPoolManager.add_time_hist_pool(
-            "sfm_send_frame", "SFM send_frame time in secs", scope=local_endpoint.name
-        )
+        stats = StatsPoolManager.get_pool("sfm_send_frame")
+        if not stats:
+            stats = StatsPoolManager.add_time_hist_pool(
+                "sfm_send_frame", "SFM send_frame time in secs", scope=local_endpoint.name
+            )
+        self.send_frame_stats = stats
 
     def add_connector(self, driver: Driver, params: dict, mode: Mode) -> str:
 
@@ -206,7 +209,7 @@ class ConnManager(ConnMonitor):
 
     def register_message_receiver(self, app_id: int, receiver: MessageReceiver):
         if self.receivers.get(app_id):
-            raise CommError(CommError.BAD_DATA, f"Receiver for app {app_id} is already registered")
+            raise CommError(CommError.BAD_CONFIG, f"Receiver for app {app_id} is already registered")
 
         self.receivers[app_id] = receiver
 
@@ -278,7 +281,7 @@ class ConnManager(ConnMonitor):
                     connector.curr_conns -= 1
             else:
                 log.error(f"Unknown state: {state}")
-        except BaseException as ex:
+        except Exception as ex:
             log.error(f"Error handling state change: {ex}")
             log.debug(traceback.format_exc())
 
@@ -315,7 +318,7 @@ class ConnManager(ConnMonitor):
 
             else:
                 log.error(f"Received unsupported frame type {prefix.type} on {sfm_conn.get_name()}")
-        except BaseException as ex:
+        except Exception as ex:
             log.error(f"Error processing frame: {ex}")
             log.debug(traceback.format_exc())
 
@@ -396,7 +399,7 @@ class ConnManager(ConnMonitor):
             old_state = sfm_endpoint.endpoint.state
             sfm_endpoint.remove_connection(sfm_conn)
 
-            state = EndpointState.READY if sfm_endpoint.sfm_conns else EndpointState.DISCONNECTED
+            state = EndpointState.READY if sfm_endpoint.connections else EndpointState.DISCONNECTED
             sfm_endpoint.endpoint.state = state
             if old_state != state:
                 self.notify_monitors(sfm_endpoint.endpoint)
@@ -416,7 +419,7 @@ class ConnManager(ConnMonitor):
 
         try:
             receiver.process_message(endpoint, self.null_conn, app_id, Message(headers, payload))
-        except BaseException as ex:
+        except Exception as ex:
             log.error(f"Loopback message error: {ex}")
 
 
@@ -428,7 +431,7 @@ class SfmFrameReceiver(FrameReceiver):
     def process_frame(self, frame: BytesAlike):
         try:
             self.conn_manager.process_frame(self.conn, frame)
-        except BaseException as ex:
+        except Exception as ex:
             log.error(f"Error processing frame: {ex}")
             log.debug(traceback.format_exc())
 

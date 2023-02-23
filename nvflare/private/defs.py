@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from nvflare.fuel.f3.message import Headers, Message
 from nvflare.fuel.hci.server.constants import ConnProps
 
 
@@ -66,6 +67,7 @@ class TrainingTopic(object):
 class RequestHeader(object):
 
     JOB_ID = "job_id"
+    TOPIC = "topic"
     JOB_META = "job_meta"
     APP_NAME = "app_name"
     CONTROL_COMMAND = "control_command"
@@ -131,4 +133,51 @@ class SSLConstants:
     ROOT_CERT = "ssl_root_cert"
 
 
+class CellChannel:
+
+    CLIENT_MAIN = "admin"
+    AUX_COMMUNICATION = "aux_communication"
+    SERVER_MAIN = "task"
+    SERVER_COMMAND = "server_command"
+    SERVER_PARENT_LISTENER = "server_parent_listener"
+    CLIENT_COMMAND = "client_command"
+    CLIENT_SUB_WORKER_COMMAND = "client_sub_worker_command"
+    MULTI_PROCESS_EXECUTOR = "multi_process_executor"
+    SIMULATOR_RUNNER = "simulator_runner"
+
+
+class CellChannelTopic:
+
+    Register = "register"
+    Quit = "quit"
+    GET_TASK = "get_task"
+    SUBMIT_RESULT = "submit_result"
+    HEART_BEAT = "hear_beat"
+    EXECUTE_RESULT = "execute_result"
+    FIRE_EVENT = "fire_event"
+
+    SIMULATOR_WORKER_INIT = "simulator_worker_init"
+
+
 ERROR_MSG_PREFIX = "NVFLARE_ERROR"
+
+
+class CellMessageHeaderKeys:
+
+    CLIENT_NAME = "client_name"
+    CLIENT_IP = "client_ip"
+    PROJECT_NAME = "project_name"
+    TOKEN = "token"
+    SSID = "ssid"
+    UNAUTHENTICATED = "unauthenticated"
+    JOB_ID = "job_id"
+    JOB_IDS = "job_ids"
+    MESSAGE = "message"
+    ABORT_JOBS = "abort_jobs"
+
+
+def new_cell_message(headers: dict, payload=None):
+    msg_headers = Headers()
+    if headers:
+        msg_headers.update(headers)
+    return Message(msg_headers, payload)

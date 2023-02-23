@@ -29,6 +29,7 @@ from .api_spec import (
     AuthorizationError,
     ClientInfo,
     InternalError,
+    InvalidArgumentError,
     InvalidJobDefinition,
     JobInfo,
     JobNotDone,
@@ -260,13 +261,17 @@ class Session(SessionSpec):
             raise InternalError("server failed to return job meta")
         return job_meta
 
-    def list_jobs(self, detailed: bool = False, all: bool = False) -> List[dict]:
+    def list_jobs(
+        self, detailed: bool = False, all: bool = False, limit: int = 5, id_prefix: str = None, name_prefix: str = None
+    ) -> List[dict]:
         """Get the job info from the server
 
         Args:
             detailed: True to get the detailed information for each job, False by default
             all: True to get jobs submitted by all users (default is to only list jobs submitted by the same user)
-
+            limit: maximum number of jobs to show, with 0 to show all (defaults to 5)
+            id_prefix: if included, only return jobs with the beginning of the job ID matching the id_prefix
+            name_prefix: if included, only return jobs with the beginning of the job name matching the name_prefix
         Returns: a dict of job meta data
 
         """
@@ -275,6 +280,18 @@ class Session(SessionSpec):
             command = command + " -d"
         if all:
             command = command + " -a"
+        if limit:
+            command = command + " -m " + str(limit)
+        if name_prefix:
+            if not isinstance(name_prefix, str):
+                raise InvalidArgumentError("name_prefix must be str but got {}.".format(type(name_prefix)))
+            else:
+                command = command + " -n " + name_prefix
+        if id_prefix:
+            if not isinstance(id_prefix, str):
+                raise InvalidArgumentError("id_prefix must be str but got {}.".format(type(id_prefix)))
+            else:
+                command = command + " " + id_prefix
         result = self._do_command(command)
         meta = result[ResultKey.META]
         jobs_list = meta.get(MetaKey.JOBS, None)
@@ -451,7 +468,7 @@ def new_insecure_session(startup_kit_location: str, debug: bool = False, timeout
     The username for insecure session is always "admin"
 
     """
-    session = Session(startup_path=startup_kit_location, secure_mode=False, debug=debug)
+    session = Session(username="admin", startup_path=startup_kit_location, secure_mode=False, debug=debug)
 
     session.try_connect(timeout)
     return session

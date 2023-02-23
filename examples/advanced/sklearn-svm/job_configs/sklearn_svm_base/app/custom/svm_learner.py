@@ -12,16 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional
+from typing import Optional, Tuple
 
 from sklearn.metrics import roc_auc_score
 from sklearn.svm import SVC
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_opt.sklearn.sklearner import SKLearner
+from nvflare.app_common.abstract.learner_spec import Learner
+from nvflare.app_opt.sklearn.data_loader import load_data_for_range
 
 
-class SVMLearner(SKLearner):
+class SVMLearner(Learner):
     def __init__(
         self,
         data_path: str,
@@ -30,7 +31,13 @@ class SVMLearner(SKLearner):
         valid_start: int,
         valid_end: int,
     ):
-        super().__init__(data_path, train_start, train_end, valid_start, valid_end)
+        super().__init__()
+        self.data_path = data_path
+        self.train_start = train_start
+        self.train_end = train_end
+        self.valid_start = valid_start
+        self.valid_end = valid_end
+
         self.train_data = None
         self.valid_data = None
         self.n_samples = None
@@ -38,8 +45,12 @@ class SVMLearner(SKLearner):
         self.kernel = None
         self.params = {}
 
+    def load_data(self) -> dict:
+        train_data = load_data_for_range(self.data_path, self.train_start, self.train_end)
+        valid_data = load_data_for_range(self.data_path, self.valid_start, self.valid_end)
+        return {"train": train_data, "valid": valid_data}
+
     def initialize(self, fl_ctx: FLContext):
-        self.fl_ctx = fl_ctx
         data = self.load_data()
         self.train_data = data["train"]
         self.valid_data = data["valid"]
@@ -48,7 +59,7 @@ class SVMLearner(SKLearner):
         self.n_samples = data["train"][-1]
         # model will be created after receiving global parameter of kernel
 
-    def train(self, curr_round: int, global_param: Optional[dict] = None) -> dict:
+    def train(self, curr_round: int, global_param: Optional[dict], fl_ctx: FLContext) -> Tuple[dict, dict]:
         if curr_round == 0:
             # only perform training on the first round
             (x_train, y_train, train_size) = self.train_data
@@ -62,10 +73,10 @@ class SVMLearner(SKLearner):
             local_support_y = y_train[index]
             self.params = {"support_x": local_support_x, "support_y": local_support_y}
         elif curr_round > 1:
-            self.system_panic("Federated SVM only performs training for one round, system exiting.", self.fl_ctx)
+            self.system_panic("Federated SVM only performs training for one round, system exiting.", fl_ctx)
         return self.params, self.svm
 
-    def evaluate(self, curr_round: int, global_param: Optional[dict] = None) -> dict:
+    def validate(self, curr_round: int, global_param: Optional[dict], fl_ctx: FLContext) -> Tuple[dict, dict]:
         # local validation with global support vectors
         # fit a standalone SVM with the global support vectors
         svm_global = SVC(kernel=self.kernel)
@@ -76,11 +87,12 @@ class SVMLearner(SKLearner):
         (x_valid, y_valid, valid_size) = self.valid_data
         y_pred = svm_global.predict(x_valid)
         auc = roc_auc_score(y_valid, y_pred)
+        self.log_info(fl_ctx, f"AUC {auc:.4f}")
         metrics = {"AUC": auc}
         return metrics, svm_global
 
-    def finalize(self) -> None:
+    def finalize(self, fl_ctx: FLContext) -> None:
         # freeing resources in finalize
         del self.train_data
         del self.valid_data
-        self.log_info(self.fl_ctx, "Freed training resources")
+        self.log_info(fl_ctx, "Freed training resources")
