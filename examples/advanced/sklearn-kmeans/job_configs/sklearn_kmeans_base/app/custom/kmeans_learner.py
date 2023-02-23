@@ -105,6 +105,7 @@ class KMeansLearner(Learner):
         (x_valid, y_valid, valid_size) = self.valid_data
         y_pred = kmeans_global.predict(x_valid)
         homo = homogeneity_score(y_valid, y_pred)
+        self.log_info(fl_ctx, f"Homogeneity {homo:.4f}")
         metrics = {"Homogeneity": homo}
         return metrics, kmeans_global
 
