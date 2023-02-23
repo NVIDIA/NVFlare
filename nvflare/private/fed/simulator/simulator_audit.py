@@ -12,11 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from nvflare.fuel.sec.audit import Auditor
 
-class SimulatorConstants:
 
-    JOB_NAME = "simulate_job"
-    CLIENT = "client"
-    CLIENT_CONFIG = "client_config"
-    DEPLOY_ARGS = "deploy_args"
-    BUILD_CTX = "build_ctx"
+class SimulatorAuditor(Auditor):
+    def __init__(self):
+        pass
+
+    def add_event(self, user: str, action: str, ref: str = "", msg: str = "") -> str:
+        pass
+
+    def add_job_event(
+        self, job_id: str, scope_name: str = "", task_name: str = "", task_id: str = "", ref: str = "", msg: str = ""
+    ) -> str:
+        pass
+
+    def close(self):
+        pass
