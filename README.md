@@ -25,7 +25,7 @@ pip install nvflare
 ### branches
 * The [dev](https://github.com/NVIDIA/NVFlare/tree/dev) branch is the default (unstable) development branch
 * The [main](https://github.com/NVIDIA/NVFlare/tree/main) branch is the stable branch, reflect the latest release
-* The 2.0, 2.1 2.2 are the branches for each major release. 
+* The 2.0, 2.1 2.2, 2.3 are the branches for each major release. 
 
 ## Quick Start
 The quick start guide means to help the user get FLARE up & running quickly without introducing any advanced concepts. For more details, refer to [Getting Started](https://nvflare.readthedocs.io/en/main/getting_started.html). 
