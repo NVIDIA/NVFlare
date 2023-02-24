@@ -1,5 +1,48 @@
 .. _getting_started:
 
+###########
+Quick Start
+###########
+
+
+**Install NVFLARE**
+======================
+
+.. code-block:: shell
+
+  $ python3 -m pip install nvflare
+
+Clone NVFLARE repo to get examples, switch main branch (latest stable branch)
+
+.. code-block:: shell
+
+  $ git clone https://github.com/NVIDIA/NVFlare.git
+  $ cd NVFlare
+  $ git switch main
+
+
+Note on branches
+
+* The [dev](https://github.com/NVIDIA/NVFlare/tree/dev) branch is the default (unstable) development branch
+
+* The [main](https://github.com/NVIDIA/NVFlare/tree/main) branch is the stable branch, reflect the latest release
+
+* The 2.0, 2.1, 2.2 and 2.3 etc. are the branches for each major release and minor patches
+
+
+**Quick Start with Simulator**
+==============================
+
+
+.. code-block:: shell
+
+   nvflare simulator -w /tmp/nvflare/hello-numpy-sag -n 2 -t 2 examples/hello-world/hello-numpy-sag
+
+Now you can watch the simulator run two clients (n=2) with two threads (t=2)
+and logs are saved in the `/tmp/nvflare/hello-numpy-sag` workspace.
+
+
+
 ###############
 Getting Started
 ###############

@@ -1,87 +1,67 @@
 **NV**IDIA **F**ederated **L**earning **A**pplication **R**untime **E**nvironment
 
+[NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) (NVIDIA Federated Learning Application Runtime Environment)
+is a domain-agnostic, open-source, extensible SDK that allows researchers and data scientists to adaptexisting 
+ML/DL workflows (PyTorch, RAPIDS, Nemo, TensorFlow) to a federated paradigm; and enables platform developers to build a 
+secure, privacy preserving offering for a distributed multi-party collaboration. 
+Our mission: _Bring privacy preserved compute and machine learning to data in a federated setting, keep it simple and production ready_
 
-[NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) enables researchers to collaborate and build AI models without sharing private data. 
+NVIDIA FLARE is built on a componentized architecture that gives you the flexibility to take federated learning workloads 
+from research and simulation to real-world production deployment. Some of the key components of this architecture include:
 
-NVIDIA FLARE is a standalone python library designed to enable federated learning amongst different parties using their local secure protected data for client-side training, at the same time it includes capabilities to coordinate and exchange progressing of results across all sites to achieve better global model while preserving data privacy. The participating clients can be in any part of the world. 
+* [FL Simulator](https://nvflare.readthedocs.io/en/main/user_guide/fl_simulator.html) for rapid development and prototyping
 
-NVIDIA FLARE builds on a flexible and modular architecture and is abstracted through APIs allowing developers & researchers to customize their implementation of functional learning components in a Federated Learning paradigm. 
+Different from other Federated learning framework, the FL simulator not only can support single thread debugging and multi-thread simulation,
+the code used in simulator can be directly deployed to real-world production without change. 
 
-Learn more - [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html).
+* [FLARE Dashboard UI](https://nvflare.readthedocs.io/en/main/user_guide/dashboard_ui.html) for simplified project management and deployment  
 
+Enable user to easily manager Federated Learning project and distributed start up package to collaborating organizations. 
 
-## Installation
+* Reference FL algorithms (e.g., FedAvg, FedProx) and workflows (e.g., Scatter and Gather, Cyclic)
 
-To install [the current release](https://pypi.org/project/nvflare), you can simply run:
+NVFLARE has various built-in workflows that supports Federated Learning (horizontal, vertical, traditional machine learning) 
+and Federated Statistics. You can find all of them in [examples](https://github.com/NVIDIA/NVFlare/tree/dev/examples)
 
-```bash
-pip install nvflare
-```
+* Privacy preservation with differential privacy, homomorphic encryption, and more
+
+ NVFLARE control data privacy in various ways: privacy filter, [privacy policy management](https://nvflare.readthedocs.io/en/main/user_guide/site_policy_management.html), 
+ privacy algorithms and tools 
+
+* Management tools for secure provisioning and deployment, orchestration, and management
+
+NVFLARE has provided a set of tools to help manage the provision and deployment (both on cloud and on premise) system to production.  
+
+* Specification-based API for extensibility
 
 ## Quick Start
 
- * [Getting Started](https://nvflare.readthedocs.io/en/main/getting_started.html)
- * [Examples](https://github.com/NVIDIA/NVFlare/tree/main/examples/)
+#### Install NVFLARE
+```
+$ python3 -m pip install nvflare
+```
+Clone NVFLARE repo to get examples, switch main branch (latest stable branch)
+```
+$ git clone https://github.com/NVIDIA/NVFlare.git
+$ cd NVFlare
+$ git switch main
+```
 
-## Release Highlights
+#### **Quick Start with Simulator**
 
-### Release 2.2.1
+```
+nvflare simulator -w /tmp/nvflare/hello-numpy-sag -n 2 -t 2 examples/hello-world/hello-numpy-sag
+```
+Now you can watch the simulator run two clients (n=2) with two threads (t=2) and logs are saved in the /tmp/nvflare/hello-numpy-sag workspace.
 
-* [FL Simulator]( https://nvflare.readthedocs.io/en/main/user_guide/fl_simulator.html) -- 
-  A lightweight simulator of a running NVFLARE FL deployment. It allows researchers to test and debug their application without provisioning 
- a real project. The FL jobs run on a server and multiple clients in the same process but 
- in a similar way to how it would run in a real deployment. Researchers can quickly 
- build out new components and jobs that can then be directly used in a real production deployment.
- 
+To learn more about NVFLARE and understand the concepts, details of above commands, examples, you can look into the following topics [Getting Started](https://nvflare.readthedocs.io/en/main/getting_started.html) and  [Examples](https://github.com/NVIDIA/NVFlare/tree/main/examples/)
 
-* [FLARE Dashboard](https://nvflare.readthedocs.io/en/main/user_guide/dashboard_ui.html)
-  NVFLARE's web UI. In its initial incarnation, the Flare Dashboard is used to help
-  project setup, user registration, startup kits distribution and dynamic provisions.
-  Dashboard setup and apis can be found [here](https://nvflare.readthedocs.io/en/main/user_guide/dashboard_api.html)
-
-* [Site-policy management](https://nvflare.readthedocs.io/en/main/user_guide/site_policy_management.html) -- 
-  Prior to NVFLARE 2.2, all policies (resource management, authorization and privacy protection, logging configurations) 
-  can only be defined by the Project Admin during provision time; and authorization policies are centrally enforced by the FL Server.
-  NVFLARE 2.2 makes it possible for each site to define its own policies in the following areas:
-  * Resource Management: the configuration of system resources that are solely the decisions of local IT.
-  * Authorization Policy: local authorization policy that determines what a user can or cannot do on the local site. see related [Federated Authorization](https://nvflare.readthedocs.io/en/main/user_guide/federated_authorization.html)
-  * Privacy Policy: local policy that specifies what types of studies are allowed and how to add privacy protection to the learning results produced by the FL client on the local site.
-  * Logging Configuration: each site can now define its own logging configuration for system generated log messages.
-  
-* [Federated XGBoost](<https://github.com/NVIDIA/NVFlare/tree/main/examples/xgboost>) --
-  We developed federated XGBoost for data scientists to perform machine learning on tabular data with popular tree-based method. In this release, we provide several 
-  approaches for the horizontal federated XGBoost algorithms. 
-  * Histogram-based Collaboration -- leverages recently released (XGBoost 1.7.0) federated versions of open-source XGBoost histogram-based distributed training algorithms, achieving identical results as centralized training (trees trained on global data information).
-  * Tree-based Collaboration -- individual trees are independently trained on each client's local data without aggregating the global sample gradient histogram information. 
-  Trained trees are collected and passed to the server / other clients for aggregation and further boosting rounds.
-  
-* [Federated Statistics](<https://github.com/NVIDIA/NVFlare/tree/main/examples/federated_statistics>) -- 
-  built-in federated statistics operators that can generate global statistics based on local client side statistics. 
-  The results, for all features of all datasets at all sites as well as global aggregates, can be visualized via the visualization utility in the notebook.  
-
-* [MONAI Integration](<https://github.com/NVIDIA/NVFlare/tree/main/integration/monai/README.md>)
-  In 2.2 release, we provided two implementations by leveraging MONAI [Bundle](https://docs.monai.io/en/latest/bundle_intro.html).
-  * MONAI [ClientAlgo](https://docs.monai.io/en/latest/fl.html#monai.fl.client.ClientAlgo) Integration -- enable running MONAI bundles directly in a federated setting using NVFLARE
-  * MONAI [ClientAlgoStats](https://docs.monai.io/en/latest/fl.html#monai.fl.client.ClientAlgoStats) Integration -- through NVFLARE Federated Statistics we can generate, compare and visualize all clients' data statistics generated from MONAI summary statistics
-
-* Tools and Production Support
-  * [Improved POC command](https://nvflare.readthedocs.io/en/main/user_guide/poc_command.html) 
-  * [Dynamic Provision](https://nvflare.readthedocs.io/en/main/user_guide/dynamic_provisioning.html)
-  * [Docker Compose](https://nvflare.readthedocs.io/en/main/user_guide/docker_compose.html)
-  * [Preflight Check](https://nvflare.readthedocs.io/en/main/user_guide/preflight_check.html#nvidia-flare-preflight-check)
-
-    
-### Migrations tips 
-
-   To migrate from releases prior to 2.2.1, here are few notes that might help
-   [migrate to 2.2.1](docs/release_notes/2.2.1/migration_notes.md).
-
-### Related talks and publications
+## Related talks and publications
 
 For a list of talks, blogs, and publications related to NVIDIA FLARE, see [here](docs/publications_and_talks.md).
 
-## Third party license
+## License
 
-See 3rdParty folder for their license files.
-
+NVIDIA FLARE has Apache 2.0 license, as found in [LICENSE](https://github.com/NVIDIA/NVFlare/blob/dev/LICENSE) file 
+ 
 
