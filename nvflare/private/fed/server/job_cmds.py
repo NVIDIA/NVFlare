@@ -319,7 +319,7 @@ class JobCommandModule(CommandModule, CommandUtil):
                     conn.append_string("No jobs matching the specified criteria.")
                     return
 
-                filtered_jobs.sort(key=lambda job: job.meta.get(JobMetaKey.SUBMIT_TIME.value, 0.0))
+                filtered_jobs.sort(key=lambda job: job.meta.get(JobMetaKey.SUBMIT_TIME.value, 0.0), reverse=True)
 
                 if not parsed_args.a:
                     filtered_jobs = filtered_jobs[:max_jobs_listed]
