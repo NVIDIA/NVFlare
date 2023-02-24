@@ -46,7 +46,10 @@ from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor, EndpointState
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.stats_pool import StatsPoolManager
 
-_BULK_CHANNEL = "cellnet.bulk"
+_CHANNEL = "cellnet.channel"
+_TOPIC_BULK = "bulk"
+_TOPIC_BYE = "bye"
+
 _ONE_MB = 1024 * 1024
 
 
@@ -186,7 +189,7 @@ class _BulkSender:
         tms = [m.to_dict() for m in messages_to_send]
         bulk_msg = new_message(payload=tms)
         send_errs = self.cell.fire_and_forget(
-            channel=_BULK_CHANNEL, topic="bulk", targets=[self.target], message=bulk_msg
+            channel=_CHANNEL, topic=_TOPIC_BULK, targets=[self.target], message=bulk_msg
         )
         if send_errs[self.target]:
             self.logger.error(
@@ -381,7 +384,8 @@ class Cell(MessageReceiver, EndpointMonitor):
         self.adhoc_connector_lock = threading.Lock()
         self.root_change_lock = threading.Lock()
 
-        self.register_request_cb(channel=_BULK_CHANNEL, topic="*", cb=self._receive_bulk_message)
+        self.register_request_cb(channel=_CHANNEL, topic=_TOPIC_BULK, cb=self._receive_bulk_message)
+        self.register_request_cb(channel=_CHANNEL, topic=_TOPIC_BYE, cb=self._peer_goodbye)
 
         self.cleanup_waiter = None
         self.msg_stats_pool = StatsPoolManager.add_time_hist_pool(
@@ -761,6 +765,15 @@ class Cell(MessageReceiver, EndpointMonitor):
         if not self.running:
             return
 
+        # notify peers that I am gone
+        with self.agent_lock:
+            if self.agents:
+                targets = [peer_name for peer_name in self.agents.keys()]
+                self.logger.debug(f"broadcasting goodbye to {targets}")
+                self.broadcast_request(
+                    channel=_CHANNEL, topic=_TOPIC_BYE, targets=targets, request=new_message(), timeout=1.0
+                )
+
         self.logger.debug(f"{self.my_info.fqcn}: Closing Cell")
         self.running = False
         self.asked_to_stop = True
@@ -768,6 +781,7 @@ class Cell(MessageReceiver, EndpointMonitor):
         self.bulk_processor.join()
 
         try:
+            # we can now stop the communicator
             self.communicator.stop()
         except Exception as ex:
             self.logger.error(f"{self.my_info.fqcn}: error stopping Communicator: {ex}")
@@ -1176,6 +1190,24 @@ class Cell(MessageReceiver, EndpointMonitor):
                     self.bulk_senders[t] = sender
                 sender.queue_message(channel=channel, topic=topic, message=message)
                 self.logger.debug(f"{self.get_fqcn()}: queued msg for {t}")
+
+    def _peer_goodbye(self, request: Message):
+        peer_ep = request.get_prop(MessagePropKey.ENDPOINT)
+        if not peer_ep:
+            self.logger.error(f"{self.my_info.fqcn}: no endpoint prop in message")
+            return
+
+        assert isinstance(peer_ep, Endpoint)
+        with self.agent_lock:
+            self.logger.debug(f"{self.my_info.fqcn}: got goodbye from cell {peer_ep.name}")
+            ep = self.agents.pop(peer_ep.name, None)
+            if ep:
+                self.logger.debug(f"{self.my_info.fqcn}: removed agent for {peer_ep.name}")
+            else:
+                self.logger.debug(f"{self.my_info.fqcn}: agent for {peer_ep.name} is already gone")
+
+        # ack back
+        return new_message()
 
     def _receive_bulk_message(self, request: Message):
         target_msgs = request.payload
@@ -1747,7 +1779,7 @@ class Cell(MessageReceiver, EndpointMonitor):
 
     def get_sub_cell_names(self) -> (List[str], List[str]):
         """
-        Get call FQCNs of all subs, which are children or top-level client cells (if my cell is server).
+        Get cell FQCNs of all subs, which are children or top-level client cells (if my cell is server).
 
         Returns: fqcns of child cells, fqcns of top-level client cells
         """

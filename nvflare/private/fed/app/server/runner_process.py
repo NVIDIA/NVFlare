@@ -18,6 +18,7 @@ import argparse
 import logging
 import os
 import sys
+import threading
 
 from nvflare.apis.fl_constant import JobConstants
 from nvflare.apis.workspace import Workspace
@@ -28,6 +29,7 @@ from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger
+from nvflare.private.fed.app.utils import check_parent_alive
 from nvflare.private.fed.server.server_app_runner import ServerAppRunner
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
@@ -62,12 +64,19 @@ def main():
     args.log_config = None
     args.snapshot = kv_list.get("restore_snapshot")
 
+    # get parent process id
+    parent_pid = os.getppid()
+    stop_event = threading.Event()
     workspace = Workspace(root_dir=args.workspace, site_name="server")
     app_custom_folder = workspace.get_client_custom_dir()
     if os.path.isdir(app_custom_folder):
         sys.path.append(app_custom_folder)
 
     try:
+        # start parent process checking thread
+        thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
+        thread.start()
+
         os.chdir(args.workspace)
         fobs_initialize()
 
@@ -121,6 +130,7 @@ def main():
         finally:
             if deployer:
                 deployer.close()
+            stop_event.set()
             AuditService.close()
 
     except ConfigError as e:
