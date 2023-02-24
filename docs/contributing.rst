@@ -91,7 +91,7 @@ To build the docs, first make sure you have all requirements
 .. code:: bash
 
    python -m pip upgrade
-   python -m pip install -r requirements-dev.txt
+   python -m pip install -e .[doc]
 
 To build the docs, please run.
 

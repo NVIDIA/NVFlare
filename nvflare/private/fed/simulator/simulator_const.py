@@ -19,3 +19,4 @@ class SimulatorConstants:
     CLIENT = "client"
     CLIENT_CONFIG = "client_config"
     DEPLOY_ARGS = "deploy_args"
+    BUILD_CTX = "build_ctx"
