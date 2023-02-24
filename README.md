@@ -22,6 +22,11 @@ To install [the current release](https://pypi.org/project/nvflare), you can simp
 pip install nvflare
 ```
 
+### branches
+* The [dev](https://github.com/NVIDIA/NVFlare/tree/dev) branch is the default (unstable) development branch
+* The [main](https://github.com/NVIDIA/NVFlare/tree/main) branch is the stable branch, reflect the latest release
+* The 2.0, 2.1, 2.2 and 2.3 are the branches for each major release. 
+
 ## Quick Start
 The quick start guide means to help the user get FLARE up & running quickly without introducing any advanced concepts. For more details, refer to [Getting Started](https://nvflare.readthedocs.io/en/main/getting_started.html). 
 Since FLARE offers different modes of running the system, we only cover the simplest approaches here. This quick start guide uses the examples/hello-world/hello-numpy-sag as an example. You will find the details in the example's README.md file.
@@ -183,7 +188,7 @@ the startup kits from the UI.
   each file's digest.  Each folder has one signature file, which maps file names to signatures
   of all files inside that folder.  The verification is performed at deployment time. 
 
-* **Support client-site model initialization**
+* **Support client-side model initialization**
   Prior to FLARE 2.3.0, the model initialization is performed on the server-side.
   The model is either initialized via model file or custom model initiation code. Pre-defining a model file means to pre-generate and save the model file and then send over to the server.  
   Many users choose to run a custom model initialization code on server. But this, to some customers, could be a security risk.
