@@ -10,7 +10,7 @@ secure multiparty computation cryptographic technique that allows two parties ho
 of these sets in order to compute the intersection. In this scenario, neither party reveals anything to the counterparty
 except for the elements in the intersection.```
 
-![psi.png](psi.png)
+![psi.png](psi.jpg)
 
 ## What's the use cases for PSI?
 
@@ -45,6 +45,9 @@ We took the two-party direct communication PSI protocol and extended to Federate
 funneled via a central FL server. We supported multi-party PSI via pair-wise approach.
 
 ## How to use FLARE PSI operator ? 
+
+In current implementation, we only support the vertical learning use cases. The federated statistics use case will be 
+addressed in the future release. 
 
 The usage is really simple. 
 
@@ -93,7 +96,7 @@ These items could be user_ids or feature names depending on your use case.
 Here we specify the following components:
 
 * **_PSIExecutor_** : this is built FLARE PSI Executor. 
-* **_local_psi_** : local PSI component is the component user needs to write, here we called it "sample_psi". 
+* **_local_psi_** : local PSI component is the component user needs to write, here we called it "local_psi". 
 the local psi component require PSI Persistor, so can one save the resulting intersect to storage. here we implemented
 a file writer
 * **_FilePsiWriter_** : save the intersection to a file in workspace.  
