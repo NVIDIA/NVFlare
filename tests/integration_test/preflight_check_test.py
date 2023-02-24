@@ -94,31 +94,42 @@ def _filter_output(output):
             continue
         elif "killing dry run process" in line:
             continue
+        elif "killed dry run process" in line:
+            continue
         elif not line:
             continue
         lines.append(line)
     return lines
 
 
-def run_preflight_check_command_in_subprocess(package_path: str):
+def _run_preflight_check_command_in_subprocess(package_path: str):
     command = f"{sys.executable} -m {PREFLIGHT_CHECK_SCRIPT} -p {package_path}"
+    print(f"Executing command {command} in subprocess")
     output = subprocess.check_output(shlex.split(command))
     return output
 
 
-def run_preflight_check_command_in_pseudo_terminal(package_path: str):
+def _run_preflight_check_command_in_pseudo_terminal(package_path: str):
     command = f"{sys.executable} -m {PREFLIGHT_CHECK_SCRIPT} -p {package_path}"
+    print(f"Executing command {command} in pty")
 
     with BytesIO() as output:
 
         def read(fd):
-            data = os.read(fd, 8192 * 8192)
+            data = os.read(fd, 1024 * 1024 * 1024)
             output.write(data)
             return data
 
         pty.spawn(shlex.split(command), read)
 
         return output.getvalue()
+
+
+def _run_preflight_check_command(package_path: str, method: str = "subprocess"):
+    if method == "subprocess":
+        return _run_preflight_check_command_in_subprocess(package_path)
+    else:
+        return _run_preflight_check_command_in_pseudo_terminal(package_path)
 
 
 @pytest.fixture(
@@ -145,11 +156,14 @@ def setup_system(request):
 class TestPreflightCheck:
     def test_run_check_on_overseer(self, setup_system):
         site_launcher, is_dummy_overseer, _ = setup_system
-        # preflight-check on overseer
-        if is_dummy_overseer:
-            return
-        output = run_preflight_check_command_in_pseudo_terminal(package_path=site_launcher.overseer_properties.root_dir)
-        assert _filter_output(output) == OVERSEER_OUTPUT_PASSED.splitlines()
+        try:
+            # preflight-check on overseer
+            if is_dummy_overseer:
+                return
+            output = _run_preflight_check_command(package_path=site_launcher.overseer_properties.root_dir)
+            assert _filter_output(output) == OVERSEER_OUTPUT_PASSED.splitlines()
+        finally:
+            site_launcher.cleanup()
 
     def test_run_check_on_server_after_overseer_start(self, setup_system):
         site_launcher, is_dummy_overseer, _ = setup_system
@@ -158,7 +172,7 @@ class TestPreflightCheck:
                 site_launcher.start_overseer()
             # preflight-check on server
             for server_name, server_props in site_launcher.server_properties.items():
-                output = run_preflight_check_command_in_pseudo_terminal(package_path=server_props.root_dir)
+                output = _run_preflight_check_command(package_path=server_props.root_dir)
                 assert _filter_output(output) == SERVER_OUTPUT_PASSED.splitlines()
         finally:
             site_launcher.stop_all_sites()
@@ -169,7 +183,7 @@ class TestPreflightCheck:
         try:
             # preflight-check on server
             for server_name, server_props in site_launcher.server_properties.items():
-                output = run_preflight_check_command_in_pseudo_terminal(package_path=server_props.root_dir)
+                output = _run_preflight_check_command(package_path=server_props.root_dir)
                 if is_dummy_overseer:
                     assert _filter_output(output) == SERVER_OUTPUT_PASSED.splitlines()
                 else:
@@ -188,13 +202,15 @@ class TestPreflightCheck:
 
             # preflight-check on clients
             for client_name, client_props in site_launcher.client_properties.items():
-                output = run_preflight_check_command_in_pseudo_terminal(package_path=client_props.root_dir)
+                output = _run_preflight_check_command(package_path=client_props.root_dir)
                 assert _filter_output(output) == CLIENT_OUTPUT_PASSED.splitlines()
+        except Exception:
+            raise
         finally:
             site_launcher.stop_all_sites()
             site_launcher.cleanup()
 
-    def test_run_check_on_admin(self, setup_system):
+    def test_run_check_on_admin_console(self, setup_system):
         site_launcher, is_dummy_overseer, admin_folder_root = setup_system
         try:
             if not is_dummy_overseer:
@@ -202,9 +218,11 @@ class TestPreflightCheck:
             site_launcher.start_servers()
             time.sleep(SERVER_START_TIME)
 
-            # preflight-check on admin
-            output = run_preflight_check_command_in_pseudo_terminal(package_path=admin_folder_root)
+            # preflight-check on admin console
+            output = _run_preflight_check_command(package_path=admin_folder_root)
             assert _filter_output(output) == CLIENT_OUTPUT_PASSED.splitlines()
+        except Exception:
+            raise
         finally:
             site_launcher.stop_all_sites()
             site_launcher.cleanup()

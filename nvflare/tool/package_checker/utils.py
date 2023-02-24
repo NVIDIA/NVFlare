@@ -248,6 +248,7 @@ def run_command_in_subprocess(command):
         shlex.split(command),
         preexec_fn=os.setsid,
         env=new_env,
+        stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         universal_newlines=True,
