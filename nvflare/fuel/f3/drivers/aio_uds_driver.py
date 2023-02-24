@@ -86,13 +86,18 @@ class AioUdsDriver(BaseDriver):
     async def _uds_connect(self, socket_path: str):
         reader, writer = await asyncio.open_unix_connection(socket_path)
         await self._create_connection(reader, writer)
-        UdsDriver.remove_socket_file(socket_path)
 
     async def _uds_listen(self, socket_path: str):
+
+        if not UdsDriver.remove_socket_file(socket_path):
+            raise CommError(CommError.ERROR, f"Can't remove existing socket file: {socket_path}")
+
         self.server = await asyncio.start_unix_server(self._create_connection, socket_path)
-        async with self.server:
-            await self.server.serve_forever()
-        UdsDriver.remove_socket_file(socket_path)
+        try:
+            async with self.server:
+                await self.server.serve_forever()
+        finally:
+            UdsDriver.remove_socket_file(socket_path)
 
     async def _create_connection(self, reader, writer):
         conn = AioConnection(self.connector, self.aio_ctx, reader, writer)

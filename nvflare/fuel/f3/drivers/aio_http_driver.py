@@ -25,14 +25,13 @@ from nvflare.fuel.f3.drivers.aio_context import AioContext
 from nvflare.fuel.f3.drivers.base_driver import BaseDriver
 from nvflare.fuel.f3.drivers.driver import ConnectorInfo
 from nvflare.fuel.f3.drivers.driver_params import DriverCap, DriverParams
-from nvflare.fuel.f3.drivers.net_utils import get_tcp_urls
+from nvflare.fuel.f3.drivers.net_utils import MAX_FRAME_SIZE, get_tcp_urls
 from nvflare.fuel.f3.sfm.conn_manager import Mode
 from nvflare.fuel.hci.security import get_certificate_common_name
 
 log = logging.getLogger(__name__)
 
 THREAD_POOL_SIZE = 8
-MAX_MSG_SIZE = 2 * 1024 * 1024 * 1024  # 2GB
 
 
 class WsConnection(Connection):
@@ -156,13 +155,13 @@ class AioHttpDriver(BaseDriver):
             scheme = "wss"
         else:
             scheme = "ws"
-        async with websockets.connect(f"{scheme}://{host}:{port}", ssl=self.ssl_context, max_size=MAX_MSG_SIZE) as ws:
+        async with websockets.connect(f"{scheme}://{host}:{port}", ssl=self.ssl_context, max_size=MAX_FRAME_SIZE) as ws:
             await self._handler(ws)
 
     async def _async_listen(self, host, port):
         self.ssl_context = net_utils.get_ssl_context(self.connector.params, True)
 
-        async with websockets.serve(self._handler, host, port, ssl=self.ssl_context, max_size=MAX_MSG_SIZE):
+        async with websockets.serve(self._handler, host, port, ssl=self.ssl_context, max_size=MAX_FRAME_SIZE):
             await self.stop_event
 
     async def _handler(self, websocket):

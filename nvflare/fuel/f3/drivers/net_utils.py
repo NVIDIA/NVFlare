@@ -32,6 +32,11 @@ RANDOM_TRIES = 20
 BIND_TIME_OUT = 5
 SECURE_SCHEMES = {"https", "wss", "grpcs", "stcp", "satcp"}
 
+# GRPC can't handle frame size over 2G. So the limit is set to (2G-2M)
+MAX_FRAME_SIZE = 2 * 1024 * 1024 * 1024 - (2 * 1024 * 1024)
+MAX_HEADER_SIZE = 1024 * 1024
+MAX_PAYLOAD_SIZE = MAX_FRAME_SIZE - 16 - MAX_HEADER_SIZE
+
 
 def ssl_required(params: dict) -> bool:
     """Check if SSL is required"""
