@@ -84,6 +84,15 @@ class Communicator:
         """
         return self.conn_manager.find_endpoint(name)
 
+    def remove_endpoint(self, name: str):
+        """Remove endpoint and close all the connections associated with it
+
+        Args:
+            name: Endpoint name
+
+        """
+        return self.conn_manager.remove_endpoint(name)
+
     def send(self, endpoint: Endpoint, app_id: int, message: Message):
         """Send a message to endpoint for app_id, no response is expected
 
