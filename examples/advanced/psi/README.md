@@ -96,7 +96,7 @@ These items could be user_ids or feature names depending on your use case.
 Here we specify the following components:
 
 * **_PSIExecutor_** : this is built FLARE PSI Executor. 
-* **_local_psi_** : local PSI component is the component user needs to write, here we called it "sample_psi". 
+* **_local_psi_** : local PSI component is the component user needs to write, here we called it "local_psi". 
 the local psi component require PSI Persistor, so can one save the resulting intersect to storage. here we implemented
 a file writer
 * **_FilePsiWriter_** : save the intersection to a file in workspace.  
