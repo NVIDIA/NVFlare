@@ -50,7 +50,7 @@ nvflare simulator -w /tmp/nvflare/hello-numpy-sag -n 2 -t 2 examples/hello-world
 ```
 Now you can watch the simulator run two clients (n=2) with two threads (t=2) and logs are saved in the /tmp/nvflare/hello-numpy-sag workspace.
 
-#### **Quick start with POC mode**
+#### **Quick Start with POC Mode**
 
 Instead of using the simulator, you can simulate the real deployment with multiple processes via POC mode:
 ```shell
@@ -173,7 +173,7 @@ the startup kits from the UI.
   we expand the user support for cloud deployments in both Azure and AWS. 
 
 
-* **Python version Support**
+* **Python Version Support**
 
   Flare expand the python version support and dropped the Python 3.7 support, FLARE 2.3.0 will support 3.8, 3.9, 3.10
   
