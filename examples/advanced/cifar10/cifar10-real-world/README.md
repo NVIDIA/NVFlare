@@ -22,13 +22,13 @@ pip install -r ./requirements.txt
 
 Set `PYTHONPATH` to include custom files of this example:
 ```
-export PYTHONPATH=${PWD}
+export PYTHONPATH=${PWD}/..
 ```
 
 ## 2. Download the CIFAR-10 dataset 
 To speed up the following experiments, first download the [CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html) dataset:
 ```
-python3 ./pt/utils/cifar10_download_data.py
+python3 ../pt/utils/cifar10_download_data.py
 ```
 
 > **_NOTE:_** This is important for running multitask experiments or running multiple clients on the same machine.
