@@ -215,6 +215,7 @@ the startup kits from the UI.
 
 
 * **Vertical Learning**
+
   * **Federated Private Set Intersection (PSI)**
   In order to support vertical learning use cases such as secure user-id matching and feature 
   over-lapping discovery, we have developed a multi-party private set intersection (PSI) operator 
