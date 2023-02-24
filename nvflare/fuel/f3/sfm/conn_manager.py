@@ -149,10 +149,23 @@ class ConnManager(ConnMonitor):
 
         sfm_endpoint = self.sfm_endpoints.get(name)
         if not sfm_endpoint:
-            log.debug("Endpoint {name} doesn't exist")
+            log.debug(f"Endpoint {name} doesn't exist")
             return None
 
         return sfm_endpoint.endpoint
+
+    def remove_endpoint(self, name: str):
+
+        sfm_endpoint = self.sfm_endpoints.get(name)
+        if not sfm_endpoint:
+            log.debug(f"Endpoint {name} doesn't exist or already removed")
+            return
+
+        for sfm_conn in sfm_endpoint.connections:
+            sfm_conn.conn.close()
+
+        self.sfm_endpoints.pop(name)
+        log.debug(f"Endpoint {name} is removed")
 
     def get_connections(self, name: str) -> Optional[List[SfmConnection]]:
 

@@ -24,7 +24,7 @@
   "components": [
     {
       "id": "prostate-learner",
-      "path": "pt.learners.supervised_monai_prostate_learner.SupervisedMonaiProstateLearner",
+      "path": "learners.supervised_monai_prostate_learner.SupervisedMonaiProstateLearner",
       "args": {
         "train_config_filename": "config_train.json",
         "aggregation_epochs": 1

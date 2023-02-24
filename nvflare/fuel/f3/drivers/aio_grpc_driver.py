@@ -34,13 +34,11 @@ from nvflare.fuel.f3.drivers.grpc.streamer_pb2_grpc import (
 from .base_driver import BaseDriver
 from .driver_params import DriverCap, DriverParams
 from .grpc.streamer_pb2 import Frame
-from .net_utils import get_address, get_tcp_urls, ssl_required
-
-MAX_MSG_SIZE = 1024 * 1024 * 1024  # 1G
+from .net_utils import MAX_FRAME_SIZE, get_address, get_tcp_urls, ssl_required
 
 GRPC_DEFAULT_OPTIONS = [
-    ("grpc.max_send_message_length", MAX_MSG_SIZE),
-    ("grpc.max_receive_message_length", MAX_MSG_SIZE),
+    ("grpc.max_send_message_length", MAX_FRAME_SIZE),
+    ("grpc.max_receive_message_length", MAX_FRAME_SIZE),
 ]
 
 
