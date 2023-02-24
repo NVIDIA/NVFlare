@@ -20,12 +20,11 @@ from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.connection import BytesAlike, Connection
 from nvflare.fuel.f3.drivers.driver import ConnectorInfo
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.f3.drivers.net_utils import MAX_FRAME_SIZE
 from nvflare.fuel.f3.sfm.prefix import PREFIX_LEN, Prefix
 from nvflare.fuel.hci.security import get_certificate_common_name
 
 log = logging.getLogger(__name__)
-
-MAX_FRAME_SIZE = 1024 * 1024 * 1024
 
 
 class SocketConnection(Connection):

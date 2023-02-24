@@ -13,12 +13,13 @@
 # limitations under the License.
 import logging
 
+from nvflare.fuel.f3.drivers.net_utils import MAX_PAYLOAD_SIZE
 from nvflare.fuel.utils.config_service import ConfigService
 
 _comm_config_files = ["comm_config.json", "comm_config.json.default"]
 
 
-DEFAULT_MAX_MSG_SIZE = 1000 * 1024 * 1024  # 1000M
+DEFAULT_MAX_MSG_SIZE = MAX_PAYLOAD_SIZE
 
 
 class VarName:
