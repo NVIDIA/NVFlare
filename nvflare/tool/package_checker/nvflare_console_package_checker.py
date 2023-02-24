@@ -24,3 +24,6 @@ class NVFlareConsolePackageChecker(ClientPackageChecker):
 
     def get_dry_run_command(self) -> str:
         return os.path.join(self.package_path, "startup", "fl_admin.sh")
+
+    def get_dry_run_inputs(self):
+        return os.path.basename(os.path.normpath(self.package_path))

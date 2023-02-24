@@ -53,7 +53,7 @@ def check_packages(args):
         if ret_code == 1:
             p.stop_dry_run(force=False)
         elif ret_code == 2:
-            p.stop_dry_run()
+            p.stop_dry_run(force=True)
 
 
 def main():

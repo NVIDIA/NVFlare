@@ -52,6 +52,6 @@ class ClientPackageChecker(PackageChecker):
         command = (
             f"{sys.executable} -m {CLIENT_SCRIPT}"
             f" -m {self.package_path} -s {self.NVF_CONFIG}"
-            " --set secure_train=false config_folder=config"
+            " --set secure_train=true config_folder=config"
         )
         return command

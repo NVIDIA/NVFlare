@@ -127,6 +127,11 @@ case $BUILD_TYPE in
         integration_test "auth"
         ;;
 
+    preflight)
+        echo "Run preflight-check tests..."
+        integration_test "preflight"
+        ;;
+
     *)
         echo "ERROR: unknown parameter: $BUILD_TYPE"
         ;;
