@@ -10,7 +10,7 @@ secure multiparty computation cryptographic technique that allows two parties ho
 of these sets in order to compute the intersection. In this scenario, neither party reveals anything to the counterparty
 except for the elements in the intersection.```
 
-![psi.png](psi.png)
+![psi.png](psi.jpg)
 
 ## What's the use cases for PSI?
 
