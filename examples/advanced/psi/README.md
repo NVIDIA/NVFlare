@@ -46,6 +46,9 @@ funneled via a central FL server. We supported multi-party PSI via pair-wise app
 
 ## How to use FLARE PSI operator ? 
 
+In current implementation, we only support the vertical learning use cases. The federated statistics use case will be 
+addressed in the future release. 
+
 The usage is really simple. 
 
 * Step 1: user needs to implement the PSI interface where the client side's items need to be loaded.

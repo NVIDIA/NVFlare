@@ -77,7 +77,7 @@ $ nvflare poc --stop
 
 Before you work in production mode, you need to first **provision**: a process to generate **startup kit**.
 Startup kits are set of start scripts, configuration and certificates associated with different user, sites, server.
-In this quick guide, we only show None-HA (non high availability mode), we will only have one FL server.
+In this quick guide, we only show Non-HA (Non-high availability mode), we will only have one FL server.
 
 #### **provision**
 <details><summary>Provision via CLI</summary>
@@ -175,7 +175,7 @@ the startup kits from the UI.
   
   To add an improved version of Admin API to make it easier to use in notebook env. The current admin APIs still work.
   we potentially could deprecate the old Admin API in the future. FLARE API currently support selected commands of admin APIs
-  For details of the Flare API, you can check [this notebook](https://github.com/NVIDIA/NVFlare/blob/dev/examples/tutorial/flare_api.ipynb)
+  For details of the Flare API, you can check [this notebook](https://github.com/NVIDIA/NVFlare/blob/dev/examples/tutorial/flare_api.ipynb).
   If you consider to migrating the existing Admin API to this new API, there is the [migration guide](https://nvflare.readthedocs.io/en/dev/real_world_fl/migrating_to_flare_api.html)
 
 * **Sign custom code**
@@ -201,20 +201,29 @@ the startup kits from the UI.
   * XGBoost Random Forest
 
 * **Vertical Learning**
-  * **Private-Set Intersection** -- support multi-party private set intersection 
+  * **Federated Private Set Intersection (PSI)**
+  In order to support vertical learning use cases such as secure user-id matching and feature 
+  over-lapping discovery, we have developed a multi-party private set intersection (PSI) operator 
+  that allows for the secure discovery of data intersections. Our approach leverages OpenMined's two-party
+  [Private Set Intersection Cardinality protocol](https://github.com/OpenMined/PSI), which is based on ECDH and Bloom Filters, and we have 
+  made this protocol available for multi-party use. More information on our approach and how to use the
+  PSI operator can be found in the [PSI Example](https://github.com/NVIDIA/NVFlare/blob/dev/examples/advanced/psi/README.md). 
+  It is worth noting that PSI is used as a pre-training step in the split learning example, which can be found in this 
+  [notebook](https://github.com/NVIDIA/NVFlare/blob/dev/examples/tutorial/vertical_federated_learning/cifar10-splitnn/cifar10_split_learning.ipynb).
+  
   * **Split-Learning** 
 
 * **Research Area**
   * FedSM 
-  * Data privacy detection tool
+  * Data privacy risk detection tool
 
 * **FLARE Communication**
   * we laid some ground work in FLARE communication layer. The new communication will be ready in next release.   
   
     
 ### Migrations tips
-   [migrate to 2.2.1](docs/release_notes/2.2.1/migration_notes.md).
-   [migrate to 2.3.0](docs/release_notes/2.3.0/migration_notes.md).
+   * [migrate to 2.2.1](docs/release_notes/2.2.1/migration_notes.md).
+   * [migrate to 2.3.0](docs/release_notes/2.3.0/migration_notes.md).
 
 
 ### Related talks and publications
