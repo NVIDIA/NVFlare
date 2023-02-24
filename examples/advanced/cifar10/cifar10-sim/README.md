@@ -7,34 +7,27 @@ and [SCAFFOLD](https://arxiv.org/abs/1910.06378) algorithms using NVFlare's FL s
 For instructions of how to run CIFAR-10 in real-world deployment settings, 
 see the example on ["Real-world Federated Learning with CIFAR-10"](../cifar10-real-world/README.md).
 
-## (Optional) 1. Set up a virtual environment
-```
-python3 -m pip install --user --upgrade pip
-python3 -m pip install --user virtualenv
-```
-(If needed) make all shell scripts executable using
-```
-find . -name ".sh" -exec chmod +x {} \;
-```
-initialize virtual environment.
-```
-source ./virtualenv/set_env.sh
-```
-install required packages for training
+## 1. Install requirements
+
+Install required packages for training
 ```
 pip install --upgrade pip
-pip install -r ./virtualenv/min-requirements.txt
+pip install -r ./requirements.txt
 ```
 (optional) if you would like to plot the TensorBoard event files as shown below, please also install
 ```
-pip install -r ./virtualenv/plot-requirements.txt
+pip install -r ./figs/requirements.txt
 ```
+
+> **_NOTE:_**  We recommend either using a containerized deployment or virtual environment, 
+> please refer to [getting started](https://nvflare.readthedocs.io/en/latest/getting_started.html).
+
 Set `PYTHONPATH` to include custom files of this example:
 ```
 export PYTHONPATH=${PWD}/..
 ```
 
-### 2. Download the CIFAR-10 dataset 
+## 2. Download the CIFAR-10 dataset 
 To speed up the following experiments, first download the [CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html) dataset:
 ```
 python3 ../pt/utils/cifar10_download_data.py
@@ -119,7 +112,7 @@ Let's summarize the result of the experiments run above. First, we will compare 
 the global models for different settings. In this example, all clients compute their validation scores using the
 same CIFAR-10 test set. The plotting script used for the below graphs is in 
 [./figs/plot_tensorboard_events.py](./figs/plot_tensorboard_events.py) 
-(please install [./virtualenv/plot-requirements.txt](./virtualenv/plot-requirements.txt)).
+(please install [./figs/requirements.txt](./figs/requirements.txt)).
 
 ### 4.1 Central vs. FedAvg
 With a data split using `alpha=1.0`, i.e. a non-heterogeneous split, we achieve the following final validation scores.

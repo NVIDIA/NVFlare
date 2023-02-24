@@ -41,7 +41,7 @@ import json
 import os
 
 import numpy as np
-from cifar10_data_utils import get_site_class_summary, load_cifar10_data
+from pt.utils.cifar10_data_utils import get_site_class_summary, load_cifar10_data
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
@@ -57,7 +57,9 @@ class Cifar10DataSplitter(FLComponent):
         self.seed = seed
 
         if self.split_dir is None:
-            raise ValueError("You need to define a valid `split_dir` when splitting the data.")
+            raise ValueError("You need to define a valid `split_dir` for splitting the data.")
+        if not os.path.isabs(self.split_dir):
+            raise ValueError("`split_dir` needs to be absolute path.")
         if alpha < 0.0:
             raise ValueError(f"Alpha should be larger or equal 0.0 but was" f" {alpha}!")
 

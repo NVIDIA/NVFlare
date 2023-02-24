@@ -55,6 +55,8 @@ def run_provision_command(project_yaml: str, workspace: str):
 
 def run_command_in_subprocess(command):
     new_env = os.environ.copy()
+    python_path = ":".join(sys.path)[1:]  # strip leading colon
+    new_env["PYTHONPATH"] = python_path
     process = subprocess.Popen(
         shlex.split(command),
         preexec_fn=os.setsid,
@@ -238,3 +240,50 @@ def run_admin_api_tests(admin_api: FLAdminAPI):
 
     print("\n" + "=" * 50)
     print("Finished with admin commands testing through FLAdminAPI.")
+
+
+def _replace_meta_json(meta_json_path: str):
+    with open(meta_json_path, "r+") as f:
+        job_meta = json.load(f)
+        job_meta.pop("resource_spec")
+        job_meta["min_clients"] = 2
+        f.seek(0)
+        json.dump(job_meta, f, indent=4)
+        f.truncate()
+
+
+def _replace_config_fed_server(server_json_path: str):
+    with open(server_json_path, "r+") as f:
+        config_fed_server = json.load(f)
+        config_fed_server["num_rounds"] = 2
+        config_fed_server["min_clients"] = 2
+        config_fed_server["TRAIN_SPLIT_ROOT"] = "/tmp/nvflare/test_data"
+        f.seek(0)
+        json.dump(config_fed_server, f, indent=4)
+        f.truncate()
+
+
+def _replace_config_fed_client(client_json_path: str):
+    with open(client_json_path, "r+") as f:
+        config_fed_client = json.load(f)
+        config_fed_client["TRAIN_SPLIT_ROOT"] = "/tmp/nvflare/test_data"
+        f.seek(0)
+        json.dump(config_fed_client, f, indent=4)
+        f.truncate()
+
+
+def simplify_job(job_folder_path: str, postfix: str = "_copy"):
+    new_job_folder_path = job_folder_path + postfix
+    shutil.copytree(job_folder_path, new_job_folder_path, dirs_exist_ok=True)
+
+    # update meta.json
+    _replace_meta_json(meta_json_path=os.path.join(new_job_folder_path, "meta.json"))
+
+    for root, dirs, files in os.walk(new_job_folder_path):
+        for file in files:
+            if file == "config_fed_server.json":
+                # set the num_rounds and TRAIN_SPLIT_ROOT in config_fed_server.json
+                _replace_config_fed_server(server_json_path=os.path.join(root, file))
+            elif file == "config_fed_client.json":
+                # set TRAIN_SPLIT_ROOT in config_fed_client.json
+                _replace_config_fed_client(client_json_path=os.path.join(root, file))

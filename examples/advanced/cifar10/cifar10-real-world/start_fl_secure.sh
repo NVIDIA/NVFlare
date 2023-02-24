@@ -11,7 +11,7 @@ n_clients=$1
 
 if test -z "${n_clients}"
 then
-      echo "Usage: ./run_secure.sh [n_clients], e.g. ./run_secure.sh 8"
+      echo "Usage: ./start_fl_secure.sh [n_clients], e.g. ./start_fl_secure.sh 8"
       exit 1
 fi
 
