@@ -176,9 +176,8 @@ the startup kits from the UI.
 
   Flare expand the python version support and dropped the Python 3.7 support, FLARE 2.3.0 will support 3.8, 3.9, 3.10
   
-* **Flare API** 
-  
-  To add an improved version of Admin API to make it easier to use in notebook env. The current admin APIs still work.
+* **Flare API**
+  We introduce an improved version of Admin API to make it easier to use in notebook env. The current admin APIs still work.
   we potentially could deprecate the old Admin API in the future. FLARE API currently support selected commands of admin APIs
   For details of the Flare API, you can check [this notebook](https://github.com/NVIDIA/NVFlare/blob/dev/examples/tutorial/flare_api.ipynb).
   If you consider to migrating the existing Admin API to this new API, there is the [migration guide](https://nvflare.readthedocs.io/en/dev/real_world_fl/migrating_to_flare_api.html)
