@@ -121,7 +121,7 @@ def main():
             print("The client could not register to server. ")
             raise RuntimeError("Login failed.")
 
-        federated_client.start_heartbeat()
+        federated_client.start_heartbeat(interval=kv_list.get("heart_beat_interval", 10.0))
 
         admin_agent = create_admin_agent(
             deployer.req_processors,
