@@ -68,8 +68,6 @@ class PTFileFedSMModelPersistor(PTFileModelPersistor):
         self.log_info(fl_ctx, "FedSM model persistor initialized")
         super()._initialize(fl_ctx=fl_ctx)
 
-        self.best_ckpt_save_path_global = os.path.join(self.log_dir, "global_" + self.best_global_model_file_name)
-        self.best_ckpt_save_path_select = os.path.join(self.log_dir, "select_" + self.best_global_model_file_name)
         # First convert str model description to model
         if isinstance(self.model_selector, str):
             # treat it as model component ID
@@ -183,19 +181,17 @@ class PTFileFedSMModelPersistor(PTFileModelPersistor):
     def handle_event(self, event: str, fl_ctx: FLContext):
         if event == EventType.START_RUN:
             self._initialize(fl_ctx)
-        elif event == "fedsm_best_global_model_available":
-            # save the current model as the best model!
-            self.save_model_file_global(self.best_ckpt_save_path_global)
-        elif event == "fedsm_best_select_model_available":
-            # save the current model as the best model!
-            self.save_model_file_select(self.best_ckpt_save_path_select)
 
-    def save_model_file_global(self, save_path: str):
-        save_dict = self.persistence_manager.to_persistence_dict()
-        torch.save(save_dict, save_path)
+        model_list = ['global_weights', 'select_weights'] + self.client_ids
+        for model_id in model_list:
+            if event == "fedsm_best_model_available_" + model_id:
+                # save the current model as the best model
+                best_ckpt_save_path = os.path.join(self.log_dir, model_id + "_" + self.best_global_model_file_name)
+                self.save_best_model(model_id, best_ckpt_save_path)
+                self.log_info(fl_ctx, f"new best model for {model_id} saved.")
 
-    def save_model_file_select(self, save_path: str):
-        save_dict = self.persistence_manager.to_persistence_dict()
+    def save_best_model(self, model_id: str, save_path: str):
+        save_dict = self.persistence_manager.get_single_model(model_id)
         torch.save(save_dict, save_path)
 
     def save_model(self, ml_dict: dict, fl_ctx: FLContext):

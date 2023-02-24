@@ -183,6 +183,9 @@ class PTFedSMHelper(object):
         if metric > self.person_best_metric:
             self.person_best_metric = metric
             self.save_person_model(current_round, is_best=True)
+            return 1
+        else:
+            return 0
 
     @abstractmethod
     def local_train_person(self, train_loader, abort_signal: Signal, writer):

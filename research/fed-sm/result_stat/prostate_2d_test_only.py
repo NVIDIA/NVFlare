@@ -34,22 +34,23 @@ from monai.transforms import (
 )
 from vgg import vgg11
 
+model_postfix = "_best_FL_global_model.pt"
 client_id_labels = ["client_I2CVB", "client_MSD", "client_NCI_ISBI_3T"]
 
 
 def main():
     parser = argparse.ArgumentParser(description="Model Testing")
-    parser.add_argument("--model_path", type=str)
+    parser.add_argument("--models_dir", type=str)
     parser.add_argument("--cache_rate", default=0.0, type=float)
     parser.add_argument("--select_threshold", default=0.9, type=float)
-    parser.add_argument("--dataset_base_dir", default="../data_preparation/dataset_2D", type=str)
-    parser.add_argument("--datalist_json_path", default="../data_preparation/datalist_2D/client_All.json", type=str)
+    parser.add_argument("--dataset_base_dir", default="DATASET_ROOT/dataset_2D", type=str)
+    parser.add_argument("--datalist_json_path", default="DATASET_ROOT/datalist_2D/client_All.json", type=str)
     args = parser.parse_args()
 
     # Set basic settings and paths
     dataset_base_dir = args.dataset_base_dir
     datalist_json_path = args.datalist_json_path
-    model_path = args.model_path
+    models_dir = args.models_dir
     cache_rate = args.cache_rate
     select_threshold = args.select_threshold
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -87,19 +88,26 @@ def main():
             ).to(device)
         )
 
-    model_set = torch.load(model_path)
-    model_set = model_set["model_set_fedsm"]
-    model_list = ["select_weights", "global_weights"] + client_id_labels
-    for model_id in model_list:
-        for var_name in model_set[model_id]:
-            model_set[model_id][var_name] = torch.as_tensor(model_set[model_id][var_name])
+    model_path = models_dir + "global_weights" + model_postfix
+    model_stat_dict = torch.load(model_path)
+    for var_name in model_stat_dict:
+         model_stat_dict[var_name] = torch.as_tensor(model_stat_dict[var_name])
+    model_global.load_state_dict(model_stat_dict)
 
-    model_select.load_state_dict(model_set["select_weights"])
-    model_select.eval()
-    model_global.load_state_dict(model_set["global_weights"])
     model_global.eval()
+    model_path = models_dir + "select_weights" + model_postfix
+    model_stat_dict = torch.load(model_path)
+    for var_name in model_stat_dict:
+         model_stat_dict[var_name] = torch.as_tensor(model_stat_dict[var_name])
+    model_select.load_state_dict(model_stat_dict)
+
+    model_select.eval()
     for site in range(num_site):
-        model_person[site].load_state_dict(model_set[client_id_labels[site]])
+        model_path = models_dir + client_id_labels[site] + model_postfix
+        model_stat_dict = torch.load(model_path)
+        for var_name in model_stat_dict:
+            model_stat_dict[var_name] = torch.as_tensor(model_stat_dict[var_name])
+        model_person[site].load_state_dict(model_stat_dict)
         model_person[site].eval()
 
     # Inferer, evaluation metric
@@ -148,8 +156,7 @@ def main():
             max_score = score[max_index]
             # get max score and determine which model to use
             if max_score > select_threshold:
-                # model_segment = model_person[max_index]
-                model_segment = model_global
+                model_segment = model_person[max_index]
             else:
                 model_segment = model_global
             # segmentation inference
