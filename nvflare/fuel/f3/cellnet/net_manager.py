@@ -29,12 +29,11 @@ def _to_int(s: str):
 
 
 class NetManager(CommandModule):
-    def __init__(self, agent: NetAgent, for_test=False):
+    def __init__(self, agent: NetAgent, diagnose=False):
         self.agent = agent
-        self.for_test = for_test
+        self.diagnose = diagnose
 
     def get_spec(self) -> CommandModuleSpec:
-        visible = self.for_test
         return CommandModuleSpec(
             name="cellnet",
             cmd_specs=[
@@ -43,123 +42,123 @@ class NetManager(CommandModule):
                     description="get system cells info",
                     usage="cells",
                     handler_func=self._cmd_cells,
-                    visible=visible,
+                    visible=self.diagnose,
                 ),
                 CommandSpec(
                     name="route",
                     description="send message to a cell and show route",
                     usage="route to_cell [from_cell]",
                     handler_func=self._cmd_route,
-                    visible=visible,
+                    visible=self.diagnose,
                 ),
                 CommandSpec(
                     name="peers",
                     description="show connected peers of a cell",
                     usage="peers target_cell",
                     handler_func=self._cmd_peers,
-                    visible=visible,
+                    visible=self.diagnose,
                 ),
                 CommandSpec(
                     name="conns",
                     description="show connectors of a cell",
                     usage="conns target_cell",
                     handler_func=self._cmd_connectors,
-                    visible=visible,
+                    visible=self.diagnose,
                 ),
                 CommandSpec(
                     name="url_use",
                     description="show use of a url",
                     usage="url_use url",
                     handler_func=self._cmd_url_use,
-                    visible=visible,
+                    visible=self.diagnose,
                 ),
                 CommandSpec(
                     name="speed",
                     description="test communication speed between cells",
                     usage="speed from_fqcn to_fqcn [num_tries] [payload_size]",
                     handler_func=self._cmd_speed_test,
-                    visible=visible,
+                    visible=self.diagnose,
                 ),
                 CommandSpec(
                     name="stress",
                     description="stress test communication among cells",
                     usage="stress [num_tries] [timeout]",
                     handler_func=self._cmd_stress_test,
-                    visible=visible,
+                    visible=self.diagnose,
                 ),
                 CommandSpec(
                     name="bulk",
                     description="test bulk message processing",
                     usage="bulk",
                     handler_func=self._cmd_bulk_test,
-                    visible=visible,
-                    enabled=self.for_test,
+                    visible=self.diagnose,
+                    enabled=self.diagnose,
                 ),
                 CommandSpec(
                     name="change_root",
                     description="change to a new root server",
                     usage="change_root url",
                     handler_func=self._cmd_change_root,
-                    visible=visible,
-                    enabled=self.for_test,
+                    visible=self.diagnose,
+                    enabled=self.diagnose,
                 ),
                 CommandSpec(
                     name="msg_stats",
                     description="show request stats",
                     usage="msg_stats target [mode]",
                     handler_func=self._cmd_msg_stats,
-                    visible=visible,
+                    visible=self.diagnose,
                 ),
                 CommandSpec(
                     name="list_pools",
                     description="list stats pools",
                     usage="list_pools target",
                     handler_func=self._cmd_list_pools,
-                    visible=visible,
+                    visible=self.diagnose,
                 ),
                 CommandSpec(
                     name="show_pool",
                     description="show stats pool detail",
                     usage="show_pool target pool_name [mode]",
                     handler_func=self._cmd_show_pool,
-                    visible=visible,
+                    visible=self.diagnose,
                 ),
                 CommandSpec(
                     name="show_comm_config",
                     description="show communication config",
                     usage="show_comm_config target",
                     handler_func=self._cmd_show_comm_config,
-                    visible=visible,
+                    visible=self.diagnose,
                 ),
                 CommandSpec(
                     name="show_config_vars",
                     description="show all defined config var values",
                     usage="show_config_vars target",
                     handler_func=self._cmd_show_config_vars,
-                    visible=visible,
+                    visible=self.diagnose,
                 ),
                 CommandSpec(
                     name="process_info",
                     description="show process information",
                     usage="process_info target",
                     handler_func=self._cmd_process_info,
-                    visible=visible,
+                    visible=self.diagnose,
                 ),
                 CommandSpec(
                     name="stop_cell",
                     description="stop a cell and its children",
                     usage="stop_cell target",
                     handler_func=self._cmd_stop_cell,
-                    visible=visible,
-                    enabled=self.for_test,
+                    visible=self.diagnose,
+                    enabled=self.diagnose,
                 ),
                 CommandSpec(
                     name="stop_net",
                     description="stop the whole cellnet",
                     usage="stop_net",
                     handler_func=self._cmd_stop_net,
-                    visible=visible,
-                    enabled=self.for_test,
+                    visible=self.diagnose,
+                    enabled=self.diagnose,
                 ),
             ],
         )
