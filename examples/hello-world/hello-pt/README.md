@@ -18,7 +18,7 @@ pip3 install -r requirements.txt
 Use nvflare simulator to run the hello-examples:
 
 ```
-nvflare simulator -w /tmp/nvflare/ -n 2 -t 2 hello-pt/job_configs/hello-pt
+nvflare simulator -w /tmp/nvflare/ -n 2 -t 2 hello-pt/jobs/hello-pt
 ```
 
 ### 3. Access the logs and results
