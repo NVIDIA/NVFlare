@@ -293,7 +293,7 @@ class JobCommandModule(CommandModule, CommandUtil):
             parser.add_argument("-n", help="Filter by job name prefix")
             parser.add_argument(
                 "-m",
-                nargs="?",
+                nargs="*",
                 const=5,
                 type=int,
                 help="Limit maximum number of jobs returned to the specified number, default is 5 if flag is set but there is no integer provided for the specified limit",
