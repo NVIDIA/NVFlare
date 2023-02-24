@@ -201,12 +201,16 @@ the startup kits from the UI.
   * XGBoost Random Forest
 
 * **Vertical Learning**
-  * **Federated Private Set Intersection (PSI)** 
-  To support vertical learning use cases of secure user-id matching or feature mapping discovery, we developed multi-party private set
-  operator that discover the data intersection securely. We leveraged the OpenMined's two-party [Private Set Intersection Cardinality protocol based on ECDH and Bloom Filters](https://github.com/OpenMined/PSI)
-  and make it available for multi-party. You can read more about FLARE PSI and how to use PSI Operator in [PSI Example](https://github.com/NVIDIA/NVFlare/blob/dev/examples/advanced/psi/README.md)
-  The PSI as pre-training step is used in the split learning example. You can find it in this [notebook](https://github.com/NVIDIA/NVFlare/blob/dev/examples/tutorial/vertical_federated_learning/cifar10-splitnn/cifar10_split_learning.ipynb)
-
+  * **Federated Private Set Intersection (PSI)**
+  In order to support vertical learning use cases such as secure user-id matching and feature 
+  over-lapping discovery, we have developed a multi-party private set intersection (PSI) operator 
+  that allows for the secure discovery of data intersections. Our approach leverages OpenMined's two-party
+  [Private Set Intersection Cardinality protocol](https://github.com/OpenMined/PSI), which is based on ECDH and Bloom Filters, and we have 
+  made this protocol available for multi-party use. More information on our approach and how to use the
+  PSI operator can be found in the [PSI Example](https://github.com/NVIDIA/NVFlare/blob/dev/examples/advanced/psi/README.md). 
+  It is worth noting that PSI is used as a pre-training step in the split learning example, which can be found in this 
+  [notebook](https://github.com/NVIDIA/NVFlare/blob/dev/examples/tutorial/vertical_federated_learning/cifar10-splitnn/cifar10_split_learning.ipynb).
+  
   * **Split-Learning** 
 
 * **Research Area**
