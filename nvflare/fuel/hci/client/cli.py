@@ -179,14 +179,14 @@ class AdminClient(cmd.Cmd):
     def emptyline(self):
         return
 
-    def _show_one_command(self, cmd_name, reg):
+    def _show_one_command(self, cmd_name, reg, show_invisible=False):
         entries = reg.get_command_entries(cmd_name)
         if len(entries) <= 0:
             self.write_string("Undefined command {}\n".format(cmd_name))
             return
 
         for e in entries:
-            if not e.visible:
+            if not e.visible and not show_invisible:
                 continue
 
             if len(e.scope.name) > 0:
@@ -237,7 +237,7 @@ class AdminClient(cmd.Cmd):
                 self.write_string("Server Commands")
                 self.write_string("---------------")
                 for cmd_name in server_cmds:
-                    self._show_one_command(cmd_name, self.api.server_cmd_reg)
+                    self._show_one_command(cmd_name, self.api.server_cmd_reg, show_invisible=True)
 
     def complete(self, text, state):
         results = [x + " " for x in self.api.all_cmds if x.startswith(text)] + [None]
