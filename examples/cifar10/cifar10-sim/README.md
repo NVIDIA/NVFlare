@@ -7,46 +7,25 @@ and [SCAFFOLD](https://arxiv.org/abs/1910.06378) algorithms using NVFlare's FL s
 For instructions of how to run CIFAR-10 in real-world deployment settings, 
 see the example on ["Real-world Federated Learning with CIFAR-10"](../cifar10-real-world/README.md).
 
-## (Optional) 1. Set up a virtual environment
-```
-python3 -m pip install --user --upgrade pip
-python3 -m pip install --user virtualenv
-```
-(If needed) make all shell scripts executable using
-```
-find . -name ".sh" -exec chmod +x {} \;
-```
-initialize virtual environment.
-```
-source ./virtualenv/set_env.sh
-```
-install required packages for training
-```
-pip install --upgrade pip
-pip install -r ./virtualenv/min-requirements.txt
-```
-(optional) if you would like to plot the TensorBoard event files as shown below, please also install
-```
-pip install -r ./virtualenv/plot-requirements.txt
-```
-Set `PYTHONPATH` to include custom files of this example:
-```
-export PYTHONPATH=${PWD}/..
-```
 
-### 2. Download the CIFAR-10 dataset 
+## Download the CIFAR-10 dataset 
 To speed up the following experiments, first download the [CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html) dataset:
 ```
 python3 ../pt/utils/cifar10_download_data.py
 ```
 
-## 3. Run simulated FL experiments
+## Run simulated FL experiments
+
+Set `PYTHONPATH` to include custom files of this example:
+```
+export PYTHONPATH=${PWD}/..
+```
 
 We are using NVFlare's [FL simulator](https://nvflare.readthedocs.io/en/latest/user_guide/fl_simulator.html) to run the following experiments. 
 
 The output root of where to save the results is set in [./run_simulator.sh](./run_simulator.sh) as `RESULT_ROOT=/tmp/nvflare/sim_cifar10`.
 
-### 3.1 Varying data heterogeneity of data splits
+### Varying data heterogeneity of data splits
 
 We use an implementation to generated heterogeneous data splits from CIFAR-10 based a Dirichlet sampling strategy 
 from FedMA (https://github.com/IBM/FedMA), where `alpha` controls the amount of heterogeneity, 
@@ -54,7 +33,7 @@ see [Wang et al.](https://arxiv.org/abs/2002.06440).
 
 We use `set_alpha.sh` to change the alpha value inside the job configurations.
 
-### 3.2 Centralized training
+### Centralized training
 
 To simulate a centralized training baseline, we run FL with 1 client for 25 local epochs but only for one round. 
 It takes circa 6 minutes on an NVIDIA TitanX GPU.
@@ -66,7 +45,7 @@ Note, here `alpha=0.0` means that no heterogeneous data splits are being generat
 You can visualize the training progress by running `tensorboard --logdir=${RESULT_ROOT}`
 ![Central training curve](./figs/central_training.png)
 
-### 3.3 FedAvg on different data splits
+### FedAvg on different data splits
 
 FedAvg (8 clients). Here we run for 50 rounds, with 4 local epochs. Corresponding roughly 
 to the same number of iterations across clients as in the central baseline above (50*4 divided by 8 clients is 25):
@@ -80,7 +59,7 @@ You can copy the whole block into the terminal, and it will execute each experim
 ./run_simulator.sh cifar10_fedavg 0.1 8 8
 ```
 
-### 3.4 Advanced FL algorithms (FedProx, FedOpt, and SCAFFOLD)
+### Advanced FL algorithms (FedProx, FedOpt, and SCAFFOLD)
 
 Next, let's try some different FL algorithms on a more heterogeneous split:
 
@@ -98,7 +77,7 @@ Here SGD with momentum and cosine learning rate decay:
 ./run_simulator.sh cifar10_scaffold 0.1 8 8
 ```
 
-### 3.5 Running experiments in parallel
+### Running experiments in parallel
 
 If you have several GPUs available in your system, you can run simulations in parallel by adjusting `CUDA_VISIBLE_DEVICES`.
 For example, you can run the following commands in two separate terminals.
@@ -113,7 +92,7 @@ export CUDA_VISIBLE_DEVICES=1
 
 > **_NOTE:_** You can run all experiments mentioned in Section 3 using the `run_experiments.sh` script.
 
-## 4. Results
+## Results
 
 Let's summarize the result of the experiments run above. First, we will compare the final validation scores of 
 the global models for different settings. In this example, all clients compute their validation scores using the
@@ -121,7 +100,7 @@ same CIFAR-10 test set. The plotting script used for the below graphs is in
 [./figs/plot_tensorboard_events.py](./figs/plot_tensorboard_events.py) 
 (please install [./virtualenv/plot-requirements.txt](./virtualenv/plot-requirements.txt)).
 
-### 4.1 Central vs. FedAvg
+### Central vs. FedAvg
 With a data split using `alpha=1.0`, i.e. a non-heterogeneous split, we achieve the following final validation scores.
 One can see that FedAvg can achieve similar performance to central training.
 
@@ -132,7 +111,7 @@ One can see that FedAvg can achieve similar performance to central training.
 
 ![Central vs. FedAvg](./figs/central_vs_fedavg.png)
 
-### 4.2 Impact of client data heterogeneity
+### Impact of client data heterogeneity
 
 We also tried different `alpha` values, where lower values cause higher heterogeneity. 
 This can be observed in the resulting performance of the FedAvg algorithms.  
@@ -146,7 +125,7 @@ This can be observed in the resulting performance of the FedAvg algorithms.
 
 ![Impact of client data heterogeneity](./figs/fedavg_alpha.png)
 
-### 4.3 FedAvg vs. FedProx vs. FedOpt vs. SCAFFOLD
+### FedAvg vs. FedProx vs. FedOpt vs. SCAFFOLD
 
 Finally, we compare an `alpha` setting of 0.1, causing a high client data heterogeneity and its 
 impact on more advanced FL algorithms, namely FedProx, FedOpt, and SCAFFOLD. 

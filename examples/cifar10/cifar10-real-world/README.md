@@ -9,30 +9,7 @@ For more information on real-world FL see [here](https://nvflare.readthedocs.io/
 For instructions of how to run CIFAR-10 with FL simulator to compare different FL algorithms, 
 see the example on ["Simulated Federated Learning with CIFAR-10"](../cifar10-sim/README.md).
 
-## (Optional) 1. Set up a virtual environment
-```
-python3 -m pip install --user --upgrade pip
-python3 -m pip install --user virtualenv
-```
-(If needed) make all shell scripts executable using
-```
-find . -name ".sh" -exec chmod +x {} \;
-```
-initialize virtual environment.
-```
-source ./virtualenv/set_env.sh
-```
-install required packages for training
-```
-pip install --upgrade pip
-pip install -r ./virtualenv/min-requirements.txt
-```
-(optional) if you would like to plot the TensorBoard event files as shown below, please also install
-```
-pip install -r ./virtualenv/plot-requirements.txt
-```
-
-### 2. Download the CIFAR-10 dataset 
+## Download the CIFAR-10 dataset 
 To speed up the following experiments, first download the [CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html) dataset:
 ```
 python3 ../pt/utils/cifar10_download_data.py
@@ -40,12 +17,12 @@ python3 ../pt/utils/cifar10_download_data.py
 > **_NOTE:_** This is important for running multi-task experiments. Otherwise, each job will try to download the dataset 
 > to the same location which might cause a file corruption.
 
-## 3. Create your FL workspace and start FL system 
+## Create your FL workspace and start FL system 
 
 The next scripts will start the FL server and 8 clients automatically to run FL experiments on localhost.
 In this example, we run all 8 clients on one GPU with at least 8 GB memory per job.
 
-### 3.1 Secure FL workspace
+### Secure FL workspace
 
 The project file for creating the secure workspace used in this example is shown at 
 [./workspaces/secure_project.yml](./workspaces/secure_project.yml).
@@ -60,7 +37,7 @@ cd ..
 ```
 For more information about secure provisioning see the [documentation](https://nvflare.readthedocs.io/en/latest/programming_guide/provisioning_system.html).
 
-### 3.2 Multi-tasking resource management
+### Multi-tasking resource management
 In this example, we assume `N_GPU` local GPUs, each with at least 8 GB of 
 memory, are available on the host system. To find the available number of 
 GPUs, run
@@ -93,14 +70,14 @@ done
 In the `meta.json` of each job, we can request 1 GB of memory for each client. 
 Hence, the FL system will schedule at most `N_GPU` jobs to be run in parallel.
 
-### 3.4 Start FL system
+### Start FL system
 
 For starting the FL system with 8 clients in the secure workspace, run
 ```
 ./start_fl_secure.sh 8
 ```
 
-### 4.1 (Optional) POC ("proof of concept") workspace
+### (Optional) POC ("proof of concept") workspace
 To run FL experiments in POC mode, create your local FL workspace the below command. 
 In the following experiments, we will be using 8 clients. Press y and enter when prompted. 
 ```
@@ -116,7 +93,7 @@ By default, POC will create startup kits at `/tmp/nvflare/poc`.
 > homomorphic encryption (HE) one shown below. These startup kits allow secure deployment of FL in real-world scenarios 
 > using SSL certificated communication channels.
 
-### 4.2 (Optional) Multi-tasking resource management in POC mode
+### (Optional) Multi-tasking resource management in POC mode
 
 We can apply the same resource management settings in POC mode as in secure mode above. 
 Note, POC provides the resources.json, so copying the default file is not necessary.
@@ -131,7 +108,7 @@ do
 done
 ```
 
-### 4.3 (Optional)  Start FL system in POC mode
+### (Optional)  Start FL system in POC mode
 
 Then, start the FL system with 8 clients by running
 ```
@@ -141,7 +118,7 @@ nvflare poc --start
 
 For details about resource management and consumption, please refer to the [documentation](https://nvflare.readthedocs.io/en/latest/programming_guide/resource_manager_and_consumer.html).
 
-## 5. Run automated experiments
+## Run automated experiments
 
 Next, we will submit jobs to start FL training automatically. 
 
@@ -164,14 +141,14 @@ Jobs will be executed automatically depending on the available resources at each
 
 For details about jobs, please refer to the [documentation](https://nvflare.readthedocs.io/en/latest/real_world_fl/job.html).
 
-### 5.1 Varying data heterogeneity of data splits
+### Varying data heterogeneity of data splits
 
 We use an implementation to generated heterogeneous data splits from CIFAR-10 based a Dirichlet sampling strategy 
 from FedMA (https://github.com/IBM/FedMA), where `alpha` controls the amount of heterogeneity, 
 see [Wang et al.](https://arxiv.org/abs/2002.06440). For more information on how `alpha` impacts model FL training, 
 see the example [here](../cifar10-sim/README.md).
 
-## 5.2 Streaming TensorBoard metrics to the server
+### Streaming TensorBoard metrics to the server
 
 In a real-world scenario, the researcher won't have access to the TensorBoard events of the individual clients. 
 In order to visualize the training performance in a central place, `AnalyticsSender`, 
@@ -205,7 +182,7 @@ You should see the cross-site validation results at
 [DOWNLOAD_DIR]/[JOB_ID]/workspace/cross_site_val/cross_val_results.json
 ```
 
-### 5.3 Secure aggregation using homomorphic encryption
+### Secure aggregation using homomorphic encryption
 
 Next we run FedAvg using homomorphic encryption (HE) for secure aggregation on the server in non-heterogeneous setting (`alpha=1`).
 
@@ -220,12 +197,12 @@ FedAvg with HE:
 
 > **_NOTE:_** Currently, FedOpt is not supported with HE as it would involve running the optimizer on encrypted values.
 
-### 5.4 Running all examples
+### Running all examples
 
 You can use `./run_experiments.sh` to submit all above-mentioned experiments at once if preferred. 
 This script uses the secure workspace to also support the HE experiment.
 
-## 6. Results
+## Results
 
 Let's summarize the result of the experiments run above. First, we will compare the final validation scores of 
 the global models for different settings. In this example, all clients compute their validation scores using the
@@ -236,7 +213,7 @@ same CIFAR-10 test set. The plotting script used for the below graphs is in
 To use it, download all job results using the `download_job` admin command and specify the `download_dir` in 
 [./figs/plot_tensorboard_events.py](./figs/plot_tensorboard_events.py). 
 
-### 6.1 FedAvg vs. FedAvg with HE
+### FedAvg vs. FedAvg with HE
 With a data split using `alpha=1.0`, i.e. a non-heterogeneous split, we achieve the following final validation scores.
 One can see that FedAvg can achieve similar performance to central training and 
 that HE does not impact the performance accuracy of FedAvg significantly while adding security to the aggregation step

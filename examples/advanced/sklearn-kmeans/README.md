@@ -35,26 +35,6 @@ initial centers with the k-means++ method. Then, the server collects all
 initial centers and performs one round of k-means to generate the initial 
 global center.
 
-## Setup
-### (Optional) Set up a virtual environment
-```commandline
-python3 -m pip install --user --upgrade pip
-python3 -m pip install --user virtualenv
-```
-(If needed) make all shell scripts executable using
-```commandline
-find . -name ".sh" -exec chmod +x {} \;
-```
-Initialize a virtual environment.
-```commandline
-source ./virtualenv/set_env.sh
-```
-Install required packages for training.
-```commandline
-pip3 install --upgrade pip
-pip3 install -r ./virtualenv/requirements.txt
-```
-
 ## Data preparation 
 This example uses the Iris dataset available from Scikit-learn's dataset API.  
 ```commandline
