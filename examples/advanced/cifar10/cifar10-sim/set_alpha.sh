@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-algorithms_dir="${PWD}/job_configs"
+algorithms_dir="${PWD}/jobs"
 
-config=$1
+job=$1
 alpha=$2
 
-echo "Configure job ${config} using alpha=${alpha}"
+echo "Configure job ${job} using alpha=${alpha}"
 workspace="${PWD}/workspaces/secure_workspace"
 admin_username="admin@nvidia.com"
 
 # set alpha
-COMMAND="python3 ./set_alpha.py --job=${algorithms_dir}/${config} --alpha=${alpha}"
+COMMAND="python3 ./set_alpha.py --job=${algorithms_dir}/${job} --alpha=${alpha}"
 echo "Running: ${COMMAND}"
 eval "${COMMAND}"

@@ -32,7 +32,7 @@ def write_json(data, filename):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--job", type=str, default="cifar10_fedavg", help="Path to job config.")
+    parser.add_argument("--job", type=str, default="cifar10_fedavg", help="Path to job.")
     parser.add_argument("--poc", action="store_true", help="Whether admin uses POC mode.")
     parser.add_argument(
         "--train_split_root", type=str, default="/tmp/cifar10_splits", help="Location where to save data splits."

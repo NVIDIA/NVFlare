@@ -142,17 +142,17 @@ Next, we will submit jobs to start FL training automatically.
 
 The [submit_job.sh](./submit_job.sh) script follows this pattern:
 ```
-./submit_job.sh [config] [alpha]
+./submit_job.sh [job] [alpha]
 ```
 If you want to use the poc workspace, append `--poc` to this command, e.g,: 
 ```
-./submit_job.sh [config] [alpha] --poc
+./submit_job.sh [job] [alpha] --poc
 ```
 
 In this simulation, the server will split the CIFAR-10 dataset to simulate each client having different data distributions.
 
-The `config` argument controls which experiment job to submit. 
-The respective folder under `job_configs` will be submitted using the admin API with [submit_job.py](./submit_job.py) for scheduling.
+The `job` argument controls which experiment job to submit. 
+The respective folder under `jobs` will be submitted using the admin API with [submit_job.py](./submit_job.py) for scheduling.
 The admin API script ([submit_job.py](./submit_job.py)) also overwrites the alpha value inside the 
 job configuration file depending on the provided commandline argument.
 Jobs will be executed automatically depending on the available resources at each client (see "Multi-tasking" section).
