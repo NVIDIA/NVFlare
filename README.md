@@ -22,7 +22,7 @@ To install [the current release](https://pypi.org/project/nvflare), you can simp
 pip install nvflare
 ```
 
-### branches
+### Branches
 * The [dev](https://github.com/NVIDIA/NVFlare/tree/dev) branch is the default (unstable) development branch
 * The [main](https://github.com/NVIDIA/NVFlare/tree/main) branch is the stable branch, reflect the latest release
 * The 2.0, 2.1, 2.2 and 2.3 are the branches for each major release. 
