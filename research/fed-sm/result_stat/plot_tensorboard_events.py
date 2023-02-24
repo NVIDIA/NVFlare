@@ -84,7 +84,9 @@ def main():
         # clear data for each metric
         data = {"Site": [], "Epoch": [], "Metric": []}
         for site in sites_fl:
-            record_path = os.path.join(client_results_root, "simulate_job", client_pre + site, "events.*")
+            record_path = os.path.join(
+                client_results_root, "simulate_job", client_pre + site, "events.*"
+            )
             eventfile = glob.glob(record_path, recursive=True)
             assert len(eventfile) == 1, "No unique event file found!"
             eventfile = eventfile[0]

@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import numpy as np
-
 from nvflare.apis.dxo import DataKind, MetaKey, from_shareable
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
@@ -130,9 +129,13 @@ class IntimeModelFedSMSelector(FLComponent):
         aggregation_weights = self.aggregation_weights.get(client_name, 1.0)
         self.log_debug(fl_ctx, f"aggregation weight: {aggregation_weights}")
 
-        self.validation_mertic_global_weighted_sum += validation_metric[0] * n_iter * aggregation_weights
+        self.validation_mertic_global_weighted_sum += (
+            validation_metric[0] * n_iter * aggregation_weights
+        )
         self.global_sum_of_weights += n_iter
-        self.validation_mertic_select_weighted_sum += validation_metric[1] * n_iter * aggregation_weights
+        self.validation_mertic_select_weighted_sum += (
+            validation_metric[1] * n_iter * aggregation_weights
+        )
         self.select_sum_of_weights += n_iter
 
         self.person_best_status[client_name] = validation_metric[2]
@@ -153,9 +156,15 @@ class IntimeModelFedSMSelector(FLComponent):
             self.validation_mertic_select_weighted_sum / self.select_sum_of_weights
         )
 
-        self.logger.debug(f"weighted validation metric for global model {self.val_metric_global}")
-        self.logger.debug(f"weighted validation metric for selector model{self.val_metric_select}")
-        self.logger.debug(f"best personalized model availability {self.person_best_status}")
+        self.logger.debug(
+            f"weighted validation metric for global model {self.val_metric_global}"
+        )
+        self.logger.debug(
+            f"weighted validation metric for selector model{self.val_metric_select}"
+        )
+        self.logger.debug(
+            f"best personalized model availability {self.person_best_status}"
+        )
 
         if self.val_metric_global > self.best_val_metric_global:
             self.best_val_metric_global = self.val_metric_global
@@ -180,7 +189,7 @@ class IntimeModelFedSMSelector(FLComponent):
         for client_id in self.person_best_status.keys():
             if self.person_best_status[client_id] == 1:
                 # Fire event to notify a new best personalized model
-                self.fire_event("fedsm_best_model_available_"+client_id, fl_ctx)
+                self.fire_event("fedsm_best_model_available_" + client_id, fl_ctx)
 
         self._reset_stats()
         return True

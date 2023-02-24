@@ -17,7 +17,6 @@ from abc import abstractmethod
 
 import numpy as np
 import torch
-
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.shareable import make_reply
 from nvflare.apis.signal import Signal
@@ -85,13 +84,21 @@ class PTFedSMHelper(object):
         self.select_model_epochs = select_model_epochs
         # check criterion, model, and optimizer type
         if not isinstance(self.person_model, torch.nn.Module):
-            raise ValueError(f"person_model component must be torch model. But got: {type(self.person_model)}")
+            raise ValueError(
+                f"person_model component must be torch model. But got: {type(self.person_model)}"
+            )
         if not isinstance(self.select_model, torch.nn.Module):
-            raise ValueError(f"select_model component must be torch model. But got: {type(self.select_model)}")
+            raise ValueError(
+                f"select_model component must be torch model. But got: {type(self.select_model)}"
+            )
         if not isinstance(self.person_criterion, torch.nn.modules.loss._Loss):
-            raise ValueError(f"person_criterion component must be torch loss. But got: {type(self.person_criterion)}")
+            raise ValueError(
+                f"person_criterion component must be torch loss. But got: {type(self.person_criterion)}"
+            )
         if not isinstance(self.select_criterion, torch.nn.modules.loss._Loss):
-            raise ValueError(f"select_criterion component must be torch loss. But got: {type(self.select_criterion)}")
+            raise ValueError(
+                f"select_criterion component must be torch loss. But got: {type(self.select_criterion)}"
+            )
         if not isinstance(self.person_optimizer, torch.optim.Optimizer):
             raise ValueError(
                 f"person_optimizer component must be torch optimizer. But got: {type(self.person_optimizer)}"
@@ -101,14 +108,18 @@ class PTFedSMHelper(object):
                 f"select_optimizer component must be torch optimizer. But got: {type(self.select_optimizer)}"
             )
         if not isinstance(self.device, torch.device):
-            raise ValueError(f"device component must be torch device. But got: {type(self.device)}")
+            raise ValueError(
+                f"device component must be torch device. But got: {type(self.device)}"
+            )
 
         # initialize other recording related parameters
         # save personalized model to local file
         # note: global and selector model saved on server
         self.person_best_metric = 0
         self.person_model_file_path = os.path.join(app_dir, "personalized_model.pt")
-        self.best_person_model_file_path = os.path.join(app_dir, "best_personalized_model.pt")
+        self.best_person_model_file_path = os.path.join(
+            app_dir, "best_personalized_model.pt"
+        )
 
     def save_person_model(self, current_round, is_best=False):
         # save personalized model locally
@@ -120,7 +131,9 @@ class PTFedSMHelper(object):
         else:
             torch.save(save_dict, self.person_model_file_path)
 
-    def local_train_select(self, train_loader, select_label, abort_signal: Signal, writer, current_round):
+    def local_train_select(
+        self, train_loader, select_label, abort_signal: Signal, writer, current_round
+    ):
         # Train selector model in full batch manner, and keep track of curves
         for epoch in range(self.select_model_epochs):
             if abort_signal.triggered:

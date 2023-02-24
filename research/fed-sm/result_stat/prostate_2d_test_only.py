@@ -43,8 +43,14 @@ def main():
     parser.add_argument("--models_dir", type=str)
     parser.add_argument("--cache_rate", default=0.0, type=float)
     parser.add_argument("--select_threshold", default=0.9, type=float)
-    parser.add_argument("--dataset_base_dir", default="DATASET_ROOT/dataset_2D", type=str)
-    parser.add_argument("--datalist_json_path", default="DATASET_ROOT/datalist_2D/client_All.json", type=str)
+    parser.add_argument(
+        "--dataset_base_dir", default="DATASET_ROOT/dataset_2D", type=str
+    )
+    parser.add_argument(
+        "--datalist_json_path",
+        default="DATASET_ROOT/datalist_2D/client_All.json",
+        type=str,
+    )
     args = parser.parse_args()
 
     # Set basic settings and paths
@@ -91,14 +97,14 @@ def main():
     model_path = models_dir + "global_weights" + model_postfix
     model_stat_dict = torch.load(model_path)
     for var_name in model_stat_dict:
-         model_stat_dict[var_name] = torch.as_tensor(model_stat_dict[var_name])
+        model_stat_dict[var_name] = torch.as_tensor(model_stat_dict[var_name])
     model_global.load_state_dict(model_stat_dict)
 
     model_global.eval()
     model_path = models_dir + "select_weights" + model_postfix
     model_stat_dict = torch.load(model_path)
     for var_name in model_stat_dict:
-         model_stat_dict[var_name] = torch.as_tensor(model_stat_dict[var_name])
+        model_stat_dict[var_name] = torch.as_tensor(model_stat_dict[var_name])
     model_select.load_state_dict(model_stat_dict)
 
     model_select.eval()
@@ -113,19 +119,30 @@ def main():
     # Inferer, evaluation metric
     inferer_select = SimpleInferer()
     inferer_segment = SimpleInferer()
-    valid_metric = DiceMetric(include_background=False, reduction="mean", get_not_nans=False)
+    valid_metric = DiceMetric(
+        include_background=False, reduction="mean", get_not_nans=False
+    )
 
     transform = Compose(
         [
             LoadImaged(keys=["image", "label"]),
             EnsureChannelFirstd(keys=["image", "label"]),
-            ScaleIntensityRanged(keys=["image", "label"], a_min=0, a_max=255, b_min=0.0, b_max=1.0),
-            Resized(keys=["image", "label"], spatial_size=(256, 256), mode=("bilinear"), align_corners=True),
+            ScaleIntensityRanged(
+                keys=["image", "label"], a_min=0, a_max=255, b_min=0.0, b_max=1.0
+            ),
+            Resized(
+                keys=["image", "label"],
+                spatial_size=(256, 256),
+                mode=("bilinear"),
+                align_corners=True,
+            ),
             AsDiscreted(keys=["label"], threshold=0.5),
             EnsureTyped(keys=["image", "label"]),
         ]
     )
-    transform_post = Compose([EnsureType(), Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
+    transform_post = Compose(
+        [EnsureType(), Activations(sigmoid=True), AsDiscrete(threshold=0.5)]
+    )
 
     # Set dataset
     test_dataset = CacheDataset(

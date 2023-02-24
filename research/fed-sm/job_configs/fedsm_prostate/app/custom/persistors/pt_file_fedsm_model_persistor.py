@@ -17,13 +17,12 @@ import os
 from collections import OrderedDict
 
 import torch
-from persistors.pt_fed_utils import PTModelPersistenceFormatManagerFedSM
-
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model import ModelLearnable
 from nvflare.app_common.app_constant import DefaultCheckpointFileName
 from nvflare.app_common.pt.pt_file_model_persistor import PTFileModelPersistor
+from persistors.pt_fed_utils import PTModelPersistenceFormatManagerFedSM
 
 
 class PTFileFedSMModelPersistor(PTFileModelPersistor):
@@ -86,7 +85,9 @@ class PTFileFedSMModelPersistor(PTFileModelPersistor):
                     fl_ctx=fl_ctx,
                 )
                 return
-        elif self.model_selector and not isinstance(self.model_selector, torch.nn.Module):
+        elif self.model_selector and not isinstance(
+            self.model_selector, torch.nn.Module
+        ):
             self.system_panic(
                 reason=f"expect model to be torch.nn.Module but got {type(self.model)}",
                 fl_ctx=fl_ctx,
@@ -137,7 +138,9 @@ class PTFileFedSMModelPersistor(PTFileModelPersistor):
                 # checkpoint may contain a dict "model_set_fedsm" of models indexed with model ids
                 # 'optimizer', 'lr_scheduler', etc.
             except:
-                self.log_exception(fl_ctx, f"error loading checkpoint from {src_file_name}")
+                self.log_exception(
+                    fl_ctx, f"error loading checkpoint from {src_file_name}"
+                )
                 self.system_panic(reason="cannot load model checkpoint", fl_ctx=fl_ctx)
                 return None
         else:
@@ -158,11 +161,15 @@ class PTFileFedSMModelPersistor(PTFileModelPersistor):
                 )
                 for id in self.client_ids:
                     data["model_set_fedsm"][id] = (
-                        self.model_set_fedsm[id].state_dict() if self.model_set_fedsm[id] is not None else OrderedDict()
+                        self.model_set_fedsm[id].state_dict()
+                        if self.model_set_fedsm[id] is not None
+                        else OrderedDict()
                     )
             except:
                 self.log_exception(fl_ctx, "error getting state_dict from model object")
-                self.system_panic(reason="cannot create state_dict from model object", fl_ctx=fl_ctx)
+                self.system_panic(
+                    reason="cannot create state_dict from model object", fl_ctx=fl_ctx
+                )
                 return None
 
         if self.model and self.model_selector:
@@ -182,11 +189,13 @@ class PTFileFedSMModelPersistor(PTFileModelPersistor):
         if event == EventType.START_RUN:
             self._initialize(fl_ctx)
 
-        model_list = ['global_weights', 'select_weights'] + self.client_ids
+        model_list = ["global_weights", "select_weights"] + self.client_ids
         for model_id in model_list:
             if event == "fedsm_best_model_available_" + model_id:
                 # save the current model as the best model
-                best_ckpt_save_path = os.path.join(self.log_dir, model_id + "_" + self.best_global_model_file_name)
+                best_ckpt_save_path = os.path.join(
+                    self.log_dir, model_id + "_" + self.best_global_model_file_name
+                )
                 self.save_best_model(model_id, best_ckpt_save_path)
                 self.log_info(fl_ctx, f"new best model for {model_id} saved.")
 
@@ -205,7 +214,9 @@ class PTFileFedSMModelPersistor(PTFileModelPersistor):
             device = "cpu"
             location = os.path.join(self.log_dir, model_file)
             data = torch.load(location, map_location=device)
-            persistence_manager = PTModelPersistenceFormatManagerFedSM(data, default_train_conf=self.default_train_conf)
+            persistence_manager = PTModelPersistenceFormatManagerFedSM(
+                data, default_train_conf=self.default_train_conf
+            )
             return persistence_manager.to_model_learnable(self.exclude_vars)
         except BaseException:
             self.log_exception(fl_ctx, f"error loading checkpoint from {model_file}")

@@ -20,7 +20,6 @@ from learners.supervised_monai_prostate_learner import SupervisedMonaiProstateLe
 from monai.losses import DiceLoss
 from monai.networks.nets.unet import UNet
 from networks.vgg import vgg11
-
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
@@ -109,17 +108,25 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
                 weights = global_weights[var_name]
                 try:
                     # reshape global weights to compute difference later on
-                    global_weights[var_name] = np.reshape(weights, local_var_dict[var_name].shape)
+                    global_weights[var_name] = np.reshape(
+                        weights, local_var_dict[var_name].shape
+                    )
                     # update the local dict
                     local_var_dict[var_name] = torch.as_tensor(global_weights[var_name])
                     n_loaded += 1
                 except Exception as e:
-                    raise ValueError(f"Convert weight from {var_name} failed with error: {str(e)}")
+                    raise ValueError(
+                        f"Convert weight from {var_name} failed with error: {str(e)}"
+                    )
         if n_loaded == 0:
-            raise ValueError(f"No global weights loaded! Received weight dict is {global_weights}")
+            raise ValueError(
+                f"No global weights loaded! Received weight dict is {global_weights}"
+            )
         return local_var_dict
 
-    def compute_model_diff(self, initial_model: dict, end_model: dict, fl_ctx: FLContext):
+    def compute_model_diff(
+        self, initial_model: dict, end_model: dict, fl_ctx: FLContext
+    ):
         model_diff = {}
         for name in initial_model:
             if name not in end_model:
@@ -146,7 +153,9 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
         # get round information
         current_round = shareable.get_header(AppConstants.CURRENT_ROUND)
         total_rounds = shareable.get_header(AppConstants.NUM_ROUNDS)
-        self.log_info(fl_ctx, f"Current/Total Round: {current_round + 1}/{total_rounds}")
+        self.log_info(
+            fl_ctx, f"Current/Total Round: {current_round + 1}/{total_rounds}"
+        )
         self.log_info(fl_ctx, f"Client identity: {fl_ctx.get_identity_name()}")
 
         # update local model parameters with received dxo
@@ -176,8 +185,12 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
             # load parameters to optimizer
             local_optim_state_dict = self.fedsm_helper.select_optimizer.state_dict()
             for name in local_optim_state_dict["state"]:
-                local_optim_state_dict["state"][name]["exp_avg"] = torch.as_tensor(global_exp_avg[str(name)])
-                local_optim_state_dict["state"][name]["exp_avg_sq"] = torch.as_tensor(global_exp_avg_sq[str(name)])
+                local_optim_state_dict["state"][name]["exp_avg"] = torch.as_tensor(
+                    global_exp_avg[str(name)]
+                )
+                local_optim_state_dict["state"][name]["exp_avg_sq"] = torch.as_tensor(
+                    global_exp_avg_sq[str(name)]
+                )
             self.fedsm_helper.select_optimizer.load_state_dict(local_optim_state_dict)
 
         # local trainings for three models
@@ -214,11 +227,17 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
 
         # compute delta models, initial models has the primary key set
         local_weights = self.model.state_dict()
-        model_diff_global = self.compute_model_diff(global_weights, local_weights, fl_ctx)
+        model_diff_global = self.compute_model_diff(
+            global_weights, local_weights, fl_ctx
+        )
         local_weights = self.fedsm_helper.person_model.state_dict()
-        model_diff_person = self.compute_model_diff(person_weights, local_weights, fl_ctx)
+        model_diff_person = self.compute_model_diff(
+            person_weights, local_weights, fl_ctx
+        )
         local_weights = self.fedsm_helper.select_model.state_dict()
-        model_diff_select = self.compute_model_diff(select_weights, local_weights, fl_ctx)
+        model_diff_select = self.compute_model_diff(
+            select_weights, local_weights, fl_ctx
+        )
         # directly return the optimizer parameters
         optim_weights = self.fedsm_helper.select_optimizer.state_dict().get("state")
         exp_avg = {}
@@ -229,9 +248,15 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
 
         # build the shareable
         dxo_dict = {
-            "global_weights": DXO(data_kind=DataKind.WEIGHT_DIFF, data=model_diff_global),
-            "person_weights": DXO(data_kind=DataKind.WEIGHT_DIFF, data=model_diff_person),
-            "select_weights": DXO(data_kind=DataKind.WEIGHT_DIFF, data=model_diff_select),
+            "global_weights": DXO(
+                data_kind=DataKind.WEIGHT_DIFF, data=model_diff_global
+            ),
+            "person_weights": DXO(
+                data_kind=DataKind.WEIGHT_DIFF, data=model_diff_person
+            ),
+            "select_weights": DXO(
+                data_kind=DataKind.WEIGHT_DIFF, data=model_diff_select
+            ),
             "select_exp_avg": DXO(data_kind=DataKind.WEIGHTS, data=exp_avg),
             "select_exp_avg_sq": DXO(data_kind=DataKind.WEIGHTS, data=exp_avg_sq),
         }
@@ -241,7 +266,9 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
         self.log_info(fl_ctx, "Local epochs finished. Returning shareable")
         return dxo_collection.to_shareable()
 
-    def validate(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
+    def validate(
+        self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal
+    ) -> Shareable:
         """Validation task pipeline for FedSM
         Validate all three models: global/personal/selector
         Return validation score for server-end best model selection and record
@@ -286,7 +313,9 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
             )
             if abort_signal.triggered:
                 return make_reply(ReturnCode.TASK_ABORTED)
-            self.log_info(fl_ctx, f"val_metric_global_model ({model_owner}): {global_metric:.4f}")
+            self.log_info(
+                fl_ctx, f"val_metric_global_model ({model_owner}): {global_metric:.4f}"
+            )
 
             person_metric = self.local_valid(
                 self.fedsm_helper.person_model,
@@ -297,9 +326,13 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
             )
             if abort_signal.triggered:
                 return make_reply(ReturnCode.TASK_ABORTED)
-            self.log_info(fl_ctx, f"val_metric_person_model ({model_owner}): {person_metric:.4f}")
+            self.log_info(
+                fl_ctx, f"val_metric_person_model ({model_owner}): {person_metric:.4f}"
+            )
             # save personalized model locally
-            person_best = self.fedsm_helper.update_metric_save_person_model(current_round=current_round, metric=person_metric)
+            person_best = self.fedsm_helper.update_metric_save_person_model(
+                current_round=current_round, metric=person_metric
+            )
             if person_best:
                 self.log_info(fl_ctx, f"best personalized model available")
 
@@ -313,17 +346,23 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
             )
             if abort_signal.triggered:
                 return make_reply(ReturnCode.TASK_ABORTED)
-            self.log_info(fl_ctx, f"val_metric_select_model ({model_owner}): {select_metric:.4f}")
+            self.log_info(
+                fl_ctx, f"val_metric_select_model ({model_owner}): {select_metric:.4f}"
+            )
 
             # validation metrics will be averaged with weights at server end for best model record
             # on the two models: global and selector
             # personalized metrics will not be averaged, send a flag to state the best model availability
             metric_dxo = DXO(
                 data_kind=DataKind.METRICS,
-                data={MetaKey.INITIAL_METRICS: [global_metric, select_metric, person_best]},
+                data={
+                    MetaKey.INITIAL_METRICS: [global_metric, select_metric, person_best]
+                },
                 meta={},
             )
-            metric_dxo.set_meta_prop(MetaKey.NUM_STEPS_CURRENT_ROUND, len(self.valid_loader))
+            metric_dxo.set_meta_prop(
+                MetaKey.NUM_STEPS_CURRENT_ROUND, len(self.valid_loader)
+            )
             return metric_dxo.to_shareable()
         else:
             return make_reply(ReturnCode.VALIDATE_TYPE_UNKNOWN)

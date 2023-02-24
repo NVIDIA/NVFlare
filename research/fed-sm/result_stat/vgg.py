@@ -31,7 +31,9 @@ model_urls = {
 
 
 class VGG(nn.Module):
-    def __init__(self, features: nn.Module, num_classes: int = 1000, init_weights: bool = True) -> None:
+    def __init__(
+        self, features: nn.Module, num_classes: int = 1000, init_weights: bool = True
+    ) -> None:
         super(VGG, self).__init__()
         self.features = features
         self.avgpool = nn.AdaptiveAvgPool2d((7, 7))
@@ -85,10 +87,19 @@ def make_layers(cfg: List[Union[str, int]], batch_norm: bool = False) -> nn.Sequ
     return nn.Sequential(*layers)
 
 
-cfgs: Dict[str, List[Union[str, int]]] = {"A": [64, "M", 128, "M", 256, 256, "M", 512, 512, "M", 512, 512, "M"]}
+cfgs: Dict[str, List[Union[str, int]]] = {
+    "A": [64, "M", 128, "M", 256, 256, "M", 512, 512, "M", 512, 512, "M"]
+}
 
 
-def _vgg(arch: str, cfg: str, batch_norm: bool, pretrained: bool, progress: bool, **kwargs: Any) -> VGG:
+def _vgg(
+    arch: str,
+    cfg: str,
+    batch_norm: bool,
+    pretrained: bool,
+    progress: bool,
+    **kwargs: Any
+) -> VGG:
     if pretrained:
         kwargs["init_weights"] = False
     model = VGG(make_layers(cfgs[cfg], batch_norm=batch_norm), **kwargs)

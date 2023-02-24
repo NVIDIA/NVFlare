@@ -83,7 +83,6 @@ class PTModelPersistenceFormatManagerFedSM(object):
             model_set[model_id] = make_model_learnable(weights, self.meta)
         return model_set
 
-
     def get_single_model(self, model_id) -> dict:
         processed_vars = self._get_processed_vars()
         weights = OrderedDict()
@@ -96,7 +95,6 @@ class PTModelPersistenceFormatManagerFedSM(object):
                 # weights[k] = v.cpu().numpy()
                 weights[k] = v
         return weights
-
 
     def to_persistence_dict(self) -> dict:
         processed_vars = self._get_processed_vars()

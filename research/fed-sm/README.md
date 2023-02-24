@@ -25,20 +25,23 @@ It can be any arbitrary path where the data locates.
 ```
 for job in fedsm_prostate
 do
-  sed -i "s|DATASET_ROOT|${PWD}/data_preparation|g" job_configs/${job}/app/config/config_train.json
+  sed -i "s|DATASET_ROOT|${PWD}/data_preparation|g" jobs/${job}/app/config/config_train.json
 done
 ```
 ### Use NVFlare simulator to run the experiments
 We use NVFlare simulator to run the FL training experiments, following the pattern:
 ```
-nvflare simulator job_configs/[job] -w ${PWD}/workspaces/[job] -c [clients] -gpu [gpu] -t [thread]
+nvflare simulator jobs/[job] -w ${workspace_path}/[job] -c [clients] -gpu [gpu] -t [thread]
 ```
 `[job]` is the experiment job that will be submitted for the FL training. 
 In this example, this is `fedsm_prostate`.  
 The combination of `-c` and `-gpu`/`-t` controls the resource allocation. 
 
 ## Results on three clients for FedSM
-In this example, we run three clients on 1 GPU with three threads `-t 3`. The minimum GPU memory requirement is 12 GB. 
+In this example, we run three clients on 1 GPU with three threads `-t 3`. The minimum GPU memory requirement is 12 GB. We put the workspace in `/tmp` folder
+```
+nvflare simulator jobs/fedsm_prostate -w /tmp/nvflare/fedsm_prostate -c client_I2CVB,client_MSD,client_NCI_ISBI_3T -t 3
+```
 
 ### Validation curve on each site
 In this example, each client computes their validation scores using their own
@@ -54,10 +57,10 @@ The TensorBoard curves (smoothed with weight 0.8) for validation Dice for the 10
 ### Testing score
 The testing score is computed based on the Super Model for FedSM.
 We provide a script for performing validation on testing data split. 
-Please add the correct paths and job_ids, and run:
+Please add the correct paths below, and run:
 
 ```
-bash ./result_stat/testing_models_2d.sh
+python3 prostate_2d_test_only.py --models_dir "${workspace_path}/fedsm_prostate/simulate_job/app_server/" --dataset_base_dir ${dataset_path} --datalist_json_path "${datalist_json_path}"
 ```
 
 ## Citation
