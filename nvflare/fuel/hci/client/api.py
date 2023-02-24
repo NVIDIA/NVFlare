@@ -169,8 +169,11 @@ class _CmdListReplyProcessor(ReplyProcessor):
             usage = row[3]
             confirm = row[4]
             client_cmd = None
+            visible = True
             if len(row) > 5:
                 client_cmd = row[5]
+            if len(row) > 6:
+                visible = row[6].lower() in ["true", "yes"]
 
             # if confirm == 'auth' and not client.require_login:
             # the user is not authenticated - skip this command
@@ -182,7 +185,7 @@ class _CmdListReplyProcessor(ReplyProcessor):
                 usage=usage,
                 handler=None,
                 authz_func=None,
-                visible=True,
+                visible=visible,
                 confirm=confirm,
                 client_cmd=client_cmd,
                 map_client_cmd=True,
