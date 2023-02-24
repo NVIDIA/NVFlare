@@ -66,7 +66,7 @@ You can find out the other commands by using "?", you can download job results. 
 ```console
 $ bye
 ```
-You can use poc command to shutdown clients and server
+You can use poc command to shut down clients and server
 
 ```shell
 $ nvflare poc --stop  
@@ -174,7 +174,9 @@ the startup kits from the UI.
 * **Flare API** 
   
   To add an improved version of Admin API to make it easier to use in notebook env. The current admin APIs still work.
-  we potentially could deprecate the old Admin API in the future. FLARE API currently support selected commands of admin APIs 
+  we potentially could deprecate the old Admin API in the future. FLARE API currently support selected commands of admin APIs
+  For details of the Flare API, you can check [this notebook](https://github.com/NVIDIA/NVFlare/blob/dev/examples/tutorial/flare_api.ipynb)
+  If you consider to migrating the existing Admin API to this new API, there is the [migration guide](https://nvflare.readthedocs.io/en/dev/real_world_fl/migrating_to_flare_api.html)
 
 * **Sign custom code**
   Before a job is submitted to the server, the submitter's private key is used to sign
@@ -186,8 +188,9 @@ the startup kits from the UI.
   The model is either initialized via model file or custom model initiation code. Pre-defining a model file means to pre-generate and save the model file and then send over to the server.  
   Many users choose to run a custom model initialization code on server. But this, to some customers, could be a security risk.
   
-  FLARE 2.3.0, introduce another way to initialize model on the client side, the Flare server will either can select the initial model based
-  on user-choose strategy (random one or some aggregation)
+  FLARE 2.3.0, introduce another way to initialize model on the client side, the Flare server will either can select 
+  the initial model based on user-choose strategy. Here is the [example](https://github.com/NVIDIA/NVFlare/tree/dev/examples/hello-world/hello-pt) using client-side model. 
+  You can read more about this feature in [FLARE documentation](TODO)
 
 * **Tradition Machine Learning Examples** 
   We add several examples to support federated learning using traditional machine learning algorithms. 
@@ -209,10 +212,10 @@ the startup kits from the UI.
   * we laid some ground work in FLARE communication layer. The new communication will be ready in next release.   
   
     
-### Migrations tips 
-
-   To migrate from releases prior to 2.2.1, here are few notes that might help
+### Migrations tips
    [migrate to 2.2.1](docs/release_notes/2.2.1/migration_notes.md).
+   [migrate to 2.3.0](docs/release_notes/2.3.0/migration_notes.md).
+
 
 ### Related talks and publications
 
