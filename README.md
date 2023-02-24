@@ -186,14 +186,14 @@ the startup kits from the UI.
   If you consider to migrating the existing Admin API to this new API, there is the [migration guide](https://nvflare.readthedocs.io/en/dev/real_world_fl/migrating_to_flare_api.html)
 
 
-* **Sign custom code**
+* **Sign Custom Code**
 
   Before a job is submitted to the server, the submitter's private key is used to sign
   each file's digest.  Each folder has one signature file, which maps file names to signatures
   of all files inside that folder.  The verification is performed at deployment time. 
 
 
-* **Support client-side model initialization**
+* **Support Client-Side Model Initialization**
 
   Prior to FLARE 2.3.0, the model initialization is performed on the server-side.
   The model is either initialized via model file or custom model initiation code. Pre-defining a model file means to pre-generate and save the model file and then send over to the server.  
