@@ -14,7 +14,6 @@
 
 from __future__ import annotations
 
-import os
 import typing
 
 from nvflare.fuel.hci.client.api_status import APIStatus
@@ -26,7 +25,7 @@ import time
 from abc import ABC, abstractmethod
 
 from nvflare.fuel.hci.client.fl_admin_api import FLAdminAPI
-from tests.integration_test.src.utils import check_job_done, run_admin_api_tests, simplify_job
+from tests.integration_test.src.utils import check_job_done, run_admin_api_tests
 
 
 class _CmdHandler(ABC):
