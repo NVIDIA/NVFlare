@@ -54,8 +54,10 @@
     },
     {
       "id": "aggregator",
-      "path": "aggregators.accumulate_model_aggregator_personalized_softpull.AccumulateWeightedAggregatorPersonalizedSoftPull",
-      "args": {}
+      "path": "aggregators.accumulate_model_aggregator_fedsm.AccumulateWeightedAggregatorFedSM",
+      "args": {
+        "soft_pull_lambda": 0.8
+      }
     },
     {
       "id": "model_selector",

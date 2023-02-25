@@ -30,7 +30,7 @@ class _AccuItem(object):
         self.steps = steps
 
 
-class AccumulateWeightedAggregatorPersonalizedSoftPull(Aggregator):
+class AccumulateWeightedAggregatorFedSM(Aggregator):
     def __init__(
         self,
         soft_pull_lambda=0.3,
