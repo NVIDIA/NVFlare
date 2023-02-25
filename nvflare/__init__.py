@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare import _version
+from . import _version
 
 __version__ = _version.get_versions()["version"]
+
+from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
