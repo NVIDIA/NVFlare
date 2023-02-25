@@ -15,9 +15,9 @@
 from typing import List, Optional
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ServerCommandKey
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReservedTopic, ServerCommandKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import ReturnCode, make_reply
+from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
 from nvflare.private.fed.server.run_manager import RunManager
 from nvflare.private.fed.server.server_state import HotState
 
@@ -34,6 +34,12 @@ class SimulatorServerEngine(ServerEngine):
 
     def update_job_run_status(self):
         pass
+
+    def send_aux_request(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
+        if topic != ReservedTopic.END_RUN:
+            return super().send_aux_request(targets, topic, request, timeout, fl_ctx)
+        else:
+            return {}
 
 
 class SimulatorRunManager(RunManager):
