@@ -42,10 +42,7 @@ def job_config_args_parser():
     parser.add_argument("--lr_mode", type=str, default="uniform", help="Whether to use uniform or scaled shrinkage")
     parser.add_argument("--nthread", type=int, default=16, help="nthread for xgboost")
     parser.add_argument(
-        "--tree_method",
-        type=str,
-        default="hist",
-        help="tree_method for xgboost - use hist or gpu_hist for best perf"
+        "--tree_method", type=str, default="hist", help="tree_method for xgboost - use hist or gpu_hist for best perf"
     )
     return parser
 

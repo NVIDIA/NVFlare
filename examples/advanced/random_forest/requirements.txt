@@ -1,0 +1,7 @@
+pandas
+xgboost==1.7.0rc1
+sklearn
+torch
+tensorboard
+tensorflow # optional for plot the TensorBoard event files
+seaborn # optional for plot the TensorBoard event files
