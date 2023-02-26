@@ -56,6 +56,25 @@ CLONED_META_KEYS = {
 }
 
 
+def _create_list_job_cmd_parser():
+    parser = SafeArgumentParser(prog="list_jobs")
+    parser.add_argument("job_id", nargs="?", help="Job ID prefix")
+    parser.add_argument("-d", action="store_true", help="Show detailed list")
+    parser.add_argument(
+        "-a",
+        action="store_true",
+        help="List all jobs",
+    )
+    parser.add_argument("-n", help="Filter by job name prefix")
+    parser.add_argument(
+        "-m",
+        default=5,
+        type=int,
+        help="Maximum number of jobs that will be listed",
+    )
+    return parser
+
+
 class JobCommandModule(CommandModule, CommandUtil):
     """Command module with commands for job management."""
 
@@ -282,22 +301,7 @@ class JobCommandModule(CommandModule, CommandUtil):
 
     def list_jobs(self, conn: Connection, args: List[str]):
         try:
-            parser = SafeArgumentParser(prog="list_jobs")
-            parser.add_argument("job_id", nargs="?", help="Job ID prefix")
-            parser.add_argument("-d", action="store_true", help="Show detailed list")
-            parser.add_argument(
-                "-a",
-                action="store_true",
-                help="List all jobs, default is filtered to jobs submitted by the same user",
-            )
-            parser.add_argument("-n", help="Filter by job name prefix")
-            parser.add_argument(
-                "-m",
-                nargs="*",
-                const=5,
-                type=int,
-                help="Limit maximum number of jobs returned to the specified number, default is 5 if flag is set but there is no integer provided for the specified limit",
-            )
+            parser = _create_list_job_cmd_parser()
             parsed_args = parser.parse_args(args[1:])
 
             engine = conn.app_ctx
@@ -325,8 +329,7 @@ class JobCommandModule(CommandModule, CommandUtil):
 
                 filtered_jobs.sort(key=lambda job: job.meta.get(JobMetaKey.SUBMIT_TIME.value, 0.0), reverse=True)
 
-                if parsed_args.m:
-                    filtered_jobs = filtered_jobs[:max_jobs_listed]
+                filtered_jobs = filtered_jobs[:max_jobs_listed]
 
                 if parsed_args.d:
                     self._send_detail_list(conn, filtered_jobs)
