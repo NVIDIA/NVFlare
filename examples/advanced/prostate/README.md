@@ -12,29 +12,7 @@ This example illustrates both 2D (from axial slices) and 3D (from 3D volumes) se
 
 Please see details for FL execution within each folder.
 
-## (Optional) 1. Set up a virtual environment
-```
-python3 -m pip install --user --upgrade pip
-python3 -m pip install --user virtualenv
-```
-(If needed) make all shell scripts executable using
-```
-find . -name ".sh" -exec chmod +x {} \;
-```
-initialize virtual environment.
-```
-source ./virtualenv/set_env.sh
-```
-install required packages for training
-```
-pip3 install --upgrade pip
-pip3 install -r ./virtualenv/min-requirements.txt
-```
-(optional) if you would like to plot the TensorBoard event files as shown below, please also install
-```
-pip install -r ./virtualenv/plot-requirements.txt
-```
-## 2. Multi-source Data Preparation
+## Multi-source Data Preparation
 To run this example, we are going to make use of three open prostate datasets which we split into four FL clients with comparable sizes. Each of them needs some special preprocessing steps. 
 
 Please go to the `./data_preparation` folder to perform the download, preprocessing, and data list generation. 
@@ -64,7 +42,7 @@ pip3 install pynrrd
 ```
 Further, [dcmqi](https://github.com/qiicr/dcmqi) is used to convert DICOM segmentations to NIfTI format by using the [segimage2itkimage](https://qiicr.gitbook.io/dcmqi-guide/opening/cmd_tools/seg/segimage2itkimage#segimage2itkimage) function, download the binary to ./utils folder.
 
-### 2.1 Downloading and preprocessing steps for each dataset: 
+### Downloading and preprocessing steps for each dataset: 
 
 [**I2CVB**](https://i2cvb.github.io/): [data link](https://zenodo.org/record/162231#.YZvNc_HMJuG) 
 
@@ -158,14 +136,14 @@ Download the two .tcia files for DICOM image/mask data with [NBIA Data Retriever
 bash data_conversion_PROSTATEx.sh
 ```
 
-### 2.2 Convert to 2D slices
+### Convert to 2D slices
 For example illustrating the 2D segmentation, for convenience, we first extract and save the 2D slices and their corresponding masks by
 
 ```
 bash data_convert_3d_to_2d.sh 
 ```
 
-### 2.3 Create data lists
+### Create data lists
 Now we have all data we need for these two example under `./dataset` for 3D and `./dataset_2D` for 2D after data download and preprocessing above, we randomly generate a data split at case level (rather than 2D image slice level) for each dataset, training:validation:testing=0.5:0.25:0.25, and combine all JSON files for simulating centralized training while keeping each data split unchanged.
 
 ```
@@ -231,5 +209,5 @@ Mode: file
 In total 39 cases, 20 for training, 10 for validation, and 9 for testing
 ```
 
-## 3. Federated Training for Prostate Tasks
+## Federated Training for Prostate Tasks
 Please go to subfolders [./prostate_2D](./prostate_2D) and [./prostate_3D](./prostate_3D) for further instructions on federated training.

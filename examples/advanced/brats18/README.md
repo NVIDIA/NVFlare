@@ -23,31 +23,7 @@ In this example, we split BraTS18 dataset into [4 subsets](./dataset_brats18/dat
 [Differential Privacy (DP)](https://arxiv.org/abs/1910.00962) [7] is method for ensuring that Federated Learning (FL) preserves privacy by obfuscating the model updates sent from clients to the central server.
 This example shows the usage of a MONAI-based trainer for medical image applications with NVFlare, as well as the usage of DP filters in your FL training. DP is added as a filter in `config_fed_client.json`. Here, we use the "Sparse Vector Technique", i.e. the [SVTPrivacy](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.filters.svt_privacy.html) protocol, as utilized in [Li et al. 2019](https://arxiv.org/abs/1910.00962) [7] (see [Lyu et al. 2016](https://arxiv.org/abs/1603.01699) [8] for more information).
 
-## (Optional) 1. Set up a virtual environment
-```
-python3 -m pip install --user --upgrade pip
-python3 -m pip install --user virtualenv
-```
-(If needed) make all shell scripts executable using
-```
-find . -name ".sh" -exec chmod +x {} \;
-```
-initialize virtual environment.
-```
-source ./virtualenv/set_env.sh
-```
-install required packages for training
-```
-pip3 install --upgrade pip
-pip3 install -r ./virtualenv/min-requirements.txt
-```
-(optional) if you would like to plot the TensorBoard event files as shown below, please also install
-```
-pip install -r ./virtualenv/plot-requirements.txt
-```
-
-
-## 2. Prepare local configs
+## Prepare local configs
 First, we add the image and datalist directory roots to `config_train.json` files for generating the absolute path to the dataset by replacing the `DATASET_ROOT` and  `DATALIST_ROOT` placeholders. In the current folder structure, it will be `${PWD}/dataset_brats18/dataset` for `DATASET_ROOT` and  `${PWD}/dataset_brats18/datalist` for `DATALIST_ROOT` but you can update the below `sed` commands if the data is located somewhere else.
 ```
 for alg in brats_central brats_fedavg brats_fedavg_dp
@@ -57,8 +33,8 @@ do
 done
 ```
 
-## 3. Run experiments with FL simulator
-### 3.1 Training with FL simulator
+## Run experiments with FL simulator
+### Training with FL simulator
 FL simulator is used to simulate FL experiments or debug codes, not for real FL deployment.
 In this example, we assume four local GPUs with at least 12GB of memory are available.
 
@@ -84,7 +60,7 @@ Run the FL simulator with 4 clients for federated learning with differential pri
 nvflare simulator './configs/brats_fedavg_dp' -w './workspace_brats/brats_fedavg_dp' -n 4 -t 4 -gpu 0,1,2,3
 ```
 
-### 3.2 Testing with FL simulator
+### Testing with FL simulator
 The best global models are stored at
 ```
 workspace_brats/[job]/simulated_job/app_server/best_FL_global_model.pt
@@ -96,9 +72,9 @@ cd ./result_stat
 bash testing_models_3d.sh
 ```
 
-## 4. Run experiments with POC ("proof of concept") FL setting
+## Run experiments with POC ("proof of concept") FL setting
 After verifying the codes with FL simulator, we have more confidence to perform FL experiments in POC setting.
-### 4.1 Create your POC ("proof of concept") workspace
+### Create your POC ("proof of concept") workspace
 In this example, we run FL experiments in POC mode, starting with creating local FL workspace.
 The [create_poc_workspace.sh](./create_poc_workspace.sh) script follows this pattern:
 ```
@@ -110,7 +86,7 @@ In the following experiments, we will be using 4 clients.
 ```
 Press y and enter when prompted.
 
-### 4.2 GPU resource and Multi-tasking
+### GPU resource and Multi-tasking
 In this example, we assume four local GPUs with at least 12GB of memory are available. 
 
 As we use the POC workspace without `meta.json`, we control the client GPU directly when starting the clients by specifying `CUDA_VISIBLE_DEVICES`. 
@@ -119,9 +95,9 @@ To enable multitasking (if there are more computation resources - e.g. 4 x 32 GB
 
 For details, please refer to the [documentation](https://nvflare.readthedocs.io/en/main/user_guide/job.html).
 
-### 4.3 Training with POC FL setting
+### Training with POC FL setting
 The next scripts will start the FL server and clients automatically to run FL experiments on localhost.
-#### 4.3.1 Start the FL system and submit jobs
+#### Start the FL system and submit jobs
 Next, we will start the FL system and submit jobs to start FL training automatically.
 
 Start the FL system with either 1 client for centralized training, or 4 clients for federated learning by running
@@ -145,13 +121,13 @@ bash ./submit_job.sh [config]
 
 Note that in order to make it working under most system resource conditions, the current config set `"cache_dataset": 0.0`, which could be slow. If resource permits, it will make the training much faster by caching the dataset. More information available [here](https://docs.monai.io/en/stable/data.html#cachedataset).  
 For reference, with `"cache_dataset": 0.5` setting (cache half the data), the centralized training for 100 round, 1 epoch per round takes around 24.5 hours on a 12GB NVIDIA TITAN Xp GPU. 
-#### 4.3.2 Centralized training
+#### Centralized training
 To simulate a centralized training baseline, we run FL with 1 client using all the training data. 
 ```
 bash start_fl_poc.sh "All"
 bash submit_job.sh brats_central
 ```
-#### 4.3.3 Federated learning
+#### Federated learning
 Start 4 FL clients
 ```
 bash start_fl_poc.sh "1 2 3 4"
@@ -165,7 +141,7 @@ To run FL with differential privacy, we use
 bash submit_job.sh brats_fedavg_dp 
 ```
 
-### 4.4 Control the process with admin console
+### Control the process with admin console
 You can always use the admin console to manually abort a running job.
 To access the admin console, run:
 ```
@@ -179,7 +155,7 @@ The `[JOB_ID]` can be found from site folder like `./workspace_brats/site-1`.
 To log into the POC workspace admin console no username is required 
 (use "admin" for commands requiring conformation with username). 
 
-### 4.5 Testing with POC FL setting
+### Testing with POC FL setting
 After training, each client's best model will be used for cross-site validation.
 The results can be downloaded and shown with the admin console using
 ```
@@ -199,9 +175,9 @@ cd ./result_stat
 bash testing_models_3d_poc.sh
 ```
 
-## 5. Results on 4 clients for Central vs. FedAvg vs. FedAvg with DP 
+## Results on 4 clients for Central vs. FedAvg vs. FedAvg with DP 
 In this example, only the global model gets evaluated at each round, and saved as the final model. 
-### 5.1 Validation curve
+### Validation curve
 We can use tensorboard tool to view the training and validation curves for each setting and each site, e.g.,
 ```
 tensorboard --logdir='./workspace_brats'
@@ -226,7 +202,7 @@ The TensorBoard curves (smoothed with weight 0.8) for validation Dice for 600 ep
 
 As shown, FedAvg achieves similar accuracy as centralized training, while DP will lead to some performance degradation based on the specific [parameter settings](./configs/brats_fedavg_dp/config/config_fed_client.json). Different DP settings will have different impacts over the performance. 
 
-### 5.2 Validation score
+### Validation score
 The accuracy metrics under each settings are:
 
 | Config	| Val Overall Dice | 	Val TC Dice	 | 	Val WT Dice	 | 	Val ET Dice	 | 
