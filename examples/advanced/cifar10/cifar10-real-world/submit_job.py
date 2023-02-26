@@ -17,6 +17,8 @@ import json
 import os
 import uuid
 
+from nvflare.fuel.hci.client.fl_admin_api_runner import FLAdminAPIRunner, api_command_wrapper
+
 
 def read_json(filename):
     assert os.path.isfile(filename), f"{filename} does not exist!"
@@ -32,8 +34,11 @@ def write_json(data, filename):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--job", type=str, default="cifar10_fedavg", help="Path to job config.")
+    parser.add_argument("--admin_dir", type=str, default="./admin/", help="Path to admin directory.")
+    parser.add_argument("--username", type=str, default="admin@nvidia.com", help="Admin username.")
+    parser.add_argument("--job", type=str, default="cifar10_fedavg", help="Path to job")
     parser.add_argument("--poc", action="store_true", help="Whether admin uses POC mode.")
+    parser.add_argument("--central", action="store_true", help="Whether we assume all data is centralized.")
     parser.add_argument(
         "--train_split_root", type=str, default="/tmp/cifar10_splits", help="Location where to save data splits."
     )
@@ -47,6 +52,16 @@ def main():
         "Assumes central training.",
     )
     args = parser.parse_args()
+
+    assert os.path.isdir(args.admin_dir), f"admin directory does not exist at {args.admin_dir}"
+
+    # Initialize the runner
+    runner = FLAdminAPIRunner(
+        username=args.username,
+        admin_dir=args.admin_dir,
+        poc=args.poc,
+        debug=False,
+    )
 
     # update alpha and split data dir
     job_name = os.path.basename(args.job)
@@ -70,9 +85,14 @@ def main():
         write_json(client_config, client_config_filename)
         write_json(server_config, server_config_filename)
         write_json(meta_config, meta_config_filename)
-        print(f"Updated {meta_config_filename} to alpha={args.alpha}")
     else:
         print("Assuming centralized training.")
+
+    # Submit job
+    api_command_wrapper(runner.api.submit_job(args.job))
+
+    # finish
+    runner.api.logout()
 
 
 if __name__ == "__main__":

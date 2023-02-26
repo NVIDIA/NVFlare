@@ -37,12 +37,11 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-from cifar10_data_splitter import Cifar10DataSplitter
+from pt.utils.cifar10_data_utils import load_cifar10_data
 
 
 def main():
-    splitter = Cifar10DataSplitter()
-    splitter.load_cifar10_data()  # will download to CIFAR10_ROOT defined in Cifar10DataSplitter
+    load_cifar10_data()
 
 
 if __name__ == "__main__":
