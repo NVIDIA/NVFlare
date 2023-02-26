@@ -1,6 +1,6 @@
 n_servers: 1
 n_clients: 2
-jobs_root_dir: ../../examples/advanced/tensorboard-streaming/job_configs
+jobs_root_dir: ../../examples/advanced/experiment-tracking/tensorboard-streaming/job_configs
 cleanup: True
 
 
