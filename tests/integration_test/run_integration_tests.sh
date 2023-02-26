@@ -2,13 +2,15 @@
 
 set -e
 
+backends=(numpy tensorflow pytorch overseer ha auth preflight cifar)
+
 usage()
 {
     echo "Run integration tests of NVFlare."
     echo
     echo "Syntax: ./run_integration_tests.sh -m [-c]"
     echo "options:"
-    echo "m     Which backend/test to run (options: numpy, tensorflow, pytorch, ha, auth, overseer, preflight, cifar)."
+    echo "m     Which backend/test to run (options: ${backends[*]})."
     echo "c     Clean up integration test results."
     echo
     exit 1
@@ -20,8 +22,12 @@ while getopts ":m:c" option; do
     case "${option}" in
         m) # framework/backend
             m=${OPTARG}
-            [[ $m == "numpy" || $m == "tensorflow" || $m == "pytorch" || $m == "overseer" || $m == "ha" || $m == "auth" || $m == "preflight" || $m == "cifar" ]] || usage
-            prefix="NVFLARE_TEST_FRAMEWORK=$m"
+            if [[ " ${backends[*]} " =~ " ${m} " ]]; then
+                # whatever you want to do when array contains value
+                prefix="NVFLARE_TEST_FRAMEWORK=$m"
+            else
+              usage
+            fi
             ;;
         c) # Clean up
             echo "Clean up integration tests result"
@@ -49,9 +55,9 @@ run_overseer_test()
     eval "$cmd"
 }
 
-run_numpy()
+run_system_test()
 {
-    echo "Running integration tests using numpy related jobs."
+    echo "Running system integration tests."
     cmd="$prefix $cmd system_test.py"
     echo "$cmd"
     eval "$cmd"
@@ -71,53 +77,41 @@ run_pytorch()
     echo "Running integration tests using pytorch related jobs."
     cmd="$prefix $cmd system_test.py"
     python -m pip install tensorboard torch torchvision
-    python -c "import torch; print('PyTorch version is ' + torch.__version__)"
+
     echo "$cmd"
     eval "$cmd"
 }
 
-run_ha()
+run_cifar()
 {
-    echo "Running HA integration tests."
+    echo "Running integration tests using cifar related jobs."
     cmd="$prefix $cmd system_test.py"
-    echo "$cmd"
-    eval "$cmd"
-}
 
-run_auth()
-{
-    echo "Running federated authorization integration tests."
-    cmd="$prefix $cmd system_test.py"
+    export OLD_PYTHON_PATH="${PYTHONPATH}"
+    export PYTHONPATH="${PYTHONPATH}:${PWD}/../../examples/advanced/cifar10"
+    echo "PYTHONPATH is: ${PYTHONPATH}"
     echo "$cmd"
     eval "$cmd"
-}
-
-run_cifar10()
-{
-    echo "Running integration tests using cifar10 related jobs."
-    cmd="$prefix $cmd system_test.py"
-    python -m pip install tensorboard torch torchvision
-    python -c "import torch; print('PyTorch version is ' + torch.__version__)"
-    export PYTHONPATH="${PYTHONPATH}:${PWD}/../../examples/cifar10"
-    echo "PYTHONPATH is " + $PYTHONPATH
-    echo "$cmd"
-    eval "$cmd"
+    export PYTHONPATH="${OLD_PYTHON_PATH}"
 }
 
 if [[ $m == "numpy" ]]; then
-    run_numpy
+    echo "Running integration tests using numpy related jobs."
+    run_system_test
 elif [[ $m == "tensorflow" ]]; then
     run_tensorflow
 elif [[ $m == "pytorch" ]]; then
     run_pytorch
 elif [[ $m == "ha" ]]; then
-    run_ha
+    echo "Running HA integration tests."
+    run_system_test
 elif [[ $m == "auth" ]]; then
-    run_auth
+    echo "Running federated authorization integration tests."
+    run_system_test
 elif [[ $m == "overseer" ]]; then
     run_overseer_test
 elif [[ $m == "preflight" ]]; then
     run_preflight_check_test
 elif [[ $m == "cifar" ]]; then
-    run_cifar10
+    run_cifar
 fi

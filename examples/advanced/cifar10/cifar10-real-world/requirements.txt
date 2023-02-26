@@ -1,0 +1,4 @@
+nvflare[HE,PT]>=2.3.0
+tensorflow
+seaborn
+pandas

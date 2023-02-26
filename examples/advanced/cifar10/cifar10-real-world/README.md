@@ -1,4 +1,4 @@
-# Federated Learning with CIFAR-10
+# Real-World Federated Learning with CIFAR-10
 
 This example includes instructions on running [FedAvg](https://arxiv.org/abs/1602.05629) 
 with streaming of TensorBoard metrics to the server during training 
@@ -9,36 +9,31 @@ For more information on real-world FL see [here](https://nvflare.readthedocs.io/
 For instructions of how to run CIFAR-10 with FL simulator to compare different FL algorithms, 
 see the example on ["Simulated Federated Learning with CIFAR-10"](../cifar10-sim/README.md).
 
-## (Optional) 1. Set up a virtual environment
-```
-python3 -m pip install --user --upgrade pip
-python3 -m pip install --user virtualenv
-```
-(If needed) make all shell scripts executable using
-```
-find . -name ".sh" -exec chmod +x {} \;
-```
-initialize virtual environment.
-```
-source ./virtualenv/set_env.sh
-```
-install required packages for training
+## 1. Install requirements
+
+Install required packages for training
 ```
 pip install --upgrade pip
-pip install -r ./virtualenv/min-requirements.txt
-```
-(optional) if you would like to plot the TensorBoard event files as shown below, please also install
-```
-pip install -r ./virtualenv/plot-requirements.txt
+pip install -r ./requirements.txt
 ```
 
-### 2. Download the CIFAR-10 dataset 
+> **_NOTE:_**  We recommend either using a containerized deployment or virtual environment, 
+> please refer to [getting started](https://nvflare.readthedocs.io/en/latest/getting_started.html).
+
+Set `PYTHONPATH` to include custom files of this example:
+```
+export PYTHONPATH=${PWD}/..
+```
+
+## 2. Download the CIFAR-10 dataset 
 To speed up the following experiments, first download the [CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html) dataset:
 ```
 python3 ../pt/utils/cifar10_download_data.py
 ```
-> **_NOTE:_** This is important for running multi-task experiments. Otherwise, each job will try to download the dataset 
-> to the same location which might cause a file corruption.
+
+> **_NOTE:_** This is important for running multitask experiments or running multiple clients on the same machine.
+> Otherwise, each job will try to download the dataset to the same location which might cause a file corruption.
+
 
 ## 3. Create your FL workspace and start FL system 
 
@@ -93,14 +88,14 @@ done
 In the `meta.json` of each job, we can request 1 GB of memory for each client. 
 Hence, the FL system will schedule at most `N_GPU` jobs to be run in parallel.
 
-### 3.4 Start FL system
+### 3.3 Start FL system
 
 For starting the FL system with 8 clients in the secure workspace, run
 ```
 ./start_fl_secure.sh 8
 ```
 
-### 4.1 (Optional) POC ("proof of concept") workspace
+### 3.4 (Optional) POC ("proof of concept") workspace
 To run FL experiments in POC mode, create your local FL workspace the below command. 
 In the following experiments, we will be using 8 clients. Press y and enter when prompted. 
 ```
@@ -116,7 +111,7 @@ By default, POC will create startup kits at `/tmp/nvflare/poc`.
 > homomorphic encryption (HE) one shown below. These startup kits allow secure deployment of FL in real-world scenarios 
 > using SSL certificated communication channels.
 
-### 4.2 (Optional) Multi-tasking resource management in POC mode
+### 3.5 (Optional) Multi-tasking resource management in POC mode
 
 We can apply the same resource management settings in POC mode as in secure mode above. 
 Note, POC provides the resources.json, so copying the default file is not necessary.
@@ -131,7 +126,7 @@ do
 done
 ```
 
-### 4.3 (Optional)  Start FL system in POC mode
+### 3.6 (Optional)  Start FL system in POC mode
 
 Then, start the FL system with 8 clients by running
 ```
@@ -141,37 +136,37 @@ nvflare poc --start
 
 For details about resource management and consumption, please refer to the [documentation](https://nvflare.readthedocs.io/en/latest/programming_guide/resource_manager_and_consumer.html).
 
-## 5. Run automated experiments
+## 4. Run automated experiments
 
 Next, we will submit jobs to start FL training automatically. 
 
 The [submit_job.sh](./submit_job.sh) script follows this pattern:
 ```
-./submit_job.sh [config] [alpha]
+./submit_job.sh [job] [alpha]
 ```
 If you want to use the poc workspace, append `--poc` to this command, e.g,: 
 ```
-./submit_job.sh [config] [alpha] --poc
+./submit_job.sh [job] [alpha] --poc
 ```
 
 In this simulation, the server will split the CIFAR-10 dataset to simulate each client having different data distributions.
 
-The `config` argument controls which experiment job to submit. 
-The respective folder under `job_configs` will be submitted using the admin API with [submit_job.py](./submit_job.py) for scheduling.
+The `job` argument controls which experiment job to submit. 
+The respective folder under `jobs` will be submitted using the admin API with [submit_job.py](./submit_job.py) for scheduling.
 The admin API script ([submit_job.py](./submit_job.py)) also overwrites the alpha value inside the 
 job configuration file depending on the provided commandline argument.
 Jobs will be executed automatically depending on the available resources at each client (see "Multi-tasking" section).
 
 For details about jobs, please refer to the [documentation](https://nvflare.readthedocs.io/en/latest/real_world_fl/job.html).
 
-### 5.1 Varying data heterogeneity of data splits
+### 4.1 Varying data heterogeneity of data splits
 
 We use an implementation to generated heterogeneous data splits from CIFAR-10 based a Dirichlet sampling strategy 
 from FedMA (https://github.com/IBM/FedMA), where `alpha` controls the amount of heterogeneity, 
-see [Wang et al.](https://arxiv.org/abs/2002.06440). For more information on how `alpha` impacts model FL training, 
+see [Wang et al.](https://arxiv.org/abs/2002.06440) For more information on how `alpha` impacts model FL training, 
 see the example [here](../cifar10-sim/README.md).
 
-## 5.2 Streaming TensorBoard metrics to the server
+### 4.2 Streaming TensorBoard metrics to the server
 
 In a real-world scenario, the researcher won't have access to the TensorBoard events of the individual clients. 
 In order to visualize the training performance in a central place, `AnalyticsSender`, 
@@ -205,7 +200,7 @@ You should see the cross-site validation results at
 [DOWNLOAD_DIR]/[JOB_ID]/workspace/cross_site_val/cross_val_results.json
 ```
 
-### 5.3 Secure aggregation using homomorphic encryption
+### 4.3 Secure aggregation using homomorphic encryption
 
 Next we run FedAvg using homomorphic encryption (HE) for secure aggregation on the server in non-heterogeneous setting (`alpha=1`).
 
@@ -220,23 +215,22 @@ FedAvg with HE:
 
 > **_NOTE:_** Currently, FedOpt is not supported with HE as it would involve running the optimizer on encrypted values.
 
-### 5.4 Running all examples
+### 4.4 Running all examples
 
 You can use `./run_experiments.sh` to submit all above-mentioned experiments at once if preferred. 
 This script uses the secure workspace to also support the HE experiment.
 
-## 6. Results
+## 5. Results
 
 Let's summarize the result of the experiments run above. First, we will compare the final validation scores of 
 the global models for different settings. In this example, all clients compute their validation scores using the
 same CIFAR-10 test set. The plotting script used for the below graphs is in 
-[./figs/plot_tensorboard_events.py](./figs/plot_tensorboard_events.py) 
-(please install [./virtualenv/plot-requirements.txt](./virtualenv/plot-requirements.txt)).
+[./figs/plot_tensorboard_events.py](./figs/plot_tensorboard_events.py)
 
 To use it, download all job results using the `download_job` admin command and specify the `download_dir` in 
 [./figs/plot_tensorboard_events.py](./figs/plot_tensorboard_events.py). 
 
-### 6.1 FedAvg vs. FedAvg with HE
+### 5.1 FedAvg vs. FedAvg with HE
 With a data split using `alpha=1.0`, i.e. a non-heterogeneous split, we achieve the following final validation scores.
 One can see that FedAvg can achieve similar performance to central training and 
 that HE does not impact the performance accuracy of FedAvg significantly while adding security to the aggregation step
