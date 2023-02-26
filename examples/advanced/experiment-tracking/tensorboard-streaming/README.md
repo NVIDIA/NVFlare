@@ -21,7 +21,7 @@ python -m pip install -r requirements.txt
 Use nvflare simulator to run the example:
 
 ```
-nvflare simulator -w /tmp/nvflare/ -n 2 -t 2 ./job_configs/tensorboard-streaming
+nvflare simulator -w /tmp/nvflare/ -n 2 -t 2 ./jobs/tensorboard-streaming
 ```
 
 ### 3. Access the logs and results
