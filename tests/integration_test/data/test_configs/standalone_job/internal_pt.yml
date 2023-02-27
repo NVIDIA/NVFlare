@@ -68,3 +68,5 @@ tests:
     validators:
       - path: tests.integration_test.validators.TBResultValidator
         args: { require_result_on_client: True }
+    setup:
+      - python -m pip install tensorboard
