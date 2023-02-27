@@ -10,7 +10,7 @@ tests:
       - "trigger":
           "type": "server_log"
           "data": "Server started"
-        "actions": [ "submit_job hello-pt" ]
+        "actions": [ "submit_job hello-pt/jobs/hello-pt" ]
         "result":
           "type": "run_state"
           "data": { }

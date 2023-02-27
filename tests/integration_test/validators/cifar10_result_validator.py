@@ -14,8 +14,6 @@
 
 import os
 
-import numpy as np
-
 from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.app_common.app_constant import DefaultCheckpointFileName
 
@@ -23,10 +21,6 @@ from .job_result_validator import FinishJobResultValidator
 
 
 class CIFAR10ResultValidator(FinishJobResultValidator):
-    def __init__(self, expected_result):
-        super().__init__()
-        self.expected_result = np.array(expected_result)
-
     def validate_finished_results(self, job_result, client_props) -> bool:
         server_run_dir = job_result["workspace_root"]
 

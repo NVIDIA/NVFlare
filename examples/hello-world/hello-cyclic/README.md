@@ -19,7 +19,7 @@ pip3 install tensorflow
 Use nvflare simulator to run the hello-examples:
 
 ```
-nvflare simulator -w /tmp/nvflare/ -n 2 -t 2 hello-cyclic
+nvflare simulator -w /tmp/nvflare/ -n 2 -t 2 hello-cyclic/jobs/hello-cyclic
 ```
 
 ### 3. Access the logs and results

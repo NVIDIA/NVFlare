@@ -10,7 +10,7 @@ tests:
       - "trigger":
           "type": "server_log"
           "data": "Server started"
-        "actions": [ "submit_job hello-numpy-sag" ]
+        "actions": [ "submit_job hello-numpy-sag/jobs/hello-numpy-sag" ]
         "result":
           "type": "run_state"
           "data": {}
@@ -29,7 +29,7 @@ tests:
       - "trigger":
           "type": "server_log"
           "data": "Server started"
-        "actions": [ "submit_job hello-numpy-cross-val" ]
+        "actions": [ "submit_job hello-numpy-cross-val/jobs/hello-numpy-cross-val" ]
         "result":
           "type": "run_state"
           "data": { }

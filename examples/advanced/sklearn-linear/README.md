@@ -26,25 +26,6 @@ Under this setting, federated learning can be formulated as a [FedAvg](https://a
 This can be achieved by setting the `warm_start` flag of SGDClassifier to 
 `True` in order to allow repeated fitting of the classifiers to the local data.
 
-## (Optional) Set up a virtual environment
-```
-python3 -m pip install --user --upgrade pip
-python3 -m pip install --user virtualenv
-```
-(If needed) make all shell scripts executable using
-```
-find . -name ".sh" -exec chmod +x {} \;
-```
-Initialize a virtual environment.
-```
-source ./virtualenv/set_env.sh
-```
-Install required packages for training.
-```
-pip3 install --upgrade pip
-pip3 install -r ./virtualenv/requirements.txt
-```
-
 ## Data preparation 
 The examples illustrate a binary classification task based on [HIGGS dataset](https://archive.ics.uci.edu/ml/datasets/HIGGS).
 This dataset contains 11 million instances, each with 28 attributes. Download the dataset from the HIGGS link above, containing a single `.csv` file.

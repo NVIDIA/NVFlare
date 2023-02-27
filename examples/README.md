@@ -7,7 +7,29 @@ The provided examples cover different aspects of [NVIDIA FLARE](https://nvflare.
 > **_NOTE:_** To run examples, please follow the instructions for [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) and any additional steps specified in the example readmes.
 
 ## 0. Quickstart
-To get started with these examples, please follow the [Quickstart](https://nvflare.readthedocs.io/en/main/quickstart.html)in the NVIDIA FLARE Documentation.  This walks you through installation, creating a POC workspace, and deploying your first NVIDIA FLARE Application.  The following examples will detail any additional requirements in their READMEs.
+To get started with these examples, please follow the [Quickstart](https://nvflare.readthedocs.io/en/main/quickstart.html) in the NVIDIA FLARE Documentation.  This walks you through installation, creating a POC workspace, and deploying your first NVIDIA FLARE Application.  The following examples will detail any additional requirements in their READMEs.
+## (Optional) Set up a virtual environment
+```
+python3 -m pip install --user --upgrade pip
+python3 -m pip install --user virtualenv
+```
+(If needed) make all shell scripts executable using
+```
+find . -name ".sh" -exec chmod +x {} \;
+```
+initialize virtual environment.
+```
+source ./virtualenv/set_env.sh
+```
+within each example folder, install required packages for training
+```
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+(optional) some examples contains script for plotting the TensorBoard event files, if needed, please also install
+```
+pip install -r plot-requirements.txt
+```
 
 ## 1. Hello World Examples
 ### 1.1 Workflows

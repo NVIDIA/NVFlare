@@ -288,11 +288,15 @@ class JobCommandModule(CommandModule, CommandUtil):
             parser.add_argument(
                 "-a",
                 action="store_true",
-                help="List all jobs, default is filtered to jobs submitted by the same user and limit to last 5 jobs by submit time",
+                help="List all jobs, default is filtered to jobs submitted by the same user",
             )
             parser.add_argument("-n", help="Filter by job name prefix")
             parser.add_argument(
-                "-m", default=5, help="Limit maximum number of jobs returned to the specified number, default is 5"
+                "-m",
+                nargs="*",
+                const=5,
+                type=int,
+                help="Limit maximum number of jobs returned to the specified number, default is 5 if flag is set but there is no integer provided for the specified limit",
             )
             parsed_args = parser.parse_args(args[1:])
 
@@ -308,7 +312,7 @@ class JobCommandModule(CommandModule, CommandUtil):
             if jobs:
                 id_prefix = parsed_args.job_id
                 name_prefix = parsed_args.n
-                max_jobs_listed = int(parsed_args.m)
+                max_jobs_listed = parsed_args.m
                 if parsed_args.a:
                     user_name = None
                 else:
@@ -319,9 +323,9 @@ class JobCommandModule(CommandModule, CommandUtil):
                     conn.append_string("No jobs matching the specified criteria.")
                     return
 
-                filtered_jobs.sort(key=lambda job: job.meta.get(JobMetaKey.SUBMIT_TIME.value, 0.0))
+                filtered_jobs.sort(key=lambda job: job.meta.get(JobMetaKey.SUBMIT_TIME.value, 0.0), reverse=True)
 
-                if not parsed_args.a:
+                if parsed_args.m:
                     filtered_jobs = filtered_jobs[:max_jobs_listed]
 
                 if parsed_args.d:
