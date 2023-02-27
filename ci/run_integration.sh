@@ -41,18 +41,6 @@ remove_pipenv() {
     rm Pipfile Pipfile.lock
 }
 
-integration_test_pt() {
-    echo "Run PT integration test..."
-    init_pipenv
-    testFolder="tests/integration_test"
-    clean_up_snapshot_and_job
-    pushd ${testFolder}
-    pipenv run ./run_integration_tests.sh -m pytorch
-    popd
-    clean_up_snapshot_and_job
-    remove_pipenv
-}
-
 integration_test_tf() {
     echo "Run TF integration test..."
     # not using pipenv because we need tensorflow package from the container
@@ -82,13 +70,13 @@ clean_up_snapshot_and_job() {
 }
 
 integration_test() {
-    echo "Run integration test..."
+    echo "Run integration test with backend $1..."
     init_pipenv
     add_dns_entries
     testFolder="tests/integration_test"
     clean_up_snapshot_and_job
     pushd ${testFolder}
-    pipenv run ./run_integration_tests.sh -m "$1"
+    pipenv run ./run_integration_tests.sh -m "$1" -d
     popd
     clean_up_snapshot_and_job
     remove_dns_entries
@@ -104,7 +92,7 @@ case $BUILD_TYPE in
 
     pytorch)
         echo "Run PT tests..."
-        integration_test_pt
+        integration_test "pytorch"
         ;;
 
     ha)
