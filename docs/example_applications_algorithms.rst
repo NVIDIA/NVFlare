@@ -12,8 +12,7 @@ NVIDIA FLARE has several examples to help you get started with federated learnin
 
    examples/hello_scatter_and_gather
    examples/hello_cross_val
-   examples/hello_pt 
-   examples/hello_pt_tb
+   examples/hello_pt
    examples/hello_tf2
    examples/federated_statistics
    Federated XGBoost (GitHub) <https://github.com/NVIDIA/NVFlare/blob/main/examples/xgboost>
@@ -37,7 +36,6 @@ The following quickstart guides walk you through some of these examples:
     1.2. Deep Learning
 
     * :ref:`Hello PyTorch <hello_pt>` - Example image classifier using FedAvg and PyTorch as the deep learning training framework
-    * :ref:`Hello PyTorch with TensorBoard <hello_pt_tb>` - Example building on Hello PyTorch with TensorBoard streaming from clients to server
     * :ref:`Hello TensorFlow <hello_tf2>` - Example image classifier using FedAvg and TensorFlow as the deep learning training frameworks
 
   2. **FL algorithms**
@@ -60,6 +58,10 @@ The following quickstart guides walk you through some of these examples:
 
   5. **Federated Site Policies**
     * `Federated Policies (Github) <https://github.com/NVIDIA/NVFlare/blob/dev/examples/federated-policies/README.rst>`_ - Discuss the federated site policies for authorization, resource and data privacy management
+
+  6. **Experiment tracking**
+    * :ref:`TensorBoard Streaming <tensorboard_streaming>` - Example building on Hello PyTorch with TensorBoard streaming from clients to server
+
 
 For the complete collection of example applications, see https://github.com/NVIDIA/NVFlare/tree/main/examples.
 
