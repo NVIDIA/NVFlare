@@ -1,6 +1,6 @@
 n_servers: 1
 n_clients: 2
-jobs_root_dir: ../../examples/advanced/experiment-tracking/tensorboard-streaming/job_configs
+jobs_root_dir: ../../examples/advanced/experiment-tracking/tensorboard-streaming/jobs
 cleanup: True
 
 
@@ -29,5 +29,6 @@ tests:
         args: { require_result_on_client: False }
     setup:
       - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='~/data', download=True)"
+      - python -m pip install tensorboard
     teardown:
       - rm -rf ~/data

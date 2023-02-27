@@ -1,7 +1,7 @@
-.. _hello_pt_tb:
+.. _tensorboard_streaming:
 
-Hello PyTorch with TensorBoard
-==============================
+TensorBoard Streaming
+=====================
 
 Introduction
 -------------
@@ -9,7 +9,7 @@ Introduction
 In this exercise, you will learn how to stream TensorBoard events from the clients
 to the server in order to visualize live training metrics from a central place on the server.
 
-This exercise will be working with the ``hello-pt-tb`` application in the examples folder,
+This exercise will be working with the ``tensorboard-streaming`` example in the examples folder,
 which builds upon :doc:`hello_pt` by adding TensorBoard streaming.
 
 The setup of this exercise consists of one **server** and two **clients**.
@@ -30,11 +30,11 @@ Let's get started. Make sure you have an environment with NVIDIA FLARE installed
   $ git clone https://github.com/NVIDIA/NVFlare.git
 
 Now remember to activate your NVIDIA FLARE Python virtual environment from the installation guide.
-Since you will use PyTorch, torchvision, and TensorBoard for this exercise, let's go ahead and install these libraries:
+And install the required dependencies.
 
 .. code-block:: shell
 
-  (nvflare-env) $ python3 -m pip install torch torchvision tensorboard
+  (nvflare-env) $ python3 -m pip install -r
 
 
 Adding TensorBoard Streaming to Configurations
@@ -42,7 +42,7 @@ Adding TensorBoard Streaming to Configurations
 
 Inside the config folder there are two files, ``config_fed_client.json`` and ``config_fed_server.json``.
 
-.. literalinclude:: ../../examples/hello-world/hello-pt-tb/app/config/config_fed_client.json
+.. literalinclude:: ../../examples/advanced/experiment-tracking/tensorboard-streaming/jobs/tensorboard-streaming/app/config/config_fed_client.json
    :language: json
    :linenos:
    :caption: config_fed_client.json
@@ -60,7 +60,7 @@ which converts local events to federated events.
 This changes the event ``analytix_log_stats`` into a fed event ``fed.analytix_log_stats``,
 which will then be streamed from the clients to the server.
 
-.. literalinclude:: ../../examples/hello-world/hello-pt-tb/app/config/config_fed_server.json
+.. literalinclude:: ../../examples/advanced/experiment-tracking/tensorboard-streaming/jobs/tensorboard-streaming/app/config/config_fed_server.json
    :language: json
    :linenos:
    :caption: config_fed_server.json
@@ -83,10 +83,10 @@ In this exercise, all of the TensorBoard code additions will be made in ``pt_lea
 
 First we must initialize our TensorBoard writer to the ``AnalyticsSender`` we defined in the client config:
 
-.. literalinclude:: ../../examples/hello-world/hello-pt-tb/app/custom/pt_learner.py
+.. literalinclude:: ../../examples/advanced/experiment-tracking/tensorboard-streaming/jobs/tensorboard-streaming/app/custom/pt_learner.py
    :language: python
-   :lines: 61, 89-92
-   :lineno-start: 61
+   :lines: 103-106
+   :lineno-start: 103
    :linenos:
 
 The ``LearnerExecutor`` passes in the component dictionary into the ``parts`` parameter of ``initialize()``.
@@ -98,14 +98,14 @@ but we can also define it in the client config to be passed into the constructor
 Now that our TensorBoard writer is set to ``AnalyticsSender``,
 we can write and stream training metrics to the server in ``local_train()``:
 
-.. literalinclude:: ../../examples/hello-world/hello-pt-tb/app/custom/pt_learner.py
+.. literalinclude:: ../../examples/advanced/experiment-tracking/tensorboard-streaming/jobs/tensorboard-streaming/app/custom/pt_learner.py
    :language: python
-   :lines: 127-159
-   :lineno-start: 127
+   :lines: 144-174
+   :lineno-start: 144
    :linenos:
 
-We use ``add_scalar(tag, scalar, global_step)`` on line 155 to send training loss metrics,
-while on line 159 we send the validation accuracy at the end of each epoch.
+We use ``add_scalar(tag, scalar, global_step)`` on line 170 to send training loss metrics,
+while on line 174 we send the validation accuracy at the end of each epoch.
 
 You can learn more about other supported writer methods in
 :class:`AnalyticsSender<nvflare.app_common.widgets.streaming.AnalyticsSender>`.
@@ -114,7 +114,7 @@ You can learn more about other supported writer methods in
 Train the Model, Federated!
 ---------------------------
 
-.. |ExampleApp| replace:: hello-pt-tb
+.. |ExampleApp| replace:: tensorboard-streaming
 .. include:: run_fl_system.rst
 
 
@@ -160,5 +160,5 @@ Congratulations!
 Now you will be able to see the live training metrics of each client from a central place on the server.
 
 The full source code for this exercise can be found in
-`examples/hello-pt-tb <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-pt-tb>`_.
+`examples/advanced/experiment-tracking/tensorboard-streaming <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/experiment-tracking/tensorboard-streaming>`_.
 

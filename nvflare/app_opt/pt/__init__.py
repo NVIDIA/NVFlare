@@ -22,5 +22,4 @@ from nvflare.app_opt.pt.model_persistence_format_manager import PTModelPersisten
 from nvflare.app_opt.pt.model_reader_writer import PTModelReaderWriter
 from nvflare.app_opt.pt.multi_process_executor import PTMultiProcessExecutor
 from nvflare.app_opt.pt.scaffold import PTScaffoldHelper, get_lr_values
-from nvflare.app_opt.pt.tb_receiver import TBAnalyticsReceiver
 from nvflare.app_opt.pt.utils import feed_vars
