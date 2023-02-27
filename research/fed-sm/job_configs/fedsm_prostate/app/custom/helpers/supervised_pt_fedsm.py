@@ -14,6 +14,7 @@
 
 
 from helpers.pt_fedsm import PTFedSMHelper
+
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.shareable import make_reply
 from nvflare.apis.signal import Signal
@@ -48,9 +49,7 @@ class SupervisedPTFedSMHelper(PTFedSMHelper):
             select_model_epochs,
         )
 
-    def local_train_person(
-        self, train_loader, abort_signal: Signal, writer, current_round
-    ):
+    def local_train_person(self, train_loader, abort_signal: Signal, writer, current_round):
         # Train personalized model, and keep track of curves
         for epoch in range(self.person_model_epochs):
             if abort_signal.triggered:

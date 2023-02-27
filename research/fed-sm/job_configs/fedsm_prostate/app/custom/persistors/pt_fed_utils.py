@@ -97,18 +97,17 @@ class PTModelPersistenceFormatManagerFedSM(object):
         return weights
 
     def to_persistence_dict(self) -> dict:
-        processed_vars = self._get_processed_vars()
+        # processed_vars = self._get_processed_vars()
         model_set = {}
         for model_id in self.model_set.keys():
             weights = OrderedDict()
             var_dict = self.model_set[model_id]
             for k, v in var_dict.items():
-                is_processed = processed_vars.get(k, False)
-                if is_processed:
-                    weights[k] = v
-                else:
-                    # weights[k] = v.cpu().numpy()
-                    weights[k] = v
+                # is_processed = processed_vars.get(k, False)
+                # if is_processed:
+                weights[k] = v
+                # else:
+                #    weights[k] = v.cpu().numpy()
             model_set[model_id] = weights
         # always use complex format for saving
         persistence_dict = OrderedDict()

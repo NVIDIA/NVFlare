@@ -15,6 +15,7 @@
 import re
 
 import numpy as np
+
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.fl_constant import ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
@@ -33,7 +34,7 @@ class _AccuItem(object):
 class AccumulateWeightedAggregatorFedSM(Aggregator):
     def __init__(
         self,
-        soft_pull_lambda=0.3,
+        soft_pull_lambda=0.7,
         exclude_vars_global=None,
         exclude_vars_person=None,
         exclude_vars_select=None,
@@ -58,15 +59,9 @@ class AccumulateWeightedAggregatorFedSM(Aggregator):
         """
         super().__init__()
         self.soft_pull_lambda = soft_pull_lambda
-        self.exclude_vars_global = (
-            re.compile(exclude_vars_global) if exclude_vars_global else None
-        )
-        self.exclude_vars_person = (
-            re.compile(exclude_vars_person) if exclude_vars_person else None
-        )
-        self.exclude_vars_select = (
-            re.compile(exclude_vars_select) if exclude_vars_select else None
-        )
+        self.exclude_vars_global = re.compile(exclude_vars_global) if exclude_vars_global else None
+        self.exclude_vars_person = re.compile(exclude_vars_person) if exclude_vars_person else None
+        self.exclude_vars_select = re.compile(exclude_vars_select) if exclude_vars_select else None
         self.aggregation_weights = aggregation_weights or {}
         self.logger.debug(f"aggregation weights control: {aggregation_weights}")
         # FedSM aggregator expects "COLLECTION" DXO containing all three models.
@@ -91,16 +86,12 @@ class AccumulateWeightedAggregatorFedSM(Aggregator):
 
         processed_algorithm = dxo.get_meta_prop(MetaKey.PROCESSED_ALGORITHM)
         if processed_algorithm is not None:
-            self.log_error(
-                fl_ctx, f"unable to accept shareable processed by {processed_algorithm}"
-            )
+            self.log_error(fl_ctx, f"unable to accept shareable processed by {processed_algorithm}")
             return False
 
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
         self.log_debug(fl_ctx, f"current_round: {current_round}")
-        client_name = shareable.get_peer_prop(
-            key=ReservedKey.IDENTITY_NAME, default="?"
-        )
+        client_name = shareable.get_peer_prop(key=ReservedKey.IDENTITY_NAME, default="?")
         contribution_round = shareable.get_header(AppConstants.CONTRIBUTION_ROUND)
 
         rc = shareable.get_return_code()
@@ -176,12 +167,9 @@ class AccumulateWeightedAggregatorFedSM(Aggregator):
             elif model_id == "select_weights":
                 exclude_vars = self.exclude_vars_select
             vars_to_aggregate = (
-                [g_var for g_var in acc_vars if not exclude_vars.search(g_var)]
-                if exclude_vars
-                else acc_vars
+                [g_var for g_var in acc_vars if not exclude_vars.search(g_var)] if exclude_vars else acc_vars
             )
 
-            clients_with_messages = []
             aggregated_model = {}
             for v_name in vars_to_aggregate:
                 n_local_iters, np_vars = [], []
@@ -199,9 +187,7 @@ class AccumulateWeightedAggregatorFedSM(Aggregator):
                                 f" This kind of message will show {self.warning_limit} times at most.",
                             )
                             if client_name in self.warning_count:
-                                self.warning_count[client_name] = (
-                                    self.warning_count[client_name] + 1
-                                )
+                                self.warning_count[client_name] = self.warning_count[client_name] + 1
                             else:
                                 self.warning_count[client_name] = 0
                         n_iter = 1.0
@@ -209,35 +195,8 @@ class AccumulateWeightedAggregatorFedSM(Aggregator):
                         continue  # this acc doesn't have the variable from client
                     float_n_iter = float(n_iter)
                     n_local_iters.append(float_n_iter)
-                    aggregation_weight = self.aggregation_weights.get(client_name)
-                    if aggregation_weight is None:
-                        if self.warning_count.get(client_name, 0) <= self.warning_limit:
-                            self.log_warning(
-                                fl_ctx,
-                                f"Aggregation_weight missing for {client_name} and set to default value, 1.0"
-                                f" This kind of message will show {self.warning_limit} times at most.",
-                            )
-                            if client_name in self.warning_count:
-                                self.warning_count[client_name] = (
-                                    self.warning_count[client_name] + 1
-                                )
-                            else:
-                                self.warning_count[client_name] = 0
-                        aggregation_weight = 1.0
 
-                    weighted_value = data[v_name] * float_n_iter * aggregation_weight
-                    if client_name not in clients_with_messages:
-                        if client_name in self.aggregation_weights.keys():
-                            self.log_debug(
-                                fl_ctx,
-                                f"Client {client_name} use weight {aggregation_weight} for aggregation.",
-                            )
-                        else:
-                            self.log_debug(
-                                fl_ctx,
-                                f"Client {client_name} not defined in the aggregation weight list. Use default value 1.0",
-                            )
-                        clients_with_messages.append(client_name)
+                    weighted_value = data[v_name] * float_n_iter
                     np_vars.append(weighted_value)
                 if not n_local_iters:
                     continue  # all acc didn't receive the variable from clients
@@ -268,12 +227,10 @@ class AccumulateWeightedAggregatorFedSM(Aggregator):
         acc_vars = set.union(*acc_vars) if acc_vars else acc_vars
         exclude_vars = self.exclude_vars_select
         vars_to_aggregate = (
-            [g_var for g_var in acc_vars if not exclude_vars.search(g_var)]
-            if exclude_vars
-            else acc_vars
+            [g_var for g_var in acc_vars if not exclude_vars.search(g_var)] if exclude_vars else acc_vars
         )
-        # SoftPull aggregation, weighted without step size
-        clients_with_messages = []
+
+        # SoftPull aggregation, weighted with soft pull lambda
         for v_name in vars_to_aggregate:
             # np_vars for personalized model set is a dict for each client
             # initialize
@@ -286,52 +243,15 @@ class AccumulateWeightedAggregatorFedSM(Aggregator):
             for item in self.accumulator:
                 client_name = item.client
                 data = item.data[model_id].data
-
                 if v_name not in data.keys():
                     continue  # this acc doesn't have the variable from client
-
-                aggregation_weight = self.aggregation_weights.get(client_name)
-                if aggregation_weight is None:
-                    if self.warning_count.get(client_name, 0) <= self.warning_limit:
-                        self.log_warning(
-                            fl_ctx,
-                            f"Aggregation_weight missing for {client_name} and set to default value, 1.0"
-                            f" This kind of message will show {self.warning_limit} times at most.",
-                        )
-                        if client_name in self.warning_count:
-                            self.warning_count[client_name] = (
-                                self.warning_count[client_name] + 1
-                            )
-                        else:
-                            self.warning_count[client_name] = 0
-                    aggregation_weight = 1.0
-
-                if client_name not in clients_with_messages:
-                    if client_name in self.aggregation_weights.keys():
-                        self.log_debug(
-                            fl_ctx,
-                            f"Client {client_name} use weight {aggregation_weight} for aggregation.",
-                        )
-                    else:
-                        self.log_debug(
-                            fl_ctx,
-                            f"Client {client_name} not defined in the aggregation weight list. Use default value 1.0",
-                        )
-                    clients_with_messages.append(client_name)
 
                 for aggr_item in self.accumulator:
                     aggr_client_name = aggr_item.client
                     if aggr_client_name == client_name:
-                        weighted_value = (
-                            data[v_name] * aggregation_weight * self.soft_pull_lambda
-                        )
+                        weighted_value = data[v_name] * self.soft_pull_lambda
                     else:
-                        weighted_value = (
-                            data[v_name]
-                            * aggregation_weight
-                            * (1 - self.soft_pull_lambda)
-                            / (len(self.accumulator) - 1)
-                        )
+                        weighted_value = data[v_name] * (1 - self.soft_pull_lambda) / (len(self.accumulator) - 1)
                     np_vars[aggr_client_name].append(weighted_value)
 
             for item in self.accumulator:
@@ -341,9 +261,7 @@ class AccumulateWeightedAggregatorFedSM(Aggregator):
         # make aggregated weights a DXO and add to dict
         person_models = {}
         for client_name in aggregated_model.keys():
-            dxo_weights = DXO(
-                data_kind=DataKind.WEIGHT_DIFF, data=aggregated_model[client_name]
-            )
+            dxo_weights = DXO(data_kind=DataKind.WEIGHTS, data=aggregated_model[client_name])
             person_models[client_name] = dxo_weights
         aggregated_model_dict["person_weights"] = person_models
 
