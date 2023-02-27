@@ -10,7 +10,7 @@ tests:
       - "trigger":
           "type": "server_log"
           "data": "Server started"
-        "actions": [ "submit_job hello-cyclic" ]
+        "actions": [ "submit_job hello-cyclic/jobs/hello-cyclic" ]
         "result":
           "type": "run_state"
           "data": { }
@@ -28,7 +28,7 @@ tests:
       - "trigger":
           "type": "server_log"
           "data": "Server started"
-        "actions": [ "submit_job hello-tf2" ]
+        "actions": [ "submit_job hello-tf2/jobs/hello-tf2" ]
         "result":
           "type": "run_state"
           "data": { }
