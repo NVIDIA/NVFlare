@@ -194,8 +194,8 @@ class SupervisedLearner(Learner):
             return make_reply(ReturnCode.TASK_ABORTED)
 
         # get round information
-        current_round = shareable.get_header(AppConstants.CURRENT_ROUND)
-        total_rounds = shareable.get_header(AppConstants.NUM_ROUNDS)
+        current_round = shareable.get_cookie(AppConstants.CURRENT_ROUND)
+        total_rounds = shareable.get_cookie(AppConstants.NUM_ROUNDS)
         self.log_info(fl_ctx, f"Current/Total Round: {current_round + 1}/{total_rounds}")
         self.log_info(fl_ctx, f"Client identity: {fl_ctx.get_identity_name()}")
 
@@ -259,7 +259,7 @@ class SupervisedLearner(Learner):
             return make_reply(ReturnCode.TASK_ABORTED)
 
         # get round information
-        current_round = shareable.get_header(AppConstants.CURRENT_ROUND)
+        current_round = shareable.get_cookie(AppConstants.CURRENT_ROUND)
 
         # validation on global model
         model_owner = "global_model"
@@ -286,7 +286,7 @@ class SupervisedLearner(Learner):
             raise ValueError(f"No weights loaded for validation! Received weight dict is {global_weights}")
 
         # before_train_validate only, can extend to other validate types
-        validate_type = shareable.get_header(AppConstants.VALIDATE_TYPE)
+        validate_type = shareable.get_cookie(AppConstants.VALIDATE_TYPE)
         if validate_type == ValidateType.BEFORE_TRAIN_VALIDATE:
             # perform valid before local train
             global_metric = self.local_valid(
