@@ -74,7 +74,7 @@ integration_test() {
     testFolder="tests/integration_test"
     rm -rf /tmp/nvflare*
     pushd ${testFolder}
-    pipenv run ./run_integration_tests.sh -m numpy
+    pipenv run ./run_integration_tests.sh -m numpy -d
     popd
     rm -rf /tmp/nvflare*
     remove_dns_entries

@@ -30,10 +30,10 @@ while getopts ":m:c:d" option; do
               usage
             fi
             ;;
-	      d) # debug
-	          export FL_LOG_LEVEL=DEBUG
+        d) # debug
+            export FL_LOG_LEVEL=DEBUG
             cmd="pytest --junitxml=./integration_test.xml -vv --log-cli-level=DEBUG --capture=no"
-	          ;;
+            ;;
         c) # Clean up
             echo "Clean up integration tests result"
             rm -rf ./integration_test.xml
