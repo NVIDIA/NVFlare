@@ -20,12 +20,12 @@ import pytest
 from nvflare.private.fed.server.job_cmds import _create_list_job_cmd_parser
 
 TEST_CASES = [
-    (["-d", "-a", "12345", "-n", "hello_", "-m", "3"], Namespace(a=True, d=True, job_id="12345", m=3, n="hello_")),
-    (["12345", "-d", "-a", "-n", "hello_", "-m", "3"], Namespace(a=True, d=True, job_id="12345", m=3, n="hello_")),
-    (["-d", "-a", "-n", "hello_", "-m", "3"], Namespace(a=True, d=True, job_id=None, m=3, n="hello_")),
-    (["-a", "-n", "hello_", "-m", "3"], Namespace(a=True, d=False, job_id=None, m=3, n="hello_")),
-    (["-a"], Namespace(a=True, d=False, job_id=None, m=5, n=None)),
-    (["nvflare"], Namespace(a=False, d=False, job_id="nvflare", m=5, n=None)),
+    (["-d", "-u", "12345", "-n", "hello_", "-m", "3"], Namespace(u=True, d=True, job_id="12345", m=3, n="hello_")),
+    (["12345", "-d", "-u", "-n", "hello_", "-m", "3"], Namespace(u=True, d=True, job_id="12345", m=3, n="hello_")),
+    (["-d", "-u", "-n", "hello_", "-m", "3"], Namespace(u=True, d=True, job_id=None, m=3, n="hello_")),
+    (["-u", "-n", "hello_", "-m", "5"], Namespace(u=True, d=False, job_id=None, m=5, n="hello_")),
+    (["-u"], Namespace(u=True, d=False, job_id=None, m=None, n=None)),
+    (["nvflare"], Namespace(u=False, d=False, job_id="nvflare", m=None, n=None)),
 ]
 
 
