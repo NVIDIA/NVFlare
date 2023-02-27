@@ -8,19 +8,20 @@ usage()
 {
     echo "Run integration tests of NVFlare."
     echo
-    echo "Syntax: ./run_integration_tests.sh -m [-c]"
+    echo "Syntax: ./run_integration_tests.sh -m [-c] [-d]"
     echo "options:"
     echo "m     Which backend/test to run (options: ${backends[*]})."
     echo "c     Clean up integration test results."
+    echo "d     Debug mode."
     echo
     exit 1
 }
 
-cmd="pytest --junitxml=./integration_test.xml -v --log-cli-level=INFO --capture=no"
 [ $# -eq 0 ] && usage
-while getopts ":m:c" option; do
+while getopts ":m:c:d" option; do
     case "${option}" in
         m) # framework/backend
+            cmd="pytest --junitxml=./integration_test.xml -v --log-cli-level=INFO --capture=no"
             m=${OPTARG}
             if [[ " ${backends[*]} " =~ " ${m} " ]]; then
                 # whatever you want to do when array contains value
@@ -29,6 +30,10 @@ while getopts ":m:c" option; do
               usage
             fi
             ;;
+	      d) # debug
+	          export FL_LOG_LEVEL=DEBUG
+            cmd="pytest --junitxml=./integration_test.xml -vv --log-cli-level=DEBUG --capture=no"
+	          ;;
         c) # Clean up
             echo "Clean up integration tests result"
             rm -rf ./integration_test.xml
@@ -72,16 +77,6 @@ run_tensorflow()
     eval "$cmd"
 }
 
-run_pytorch()
-{
-    echo "Running integration tests using pytorch related jobs."
-    cmd="$prefix $cmd system_test.py"
-    python -m pip install tensorboard torch torchvision
-
-    echo "$cmd"
-    eval "$cmd"
-}
-
 run_cifar()
 {
     echo "Running integration tests using cifar related jobs."
@@ -101,7 +96,8 @@ if [[ $m == "numpy" ]]; then
 elif [[ $m == "tensorflow" ]]; then
     run_tensorflow
 elif [[ $m == "pytorch" ]]; then
-    run_pytorch
+    echo "Running integration tests using pytorch related jobs."
+    run_system_test
 elif [[ $m == "ha" ]]; then
     echo "Running HA integration tests."
     run_system_test
