@@ -164,14 +164,13 @@ class FederatedClientBase:
                 self.servers[project_name]["target"] = location
                 self.sp_established = True
 
+                scheme_location = scheme + "://" + location
                 if self.cell:
-                    # self.net_agent.close()
-                    # self.cell.stop()
-                    self.cell.change_server_root(scheme + "://" + location)
+                    self.cell.change_server_root(scheme_location)
                 else:
                     self._create_cell(location, scheme)
 
-                self.logger.info(f"Got the new primary SP: {scheme + location}")
+                self.logger.info(f"Got the new primary SP: {scheme_location}")
 
             if self.ssid and self.ssid != sp.service_session_id:
                 self.ssid = sp.service_session_id

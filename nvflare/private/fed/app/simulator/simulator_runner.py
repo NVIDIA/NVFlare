@@ -444,16 +444,14 @@ class SimulatorClientRunner(FLComponent):
             self.logger.error(f"SimulatorClientRunner run error: {secure_format_exception(e)}")
         finally:
             for client in self.federated_clients:
-                # touch_file = os.path.join(client.app_client_root, "shutdown.fl")
-                # shutdown_client(client, touch_file)
+                threading.Thread(target=self._shutdown_client, args=[client]).start()
 
-                client.communicator.heartbeat_done = True
-                # time.sleep(3)
-                client.terminate()
-                client.status = ClientStatus.STOPPED
-
-                client.communicator.cell.stop()
-            # self.deployer.close()
+    def _shutdown_client(self, client):
+        client.communicator.heartbeat_done = True
+        time.sleep(3)
+        client.terminate()
+        client.status = ClientStatus.STOPPED
+        client.communicator.cell.stop()
 
     def run_client_thread(self, num_of_threads, gpu, lock, timeout=60):
         stop_run = False
