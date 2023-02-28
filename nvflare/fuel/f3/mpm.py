@@ -77,7 +77,7 @@ class MainProcessMonitor:
             logger.debug(f"=========== {cls.name}: Nothing to cleanup ...")
             return
 
-        logger.info(f"=========== {cls.name}: Shutting down. Starting cleanup ...")
+        logger.debug(f"=========== {cls.name}: Shutting down. Starting cleanup ...")
         time.sleep(shutdown_grace_time)  # let pending activities finish
 
         cleanup_waiter = threading.Event()
@@ -95,7 +95,7 @@ class MainProcessMonitor:
             cb_name = ""
             try:
                 cb_name = _cb[0].__name__
-                logger.info(f"{cls.name}: calling cleanup CB {cb_name}")
+                logger.debug(f"{cls.name}: calling cleanup CB {cb_name}")
                 cls._call_cb(_cb)
                 logger.debug(f"{cls.name}: finished cleanup CB {cb_name}")
             except Exception as ex:
@@ -138,7 +138,7 @@ class MainProcessMonitor:
 
         # call and wait for the main_func to complete
         logger = cls.logger()
-        logger.info(f"=========== {cls.name}: started to run forever")
+        logger.debug(f"=========== {cls.name}: started to run forever")
         rc = main_func()
 
         # start shutdown process
@@ -148,14 +148,14 @@ class MainProcessMonitor:
         # We can now stop the AIO loop!
         AioContext.close_global_context()
 
-        logger.info(f"=========== {cls.name}: checking running threads")
+        logger.debug(f"=========== {cls.name}: checking running threads")
         num_active_threads = 0
         for thread in threading.enumerate():
             if thread.name != "MainThread" and not thread.daemon:
                 logger.warning(f"#### {cls.name}: still running thread {thread.name}")
                 num_active_threads += 1
 
-        logger.info(f"{cls.name}: Good Bye!")
+        logger.debug(f"{cls.name}: Good Bye!")
         if num_active_threads > 0:
             try:
                 os.kill(os.getpid(), signal.SIGKILL)
