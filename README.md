@@ -34,7 +34,7 @@ NVFLARE has provided a set of tools to help manage the provision and deployment 
 
 #### Specification-based API for extensibility
 
-Every layer is customizable and extensible according the API specs. Here the [FLARE API](https://nvflare.readthedocs.io/en/dev/real_world_fl/flare_api.html) for interact with FL Server and submit jobs 
+Every layer is customizable and extensible according the API specs. Here is the [FLARE API](https://nvflare.readthedocs.io/en/dev/real_world_fl/flare_api.html) for interact with FL Server and submit jobs 
 
 
 ## Quick Start
