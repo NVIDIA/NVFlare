@@ -17,6 +17,7 @@ import os
 from nvflare.apis.fl_constant import FLContextKey, MachineStatus
 from nvflare.apis.workspace import Workspace
 from nvflare.private.fed.app.fl_conf import create_privacy_manager
+from nvflare.private.fed.runner import Runner
 from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.private.fed.server.server_status import ServerStatus
@@ -42,7 +43,11 @@ def _set_up_run_config(workspace: Workspace, server, conf):
     server.handlers = conf.handlers
 
 
-class ServerAppRunner:
+class ServerAppRunner(Runner):
+    def __init__(self, server) -> None:
+        super().__init__()
+        self.server = server
+
     def start_server_app(self, workspace: Workspace, server, args, app_root, job_id, snapshot, logger, kv_list=None):
 
         try:
@@ -74,3 +79,6 @@ class ServerAppRunner:
 
     def update_job_run_status(self, server):
         server.engine.update_job_run_status()
+
+    def stop(self):
+        self.server.engine.asked_to_stop = True

@@ -40,6 +40,9 @@ class SimulatorClientAppRunner(ClientAppRunner):
 
 
 class SimulatorServerAppRunner(ServerAppRunner):
+    def __init__(self, server) -> None:
+        super().__init__(server)
+
     def sync_up_parents_process(self, args, server):
         pass
 

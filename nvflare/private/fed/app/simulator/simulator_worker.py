@@ -29,8 +29,8 @@ from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.sec.audit import AuditService
-from nvflare.private.fed.app.client.worker_process import check_parent_alive
 from nvflare.private.fed.app.deployer.base_client_deployer import BaseClientDeployer
+from nvflare.private.fed.app.utils import check_parent_alive
 from nvflare.private.fed.client.client_engine import ClientEngine
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.client.fed_client import FederatedClient

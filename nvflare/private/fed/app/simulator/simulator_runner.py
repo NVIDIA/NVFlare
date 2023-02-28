@@ -398,7 +398,7 @@ class SimulatorRunner(FLComponent):
             False,
             None,
         )
-        server_app_runner = SimulatorServerAppRunner()
+        server_app_runner = SimulatorServerAppRunner(self.services)
         snapshot = None
         server_app_runner.start_server_app(
             workspace, self.services, self.args, app_server_root, self.args.job_id, snapshot, self.logger
