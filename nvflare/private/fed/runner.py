@@ -12,11 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from abc import abstractmethod
+
 
 class Runner:
     def start(self):
         """Method call at the start of the Runner process."""
         pass
 
+    @abstractmethod
     def stop(self):
         """Method call at the end of the Runner process."""

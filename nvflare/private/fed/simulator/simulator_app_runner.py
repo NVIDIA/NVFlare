@@ -43,8 +43,8 @@ class SimulatorServerAppRunner(ServerAppRunner):
     def __init__(self, server) -> None:
         super().__init__(server)
 
-    def sync_up_parents_process(self, args, server):
+    def sync_up_parents_process(self, args):
         pass
 
-    def update_job_run_status(self, server):
+    def update_job_run_status(self):
         pass
