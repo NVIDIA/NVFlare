@@ -143,7 +143,7 @@ class SimulatorDeployer(ServerDeployer):
                     data = json.load(file)
                     augment(to_dict=client_config, from_dict=data, from_override_to=False)
                 except BaseException as e:
-                    raise RuntimeError(f"Error processing config file {file}: {e}")
+                    raise RuntimeError(f"Error processing config file {resources}: {e}")
 
         build_ctx = {
             "client_name": client_name,
