@@ -148,7 +148,7 @@ cp -r user_email_match/data /tmp/nvflare/psi/.
 
 **run job** 
 ```
-nvflare simulator -w /tmp/nvflare/psi -n 3 -t 3 examples/advanced/psi/user_email_match
+nvflare simulator -w /tmp/nvflare/psi -n 3 -t 3 user_email_match
 ```
 Once job completed and succeed, you should be able to find the intersection for different sites at
 
