@@ -11,10 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import time
 import traceback
 
-from nvflare.apis.controller_spec import Task
+from nvflare.apis.controller_spec import Task, TaskCompletionStatus
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.signal import Signal
@@ -22,11 +22,14 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.app_common.workflows.scatter_and_gather import ScatterAndGather
 
+_TASK_KEY_DONE = "___done"
+
 
 class ScatterAndGatherFedSM(ScatterAndGather):
     def __init__(
         self,
         client_id_label_mapping,
+        parallel_task: int = 1,
         min_clients: int = 1,
         num_rounds: int = 5,
         start_round: int = 0,
@@ -54,6 +57,7 @@ class ScatterAndGatherFedSM(ScatterAndGather):
 
         Args:
             client_id_label_mapping: needed for training selector model, no Default.
+            parallel_task (int, optional): sequential or parallel task. Defaults to 1 (parallel).
             min_clients (int, optional): Min number of clients in training. Defaults to 1.
             num_rounds (int, optional): The total number of training rounds. Defaults to 5.
             start_round (int, optional): Start round for training. Defaults to 0.
@@ -79,6 +83,7 @@ class ScatterAndGatherFedSM(ScatterAndGather):
         )
         # extras for FedSM
         # client_id to label mapping for selector
+        self.parallel_task = parallel_task
         self.client_id_label_mapping = client_id_label_mapping
         self.participating_clients = None
 
@@ -109,6 +114,21 @@ class ScatterAndGatherFedSM(ScatterAndGather):
                 )
                 return
 
+    def _wait_for_task(self, task: Task, abort_signal: Signal):
+        task.props[_TASK_KEY_DONE] = False
+        task.task_done_cb = self._process_finished_task(task=task, func=task.task_done_cb)
+        while True:
+            if task.completion_status is not None:
+                break
+            if abort_signal and abort_signal.triggered:
+                self.cancel_task(task, fl_ctx=None, completion_status=TaskCompletionStatus.ABORTED)
+                break
+
+            task_done = task.props[_TASK_KEY_DONE]
+            if task_done:
+                break
+            time.sleep(self._task_check_period)
+
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext) -> None:
         try:
             self.log_info(fl_ctx, "Beginning ScatterAndGatherFedSM training phase.")
@@ -123,7 +143,7 @@ class ScatterAndGatherFedSM(ScatterAndGather):
                     return
 
                 self.log_info(fl_ctx, f"Round {self._current_round} started.")
-                self.log_info(fl_ctx, f"Models in fl_ctx: {self._global_weights.keys()}")
+                self.log_info(fl_ctx, f"Models in fl_ctx: {self._global_weights['weights'].keys()}")
 
                 fl_ctx.set_prop(
                     AppConstants.GLOBAL_MODEL,
@@ -140,11 +160,12 @@ class ScatterAndGatherFedSM(ScatterAndGather):
                 self.fire_event(AppEventType.ROUND_STARTED, fl_ctx)
 
                 # Create train_task for each participating clients, 3 models for each
+                tasks_each_round = []
                 for client_id in self.participating_clients:
                     # get the models for a client
-                    select_weight = self._global_weights["select_weights"]
-                    global_weight = self._global_weights["global_weights"]
-                    client_weight = self._global_weights[client_id]
+                    select_weight = self._global_weights["weights"]["select_weights"]
+                    global_weight = self._global_weights["weights"]["global_weights"]
+                    client_weight = self._global_weights["weights"][client_id]
                     client_label = self.client_id_label_mapping[client_id]
 
                     # add all three models using a DXO collection
@@ -153,8 +174,8 @@ class ScatterAndGatherFedSM(ScatterAndGather):
                     dxo_person_weights = DXO(data_kind=DataKind.WEIGHTS, data=client_weight)
                     # add Adam parameter sets
                     if self._current_round > 0:
-                        select_exp_avg = self._global_weights["select_exp_avg"]
-                        select_exp_avg_sq = self._global_weights["select_exp_avg_sq"]
+                        select_exp_avg = self._global_weights["weights"]["select_exp_avg"]
+                        select_exp_avg_sq = self._global_weights["weights"]["select_exp_avg_sq"]
                         dxo_select_exp_avg = DXO(data_kind=DataKind.WEIGHTS, data=select_exp_avg)
                         dxo_select_exp_avg_sq = DXO(data_kind=DataKind.WEIGHTS, data=select_exp_avg_sq)
                     else:
@@ -193,15 +214,28 @@ class ScatterAndGatherFedSM(ScatterAndGather):
                     )
 
                     # send only to the target client
-                    # tasks will be executed sequentially
-                    self.send_and_wait(
-                        task=train_task,
-                        targets=[client_id],
-                        fl_ctx=fl_ctx,
-                    )
-
+                    if self.parallel_task:
+                        # tasks send in parallel
+                        self.send(
+                            task=train_task,
+                            targets=[client_id],
+                            fl_ctx=fl_ctx,
+                        )
+                        tasks_each_round.append(train_task)
+                    else:
+                        # tasks will be executed sequentially
+                        self.send_and_wait(
+                            task=train_task,
+                            targets=[client_id],
+                            fl_ctx=fl_ctx,
+                        )
                     if self._check_abort_signal(fl_ctx, abort_signal):
                         return
+
+                # wait for all tasks in this round to finish
+                if self.parallel_task:
+                    for task in tasks_each_round:
+                        self._wait_for_task(task, abort_signal)
 
                 # aggregate the returned results in shareable
                 self.fire_event(AppEventType.BEFORE_AGGREGATION, fl_ctx)
@@ -239,7 +273,7 @@ class ScatterAndGatherFedSM(ScatterAndGather):
                     return
 
                 self.fire_event(AppEventType.BEFORE_LEARNABLE_PERSIST, fl_ctx)
-                self.persistor.save(self._global_weights, fl_ctx)
+                self.persistor.save(self._global_weights["weights"], fl_ctx)
                 self.fire_event(AppEventType.AFTER_LEARNABLE_PERSIST, fl_ctx)
 
                 self.fire_event(AppEventType.ROUND_DONE, fl_ctx)

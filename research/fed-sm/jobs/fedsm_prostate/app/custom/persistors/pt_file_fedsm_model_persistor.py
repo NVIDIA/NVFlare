@@ -172,11 +172,11 @@ class PTFileFedSMModelPersistor(PTFileModelPersistor):
                     "model_selector": type(self.model_selector).__name__,
                 }
             }
-
         self.persistence_manager = PTModelPersistenceFormatManagerFedSM(
             data, default_train_conf=self.default_train_conf
         )
-        return self.persistence_manager.to_model_learnable(self.exclude_vars)
+        learnable = self.persistence_manager.to_model_learnable(self.exclude_vars)
+        return learnable
 
     def handle_event(self, event: str, fl_ctx: FLContext):
         if event == EventType.START_RUN:

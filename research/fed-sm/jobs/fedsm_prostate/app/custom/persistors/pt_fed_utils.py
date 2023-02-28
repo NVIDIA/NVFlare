@@ -67,6 +67,7 @@ class PTModelPersistenceFormatManagerFedSM(object):
 
     def to_model_learnable(self, exclude_vars) -> dict:
         processed_vars = self._get_processed_vars()
+        # learnable of learnables
         model_set = {}
         for model_id in self.model_set.keys():
             weights = {}
@@ -81,6 +82,7 @@ class PTModelPersistenceFormatManagerFedSM(object):
                 else:
                     weights[k] = v.cpu().numpy()
             model_set[model_id] = make_model_learnable(weights, self.meta)
+        model_set = make_model_learnable(model_set, self.meta)
         return model_set
 
     def get_single_model(self, model_id) -> dict:

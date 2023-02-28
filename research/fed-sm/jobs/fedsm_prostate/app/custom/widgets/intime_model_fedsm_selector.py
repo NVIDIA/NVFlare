@@ -53,13 +53,13 @@ class IntimeModelFedSMSelector(FLComponent):
             fl_ctx (FLContext): FL context, including peer context and other information
         """
         if event_type == EventType.START_RUN:
-            self._startup(fl_ctx)
+            self._startup()
         elif event_type == EventType.BEFORE_PROCESS_SUBMISSION:
             self._before_accept(fl_ctx)
         elif event_type == AppEventType.BEFORE_AGGREGATION:
             self._before_aggregate(fl_ctx)
 
-    def _startup(self, fl_ctx):
+    def _startup(self):
         self._reset_stats()
 
     def _reset_stats(self):

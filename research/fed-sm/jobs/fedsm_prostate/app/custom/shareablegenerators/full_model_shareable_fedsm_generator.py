@@ -15,7 +15,12 @@
 from nvflare.apis.dxo import DataKind, from_shareable
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, model_learnable_to_dxo
+from nvflare.app_common.abstract.model import (
+    ModelLearnable,
+    ModelLearnableKey,
+    make_model_learnable,
+    model_learnable_to_dxo,
+)
 from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 
@@ -94,7 +99,8 @@ class FullModelShareableFedSMGenerator(ShareableGenerator):
 
         # base_model_set is a "flattened set", containing all models with ids
         # "select_weights", "select_exp_avg", "select_exp_avg_sq", "global_weights", and client_ids
-        base_model_set = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
+        base_model_set = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)["weights"]
+        meta = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)["meta"]
         if not base_model_set:
             self.system_panic(reason="No FedSM base model set!", fl_ctx=fl_ctx)
             return base_model_set
@@ -118,4 +124,6 @@ class FullModelShareableFedSMGenerator(ShareableGenerator):
             dxo_single = dxo_select.get(model_id)
             self.update_single_model(dxo_single, base_model_set, model_id, fl_ctx)
 
-        return base_model_set
+        model_set = make_model_learnable(base_model_set, meta)
+
+        return model_set
