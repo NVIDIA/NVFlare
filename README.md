@@ -9,30 +9,30 @@ Our mission: _Bring privacy preserved compute and machine learning to data in a 
 NVIDIA FLARE is built on a componentized architecture that gives you the flexibility to take federated learning workloads 
 from research and simulation to real-world production deployment. Some of the key components of this architecture include:
 
-* [FL Simulator](https://nvflare.readthedocs.io/en/main/user_guide/fl_simulator.html) for rapid development and prototyping
+#### [FL Simulator](https://nvflare.readthedocs.io/en/main/user_guide/fl_simulator.html) for rapid development and prototyping
 
 Different from other Federated learning framework, the FL simulator not only can support single thread debugging and multi-thread simulation,
 the code used in simulator can be directly deployed to real-world production without change. 
 
-* [FLARE Dashboard UI](https://nvflare.readthedocs.io/en/main/user_guide/dashboard_ui.html) for simplified project management and deployment  
+#### [FLARE Dashboard UI](https://nvflare.readthedocs.io/en/main/user_guide/dashboard_ui.html) for simplified project management and deployment  
 
 Enable user to easily manager Federated Learning project and distributed start up package to collaborating organizations. 
 
-* Reference FL algorithms (e.g., FedAvg, FedProx) and workflows (e.g., Scatter and Gather, Cyclic)
+#### Reference FL algorithms (e.g., FedAvg, FedProx) and workflows (e.g., Scatter and Gather, Cyclic)
 
 NVFLARE has various built-in workflows that supports Federated Learning (horizontal, vertical, traditional machine learning) 
 and Federated Statistics. You can find all of them in [examples](https://github.com/NVIDIA/NVFlare/tree/dev/examples)
 
-* Privacy preservation with differential privacy, homomorphic encryption, and more
+#### Privacy preservation with differential privacy, homomorphic encryption, and more
 
  NVFLARE control data privacy in various ways: privacy filter, [privacy policy management](https://nvflare.readthedocs.io/en/main/user_guide/site_policy_management.html), 
  privacy algorithms and tools 
 
-* Management tools for secure provisioning and deployment, orchestration, and management
+#### Management tools for secure provisioning and deployment, orchestration, and management
 
 NVFLARE has provided a set of tools to help manage the provision and deployment (both on cloud and on premise) system to production.  
 
-* Specification-based API for extensibility
+#### Specification-based API for extensibility
 
 ## Quick Start
 
