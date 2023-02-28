@@ -222,7 +222,7 @@ def run_admin_api_tests(admin_api: FLAdminAPI):
     print("\nCommand: get_available_apps_to_upload")
     print(admin_api.get_available_apps_to_upload())
     print("\nList Jobs:")
-    list_jobs_return_rows = admin_api.list_jobs("-a").get("details")
+    list_jobs_return_rows = admin_api.list_jobs().get("details")
     print(list_jobs_return_rows)
     first_job = str(list_jobs_return_rows[1][0])
     print("\nCommand: ls server -a .")

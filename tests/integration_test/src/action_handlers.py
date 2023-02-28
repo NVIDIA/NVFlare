@@ -114,7 +114,7 @@ class _SubmitJobHandler(_CmdHandler):
             admin_controller.admin_api_response = response["raw"]["data"]
         elif response["status"] == APIStatus.ERROR_AUTHORIZATION:
             admin_controller.admin_api_response = response["details"]
-        if response["status"] == APIStatus.SUCCESS:
+        elif response["status"] == APIStatus.SUCCESS:
             admin_controller.job_id = response["details"]["job_id"]
             admin_controller.last_job_name = job_name
 
@@ -141,7 +141,7 @@ class _AbortJobHandler(_CmdHandler):
 
 class _ListJobHandler(_CmdHandler):
     def handle(self, command_args: list, admin_controller: FLTestDriver, admin_api: FLAdminAPI):
-        response = admin_api.list_jobs("-a")
+        response = admin_api.list_jobs()
         assert response["status"] == APIStatus.SUCCESS
 
 

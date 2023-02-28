@@ -245,6 +245,19 @@ class FLTestDriver:
 
         return run_data
 
+    @staticmethod
+    def _check_client_status_ready(response: dict):
+        if "details" not in response:
+            return False
+
+        data = response.get("raw", {}).get("data", [])
+        if data:
+            for d in data:
+                if d.get("type") == "error":
+                    return False
+
+        return True
+
     def ensure_clients_started(self, num_clients):
         timeout = 1000
         start_time = time.time()
@@ -256,7 +269,7 @@ class FLTestDriver:
             time.sleep(0.5)
             response = self.super_admin_api.check_status(target_type=TargetType.CLIENT)
             if response["status"] == APIStatus.SUCCESS:
-                if "details" not in response:
+                if not self._check_client_status_ready(response):
                     # clients not ready
                     continue
                 for row in response["details"]["client_statuses"][1:]:

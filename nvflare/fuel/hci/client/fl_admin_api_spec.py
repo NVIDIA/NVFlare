@@ -40,9 +40,9 @@ class FLAdminAPIResponse(dict):
         """
         super().__init__()
         self["status"] = status  # todo: status.value but it may break existing code
-        if details:
+        if details is not None:
             self["details"] = details
-        if raw:
+        if raw is not None:
             self["raw"] = raw
 
 
