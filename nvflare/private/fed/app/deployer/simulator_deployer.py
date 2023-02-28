@@ -12,15 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
+import os
 import shutil
 import tempfile
 
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
+from nvflare.fuel.utils.dict_utils import augment
 from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.private.fed.app.utils import create_admin_server
-
-# from nvflare.private.fed.client.admin_msg_sender import AdminMessageSender
 from nvflare.private.fed.simulator.simulator_client_engine import SimulatorParentClientEngine
 from nvflare.private.fed.simulator.simulator_server import SimulatorServer
 
@@ -65,7 +66,7 @@ class SimulatorDeployer(ServerDeployer):
         return simulator_server, services
 
     def create_fl_client(self, client_name, args):
-        client_config, build_ctx = self._create_simulator_client_config(client_name)
+        client_config, build_ctx = self._create_simulator_client_config(client_name, args)
 
         deployer = BaseClientDeployer()
         deployer.build(build_ctx)
@@ -121,7 +122,7 @@ class SimulatorDeployer(ServerDeployer):
         }
         return simulator_server
 
-    def _create_simulator_client_config(self, client_name):
+    def _create_simulator_client_config(self, client_name, args):
         client_config = {
             "servers": [
                 {
@@ -134,6 +135,15 @@ class SimulatorDeployer(ServerDeployer):
             ],
             "client": {"retry_timeout": 30, "compression": "Gzip"},
         }
+
+        resources = os.path.join(args.workspace, "local/resources.json")
+        if os.path.exists(resources):
+            with open(resources) as file:
+                try:
+                    data = json.load(file)
+                    augment(to_dict=client_config, from_dict=data, from_override_to=False)
+                except BaseException as e:
+                    raise RuntimeError(f"Error processing config file {resources}: {e}")
 
         build_ctx = {
             "client_name": client_name,
