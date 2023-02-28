@@ -85,7 +85,8 @@ class ClientTaskWorker(FLComponent):
                 if client_runner.end_run_fired or client_runner.asked_to_stop:
                     stop_run = True
                     self.logger.info("End the Simulator run.")
-        except Exception:
+        except Exception as e:
+            self.logger.error(f"do_one_task execute exception: {e}")
             interval = 1.0
             stop_run = True
 
