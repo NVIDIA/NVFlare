@@ -103,7 +103,7 @@ class FederatedClientBase:
             compression=compression,
             cell=cell,
             client_register_interval=client_args.get("client_register_interval", 2.0),
-            timeout=client_args.get("communication_timeout", 5.0),
+            timeout=client_args.get("communication_timeout", 10.0),
         )
 
         self.secure_train = secure_train
