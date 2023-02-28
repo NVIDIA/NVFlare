@@ -1104,6 +1104,8 @@ azure_start_svr_sh: |
   report_status "$?" "installing packages"
 
   echo "System was provisioned"
+  echo "To delete the resource group (also delete the VM), run the following command"
+  echo "az group delete -n ${RESOURCE_GROUP}"
   # echo "The VM was created with user: ${ADMIN_USERNAME} and password: ${PASSWORD}"
 
 
@@ -1267,6 +1269,8 @@ azure_start_cln_sh: |
   report_status "$?" "installing packages"
 
   echo "System was provisioned"
+  echo "To delete the resource group (also delete the VM), run the following command"
+  echo "az group delete -n ${RESOURCE_GROUP}"
   # echo "To login to the VM with SSH, use ${ADMIN_USERNAME} : ${PASSWORD}"
 
 azure_start_dsb_sh: |
@@ -1696,6 +1700,8 @@ aws_start_svr_sh: |
   report_status "$?" "installing packages"
 
   echo "System was provisioned"
+  echo "To terminate the EC2 instance, run the following command."
+  echo "aws ec2 terminate-instances --instance-ids ${instance_id}"
 
 aws_start_cln_sh: |
   #!/usr/bin/env bash
@@ -1825,6 +1831,8 @@ aws_start_cln_sh: |
   report_status "$?" "installing packages"
 
   echo "System was provisioned"
+  echo "To terminate the EC2 instance, run the following command."
+  echo "aws ec2 terminate-instances --instance-ids ${instance_id}"
 
 aws_start_dsb_sh: |
   #!/usr/bin/env bash
@@ -1971,3 +1979,6 @@ aws_start_dsb_sh: |
   fi
   echo "Note: you may need to configure DNS server with your DNS hostname and the above IP address."
   echo "Project admin credential (username:password) is ${credential} ."
+  echo "To terminate the EC2 instance, run the following command."
+  echo "aws ec2 terminate-instances --instance-ids ${instance_id}"
+

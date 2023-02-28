@@ -23,7 +23,7 @@ Installation
 Python Version
 --------------
 
-NVIDIA FLARE requires Python 3.8.  It may work with Python 3.7 but currently is not compatible with Python 3.9 and above.
+NVIDIA FLARE requires Python 3.8+.  It may work with Python 3.7.
 
 Install NVIDIA FLARE in a virtual environment
 ---------------------------------------------
@@ -102,7 +102,7 @@ and instructions for this can be found in the `NVIDIA Container Toolkit Install 
 
 A simple Dockerfile is used to capture the base requirements and dependencies.  In
 this case, we're building an environment that will support PyTorch-based workflows,
-in particular the `Hello PyTorch with Tensorboard Streaming <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-pt-tb>`_
+in particular the `Hello PyTorch <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-pt>`_
 example. The base for this build is the NGC PyTorch container.  On this base image,
 we will install the necessary dependencies and clone the NVIDIA FLARE GitHub
 source code into the root workspace directory.
@@ -195,7 +195,7 @@ Running an example application
 ================================
 
 Any of the :ref:`example_applications` can be used with the FL Simulator.  We'll demonstrate the steps here
-using the hello-pt-tb example.
+using the hello-pt example.
 
 First, we need to clone the NVFlare repo to get the source code for the examples:
 
@@ -209,31 +209,30 @@ to a working directory:
 .. code-block:: shell
 
   mkdir simulator-example
-  cp -rf NVFlare/examples/hello-pt-tb simulator-example/
+  cp -rf NVFlare/examples/hello-pt simulator-example/
 
-The hello-pt-tb application requires a few dependencies to be installed.  As in the installation section,
+The hello-pt application requires a few dependencies to be installed.  As in the installation section,
 we can install these in the Python virtual environment by running:
 
 .. code-block:: shell
 
   source nvflare-env/bin/activate
-  python3 -m pip install torch torchvision tensorboard
+  python3 -m pip install -r simulator-example/requirements.txt
 
 If using the Dockerfile above to run in a container, these dependencies have already been installed.
 
 Next, we can create a workspace for the Simulator to use for outputs of the application run, and launch
-the simulator using ``simulator-example/hello-pt-tb`` as the input job directory.  In this example, we'll
+the simulator using ``simulator-example/hello-pt`` as the input job directory.  In this example, we'll
 run on two clients using two threads:
 
 .. code-block:: shell
 
   mkdir simulator-example/workspace
-  nvflare simulator -w simulator-example/workspace -n 2 -t 2 simulator-example/hello-pt-tb
+  nvflare simulator -w simulator-example/workspace -n 2 -t 2 simulator-example/hello-pt
 
 Now you will see output streaming from the server and client processes as they execute the federated
 application.  Once the run completes, your workspace directory will contain the input application configuration
-and codes, logs of the output, site and global models, cross-site validation results, and in this example the
-Tensorboard event files.
+and codes, logs of the output, site and global models, cross-site validation results.
 
 .. code-block:: shell
   
@@ -268,20 +267,6 @@ Tensorboard event files.
       │      ├── site-1
       │      └── site-2
       └── startup
-
-
-We can view the training performance for the two sites by launching Tensorboard:
-
-.. code-block:: shell
-
-  tensorboard --logdir simulator-example/workspace/simulate_job/tb_events
-
-For this example run over 5 epochs, the training loss:
-
-.. figure:: resources/getting_started_tb-train-loss.png
-    :height: 305px
-
-    Tensorboard graph showing train_loss for two sites in the hello_pt_tb example.
 
 
 Now that we've explored an example application with the FL Simulator, we can look at what it takes to bring
