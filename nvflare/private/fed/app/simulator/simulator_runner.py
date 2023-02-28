@@ -449,7 +449,8 @@ class SimulatorClientRunner(FLComponent):
     def _shutdown_client(self, client):
         client.communicator.heartbeat_done = True
         time.sleep(3)
-        client.terminate()
+        # client.terminate()
+        client.close()
         client.status = ClientStatus.STOPPED
         client.communicator.cell.stop()
 

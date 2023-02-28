@@ -70,30 +70,34 @@ class ClientTaskWorker(FLComponent):
     def do_one_task(self, client):
         stop_run = False
         # Create the ClientRunManager and ClientRunner for the new client to run
-        if client.run_manager is None:
-            self.create_client_runner(client)
-            self.logger.info(f"Initialize ClientRunner for client: {client.client_name}")
-        with client.run_manager.new_context() as fl_ctx:
-            client_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
-            self.fire_event(EventType.SWAP_IN, fl_ctx)
+        try:
+            if client.run_manager is None:
+                self.create_client_runner(client)
+                self.logger.info(f"Initialize ClientRunner for client: {client.client_name}")
+            with client.run_manager.new_context() as fl_ctx:
+                client_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
+                self.fire_event(EventType.SWAP_IN, fl_ctx)
 
-            interval, task_processed = client_runner.fetch_and_run_one_task(fl_ctx)
-            self.logger.info(f"Finished one task run for client: {client.client_name}")
+                interval, task_processed = client_runner.fetch_and_run_one_task(fl_ctx)
+                self.logger.info(f"Finished one task run for client: {client.client_name}")
 
-            # if any client got the END_RUN event, stop the simulator run.
-            if client_runner.end_run_fired or client_runner.asked_to_stop:
-                stop_run = True
-                self.logger.info("End the Simulator run.")
+                # if any client got the END_RUN event, stop the simulator run.
+                if client_runner.end_run_fired or client_runner.asked_to_stop:
+                    stop_run = True
+                    self.logger.info("End the Simulator run.")
+        except Exception as e:
+            self.logger.error(f"do_one_task execute exception: {e}")
+            interval = 1.0
+            stop_run = True
 
         return interval, stop_run
 
     def release_resources(self, client):
-        with client.run_manager.new_context() as fl_ctx:
-            self.fire_event(EventType.SWAP_OUT, fl_ctx)
+        if client.run_manager:
+            with client.run_manager.new_context() as fl_ctx:
+                self.fire_event(EventType.SWAP_OUT, fl_ctx)
 
-            # client.run_manager.aux_runner.abort_signal.trigger("True")
-
-            fl_ctx.set_prop(FLContextKey.RUNNER, None, private=True)
+                fl_ctx.set_prop(FLContextKey.RUNNER, None, private=True)
         self.logger.info(f"Clean up ClientRunner for : {client.client_name} ")
 
     def run(self, args, conn):
