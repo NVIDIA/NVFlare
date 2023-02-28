@@ -60,7 +60,7 @@ class SocketConnection(Connection):
             self.read_frame_loop()
         except CommError as error:
             if error.code == CommError.CLOSED:
-                log.info(f"Connection {self.name} is closed by peer")
+                log.debug(f"Connection {self.name} is closed by peer")
             else:
                 log.error(f"Connection {self.name} is closed due to error: {error}")
         except Exception as ex:
