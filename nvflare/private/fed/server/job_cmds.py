@@ -56,6 +56,20 @@ CLONED_META_KEYS = {
 }
 
 
+def _create_list_job_cmd_parser():
+    parser = SafeArgumentParser(prog=AdminCommandNames.LIST_JOBS)
+    parser.add_argument("job_id", nargs="?", help="Job ID prefix")
+    parser.add_argument("-d", action="store_true", help="Show detailed list")
+    parser.add_argument("-u", action="store_true", help="List jobs submitted by the same user")
+    parser.add_argument("-n", help="Filter by job name prefix")
+    parser.add_argument(
+        "-m",
+        type=int,
+        help="Maximum number of jobs that will be listed",
+    )
+    return parser
+
+
 class JobCommandModule(CommandModule, CommandUtil):
     """Command module with commands for job management."""
 
@@ -86,7 +100,7 @@ class JobCommandModule(CommandModule, CommandUtil):
                 CommandSpec(
                     name=AdminCommandNames.LIST_JOBS,
                     description="list submitted jobs",
-                    usage=f"{AdminCommandNames.LIST_JOBS} [-n name_prefix] [-d] [-a] [job_id_prefix]",
+                    usage=f"{AdminCommandNames.LIST_JOBS} [-n name_prefix] [-d] [-u] [-m num_of_jobs] [job_id_prefix]",
                     handler_func=self.list_jobs,
                     authz_func=self.command_authz_required,
                 ),
@@ -209,8 +223,8 @@ class JobCommandModule(CommandModule, CommandUtil):
                 wrong_clients.append(client)
 
         if wrong_clients:
-            display_clientss = ",".join(wrong_clients)
-            conn.append_error(f"{display_clientss} are not in the job running list.")
+            display_clients = ",".join(wrong_clients)
+            conn.append_error(f"{display_clients} are not in the job running list.")
             return
 
         err = engine.check_app_start_readiness(job_id)
@@ -282,22 +296,7 @@ class JobCommandModule(CommandModule, CommandUtil):
 
     def list_jobs(self, conn: Connection, args: List[str]):
         try:
-            parser = SafeArgumentParser(prog="list_jobs")
-            parser.add_argument("job_id", nargs="?", help="Job ID prefix")
-            parser.add_argument("-d", action="store_true", help="Show detailed list")
-            parser.add_argument(
-                "-a",
-                action="store_true",
-                help="List all jobs, default is filtered to jobs submitted by the same user",
-            )
-            parser.add_argument("-n", help="Filter by job name prefix")
-            parser.add_argument(
-                "-m",
-                nargs="*",
-                const=5,
-                type=int,
-                help="Limit maximum number of jobs returned to the specified number, default is 5 if flag is set but there is no integer provided for the specified limit",
-            )
+            parser = _create_list_job_cmd_parser()
             parsed_args = parser.parse_args(args[1:])
 
             engine = conn.app_ctx
@@ -313,10 +312,7 @@ class JobCommandModule(CommandModule, CommandUtil):
                 id_prefix = parsed_args.job_id
                 name_prefix = parsed_args.n
                 max_jobs_listed = parsed_args.m
-                if parsed_args.a:
-                    user_name = None
-                else:
-                    user_name = conn.get_prop(ConnProps.USER_NAME, "")
+                user_name = conn.get_prop(ConnProps.USER_NAME, "") if parsed_args.u else None
 
                 filtered_jobs = [job for job in jobs if self._job_match(job.meta, id_prefix, name_prefix, user_name)]
                 if not filtered_jobs:
@@ -325,7 +321,7 @@ class JobCommandModule(CommandModule, CommandUtil):
 
                 filtered_jobs.sort(key=lambda job: job.meta.get(JobMetaKey.SUBMIT_TIME.value, 0.0), reverse=True)
 
-                if parsed_args.m:
+                if max_jobs_listed:
                     filtered_jobs = filtered_jobs[:max_jobs_listed]
 
                 if parsed_args.d:
