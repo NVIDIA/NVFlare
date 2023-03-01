@@ -20,7 +20,7 @@ from research and simulation to real-world production deployment. Some of the ke
 * Management tools for secure provisioning and deployment, orchestration, and management
 * Specification-based API for extensibility
 
-## Install NVFLARE
+## Installation
 To install the [current release](https://pypi.org/project/nvflare/), you can simply run:
 ```
 $ python3 -m pip install nvflare
