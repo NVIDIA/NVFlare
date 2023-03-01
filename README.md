@@ -8,7 +8,7 @@ secure, privacy preserving offering for a distributed multi-party collaboration.
 
 ## Features
 
-> Please see the feature highlights and What's New of the milestone releases.
+> Please see the feature highlights (TODO) and What's New (TODO) of the milestone releases.
 
 NVIDIA FLARE is built on a componentized architecture that gives you the flexibility to take federated learning workloads 
 from research and simulation to real-world production deployment. Some of the key components of this architecture include:
