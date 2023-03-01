@@ -114,3 +114,47 @@ After you run the two scripts `data_split_gen.sh` and `jobs_gen.sh`, the experim
 bash run_experiment_simulator.sh
 ```
 
+## Validate the trained model
+The trained global random forest model can further be validated using
+```
+bash model_validation.sh 
+```
+The output is 
+```
+5_clients_uniform_split_uniform_lr_split_0.5_subsample
+AUC over first 1000000 instances is: 0.7739160662860319
+5_clients_exponential_split_uniform_lr_split_0.5_subsample
+AUC over first 1000000 instances is: 0.7770108010299946
+5_clients_exponential_split_scaled_lr_split_0.5_subsample
+AUC over first 1000000 instances is: 0.7727404041835751
+5_clients_uniform_split_uniform_lr_split_0.05_subsample
+AUC over first 1000000 instances is: 0.7810306437097397
+5_clients_exponential_split_uniform_lr_split_0.05_subsample
+AUC over first 1000000 instances is: 0.7821852372076727
+5_clients_exponential_split_scaled_lr_split_0.05_subsample
+AUC over first 1000000 instances is: 0.7787293667285318
+5_clients_uniform_split_uniform_lr_split_0.005_subsample
+AUC over first 1000000 instances is: 0.7825158041290863
+5_clients_exponential_split_uniform_lr_split_0.005_subsample
+AUC over first 1000000 instances is: 0.7797689977305647
+5_clients_exponential_split_scaled_lr_split_0.005_subsample
+AUC over first 1000000 instances is: 0.7817849808015369
+20_clients_uniform_split_uniform_lr_split_0.8_subsample
+AUC over first 1000000 instances is: 0.7768044721524759
+20_clients_square_split_uniform_lr_split_0.8_subsample
+AUC over first 1000000 instances is: 0.7788396083758498
+20_clients_square_split_scaled_lr_split_0.8_subsample
+AUC over first 1000000 instances is: 0.7757795325989565
+20_clients_uniform_split_uniform_lr_split_0.2_subsample
+AUC over first 1000000 instances is: 0.7808745447533768
+20_clients_square_split_uniform_lr_split_0.2_subsample
+AUC over first 1000000 instances is: 0.7817719906970683
+20_clients_square_split_scaled_lr_split_0.2_subsample
+AUC over first 1000000 instances is: 0.7797564888670013
+20_clients_uniform_split_uniform_lr_split_0.02_subsample
+AUC over first 1000000 instances is: 0.7828698775310959
+20_clients_square_split_uniform_lr_split_0.02_subsample
+AUC over first 1000000 instances is: 0.779952094937354
+20_clients_square_split_scaled_lr_split_0.02_subsample
+AUC over first 1000000 instances is: 0.7825360505137948
+```
