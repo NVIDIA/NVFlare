@@ -34,10 +34,9 @@ No further training will be performed, `num_boost_round` should be 1 to align wi
 ## HIGGS Data Preparation
 ### Download and Store Data
 To run the examples, we first download the dataset from the HIGGS link above, which is a single `.csv` file.
-By default, we assume the dataset is downloaded, uncompressed, and stored in `~/dataset/HIGGS.csv`.
+By default, we assume the dataset is downloaded, uncompressed, and stored in `DATASET_ROOT/HIGGS.csv`.
 
-> **_NOTE:_** If the dataset is downloaded in another place,
-> make sure to modify the corresponding `DATASET_PATH` inside `data_split_gen.sh`.
+> **_NOTE:_** make sure to modify the corresponding `DATASET_ROOT` inside `data_split_gen.sh`.
 
 ### Data Split
 Since HIGGS dataset is already randomly recorded,
@@ -62,20 +61,20 @@ Data splits used in this example can be generated with
 bash data_split_gen.sh
 ```
 
-This will generate data splits for three client sizes: 2, 5 and 20, and 3 split conditions: uniform, square, and exponential.
+This will generate data splits for two client sizes: 5 and 20, and 3 split conditions: uniform, square, and exponential.
 If you want to customize for your experiments, please check `utils/prepare_data_split.py`.
 
-> **_NOTE:_** The generated train config files will be stored in the folder `/tmp/nvflare/xgboost_higgs_dataset/`,
+> **_NOTE:_** The generated train config files will be stored in the folder `/tmp/nvflare/random_forest/HIGGS/data_splits`,
 > and will be used by job_configs by specifying the path within `config_fed_client.json` 
 
 
-## HIGGS job configs preparation under various training settings
+## HIGGS jobs preparation under various training settings
 
 Please follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions to install NVFlare.
 
-We then prepare the NVFlare job configs for different settings by running
+We then prepare the NVFlare jobs for different settings by running
 ```
-bash job_config_gen.sh
+bash jobs_gen.sh
 ```
 
 This script modifies settings from base job configuration
@@ -85,7 +84,7 @@ and copies the correct data split file generated in the data preparation step.
 > **_NOTE:_** To customize your own job configs, you can just edit from the generated ones.
 > Or check the code in `./utils/prepare_job_config.py`.
 
-The script will generate a total of 18 different configs in `./job_configs` for random forest algorithm with different data split, client number, local tree number, and local subsample rate.
+The script will generate a total of 18 different configs in `./jobs` for random forest algorithm with different data split, client number, local tree number, and local subsample rate.
 
 ## GPU support
 By default, CPU based training is used.
@@ -110,7 +109,7 @@ For GPU based training, edit `job_config_gen.sh` to change `TREE_METHOD="hist"` 
 Then run the `job_config_gen.sh` again to generates new job configs for GPU-based training.
 
 ## Run experiments 
-After you run the two scripts `data_split_gen.sh` and `job_config_gen.sh`, the experiments can be run with the NVFlare simulator.
+After you run the two scripts `data_split_gen.sh` and `jobs_gen.sh`, the experiments can be run with the NVFlare simulator.
 ```
 bash run_experiment_simulator.sh
 ```

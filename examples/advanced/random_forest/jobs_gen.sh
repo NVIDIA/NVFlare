@@ -2,7 +2,7 @@
 
 # change to "gpu_hist" for gpu training
 TREE_METHOD="hist"
-DATA_SPLIT_ROOT="${PWD}/data_splits"
+DATA_SPLIT_ROOT="/tmp/nvflare/random_forest/HIGGS/data_splits"
 
 prepare_job_config() {
     python3 utils/prepare_job_config.py --site_num "$1" --num_local_parallel_tree "$2" --local_subsample "$3" \
