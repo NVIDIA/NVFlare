@@ -69,7 +69,7 @@ class SimulatorRunner(FLComponent):
         self.ask_to_stop = False
 
         self.simulator_root = None
-        self.services = None
+        self.server = None
         self.deployer = SimulatorDeployer()
         self.client_names = []
         self.federated_clients = []
@@ -197,7 +197,7 @@ class SimulatorRunner(FLComponent):
 
             # Deploy the FL server
             self.logger.info("Create the Simulator Server.")
-            simulator_server, self.services = self.deployer.create_fl_server(self.args)
+            simulator_server, self.server = self.deployer.create_fl_server(self.args)
             # self.services.deploy(self.args, grpc_args=simulator_server)
 
             self.logger.info("Deploy the Apps.")
@@ -328,12 +328,12 @@ class SimulatorRunner(FLComponent):
         if self.setup():
             try:
                 self.create_clients()
-                self.services.engine.run_processes[SimulatorConstants.JOB_NAME] = {
+                self.server.engine.run_processes[SimulatorConstants.JOB_NAME] = {
                     RunProcessKey.LISTEN_PORT: None,
                     RunProcessKey.CONNECTION: None,
                     RunProcessKey.CHILD_PROCESS: None,
                     RunProcessKey.JOB_ID: SimulatorConstants.JOB_NAME,
-                    RunProcessKey.PARTICIPANTS: self.services.engine.client_manager.clients,
+                    RunProcessKey.PARTICIPANTS: self.server.engine.client_manager.clients,
                 }
 
                 self.logger.info("Deploy and start the Server App.")
@@ -341,7 +341,7 @@ class SimulatorRunner(FLComponent):
                 server_thread.start()
 
                 # wait for the server app is started
-                while self.services.engine.engine_info.status != MachineStatus.STARTED:
+                while self.server.engine.engine_info.status != MachineStatus.STARTED:
                     time.sleep(1.0)
                     if not server_thread.is_alive():
                         raise RuntimeError("Could not start the Server App.")
@@ -391,17 +391,17 @@ class SimulatorRunner(FLComponent):
         os.makedirs(local, exist_ok=True)
         workspace = Workspace(root_dir=self.args.workspace, site_name="server")
 
-        self.services.job_cell = self.services.create_job_cell(
+        self.server.job_cell = self.server.create_job_cell(
             SimulatorConstants.JOB_NAME,
-            self.services.cell.get_root_url_for_child(),
-            self.services.cell.get_internal_listener_url(),
+            self.server.cell.get_root_url_for_child(),
+            self.server.cell.get_internal_listener_url(),
             False,
             None,
         )
-        server_app_runner = SimulatorServerAppRunner()
+        server_app_runner = SimulatorServerAppRunner(self.server)
         snapshot = None
         server_app_runner.start_server_app(
-            workspace, self.services, self.args, app_server_root, self.args.job_id, snapshot, self.logger
+            workspace, self.args, app_server_root, self.args.job_id, snapshot, self.logger
         )
 
         # start = time.time()
@@ -411,8 +411,8 @@ class SimulatorRunner(FLComponent):
         #     if time.time() - start > 30.:
         #         break
 
-        self.services.admin_server.stop()
-        self.services.close()
+        self.server.admin_server.stop()
+        self.server.close()
 
 
 class SimulatorClientRunner(FLComponent):
