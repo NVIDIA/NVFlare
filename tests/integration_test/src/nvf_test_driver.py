@@ -37,10 +37,10 @@ from tests.integration_test.src.action_handlers import (
     _TestDoneHandler,
 )
 from tests.integration_test.src.site_launcher import SiteLauncher
-from tests.integration_test.src.utils import get_job_meta
+from tests.integration_test.src.utils import check_client_status_ready, get_job_meta
 
 
-class FLTestError(Exception):
+class NVFTestError(Exception):
     pass
 
 
@@ -162,7 +162,7 @@ def _admin_api_login(admin_api, admin_user_name, poc):
     return login_success
 
 
-class FLTestDriver:
+class NVFTestDriver:
     def __init__(self, download_root_dir: str, site_launcher: SiteLauncher, poll_period=1):
         """FL system test driver.
 
@@ -245,19 +245,6 @@ class FLTestDriver:
 
         return run_data
 
-    @staticmethod
-    def _check_client_status_ready(response: dict):
-        if "details" not in response:
-            return False
-
-        data = response.get("raw", {}).get("data", [])
-        if data:
-            for d in data:
-                if d.get("type") == "error":
-                    return False
-
-        return True
-
     def ensure_clients_started(self, num_clients):
         timeout = 1000
         start_time = time.time()
@@ -268,18 +255,18 @@ class FLTestDriver:
 
             time.sleep(0.5)
             response = self.super_admin_api.check_status(target_type=TargetType.CLIENT)
-            if response["status"] == APIStatus.SUCCESS:
-                if not self._check_client_status_ready(response):
-                    # clients not ready
+            if not check_client_status_ready(response):
+                # clients not ready
+                continue
+
+            for row in response["details"]["client_statuses"][1:]:
+                if row[3] != "not started":
                     continue
-                for row in response["details"]["client_statuses"][1:]:
-                    if row[3] != "not started":
-                        continue
-                # wait for all clients to come up
-                if len(response["details"]["client_statuses"]) < num_clients + 1:
-                    continue
-                clients_up = True
-                print("All clients are up.")
+            # wait for all clients to come up
+            if len(response["details"]["client_statuses"]) < num_clients + 1:
+                continue
+            clients_up = True
+            print("All clients are up.")
 
         return clients_up
 

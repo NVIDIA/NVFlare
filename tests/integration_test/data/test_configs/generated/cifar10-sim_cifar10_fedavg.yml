@@ -1,0 +1,35 @@
+additional_python_paths:
+- /home/yuantingh/NVFlare/examples/advanced/cifar10/cifar10-sim
+- /home/yuantingh/NVFlare/examples/advanced/cifar10
+cleanup: true
+ha: true
+jobs_root_dir: /home/yuantingh/NVFlare/examples/advanced/cifar10/cifar10-sim/jobs
+project_yaml: data/projects/ha_1_servers_2_clients.yml
+tests:
+- event_sequence:
+  - actions:
+    - submit_job cifar10_fedavg_copy
+    result:
+      data: {}
+      type: run_state
+    trigger:
+      data: Server started
+      type: server_log
+  - actions:
+    - ensure_current_job_done
+    result:
+      data:
+        run_finished: true
+      type: run_state
+    trigger:
+      data:
+        run_finished: true
+      type: run_state
+  setup:
+  - bash /home/yuantingh/NVFlare/examples/advanced/cifar10/cifar10-sim/prepare_data.sh
+  - pip install -r /home/yuantingh/NVFlare/examples/advanced/cifar10/cifar10-sim/requirements.txt
+  - python convert_to_test_job.py --job /home/yuantingh/NVFlare/examples/advanced/cifar10/cifar10-sim/jobs/cifar10_fedavg
+    --post _copy
+  teardown:
+  - rm -rf /home/yuantingh/NVFlare/examples/advanced/cifar10/cifar10-sim/jobs/cifar10_fedavg_copy
+  test_name: Test a simplified copy of job cifar10_fedavg for example cifar10-sim.

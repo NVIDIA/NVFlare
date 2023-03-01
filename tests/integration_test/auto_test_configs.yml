@@ -1,0 +1,11 @@
+test_configs:
+  auto:
+  - data/test_configs/generated/cifar10-sim_cifar10_fedavg.yml
+  - data/test_configs/generated/cifar10-sim_cifar10_fedprox.yml
+  - data/test_configs/generated/cifar10-sim_cifar10_central.yml
+  - data/test_configs/generated/cifar10-sim_cifar10_fedopt.yml
+  - data/test_configs/generated/cifar10-sim_cifar10_scaffold.yml
+  - data/test_configs/generated/tensorboard-streaming_tensorboard-streaming.yml
+  - data/test_configs/generated/sklearn-kmeans_sklearn_kmeans_base.yml
+  - data/test_configs/generated/sklearn-linear_sklearn_linear_base.yml
+  - data/test_configs/generated/sklearn-svm_sklearn_svm_base.yml
