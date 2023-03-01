@@ -1,5 +1,5 @@
 ha: True
-jobs_root_dir: ../../examples/advanced/cifar10/cifar10-real-world/job_configs
+jobs_root_dir: ../../examples/advanced/cifar10/cifar10-real-world/jobs
 cleanup: False
 project_yaml: ./data/projects/ha_1_servers_2_clients.yml
 poll_period: 0.5
@@ -25,7 +25,7 @@ tests:
     validators:
       - path: tests.integration_test.validators.CIFAR10ResultValidator
     setup:
-      - python convert_to_test_job.py --job ../../examples/advanced/cifar10/cifar10-real-world/job_configs/cifar10_fedavg_stream_tb --post _copy
+      - python convert_to_test_job.py --job ../../examples/advanced/cifar10/cifar10-real-world/jobs/cifar10_fedavg_stream_tb --post _copy
       - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/cifar10', download=True)"
     teardown:
-      - rm -rf ../../examples/advanced/cifar10/cifar10-real-world/job_configs/cifar10_fedavg_stream_tb_copy
+      - rm -rf ../../examples/advanced/cifar10/cifar10-real-world/jobs/cifar10_fedavg_stream_tb_copy
