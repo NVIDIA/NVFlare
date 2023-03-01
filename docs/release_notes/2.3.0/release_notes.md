@@ -46,10 +46,10 @@
 
   We add several examples to support federated learning using traditional machine learning algorithms.
   In particular,
-    * scikit-learn linear model ( linea and logistics regression )
-    * scikit-learn SVM
-    * scikit-learn K-Means
-    * XGBoost Random Forest
+    * [Linear model](https://github.com/NVIDIA/NVFlare/tree/dev/examples/advanced/sklearn-linear) using scikit-learn library via [iterative SGD training](https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.SGDClassifier.html). Linear and logistic regressions can be implemented following this iterative example by adopting different loss functions.
+    * [SVM](https://github.com/NVIDIA/NVFlare/tree/dev/examples/advanced/sklearn-svm) using scikit-learn library. In this two-step process, server performs an additional round of SVM over the collected supporting vectors from clients.
+    * [K-Means](https://github.com/NVIDIA/NVFlare/tree/dev/examples/advanced/sklearn-kmeans) using scikit-learn library via [mini-batch K-Means method](https://scikit-learn.org/stable/modules/generated/sklearn.cluster.MiniBatchKMeans.html). In this iterative process, each client performs mini-batch K-Means and server syncs the updates for global model. 
+    * [Random Forest](https://github.com/NVIDIA/NVFlare/tree/dev/examples/advanced/random_forest) using XGBoost library with [random forest functionality](https://xgboost.readthedocs.io/en/stable/tutorials/rf.html). In this two-step process, clients construct sub-forests on their local data, and server ensembles all collected sub-forests to produce the global random forest. 
 
 
 * **Vertical Learning**
@@ -70,7 +70,7 @@
 
 * **Research Area**
 
-    * FedSM
+    * **FedSM** This example illustrates the personalized federated learning algorithm [FedSM](https://arxiv.org/abs/2203.10144) accepted to CVPR2022. It bridges the different data distributions across clients via a SoftPull mechanism and utilizes a Super Model. A model selector is trained to predict the belongings of a particular sample to any of the clients' personalized models or global model. The training of this model also illustrates a challenging federated learning scenario with extreme label-imbalance, where each local training is only based on a single label towards the optimization for classification of a number of classes equvilant to the number of clients. In this case, the higher-order moments of the Adam optimizer are also averaged and synced together with model updates. 
     * Data privacy risk detection tool
 
 
