@@ -13,8 +13,8 @@ secure, privacy preserving offering for a distributed multi-party collaboration.
 NVIDIA FLARE is built on a componentized architecture that gives you the flexibility to take federated learning workloads 
 from research and simulation to real-world production deployment. Some of the key components of this architecture include:
 
-* FL Simulator  for rapid development and prototyping
-* FLARE Dashboard UI for simplified project management and deployment  
+* Simulator for rapid development and prototyping
+* NVFLARE Dashboard UI for simplified project management and deployment  
 * Reference FL algorithms (e.g., FedAvg, FedProx) and workflows (e.g., Scatter and Gather, Cyclic)
 * Privacy preservation with differential privacy, homomorphic encryption, and more
 * Management tools for secure provisioning and deployment, orchestration, and management
