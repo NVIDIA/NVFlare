@@ -10,14 +10,14 @@ from research and simulation to real-world production deployment. Some of the ke
 
 * Simulator for rapid development and prototyping
 * NVFLARE Dashboard UI for simplified project management and deployment  
-* built-in FL algorithms (e.g., FedAvg, FedProx, FedOpt, Scaffold, ditto )
-* built-in workflows (e.g., Scatter and Gather, Cyclic, Global Model Evaluation, Cross-site validation)
-* built-in operators that support horizontal and vertical federated learnings (including multi-party Private set intersection),
+* Built-in FL algorithms (e.g., FedAvg, FedProx, FedOpt, Scaffold, ditto )
+* Built-in workflows (e.g., Scatter and Gather, Cyclic, Global Model Evaluation, Cross-site validation)
+* Built-in operators that support horizontal and vertical federated learnings (including multi-party Private set intersection),
 federated statistics, XGBoost and traditional machine algorithms 
 * Privacy preservation with differential privacy, homomorphic encryption, and privacy filter
-* layered API design for customization and extensibility
+* Layered API design for customization and extensibility
 * Deployment on cloud and on premise 
-* built-in support for system resiliency and fault tolerance 
+* Built-in support for system resiliency and fault tolerance 
 
 ## Installation
 To install the [current release](https://pypi.org/project/nvflare/), you can simply run:
