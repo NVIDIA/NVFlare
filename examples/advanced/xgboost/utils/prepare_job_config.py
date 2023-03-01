@@ -20,7 +20,7 @@ import shutil
 
 from nvflare.apis.fl_constant import JobConstants
 
-JOB_CONFIGS_ROOT = "jobs"
+JOB_CONFIGS_ROOT = "job_configs"
 MODE_ALGO_MAP = {"bagging": "tree-based", "cyclic": "tree-based", "histogram": "histogram-based"}
 
 

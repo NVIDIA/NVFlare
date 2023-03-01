@@ -20,7 +20,7 @@ import shutil
 
 from nvflare.apis.fl_constant import JobConstants
 
-JOB_CONFIGS_ROOT = "jobs"
+JOB_CONFIGS_ROOT = "job_configs"
 BASE_FOLDER = "random_forest_base"
 
 

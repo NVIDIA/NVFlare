@@ -24,7 +24,7 @@ import numpy as np
 
 from nvflare.apis.fl_constant import JobConstants
 
-JOB_CONFIGS_ROOT = "jobs"
+JOB_CONFIGS_ROOT = "job_configs"
 
 
 class SplitMethod(Enum):
