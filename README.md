@@ -9,7 +9,7 @@ NVIDIA FLARE is built on a componentized architecture that gives you the flexibi
 from research and simulation to real-world production deployment. Some of the key components include:
 
 * Simulator for rapid development and prototyping
-* NVFLARE Dashboard UI for simplified project management and deployment  
+* Dashboard UI for simplified project management and deployment  
 * Built-in FL algorithms (e.g., FedAvg, FedProx, FedOpt, Scaffold, ditto )
 * Built-in workflows (e.g., Scatter and Gather, Cyclic, Global Model Evaluation, Cross-site validation)
 * Built-in operators that support horizontal and vertical federated learnings (including multi-party Private set intersection),
