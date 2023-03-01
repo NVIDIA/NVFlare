@@ -9,7 +9,9 @@ from research and simulation to real-world production deployment. Some of the ke
 
 * Simulator for rapid development and prototyping
 * NVFLARE Dashboard UI for simplified project management and deployment  
-* built-in FL algorithms (e.g., FedAvg, FedProx ), and workflows (e.g., Scatter and Gather, Cyclic)
+* built-in FL algorithms (e.g., FedAvg, FedProx, FedOpt, Scaffold, ditto )
+* built-in workflows (e.g., Scatter and Gather, Cyclic, Global Model Evaluation, Cross-site validation)
+* built-in operators that support horizontal and vertical learnings, Private Set Intersection (PSI), federated statistics, XGBoost and traditional machine 
 * Privacy preservation with differential privacy, homomorphic encryption, and more
 * layered API design for customization and extensibility
 * Deployment on cloud and on premise 
