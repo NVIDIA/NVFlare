@@ -993,7 +993,7 @@ azure_start_svr_sh: |
   echo "If the client requires additional dependencies, please copy the requirements.txt to ${DIR}."
   prompt ans "Press ENTER when it's done or no additional dependencies. "
 
-  az login
+  az login --use-device-code
 
   # Start provisioning
 
@@ -1195,7 +1195,7 @@ azure_start_cln_sh: |
   echo "If the client requires additional dependencies, please copy the requirements.txt to ${DIR}."
   prompt ans "Press ENTER when it's done or no additional dependencies. "
 
-  az login
+  az login --use-device-code
 
   # Start provisioning
 
@@ -1326,7 +1326,7 @@ azure_start_dsb_sh: |
   echo "Please enter the email address for this user."
   read email
 
-  az login
+  az login --use-device-code
   # Start provisioning
   echo "Creating Resource Group $RESOURCE_GROUP at Location $LOCATION"
   az group create --output none --name $RESOURCE_GROUP --location $LOCATION
