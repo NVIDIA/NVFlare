@@ -183,20 +183,20 @@ class ScatterAndGather(Controller):
             )
             return
 
+        if self._global_weights.is_empty():
+            # see whether it is available from fl_ctx
+            self._global_weights = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
+            if not isinstance(self._global_weights, ModelLearnable):
+                self.system_panic(
+                    reason=f"Expected global weights to be of type `ModelLearnable` but received {type(ModelLearnable)}",
+                    fl_ctx=fl_ctx,
+                )
+                return
+
         if not self.allow_empty_global_weights:
             if self._global_weights.is_empty():
-               # see whether it is available from fl_ctx
-               self._global_weights = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
-               if not isinstance(self._global_weights, ModelLearnable):
-                   self.system_panic(
-                       reason=f"Expected global weights to be of type `ModelLearnable` but received {type(ModelLearnable)}",
-                       fl_ctx=fl_ctx,
-                   )
-                   return
-
-            if self._global_weights.is_empty():
-               self.system_panic(reason="Missing initial global model weights", fl_ctx=fl_ctx)
-               return
+                self.system_panic(reason="Missing initial global model weights", fl_ctx=fl_ctx)
+                return
 
         fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._global_weights, private=True, sticky=True)
         self.fire_event(AppEventType.INITIAL_MODEL_LOADED, fl_ctx)
