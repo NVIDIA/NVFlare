@@ -9,10 +9,11 @@ from research and simulation to real-world production deployment. Some of the ke
 
 * Simulator for rapid development and prototyping
 * NVFLARE Dashboard UI for simplified project management and deployment  
-* Reference FL algorithms (e.g., FedAvg, FedProx) and workflows (e.g., Scatter and Gather, Cyclic)
+* built-in FL algorithms (e.g., FedAvg, FedProx ), and workflows (e.g., Scatter and Gather, Cyclic)
 * Privacy preservation with differential privacy, homomorphic encryption, and more
-* Management tools for secure provisioning and deployment, orchestration, and management
-* Specification-based API for extensibility
+* layered API design for customization and extensibility
+* Deployment on cloud and on premise 
+* built-in support for system resiliency and fault torlerence 
 
 ## Installation
 To install the [current release](https://pypi.org/project/nvflare/), you can simply run:
