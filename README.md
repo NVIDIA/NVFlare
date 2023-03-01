@@ -4,7 +4,7 @@
 allows researchers and data scientists to adapt existing ML/DL workflows (PyTorch, RAPIDS, Nemo, TensorFlow) to a federated paradigm; and enables platform developers to build a 
 secure, privacy preserving offering for a distributed multi-party collaboration. Our mission:
 
-_Bring privacy preserved compute and machine learning to data in a federated setting, keep it simple and production ready_
+* _Bring privacy preserved compute and machine learning to data in a federated setting, keep it simple and production ready_
 
 ## Features
 
