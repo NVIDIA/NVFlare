@@ -5,7 +5,7 @@ allows researchers and data scientists to adapt existing ML/DL workflows (PyTorc
 secure, privacy preserving offering for a distributed multi-party collaboration. 
 
 NVIDIA FLARE is built on a componentized architecture that gives you the flexibility to take federated learning workloads 
-from research and simulation to real-world production deployment. Some of the key components of this architecture include:
+from research and simulation to real-world production deployment. Some of the key components include:
 
 * Simulator for rapid development and prototyping
 * NVFLARE Dashboard UI for simplified project management and deployment  
