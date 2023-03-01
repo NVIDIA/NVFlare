@@ -111,7 +111,7 @@ class _SubmitJobHandler(_CmdHandler):
 
         response = admin_api.submit_job(job_name)
         if response["status"] == APIStatus.ERROR_RUNTIME:
-            admin_controller.admin_api_response = response["raw"]["data"]
+            admin_controller.admin_api_response = response.get("raw", {}).get("data")
         elif response["status"] == APIStatus.ERROR_AUTHORIZATION:
             admin_controller.admin_api_response = response["details"]
         elif response["status"] == APIStatus.SUCCESS:
@@ -123,7 +123,7 @@ class _CloneJobHandler(_CmdHandler):
     def handle(self, command_args: list, admin_controller: NVFTestDriver, admin_api: FLAdminAPI):
         response = admin_api.clone_job(admin_controller.job_id)
         if response["status"] == APIStatus.ERROR_RUNTIME:
-            admin_controller.admin_api_response = response["raw"]["data"]
+            admin_controller.admin_api_response = response.get("raw", {}).get("data")
         elif response["status"] == APIStatus.ERROR_AUTHORIZATION:
             admin_controller.admin_api_response = response["details"]
         if response["status"] == APIStatus.SUCCESS:
@@ -134,7 +134,7 @@ class _AbortJobHandler(_CmdHandler):
     def handle(self, command_args: list, admin_controller: NVFTestDriver, admin_api: FLAdminAPI):
         response = admin_api.abort_job(admin_controller.job_id)
         if response["status"] == APIStatus.ERROR_RUNTIME:
-            admin_controller.admin_api_response = response["raw"]["data"]
+            admin_controller.admin_api_response = response.get("raw", {}).get("data")
         elif response["status"] == APIStatus.ERROR_AUTHORIZATION:
             admin_controller.admin_api_response = response["details"]
 
@@ -150,7 +150,7 @@ class _ShellCommandHandler(_CmdHandler):
         if str(command_args[0]) == "ls":
             response = admin_api.ls_target(str(command_args[1]))
             if response["status"] == APIStatus.ERROR_RUNTIME:
-                admin_controller.admin_api_response = response["raw"]["data"]
+                admin_controller.admin_api_response = response.get("raw", {}).get("data")
             elif response["status"] == APIStatus.ERROR_AUTHORIZATION:
                 admin_controller.admin_api_response = response["details"]["message"]
             elif response["status"] == APIStatus.SUCCESS:
