@@ -45,9 +45,10 @@ from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.private.defs import CellChannel, CellChannelTopic, new_cell_message
-from nvflare.private.fed.app.client.worker_process import check_parent_alive
 from nvflare.private.fed.app.fl_conf import create_privacy_manager
+from nvflare.private.fed.app.utils import monitor_parent_process
 from nvflare.private.fed.client.client_run_manager import ClientRunManager
+from nvflare.private.fed.runner import Runner
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorClientRunManager
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, configure_logging, fobs_initialize
 from nvflare.private.privacy_manager import PrivacyService
@@ -123,7 +124,7 @@ class EventRelayer(FLComponent):
                     )
 
 
-class SubWorkerExecutor:
+class SubWorkerExecutor(Runner):
     def __init__(self, args, workspace, num_of_processes, local_rank) -> None:
         self.args = args
         self.workspace = workspace
@@ -282,6 +283,9 @@ class SubWorkerExecutor:
         # mpm.run("Client sub_worker")
         self.logger.info("SubWorkerExecutor process shutdown.")
 
+    def stop(self):
+        self.done = True
+
 
 def main():
     """Sub_worker process program."""
@@ -323,7 +327,7 @@ def main():
     # start parent process checking thread
     parent_pid = args.parent_pid
     stop_event = threading.Event()
-    thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
+    thread = threading.Thread(target=monitor_parent_process, args=(sub_executor, parent_pid, stop_event))
     thread.start()
 
     job_id = args.job_id

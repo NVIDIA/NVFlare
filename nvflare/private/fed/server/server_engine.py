@@ -491,6 +491,7 @@ class ServerEngine(ServerEngineInternalSpec):
             channel=CellChannel.SERVER_PARENT_LISTENER,
             topic=ServerCommandNames.GET_CLIENTS,
             request=request,
+            timeout=5.0,
         )
         data = fobs.loads(return_data.payload)
         if data.get(ServerCommandKey.CLIENTS):
@@ -514,13 +515,15 @@ class ServerEngine(ServerEngineInternalSpec):
                 message=request,
             )
 
-    def send_command_to_child_runner_process(self, job_id: str, command_name: str, command_data, return_result=True):
+    def send_command_to_child_runner_process(
+        self, job_id: str, command_name: str, command_data, return_result=True, timeout=5.0
+    ):
         result = None
         with self.lock:
             fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
             request = new_cell_message({}, fobs.dumps(command_data))
             return_data = self.server.cell.send_request(
-                target=fqcn, channel=CellChannel.SERVER_COMMAND, topic=command_name, request=request
+                target=fqcn, channel=CellChannel.SERVER_COMMAND, topic=command_name, request=request, timeout=timeout
             )
             result = fobs.loads(return_data.payload)
 
