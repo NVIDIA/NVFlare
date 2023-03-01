@@ -3,7 +3,7 @@
 set -e
 
 PYTHONPATH="${PWD}/../.."
-backends=(numpy tensorflow pytorch overseer ha auth preflight auto cifar)
+backends=(numpy tensorflow pytorch overseer ha auth preflight cifar auto)
 
 usage()
 {
@@ -96,10 +96,10 @@ elif [[ $m == "overseer" ]]; then
     run_overseer_test
 elif [[ $m == "preflight" ]]; then
     run_preflight_check_test
-elif [[ $m == "auto" ]]; then
-    echo "Running integration tests using auto generated jobs."
-    run_system_test
 elif [[ $m == "cifar" ]]; then
     echo "Running integration tests using cifar jobs."
+    run_system_test
+elif [[ $m == "auto" ]]; then
+    echo "Running integration tests using auto generated jobs."
     run_system_test
 fi
