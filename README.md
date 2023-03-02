@@ -28,7 +28,7 @@ $ python3 -m pip install nvflare
 ```
 ## Getting started
 
-You can quickly get started using the [FL simulator](https://nvflare.readthedocs.io/en/main/quick_start.html).
+You can quickly get started using the [FL simulator](https://nvflare.readthedocs.io/en/main/getting_started.html#the-fl-simulator).
 
 A detailed [getting started](https://nvflare.readthedocs.io/en/main/getting_started.html) guide is available in the [documentation](https://nvflare.readthedocs.io/en/main/index.html).
  
