@@ -8,7 +8,7 @@
 ```  
    nvflare dashboard --cloud azure | aws
    <server-startup-kit>/start.sh --cloud azure | aws
-   <server-startup-kit>/start.sh --cloud azure | aws
+   <client-startup-kit>/start.sh --cloud azure | aws
 ```
 
 * **Python Version Support**
