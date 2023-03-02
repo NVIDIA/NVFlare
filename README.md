@@ -1,7 +1,7 @@
 **NV**IDIA **F**ederated **L**earning **A**pplication **R**untime **E**nvironment
 
 [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) is a domain-agnostic, open-source, extensible SDK that 
-allows researchers and data scientists to adapt existing ML/DL workflows(PyTorch, TensorFlow, Scikit-learn, XGBoost) 
+allows researchers and data scientists to adapt existing ML/DL workflows(PyTorch, TensorFlow, Scikit-learn, XGBoost etc.) 
 to a federated paradigm. It enables platform developers to build a secure, privacy-preserving offering 
 for a distributed multi-party collaboration. 
 
@@ -11,7 +11,7 @@ from research and simulation to real-world production deployment. Key components
 * Support both deep learning and traditional machine algorithms
 * Support horizontal and vertical federated learning
 * Built-in FL algorithms (e.g., FedAvg, FedProx, FedOpt, Scaffold, Ditto )
-* Support multiple training workflows (e.g., scatter and gather and cyclic) and validation workflows (global model evaluation, cross-site validation)
+* Support multiple training workflows (e.g., scatter & gather, cyclic) and validation workflows (global model evaluation, cross-site validation)
 * Support both data analytics (federated statistics) and machine learning lifecycle management
 * Privacy preservation with differential privacy, homomorphic encryption
 * Security enforcement through federated authorization and privacy policy 
