@@ -207,22 +207,23 @@ class ServerEngine(ServerEngineInternalSpec):
     def wait_for_complete(self, job_id, process):
         process.wait()
         run_process_info = self.run_processes.get(job_id)
-        process_finished = run_process_info.get(RunProcessKey.PROCESS_FINISHED, False)
-        # Wait for the job process to finish UPDATE_RUN_STATUS process
-        start_time = time.time()
-        while not process_finished:
-            if time.time() - start_time > 5.0:
-                self.logger.error(f"Job:{job_id} UPDATE_RUN_STATUS didn't finish fast enough.")
-                break
-            time.sleep(0.1)
+        if run_process_info:
+            process_finished = run_process_info.get(RunProcessKey.PROCESS_FINISHED, False)
+            # Wait for the job process to finish UPDATE_RUN_STATUS process
+            start_time = time.time()
+            while not process_finished:
+                if time.time() - start_time > 5.0:
+                    self.logger.error(f"Job:{job_id} UPDATE_RUN_STATUS didn't finish fast enough.")
+                    break
+                time.sleep(0.1)
 
-        with self.lock:
-            if job_id in self.run_processes:
-                run_process_info = self.run_processes.pop(job_id)
-                # return_code = run_process_info[RunProcessKey.CHILD_PROCESS].poll()
-                # # if process exit but with Execution exception
-                # if return_code and return_code != 0:
-                #     self.exception_run_processes[job_id] = run_process_info
+            with self.lock:
+                if job_id in self.run_processes:
+                    run_process_info = self.run_processes.pop(job_id)
+                    # return_code = run_process_info[RunProcessKey.CHILD_PROCESS].poll()
+                    # # if process exit but with Execution exception
+                    # if return_code and return_code != 0:
+                    #     self.exception_run_processes[job_id] = run_process_info
         self.engine_info.status = MachineStatus.STOPPED
 
     def _start_runner_process(
