@@ -7,8 +7,8 @@
   deploy and start dashboard, FL server, FL Client(s).
 ```  
    nvflare dashboard --cloud azure | aws
-   nvflare server --cloud azure | aws
-   nvflare client --cloud azure | aws
+   <server-startup-kit>/start.sh --cloud azure | aws
+   <server-startup-kit>/start.sh --cloud azure | aws
 ```
 
 * **Python Version Support**
