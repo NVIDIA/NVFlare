@@ -1305,7 +1305,7 @@ azure_start_dsb_sh: |
   fi
   }
 
-  RESOURCE_GROUP=nvflare_dashboard_rg
+  RESOURCE_GROUP=nvflare_dashboard_rg_${RANDOM}_${RANDOM}
   VM_NAME=nvflare_dashboard
   VM_IMAGE=Canonical:0001-com-ubuntu-server-focal:20_04-lts-gen2:latest
   VM_SIZE=Standard_B2ms
