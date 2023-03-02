@@ -180,7 +180,7 @@ class SimulatorRunner(FLComponent):
                         f"the number of GPUS: ({len(gpus)})"
                     )
                     return False
-                if len(gpus) > 1 and self.args.threads > 1:
+                if len(gpus) > 1 and self.args.threads and self.args.threads > 1:
                     self.logger.info(
                         "When running with multi GPU, each GPU will run with only 1 thread. " "Set the Threads to 1."
                     )
