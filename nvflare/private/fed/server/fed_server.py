@@ -336,12 +336,13 @@ class FederatedServer(BaseServer):
             return make_cellnet_reply(F3ReturnCode.OK, "", fobs.dumps(return_data))
         elif command == ServerCommandNames.UPDATE_RUN_STATUS:
             execution_error = data.get("execution_error")
-            if execution_error:
-                with self.lock:
-                    run_process_info = self.engine.run_processes.get(job_id)
+            with self.lock:
+                run_process_info = self.engine.run_processes.get(job_id)
+                if execution_error:
                     self.engine.exception_run_processes[job_id] = run_process_info
-                    reply = make_cellnet_reply(F3ReturnCode.OK, "", None)
-                    return reply
+                run_process_info[RunProcessKey.PROCESS_FINISHED] = True
+                reply = make_cellnet_reply(F3ReturnCode.OK, "", None)
+                return reply
         elif command == ServerCommandNames.HEARTBEAT:
             return make_cellnet_reply(F3ReturnCode.OK, "", None)
         else:
