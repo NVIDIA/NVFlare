@@ -132,6 +132,7 @@ class GetTaskCommand(CommandProcessor):
         """
 
         shared_fl_ctx = data.get_header(ServerCommandKey.PEER_FL_CONTEXT)
+        data.set_header(ServerCommandKey.PEER_FL_CONTEXT, FLContext())
         client = data.get_header(ServerCommandKey.FL_CLIENT)
         fl_ctx.set_peer_context(shared_fl_ctx)
         server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
@@ -199,6 +200,7 @@ class SubmitUpdateCommand(CommandProcessor):
         # server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
 
         shared_fl_ctx = data.get_header(ServerCommandKey.PEER_FL_CONTEXT)
+        data.set_header(ServerCommandKey.PEER_FL_CONTEXT, FLContext())
         shared_fl_ctx.set_prop(FLContextKey.SHAREABLE, data, private=True)
 
         client = data.get_header(ServerCommandKey.FL_CLIENT)

@@ -15,7 +15,6 @@
 import uuid
 from datetime import datetime, timedelta
 
-print("Using memory store")
 from .mem_store import get_all_sp, get_primary_sp, get_sp_by, update_sp  # noqa
 
 system_state = "ready"

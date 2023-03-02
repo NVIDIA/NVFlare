@@ -14,7 +14,7 @@
 
 import os
 import time
-from typing import List
+from typing import List, Optional
 
 from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.apis.job_def import JobMetaKey, RunStatus
@@ -262,7 +262,12 @@ class Session(SessionSpec):
         return job_meta
 
     def list_jobs(
-        self, detailed: bool = False, all: bool = False, limit: int = 5, id_prefix: str = None, name_prefix: str = None
+        self,
+        detailed: bool = False,
+        all: bool = False,
+        limit: Optional[int] = None,
+        id_prefix: str = None,
+        name_prefix: str = None,
     ) -> List[dict]:
         """Get the job info from the server
 
