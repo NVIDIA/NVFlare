@@ -42,6 +42,7 @@
         "shareable_generator_id": "shareable_generator",
         "train_task_name": "train",
         "train_timeout": 0,
+        "allow_empty_global_weights": true,
         "task_check_period": 0.01,
         "persist_every_n_rounds": 0,
         "snapshot_every_n_rounds": 0
