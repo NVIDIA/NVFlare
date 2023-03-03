@@ -21,6 +21,8 @@ import time
 from typing import Dict, List, Optional
 
 from nvflare.cli_exception import CLIException
+from nvflare.fuel.flare_api.api_spec import JobNotFound, NoConnection
+from nvflare.fuel.flare_api.flare_api import new_insecure_session
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
 from nvflare.lighter.poc import generate_poc
 from nvflare.lighter.service_constants import FlareServiceConstants as SC
@@ -189,10 +191,51 @@ def stop_poc(poc_workspace: str, excluded=None, white_list=None):
     else:
         excluded.append(SC.FLARE_CONSOLE)
 
-    print(f"stop_poc at {poc_workspace}")
+    print("start shutdown NVFLARE")
     validate_poc_workspace(poc_workspace)
     gpu_ids: List[int] = []
+    sess = None
+
+    try:
+        admin_dir = os.path.join(poc_workspace, "admin")
+        print("trying to connect to FL server")
+        sess = new_insecure_session(admin_dir)
+        print("checking running jobs")
+        jobs = sess.list_jobs()
+        active_job_ids = _get_running_job_ids(jobs)
+        if len(active_job_ids) > 0:
+            print("Warning: current running jobs will be aborted")
+            _abort_jobs(sess, active_job_ids)
+
+        print("shutdown NVFLARE")
+        sess.api.do_command("shutdown all")
+    except NoConnection:
+        print("fail to connect FL server")
+        pass
+    except Exception as e:
+        print("failure", e)
+    finally:
+        if sess:
+            sess.close()
+
     _run_poc(SC.CMD_STOP, poc_workspace, gpu_ids, excluded=excluded, white_list=white_list)
+
+
+def _abort_jobs(sess, job_ids):
+    for job_id in job_ids:
+        try:
+            sess.abort_job(job_id)
+        except JobNotFound:
+            # ignore invalid job id
+            pass
+
+
+def _get_running_job_ids(jobs: list) -> List[str]:
+    if len(jobs) > 0:
+        running_job_ids = [job for job in jobs if job["status"] == "RUNNING"]
+        return running_job_ids
+    else:
+        return []
 
 
 def _get_clients(package_commands: list) -> List[str]:

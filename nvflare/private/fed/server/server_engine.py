@@ -206,13 +206,20 @@ class ServerEngine(ServerEngineInternalSpec):
 
     def wait_for_complete(self, job_id, process):
         process.wait()
-        with self.lock:
-            if job_id in self.run_processes:
-                run_process_info = self.run_processes.pop(job_id)
-                # return_code = run_process_info[RunProcessKey.CHILD_PROCESS].poll()
-                # # if process exit but with Execution exception
-                # if return_code and return_code != 0:
-                #     self.exception_run_processes[job_id] = run_process_info
+        run_process_info = self.run_processes.get(job_id)
+        if run_process_info:
+            process_finished = run_process_info.get(RunProcessKey.PROCESS_FINISHED, False)
+            # Wait for the job process to finish UPDATE_RUN_STATUS process
+            start_time = time.time()
+            while not process_finished:
+                if time.time() - start_time > 5.0:
+                    self.logger.error(f"Job:{job_id} UPDATE_RUN_STATUS didn't finish fast enough.")
+                    break
+                time.sleep(0.1)
+
+            with self.lock:
+                if job_id in self.run_processes:
+                    run_process_info = self.run_processes.pop(job_id)
         self.engine_info.status = MachineStatus.STOPPED
 
     def _start_runner_process(
@@ -491,6 +498,7 @@ class ServerEngine(ServerEngineInternalSpec):
             channel=CellChannel.SERVER_PARENT_LISTENER,
             topic=ServerCommandNames.GET_CLIENTS,
             request=request,
+            timeout=5.0,
         )
         data = fobs.loads(return_data.payload)
         if data.get(ServerCommandKey.CLIENTS):
@@ -514,13 +522,15 @@ class ServerEngine(ServerEngineInternalSpec):
                 message=request,
             )
 
-    def send_command_to_child_runner_process(self, job_id: str, command_name: str, command_data, return_result=True):
+    def send_command_to_child_runner_process(
+        self, job_id: str, command_name: str, command_data, return_result=True, timeout=5.0
+    ):
         result = None
         with self.lock:
             fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
             request = new_cell_message({}, fobs.dumps(command_data))
             return_data = self.server.cell.send_request(
-                target=fqcn, channel=CellChannel.SERVER_COMMAND, topic=command_name, request=request
+                target=fqcn, channel=CellChannel.SERVER_COMMAND, topic=command_name, request=request, timeout=timeout
             )
             result = fobs.loads(return_data.payload)
 

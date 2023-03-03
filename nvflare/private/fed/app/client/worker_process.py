@@ -28,7 +28,7 @@ from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import EngineConstant
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger
-from nvflare.private.fed.app.utils import check_parent_alive
+from nvflare.private.fed.app.utils import monitor_parent_process
 from nvflare.private.fed.client.client_app_runner import ClientAppRunner
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize
@@ -102,10 +102,6 @@ def main():
 
     logger = None
     try:
-        # start parent process checking thread
-        thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
-        thread.start()
-
         conf = FLClientStarterConfiger(
             workspace=workspace,
             args=args,
@@ -131,6 +127,10 @@ def main():
         federated_client.fl_ctx.set_prop(FLContextKey.WORKSPACE_ROOT, args.workspace, private=True)
 
         client_app_runner = ClientAppRunner(time_out=kv_list.get("app_runner_timeout", 60.0))
+        # start parent process checking thread
+        thread = threading.Thread(target=monitor_parent_process, args=(client_app_runner, parent_pid, stop_event))
+        thread.start()
+
         client_app_runner.start_run(app_root, args, config_folder, federated_client, secure_train)
 
     except BaseException as e:

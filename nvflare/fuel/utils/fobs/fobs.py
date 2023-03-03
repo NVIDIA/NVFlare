@@ -212,7 +212,10 @@ def serialize(obj: Any, **kwargs) -> bytes:
         Serialized data
     """
     _register_decomposers()
-    return msgpack.packb(obj, default=_fobs_packer, strict_types=True, **kwargs)
+    try:
+        return msgpack.packb(obj, default=_fobs_packer, strict_types=True, **kwargs)
+    except ValueError as ex:
+        raise ValueError(f"Object {type(obj)} is not serializable: {ex}: {obj}")
 
 
 def serialize_stream(obj: Any, stream: BinaryIO, **kwargs):

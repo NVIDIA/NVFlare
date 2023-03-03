@@ -25,24 +25,26 @@ from nvflare.private.fed.client.client_run_manager import ClientRunManager
 from nvflare.private.fed.client.client_runner import ClientRunner
 from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.client.command_agent import CommandAgent
+from nvflare.private.fed.runner import Runner
 from nvflare.private.privacy_manager import PrivacyService
 
 
-class ClientAppRunner:
+class ClientAppRunner(Runner):
     def __init__(self, time_out=60.0) -> None:
         self.command_agent = None
         self.timeout = time_out
+        self.client_runner = None
 
     def start_run(self, app_root, args, config_folder, federated_client, secure_train):
-        client_runner = self.create_client_runner(app_root, args, config_folder, federated_client, secure_train)
-        federated_client.set_client_runner(client_runner)
+        self.client_runner = self.create_client_runner(app_root, args, config_folder, federated_client, secure_train)
+        federated_client.set_client_runner(self.client_runner)
         start = time.time()
         while federated_client.communicator.cell is None:
             time.sleep(1.0)
             if time.time() - start > self.timeout:
                 raise RuntimeError("No cell created for communicator. Failed to start the ClientAppRunner.")
         federated_client.status = ClientStatus.STARTED
-        client_runner.run(app_root, args)
+        self.client_runner.run(app_root, args)
 
         federated_client.stop_cell()
 
@@ -113,3 +115,7 @@ class ClientAppRunner:
     def close(self):
         if self.command_agent:
             self.command_agent.shutdown()
+
+    def stop(self):
+        if self.client_runner:
+            self.client_runner.asked_to_stop = True

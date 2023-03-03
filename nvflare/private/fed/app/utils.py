@@ -21,8 +21,17 @@ import psutil
 
 from nvflare.fuel.hci.security import hash_password
 from nvflare.private.defs import SSLConstants
+from nvflare.private.fed.runner import Runner
 from nvflare.private.fed.server.admin import FedAdminServer
 from nvflare.private.fed.server.fed_server import FederatedServer
+
+
+def monitor_parent_process(runner: Runner, parent_pid, stop_event: threading.Event):
+    while True:
+        if stop_event.is_set() or not psutil.pid_exists(parent_pid):
+            runner.stop()
+            break
+        time.sleep(1)
 
 
 def check_parent_alive(parent_pid, stop_event: threading.Event):
