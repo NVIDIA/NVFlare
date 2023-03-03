@@ -13,7 +13,7 @@
 
 * **Python Version Support**
 
-  Flare expand the python version support and dropped the Python 3.7 support, FLARE 2.3.0 will support 3.8, 3.9, 3.10
+  FLARE expands the python version support and dropped the Python 3.7 support, FLARE 2.3.0 will support 3.8, 3.9, 3.10
 
 
 * **Flare API**
