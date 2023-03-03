@@ -300,7 +300,8 @@ class WorkspaceConstants:
     SITE_FOLDER_NAME = "local"
     CUSTOM_FOLDER_NAME = "custom"
 
-    LOGGING_CONFIG = "log.config"
+    # LOGGING_CONFIG = "log.config"
+    LOGGING_CONFIG = "log_config.json"
     DEFAULT_LOGGING_CONFIG = LOGGING_CONFIG + ".default"
     AUDIT_LOG = "audit.log"
     LOG_FILE_NAME = "log.txt"

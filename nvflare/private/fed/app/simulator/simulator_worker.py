@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import argparse
-import logging.config
 import os
 import sys
 import threading
@@ -37,7 +36,8 @@ from nvflare.private.fed.client.fed_client import FederatedClient
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorClientAppRunner
 from nvflare.private.fed.simulator.simulator_audit import SimulatorAuditor
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize
+from nvflare.private.fed.utils.fed_utils import fobs_initialize
+from nvflare.private.fed.utils.log_config_utils import initialize_log_config
 from nvflare.security.logging import secure_format_exception
 from nvflare.security.security import EmptyAuthorizer
 
@@ -197,13 +197,10 @@ def main():
     thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
     thread.start()
 
-    log_config_file_path = os.path.join(args.workspace, "startup", WorkspaceConstants.LOGGING_CONFIG)
-    if not os.path.isfile(log_config_file_path):
-        log_config_file_path = os.path.join(os.path.dirname(__file__), WorkspaceConstants.LOGGING_CONFIG)
-    logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
     workspace = os.path.join(args.workspace, SimulatorConstants.JOB_NAME, "app_" + args.client)
     log_file = os.path.join(workspace, WorkspaceConstants.LOG_FILE_NAME)
-    add_logfile_handler(log_file)
+    resource_dir = os.path.join(os.path.dirname(__file__), "resource")
+    initialize_log_config(log_file, args.workspace, resource_dir)
 
     os.chdir(workspace)
     fobs_initialize()
