@@ -35,25 +35,6 @@ Next, the global model will be sent back to clients for the second round,
 performing model validation and local model update. 
 If this number is set to a number greater than 2, the system will report an error and exit.
 
-## (Optional) Set up a virtual environment
-```
-python3 -m pip install --user --upgrade pip
-python3 -m pip install --user virtualenv
-```
-(If needed) make all shell scripts executable using
-```
-find . -name ".sh" -exec chmod +x {} \;
-```
-Initialize a virtual environment.
-```
-source ./virtualenv/set_env.sh
-```
-Install required packages for training.
-```
-pip3 install --upgrade pip
-pip3 install -r ./virtualenv/requirements.txt
-```
-
 ## Data preparation 
 This example uses the breast cancer dataset available from Scikit-learn's dataset API.
 

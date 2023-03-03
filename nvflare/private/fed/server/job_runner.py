@@ -443,8 +443,8 @@ class JobRunner(FLComponent):
                 del self.running_jobs[job_id]
             self.fire_event(EventType.JOB_ABORTED, fl_ctx)
         else:
-            # raise RuntimeError(f"Job {job_id} is not running.")
-            self.log_error(fl_ctx, f"Job {job_id} is not running.")
+            self.log_error(fl_ctx, f"Job {job_id} is not running. It can not be stopped.")
+            raise RuntimeError(f"Job {job_id} is not running.")
 
     def stop_all_runs(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()

@@ -20,7 +20,7 @@ import shutil
 
 from nvflare.apis.fl_constant import JobConstants
 
-JOB_CONFIGS_ROOT = "job_configs"
+JOB_CONFIGS_ROOT = "jobs"
 BASE_FOLDER = "random_forest_base"
 
 
@@ -29,7 +29,7 @@ def job_config_args_parser():
     parser.add_argument(
         "--data_split_root",
         type=str,
-        default="/tmp/nvflare/xgboost_higgs_dataset",
+        default="/tmp/nvflare/random_forest/HIGGS/data_splits",
         help="Path to dataset config files for each site",
     )
     parser.add_argument("--site_num", type=int, default=5, help="Total number of sites")
@@ -40,10 +40,7 @@ def job_config_args_parser():
     parser.add_argument("--lr_mode", type=str, default="uniform", help="Whether to use uniform or scaled shrinkage")
     parser.add_argument("--nthread", type=int, default=16, help="nthread for xgboost")
     parser.add_argument(
-        "--tree_method",
-        type=str,
-        default="hist",
-        help="tree_method for xgboost - use hist or gpu_hist for best perf"
+        "--tree_method", type=str, default="hist", help="tree_method for xgboost - use hist or gpu_hist for best perf"
     )
     return parser
 

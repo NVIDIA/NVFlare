@@ -165,9 +165,11 @@ class Communicator:
         shared_fl_ctx = FLContext()
         shared_fl_ctx.set_public_props(get_serializable_data(fl_ctx).get_all_public_props())
         shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_ctx)
+        client_name = fl_ctx.get_identity_name()
         task_message = new_cell_message(
             {
                 CellMessageHeaderKeys.TOKEN: token,
+                CellMessageHeaderKeys.CLIENT_NAME: client_name,
                 CellMessageHeaderKeys.SSID: ssid,
                 CellMessageHeaderKeys.PROJECT_NAME: project_name,
             },
@@ -190,8 +192,6 @@ class Communicator:
             size = len(task.payload)
             task.payload = fobs.loads(task.payload)
             task_name = task.payload.get_header(ServerCommandKey.TASK_NAME)
-            if task_name == SpecialTaskName.TRY_AGAIN:
-                time.sleep(5)
             self.logger.info(
                 f"Received from {project_name} server "
                 f" ({size} Bytes). getTask: {task_name} time: {end_time - start_time} seconds"
@@ -206,7 +206,6 @@ class Communicator:
             else:
                 task = None
                 self.logger.warning(f"Failed to get_task from {project_name} server. Will try it again.")
-                time.sleep(5)
 
         return task
 
@@ -239,6 +238,7 @@ class Communicator:
         task_message = new_cell_message(
             {
                 CellMessageHeaderKeys.TOKEN: token,
+                CellMessageHeaderKeys.CLIENT_NAME: client_name,
                 CellMessageHeaderKeys.SSID: ssid,
                 CellMessageHeaderKeys.PROJECT_NAME: project_name,
             },
@@ -275,9 +275,11 @@ class Communicator:
             server's reply to the last message
 
         """
+        client_name = fl_ctx.get_identity_name()
         quit_message = new_cell_message(
             {
                 CellMessageHeaderKeys.TOKEN: token,
+                CellMessageHeaderKeys.CLIENT_NAME: client_name,
                 CellMessageHeaderKeys.SSID: ssid,
                 CellMessageHeaderKeys.PROJECT_NAME: task_name,
             }

@@ -247,6 +247,8 @@ class NonSerializableKeys(object):
         FLContextKey.SCOPE_PROPERTIES,
         FLContextKey.SCOPE_OBJECT,
         FLContextKey.WORKSPACE_OBJECT,
+        FLContextKey.TASK_DATA,
+        FLContextKey.SHAREABLE,
     ]
 
 
@@ -278,6 +280,7 @@ class RunProcessKey(object):
     STATUS = "_status"
     JOB_ID = "_job_id"
     PARTICIPANTS = "_participants"
+    PROCESS_FINISHED = "_process_finished"
 
 
 class SystemComponents(object):

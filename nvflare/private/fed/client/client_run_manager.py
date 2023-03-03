@@ -215,6 +215,7 @@ class ClientRunManager(ClientEngineExecutorSpec):
             channel=CellChannel.SERVER_PARENT_LISTENER,
             topic=ServerCommandNames.GET_CLIENTS,
             request=get_clients_message,
+            timeout=5.0,
         )
         data = fobs.loads(return_data.payload)
         self.all_clients = data.get(ServerCommandKey.CLIENTS)

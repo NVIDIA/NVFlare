@@ -17,6 +17,7 @@ import os
 from nvflare.apis.fl_constant import FLContextKey, MachineStatus
 from nvflare.apis.workspace import Workspace
 from nvflare.private.fed.app.fl_conf import create_privacy_manager
+from nvflare.private.fed.runner import Runner
 from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.private.fed.server.server_status import ServerStatus
@@ -42,8 +43,12 @@ def _set_up_run_config(workspace: Workspace, server, conf):
     server.handlers = conf.handlers
 
 
-class ServerAppRunner:
-    def start_server_app(self, workspace: Workspace, server, args, app_root, job_id, snapshot, logger, kv_list=None):
+class ServerAppRunner(Runner):
+    def __init__(self, server) -> None:
+        super().__init__()
+        self.server = server
+
+    def start_server_app(self, workspace: Workspace, args, app_root, job_id, snapshot, logger, kv_list=None):
 
         try:
             server_config_file_name = os.path.join(app_root, args.server_config)
@@ -51,26 +56,29 @@ class ServerAppRunner:
             conf = ServerJsonConfigurator(config_file_name=server_config_file_name, args=args, kv_list=kv_list)
             conf.configure()
 
-            _set_up_run_config(workspace, server, conf)
+            _set_up_run_config(workspace, self.server, conf)
 
-            if not isinstance(server.engine, ServerEngine):
-                raise TypeError(f"server.engine must be ServerEngine. Got type:{type(server.engine).__name__}")
-            self.sync_up_parents_process(args, server)
+            if not isinstance(self.server.engine, ServerEngine):
+                raise TypeError(f"server.engine must be ServerEngine. Got type:{type(self.server.engine).__name__}")
+            self.sync_up_parents_process(args)
 
-            server.start_run(job_id, app_root, conf, args, snapshot)
+            self.server.start_run(job_id, app_root, conf, args, snapshot)
         except BaseException as e:
-            with server.engine.new_context() as fl_ctx:
+            with self.server.engine.new_context() as fl_ctx:
                 fl_ctx.set_prop(key=FLContextKey.FATAL_SYSTEM_ERROR, value=True, private=True, sticky=True)
             logger.exception(f"FL server execution exception: {secure_format_exception(e)}")
             raise e
         finally:
             # self.update_job_run_status(server)
-            server.status = ServerStatus.STOPPED
-            server.engine.engine_info.status = MachineStatus.STOPPED
-            server.stop_training()
+            self.server.status = ServerStatus.STOPPED
+            self.server.engine.engine_info.status = MachineStatus.STOPPED
+            self.server.stop_training()
 
-    def sync_up_parents_process(self, args, server):
-        server.engine.sync_clients_from_main_process()
+    def sync_up_parents_process(self, args):
+        self.server.engine.sync_clients_from_main_process()
 
-    def update_job_run_status(self, server):
-        server.engine.update_job_run_status()
+    def update_job_run_status(self):
+        self.server.engine.update_job_run_status()
+
+    def stop(self):
+        self.server.engine.asked_to_stop = True

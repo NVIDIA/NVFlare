@@ -51,6 +51,7 @@ class ScatterAndGather(Controller):
         train_task_name=AppConstants.TASK_TRAIN,
         train_timeout: int = 0,
         ignore_result_error: bool = False,
+        allow_empty_global_weights: bool = False,
         task_check_period: float = 0.5,
         persist_every_n_rounds: int = 1,
         snapshot_every_n_rounds: int = 1,
@@ -75,6 +76,8 @@ class ScatterAndGather(Controller):
             train_task_name (str, optional): Name of the train task. Defaults to "train".
             train_timeout (int, optional): Time to wait for clients to do local training.
             ignore_result_error (bool, optional): whether this controller can proceed if client result has errors.
+                Defaults to False.
+            allow_empty_global_weights (bool, optional): whether to allow empty global weights.
                 Defaults to False.
             task_check_period (float, optional): interval for checking status of tasks. Defaults to 0.5.
             persist_every_n_rounds (int, optional): persist the global model every n rounds. Defaults to 1.
@@ -132,6 +135,7 @@ class ScatterAndGather(Controller):
         self._persist_every_n_rounds = persist_every_n_rounds
         self._snapshot_every_n_rounds = snapshot_every_n_rounds
         self.ignore_result_error = ignore_result_error
+        self.allow_empty_global_weights = allow_empty_global_weights
 
         # workflow phases: init, train, validate
         self._phase = AppConstants.PHASE_INIT
@@ -189,9 +193,10 @@ class ScatterAndGather(Controller):
                 )
                 return
 
-        if self._global_weights.is_empty():
-            self.system_panic(reason="Missing initial global model weights", fl_ctx=fl_ctx)
-            return
+        if not self.allow_empty_global_weights:
+            if self._global_weights.is_empty():
+                self.system_panic(reason="Missing initial global model weights", fl_ctx=fl_ctx)
+                return
 
         fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._global_weights, private=True, sticky=True)
         self.fire_event(AppEventType.INITIAL_MODEL_LOADED, fl_ctx)
@@ -215,7 +220,7 @@ class ScatterAndGather(Controller):
 
                 self.log_info(fl_ctx, f"Round {self._current_round} started.")
                 fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._global_weights, private=True, sticky=True)
-                fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=False)
+                fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=True)
                 self.fire_event(AppEventType.ROUND_STARTED, fl_ctx)
 
                 # Create train_task

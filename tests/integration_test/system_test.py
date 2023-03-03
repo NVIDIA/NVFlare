@@ -16,12 +16,14 @@ import importlib
 import os
 import shlex
 import subprocess
+import sys
 import tempfile
 import time
 
 import pytest
 
 from tests.integration_test.src import FLTestDriver, POCSiteLauncher, ProvisionSiteLauncher, cleanup_path, read_yaml
+from tests.integration_test.src.fl_test_driver import FLTestError
 
 
 def get_module_class_from_full_path(full_path):
@@ -39,25 +41,25 @@ def get_test_config(test_config_yaml: str):
     test_config["ha"] = test_config.get("ha", False)
     for x in ["cleanup", "single_app_as_job"]:
         if x not in test_config:
-            raise RuntimeError(f"Test config: {test_config_yaml} missing required attributes {x}.")
+            raise FLTestError(f"Test config: {test_config_yaml} missing required attributes {x}.")
         print(f"\t{x}: {test_config[x]}")
 
     if test_config["single_app_as_job"]:
         if "apps_root_dir" not in test_config:
-            raise RuntimeError(f"Test config: {test_config_yaml} missing apps_root_dir.")
+            raise FLTestError(f"Test config: {test_config_yaml} missing apps_root_dir.")
         print(f"\tapps_root_dir: {test_config['apps_root_dir']}")
     else:
         if "jobs_root_dir" not in test_config:
-            raise RuntimeError(f"Test config: {test_config_yaml} missing jobs_root_dir.")
+            raise FLTestError(f"Test config: {test_config_yaml} missing jobs_root_dir.")
         print(f"\tjobs_root_dir: {test_config['jobs_root_dir']}")
 
     if test_config["ha"]:
         if "project_yaml" not in test_config:
-            raise RuntimeError(f"Test config: {test_config_yaml} missing project_yaml.")
+            raise FLTestError(f"Test config: {test_config_yaml} missing project_yaml.")
     else:
         for x in ["n_servers", "n_clients"]:
             if x not in test_config:
-                raise RuntimeError(f"Test config: {test_config_yaml} missing required attributes {x}.")
+                raise FLTestError(f"Test config: {test_config_yaml} missing required attributes {x}.")
 
     return test_config
 
@@ -79,28 +81,29 @@ def setup_and_teardown_system(request):
     yaml_path = os.path.join(os.path.dirname(__file__), request.param)
     test_config = get_test_config(yaml_path)
 
-    cleaned = False
-    cleanup_in_the_end = test_config["cleanup"]
+    cleanup = test_config["cleanup"]
     ha = test_config["ha"]
     poll_period = test_config.get("poll_period", 5)
+    additional_python_paths = test_config.get("additional_python_paths", [])
+    for additional_python_path in additional_python_paths:
+        sys.path.append(additional_python_path)
 
     test_temp_dir = tempfile.mkdtemp()
 
     fl_test_driver = None
     site_launcher = None
-    test_cases = []
     try:
         if ha:
             project_yaml_path = test_config.get("project_yaml")
             if not os.path.isfile(project_yaml_path):
-                raise RuntimeError(f"Missing project_yaml at {project_yaml_path}.")
+                raise FLTestError(f"Missing project_yaml at {project_yaml_path}.")
             site_launcher = ProvisionSiteLauncher(project_yaml=project_yaml_path)
             poc = False
             super_user_name = "super@test.org"
         else:
             POC_PATH = "../../nvflare/poc"
             if not os.path.isdir(POC_PATH):
-                raise RuntimeError(f"Missing POC folder at {POC_PATH}.")
+                raise FLTestError(f"Missing POC folder at {POC_PATH}.")
             n_servers = int(test_config["n_servers"])
             n_clients = int(test_config["n_clients"])
             site_launcher = POCSiteLauncher(poc_dir=POC_PATH, n_servers=n_servers, n_clients=n_clients)
@@ -138,7 +141,7 @@ def setup_and_teardown_system(request):
         if not fl_test_driver.initialize_super_user(
             workspace_root_dir=workspace_root, upload_root_dir=jobs_root_dir, poc=poc, super_user_name=super_user_name
         ):
-            raise RuntimeError("FLTestDriver initialize_super_user failed.")
+            raise FLTestError("FLTestDriver initialize_super_user failed.")
         if ha:
             if not fl_test_driver.initialize_admin_users(
                 workspace_root_dir=workspace_root,
@@ -146,23 +149,19 @@ def setup_and_teardown_system(request):
                 poc=poc,
                 admin_user_names=site_launcher.admin_user_names,
             ):
-                raise RuntimeError("FLTestDriver initialize_admin_users failed.")
+                raise FLTestError("FLTestDriver initialize_admin_users failed.")
         fl_test_driver.ensure_clients_started(num_clients=len(site_launcher.client_properties.keys()))
-    except RuntimeError:
+        yield ha, test_cases, site_launcher, fl_test_driver
+    finally:
         if fl_test_driver:
             fl_test_driver.finalize()
         if site_launcher:
             site_launcher.stop_all_sites()
-            site_launcher.cleanup()
-        cleanup_path(test_temp_dir)
-        cleaned = True
-    yield ha, test_cases, site_launcher, fl_test_driver
-    fl_test_driver.finalize()
-    site_launcher.stop_all_sites()
-    if cleanup_in_the_end and not cleaned:
-        if site_launcher:
-            site_launcher.cleanup()
-        cleanup_path(test_temp_dir)
+        if cleanup:
+            if site_launcher:
+                site_launcher.cleanup()
+            cleanup_path(test_temp_dir)
+        sys.path = sys.path[: -len(additional_python_paths)]
 
 
 @pytest.mark.xdist_group(name="system_tests_group")

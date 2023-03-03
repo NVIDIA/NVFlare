@@ -1,0 +1,5 @@
+pandas
+xgboost==1.7.0rc1
+sklearn
+torch
+tensorboard

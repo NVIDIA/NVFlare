@@ -993,7 +993,7 @@ azure_start_svr_sh: |
   echo "If the client requires additional dependencies, please copy the requirements.txt to ${DIR}."
   prompt ans "Press ENTER when it's done or no additional dependencies. "
 
-  az login
+  az login --use-device-code
 
   # Start provisioning
 
@@ -1104,6 +1104,8 @@ azure_start_svr_sh: |
   report_status "$?" "installing packages"
 
   echo "System was provisioned"
+  echo "To delete the resource group (also delete the VM), run the following command"
+  echo "az group delete -n ${RESOURCE_GROUP}"
   # echo "The VM was created with user: ${ADMIN_USERNAME} and password: ${PASSWORD}"
 
 
@@ -1152,7 +1154,7 @@ azure_start_cln_sh: |
       shift
   done
 
-  RESOURCE_GROUP=nvflare_client_rg
+  RESOURCE_GROUP=nvflare_client_rg_${RANDOM}_${RANDOM}
   VM_NAME=nvflare_client
   VM_IMAGE=Canonical:0001-com-ubuntu-server-focal:20_04-lts-gen2:latest
   VM_SIZE=Standard_B2ms
@@ -1193,7 +1195,7 @@ azure_start_cln_sh: |
   echo "If the client requires additional dependencies, please copy the requirements.txt to ${DIR}."
   prompt ans "Press ENTER when it's done or no additional dependencies. "
 
-  az login
+  az login --use-device-code
 
   # Start provisioning
 
@@ -1267,6 +1269,8 @@ azure_start_cln_sh: |
   report_status "$?" "installing packages"
 
   echo "System was provisioned"
+  echo "To delete the resource group (also delete the VM), run the following command"
+  echo "az group delete -n ${RESOURCE_GROUP}"
   # echo "To login to the VM with SSH, use ${ADMIN_USERNAME} : ${PASSWORD}"
 
 azure_start_dsb_sh: |
@@ -1301,7 +1305,7 @@ azure_start_dsb_sh: |
   fi
   }
 
-  RESOURCE_GROUP=nvflare_dashboard_rg
+  RESOURCE_GROUP=nvflare_dashboard_rg_${RANDOM}_${RANDOM}
   VM_NAME=nvflare_dashboard
   VM_IMAGE=Canonical:0001-com-ubuntu-server-focal:20_04-lts-gen2:latest
   VM_SIZE=Standard_B2ms
@@ -1322,7 +1326,7 @@ azure_start_dsb_sh: |
   echo "Please enter the email address for this user."
   read email
 
-  az login
+  az login --use-device-code
   # Start provisioning
   echo "Creating Resource Group $RESOURCE_GROUP at Location $LOCATION"
   az group create --output none --name $RESOURCE_GROUP --location $LOCATION
@@ -1696,6 +1700,8 @@ aws_start_svr_sh: |
   report_status "$?" "installing packages"
 
   echo "System was provisioned"
+  echo "To terminate the EC2 instance, run the following command."
+  echo "aws ec2 terminate-instances --instance-ids ${instance_id}"
 
 aws_start_cln_sh: |
   #!/usr/bin/env bash
@@ -1825,6 +1831,8 @@ aws_start_cln_sh: |
   report_status "$?" "installing packages"
 
   echo "System was provisioned"
+  echo "To terminate the EC2 instance, run the following command."
+  echo "aws ec2 terminate-instances --instance-ids ${instance_id}"
 
 aws_start_dsb_sh: |
   #!/usr/bin/env bash
@@ -1971,3 +1979,6 @@ aws_start_dsb_sh: |
   fi
   echo "Note: you may need to configure DNS server with your DNS hostname and the above IP address."
   echo "Project admin credential (username:password) is ${credential} ."
+  echo "To terminate the EC2 instance, run the following command."
+  echo "aws ec2 terminate-instances --instance-ids ${instance_id}"
+

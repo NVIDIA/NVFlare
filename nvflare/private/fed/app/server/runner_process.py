@@ -29,7 +29,7 @@ from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger
-from nvflare.private.fed.app.utils import check_parent_alive
+from nvflare.private.fed.app.utils import monitor_parent_process
 from nvflare.private.fed.server.server_app_runner import ServerAppRunner
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
@@ -73,10 +73,6 @@ def main():
         sys.path.append(app_custom_folder)
 
     try:
-        # start parent process checking thread
-        thread = threading.Thread(target=check_parent_alive, args=(parent_pid, stop_event))
-        thread.start()
-
         os.chdir(args.workspace)
         fobs_initialize()
 
@@ -123,10 +119,12 @@ def main():
             if args.snapshot:
                 snapshot = server.snapshot_persistor.retrieve_run(args.job_id)
 
-            server_app_runner = ServerAppRunner()
-            server_app_runner.start_server_app(
-                workspace, server, args, args.app_root, args.job_id, snapshot, logger, args.set
-            )
+            server_app_runner = ServerAppRunner(server)
+            # start parent process checking thread
+            thread = threading.Thread(target=monitor_parent_process, args=(server_app_runner, parent_pid, stop_event))
+            thread.start()
+
+            server_app_runner.start_server_app(workspace, args, args.app_root, args.job_id, snapshot, logger, args.set)
         finally:
             if deployer:
                 deployer.close()
