@@ -22,6 +22,7 @@ from nvflare.lighter import utils
 
 from .cert import CertPair, Entity, deserialize_ca_key, make_cert
 from .models import Client, Project, User
+from ...apis.fl_constant import WorkspaceConstants
 
 lighter_folder = os.path.dirname(utils.__file__)
 template = utils.load_yaml(os.path.join(lighter_folder, "impl", "master_template.yml"))
@@ -167,7 +168,7 @@ def gen_server(key, first_server=True):
         dest_dir = os.path.join(server_dir, "local")
         os.mkdir(dest_dir)
         _write(
-            os.path.join(dest_dir, "log.config.default"),
+            os.path.join(dest_dir, WorkspaceConstants.DEFAULT_LOGGING_CONFIG),
             template["log_config"],
             "t",
         )
@@ -278,7 +279,7 @@ def gen_client(key, id):
         dest_dir = os.path.join(client_dir, "local")
         os.mkdir(dest_dir)
         _write(
-            os.path.join(dest_dir, "log.config.default"),
+            os.path.join(dest_dir, WorkspaceConstants.DEFAULT_LOGGING_CONFIG),
             template["log_config"],
             "t",
         )

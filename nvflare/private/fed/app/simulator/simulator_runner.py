@@ -117,8 +117,7 @@ class SimulatorRunner(FLComponent):
 
         log_file = os.path.join(self.simulator_root, WorkspaceConstants.LOG_FILE_NAME)
         resource_dir = os.path.join(os.path.dirname(__file__), "resource")
-        print("resource dir = ", resource_dir)
-        initialize_log_config(log_file, self.args.workspace, resource_dir)
+        initialize_log_config(self.args.workspace, resource_dir, log_file)
 
         self.args.log_config = None
         self.args.config_folder = "config"
@@ -199,7 +198,7 @@ class SimulatorRunner(FLComponent):
             return False
 
     def prepare_runtime_dirs(self):
-        local_dir = os.path.join(self.args.workspace, "local")
+        local_dir = os.path.join(self.args.workspace, WorkspaceConstants.SITE_FOLDER_NAME)
         os.makedirs(local_dir, exist_ok=True)
 
         self.simulator_root = os.path.join(self.args.workspace, SimulatorConstants.JOB_NAME)

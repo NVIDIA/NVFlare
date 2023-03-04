@@ -13,18 +13,23 @@
 # limitations under the License.
 import logging.config
 import os
+from typing import Optional
 
 from nvflare.apis.fl_constant import WorkspaceConstants
 
 
-def initialize_log_config(log_file, workspace, resource_dir):
+def initialize_log_config(workspace: str, resource_dir: str, log_file: Optional[str] = None):
     config_file_path = get_config_file_path(workspace, resource_dir)
+    config_logging_by_file(config_file_path, log_file)
+
+
+def config_logging_by_file(config_file_path: str , log_file: Optional[str] = None):
     config_schema = get_log_config_schema(config_file_path, log_file)
     logging.config.dictConfig(config_schema)
     logging.info(f"Log config is loaded from '{config_file_path}'")
 
 
-def get_log_config_schema(config_file_path: str, log_file: str) -> dict:
+def get_log_config_schema(config_file_path: str, log_file: Optional[str] = None) -> dict:
     import json
 
     config_schema = {}
@@ -36,11 +41,12 @@ def get_log_config_schema(config_file_path: str, log_file: str) -> dict:
         raise ValueError(f"invalid log_config_file: {config_file_path}")
 
     # update log name
-    handlers_config = config_schema["handlers"]
-    for handler_name in handlers_config:
-        one_handler_config = handlers_config[handler_name]
-        if "filename" in one_handler_config:
-            one_handler_config["filename"] = log_file
+    if log_file:
+        handlers_config = config_schema["handlers"]
+        for handler_name in handlers_config:
+            one_handler_config = handlers_config[handler_name]
+            if "filename" in one_handler_config:
+                one_handler_config["filename"] = log_file
 
     return config_schema
 

@@ -18,6 +18,7 @@ import os
 
 import yaml
 
+from nvflare.apis.fl_constant import WorkspaceConstants
 from nvflare.lighter.spec import Builder
 from nvflare.lighter.utils import sh_replace
 
@@ -197,7 +198,7 @@ class StaticFileBuilder(Builder):
         # local folder creation
         dest_dir = self.get_local_dir(server, ctx)
         self._write(
-            os.path.join(dest_dir, "log.config.default"),
+            os.path.join(dest_dir, WorkspaceConstants.DEFAULT_LOGGING_CONFIG),
             self.template["log_config"],
             "t",
         )
@@ -285,7 +286,7 @@ class StaticFileBuilder(Builder):
         # local folder creation
         dest_dir = self.get_local_dir(client, ctx)
         self._write(
-            os.path.join(dest_dir, "log.config.default"),
+            os.path.join(dest_dir, WorkspaceConstants.DEFAULT_LOGGING_CONFIG),
             self.template["log_config"],
             "t",
         )

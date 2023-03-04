@@ -37,6 +37,7 @@ from nvflare.security.logging import secure_format_exception, secure_log_traceba
 from nvflare.security.security import EmptyAuthorizer, FLAuthorizer
 
 from .app_authz import AppAuthzService
+from .log_config_utils import config_logging_by_file
 
 
 def add_logfile_handler(log_file):
@@ -191,7 +192,7 @@ def create_job_processing_context_properties(workspace: Workspace, job_id: str) 
 def configure_logging(workspace: Workspace):
     log_config_file_path = workspace.get_log_config_file_path()
     assert os.path.isfile(log_config_file_path), f"missing log config file {log_config_file_path}"
-    logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
+    config_logging_by_file(log_config_file_path)
 
 
 def get_scope_info():

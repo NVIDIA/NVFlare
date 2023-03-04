@@ -200,7 +200,7 @@ def main():
     workspace = os.path.join(args.workspace, SimulatorConstants.JOB_NAME, "app_" + args.client)
     log_file = os.path.join(workspace, WorkspaceConstants.LOG_FILE_NAME)
     resource_dir = os.path.join(os.path.dirname(__file__), "resource")
-    initialize_log_config(log_file, args.workspace, resource_dir)
+    initialize_log_config(args.workspace, resource_dir, log_file)
 
     os.chdir(workspace)
     fobs_initialize()

@@ -345,27 +345,50 @@ fl_admin_sh: |
   python3 -m nvflare.fuel.hci.tools.admin -m $DIR/.. -s fed_admin.json
 
 log_config: |
-  [loggers]
-  keys=root
-
-  [handlers]
-  keys=consoleHandler
-
-  [formatters]
-  keys=fullFormatter
-
-  [logger_root]
-  level=INFO
-  handlers=consoleHandler
-
-  [handler_consoleHandler]
-  class=StreamHandler
-  level=DEBUG
-  formatter=fullFormatter
-  args=(sys.stdout,)
-
-  [formatter_fullFormatter]
-  format=%(asctime)s - %(name)s - %(levelname)s - %(message)s
+  {
+    "version": 1,
+    "disable_existing_loggers": "False",
+    "formatters": {
+      "standard": {
+        "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+      }
+    },
+    "handlers": {
+      "console": {
+        "level": "NOTSET",
+        "formatter": "standard",
+        "class": "logging.StreamHandler",
+        "stream": "ext://sys.stdout"
+      },
+      "file": {
+        "level": "NOTSET",
+        "formatter": "standard",
+        "class": "logging.handlers.RotatingFileHandler",
+        "filename": "log.txt",
+        "mode": "a",
+        "encoding": "utf-8",
+        "maxBytes": 20971520,
+        "backupCount": 10
+      }
+    },
+    "loggers": {
+      "": {
+        "handlers": [
+          "console",
+          "file"
+        ],
+        "level": "INFO",
+        "propagate": "True"
+      },
+      "__main__": {
+        "handlers": [
+          "console"
+        ],
+        "level": "DEBUG",
+        "propagate": "False"
+      }
+    }
+  }
 
 start_ovsr_sh: |
   #!/usr/bin/env bash
