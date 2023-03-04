@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import logging.config
 import os
 import shlex
 import shutil
@@ -47,7 +46,8 @@ from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorServerAppRunner
 from nvflare.private.fed.simulator.simulator_audit import SimulatorAuditor
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize
+from nvflare.private.fed.utils.fed_utils import fobs_initialize
+from nvflare.private.fed.utils.log_config_utils import initialize_log_config
 from nvflare.security.logging import secure_format_exception
 from nvflare.security.security import EmptyAuthorizer
 
@@ -113,13 +113,12 @@ class SimulatorRunner(FLComponent):
                 for i in range(self.args.n_clients):
                     self.client_names.append("site-" + str(i + 1))
 
-        log_config_file_path = os.path.join(self.args.workspace, "startup", WorkspaceConstants.LOGGING_CONFIG)
-        if not os.path.isfile(log_config_file_path):
-            log_config_file_path = os.path.join(os.path.dirname(__file__), WorkspaceConstants.LOGGING_CONFIG)
-        logging.config.fileConfig(fname=log_config_file_path, disable_existing_loggers=False)
-        local_dir = os.path.join(self.args.workspace, "local")
-        os.makedirs(local_dir, exist_ok=True)
-        shutil.copyfile(log_config_file_path, os.path.join(local_dir, WorkspaceConstants.LOGGING_CONFIG))
+        self.prepare_runtime_dirs()
+
+        log_file = os.path.join(self.simulator_root, WorkspaceConstants.LOG_FILE_NAME)
+        resource_dir = os.path.join(os.path.dirname(__file__), "resource")
+        print("resource dir = ", resource_dir)
+        initialize_log_config(log_file, self.args.workspace, resource_dir)
 
         self.args.log_config = None
         self.args.config_folder = "config"
@@ -129,20 +128,10 @@ class SimulatorRunner(FLComponent):
         cwd = os.getcwd()
         self.args.job_folder = os.path.join(cwd, self.args.job_folder)
 
-        if not os.path.exists(self.args.workspace):
-            os.makedirs(self.args.workspace)
         os.chdir(self.args.workspace)
         fobs_initialize()
         AuthorizationService.initialize(EmptyAuthorizer())
         AuditService.the_auditor = SimulatorAuditor()
-
-        self.simulator_root = os.path.join(self.args.workspace, SimulatorConstants.JOB_NAME)
-        if os.path.exists(self.simulator_root):
-            shutil.rmtree(self.simulator_root)
-
-        os.makedirs(self.simulator_root)
-        log_file = os.path.join(self.simulator_root, WorkspaceConstants.LOG_FILE_NAME)
-        add_logfile_handler(log_file)
 
         try:
             data_bytes, job_name, meta = self.validate_job_data()
@@ -208,6 +197,18 @@ class SimulatorRunner(FLComponent):
         except BaseException as e:
             self.logger.error(f"Simulator setup error: {secure_format_exception(e)}")
             return False
+
+    def prepare_runtime_dirs(self):
+        local_dir = os.path.join(self.args.workspace, "local")
+        os.makedirs(local_dir, exist_ok=True)
+
+        self.simulator_root = os.path.join(self.args.workspace, SimulatorConstants.JOB_NAME)
+        if os.path.exists(self.simulator_root):
+            shutil.rmtree(self.simulator_root)
+        os.makedirs(self.simulator_root)
+
+        if not os.path.exists(self.args.workspace):
+            os.makedirs(self.args.workspace)
 
     def validate_job_data(self):
         # Validate the simulate job
