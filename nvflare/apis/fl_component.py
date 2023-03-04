@@ -25,6 +25,14 @@ from .persistable import StatePersistable
 from .shareable import Shareable
 
 
+def fullname(o):
+    klass = o.__class__
+    module = klass.__module__
+    if module == '__builtin__':
+        return klass.__name__ # avoid outputs like '__builtin__.str'
+    return module + '.' + klass.__name__
+
+
 class FLComponent(StatePersistable):
     def __init__(self):
         """Init FLComponent.
@@ -35,7 +43,7 @@ class FLComponent(StatePersistable):
         FLComponents have the capability to handle and fire events and contain various methods for logging.
         """
         self._name = self.__class__.__name__
-        self.logger = logging.getLogger(self._name)
+        self.logger = logging.getLogger(fullname(self))
 
     def _fire(self, event_type: str, fl_ctx: FLContext):
         fl_ctx.set_prop(FLContextKey.EVENT_ORIGIN, self._name, private=True, sticky=False)
