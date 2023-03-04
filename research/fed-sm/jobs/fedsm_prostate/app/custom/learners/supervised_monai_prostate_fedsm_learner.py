@@ -212,21 +212,6 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
 
-        # local valid for personalized model each round
-        # after local training
-        metric = self.local_valid(
-            self.fedsm_helper.person_model,
-            self.valid_loader,
-            abort_signal,
-            tb_id="val_metric_per_model_local",
-            current_round=current_round,
-        )
-        if abort_signal.triggered:
-            return make_reply(ReturnCode.TASK_ABORTED)
-        self.log_info(fl_ctx, f"val_metric_per_model_local: {metric:.4f}")
-        # save model
-        self.fedsm_helper.update_metric_save_person_model(current_round=current_round, metric=metric)
-
         # compute delta models, initial models has the primary key set
         local_weights = self.model.state_dict()
         model_diff_global = self.compute_model_diff(global_weights, local_weights, fl_ctx)
