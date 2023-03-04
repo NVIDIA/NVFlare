@@ -70,7 +70,7 @@ DEFAULT_CONFIG = {
     },
     "loggers": {
         "": {"handlers": ["console", "file"], "level": "INFO", "propagate": "True"},
-        "__main__": {"handlers": ["console"], "level": "DEBUG", "propagate": "False"},
+        "__main__": {"level": "INFO", "propagate": "False"},
     },
 }
 

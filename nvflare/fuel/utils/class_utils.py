@@ -23,6 +23,14 @@ from nvflare.security.logging import secure_format_exception
 DEPRECATED_PACKAGES = ["nvflare.app_common.pt", "nvflare.app_common.homomorphic_encryption"]
 
 
+def get_class_fullname(o):
+    klass = o.__class__
+    module = klass.__module__
+    if module == '__builtin__':
+        return klass.__name__ # avoid outputs like '__builtin__.str'
+    return module + '.' + klass.__name__
+
+
 def get_class(class_path):
     module_name, class_name = class_path.rsplit(".", 1)
 

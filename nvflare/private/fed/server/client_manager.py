@@ -22,6 +22,7 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.fuel.f3.cellnet.defs import MessagePropKey
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
+from nvflare.fuel.utils.class_utils import get_class_fullname
 from nvflare.private.defs import CellMessageHeaderKeys
 
 
@@ -41,7 +42,7 @@ class ClientManager:
         self.clients = dict()  # token => Client
         self.lock = threading.Lock()
 
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = logging.getLogger(get_class_fullname(self))
 
     def authenticate(self, request, context):
         client = self.login_client(request, context)

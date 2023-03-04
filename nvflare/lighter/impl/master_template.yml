@@ -381,10 +381,7 @@ log_config: |
         "propagate": "True"
       },
       "__main__": {
-        "handlers": [
-          "console"
-        ],
-        "level": "DEBUG",
+        "level": "INFO",
         "propagate": "False"
       }
     }

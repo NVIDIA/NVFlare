@@ -33,6 +33,7 @@ from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.argument_utils import parse_vars
+from nvflare.fuel.utils.class_utils import get_class_fullname
 from nvflare.private.defs import EngineConstant
 from nvflare.security.logging import secure_format_exception
 
@@ -83,7 +84,7 @@ class FederatedClientBase:
             compression: communication compression algorithm
             cell: CellNet communicator
         """
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = logging.getLogger(get_class_fullname(self))
 
         self.client_name = client_name
         self.token = None
