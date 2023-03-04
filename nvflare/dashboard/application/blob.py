@@ -20,9 +20,9 @@ import tempfile
 
 from nvflare.lighter import utils
 
+from ...apis.fl_constant import WorkspaceConstants
 from .cert import CertPair, Entity, deserialize_ca_key, make_cert
 from .models import Client, Project, User
-from ...apis.fl_constant import WorkspaceConstants
 
 lighter_folder = os.path.dirname(utils.__file__)
 template = utils.load_yaml(os.path.join(lighter_folder, "impl", "master_template.yml"))

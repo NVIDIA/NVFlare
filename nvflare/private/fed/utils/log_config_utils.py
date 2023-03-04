@@ -23,7 +23,7 @@ def initialize_log_config(workspace: str, resource_dir: str, log_file: Optional[
     config_logging_by_file(config_file_path, log_file)
 
 
-def config_logging_by_file(config_file_path: str , log_file: Optional[str] = None):
+def config_logging_by_file(config_file_path: str, log_file: Optional[str] = None):
     config_schema = get_log_config_schema(config_file_path, log_file)
     logging.config.dictConfig(config_schema)
     logging.info(f"Log config is loaded from '{config_file_path}'")
