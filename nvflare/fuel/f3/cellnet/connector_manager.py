@@ -22,6 +22,7 @@ from nvflare.fuel.f3.cellnet.defs import ConnectorRequirementKey
 from nvflare.fuel.f3.cellnet.fqcn import FqcnInfo
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.communicator import CommError, Communicator, Mode
+from nvflare.fuel.utils.class_utils import get_class_fullname
 
 _KEY_RESOURCES = "resources"
 _KEY_INT = "internal"
@@ -56,7 +57,7 @@ class ConnectorManager:
 
     def __init__(self, communicator: Communicator, secure: bool, comm_configurator: CommConfigurator):
         self._name = self.__class__.__name__
-        self.logger = logging.getLogger(self._name)
+        self.logger = logging.getLogger(get_class_fullname(self))
 
         self.communicator = communicator
         self.secure = secure
