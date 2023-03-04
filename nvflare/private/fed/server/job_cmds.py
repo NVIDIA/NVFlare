@@ -217,9 +217,12 @@ class JobCommandModule(CommandModule, CommandUtil):
         participants = run_process.get(RunProcessKey.PARTICIPANTS, [])
         wrong_clients = []
         for client in client_names:
+            client_valid = False
             for _, p in participants.items():
                 if client == p.name:
+                    client_valid = True
                     break
+            if not client_valid:
                 wrong_clients.append(client)
 
         if wrong_clients:

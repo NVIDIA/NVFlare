@@ -165,9 +165,11 @@ class Communicator:
         shared_fl_ctx = FLContext()
         shared_fl_ctx.set_public_props(get_serializable_data(fl_ctx).get_all_public_props())
         shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_ctx)
+        client_name = fl_ctx.get_identity_name()
         task_message = new_cell_message(
             {
                 CellMessageHeaderKeys.TOKEN: token,
+                CellMessageHeaderKeys.CLIENT_NAME: client_name,
                 CellMessageHeaderKeys.SSID: ssid,
                 CellMessageHeaderKeys.PROJECT_NAME: project_name,
             },
@@ -236,6 +238,7 @@ class Communicator:
         task_message = new_cell_message(
             {
                 CellMessageHeaderKeys.TOKEN: token,
+                CellMessageHeaderKeys.CLIENT_NAME: client_name,
                 CellMessageHeaderKeys.SSID: ssid,
                 CellMessageHeaderKeys.PROJECT_NAME: project_name,
             },
@@ -272,9 +275,11 @@ class Communicator:
             server's reply to the last message
 
         """
+        client_name = fl_ctx.get_identity_name()
         quit_message = new_cell_message(
             {
                 CellMessageHeaderKeys.TOKEN: token,
+                CellMessageHeaderKeys.CLIENT_NAME: client_name,
                 CellMessageHeaderKeys.SSID: ssid,
                 CellMessageHeaderKeys.PROJECT_NAME: task_name,
             }
