@@ -570,11 +570,11 @@ Workspace Structure
             Resources.json.default
             Authorization.json.default
             Privacy.json.sample
-            Log.config.default
+            Log_config.json.default
             Resources.json
             Authorization.json
             Privacy.json
-            Log.config
+            Log_config.json
             custom/
                 local_code.xyz
         Audit.txt

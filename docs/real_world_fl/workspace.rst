@@ -89,13 +89,14 @@ Client
             client.crt
             client.key
             fed_client.json
-            log.config
             readme.txt
             rootCA.pem
             signature.pkl
             start.sh
             stop_fl.sh
             sub_start.sh
+        local/
+            log_config.json
         transfer/
         aefdb0a3-6fbb-4c53-a677-b6951d6845a6/
             app_clientA/

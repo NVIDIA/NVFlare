@@ -31,11 +31,11 @@ NVFLARE's policy files are stored in the workspace. To support local site polici
             resources.json.default
             authorization.json.default
             privacy.json.sample
-            log.config.default
+            log_config.json.default
             resources.json
             authorization.json
             privacy.json
-            log.config
+            log_config.json
             custom/
                 local_code.xyz
         audit.txt

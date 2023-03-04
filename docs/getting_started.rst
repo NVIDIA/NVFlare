@@ -240,7 +240,7 @@ and codes, logs of the output, site and global models, cross-site validation res
   simulator-example/workspace/
   ├── audit.log
   ├── local
-      │  └── log.config
+      │  └── log_config.json
       ├── simulate_job
       │  ├── app_server
       │  │   ├── config

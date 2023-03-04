@@ -84,7 +84,7 @@ The default configurations are provided in each site's local directory:
 ```
 local
 ├── authorization.json.default
-├── log.config.default
+├── log_config.json.default
 ├── privacy.json.sample
 └── resources.json.default
 ```

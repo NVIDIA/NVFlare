@@ -34,7 +34,7 @@ Custom FL applications can contain the folders:
 
  #. **custom**: contains the custom components (``tf2_net.py``, ``trainer.py``, ``filter.py``, ``tf2_model_persistor.py``)
  #. **config**: contains client and server configurations (``config_fed_client.json``, ``config_fed_server.json``)
- #. **resources**: contains the logger config (``log.config``)
+ #. **resources**: contains the logger config (``log_config.json``)
 
 Let's get started.
 Since this task is using TensorFlow, let's go ahead and install the library inside our virtual environment:

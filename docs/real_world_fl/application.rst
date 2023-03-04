@@ -18,7 +18,7 @@ The structure of the app folder needs to be::
             [another file with custom code].py
             ...
         resources/
-            log.config
+            log_config.json
 
 .. note::
 
@@ -121,9 +121,9 @@ to certain roles or even orgs or users. See :ref:`federated_authorization` for d
 Resources
 *********
 
-A ``log.config`` is needed inside the resources folder.
+A ``log_config.json`` is needed inside the resources folder.
 This file is for the Python logger to use.
-If you don't want to customize the log behavior, you can use the same ``log.config`` from one of
+If you don't want to customize the log behavior, you can use the same ``log_config.json`` from one of
 the example application folder.
 
-.. literalinclude:: ../resources/log.config
+.. literalinclude:: ../resources/log_config.json

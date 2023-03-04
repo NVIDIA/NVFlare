@@ -35,7 +35,7 @@ Custom FL applications can contain the folders:
 
  #. **custom**: contains the custom components (``simple_network.py``, ``cifar10trainer.py``)
  #. **config**: contains client and server configurations (``config_fed_client.json``, ``config_fed_server.json``)
- #. **resources**: contains the logger config (``log.config``)
+ #. **resources**: contains the logger config (``log_config.json``)
 
 Now that you have a rough idea of what is going on, let's get started. First clone the repo:
 
