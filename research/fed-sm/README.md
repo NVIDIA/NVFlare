@@ -54,6 +54,8 @@ python3 ./result_stat/plot_tensorboard_events.py
 The TensorBoard curves (smoothed with weight 0.8) for validation Dice for the 100 epochs (100 rounds, 1 local epoch per round) during training are shown below:
 ![All training curve](./figs/all_training.png)
 
+As shown, FedSM personalized models can achieve better validation accuracy than global model, and the selector model is able to distinct among sites  
+
 ### Testing score
 The testing score is computed based on the Super Model for FedSM.
 We provide a script for performing validation on testing data split. 
@@ -62,6 +64,7 @@ Please add the correct paths below, and run:
 ```
 python3 ./result_stat/prostate_2d_test_only.py --models_dir "${workspace_path}/fedsm_prostate/simulate_job/app_server/" --dataset_base_dir ${dataset_path} --datalist_json_path "${datalist_json_path}"
 ```
+The test Dice with FedSM model is 0.7274, while using global model only (setting `--select_threshold 1`), the test Dice is 0.7178.
 
 ## Citation
 
