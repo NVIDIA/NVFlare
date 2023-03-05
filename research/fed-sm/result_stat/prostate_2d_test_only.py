@@ -43,9 +43,7 @@ def main():
     parser.add_argument("--models_dir", type=str)
     parser.add_argument("--cache_rate", default=0.0, type=float)
     parser.add_argument("--select_threshold", default=0.9, type=float)
-    parser.add_argument(
-        "--dataset_base_dir", default="DATASET_ROOT/dataset_2D", type=str
-    )
+    parser.add_argument("--dataset_base_dir", default="DATASET_ROOT/dataset_2D", type=str)
     parser.add_argument(
         "--datalist_json_path",
         default="DATASET_ROOT/datalist_2D/client_All.json",
@@ -119,17 +117,13 @@ def main():
     # Inferer, evaluation metric
     inferer_select = SimpleInferer()
     inferer_segment = SimpleInferer()
-    valid_metric = DiceMetric(
-        include_background=False, reduction="mean", get_not_nans=False
-    )
+    valid_metric = DiceMetric(include_background=False, reduction="mean", get_not_nans=False)
 
     transform = Compose(
         [
             LoadImaged(keys=["image", "label"]),
             EnsureChannelFirstd(keys=["image", "label"]),
-            ScaleIntensityRanged(
-                keys=["image", "label"], a_min=0, a_max=255, b_min=0.0, b_max=1.0
-            ),
+            ScaleIntensityRanged(keys=["image", "label"], a_min=0, a_max=255, b_min=0.0, b_max=1.0),
             Resized(
                 keys=["image", "label"],
                 spatial_size=(256, 256),
@@ -140,9 +134,7 @@ def main():
             EnsureTyped(keys=["image", "label"]),
         ]
     )
-    transform_post = Compose(
-        [EnsureType(), Activations(sigmoid=True), AsDiscrete(threshold=0.5)]
-    )
+    transform_post = Compose([EnsureType(), Activations(sigmoid=True), AsDiscrete(threshold=0.5)])
 
     # Set dataset
     test_dataset = CacheDataset(

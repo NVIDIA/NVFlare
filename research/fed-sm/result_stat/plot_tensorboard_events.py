@@ -20,7 +20,7 @@ import seaborn as sns
 import tensorflow as tf
 
 # simulator workspace
-client_results_root = "../workspaces/fedsm_prostate/"
+client_results_root = "/tmp/nvflare/fedsm_prostate/"
 client_pre = "app_client_"
 
 # 3 sites
@@ -28,7 +28,7 @@ sites_fl = ["I2CVB", "MSD", "NCI_ISBI_3T"]
 
 metrics = {
     "global_model": "val_metric_global_model",
-    "personal_model": "val_metric_per_model",
+    "personal_model": "val_metric_person_model",
     "selector_model": "val_metric_select_model",
 }
 
@@ -84,9 +84,7 @@ def main():
         # clear data for each metric
         data = {"Site": [], "Epoch": [], "Metric": []}
         for site in sites_fl:
-            record_path = os.path.join(
-                client_results_root, "simulate_job", client_pre + site, "events.*"
-            )
+            record_path = os.path.join(client_results_root, "simulate_job", client_pre + site, "events.*")
             eventfile = glob.glob(record_path, recursive=True)
             assert len(eventfile) == 1, "No unique event file found!"
             eventfile = eventfile[0]

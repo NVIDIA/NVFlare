@@ -93,7 +93,7 @@ class IntimeModelFedSMSelector(FLComponent):
 
         # DXO for FedSM is in "collection" format, containing three dxo objects (global_weights, person_weights, select_weights)
         # together with the meta information
-        contribution_round = shareable.get_cookie(AppConstants.CONTRIBUTION_ROUND)
+        contribution_round = shareable.get_header(AppConstants.CONTRIBUTION_ROUND)
         client_name = shareable.get_peer_prop(ReservedKey.IDENTITY_NAME, default="?")
 
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)

@@ -60,7 +60,7 @@ We provide a script for performing validation on testing data split.
 Please add the correct paths below, and run:
 
 ```
-python3 prostate_2d_test_only.py --models_dir "${workspace_path}/fedsm_prostate/simulate_job/app_server/" --dataset_base_dir ${dataset_path} --datalist_json_path "${datalist_json_path}"
+python3 ./result_stat/prostate_2d_test_only.py --models_dir "${workspace_path}/fedsm_prostate/simulate_job/app_server/" --dataset_base_dir ${dataset_path} --datalist_json_path "${datalist_json_path}"
 ```
 
 ## Citation
