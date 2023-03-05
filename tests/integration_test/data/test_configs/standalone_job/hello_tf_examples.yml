@@ -22,7 +22,7 @@ tests:
           "type": "run_state"
           "data": { "run_finished": True }
     validators:
-      - path: tests.integration_test.validators.TFModelValidator
+      - path: tests.integration_test.src.validators.TFModelValidator
   - test_name: "run hello-tf2"
     event_sequence:
       - "trigger":
@@ -40,4 +40,4 @@ tests:
           "type": "run_state"
           "data": { "run_finished": True }
     validators:
-      - path: tests.integration_test.validators.TFModelValidator
+      - path: tests.integration_test.src.validators.TFModelValidator

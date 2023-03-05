@@ -22,8 +22,8 @@ tests:
           "type": "run_state"
           "data": { "run_finished": True }
     validators:
-      - path: tests.integration_test.validators.PTModelValidator
-      - path: tests.integration_test.validators.CrossValResultValidator
+      - path: tests.integration_test.src.validators.PTModelValidator
+      - path: tests.integration_test.src.validators.CrossValResultValidator
         args: { server_model_names: [ "server" ] }
     setup:
       - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='~/data', download=True)"

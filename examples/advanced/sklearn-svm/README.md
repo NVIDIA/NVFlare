@@ -43,7 +43,7 @@ the label and feature columns, and save it to a CSV file with comma separation.
 The default path is `/tmp/nvflare/dataset/sklearn_breast_cancer.
 csv`.
 ```commandline
-bash data_prepare.sh
+bash prepare_data.sh
 ``` 
 
 ## Prepare clients' configs with proper data information 

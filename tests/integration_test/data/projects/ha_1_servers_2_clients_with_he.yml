@@ -20,24 +20,6 @@ participants:
   - name: site-2
     type: client
     org: org_a
-  - name: site-3
-    type: client
-    org: org_a
-  - name: site-4
-    type: client
-    org: org_a
-  - name: site-5
-    type: client
-    org: org_a
-  - name: site-6
-    type: client
-    org: org_a
-  - name: site-7
-    type: client
-    org: org_a
-  - name: site-8
-    type: client
-    org: org_a
   - name: super@test.org
     type: admin
     org: org_a
@@ -70,5 +52,11 @@ builders:
         # args:
         #   sp_end_point: example1.com.8002:8003
 
+  - path: nvflare.lighter.impl.he.HEBuilder
+    args:
+      poly_modulus_degree: 8192
+      coeff_mod_bit_sizes: [60, 40, 40]
+      scale_bits: 40
+      scheme: CKKS
   - path: nvflare.lighter.impl.cert.CertBuilder
   - path: nvflare.lighter.impl.signature.SignatureBuilder

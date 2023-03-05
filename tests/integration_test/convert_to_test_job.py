@@ -18,7 +18,7 @@ from tests.integration_test.src.utils import simplify_job
 
 
 def main():
-    parser = ArgumentParser()
+    parser = ArgumentParser("Simplify job")
     parser.add_argument("--job", required=True, type=str)
     parser.add_argument("--postfix", type=str, default="_copy")
     args = parser.parse_args()

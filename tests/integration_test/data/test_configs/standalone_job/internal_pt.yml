@@ -22,7 +22,7 @@ tests:
           "type": "run_state"
           "data": { "run_finished": True }
     validators:
-      - path: tests.integration_test.validators.PTModelValidator
+      - path: tests.integration_test.src.validators.PTModelValidator
     setup:
       - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/cifar10_data', download=True)"
     teardown:
@@ -44,7 +44,7 @@ tests:
           "type": "run_state"
           "data": { "run_finished": True }
     validators:
-      - path: tests.integration_test.validators.PTModelValidator
+      - path: tests.integration_test.src.validators.PTModelValidator
     setup:
       - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/cifar10_data', download=True)"
     teardown:
@@ -66,7 +66,7 @@ tests:
           "type": "run_state"
           "data": { "run_finished": True }
     validators:
-      - path: tests.integration_test.validators.TBResultValidator
+      - path: tests.integration_test.src.validators.TBResultValidator
         args: { require_result_on_client: True }
     setup:
       - python -m pip install tensorboard
