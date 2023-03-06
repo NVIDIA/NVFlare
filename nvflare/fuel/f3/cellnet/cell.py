@@ -43,10 +43,9 @@ from nvflare.fuel.f3.connection import Connection
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor, EndpointState
 from nvflare.fuel.f3.message import Message
-from nvflare.fuel.f3.stats_pool import StatsPoolManager
 from nvflare.fuel.f3.mpm import MainProcessMonitor
-from nvflare.security.logging import secure_format_traceback, secure_format_exception
-
+from nvflare.fuel.f3.stats_pool import StatsPoolManager
+from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
 _CHANNEL = "cellnet.channel"
 _TOPIC_BULK = "bulk"
@@ -204,7 +203,7 @@ class _BulkSender:
                 self.messages = []
             else:
                 messages_to_send = self.messages[: self.max_queue_size]
-                self.messages = self.messages[self.max_queue_size:]
+                self.messages = self.messages[self.max_queue_size :]
 
         self.logger.debug(
             f"{self.cell.get_fqcn()}: bulk sender {self.target} sending bulk size {len(messages_to_send)}"
@@ -219,7 +218,7 @@ class _BulkSender:
                 logger=self.logger,
                 msg=bulk_msg,
                 log_text=f"failed to send bulk message: {send_errs[self.target]}",
-                cell=self.cell
+                cell=self.cell,
             )
         else:
             self.logger.debug(f"{self.cell.get_fqcn()}: sent bulk messages ({len(messages_to_send)}) to {self.target}")
@@ -452,13 +451,7 @@ class Cell(MessageReceiver, EndpointMonitor):
         )
 
     def log_error(self, log_text: str, msg: Union[None, Message], log_except=False):
-        log_messaging_error(
-            logger=self.logger,
-            log_text=log_text,
-            cell=self,
-            msg=msg,
-            log_except=log_except
-        )
+        log_messaging_error(logger=self.logger, log_text=log_text, cell=self, msg=msg, log_except=log_except)
 
     def get_root_url_for_child(self):
         if isinstance(self.root_url, list):
@@ -564,9 +557,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                 self.communicator.remove_connector(self.bb_ext_connector.handle)
                 self.communicator.remove_endpoint(FQCN.ROOT_SERVER)
             except Exception as ex:
-                self.log_error(
-                    msg=None,
-                    log_text=f"{self.my_info.fqcn}: error removing bb_ext_connector {ex}")
+                self.log_error(msg=None, log_text=f"{self.my_info.fqcn}: error removing bb_ext_connector {ex}")
             self.bb_ext_connector = None
 
         # drop ad-hoc connectors to cells on server
@@ -585,9 +576,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                         self.communicator.remove_endpoint(cell_name)
                     except:
                         self.log_error(
-                            msg=None,
-                            log_text=f"error removing adhoc connector to {cell_name}",
-                            log_except=True
+                            msg=None, log_text=f"error removing adhoc connector to {cell_name}", log_except=True
                         )
 
     def drop_agents(self):
@@ -811,8 +800,12 @@ class Cell(MessageReceiver, EndpointMonitor):
                 targets = [peer_name for peer_name in self.agents.keys()]
                 self.logger.debug(f"broadcasting goodbye to {targets}")
                 self.broadcast_request(
-                    channel=_CHANNEL, topic=_TOPIC_BYE, targets=targets,
-                    request=new_message(), timeout=0.5, optional=True
+                    channel=_CHANNEL,
+                    topic=_TOPIC_BYE,
+                    targets=targets,
+                    request=new_message(),
+                    timeout=0.5,
+                    optional=True,
                 )
 
         self.logger.debug(f"{self.my_info.fqcn}: Closing Cell")
@@ -826,9 +819,8 @@ class Cell(MessageReceiver, EndpointMonitor):
             self.communicator.stop()
         except Exception as ex:
             self.log_error(
-                msg=None,
-                log_text=f"error stopping Communicator: {secure_format_exception(ex)}",
-                log_except=True)
+                msg=None, log_text=f"error stopping Communicator: {secure_format_exception(ex)}", log_except=True
+            )
 
         self.logger.debug(f"{self.my_info.fqcn}: CELL closed!")
 
@@ -903,9 +895,7 @@ class Cell(MessageReceiver, EndpointMonitor):
     def _find_endpoint(self, target_fqcn: str) -> (str, Union[None, Endpoint]):
         err = FQCN.validate(target_fqcn)
         if err:
-            self.log_error(
-                msg=None,
-                log_text=f"invalid target FQCN '{target_fqcn}': {err}")
+            self.log_error(msg=None, log_text=f"invalid target FQCN '{target_fqcn}': {err}")
             return ReturnCode.INVALID_TARGET, None
 
         try:
@@ -914,11 +904,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                 return ReturnCode.TARGET_UNREACHABLE, None
             return "", ep
         except:
-            self.log_error(
-                msg=None,
-                log_text=f"Error when finding {target_fqcn}",
-                log_except=True
-            )
+            self.log_error(msg=None, log_text=f"Error when finding {target_fqcn}", log_except=True)
             return ReturnCode.TARGET_UNREACHABLE, None
 
     def _try_find_ep(self, target_fqcn: str) -> Union[None, Endpoint]:
@@ -1088,13 +1074,17 @@ class Cell(MessageReceiver, EndpointMonitor):
             target_msgs[t] = TargetMessage(t, channel, topic, message)
         return self._send_target_messages(target_msgs)
 
-    def send_request(self, channel: str, topic: str, target: str, request: Message, timeout=None, optional=False) -> Message:
+    def send_request(
+        self, channel: str, topic: str, target: str, request: Message, timeout=None, optional=False
+    ) -> Message:
         self.logger.debug(f"{self.my_info.fqcn}: sending request {channel}:{topic} to {target}")
         result = self.broadcast_request(channel, topic, [target], request, timeout, optional)
         assert isinstance(result, dict)
         return result.get(target)
 
-    def broadcast_multi_requests(self, target_msgs: Dict[str, TargetMessage], timeout=None, optional=False) -> Dict[str, Message]:
+    def broadcast_multi_requests(
+        self, target_msgs: Dict[str, TargetMessage], timeout=None, optional=False
+    ) -> Dict[str, Message]:
         """
         This is the core of the request/response handling. Be extremely careful when making any changes!
         To maximize the communication efficiency, we avoid the use of locks.
@@ -1139,7 +1129,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                         MessageHeaderKey.REQ_ID: waiter.id,
                         MessageHeaderKey.REPLY_EXPECTED: True,
                         MessageHeaderKey.WAIT_UNTIL: time.time() + timeout,
-                        MessageHeaderKey.OPTIONAL: optional
+                        MessageHeaderKey.OPTIONAL: optional,
                     }
                 )
             send_errs = self._send_target_messages(target_msgs)
@@ -1221,11 +1211,7 @@ class Cell(MessageReceiver, EndpointMonitor):
         Returns: None
 
         """
-        message.add_headers(
-            {
-                MessageHeaderKey.REPLY_EXPECTED: False,
-                MessageHeaderKey.OPTIONAL: optional
-             })
+        message.add_headers({MessageHeaderKey.REPLY_EXPECTED: False, MessageHeaderKey.OPTIONAL: optional})
         return self._send_to_targets(channel, topic, targets, message)
 
     def queue_message(self, channel: str, topic: str, targets: Union[str, List[str]], message: Message, optional=False):
@@ -1302,12 +1288,7 @@ class Cell(MessageReceiver, EndpointMonitor):
     def fire_multi_requests_and_forget(self, target_msgs: Dict[str, TargetMessage], optional=False) -> Dict[str, str]:
         for _, tm in target_msgs.items():
             request = tm.message
-            request.add_headers(
-                {
-                    MessageHeaderKey.REPLY_EXPECTED: False,
-                    MessageHeaderKey.OPTIONAL: optional
-                }
-            )
+            request.add_headers({MessageHeaderKey.REPLY_EXPECTED: False, MessageHeaderKey.OPTIONAL: optional})
         return self._send_target_messages(target_msgs)
 
     def send_reply(self, reply: Message, to_cell: str, for_req_ids: List[str], optional=False) -> str:
@@ -1335,7 +1316,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                 MessageHeaderKey.DESTINATION: to_cell,
                 MessageHeaderKey.REQ_ID: for_req_ids,
                 MessageHeaderKey.MSG_TYPE: MessageType.REPLY,
-                MessageHeaderKey.OPTIONAL: optional
+                MessageHeaderKey.OPTIONAL: optional,
             }
         )
 
@@ -1360,8 +1341,9 @@ class Cell(MessageReceiver, EndpointMonitor):
         except AbortRun:
             return make_reply(ReturnCode.ABORT_RUN)
         except Exception as ex:
-            self.log_error(f"exception from CB {cb.__name__}: {secure_format_exception(ex)}",
-                           msg=message, log_except=True)
+            self.log_error(
+                f"exception from CB {cb.__name__}: {secure_format_exception(ex)}", msg=message, log_except=True
+            )
             return make_reply(ReturnCode.PROCESS_EXCEPTION)
 
     def process_message(self, endpoint: Endpoint, connection: Connection, app_id: int, message: Message):
@@ -1370,9 +1352,7 @@ class Cell(MessageReceiver, EndpointMonitor):
             self._process_received_msg(endpoint, connection, message)
         except Exception as ex:
             self.log_error(
-                f"Error processing received message: {secure_format_exception(ex)}",
-                msg=message,
-                log_except=True
+                f"Error processing received message: {secure_format_exception(ex)}", msg=message, log_except=True
             )
 
     def _process_request(self, origin: str, message: Message) -> Union[None, Message]:
@@ -1412,7 +1392,7 @@ class Cell(MessageReceiver, EndpointMonitor):
             self.log_error(
                 f"bad result from request CB for topic {topic} on channel {channel}: "
                 f"expect Message but got {type(reply)}",
-                msg=message
+                msg=message,
             )
             reply = make_reply(ReturnCode.PROCESS_EXCEPTION, error="bad cb result")
         return reply
@@ -1423,10 +1403,7 @@ class Cell(MessageReceiver, EndpointMonitor):
             route = []
             message.set_header(MessageHeaderKey.ROUTE, route)
         if not isinstance(route, list):
-            self.log_error(
-                f"bad route header: expect list but got {type(route)}",
-                msg=message
-            )
+            self.log_error(f"bad route header: expect list but got {type(route)}", msg=message)
         else:
             route.append((self.my_info.fqcn, time.time()))
 
@@ -1443,10 +1420,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                 self.logger.debug(f"{self.my_info.fqcn}: forwarded successfully!")
                 return
             else:
-                self.log_error(
-                    f"failed to forward {msg_type}: {err}",
-                    msg=message
-                )
+                self.log_error(f"failed to forward {msg_type}: {err}", msg=message)
         else:
             # cannot find next leg endpoint
             self.log_error(f"cannot forward {msg_type}: no path", message)
@@ -1544,7 +1518,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                     self.log_error(
                         f"unexpected reply for {rid} from {req_destination}"
                         f"req_destination='{req_destination}', expecting={waiter.targets}",
-                        message
+                        message,
                     )
                     return
                 waiter.received_replies[req_destination] = message
