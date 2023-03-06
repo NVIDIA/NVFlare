@@ -1,5 +1,6 @@
 {
   "format_version": 2,
+  "AGGREGATION_EPOCHS": 25,
 
   "executors": [
     {
@@ -26,7 +27,7 @@
       "id": "cifar10-learner",
       "path": "pt.learners.cifar10_learner.CIFAR10Learner",
       "args": {
-        "aggregation_epochs": 25,
+        "aggregation_epochs": "{AGGREGATION_EPOCHS}",
         "lr": 1e-2,
         "central": true
       }

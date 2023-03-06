@@ -57,5 +57,5 @@ tests:
           "data": { "run_finished": True }
 
     validators:
-      - path: tests.integration_test.validators.NumpySAGResultValidator
+      - path: tests.integration_test.src.validators.NumpySAGResultValidator
         args: { expected_result: [ [ 3, 4, 5 ], [ 6, 7, 8 ], [ 9, 10, 11 ] ] }
