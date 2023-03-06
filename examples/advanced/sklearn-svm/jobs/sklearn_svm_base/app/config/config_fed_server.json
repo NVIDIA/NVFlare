@@ -1,5 +1,7 @@
 {
   "format_version": 2,
+  "min_clients": 3,
+  "num_rounds": 2,
   "server": {
     "heart_beat_timeout": 600,
     "task_request_interval": 0.05
@@ -41,8 +43,8 @@
       "id": "scatter_and_gather",
       "name": "ScatterAndGather",
       "args": {
-        "min_clients": 3,
-        "num_rounds": 2,
+        "min_clients" : "{min_clients}",
+        "num_rounds" : "{num_rounds}",
         "start_round": 0,
         "wait_time_after_min_received": 0,
         "aggregator_id": "aggregator",
