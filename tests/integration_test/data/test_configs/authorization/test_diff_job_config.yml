@@ -1,5 +1,5 @@
-n_servers: 1
-n_clients: 3
+ha: True
+project_yaml: ./data/projects/authz.yml
 jobs_root_dir: ../unit_test/data/jobs
 cleanup: True
 poll_period: 0.5

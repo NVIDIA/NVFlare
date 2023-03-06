@@ -2,7 +2,8 @@
 
 set -e
 
-backends=(numpy tensorflow pytorch overseer ha auth preflight cifar)
+PYTHONPATH="${PWD}/../.."
+backends=(numpy tensorflow pytorch overseer ha auth preflight cifar auto)
 
 usage()
 {
@@ -25,15 +26,15 @@ while getopts ":m:c:d" option; do
             m=${OPTARG}
             if [[ " ${backends[*]} " =~ " ${m} " ]]; then
                 # whatever you want to do when array contains value
-                prefix="NVFLARE_TEST_FRAMEWORK=$m"
+                prefix="NVFLARE_TEST_FRAMEWORK=$m PYTHONPATH=${PYTHONPATH}"
             else
               usage
             fi
             ;;
-	      d) # debug
-	          export FL_LOG_LEVEL=DEBUG
+        d) # debug
+            export FL_LOG_LEVEL=DEBUG
             cmd="pytest --junitxml=./integration_test.xml -vv --log-cli-level=DEBUG --capture=no"
-	          ;;
+            ;;
         c) # Clean up
             echo "Clean up integration tests result"
             rm -rf ./integration_test.xml
@@ -77,19 +78,6 @@ run_tensorflow()
     eval "$cmd"
 }
 
-run_cifar()
-{
-    echo "Running integration tests using cifar related jobs."
-    cmd="$prefix $cmd system_test.py"
-
-    export OLD_PYTHON_PATH="${PYTHONPATH}"
-    export PYTHONPATH="${PYTHONPATH}:${PWD}/../../examples/advanced/cifar10"
-    echo "PYTHONPATH is: ${PYTHONPATH}"
-    echo "$cmd"
-    eval "$cmd"
-    export PYTHONPATH="${OLD_PYTHON_PATH}"
-}
-
 if [[ $m == "numpy" ]]; then
     echo "Running integration tests using numpy related jobs."
     run_system_test
@@ -109,5 +97,9 @@ elif [[ $m == "overseer" ]]; then
 elif [[ $m == "preflight" ]]; then
     run_preflight_check_test
 elif [[ $m == "cifar" ]]; then
-    run_cifar
+    echo "Running integration tests using cifar jobs."
+    run_system_test
+elif [[ $m == "auto" ]]; then
+    echo "Running integration tests using auto generated jobs."
+    run_system_test
 fi

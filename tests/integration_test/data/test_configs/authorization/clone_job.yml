@@ -24,7 +24,7 @@ tests:
           "data": { "run_finished": True }
     reset_job_info: False
     validators:
-      - path: tests.integration_test.validators.NumpySAGResultValidator
+      - path: tests.integration_test.src.validators.NumpySAGResultValidator
         args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
   - test_name: "lead a clone previous np_sag"
     event_sequence:
@@ -45,7 +45,7 @@ tests:
           "data": { "run_finished": True }
     reset_job_info: False
     validators:
-      - path: tests.integration_test.validators.NumpySAGResultValidator
+      - path: tests.integration_test.src.validators.NumpySAGResultValidator
         args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
   - test_name: "lead b clone previous np_sag"
     event_sequence:
@@ -84,5 +84,5 @@ tests:
           "type": "run_state"
           "data": { "run_finished": True }
     validators:
-      - path: tests.integration_test.validators.NumpySAGResultValidator
+      - path: tests.integration_test.src.validators.NumpySAGResultValidator
         args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
