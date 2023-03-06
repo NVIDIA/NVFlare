@@ -44,8 +44,8 @@ CIFAR10_ROOT = "/tmp/cifar10"  # will be used for all CIFAR-10 experiments
 
 
 def load_cifar10_data():
-    # download data
-    train_dataset = datasets.CIFAR10(root=CIFAR10_ROOT, train=True, download=True)
+    # load data
+    train_dataset = datasets.CIFAR10(root=CIFAR10_ROOT, train=True, download=False)
 
     # only training label is needed for doing split
     train_label = np.array(train_dataset.targets)

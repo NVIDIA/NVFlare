@@ -1,6 +1,6 @@
 ha: true
 jobs_root_dir: ../../examples/advanced/cifar10/cifar10-real-world/jobs
-cleanup: false
+cleanup: true
 project_yaml: ./data/projects/ha_1_servers_2_clients_with_he.yml
 additional_python_paths:
 - ../../examples/advanced/cifar10
