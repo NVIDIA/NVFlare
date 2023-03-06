@@ -213,6 +213,8 @@ class ConfigService:
 
     @classmethod
     def _any_var(cls, func, name, conf, default):
+        if name in cls._var_values:
+            return cls._var_values.get(name)
         v = func(name, conf, default)
         cls._var_values[name] = v
         return v
