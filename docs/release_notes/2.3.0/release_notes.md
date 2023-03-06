@@ -61,11 +61,14 @@
       [Private Set Intersection Cardinality protocol](https://github.com/OpenMined/PSI), which is based on ECDH and Bloom Filters, and we have
       made this protocol available for multi-party use. More information on our approach and how to use the
       PSI operator can be found in the [PSI Example](https://github.com/NVIDIA/NVFlare/blob/dev/examples/advanced/psi/README.md).
-      It is worth noting that PSI is used as a pre-training step in the split learning example, which can be found in this
-      [notebook](https://github.com/NVIDIA/NVFlare/blob/dev/examples/tutorial/vertical_federated_learning/cifar10-splitnn/cifar10_split_learning.ipynb).
-
-
-* **Split-Learning**
+      It is worth noting that PSI is used as a pre-processing step in the split learning example, which can be found in this
+      [notebook](https://github.com/NVIDIA/NVFlare/blob/dev/examples/advanced/vertical_federated_learning/cifar10-splitnn/README.md).
+      
+    * **Split-Learning** can allow the training of deep neural networks on vertically separated data. 
+      With this release, we include an [example](https://github.com/NVIDIA/NVFlare/blob/dev/examples/advanced/vertical_federated_learning/cifar10-splitnn/README.md) 
+      on how to run [split learning](https://arxiv.org/abs/1810.06060) using the CIFAR-10 dataset assuming one client holds the images, 
+      and the other client holds the labels to compute losses and accuracy metrics. 
+      Activations and corresponding gradients are being exchanged between the clients using FLARE's new communication API.
 
 
 * **Research Area**
