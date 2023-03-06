@@ -997,9 +997,14 @@ azure_start_svr_sh: |
 
   # Start provisioning
 
-  echo "Creating Resource Group $RESOURCE_GROUP at Location $LOCATION"
-  az group create --output none --name $RESOURCE_GROUP --location $LOCATION
-  report_status "$?" "creating resource group"
+  if [ $(az group exists -n $RESOURCE_GROUP) == 'false' ]
+  then
+    echo "Creating Resource Group $RESOURCE_GROUP at Location $LOCATION"
+    az group create --output none --name $RESOURCE_GROUP --location $LOCATION
+    report_status "$?" "creating resource group"
+  else
+    echo "Resource Group $RESOURCE_GROUP exists, will reuse it."
+  fi
 
   echo "Creating Virtual Machine, will take a few minutes"
   if [ $self_dns = true ]
@@ -1108,7 +1113,6 @@ azure_start_svr_sh: |
   echo "az group delete -n ${RESOURCE_GROUP}"
   # echo "The VM was created with user: ${ADMIN_USERNAME} and password: ${PASSWORD}"
 
-
 azure_start_cln_sh: |
   #!/usr/bin/env bash
   DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
@@ -1199,9 +1203,14 @@ azure_start_cln_sh: |
 
   # Start provisioning
 
-  echo "Creating Resource Group $RESOURCE_GROUP at Location $LOCATION"
-  az group create --output none --name $RESOURCE_GROUP --location $LOCATION
-  report_status "$?" "creating resource group"
+  if [ $(az group exists -n $RESOURCE_GROUP) == 'false' ]
+  then
+    echo "Creating Resource Group $RESOURCE_GROUP at Location $LOCATION"
+    az group create --output none --name $RESOURCE_GROUP --location $LOCATION
+    report_status "$?" "creating resource group"
+  else
+    echo "Resource Group $RESOURCE_GROUP exists, will reuse it."
+  fi
 
   echo "Creating Virtual Machine, will take a few minutes"
   az vm create \
@@ -1327,10 +1336,16 @@ azure_start_dsb_sh: |
   read email
 
   az login --use-device-code
+
   # Start provisioning
-  echo "Creating Resource Group $RESOURCE_GROUP at Location $LOCATION"
-  az group create --output none --name $RESOURCE_GROUP --location $LOCATION
-  report_status "$?" "creating resource group"
+  if [ $(az group exists -n $RESOURCE_GROUP) == 'false' ]
+  then
+    echo "Creating Resource Group $RESOURCE_GROUP at Location $LOCATION"
+    az group create --output none --name $RESOURCE_GROUP --location $LOCATION
+    report_status "$?" "creating resource group"
+  else
+    echo "Resource Group $RESOURCE_GROUP exists, will reuse it."
+  fi
 
   echo "Creating Virtual Machine, will take a few minutes"
   az vm create \
