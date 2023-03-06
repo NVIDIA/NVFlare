@@ -64,7 +64,7 @@ An example would be `tests/integration_test/data/test_configs/one_job/test_hello
 |-----------------|----------------------------------------------------------------------------------------|
 | `ha`            | Need to set to True for HA.                                                            |
 | `project_yaml`  | The file that would be passed to NVFlare provision script to generate the startup kits |
-| `poll_period`   | The polling period of `FLTestDriver`. (Default to 5 seconds.)                          |
+| `poll_period`   | The polling period of `NVFTestDriver`. (Default to 5 seconds.)                          |
 | `cleanup`       | Whether to clean up test folders or not. (Default to True.)                            |
 | `jobs_root_dir` | The directory that contains the job folders to upload                                  |
 | `tests`         | The test cases to run                                                                  |
@@ -111,8 +111,8 @@ An example test case is shown:
           "type": "run_state"
           "data": { "run_finished": True }
     validators:
-      - path: tests.integration_test.validators.PTModelValidator
-      - path: tests.integration_test.validators.CrossValResultValidator
+      - path: tests.integration_test.src.validators.PTModelValidator
+      - path: tests.integration_test.src.validators.CrossValResultValidator
         args: { server_model_names: [ "server" ] }
     setup:
       - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='~/data', download=True)"
@@ -168,7 +168,7 @@ The following result type is supported:
 - src: source codes for the integration test system:
   - action_handlers.py: define how to handle event actions.
   - constants.py: define constants shared by the test system.
-  - fl_test_driver.py: the test driver controls and coordinates the test system.
+  - nvf_test_driver.py: the test driver controls and coordinates the test system.
   - oa_launcher.py: overseer and overseer agent launcher.
   - poc_site_launcher.py: site launcher implementation for Proof-Of-Concept mode.
   - provision_site_launcher.py: site launcher implementation that utilizes NVFlare provision.
