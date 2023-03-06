@@ -26,9 +26,9 @@ DEPRECATED_PACKAGES = ["nvflare.app_common.pt", "nvflare.app_common.homomorphic_
 def get_class_fullname(o):
     klass = o.__class__
     module = klass.__module__
-    if module == '__builtin__':
-        return klass.__name__ # avoid outputs like '__builtin__.str'
-    return module + '.' + klass.__name__
+    if module == "__builtin__":
+        return klass.__name__  # avoid outputs like '__builtin__.str'
+    return module + "." + klass.__name__
 
 
 def get_class(class_path):
