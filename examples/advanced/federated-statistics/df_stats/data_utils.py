@@ -4,8 +4,6 @@ import shutil
 
 import wget
 
-#data_root_dir = "/tmp/nvflare/data"
-
 
 def parse_args(prog_name: str):
     _parser = argparse.ArgumentParser(description=prog_name)

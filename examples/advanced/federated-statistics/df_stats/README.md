@@ -313,8 +313,8 @@ so we need to provide local min/max calculation methods
 
 ## to run pytest in examples
 
-under df_stats/jobs/df_stats directory
+under df_stats/jobs directory
 
 ```
-pytest custom/
+pytest df_stats/custom/
 ```
