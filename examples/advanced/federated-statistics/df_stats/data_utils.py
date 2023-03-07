@@ -4,7 +4,7 @@ import shutil
 
 import wget
 
-data_root_dir = "/tmp/nvflare/data"
+#data_root_dir = "/tmp/nvflare/data"
 
 
 def parse_args(prog_name: str):
@@ -15,6 +15,14 @@ def parse_args(prog_name: str):
         action="store_const",
         const=prepare_data,
         help="prepare data based on configuration",
+    )
+    _parser.add_argument(
+        "-d",
+        "--dest",
+        type=str,
+        nargs="?",
+        default="",
+        help="destination directory where the data to download to",
     )
     return _parser, _parser.parse_args()
 
@@ -27,8 +35,8 @@ def get_data_url() -> dict:
     return client_data
 
 
-def prepare_data():
-    print("prepare data for data directory")
+def prepare_data(data_root_dir: str):
+    print(f"prepare data for data directory {data_root_dir}")
     client_data_urls = get_data_url()
     for client in client_data_urls:
         client_data_dir = os.path.join(data_root_dir, client)
@@ -36,10 +44,11 @@ def prepare_data():
             os.makedirs(client_data_dir, exist_ok=True)
 
         dest = os.path.join(client_data_dir, "data.csv")
-        print(f"\nremove existing data at {dest}")
-        shutil.rmtree(dest, ignore_errors=True)
+        if os.path.exists(dest):
+            print(f"\nremove existing data at {dest}")
+            shutil.rmtree(dest, ignore_errors=True)
 
-        print(f"wget download to {dest}")
+        print(f"\nwget download to {dest}")
         url = client_data_urls[client]
         response = wget.download(url, dest)
     print("\ndone with prepare data")
@@ -50,7 +59,7 @@ def main():
     parser, args = parse_args(prog_name)
 
     if args.prepare_data:
-        prepare_data()
+        prepare_data(args.dest)
     else:
         parser.print_help()
 

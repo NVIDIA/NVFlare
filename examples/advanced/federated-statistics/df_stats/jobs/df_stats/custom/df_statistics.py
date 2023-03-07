@@ -26,7 +26,7 @@ from nvflare.app_common.statistics.numpy_utils import dtype_to_data_type, get_st
 class DFStatistics(Statistics):
     def __init__(self, data_path):
         super().__init__()
-        self.data_root_dir = "/tmp/nvflare/data"
+        self.data_root_dir = "/tmp/nvflare/df_stats/data"
         self.data_path = data_path
         self.data: Optional[Dict[str, pd.DataFrame]] = None
         self.data_features = [

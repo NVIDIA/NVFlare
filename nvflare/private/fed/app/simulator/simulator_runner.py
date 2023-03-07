@@ -105,7 +105,7 @@ class SimulatorRunner(FLComponent):
         self.args = self._generate_args(
             self.job_folder, self.workspace, self.clients, self.n_clients, self.threads, self.gpu, self.max_clients
         )
-
+        print("step -1")
         if self.args.clients:
             self.client_names = self.args.clients.strip().split(",")
         else:
@@ -120,7 +120,7 @@ class SimulatorRunner(FLComponent):
         local_dir = os.path.join(self.args.workspace, "local")
         os.makedirs(local_dir, exist_ok=True)
         shutil.copyfile(log_config_file_path, os.path.join(local_dir, WorkspaceConstants.LOGGING_CONFIG))
-
+        print("step -2")
         self.args.log_config = None
         self.args.config_folder = "config"
         self.args.job_id = SimulatorConstants.JOB_NAME
@@ -140,10 +140,13 @@ class SimulatorRunner(FLComponent):
         if os.path.exists(self.simulator_root):
             shutil.rmtree(self.simulator_root)
 
+        print("step -3")
+
         os.makedirs(self.simulator_root)
         log_file = os.path.join(self.simulator_root, WorkspaceConstants.LOG_FILE_NAME)
         add_logfile_handler(log_file)
 
+        print("step -4")
         try:
             data_bytes, job_name, meta = self.validate_job_data()
 
@@ -158,14 +161,14 @@ class SimulatorRunner(FLComponent):
             if self.args.gpu is None and self.args.threads is None:
                 self.args.threads = 1
                 self.logger.warn("The number of threads is not provided. Set it to default: 1")
-
+            print("step -5")
             if self.max_clients < len(self.client_names):
                 self.logger.error(
                     f"The number of clients ({len(self.client_names)}) can not be more than the "
                     f"max_number of clients ({self.max_clients})"
                 )
                 return False
-
+            print("step -6")
             if self.args.gpu:
                 gpus = self.args.gpu.split(",")
                 host_gpus = [str(x) for x in (get_host_gpu_ids())]
@@ -173,26 +176,28 @@ class SimulatorRunner(FLComponent):
                     wrong_gpus = [x for x in gpus if x not in host_gpus]
                     self.logger.error(f"These GPUs are not available: {wrong_gpus}")
                     return False
-
+                print("step -7")
                 if len(gpus) > len(self.client_names):
                     self.logger.error(
                         f"The number of clients ({len(self.client_names)}) must be larger than or equal to "
                         f"the number of GPUS: ({len(gpus)})"
                     )
                     return False
+                print("step -8")
                 if len(gpus) > 1 and self.args.threads and self.args.threads > 1:
                     self.logger.info(
                         "When running with multi GPU, each GPU will run with only 1 thread. " "Set the Threads to 1."
                     )
                     self.args.threads = 1
-
+            print("step -9")
             if self.args.threads and self.args.threads > len(self.client_names):
                 self.logger.error("The number of threads to run can not be larger than the number of clients.")
                 return False
+            print("step -10")
             if not (self.args.gpu or self.args.threads):
                 self.logger.error("Please provide the number of threads or provide gpu options to run the simulator.")
                 return False
-
+            print("step -11")
             self._validate_client_names(meta, self.client_names)
 
             # Deploy the FL server
