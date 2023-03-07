@@ -37,7 +37,9 @@ def format_log_message(fqcn: str, message: Message, log: str) -> str:
         "O=" + message.get_header(MessageHeaderKey.ORIGIN, "?"),
         "D=" + message.get_header(MessageHeaderKey.DESTINATION, "?"),
         "F=" + message.get_header(MessageHeaderKey.FROM_CELL, "?"),
-        "T=" + message.get_header(MessageHeaderKey.TO_CELL, "?") + "]",
+        "T=" + message.get_header(MessageHeaderKey.TO_CELL, "?"),
+        "CH=" + message.get_header(MessageHeaderKey.CHANNEL, "?"),
+        "TP=" + message.get_header(MessageHeaderKey.TOPIC, "?") + "]",
         log,
     ]
     return " ".join(parts)

@@ -503,12 +503,12 @@ class AdminAPI(AdminAPISpec):
     def _start_session_monitor(self, interval=0.2):
         self.sess_monitor_thread = threading.Thread(target=self._monitor_session, args=(interval,), daemon=True)
         self.sess_monitor_active = True
+        self.sess_monitor_thread.daemon = True
         self.sess_monitor_thread.start()
 
     def _close_session_monitor(self):
         self.sess_monitor_active = False
-        if self.sess_monitor_thread and self.sess_monitor_thread.is_alive():
-            self.sess_monitor_thread.join()
+        if self.sess_monitor_thread:
             self.sess_monitor_thread = None
         if self.debug:
             print("DEBUG: session monitor closed!")
@@ -859,14 +859,38 @@ class AdminAPI(AdminAPISpec):
         if meta:
             result[ResultKey.META] = meta
 
-        if ProtoKey.DATA in result:
-            for item in result[ProtoKey.DATA]:
-                if item[ProtoKey.TYPE] == ProtoKey.ERROR:
-                    item_data = item[ProtoKey.DATA]
-                    if "session_inactive" in item_data:
-                        result[ResultKey.STATUS] = APIStatus.ERROR_INACTIVE_SESSION
-                    elif any(err in item_data for err in ("Failed to communicate with Admin Server", "wrong server")):
-                        result[ResultKey.STATUS] = APIStatus.ERROR_SERVER_CONNECTION
         if ResultKey.STATUS not in result:
-            result[ResultKey.STATUS] = APIStatus.SUCCESS
+            result[ResultKey.STATUS] = self._determine_api_status(result)
         return result
+
+    def _determine_api_status(self, result):
+        status = result.get(ResultKey.STATUS)
+        if status:
+            return status
+
+        data = result.get(ProtoKey.DATA)
+        if not data:
+            return APIStatus.ERROR_RUNTIME
+
+        reply_data_list = []
+        for d in data:
+            if isinstance(d, dict):
+                t = d.get(ProtoKey.TYPE)
+                if t == ProtoKey.SUCCESS:
+                    return APIStatus.SUCCESS
+                if t == ProtoKey.STRING or t == ProtoKey.ERROR:
+                    reply_data_list.append(d[ProtoKey.DATA])
+        reply_data_full_response = "\n".join(reply_data_list)
+        if "session_inactive" in reply_data_full_response:
+            return APIStatus.ERROR_INACTIVE_SESSION
+        if "wrong server" in reply_data_full_response:
+            return APIStatus.ERROR_SERVER_CONNECTION
+        if "Failed to communicate" in reply_data_full_response:
+            return APIStatus.ERROR_SERVER_CONNECTION
+        if "invalid client" in reply_data_full_response:
+            return APIStatus.ERROR_INVALID_CLIENT
+        if "unknown site" in reply_data_full_response:
+            return APIStatus.ERROR_INVALID_CLIENT
+        if "not authorized" in reply_data_full_response:
+            return APIStatus.ERROR_AUTHORIZATION
+        return APIStatus.SUCCESS
