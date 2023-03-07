@@ -115,7 +115,14 @@ class AuxRunner(FLComponent):
         return valid_reply
 
     def send_aux_request(
-        self, targets: list, topic: str, request: Shareable, timeout: float, fl_ctx: FLContext, bulk_send: bool = False
+        self,
+        targets: list,
+        topic: str,
+        request: Shareable,
+        timeout: float,
+        fl_ctx: FLContext,
+        bulk_send: bool = False,
+        optional: bool = False,
     ) -> dict:
         job_id = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
         cmi = JobCellMessenger(self.engine, job_id)
@@ -159,7 +166,11 @@ class AuxRunner(FLComponent):
                 timeout=timeout,
                 fl_ctx=fl_ctx,
                 bulk_send=bulk_send,
+                optional=optional,
             )
-        except BaseException as e:
-            self.logger.error(f"Failed to send the message to targets: {targets}")
+        except BaseException:
+            if optional:
+                self.logger.debug(f"Failed to send the message to targets: {targets}")
+            else:
+                self.logger.error(f"Failed to send the message to targets: {targets}")
             return {}

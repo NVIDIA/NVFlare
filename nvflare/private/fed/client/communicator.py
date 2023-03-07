@@ -18,7 +18,9 @@ import time
 from typing import List, Optional
 
 from nvflare.apis.filter import Filter
-from nvflare.apis.fl_constant import FLContextKey, ServerCommandKey, ServerCommandNames
+from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_constant import ReturnCode as ShareableRC
+from nvflare.apis.fl_constant import ServerCommandKey, ServerCommandNames
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
 from nvflare.apis.shareable import Shareable
@@ -184,6 +186,7 @@ class Communicator:
             topic=ServerCommandNames.GET_TASK,
             request=task_message,
             timeout=self.timeout,
+            optional=True,
         )
         end_time = time.time()
         return_code = task.get_header(MessageHeaderKey.RETURN_CODE)
@@ -192,7 +195,7 @@ class Communicator:
             size = len(task.payload)
             task.payload = fobs.loads(task.payload)
             task_name = task.payload.get_header(ServerCommandKey.TASK_NAME)
-            self.logger.info(
+            self.logger.debug(
                 f"Received from {project_name} server "
                 f" ({size} Bytes). getTask: {task_name} time: {end_time - start_time} seconds"
             )
@@ -234,6 +237,8 @@ class Communicator:
 
         # shareable.add_cookie(name=FLContextKey.TASK_ID, data=task_id)
         shareable.set_header(FLContextKey.TASK_NAME, execute_task_name)
+        rc = shareable.get_return_code()
+        optional = rc == ShareableRC.TASK_ABORTED
 
         task_message = new_cell_message(
             {
@@ -253,6 +258,7 @@ class Communicator:
             topic=ServerCommandNames.SUBMIT_UPDATE,
             request=task_message,
             timeout=self.timeout,
+            optional=optional,
         )
         end_time = time.time()
         return_code = result.get_header(MessageHeaderKey.RETURN_CODE)

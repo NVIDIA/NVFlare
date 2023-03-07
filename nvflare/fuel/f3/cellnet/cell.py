@@ -462,8 +462,8 @@ class Cell(MessageReceiver, EndpointMonitor):
     def get_fqcn(self) -> str:
         return self.my_info.fqcn
 
-    def is_cell_reachable(self, target_fqcn: str) -> bool:
-        _, ep = self._find_endpoint(target_fqcn)
+    def is_cell_reachable(self, target_fqcn: str, for_msg=None) -> bool:
+        _, ep = self._find_endpoint(target_fqcn, for_msg)
         return ep is not None
 
     def is_cell_connected(self, target_fqcn: str) -> bool:
@@ -892,22 +892,22 @@ class Cell(MessageReceiver, EndpointMonitor):
             return None
         return self._try_path(fqcn_path[:-1])
 
-    def _find_endpoint(self, target_fqcn: str) -> (str, Union[None, Endpoint]):
+    def _find_endpoint(self, target_fqcn: str, for_msg: Message) -> (str, Union[None, Endpoint]):
         err = FQCN.validate(target_fqcn)
         if err:
             self.log_error(msg=None, log_text=f"invalid target FQCN '{target_fqcn}': {err}")
             return ReturnCode.INVALID_TARGET, None
 
         try:
-            ep = self._try_find_ep(target_fqcn)
+            ep = self._try_find_ep(target_fqcn, for_msg)
             if not ep:
                 return ReturnCode.TARGET_UNREACHABLE, None
             return "", ep
         except:
-            self.log_error(msg=None, log_text=f"Error when finding {target_fqcn}", log_except=True)
+            self.log_error(msg=for_msg, log_text=f"Error when finding {target_fqcn}", log_except=True)
             return ReturnCode.TARGET_UNREACHABLE, None
 
-    def _try_find_ep(self, target_fqcn: str) -> Union[None, Endpoint]:
+    def _try_find_ep(self, target_fqcn: str, for_msg: Message) -> Union[None, Endpoint]:
         self.logger.debug(f"{self.my_info.fqcn}: finding path to {target_fqcn}")
         if target_fqcn == self.my_info.fqcn:
             return self.endpoint
@@ -921,10 +921,10 @@ class Cell(MessageReceiver, EndpointMonitor):
 
         if same_family(self.my_info, target_info):
             if FQCN.is_parent(self.my_info.fqcn, target_fqcn):
-                self.log_error(msg=None, log_text=f"backbone broken: no path to child {target_fqcn}")
+                self.log_error(msg=for_msg, log_text=f"backbone broken: no path to child {target_fqcn}")
                 return None
             elif FQCN.is_parent(target_fqcn, self.my_info.fqcn):
-                self.log_error(f"backbone broken: no path to parent {target_fqcn}", None)
+                self.log_error(f"backbone broken: no path to parent {target_fqcn}", for_msg)
 
             self.logger.debug(f"{self.my_info.fqcn}: find path in the same family")
             if FQCN.is_ancestor(self.my_info.fqcn, target_fqcn):
@@ -937,7 +937,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                 parent_fqcn = FQCN.get_parent(self.my_info.fqcn)
                 agent = self.agents.get(parent_fqcn)
                 if not agent:
-                    self.log_error(f"broken backbone - no path to parent {parent_fqcn}", None)
+                    self.log_error(f"broken backbone - no path to parent {parent_fqcn}", for_msg)
                     return None
                 return agent.endpoint
 
@@ -959,11 +959,11 @@ class Cell(MessageReceiver, EndpointMonitor):
             parent_fqcn = FQCN.get_parent(self.my_info.fqcn)
             agent = self.agents.get(parent_fqcn)
             if not agent:
-                self.log_error(f"broken backbone - no path to parent {parent_fqcn}", None)
+                self.log_error(f"broken backbone - no path to parent {parent_fqcn}", for_msg)
                 return None
             return agent.endpoint
 
-        self.log_error(f"cannot find path to {target_fqcn}", None)
+        self.log_error(f"cannot find path to {target_fqcn}", for_msg)
         return None
 
     def _send_to_endpoint(self, to_endpoint: Endpoint, message: Message) -> str:
@@ -1001,12 +1001,12 @@ class Cell(MessageReceiver, EndpointMonitor):
 
         send_errs = {}
         reachable_targets = {}  # target fqcn => endpoint
-        for t in target_msgs.keys():
-            err, ep = self._find_endpoint(t)
+        for t, tm in target_msgs.items():
+            err, ep = self._find_endpoint(t, tm.message)
             if ep:
                 reachable_targets[t] = ep
             else:
-                self.log_error(f"cannot send to '{t}': {err}", target_msgs[t].message)
+                self.log_error(f"cannot send to '{t}': {err}", tm.message)
                 send_errs[t] = err
 
         for t, ep in reachable_targets.items():
@@ -1320,7 +1320,7 @@ class Cell(MessageReceiver, EndpointMonitor):
             }
         )
 
-        err, ep = self._find_endpoint(to_cell)
+        err, ep = self._find_endpoint(to_cell, reply)
         if err:
             return err
         reply.set_header(MessageHeaderKey.TO_CELL, ep.name)
@@ -1410,7 +1410,7 @@ class Cell(MessageReceiver, EndpointMonitor):
     def _forward(self, endpoint: Endpoint, origin: str, destination: str, msg_type: str, message: Message):
         # not for me - need to forward it
         self.logger.debug(f"{self.my_info.fqcn}: forwarding for {origin} to {destination}")
-        err, ep = self._find_endpoint(destination)
+        err, ep = self._find_endpoint(destination, message)
         if ep:
             self.logger.debug(f"{self.my_info.fqcn}: found next leg {ep.name}")
             message.add_headers({MessageHeaderKey.FROM_CELL: self.my_info.fqcn, MessageHeaderKey.TO_CELL: ep.name})
