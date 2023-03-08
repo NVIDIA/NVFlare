@@ -35,9 +35,11 @@ class SimulatorServerEngine(ServerEngine):
     def update_job_run_status(self):
         pass
 
-    def send_aux_request(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
+    def send_aux_request(
+        self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext, optional=False
+    ) -> dict:
         if topic != ReservedTopic.END_RUN:
-            return super().send_aux_request(targets, topic, request, timeout, fl_ctx)
+            return super().send_aux_request(targets, topic, request, timeout, fl_ctx, optional)
         else:
             return {}
 

@@ -20,11 +20,11 @@
       "id": "svm_learner",
       "path": "svm_learner.SVMLearner",
       "args": {
-        "data_path": "/tmp/nvflare/sklearn/dataset/svm_dataset.csv",
-        "train_start": 0,
-        "train_end": 0,
+        "data_path": "/tmp/nvflare/dataset/sklearn_breast_cancer.csv",
+        "train_start": 114,
+        "train_end": 265,
         "valid_start": 0,
-        "valid_end": 0
+        "valid_end": 114
       }
     }
   ]

@@ -20,11 +20,11 @@
       "id": "kmeans_learner",
       "path": "kmeans_learner.KMeansLearner",
       "args": {
-        "data_path": "/tmp/nvflare/sklearn/dataset/kmeans_dataset.csv",
+        "data_path": "/tmp/nvflare/dataset/sklearn_iris.csv",
         "train_start": 0,
-        "train_end": 0,
+        "train_end": 50,
         "valid_start": 0,
-        "valid_end": 0,
+        "valid_end": 150,
         "random_state": 0
       }
     }

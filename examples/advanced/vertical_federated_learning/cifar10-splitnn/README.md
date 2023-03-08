@@ -10,26 +10,15 @@ Activations and corresponding gradients are being exchanged between the clients 
 For instructions of how to run CIFAR-10 in real-world deployment settings, 
 see the example on ["Real-world Federated Learning with CIFAR-10"](../cifar10-real-world/README.md).
 
-## (Optional) Set up a virtual environment
-```
-python3 -m pip install --user --upgrade pip
-python3 -m pip install --user virtualenv
-```
-(If needed) make all shell scripts executable using
-```
-find . -name ".sh" -exec chmod +x {} \;
-```
-initialize virtual environment.
-```
-source ./virtualenv/set_env.sh
-```
-install required packages for training
+## 1. Install requirements
+
+Install required packages for training
 ```
 pip install --upgrade pip
-pip install -r ./virtualenv/min-requirements.txt
+pip install -r ./requirements.txt
 ```
 
-## Start Jupyter notebook
+## 2. Start Jupyter notebook
 Set `PYTHONPATH` to include custom files of this example and some reused files from the [CIFAR-10](../cifar10) examples:
 ```
 export PYTHONPATH=${PWD}/src:${PWD}/../../../cifar10

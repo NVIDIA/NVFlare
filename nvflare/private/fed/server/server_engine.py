@@ -469,7 +469,9 @@ class ServerEngine(ServerEngineInternalSpec):
     def register_aux_message_handler(self, topic: str, message_handle_func):
         self.run_manager.aux_runner.register_aux_message_handler(topic, message_handle_func)
 
-    def send_aux_request(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
+    def send_aux_request(
+        self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext, optional=False
+    ) -> dict:
         try:
             if not targets:
                 # self.sync_clients_from_main_process()
@@ -478,7 +480,7 @@ class ServerEngine(ServerEngineInternalSpec):
                     targets.append(t.name)
             if targets:
                 return self.run_manager.aux_runner.send_aux_request(
-                    targets=targets, topic=topic, request=request, timeout=timeout, fl_ctx=fl_ctx
+                    targets=targets, topic=topic, request=request, timeout=timeout, fl_ctx=fl_ctx, optional=optional
                 )
             else:
                 return {}

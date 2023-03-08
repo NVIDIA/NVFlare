@@ -4,11 +4,16 @@ In this example, we will show how to generate federated statistics for data that
 
 ## setup NVFLARE
 follow the [Quick Start Guide](https://nvflare.readthedocs.io/en/main/quickstart.html) to setup virtual environment and install NVFLARE
-```
+
 install required packages.
+
 ```
 pip install --upgrade pip
-pip install -r ./requirements.txt
+
+cd NVFlare/examples/advanced/federated-statistics/
+
+pip install -r df_stats/requirements.txt
+```
 
 ## 1. Prepare data
 
@@ -17,16 +22,16 @@ The original dataset has already contains "training" and "test" datasets. Here w
 so we assigned the training data and test data into two clients.
  
 Now we use data utility to download UCI datasets to separate client package directory to /tmp/nvflare/data/ directory
-
-```
-python3 data_utils.py  --prepare-data
+```shell
+./prepare_data.sh
 ```
 it should showing something like
 ```
-wget download to /tmp/nvflare/data/site-1/data.csv
+prepare data for data directory /tmp/nvflare/df_stats/data
+
+wget download to /tmp/nvflare/df_stats/data/site-1/data.csv
 100% [..........................................................................] 3974305 / 3974305
-remove existing data at /tmp/nvflare/data/site-2/data.csv
-wget download to /tmp/nvflare/data/site-2/data.csv
+wget download to /tmp/nvflare/df_stats/data/site-2/data.csv
 100% [..........................................................................] 2003153 / 2003153
 done with prepare data
 
@@ -36,13 +41,15 @@ done with prepare data
 
 With FL simulator, we can just run the example with CLI command 
 
+
 ```
-nvflare simulator $NVFLARE_HOME/examples/federated_statistics/df_stats/df_stats_job -w /tmp/nvflare -n 2 -t 2
+cd NVFlare/examples/advanced/federated-statistics/
+nvflare simulator df_stats/jobs/df_stats -w /tmp/nvflare/df_stats -n 2 -t 2
 ```
 
 The results are stored in workspace "/tmp/nvflare"
 ```
-/tmp/nvflare/simulate_job/statistics/adults_stats.json
+/tmp/nvflare/df_stats/simulate_job/statistics/adults_stats.json
 ```
 
 ## 3. Visualization
@@ -53,9 +60,9 @@ The results are stored in workspace "/tmp/nvflare"
    assuming NVFLARE_HOME env variable point tp the github project location (NVFlare) which contains current example. 
 
 ```bash
-    cp /tmp/nvflare/simulate_job/statistics/adults_stats.json $NVFLARE_HOME/examples/federated_statistics/df_stats/demo/.
+    cp /tmp/nvflare/df_stats/simulate_job/advanced/statistics/adults_stats.json $NVFLARE_HOME/examples/advanced/federated-statistics/df_stats/demo/.
     
-    cd $NVFLARE_HOME/examples/federated_statistics/df_stats/demo
+    cd $NVFLARE_HOME/examples/advanced/federated-statistics/df_stats/demo
     
     jupyter notebook  visualization.ipynb
 ```
@@ -102,7 +109,7 @@ nvflare poc --start -p admin
 
 Inside the console, submit the job:
 ```
-submit_job federated_statistics/df_stats/df_stats_job
+submit_job advanced/federated-statistics/df_stats/jobs/df_stats
 ```
 
 ### 4.4 List the submitted job
@@ -116,7 +123,7 @@ Your output should be similar to the following.
 -------------------------------------------------------------------------------------------------==--------------------------------
 | JOB ID                               | NAME     | STATUS                       | SUBMIT TIME                                    |
 -----------------------------------------------------------------------------------------------------------------------------------
-| 10a92352-5459-47d2-8886-b85abf70ddd1 | df_stats_job | FINISHED:COMPLETED           | 2022-08-05T22:50:40.968771-07:00 | 0:00:29.4493|
+| 10a92352-5459-47d2-8886-b85abf70ddd1 | df_stats | FINISHED:COMPLETED           | 2022-08-05T22:50:40.968771-07:00 | 0:00:29.4493|
 -----------------------------------------------------------------------------------------------------------------------------------
 ```
 
@@ -233,7 +240,7 @@ In this example, task_result_filters is defined as task privacy filter : `Statis
   ],
 ``` 
 `StatisticsPrivacyFilter` is using three separate the `StatisticsPrivacyCleanser`, you can find more details in
-[local privacy policy](../local/README.md) and in later discussion on privacy.
+[local privacy policy](../local/privacy.json) and in later discussion on privacy.
 
 The privacy cleansers specify policy can be find in
 ```
@@ -312,8 +319,8 @@ so we need to provide local min/max calculation methods
 
 ## to run pytest in examples
 
-under df_stats directory
+under df_stats/jobs directory
 
 ```
-pytest df_stats_job/custom/
+pytest df_stats/custom/
 ```

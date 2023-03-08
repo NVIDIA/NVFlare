@@ -29,7 +29,6 @@ from nvflare.apis.impl.controller import Controller
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.apis.signal import Signal
-from tests.test_utils import skip_if_quick
 
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
@@ -1521,7 +1520,6 @@ def _get_order_with_task_assignment_timeout_test_cases():
     ]
 
 
-@skip_if_quick
 @pytest.mark.parametrize("method", ["relay", "relay_and_wait"])
 class TestRelayBehavior(TestController):
     @pytest.mark.parametrize("send_order", [SendOrder.ANY, SendOrder.SEQUENTIAL])

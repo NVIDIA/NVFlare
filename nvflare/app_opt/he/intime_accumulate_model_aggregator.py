@@ -64,7 +64,11 @@ class HEInTimeAccumulateWeightedAggregator(Aggregator):
             raise ValueError(f"expected algorithm {self.expected_algorithm} not supported")
         self.exclude_vars = re.compile(exclude_vars) if exclude_vars else None
         self.aggregation_weights = aggregation_weights or {}
-        self.reset_stats()
+        self.total = dict()
+        self.counts = dict()
+        self.contribution_count = 0
+        self.history = list()
+        self.merged_encrypted_layers = dict()  # thread-safety is handled by workflow
         self.weigh_by_local_iter = weigh_by_local_iter
         self.logger.info(f"client weights control: {self.aggregation_weights}")
         if not self.weigh_by_local_iter:
@@ -92,7 +96,7 @@ class HEInTimeAccumulateWeightedAggregator(Aggregator):
 
         Args:
             shareable: a shareable from client
-            fl_ctx: FL Contenxt associated with this shareable
+            fl_ctx: FL Context associated with this shareable
 
         Returns:
             bool to indicate if this shareable is accepted.
@@ -107,24 +111,24 @@ class HEInTimeAccumulateWeightedAggregator(Aggregator):
 
         enc_algo = dxo.get_meta_prop(key=MetaKey.PROCESSED_ALGORITHM, default=None)
         if enc_algo != self.expected_algorithm:
-            self.log_error(fl_ctx, "unsupported encryption algorithm {enc_algo}")
+            self.log_error(fl_ctx, f"unsupported encryption algorithm {enc_algo}")
             return False
 
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
         client_name = shareable.get_peer_prop(ReservedKey.IDENTITY_NAME, "?")
-        contribution_round = shareable.get_header(AppConstants.CONTRIBUTION_ROUND)
+        contribution_round = shareable.get_cookie(AppConstants.CONTRIBUTION_ROUND)
 
         rc = shareable.get_return_code()
         if rc and rc != ReturnCode.OK:
-            self.log_debug(fl_ctx, f"Client {client_name} returned rc: {rc}. Disregarding contribution.")
+            self.log_info(fl_ctx, f"Client {client_name} returned rc: {rc}. Disregarding contribution.")
             return False
 
         self.log_debug(fl_ctx, f"current_round: {current_round}")
 
         if contribution_round != current_round:
-            self.log_debug(
+            self.log_info(
                 fl_ctx,
-                "Discarded the contribution from {client_name} for round: {contribution_round}. Current round is: {current_round}",
+                f"Discarded the contribution from {client_name} for round: {contribution_round}. Current round is: {current_round}",
             )
             return False
 
@@ -146,7 +150,7 @@ class HEInTimeAccumulateWeightedAggregator(Aggregator):
             if self.warning_count.get(client_name, 0) <= self.warning_limit:
                 self.log_warning(
                     fl_ctx,
-                    f"NUM_STEPS_CURRENT_ROUND missing"
+                    "NUM_STEPS_CURRENT_ROUND missing"
                     f" from {client_name} and set to default value, 1.0. "
                     f" This kind of message will show {self.warning_limit} times at most.",
                 )
