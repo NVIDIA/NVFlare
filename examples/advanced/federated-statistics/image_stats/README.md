@@ -2,70 +2,64 @@
 
 Compute the local and global image statistics
 
+## setup NVFLARE
+follow the [Quick Start Guide](https://nvflare.readthedocs.io/en/main/quickstart.html) to setup virtual environment and install NVFLARE
 
-## (Optional) 0. Set up a virtual environment
-```
-python3 -m pip install --user --upgrade pip
-python3 -m pip install --user virtualenv
-```
-
-initialize virtual environment.
-```
-source ./virtualenv/set_env.sh
-```
 install required packages.
 ```
 pip install --upgrade pip
-pip install -r ./virtualenv/requirements.txt
+
+cd NVFlare/examples/advanced/federated-statistics/
+
+pip install -r image_stats/requirements.txt
 ```
 
 ## 1. Download the example data
 
 As an example, we use the dataset from the ["COVID-19 Radiography Database"](https://www.kaggle.com/tawsifurrahman/covid19-radiography-database).
 it contains png image files in four different classes: `COVID`, `Lung_Opacity`, `Normal`, and `Viral Pneumonia`.
-First, download and extract to `/tmp/nvflare/data/.`.
+First, download and extract to `/tmp/nvflare/image_stats/data/.`.
 
 Next, create the data lists simulating different clients with varying amounts and types of images. 
 The downloaded archive contains subfolders for four different classes: `COVID`, `Lung_Opacity`, `Normal`, and `Viral Pneumonia`.
 Here we assume each class of image corresponds to a different sites.
+
 ```
-python3 data/prepare_data.py --input_dir /tmp/nvflare/data
+cd NVFlare/examples/advanced/federated-statistics/image_stats
+./prepare_data.sh
 ```
 
 With this ratio setting, site-3 will have the largest number of images. You should see the following output
 ```
 Created 4 data lists for ['COVID', 'Lung_Opacity', 'Normal', 'Viral Pneumonia'].
-Saved 3616 entries at /tmp/nvflare/data/site-1_COVID.json
-Saved 6012 entries at /tmp/nvflare/data/site-2_Lung_Opacity.json
-Saved 10192 entries at /tmp/nvflare/data/site-3_Normal.json
-Saved 1345 entries at /tmp/nvflare/data/site-4_Viral Pneumonia.json
+Saved 3616 entries at /tmp/nvflare/image_stats/data/site-1_COVID.json
+Saved 6012 entries at /tmp/nvflare/image_stats/data/site-2_Lung_Opacity.json
+Saved 10192 entries at /tmp/nvflare/image_stats/data/site-3_Normal.json
+Saved 1345 entries at /tmp/nvflare/image_stats/data/site-4_Viral Pneumonia.json
 
 ```
-## 2. Run the Fed Statistics Job in Simulator 
+## 2. Run the Federated Statistics Job in Simulator 
 
 ## 2.1. Simulator CLI
 
-you can run the job in CLI command. Assuming NVFLARE_HOME env point to the location where your NVFlare project directory.
-
-This example job directory is at `$NVFLARE_HOME/examples/federated_statistics/image_stats/image_stats_job`
-we like to use `/tmp/nvflare` as workspace, the output goes to that directory
-since we have 4 clients, we will set `-n 4` with 4 threads `-t 4`
+you can run the job in CLI command, since we have 4 clients, we will set `-n 4` with 4 threads `-t 4`
 
 ```
-nvflare simulator $NVFLARE_HOME/examples/federated_statistics/image_stats/image_stats_job -w /tmp/nvflare -n 4 -t 4
+cd NVFlare/examples/federated-statistics
+nvflare simulator image_stats/jobs/image_stats -w /tmp/nvflare/image_stats -n 4 -t 4
 ```
 
 The results are stored in workspace "/tmp/nvflare"
 ```
-/tmp/nvflare/simulate_job/statistics/image_histogram.json
+/tmp/nvflare/image_stats/simulate_job/statistics/image_histogram.json
 ```
 
 ## 2.2 Visualization
 
 ```bash
-    cp /tmp/nvflare/simulate_job/statistics/image_histogram.json $NVFLARE_HOME/examples/federated_statistics/image_stats/demo/.
+    cp /tmp/nvflare/image_stats/simulate_job/statistics/image_histogram.json NVFlare/examples/advanced/federated-statistics/image_stats/demo/.
     
-    cd $NVFLARE_HOME/examples/federated_statistics/image_stats/demo
+    cd NVFlare/examples/advanced/federated-statistics/image_stats/demo
     
     jupyter notebook  visualization.ipynb
 ```
@@ -174,6 +168,7 @@ class ImageStatistics(Statistics):
             data_root: str = "/tmp/nvflare/data",
             data_list_key: str = "data"
     ):
+
 ```
 The local statistics generator implements `Statistics` spec.
 

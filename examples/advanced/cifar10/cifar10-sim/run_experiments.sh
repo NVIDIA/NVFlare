@@ -3,7 +3,7 @@
 export PYTHONPATH=${PWD}/..
 
 # download dataset
-python3 ../pt/utils/cifar10_download_data.py
+./prepare_data.sh
 
 # RESULT_ROOT=/tmp/nvflare/sim_cifar10 is set in run_simulator.sh
 

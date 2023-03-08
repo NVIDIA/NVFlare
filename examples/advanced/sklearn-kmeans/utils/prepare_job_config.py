@@ -24,7 +24,7 @@ import numpy as np
 
 from nvflare.apis.fl_constant import JobConstants
 
-JOB_CONFIGS_ROOT = "jobs"
+JOBS_ROOT = "jobs"
 
 
 class SplitMethod(Enum):
@@ -163,7 +163,7 @@ def _read_json(filename):
 
 def _write_json(data, filename):
     with open(filename, "w") as f:
-        json.dump(data, f, indent=4)
+        json.dump(data, f, indent=2)
 
 
 def _get_job_name(args) -> str:
@@ -195,7 +195,7 @@ def _update_client_config(config: dict, args, site_name: str, site_indices):
 
 
 def _update_server_config(config: dict, args):
-    config["workflows"][0]["args"]["min_clients"] = args.site_num
+    config["min_clients"] = args.site_num
 
 
 def _copy_custom_files(src_job_path, src_app_name, dst_job_path, dst_app_name):
@@ -246,10 +246,10 @@ def main():
     args = parser.parse_args()
     job_name = _get_job_name(args)
     src_name = args.task_name + "_base"
-    src_job_path = pathlib.Path(JOB_CONFIGS_ROOT) / src_name
+    src_job_path = pathlib.Path(JOBS_ROOT) / src_name
 
     # create a new job
-    dst_job_path = pathlib.Path(JOB_CONFIGS_ROOT) / job_name
+    dst_job_path = pathlib.Path(JOBS_ROOT) / job_name
     if not os.path.exists(dst_job_path):
         os.makedirs(dst_job_path)
 
