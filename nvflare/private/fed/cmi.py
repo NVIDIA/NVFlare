@@ -160,6 +160,7 @@ class JobCellMessenger(CellMessageInterface):
         timeout: float,
         fl_ctx: FLContext,
         bulk_send=False,
+        optional=False,
     ) -> dict:
         """Send request to the job cells of other target sites.
         Args:
@@ -170,6 +171,7 @@ class JobCellMessenger(CellMessageInterface):
             timeout (float): how long to wait for result. 0 means fire-and-forget
             fl_ctx (FLContext): the FL context
             bulk_send: whether to bulk send this request (only applies in the fire-and-forget situation)
+            optional: whether the request is optional
         Returns:
             A dict of Shareables
         """
@@ -216,7 +218,7 @@ class JobCellMessenger(CellMessageInterface):
         cell_msg = self.new_cmi_message(fl_ctx, payload=request)
         if timeout > 0:
             cell_replies = cell.broadcast_request(
-                channel=channel, topic=topic, request=cell_msg, targets=target_fqcns, timeout=timeout
+                channel=channel, topic=topic, request=cell_msg, targets=target_fqcns, timeout=timeout, optional=optional
             )
 
             replies = {}
@@ -240,9 +242,6 @@ class JobCellMessenger(CellMessageInterface):
                 cell.queue_message(channel=channel, topic=topic, message=cell_msg, targets=target_fqcns)
             else:
                 cell.fire_and_forget(
-                    channel=channel,
-                    topic=topic,
-                    message=cell_msg,
-                    targets=target_fqcns,
+                    channel=channel, topic=topic, message=cell_msg, targets=target_fqcns, optional=optional
                 )
             return {}

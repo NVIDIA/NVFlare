@@ -86,7 +86,13 @@ class ClientEngineExecutorSpec(ClientEngineSpec, EngineSpec, ABC):
 
     @abstractmethod
     def send_aux_request(
-        self, targets: Union[None, str, List[str]], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext
+        self,
+        targets: Union[None, str, List[str]],
+        topic: str,
+        request: Shareable,
+        timeout: float,
+        fl_ctx: FLContext,
+        optional=False,
     ) -> dict:
         """Send a request to Server via the aux channel.
 
@@ -98,6 +104,7 @@ class ClientEngineExecutorSpec(ClientEngineSpec, EngineSpec, ABC):
             request: request to be sent
             timeout: number of secs to wait for replies. 0 means fire-and-forget.
             fl_ctx: FL context
+            optional: whether the request is optional
 
         Returns:
             a dict of reply Shareable in the format of:
@@ -107,13 +114,16 @@ class ClientEngineExecutorSpec(ClientEngineSpec, EngineSpec, ABC):
         pass
 
     @abstractmethod
-    def fire_and_forget_aux_request(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
+    def fire_and_forget_aux_request(
+        self, topic: str, request: Shareable, fl_ctx: FLContext, optional=False
+    ) -> Shareable:
         """Send an async request to Server via the aux channel.
 
         Args:
             topic: topic of the request
             request: request to be sent
             fl_ctx: FL context
+            optional: whether the request is optional
 
         Returns:
 
@@ -128,6 +138,7 @@ class ClientEngineExecutorSpec(ClientEngineSpec, EngineSpec, ABC):
             config_dict: config dict
 
         """
+        pass
 
     @abstractmethod
     def abort_app(self, job_id: str, fl_ctx: FLContext):
