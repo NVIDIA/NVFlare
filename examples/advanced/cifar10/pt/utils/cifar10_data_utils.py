@@ -44,7 +44,7 @@ CIFAR10_ROOT = "/tmp/cifar10"  # will be used for all CIFAR-10 experiments
 
 
 def load_cifar10_data():
-    # download data
+    # load data
     train_dataset = datasets.CIFAR10(root=CIFAR10_ROOT, train=True, download=True)
 
     # only training label is needed for doing split
@@ -60,3 +60,11 @@ def get_site_class_summary(train_label, site_idx):
         tmp = {int(unq[i]): int(unq_cnt[i]) for i in range(len(unq))}
         class_sum[site] = tmp
     return class_sum
+
+
+def main():
+    load_cifar10_data()
+
+
+if __name__ == "__main__":
+    main()

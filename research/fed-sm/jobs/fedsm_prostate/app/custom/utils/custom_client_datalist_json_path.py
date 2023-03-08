@@ -13,20 +13,18 @@
 # limitations under the License.
 
 import os
-import unittest
-
-quick_test_var = "QUICKTEST"
 
 
-def test_is_quick():
-    return os.environ.get(quick_test_var, "").lower() == "true"
-
-
-def skip_if_quick(obj):
+def custom_client_datalist_json_path(datalist_json_path: str, client_id: str) -> str:
     """
-    Skip the unit tests if environment variable `quick_test_var=true`.
-    For example, the user can skip the relevant tests by setting ``export QUICKTEST=true``.
+    Customize datalist_json_path for each client
+    Args:
+         datalist_json_path: root path containing all jsons
+         client_id: e.g., site-2
     """
-    is_quick = test_is_quick()
-
-    return unittest.skipIf(is_quick, "Skipping slow tests")(obj)
+    # Customize datalist_json_path for each client
+    datalist_json_path_client = os.path.join(
+        datalist_json_path,
+        client_id + ".json",
+    )
+    return datalist_json_path_client

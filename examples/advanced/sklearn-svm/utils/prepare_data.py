@@ -30,7 +30,6 @@ def sklearn_dataset_args_parser():
 
 
 def load_data(dataset_name: str = "iris"):
-    dataset = None
     if dataset_name == "iris":
         dataset = datasets.load_iris()
     elif dataset_name == "cancer":
@@ -70,7 +69,7 @@ def download_data(
     # Save to csv file
     filename = filename if filename else f"{dataset_name}.csv"
     if file_format == "csv":
-        file_path = f"{output_dir}/{filename}"
+        file_path = os.path.join(output_dir, filename)
 
         df.to_csv(file_path, sep=",", index=False, header=False)
     else:
@@ -78,8 +77,12 @@ def download_data(
 
 
 def main():
-    parser = sklearn_dataset_args_parser()
+    parser = argparse.ArgumentParser(description="Load sklearn data and save to csv")
+    parser.add_argument("--dataset_name", type=str, choices=["iris", "cancer"], help="Dataset name")
+    parser.add_argument("--randomize", type=int, help="Whether to randomize data sequence")
+    parser.add_argument("--out_path", type=str, help="Path to output data file")
     args = parser.parse_args()
+
     output_dir = os.path.dirname(args.out_path)
     filename = os.path.basename(args.out_path)
     download_data(output_dir, args.dataset_name, args.randomize, filename)

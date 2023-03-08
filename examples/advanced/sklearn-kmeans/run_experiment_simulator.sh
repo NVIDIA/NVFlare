@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
+
 task_name="sklearn_kmeans"
-n=3
-for study in uniform
+
+for site_num in 3;
 do
-    nvflare simulator job_configs/${task_name}_${n}_${study} -w ${PWD}/workspaces/${task_name}_${n}_${study} -n ${n} -t ${n}
+    for split_mode in uniform;
+    do
+        nvflare simulator jobs/${task_name}_${site_num}_${split_mode} \
+            -w "${PWD}"/workspaces/${task_name}_${site_num}_${split_mode} \
+            -n ${site_num} \
+            -t ${site_num}
+    done
 done
