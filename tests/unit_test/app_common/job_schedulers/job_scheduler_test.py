@@ -106,7 +106,7 @@ class MockServerEngine(ServerEngineSpec):
     def register_aux_message_handler(self, topic: str, message_handle_func):
         pass
 
-    def send_aux_request(self, targets: [], topic: str, request, timeout: float, fl_ctx: FLContext) -> dict:
+    def send_aux_request(self, targets: [], topic: str, request, timeout: float, fl_ctx: FLContext, optional=False) -> dict:
         pass
 
     def get_widget(self, widget_id: str):
