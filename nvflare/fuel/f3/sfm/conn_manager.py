@@ -38,6 +38,7 @@ FRAME_THREAD_POOL_SIZE = 100
 CONN_THREAD_POOL_SIZE = 16
 INIT_WAIT = 1
 MAX_WAIT = 60
+SILENT_RECONNECT_TIME = 5
 SELF_ADDR = "0.0.0.0:0"
 
 log = logging.getLogger(__name__)
@@ -259,8 +260,11 @@ class ConnManager(ConnMonitor):
             try:
                 starter(connector)
             except Exception as ex:
-                log.error(f"Connector {connector} failed with exception {type(ex).__name__}: {ex}")
-                log.debug(traceback.format_exc())
+                fail_msg = f"Connector {connector} failed with exception {type(ex).__name__}: {ex}"
+                if wait < SILENT_RECONNECT_TIME:
+                    log.debug(fail_msg)
+                else:
+                    log.error(fail_msg)
 
             if connector.stopping:
                 log.debug(f"Connector {connector} has stopped")
@@ -272,7 +276,13 @@ class ConnManager(ConnMonitor):
                 log.debug(f"Driver for {connector} had a long run ({run_time} sec), resetting wait")
                 wait = INIT_WAIT
 
-            log.info(f"Retrying {connector} in {wait} seconds")
+            reconnect_msg = f"Retrying {connector} in {wait} seconds"
+            # First few retries may happen in normal shutdown, show it as debug
+            if wait < SILENT_RECONNECT_TIME:
+                log.debug(reconnect_msg)
+            else:
+                log.info(reconnect_msg)
+
             time.sleep(wait)
             # Exponential backoff
             wait *= 2
