@@ -41,6 +41,7 @@ class MessageHeaderKey:
     ORIGINAL_HEADERS = CELLNET_PREFIX + "original_headers"
     SEND_TIME = CELLNET_PREFIX + "send_time"
     RETURN_REASON = CELLNET_PREFIX + "return_reason"
+    OPTIONAL = CELLNET_PREFIX + "optional"
 
 
 class ReturnReason:

@@ -161,10 +161,11 @@ class Session(SessionSpec):
             raise SessionClosed("the session is closed on server")
         elif status in [APIStatus.ERROR_PROTOCOL, APIStatus.ERROR_SYNTAX]:
             raise InternalError(f"protocol error: {status}")
-        elif status in [APIStatus.ERROR_INVALID_CLIENT, APIStatus.ERROR_SERVER_CONNECTION]:
+        elif status in [APIStatus.ERROR_SERVER_CONNECTION]:
             raise ConnectionError(f"cannot connect to server: {status}")
         elif status != APIStatus.SUCCESS:
-            raise RuntimeError(f"runtime error encountered: {status}")
+            details = result.get(ResultKey.DETAILS, "")
+            raise RuntimeError(f"runtime error encountered: {status}: {details}")
 
         meta = result.get(ResultKey.META, None)
         if not meta:
@@ -250,7 +251,7 @@ class Session(SessionSpec):
         Args:
             job_id: ID of the job
 
-        Returns: a dict of job meta data
+        Returns: a dict of job metadata
 
         """
         self._validate_job_id(job_id)

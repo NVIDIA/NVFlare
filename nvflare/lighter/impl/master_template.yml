@@ -1524,12 +1524,11 @@ adm_notebook: |
       "import os\n",
       "from nvflare.fuel.flare_api.flare_api import new_secure_session\n",
       "\n",
-      "username = \"admin@nvidia.com\"  # change this to your own username\n",
-      "admin_user_dir = os.path.join(os.getcwd(), username)\n",
+      "username = \"{~~admin_name~~}\"  # change this to your own username\n",
       "\n",
       "sess = new_secure_session(\n",
       "    username=username,\n",
-      "    startup_kit_location=admin_user_dir\n",
+      "    startup_kit_location=os.getcwd()\n",
       ")\n",
       "print(sess.get_system_info())"
     ]

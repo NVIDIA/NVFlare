@@ -2,7 +2,7 @@
 
 This example includes instructions on how to run [split learning](https://arxiv.org/abs/1810.06060) (SL) using the CIFAR-10 dataset and the FL simulator.
 
-We assume one client holds the images, and the other clients holds the labels to compute losses and accuracy metrics. 
+We assume one client holds the images, and the other client holds the labels to compute losses and accuracy metrics. 
 Activations and corresponding gradients are being exchanged between the clients through the NVFlare server.
 
 <img src="./figs/split_learning.svg" alt="Split learning setup" width="300"/>
