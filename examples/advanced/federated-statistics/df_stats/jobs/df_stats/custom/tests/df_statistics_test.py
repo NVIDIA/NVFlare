@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import pandas as pd
-from examples.federated_statistics.df_stats.df_stats_job.custom.df_statistics import DFStatistics
+from df_stats.custom.df_statistics import DFStatistics
 
 from nvflare.apis.fl_context import FLContext
 
@@ -22,7 +22,7 @@ class TestDFStatistics:
         # mock the load_data with fake data
         self.local_stats_gen = DFStatistics(data_path="data.csv")
         self.local_stats_gen.load_data = self.load_data
-        self.local_stats_gen.initialize(parts={}, fl_ctx=None)
+        self.local_stats_gen.initialize(fl_ctx=None)
 
     def teardown_method(self) -> None:
         pass
