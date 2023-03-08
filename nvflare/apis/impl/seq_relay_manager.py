@@ -183,16 +183,17 @@ class SequentialRelayTaskManager(TaskManager):
         """
         # are we waiting for any client?
         win_start_idx, win_end_idx = self._determine_window(task)
-        last_send_idx = task.props[_KEY_LAST_SEND_IDX]
-        last_client_task = None
-        if last_send_idx >= 0:
-            # see whether the result has been received
-            last_client_task = task.last_client_task_map[task.targets[last_send_idx]]
 
         self.logger.debug("check_task_exit: win_start_idx={}, win_end_idx={}".format(win_start_idx, win_end_idx))
         if win_start_idx < 0 and win_end_idx == 0:
-            if last_client_task and last_client_task.result_received_time is not None:
-                return True, TaskCompletionStatus.OK
+            last_send_idx = task.props[_KEY_LAST_SEND_IDX]
+            last_send_target = task.targets[last_send_idx]
+
+            if last_send_idx >= 0 and last_send_target in task.last_client_task_map:
+                # see whether the result has been received
+                last_client_task = task.last_client_task_map[last_send_target]
+                if last_client_task.result_received_time is not None:
+                    return True, TaskCompletionStatus.OK
             return True, TaskCompletionStatus.TIMEOUT
         else:
             return False, TaskCompletionStatus.IGNORED
