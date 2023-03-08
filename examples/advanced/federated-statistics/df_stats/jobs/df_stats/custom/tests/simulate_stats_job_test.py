@@ -14,6 +14,7 @@
 import os
 import shutil
 import tempfile
+# from nvflare import SimulatorRunner
 
 
 class TestSimulateFedStatsJob:
@@ -26,10 +27,11 @@ class TestSimulateFedStatsJob:
         shutil.rmtree(self.workspace)
 
     def test_fed_stats_job_simulate_setup(self):
-        # todo: temp disable the unit tests
-        # as it doesn't return back to terminal after the tests passes.
-        # Still trying to figure out why
-
+        # todo: temporary disable the unit tests
+        # runner.server.close() did not call cell.stop()
+        # as result, there active threads at end of run
+        # Wait for that to be fixed
+        #
         # runner = SimulatorRunner(
         #     job_folder=self.stats_job_folder, workspace=self.workspace, clients="site-1, site-2", threads=2
         # )
@@ -39,7 +41,4 @@ class TestSimulateFedStatsJob:
         # for client in runner.client_names:
         #     client_names.append(client.strip())
         # assert sorted(client_names) == sorted(expected_clients)
-        #
-        pass
-
-
+        # runner.server.close()

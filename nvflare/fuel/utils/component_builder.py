@@ -11,8 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import logging
-import traceback
+
 from abc import abstractmethod
 
 from nvflare.fuel.common.excepts import ConfigError
@@ -20,8 +19,6 @@ from nvflare.fuel.utils.class_utils import instantiate_class
 
 
 class ComponentBuilder:
-    logger = logging.getLogger(__name__)
-
     @abstractmethod
     def get_module_scanner(self):
         """Provide the package module scanner.
@@ -49,7 +46,6 @@ class ComponentBuilder:
                     t = self.build_component(v)
                     class_args[k] = t
                 except BaseException:
-                    ComponentBuilder.logger.error(traceback.format_exc())
                     pass
         class_path = self.get_class_path(config_dict)
 

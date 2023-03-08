@@ -60,7 +60,7 @@ The detailed example instructions can be found [Data frame statistics](df_stats/
 The second example provided is image histogram example. Different from **Tabular** data example, 
 
 The image examples show the followings
-* The [image_statistics.py](image_stats/image_stats_job/custom/image_statistics.py) only needs 
+* The [image_statistics.py](image_stats/jobs/image_stats/custom/image_statistics.py) only needs 
 to calculate the count and histogram target statistics, then user only needs to provide the calculation count, failure_count and histogram functions. There is no need to implement other metrics functions
  (sum, mean,std_dev etc.) ( get_failure_count by default return 0 )
 * For each site's dataset, there are several thousands of images, the local histogram is aggregate histogram of all the image histograms.  
@@ -78,7 +78,7 @@ Here some of the image histogram ( the underline image files have only 1 channel
 
 ### Monai Stats with Spleen CT Image example
 
-This example [Spleen CT Image Statistics](../../integration/monai/examples/spleen_ct_segmentation/) demonstrated 
+This example [Spleen CT Image Statistics](../../../integration/monai/examples/spleen_ct_segmentation/) demonstrated 
 few more details in Federated statistics.
 
 * instead of locally calculate the histogram on each image, this example shows how to get the local statistics from monai

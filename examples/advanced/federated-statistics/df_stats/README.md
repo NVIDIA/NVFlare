@@ -4,11 +4,16 @@ In this example, we will show how to generate federated statistics for data that
 
 ## setup NVFLARE
 follow the [Quick Start Guide](https://nvflare.readthedocs.io/en/main/quickstart.html) to setup virtual environment and install NVFLARE
-```
+
 install required packages.
+
 ```
 pip install --upgrade pip
-pip install -r ./requirements.txt
+
+cd NVFlare/examples/advanced/federated-statistics/
+
+pip install -r df_stats/requirements.txt
+```
 
 ## 1. Prepare data
 
@@ -22,7 +27,7 @@ Now we use data utility to download UCI datasets to separate client package dire
 ```
 it should showing something like
 ```
-repare data for data directory /tmp/nvflare/df_stats/data
+prepare data for data directory /tmp/nvflare/df_stats/data
 
 wget download to /tmp/nvflare/df_stats/data/site-1/data.csv
 100% [..........................................................................] 3974305 / 3974305
@@ -38,7 +43,8 @@ With FL simulator, we can just run the example with CLI command
 
 
 ```
-nvflare simulator $NVFLARE_HOME/examples/advanced/federated-statistics/df_stats/jobs/df_stats -w /tmp/nvflare/df_stats -n 2 -t 2
+cd NVFlare/examples/advanced/federated-statistics/
+nvflare simulator df_stats/jobs/df_stats -w /tmp/nvflare/df_stats -n 2 -t 2
 ```
 
 The results are stored in workspace "/tmp/nvflare"

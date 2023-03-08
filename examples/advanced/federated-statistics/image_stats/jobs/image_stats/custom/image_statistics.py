@@ -25,7 +25,7 @@ from nvflare.app_common.abstract.statistics_spec import Bin, DataType, Feature, 
 
 
 class ImageStatistics(Statistics):
-    def __init__(self, data_root: str = "/tmp/nvflare/data", data_list_key: str = "data"):
+    def __init__(self, data_root: str = "/tmp/nvflare/image_stats/data", data_list_key: str = "data"):
         """local image statistics generator .
 
         Args:
@@ -61,6 +61,7 @@ class ImageStatistics(Statistics):
             return False
         dataset_json = dataset_json[0]
         self.log_info(fl_ctx, f"Reading data from {dataset_json}")
+        print(f"Reading data from {dataset_json}")
         data_list = load_decathlon_datalist(
             data_list_file_path=dataset_json, data_list_key=self.data_list_key, base_dir=self.data_root
         )
@@ -70,10 +71,10 @@ class ImageStatistics(Statistics):
         return True
 
     def pre_run(
-        self,
-        statistics: List[str],
-        num_of_bins: Optional[Dict[str, Optional[int]]],
-        bin_ranges: Optional[Dict[str, Optional[List[float]]]],
+            self,
+            statistics: List[str],
+            num_of_bins: Optional[Dict[str, Optional[int]]],
+            bin_ranges: Optional[Dict[str, Optional[List[float]]]],
     ):
         pass
 
@@ -89,7 +90,8 @@ class ImageStatistics(Statistics):
         return self.failure_images
 
     def histogram(
-        self, dataset_name: str, feature_name: str, num_of_bins: int, global_min_value: float, global_max_value: float
+            self, dataset_name: str, feature_name: str, num_of_bins: int, global_min_value: float,
+            global_max_value: float
     ) -> Histogram:
         histogram_bins: List[Bin] = []
         histogram = np.zeros((num_of_bins,), dtype=np.int64)

@@ -35,7 +35,7 @@
       "id": "local_hist_generator",
       "path": "image_statistics.ImageStatistics",
       "args": {
-        "data_root": "/tmp/nvflare/data"
+        "data_root": "/tmp/nvflare/image_stats/data"
       }
     },
     {
