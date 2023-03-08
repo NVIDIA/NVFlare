@@ -64,9 +64,7 @@ Please add the correct paths below, and run:
 ```
 python3 ./result_stat/prostate_2d_test_only.py --models_dir "${workspace_path}/fedsm_prostate/simulate_job/app_server/" --dataset_base_dir ${dataset_path} --datalist_json_path "${datalist_json_path}"
 ```
-The test Dice with FedSM model is 0.7274, while using global model only (setting `--select_threshold 1`), the test Dice is 0.7178.
-FedSM personalized models can achieve better accuracy than global model, and the selector model is able to distinct among sites.  
-
+The test Dice with FedSM model is 0.7274, while using the global model only (setting --select_threshold 1), the test Dice is 0.7178. FedSM personalized models can achieve better accuracy than the global model, and the selector model can distinguish data from different sites.
 ## Citation
 
 > Xu, An, et al. "Closing the generalization gap of cross-silo federated medical image segmentation." Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. 2022.
