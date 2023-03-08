@@ -20,7 +20,7 @@ import seaborn as sns
 import tensorflow as tf
 
 # simulator workspace
-client_results_root = "/tmp/nvflare/fedsm_prostate/"
+client_results_root = "../workspaces/fedsm_prostate/"
 client_pre = "app_client_"
 
 # 3 sites
@@ -94,7 +94,10 @@ def main():
         ax = plt.subplot(1, int(num_metric), i)
         ax.set_title(metric)
         sns.lineplot(x="Epoch", y="Metric", hue="Site", data=data)
-        # ax.set_xlim([0, 1000])
+        if metric == "selector_model":
+            plt.ylabel("Accuracy (%)")
+        else:
+            plt.ylabel("Dice")
         i = i + 1
     plt.subplots_adjust(hspace=0.3)
     plt.show()

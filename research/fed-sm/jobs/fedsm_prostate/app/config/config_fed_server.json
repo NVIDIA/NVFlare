@@ -86,7 +86,7 @@
         "persistor_id": "persistor",
         "shareable_generator_id": "shareable_generator",
         "train_task_name": "train",
-        "train_timeout": 0
+        "train_timeout": 600
       }
     }
   ]

@@ -6,3 +6,6 @@ tensorboard
 monai
 tqdm
 nibabel
+tensorflow
+seaborn
+matplotlib

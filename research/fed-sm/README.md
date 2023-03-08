@@ -11,6 +11,8 @@ which is a PyTorch-based, open-source framework for deep learning in healthcare 
 This example illustrates the personalized federated learning algorithm [FedSM](https://arxiv.org/abs/2203.10144) accepted to [CVPR2022](https://cvpr2022.thecvf.com/). 
 It bridges the different data distributions across clients via a SoftPull mechanism and utilizes a Super Model. 
 
+Please note that the training of the selector model shown in this example is to predict the specific client from an input image. Hence, it is an extreme case of label imbalance: each local training only have access to one of the labels. In order to train the model successfully, the moments of Adam optimizer need to be averaged and synced together with model updates. This label imbalance across clients also lead to significant fluctuation of the validation curve (as shown below) before converging to high accuracy for all clients.   
+
 ## Multi-source Prostate Segmentation
 This example uses 2D (axial slices) segmentation of the prostate in T2-weighted MRIs based on multiple datasets.
 
@@ -54,8 +56,6 @@ python3 ./result_stat/plot_tensorboard_events.py
 The TensorBoard curves (smoothed with weight 0.8) for validation Dice for the 100 epochs (100 rounds, 1 local epoch per round) during training are shown below:
 ![All training curve](./figs/all_training.png)
 
-As shown, FedSM personalized models can achieve better validation accuracy than global model, and the selector model is able to distinct among sites  
-
 ### Testing score
 The testing score is computed based on the Super Model for FedSM.
 We provide a script for performing validation on testing data split. 
@@ -65,6 +65,7 @@ Please add the correct paths below, and run:
 python3 ./result_stat/prostate_2d_test_only.py --models_dir "${workspace_path}/fedsm_prostate/simulate_job/app_server/" --dataset_base_dir ${dataset_path} --datalist_json_path "${datalist_json_path}"
 ```
 The test Dice with FedSM model is 0.7274, while using global model only (setting `--select_threshold 1`), the test Dice is 0.7178.
+FedSM personalized models can achieve better accuracy than global model, and the selector model is able to distinct among sites.  
 
 ## Citation
 
