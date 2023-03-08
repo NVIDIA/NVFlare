@@ -5,23 +5,16 @@ Glossary
 ########
 Below is a list of terms and concepts in NVIDIA FLARE and their definitions.
 
-Admin API
-=========
-
-Admin Console (Admin Client)
-============================
-The :ref:`Admin Console <operating_nvflare>` is used to orchestrate the FL study, including starting and stopping the server
-and clients and checking their status, deploying applications, and managing FL experiments.
-
 Aggregator
 ==========
 The :ref:`aggregator` defines the algorithm used on the server to aggregate the data passed back to the server in the
 clients' Shareable object.
 
-Application
-===========
+Application (app)
+=================
 An :ref:`Application <application>` is a named directory structure that defines the client and server configuration
-and any custom code required to implement the Controller/Worker workflow.
+and any custom code required to implement the Controller/Worker workflow. Since 2.1.0, :ref:`jobs <job>` have been
+introduced to manage the deployment of apps in an experiment.
 
 Controller
 ==========
@@ -46,6 +39,23 @@ Filter
 :ref:`Filters <filters>` are used to define transformations of the data in the Shareable object when transferred between server
 and client and vice versa.  Filters can be applied when the data is sent or received by either the client or server.
 
+FLAdminAPI
+==========
+:class:`FLAdminAPI<nvflare.fuel.hci.client.fl_admin_api.FLAdminAPI>` is a wrapper for admin commands that can be issued
+by an admin client to the FL server. You can use a provisioned admin client's certs and keys to initialize an instance
+of FLAdminAPI to programmatically submit commands to the FL server. :ref:`flare_api` is a redesigned version of this introduced
+in version 2.3.0.
+
+FLARE API
+=========
+:ref:`flare_api` is a redesigned version of FLAdminAPI intended to provide a better user experience for
+issuing admin commands to the FL server.
+
+FLARE Console (previously referred to as Admin Console or Admin Client)
+=======================================================================
+The :ref:`FLARE Console <operating_nvflare>` is used to orchestrate the FL study, including starting and stopping the server
+and clients and checking their status, deploying applications, and managing FL experiments.
+
 FLComponent
 ===========
 Most component types are subclasses of :ref:`FLComponent <fl_component>`. You can create your own subclass of
@@ -64,6 +74,11 @@ HA
 :ref:`high_availability` is a feature implemented in NVIDIA FLARE 2.1.0 around FL server failover introducing an Overseer
 to coordinate multiple FL servers.
 
+Job
+===
+:ref:`Jobs <job>` contain all of the apps and the information of which app(s) to deploy to which clients or server, the resource requirements
+for the experiment, and everything about the experiment.
+
 Learnable
 =========
 Learnable is the result of the Federated Learning application maintained by the server.  In DL workflows, the
@@ -71,6 +86,18 @@ Learnable is the aspect of the DL model to be learned.  For example, the model w
 feature, not the model geometry.  Depending on the purpose of your study, the Learnable may be any component of interest.
 Learnable is an abstract object that is aggregated from the client's Shareable object and is not DL-specific.  It
 can be any model, or object.  The Learnable is managed in the Controller workflow.
+
+Learner
+=======
+:class:`Learner <nvflare.app_common.abstract.learner_spec.Learner>` is a class that focuses just on the training specific tasks, that 
+can be used for building a component to use with :class:`LearnerExecutor <nvflare.app_common.executors.learner_executor.LearnerExecutor>`.
+This way, the communication constructs, error code handling, etc. that are specific to NVFLARE are handled in LearnerExecutor while 
+the training and validation logic can be focused in Learner.
+
+LearnerExecutor
+===============
+:class:`LearnerExecutor <nvflare.app_common.executors.learner_executor.LearnerExecutor>` is a special type of Executor that abstracts the
+execution flow and delegates the actual training work to the :class:`Learner <nvflare.app_common.abstract.learner_spec.Learner>`.
 
 ModelLocator
 ============
@@ -86,6 +113,11 @@ Overseer
 ========
 The overseer is a subsystem that monitors the FL servers in :ref:`HA mode <high_availability>` and tells clients which FL
 server to connect to. This is only applicable in HA mode.
+
+Persistor
+=========
+A component for saving the state of something. :class:`LearnablePersistor<nvflare.app_common.abstract.learnable_persistor.LearnablePersistor>`
+is a method implemented for the FL server to save the state of the Learnable object, for example writing a global model to disk.
 
 POC mode
 ========
@@ -114,6 +146,15 @@ Shareable from the client to server carries the result of the task execution.  W
 training, the task data typically contains model weights for the client to train on; and the task result contains
 updated model weights from the client.  The concept of Shareable is very general - it can be whatever that makes
 sense for the task.
+
+ShareableGenerator
+==================
+.. currentmodule:: nvflare.app_common.abstract.shareable_generator.ShareableGenerator
+
+:class:`ShareableGenerator <nvflare.app_common.abstract.shareable_generator.ShareableGenerator>` is a
+component that converts between Shareable objects and model objects. The ShareableGenerator implements two methods,
+:meth:`learnable_to_shareable` converts a Learnable object to a form of data to be shared to FL clients, and
+:meth:`shareable_to_learnable` uses the Shareable data (or aggregated Shareable data) from the FL clients to update the Learnable object.
 
 Startup kit
 ===========

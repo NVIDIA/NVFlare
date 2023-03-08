@@ -84,7 +84,7 @@ The Trainer is augmented to process this task and return the current model weigh
 The following are the relevant code snippets:
 
 
-.. code:: python
+.. code-block:: python
 
     class Cifar10Trainer(Executor):
     
@@ -94,7 +94,7 @@ The following are the relevant code snippets:
                 exclude_vars=None,
                 pre_train_task_name=AppConstants.TASK_GET_WEIGHTS):
 
-.. code:: python
+.. code-block:: python
 
     def _get_model_weights(self) -> Shareable:
         # Get state dict and send as weights
@@ -107,7 +107,7 @@ The following are the relevant code snippets:
         return outgoing_dxo.to_shareable()
 
 
-.. code:: python
+.. code-block:: python
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         try:
@@ -147,13 +147,13 @@ component.
 Example: Run hello-pt with ResponseProcessor for Global Model Initialization
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-.. code:: shell
+.. code-block:: shell
 
     # Setup pip virtual environment
     python3 -m pip install --user --upgrade pip
     python3 -m pip install --user virtualenv
 
-.. code:: shell
+.. code-block:: shell
 
     # Clone repo
     git clone https://github.com/NVIDIA/NVFlare.git nvflare_model_init
@@ -161,7 +161,7 @@ Example: Run hello-pt with ResponseProcessor for Global Model Initialization
     git checkout 2.0.18_model_init
     export NVFLARE_HOME=${PWD} 
 
-.. code:: shell
+.. code-block:: shell
 
     # setup virtual environment
     export projectname='nvflare_model_init'
@@ -169,7 +169,7 @@ Example: Run hello-pt with ResponseProcessor for Global Model Initialization
     source ${projectname}/bin/activate
 
 
-.. code:: shell
+.. code-block:: shell
 
     # install requirements
     pip install -r requirements-min.txt
@@ -179,7 +179,7 @@ Example: Run hello-pt with ResponseProcessor for Global Model Initialization
     pip install --upgrade protobuf==3.20.0
 
 
-.. code:: shell
+.. code-block:: shell
 
     # Create nvflare POC workspace (2 clients). Type "y" when prompted.
     cd ${NVFLARE_HOME}/nvflare
@@ -190,13 +190,13 @@ Example: Run hello-pt with ResponseProcessor for Global Model Initialization
     python3 -m nvflare.lighter.poc -n 2
 
 
-.. code:: shell
+.. code-block:: shell
 
     # link example folder to admin's transfer folder
     ln -s ${NVFLARE_HOME}/examples poc/admin/transfer
 
 
-.. code:: shell
+.. code-block:: shell
 
     # Start server and clients
     ./poc/server/startup/start.sh
@@ -204,13 +204,13 @@ Example: Run hello-pt with ResponseProcessor for Global Model Initialization
     ./poc/site-2/startup/start.sh
 
 
-.. code:: shell
+.. code-block:: shell
 
     # Start admin console (User name & password are "admin")
     ./poc/admin/startup/fl_admin.sh
 
 
-.. code:: shell
+.. code-block:: shell
 
     # Run the app by typing these commands into the admin console
     set_run_number 1
@@ -218,7 +218,7 @@ Example: Run hello-pt with ResponseProcessor for Global Model Initialization
     deploy_app hello-pt all
     start_app all
 
-.. code:: shell
+.. code-block:: shell
 
     # Shut down the server/clients
     # To shut down the clients and server, run the following Admin command (confirm using the user name "admin"):

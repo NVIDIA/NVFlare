@@ -14,8 +14,9 @@ NVIDIA FLARE has several examples to help you get started with federated learnin
    examples/hello_cross_val
    examples/hello_pt
    examples/hello_tf2
+   examples/tensorboard_streaming
    examples/federated_statistics
-   Federated XGBoost (GitHub) <https://github.com/NVIDIA/NVFlare/blob/main/examples/xgboost>
+   examples/xgboost
    Hello Cyclic Weight Transfer (GitHub) <https://github.com/NVIDIA/NVFlare/blob/main/examples/hello-cyclic>
    Federated Learning with CIFAR-10 (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/cifar10>
    Hello MONAI Bundle (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-monai-bundle>
@@ -40,7 +41,7 @@ The following quickstart guides walk you through some of these examples:
   2. **FL algorithms**
 
     * `Federated Learning with CIFAR-10 (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/cifar10>`_ - Includes examples of using FedAvg, FedProx, FedOpt, SCAFFOLD, homomorphic encryption, and streaming of TensorBoard metrics to the server during training
-    * `Federated XGBoost (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/xgboost>`_ - Includes examples of histogram-based and tree-based algorithms. Tree-based algorithms also includes bagging and cyclic approaches
+    * :ref:`Federated XGBoost <federated_xgboost>` - Includes examples of histogram-based and tree-based algorithms. Tree-based algorithms also includes bagging and cyclic approaches
 
   3. **Medical Image Analysis**
 

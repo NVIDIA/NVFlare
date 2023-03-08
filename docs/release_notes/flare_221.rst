@@ -17,7 +17,7 @@ Essentially, to address this type of issue, you need to do the following steps:
 
 The following examples are directly copied from `Flare Object Serializer (FOBS) <https://github.com/NVIDIA/NVFlare/blob/dev/nvflare/fuel/utils/fobs/README.rst>`_.
 
-.. code:: python
+.. code-block:: python
 
     from nvflare.fuel.utils import fobs
 
@@ -43,7 +43,7 @@ The following examples are directly copied from `Flare Object Serializer (FOBS) 
 
 Register the data type in FOBS before the data type is used, then you can register the newly created FOBDecomposer
 
-.. code:: python
+.. code-block:: python
 
     fobs.register(SimpleDecomposer)
 
@@ -57,13 +57,13 @@ Use FOBS to serialize data before you use sharable
 A custom object cannot be put in shareable directly, it must be serialized using FOBS first.
 Assuming custom_data contains custom type, this is how data can be stored in shareable:
 
-.. code:: python
+.. code-block:: python
 
     shareable[CUSTOM_DATA] = fobs.dumps(custom_data)
 
 On the receiving end:
 
-.. code:: python
+.. code-block:: python
 
     custom_data = fobs.loads(shareable[CUSTOM_DATA])
 
@@ -87,7 +87,7 @@ change the default policies.
 
 The default configurations are provided in each site's local directory:
 
-.. code::
+.. code-block::
 
     local
     ├── authorization.json.default

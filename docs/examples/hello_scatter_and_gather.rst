@@ -165,3 +165,10 @@ You now have a decent grasp of the main FL concepts, and are ready to start expl
 The full application for this exercise can be found in
 `examples/hello-numpy-sag <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-numpy-sag>`_,
 with the client and server components implemented in the `nvflare/app-common/np <https://github.com/NVIDIA/NVFlare/tree/main/nvflare/app_common/np>`_ folder of the NVFlare code tree.
+
+Previous Versions of Hello Scatter and Gather
+---------------------------------------------
+
+   - `hello-numpy-sag for 2.0 <https://github.com/NVIDIA/NVFlare/tree/2.0/examples/hello-numpy-sag>`_
+   - `hello-numpy-sag for 2.1 <https://github.com/NVIDIA/NVFlare/tree/2.1/examples/hello-numpy-sag>`_
+   - `hello-numpy-sag for 2.2 <https://github.com/NVIDIA/NVFlare/tree/2.2/examples/hello-numpy-sag>`_

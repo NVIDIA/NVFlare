@@ -110,7 +110,7 @@ Let's also implement a local training loop in a method called ``local_train``:
 
 .. literalinclude:: ../../examples/hello-world/hello-pt/jobs/hello-pt/app/custom/cifar10trainer.py
    :language: python
-   :pyobject: Cifar10Trainer.local_train
+   :pyobject: Cifar10Trainer._local_train
 
 
 .. note::
@@ -233,3 +233,10 @@ You've successfully built and run your first federated learning system.
 
 The full source code for this exercise can be found in
 `examples/hello-pt <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-pt/>`_.
+
+Previous Versions of Hello PyTorch
+----------------------------------
+
+   - `hello-pt for 2.0 <https://github.com/NVIDIA/NVFlare/tree/2.0/examples/hello-pt>`_
+   - `hello-pt for 2.1 <https://github.com/NVIDIA/NVFlare/tree/2.1/examples/hello-pt>`_
+   - `hello-pt for 2.2 <https://github.com/NVIDIA/NVFlare/tree/2.2/examples/hello-pt>`_

@@ -29,6 +29,8 @@ Automatic Server Failover
 The most important feature of HA is automatic cutover to a standby server when the current hot or active server is out of
 service, without human intervention. The Overseer and Overseer Agents help support this automatic SP cutover.
 
+.. _overseer:
+
 Overseer
 ========
 The Overseer provides the authoritative endpoint info of the hot FL server. All other system entities (FL servers, FL
@@ -92,38 +94,38 @@ The Overseer client is responsible for handling Overseer responses (or the lack 
 
 FL Client
 ---------
-No response from Overseer (connection error, etc.)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FL Client: No response from Overseer (connection error, etc.)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 If I already have a hot SP, I'll continue using it. I'll keep retrying to communicate with the Overseer to obtain a response.
 
-No hot SP available
-^^^^^^^^^^^^^^^^^^^
+FL Client: No hot SP available
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 If I already have a hot SP, I'll continue using it. I'll keep retrying to communicate with the Overseer to obtain a
 different response.
 
-Hot SP has not changed
-^^^^^^^^^^^^^^^^^^^^^^
+FL Client: Hot SP has not changed
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 I'll continue to use the current hot FL Server.
 
-Hot SP has changed
-^^^^^^^^^^^^^^^^^^
+FL Client: Hot SP has changed
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 I'll suspend current jobs and abort current running tasks (if any), and try to login to the new hot FL server. After that,
 I will resume current jobs, if any. If I run into any communication issues with the new server, I will keep retrying
 until success or the hot server endpoint changes again.
 
 FL Server
 ---------
-No response from Overseer (connection error, etc.)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FL Server: No response from Overseer (connection error, etc.)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 I'll stay in my current mode (hot or cold). I'll keep retrying to communicate with the Overseer to obtain a response.
 
-No hot SP available
-^^^^^^^^^^^^^^^^^^^
+FL Server: No hot SP available
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 I'll stay in my current mode (hot or cold). I'll keep retrying to communicate with the Overseer to obtain a
 different response.
 
-Hot SP is available
-^^^^^^^^^^^^^^^^^^^
+FL Server: Hot SP is available
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 If I'm currently cold, and the hot SP is not me, then I stay cold.
 
 If I'm currently hot, and the hot SP is me, then I stay hot.
@@ -138,21 +140,21 @@ tell them I am not in service. This is a transition state to the cold state.
 
 Admin Client
 ------------
-No response from Overseer (connection error, etc.)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Admin Client: No response from Overseer (connection error, etc.)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 If I already have a hot SP, I'll keep using it. I'll keep retrying to communicate with the Overseer to obtain a response.
 
-No hot SP available
-^^^^^^^^^^^^^^^^^^^
+Admin Client: No hot SP available
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 If I already have a hot SP, I'll keep using it. I'll keep retrying to communicate with the Overseer to obtain a
 different response.
 
-Hot SP has not changed
-^^^^^^^^^^^^^^^^^^^^^^
+Admin Client: Hot SP has not changed
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 I'll continue to use the current hot FL server.
 
-Hot SP has changed
-^^^^^^^^^^^^^^^^^^
+Admin Client: Hot SP has changed
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 I'll try to login to the new hot FL server. After that, I will issue commands to the new hot server. If I run
 into any communication issues with the new server, I will keep retrying until success or the hot server
 endpoint changes again.
