@@ -2,6 +2,7 @@
   "format_version": 2,
 
   "TRAIN_SPLIT_ROOT": "/tmp/cifar10_splits",
+  "AGGREGATION_EPOCHS": 4,
 
   "executors": [
     {
@@ -29,7 +30,7 @@
       "path": "pt.learners.cifar10_learner.CIFAR10Learner",
       "args": {
         "train_idx_root": "{TRAIN_SPLIT_ROOT}",
-        "aggregation_epochs": 4,
+        "aggregation_epochs": "{AGGREGATION_EPOCHS}",
         "lr": 1e-2,
         "fedproxloss_mu": 1e-5
       }

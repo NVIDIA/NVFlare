@@ -38,7 +38,7 @@ global center.
 ## Data preparation 
 This example uses the Iris dataset available from Scikit-learn's dataset API.  
 ```commandline
-bash data_prepare.sh
+bash prepare_data.sh
 ```
 This will load the data, format it properly by removing the header, order 
 the label and feature columns, randomize the dataset, and save it to a CSV file with comma separation. 
@@ -76,7 +76,7 @@ bash prepare_job_config.sh
 ```
 In this example, we experiment with 3 clients under a uniform data split. 
 
-Below is a sample config for site-1, saved to `./job_configs/sklearn_kmeans_3_uniform/app_site-1/config/config_fed_client.json`:
+Below is a sample config for site-1, saved to `./jobs/sklearn_kmeans_3_uniform/app_site-1/config/config_fed_client.json`:
 ```json
 {
     "format_version": 2,

@@ -19,6 +19,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from typing import List
 
 import yaml
 
@@ -29,6 +30,11 @@ from nvflare.fuel.hci.client.fl_admin_api_constants import FLDetailKey
 from nvflare.fuel.hci.client.fl_admin_api_spec import TargetType
 
 from .constants import DEFAULT_RESOURCE_CONFIG, FILE_STORAGE, PROVISION_SCRIPT, RESOURCE_CONFIG
+from .example import Example
+
+OUTPUT_YAML_DIR = os.path.join("data", "test_configs", "generated")
+PROJECT_YAML = os.path.join("data", "projects", "ha_1_servers_2_clients.yml")
+POSTFIX = "_copy"
 
 
 def read_yaml(yaml_file_path):
@@ -169,6 +175,22 @@ def get_job_meta(admin_api: FLAdminAPI, job_id: str) -> dict:
     return response.get("meta", {}).get("job_meta", {})
 
 
+def check_client_status_ready(response: dict) -> bool:
+    if response["status"] != APIStatus.SUCCESS:
+        return False
+
+    if "details" not in response:
+        return False
+
+    data = response.get("raw", {}).get("data", [])
+    if data:
+        for d in data:
+            if d.get("type") == "error":
+                return False
+
+    return True
+
+
 def check_job_done(job_id: str, admin_api: FLAdminAPI):
     response = admin_api.check_status(target_type=TargetType.SERVER)
     if response and "status" in response:
@@ -186,11 +208,8 @@ def check_job_done(job_id: str, admin_api: FLAdminAPI):
                     and response["details"][FLDetailKey.SERVER_ENGINE_STATUS] == "stopped"
                 ):
                     response = admin_api.check_status(target_type=TargetType.CLIENT)
-                    if response["status"] != APIStatus.SUCCESS:
+                    if not check_client_status_ready(response):
                         print(f"Check client status failed: {response}")
-                        return False
-                    if "details" not in response:
-                        print(f"Check client status missing details: {response}.")
                         return False
                     else:
                         job_meta = get_job_meta(admin_api, job_id=job_id)
@@ -245,7 +264,8 @@ def run_admin_api_tests(admin_api: FLAdminAPI):
 def _replace_meta_json(meta_json_path: str):
     with open(meta_json_path, "r+") as f:
         job_meta = json.load(f)
-        job_meta.pop("resource_spec")
+        if "resource_spec" in job_meta:
+            job_meta.pop("resource_spec")
         job_meta["min_clients"] = 2
         f.seek(0)
         json.dump(job_meta, f, indent=4)
@@ -267,6 +287,7 @@ def _replace_config_fed_client(client_json_path: str):
     with open(client_json_path, "r+") as f:
         config_fed_client = json.load(f)
         config_fed_client["TRAIN_SPLIT_ROOT"] = "/tmp/nvflare/test_data"
+        config_fed_client["AGGREGATION_EPOCHS"] = 1
         f.seek(0)
         json.dump(config_fed_client, f, indent=4)
         f.truncate()
@@ -287,3 +308,50 @@ def simplify_job(job_folder_path: str, postfix: str = "_copy"):
             elif file == "config_fed_client.json":
                 # set TRAIN_SPLIT_ROOT in config_fed_client.json
                 _replace_config_fed_client(client_json_path=os.path.join(root, file))
+
+
+def generate_test_config_yaml_for_example(example: Example) -> List[str]:
+
+    output_yamls = []
+    os.makedirs(OUTPUT_YAML_DIR, exist_ok=True)
+    for job in os.listdir(example.jobs_root_dir):
+        output_yaml = os.path.join(OUTPUT_YAML_DIR, f"{example.name}_{job}.yml")
+        job_dir = os.path.join(example.jobs_root_dir, job)
+
+        setup = [
+            f"pip install -r {os.path.join(example.root, example.requirements_file)}",
+            f"python convert_to_test_job.py --job {job_dir} --post {POSTFIX}",
+        ]
+        if example.prepare_data_script is not None:
+            setup.insert(0, f"bash {example.prepare_data_script}")
+
+        config = {
+            "ha": True,
+            "jobs_root_dir": example.jobs_root_dir,
+            "cleanup": True,
+            "project_yaml": PROJECT_YAML,
+            "additional_python_paths": example.additional_python_paths,
+            "tests": [
+                {
+                    "test_name": f"Test a simplified copy of job {job} for example {example.name}.",
+                    "event_sequence": [
+                        {
+                            "trigger": {"type": "server_log", "data": "Server started"},
+                            "actions": [f"submit_job {job}{POSTFIX}"],
+                            "result": {"type": "run_state", "data": {}},
+                        },
+                        {
+                            "trigger": {"type": "run_state", "data": {"run_finished": True}},
+                            "actions": ["ensure_current_job_done"],
+                            "result": {"type": "run_state", "data": {"run_finished": True}},
+                        },
+                    ],
+                    "setup": setup,
+                    "teardown": [f"rm -rf {job_dir}{POSTFIX}"],
+                }
+            ],
+        }
+        with open(output_yaml, "w") as yaml_file:
+            yaml.dump(config, yaml_file, default_flow_style=False)
+        output_yamls.append(output_yaml)
+    return output_yamls

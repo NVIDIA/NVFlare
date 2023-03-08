@@ -22,9 +22,9 @@ tests:
           "type": "run_state"
           "data": { "run_finished": True }
     validators:
-      - path: tests.integration_test.validators.GlobalModelEvalValidator
+      - path: tests.integration_test.src.validators.GlobalModelEvalValidator
         args: { server_model_names: ["server"] }
-      - path: tests.integration_test.validators.NumpySAGResultValidator
+      - path: tests.integration_test.src.validators.NumpySAGResultValidator
         args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
   - test_name: "run cross_val_one_client"
     event_sequence:
@@ -43,9 +43,9 @@ tests:
           "type": "run_state"
           "data": { "run_finished": True }
     validators:
-      - path: tests.integration_test.validators.CrossValSingleClientResultValidator
+      - path: tests.integration_test.src.validators.CrossValSingleClientResultValidator
         args: { server_model_names: ["server"] }
-      - path: tests.integration_test.validators.NumpySAGResultValidator
+      - path: tests.integration_test.src.validators.NumpySAGResultValidator
         args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
   - test_name: "run cross_val"
     event_sequence:
@@ -64,9 +64,9 @@ tests:
           "type": "run_state"
           "data": { "run_finished": True }
     validators:
-      - path: tests.integration_test.validators.CrossValResultValidator
+      - path: tests.integration_test.src.validators.CrossValResultValidator
         args: { server_model_names: ["server"] }
-      - path: tests.integration_test.validators.NumpySAGResultValidator
+      - path: tests.integration_test.src.validators.NumpySAGResultValidator
         args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
   - test_name: "run np_sag"
     event_sequence:
@@ -85,7 +85,7 @@ tests:
           "type": "run_state"
           "data": { "run_finished": True }
     validators:
-      - path: tests.integration_test.validators.NumpySAGResultValidator
+      - path: tests.integration_test.src.validators.NumpySAGResultValidator
         args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
   - test_name: "run np_sag_weights_diff"
     event_sequence:
@@ -104,7 +104,7 @@ tests:
           "type": "run_state"
           "data": { "run_finished": True }
     validators:
-      - path: tests.integration_test.validators.NumpySAGResultValidator
+      - path: tests.integration_test.src.validators.NumpySAGResultValidator
         args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
   - test_name: "run filters"
     event_sequence:
@@ -123,4 +123,4 @@ tests:
           "type": "run_state"
           "data": { "run_finished": True }
     validators:
-      - path: tests.integration_test.validators.NumpyModelValidator
+      - path: tests.integration_test.src.validators.NumpyModelValidator

@@ -16,7 +16,7 @@
 #
 
 # Argument(s):
-#   BUILD_TYPE:   numpy | tensorflow | pytorch | overseer | ha | auth, tests to execute
+#   BUILD_TYPE:  numpy | tensorflow | pytorch | overseer | ha | auth | preflight | cifar | auto, tests to execute
 
 set -ex
 BUILD_TYPE=pytorch
@@ -76,6 +76,7 @@ integration_test() {
     testFolder="tests/integration_test"
     clean_up_snapshot_and_job
     pushd ${testFolder}
+    pipenv run ./generate_test_configs_for_examples.sh
     pipenv run ./run_integration_tests.sh -m "$1" -d
     popd
     clean_up_snapshot_and_job
@@ -84,6 +85,11 @@ integration_test() {
 }
 
 case $BUILD_TYPE in
+
+    numpy)
+        echo "Run numpy tests..."
+        integration_test "numpy"
+        ;;
 
     tensorflow)
         echo "Run TF tests..."
@@ -100,9 +106,9 @@ case $BUILD_TYPE in
         integration_test "ha"
         ;;
 
-    numpy)
-        echo "Run numpy tests..."
-        integration_test "numpy"
+    auth)
+        echo "Run auth tests..."
+        integration_test "auth"
         ;;
 
     overseer)
@@ -110,14 +116,19 @@ case $BUILD_TYPE in
         integration_test "overseer"
         ;;
 
-    auth)
-        echo "Run auth tests..."
-        integration_test "auth"
-        ;;
-
     preflight)
         echo "Run preflight-check tests..."
         integration_test "preflight"
+        ;;
+
+    cifar)
+        echo "Run cifar tests..."
+        integration_test "cifar"
+        ;;
+
+    auto)
+        echo "Run auto generated tests..."
+        integration_test "auto"
         ;;
 
     *)
