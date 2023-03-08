@@ -17,7 +17,6 @@ import logging
 
 from nvflare.apis.fl_constant import FLContextKey, ServerCommandKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import ReservedHeaderKey
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.fuel.f3.cellnet.cell import Cell, MessageHeaderKey, ReturnCode, make_reply
 from nvflare.fuel.f3.message import Message as CellMessage
