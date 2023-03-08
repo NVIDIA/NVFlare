@@ -7,7 +7,7 @@ The provided examples cover different aspects of [NVIDIA FLARE](https://nvflare.
 > **_NOTE:_** To run examples, please follow the instructions for [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) and any additional steps specified in the example readmes.
 
 ## 0. Quickstart
-To get started with these examples, please follow the [Quickstart](https://nvflare.readthedocs.io/en/main/quickstart.html) in the NVIDIA FLARE Documentation.  This walks you through installation, creating a POC workspace, and deploying your first NVIDIA FLARE Application.  The following examples will detail any additional requirements in their READMEs.
+To get started with these examples, please follow the [Quickstart](https://nvflare.readthedocs.io/en/main/quickstart.html) in the NVIDIA FLARE Documentation.  This walks you through installation, creating a POC workspace, and deploying your first NVIDIA FLARE Application.  The following examples will detail any additional requirements in their `requirements.txt`.
 ## (Optional) Set up a virtual environment
 ```
 python3 -m pip install --user --upgrade pip
