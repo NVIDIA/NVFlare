@@ -1,5 +1,5 @@
 #!/bin/bash
 
-DATASET_PATH="/tmp/cifar10"
+script_dir="$( dirname -- "$0"; )";
 
-python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='${DATASET_PATH}', download=True)"
+python "${script_dir}"/../pt/utils/cifar10_data_utils.py

@@ -116,17 +116,17 @@ class HEInTimeAccumulateWeightedAggregator(Aggregator):
 
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
         client_name = shareable.get_peer_prop(ReservedKey.IDENTITY_NAME, "?")
-        contribution_round = shareable.get_header(AppConstants.CONTRIBUTION_ROUND)
+        contribution_round = shareable.get_cookie(AppConstants.CONTRIBUTION_ROUND)
 
         rc = shareable.get_return_code()
         if rc and rc != ReturnCode.OK:
-            self.log_debug(fl_ctx, f"Client {client_name} returned rc: {rc}. Disregarding contribution.")
+            self.log_info(fl_ctx, f"Client {client_name} returned rc: {rc}. Disregarding contribution.")
             return False
 
         self.log_debug(fl_ctx, f"current_round: {current_round}")
 
         if contribution_round != current_round:
-            self.log_debug(
+            self.log_info(
                 fl_ctx,
                 f"Discarded the contribution from {client_name} for round: {contribution_round}. Current round is: {current_round}",
             )
