@@ -340,17 +340,17 @@ class ProcessExecutor(ClientExecutor):
                         data = {}
                         fqcn = FQCN.join([self.client.client_name, job_id])
                         request = new_cell_message({}, fobs.dumps(data))
-                        return_data = self.client.cell.fire_and_forget(
+                        self.client.cell.fire_and_forget(
                             targets=fqcn,
                             channel=CellChannel.CLIENT_COMMAND,
                             topic=AdminCommandNames.ABORT,
                             message=request,
+                            optional=True,
                         )
-                        self.logger.debug("abort sent")
-
-                        if child_process:
-                            threading.Thread(target=self._terminate_process, args=[child_process, job_id]).start()
-                        self.run_processes.pop(job_id)
+                        self.logger.debug("abort sent to worker")
+                        t = threading.Thread(target=self._terminate_process, args=[child_process, job_id])
+                        t.start()
+                        t.join()
                         break
                     except Exception as e:
                         if retry == 0:
@@ -367,14 +367,31 @@ class ProcessExecutor(ClientExecutor):
         self.logger.info("Client worker process is terminated.")
 
     def _terminate_process(self, child_process, job_id):
-        # wait for client to handle abort
-        time.sleep(10.0)
+        max_wait = 10.0
+        done = False
+        start = time.time()
+        while True:
+            process = self.run_processes.get(job_id)
+            if not process:
+                # already finished gracefully
+                done = True
+                break
+
+            if time.time() - start > max_wait:
+                # waited enough
+                break
+
+            time.sleep(0.05)  # we want to quickly check
+
         # kill the sub-process group directly
-        try:
-            os.killpg(os.getpgid(child_process.pid), 9)
-            self.logger.debug("kill signal sent")
-        except Exception:
-            pass
+        if not done:
+            self.logger.debug(f"still not done after {max_wait} secs")
+            try:
+                os.killpg(os.getpgid(child_process.pid), 9)
+                self.logger.debug("kill signal sent")
+            except:
+                pass
+
         child_process.terminate()
         self.logger.info(f"run ({job_id}): child worker process terminated")
 
@@ -411,10 +428,8 @@ class ProcessExecutor(ClientExecutor):
             resource_manager.free_resources(
                 resources=allocated_resource, token=token, fl_ctx=client.engine.new_context()
             )
-
-        with self.lock:
-            if job_id in self.run_processes.keys():
-                self.run_processes.pop(job_id)
+        self.run_processes.pop(job_id, None)
+        self.logger.debug(f"run ({job_id}): child worker resources freed.")
 
     def get_status(self, job_id):
         with self.lock:
