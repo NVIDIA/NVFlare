@@ -18,6 +18,7 @@ import threading
 import time
 
 from nvflare.fuel.f3.drivers.aio_context import AioContext
+from nvflare.security.logging import secure_format_exception
 
 
 class MainProcessMonitor:
@@ -68,7 +69,7 @@ class MainProcessMonitor:
         try:
             return cb(*args, **kwargs)
         except Exception as ex:
-            cls.logger().error(f"exception from CB {cb.__name__}: {type(ex)}")
+            cls.logger().error(f"exception from CB {cb.__name__}: {type(secure_format_exception(ex))}")
 
     @classmethod
     def _start_shutdown(cls, shutdown_grace_time, cleanup_grace_time):
@@ -99,7 +100,7 @@ class MainProcessMonitor:
                 cls._call_cb(_cb)
                 logger.debug(f"{cls.name}: finished cleanup CB {cb_name}")
             except Exception as ex:
-                logger.warning(f"{cls.name}: exception {ex} from cleanup CB {cb_name}")
+                logger.warning(f"{cls.name}: exception {secure_format_exception(ex)} from cleanup CB {cb_name}")
 
     @classmethod
     def _do_cleanup(cls, waiter: threading.Event):
@@ -155,11 +156,11 @@ class MainProcessMonitor:
                 logger.warning(f"#### {cls.name}: still running thread {thread.name}")
                 num_active_threads += 1
 
-        logger.debug(f"{cls.name}: Good Bye!")
+        logger.info(f"{cls.name}: Good Bye!")
         if num_active_threads > 0:
             try:
                 os.kill(os.getpid(), signal.SIGKILL)
             except Exception as ex:
-                logger.debug(f"Failed to kill process {os.getpid()}: {ex}")
+                logger.debug(f"Failed to kill process {os.getpid()}: {secure_format_exception(ex)}")
 
         return rc

@@ -328,7 +328,7 @@ def gen_user(key, id):
     cert_pair = make_cert(entity, signing_cert_pair)
 
     config = json.loads(template["fed_admin"])
-    replacement_dict = {"cn": server_name, "admin_port": "8003", "docker_image": ""}
+    replacement_dict = {"admin_name": entity.name, "cn": server_name, "admin_port": "8003", "docker_image": ""}
 
     if project.ha_mode:
         overseer_agent = {"path": "nvflare.ha.overseer_agent.HttpOverseerAgent"}
@@ -374,7 +374,7 @@ def gen_user(key, id):
         )
         _write(
             os.path.join(user_dir, "system_info.ipynb"),
-            template["adm_notebook"],
+            utils.sh_replace(template["adm_notebook"], replacement_dict),
             "t",
         )
         run_args = ["zip", "-rq", "-P", key, "tmp.zip", "."]
