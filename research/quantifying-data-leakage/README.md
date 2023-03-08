@@ -19,33 +19,18 @@ Special Issue on Federated Learning.
 
 ## Setup
 
-#### (Optional) Set up a virtual environment
-```
-python3 -m pip install --user --upgrade pip
-python3 -m pip install --user virtualenv
-```
-(If needed) make all shell scripts executable using
-```
-find . -name ".sh" -exec chmod +x {} \;
-```
-initialize virtual environment.
-```
-source ./virtualenv/set_env.sh
-```
-
-#### Install requirements
-install required packages for training
+Install required packages for training
 ```
 pip install --upgrade pip
-pip install -r ./virtualenv/requirements.txt
+pip install -r ./requirements.txt
 ```
 
-#### Download the inversion code
+Download the inversion code
 ```
 git clone https://github.com/NVlabs/DeepInversion.git
 ```
 
-#### Config the Python environment
+Config the Python environment
 Set `PYTHONPATH` to include custom files of this example:
 ```
 export PYTHONPATH="${PWD}/src:${PWD}/DeepInversion/FLGradientInversion"
@@ -78,13 +63,13 @@ Furthermore, we need to modify the gradient inversion config file to use
 the downloaded prior image (part of DeepInversion package).
 
 This can be done by using the provided template configure files in 
-[./job_configs/app_template](./job_configs/app_template).
+[./jobs/app_template](jobs/app_template).
 ```
-python3 -m nvflare_gradinv.utils.create_job_config --app_folder ./job_configs/app_template \
+python3 -m nvflare_gradinv.utils.create_job_config --app_folder ./jobs/app_template \
 --n_clients 1 --num_rounds 3 \
 --data_root=${DATA_ROOT} --dataset_json=${PWD}/data/data_200val+rest_client \
 --prior_file=${PWD}/DeepInversion/FLGradientInversion/prior/prior_1.jpg \
---output ./job_configs/cxr_1client
+--output ./jobs/cxr_1client
 ```
 
 #### cxr_9clients
@@ -112,12 +97,12 @@ Nr. Testing: 1382
 We can modify to client and gradient inversion config files to use the 
 downloaded data, above dataset, and prior image using
 ```
-python3 -m nvflare_gradinv.utils.create_job_config --app_folder ./job_configs/app_template \
+python3 -m nvflare_gradinv.utils.create_job_config --app_folder ./jobs/app_template \
 --n_clients 9 --num_rounds 100 \
 --invert_clients 1,5,9 --batch_sizes 4,4,4,4,8,8,8,8,1 \
 --data_root=${DATA_ROOT} --dataset_json=${PWD}/data/data_200val+rest_client \
 --prior_file=${PWD}/DeepInversion/FLGradientInversion/prior/prior_1.jpg \
---output ./job_configs/cxr_9clients
+--output ./jobs/cxr_9clients
 ```
 
 
@@ -126,7 +111,7 @@ python3 -m nvflare_gradinv.utils.create_job_config --app_folder ./job_configs/ap
 To run the "quick" FL experiment, inverting one client, execute
 ```
 N_CLIENTS=1
-JOB=./job_configs/cxr_1client
+JOB=./jobs/cxr_1client
 EXP_NAME=exp1
 ./start_fl_sim.sh ${N_CLIENTS} ${JOB} ${EXP_NAME} 
 ```
@@ -134,7 +119,7 @@ EXP_NAME=exp1
 To run the full FL experiment, inverting 3 out of 9 clients, execute
 ```
 N_CLIENTS=9
-JOB=./job_configs/cxr_9clients
+JOB=./jobs/cxr_9clients
 EXP_NAME=exp1
 ./start_fl_sim.sh ${N_CLIENTS} ${JOB} ${EXP_NAME}
 ```

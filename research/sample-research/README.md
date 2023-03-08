@@ -27,6 +27,21 @@ Provide an overview of the current state, how things are currently done and what
 ## Description
 Every design and implementation has some assumptions behind it, either about the state of the world and what will be needed. State the main ones clearly here and evaluate the associated risks with that assumption being false.
 
+## Setup
 
-## Required NVFLARE version
-pip3 install nvflare==2.2.1 
+Install required packages for training
+```
+pip install --upgrade pip
+pip install -r ./requirements.txt
+```
+Add any other requirements, e.g., setting the `PYTHONPATH`.
+
+## Steps to run the code 
+
+Data download and preparation (if applicable).
+
+## Expected Results
+Description of the expected results, and optional figures/tables.
+
+## Requirements
+Each research project should contain a `requirements.txt` file containing all dependencies, including the required NVFLARE version.
