@@ -20,7 +20,7 @@ with the username of the admin user and the path to the admin startup kit direct
 
 Initialization the FLAdminAPI:
 
-.. code:: python
+.. code-block:: python
 
     api_instance = FLAdminAPI(
         ca_cert="/workspace/example_project/prod_00/super@nvidia.com/startup/rootCA.pem",
@@ -34,7 +34,7 @@ Initialization the FLAdminAPI:
 
 Initializing the FLAdminAPIRunner, which initializes FLAdminAPI with the values in fed_admin.json of the startup kit in the provided admin_dir:
 
-.. code:: python
+.. code-block:: python
 
     runner = FLAdminAPIRunner(  
         username="super@nvidia.com",
@@ -46,7 +46,7 @@ with :func:`new_secure_session<nvflare.fuel.flare_api.flare_api.new_secure_sessi
 the username and the path to the root admin directory containing the startup folder with the admin client's
 certs and keys:
 
-.. code:: python
+.. code-block:: python
 
     from nvflare.fuel.flare_api.flare_api import new_secure_session
 
@@ -109,13 +109,13 @@ Get System Info from Check Status
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 Getting the system information before with the FLAdminAPI was primarily done through the ``check_status()`` command:
 
-.. code:: python
+.. code-block:: python
 
     from nvflare.fuel.hci.client.fl_admin_api_spec import TargetType
 
     api_command_wrapper(runner.api.check_status(TargetType.SERVER))
 
-.. code:: bash
+.. code-block:: bash
 
     {'status': <APIStatus.SUCCESS: 'SUCCESS'>,
     'details': {<FLDetailKey.SERVER_ENGINE_STATUS: 'server_engine_status'>: 'stopped',
@@ -156,14 +156,14 @@ With the FLARE API, the new command ``get_system_info()`` returns a SystemInfo o
 (server status and start time), client_info (each connected client and the last connect time for that client), and job_info
 (the list of current jobs with the job_id and app_name).
 
-.. code:: python
+.. code-block:: python
 
     sess.get_system_info()
 
 Calling print on the :class:`SystemInfo<nvflare.fuel.flare_api.api_spec.SystemInfo>` object will give a result like the following,
 or you can access the server_info, client_info, and job_info variables to access the data within.
 
-.. code:: bash
+.. code-block:: bash
 
     SystemInfo
     server_info: status: stopped, start_time: Thu Jan 26 15:12:01 2023
@@ -180,12 +180,12 @@ Submit Job
 The ``submit_job()`` command for the FLAdminAPI and FLARE API are very similar. The necessary argument is the same for both, the
 path to the job to submit as a string. For ``submit_job()`` with FLAdminAPI:
 
-.. code:: python
+.. code-block:: python
 
     path_to_example_job = "/workspace/NVFlare/examples/hello-numpy-sag"
     runner.api.submit_job(path_to_example_job)
 
-.. code:: bash
+.. code-block:: bash
 
     {'status': <APIStatus.SUCCESS: 'SUCCESS'>,
     'details': {'message': 'Submitted job: 5d0eaa30-6936-4044-918e-cd9c3f5edf9b',
@@ -203,13 +203,13 @@ path to the job to submit as a string. For ``submit_job()`` with FLAdminAPI:
 With the FLARE API, ``submit_job()`` returns the job_id of the job if it is successfully submitted so you can save that
 value to use later.
 
-.. code:: python
+.. code-block:: python
 
     path_to_example_job = "/workspace/NVFlare/examples/hello-numpy-sag"
     job_id = sess.submit_job(path_to_example_job)
     print(job_id + " was submitted")
 
-.. code:: bash
+.. code-block:: bash
 
     5d0eaa30-6936-4044-918e-cd9c3f5edf9b was submitted
 
@@ -219,12 +219,12 @@ List Jobs
 The ``list_jobs()`` command for FLAdminAPI took an optional argument of a string for the options, and with the FLARE API, the options are
 set as boolean values. For ``list_jobs()`` with FLAdminAPI:
 
-.. code:: python
+.. code-block:: python
 
     runner.api.list_jobs()
     # runner.api.list_jobs("-a -d")
 
-.. code:: bash
+.. code-block:: bash
 
     {'status': <APIStatus.SUCCESS: 'SUCCESS'>,
     'details': [['JOB ID', 'NAME', 'STATUS', 'SUBMIT TIME', 'RUN DURATION'],
@@ -254,14 +254,14 @@ set as boolean values. For ``list_jobs()`` with FLAdminAPI:
 
 With the FLARE API, ``list_job()``:
 
-.. code:: python
+.. code-block:: python
 
     list_jobs_output = sess.list_jobs()
     print(list_jobs_output)
     # list_jobs_output_detailed_all = sess.list_jobs(detailed=True, all=True)
     # print(list_jobs_output_detailed_all)
 
-.. code:: bash
+.. code-block:: bash
 
     [{'job_id': '9382ff9e-eb7e-4e0d-9a8e-78c82747b5ac', 'job_name': 'hello-numpy-sag', 'status': 'RUNNING', 'submit_time': '2023-01-26T15:56:30.188836-05:00', 'duration': '0:00:32.686275'}]
 
@@ -271,25 +271,25 @@ Monitor Job from Wait Until
 In the FLAdminAPI, there were ``wait_until_server_status()`` and ``wait_until_client_status()`` that you could use to
 monitor the status of the training:
 
-.. code:: python
+.. code-block:: python
 
     runner.api.wait_until_server_status()
 
 By default, the ``wait_until`` functions for FLAdminAPI waited until the server engine status was stopped or the clients no longer had
 any active jobs before returning a status of "SUCCESS".
 
-.. code:: bash
+.. code-block:: bash
 
     {'status': <APIStatus.SUCCESS: 'SUCCESS'>}
 
 With the FLARE API, ``monitor_job()`` provides a similar function but takes a required argument of a job_id to continuously retrieve the
 job meta information for the job status until that job is done.
 
-.. code:: python
+.. code-block:: python
 
     sess.monitor_job(job_id)
 
-.. code:: bash
+.. code-block:: bash
 
     <MonitorReturnCode.JOB_FINISHED: 0>
 
@@ -305,11 +305,11 @@ The ``download_job()`` command for FLAdminAPI has been renamed to ``download_job
 and this remains the same for the FLARE API. The behavior of the command remains the same, with the output being simplified just to the path
 to the downloaded job. With FLAdminAPI:
 
-.. code:: python
+.. code-block:: python
 
     runner.api.download_job(job_id)
 
-.. code:: bash
+.. code-block:: bash
 
     {'status': <APIStatus.SUCCESS: 'SUCCESS'>,
     'details': {'message': 'Download to dir /workspace/workspace/hello-example/prod_00/admin@nvidia.com/transfer'},
@@ -321,11 +321,11 @@ to the downloaded job. With FLAdminAPI:
 
 With the FLARE API, ``download_job_result()``:
 
-.. code:: python
+.. code-block:: python
 
     sess.download_job_result(job_id)
 
-.. code:: bash
+.. code-block:: bash
 
     '/workspace/workspace/hello-example/prod_00/admin@nvidia.com/transfer/5d0eaa30-6936-4044-918e-cd9c3f5edf9b'
 
@@ -335,11 +335,11 @@ Clone Job
 The usage for the ``clone_job()`` command is the same for FLAdminAPI and the FLARE API with just the job_id as a string as the required argument.
 The behavior of the command remains the same, with the output being simplified just to the job_id of the newly cloned job. With FLAdminAPI:
 
-.. code:: python
+.. code-block:: python
 
     runner.api.clone_job(job_id)
 
-.. code:: bash
+.. code-block:: bash
 
     {'status': <APIStatus.SUCCESS: 'SUCCESS'>,
     'details': {'message': 'Cloned job 5d0eaa30-6936-4044-918e-cd9c3f5edf9b as: 4a2cf195-314d-4476-9ea5-c69bed397e3a',
@@ -355,11 +355,11 @@ The behavior of the command remains the same, with the output being simplified j
 
 With the FLARE API, ``clone_job()``:
 
-.. code:: python
+.. code-block:: python
 
     sess.clone_job(job_id)
 
-.. code:: bash
+.. code-block:: bash
 
     '4a2cf195-314d-4476-9ea5-c69bed397e3a'
 
@@ -369,11 +369,11 @@ Abort Job
 The ``abort_job()`` command is the same for FLAdminAPI and the FLARE API with just the job_id as a string as the required argument.
 The behavior of the command remains the same, with the output being simplified to None. With FLAdminAPI:
 
-.. code:: python
+.. code-block:: python
 
     runner.api.abort_job(job_id)
 
-.. code:: bash
+.. code-block:: bash
 
     {'status': <APIStatus.SUCCESS: 'SUCCESS'>,
     'details': {'message': 'Abort signal has been sent to the server app.'},
@@ -386,11 +386,11 @@ The behavior of the command remains the same, with the output being simplified t
 
 With the FLARE API, ``abort_job()``:
 
-.. code:: python
+.. code-block:: python
 
     sess.abort_job(job_id)
 
-.. code:: bash
+.. code-block:: bash
 
     None
 
@@ -400,11 +400,11 @@ Delete Job
 The ``delete_job()`` command is the same for FLAdminAPI and the FLARE API with just the job_id as a string as the required argument.
 The behavior of the command remains the same, with the output being simplified to nothing. With FLAdminAPI:
 
-.. code:: python
+.. code-block:: python
 
     runner.api.delete_job(job_id)
 
-.. code:: bash
+.. code-block:: bash
 
     {'status': <APIStatus.SUCCESS: 'SUCCESS'>,
     'details': {'message': 'Job 4a2cf195-314d-4476-9ea5-c69bed397e3a deleted.'},
@@ -417,7 +417,7 @@ The behavior of the command remains the same, with the output being simplified t
 
 With the FLARE API, ``delete_job()``:
 
-.. code:: python
+.. code-block:: python
 
     sess.delete_job(job_id)
 
@@ -429,6 +429,6 @@ Migrating All Other FLAdminAPI Commands to FLARE API
 For all other commands, there are not yet specific commands in the FLARE API. With the underlying api, however, you
 can submit any previous command that could be executed from the Admin Console with ``do_command()``:
 
-.. code:: python
+.. code-block:: python
 
     sess.api.do_command(COMMAND_AS_STRING)
