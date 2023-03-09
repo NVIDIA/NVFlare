@@ -394,7 +394,7 @@ class JobRunner(FLComponent):
                                 fl_ctx=fl_ctx,
                             )
                             with self.lock:
-                                self.running_jobs[ready_job.job_id] = ready_job
+                                self.running_jobs[job_id] = ready_job
                             job_manager.set_status(ready_job.job_id, RunStatus.RUNNING, fl_ctx)
                         except BaseException as e:
                             if job_id:
