@@ -12,7 +12,7 @@ except for the elements in the intersection.```
 
 ![psi.png](psi.jpg)
 
-## What's the use cases for PSI?
+## What's the use cases for PSI in federated learning?
 
 There are many use cases for PSI, in terms of federated machine learning, we are particularly interested in the 
 following use cases:
@@ -34,6 +34,9 @@ following use cases:
   site-2:   features: country,  total distinct country = 100
   site-1 and site2 overlapping distinct country = 10  
   Total distinct countries = 20 + 100 - Overlapping countries  = 120-10 = 110
+  
+In federated statistics use case, the PSI will be used inside the Federated Statistics operations.
+For Vertical Learning user id matching use case, we can directly do PSI calculation
 
 ## PSI Protocol
 
@@ -47,9 +50,9 @@ funneled via a central FL server. We supported multi-party PSI via pair-wise app
 ## How to use FLARE PSI operator ? 
 
 In current implementation, we only support the vertical learning use cases. The federated statistics use case will be 
-addressed in the future release. 
+addressed in the future release, therefore it will not be showed in this example. 
 
-The usage is really simple. 
+For User ids matching, the usage is really simple. 
 
 * Step 1: user needs to implement the PSI interface where the client side's items need to be loaded.
 These items could be user_ids or feature names depending on your use case.
@@ -138,17 +141,31 @@ class LocalPSI(PSI):
    you need to copy the data to tmp location first. 
 
 **prepare data**
+
+change to the PSI example directory
 ```
-mkdir -p /tmp/nvflare/psi    
-cd examples/advanced/psi 
-cp -r user_email_match/data /tmp/nvflare/psi/.
+cd NVFlare/examples/advanced/psi/
+```
+We have already prepared some random fake emails as data, all we need to copy this dat to a location 
+that used by the data loading code, we have specified "/tmp/nvflare/psi" in our sample code, so we copy the data to
+"/tmp/nvflare/psi" directory
+
+```
+user_email_match/prepare_data.sh
 ```   
+You will see something like the followings
+
+```
+copy NVFlare/examples/advanced/psi/user_email_match/data to /tmp/nvflare/psi directory
+
+```
+
 **import note**
    The items must be unique. duplicate items can result incorrect intersection result
 
 **run job** 
 ```
-nvflare simulator -w /tmp/nvflare/psi -n 3 -t 3 user_email_match
+nvflare simulator -w /tmp/nvflare/psi -n 3 -t 3 user_email_match/jobs/user_email_match
 ```
 Once job completed and succeed, you should be able to find the intersection for different sites at
 
@@ -156,4 +173,10 @@ Once job completed and succeed, you should be able to find the intersection for 
 /tmp/nvflare/psi/simulate_job/site-1/psi/intersection.txt 
 /tmp/nvflare/psi/simulate_job/site-2/psi/intersection.txt 
 /tmp/nvflare/psi/simulate_job/site-3/psi/intersection.txt  
+```
+to compare these intersections, you can check with the followings:
+
+```bash
+diff <(sort /tmp/nvflare/psi/simulate_job/site-1/psi/intersection.txt) <(sort /tmp/nvflare/psi/simulate_job/site-2/psi/intersection.txt)
+diff <(sort /tmp/nvflare/psi/simulate_job/site-2/psi/intersection.txt) <(sort /tmp/nvflare/psi/simulate_job/site-3/psi/intersection.txt)
 ```
