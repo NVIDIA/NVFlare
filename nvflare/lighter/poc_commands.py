@@ -220,7 +220,7 @@ def stop_poc(poc_workspace: str, excluded=None, white_list=None):
     finally:
         if sess:
             sess.close()
-    # give system a chance to shutdown
+
     _run_poc(SC.CMD_STOP, poc_workspace, gpu_ids, excluded=excluded, white_list=white_list)
 
 
