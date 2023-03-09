@@ -16,12 +16,14 @@ from threading import Lock
 
 from nvflare.apis.client import Client
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, ReturnCode
+from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
+from nvflare.fuel.f3.cellnet.cell import Message, MessageHeaderKey
+from nvflare.fuel.f3.cellnet.cell import ReturnCode as CellReturnCode
+from nvflare.fuel.f3.cellnet.cell import new_message
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.private.defs import CellChannel
-from nvflare.private.fed.cmi import JobCellMessenger
 
 
 class AuxRunner(FLComponent):
@@ -107,6 +109,12 @@ class AuxRunner(FLComponent):
             fl_ctx: FLContext
         Returns: reply message
         """
+        peer_props = request.get_peer_props()
+        if peer_props:
+            peer_ctx = FLContext()
+            peer_ctx.set_public_props(peer_props)
+            fl_ctx.set_peer_context(peer_ctx)
+
         valid_reply = self._process_request(topic, request, fl_ctx)
         if isinstance(request, Shareable):
             cookie_jar = request.get_cookie_jar()
@@ -124,13 +132,7 @@ class AuxRunner(FLComponent):
         bulk_send: bool = False,
         optional: bool = False,
     ) -> dict:
-        job_id = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
-        cmi = JobCellMessenger(self.engine, job_id)
-
         # validate targets
-        request.set_peer_props(fl_ctx.get_all_public_props())
-        request.set_header(ReservedHeaderKey.TOPIC, topic)
-
         target_names = []
         for t in targets:
             if isinstance(t, str):
@@ -144,9 +146,6 @@ class AuxRunner(FLComponent):
                 # ignore empty name
                 continue
 
-            if FQCN.is_ancestor(name, cmi.cell.get_fqcn()):
-                raise ValueError(f"invalid target '{name}': cannot send to myself")
-
             if name not in target_names:
                 target_names.append(t)
 
@@ -158,7 +157,7 @@ class AuxRunner(FLComponent):
             raise ValueError(f"invalid target(s): {invalid_names}")
 
         try:
-            return cmi.send_to_cell(
+            return self._send_to_cell(
                 targets=targets,
                 channel=CellChannel.AUX_COMMUNICATION,
                 topic=topic,
@@ -174,3 +173,88 @@ class AuxRunner(FLComponent):
             else:
                 self.logger.error(f"Failed to send the message to targets: {targets}")
             return {}
+
+    def _send_to_cell(
+        self,
+        targets: [],
+        channel: str,
+        topic: str,
+        request: Shareable,
+        timeout: float,
+        fl_ctx: FLContext,
+        bulk_send=False,
+        optional=False,
+    ) -> dict:
+        """Send request to the job cells of other target sites.
+        Args:
+            targets (list): list of client names that the request will be sent to
+            channel (str): channel of the request
+            topic (str): topic of the request
+            request (Shareable): request
+            timeout (float): how long to wait for result. 0 means fire-and-forget
+            fl_ctx (FLContext): the FL context
+            bulk_send: whether to bulk send this request (only applies in the fire-and-forget situation)
+            optional: whether the request is optional
+        Returns:
+            A dict of Shareables
+        """
+        request.set_header(ReservedHeaderKey.TOPIC, topic)
+        request.set_peer_props(fl_ctx.get_all_public_props())
+
+        job_id = fl_ctx.get_job_id()
+        cell = self.engine.get_cell()
+
+        target_names = []
+        for t in targets:
+            if not isinstance(t, str):
+                raise ValueError(f"invalid target name {t}: expect str but got {type(t)}")
+            if t not in target_names:
+                target_names.append(t)
+
+        target_fqcns = []
+        for name in target_names:
+            target_fqcns.append(FQCN.join([name, job_id]))
+
+        cell_msg = new_message(payload=request)
+        if timeout > 0:
+            cell_replies = cell.broadcast_request(
+                channel=channel, topic=topic, request=cell_msg, targets=target_fqcns, timeout=timeout, optional=optional
+            )
+
+            replies = {}
+            if cell_replies:
+                for k, v in cell_replies.items():
+                    assert isinstance(v, Message)
+                    rc = v.get_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
+                    client_name = FQCN.get_root(k)
+                    if rc == CellReturnCode.OK:
+                        result = v.payload
+                        if not isinstance(result, Shareable):
+                            self.logger.error(f"reply of {channel}:{topic} must be dict but got {type(result)}")
+                            result = make_reply(ReturnCode.ERROR)
+                        replies[client_name] = result
+                    else:
+                        src = self._convert_return_code(rc)
+                        replies[client_name] = make_reply(src)
+            return replies
+        else:
+            if bulk_send:
+                cell.queue_message(channel=channel, topic=topic, message=cell_msg, targets=target_fqcns)
+            else:
+                cell.fire_and_forget(
+                    channel=channel, topic=topic, message=cell_msg, targets=target_fqcns, optional=optional
+                )
+            return {}
+
+    def _convert_return_code(self, rc):
+        rc_table = {
+            CellReturnCode.TIMEOUT: ReturnCode.COMMUNICATION_ERROR,
+            CellReturnCode.COMM_ERROR: ReturnCode.COMMUNICATION_ERROR,
+            CellReturnCode.PROCESS_EXCEPTION: ReturnCode.EXECUTION_EXCEPTION,
+            CellReturnCode.ABORT_RUN: CellReturnCode.ABORT_RUN,
+            CellReturnCode.INVALID_REQUEST: CellReturnCode.INVALID_REQUEST,
+            CellReturnCode.INVALID_SESSION: CellReturnCode.INVALID_SESSION,
+            CellReturnCode.AUTHENTICATION_ERROR: CellReturnCode.UNAUTHENTICATED,
+            CellReturnCode.SERVICE_UNAVAILABLE: CellReturnCode.SERVICE_UNAVAILABLE,
+        }
+        return rc_table.get(rc, ReturnCode.ERROR)
