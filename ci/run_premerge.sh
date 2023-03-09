@@ -41,21 +41,6 @@ remove_pipenv() {
     rm Pipfile Pipfile.lock
 }
 
-unit_test() {
-    echo "Run unit test..."
-    init_pipenv
-    pipenv run ./runtest.sh
-    remove_pipenv
-}
-
-wheel_build() {
-    echo "Run wheel build..."
-    init_pipenv
-    pipenv install build twine
-    pipenv run python -m build --wheel
-    remove_pipenv
-}
-
 add_dns_entries() {
     echo "adding DNS entries for HA test cases"
     cp /etc/hosts /etc/hosts_bak
@@ -69,7 +54,6 @@ remove_dns_entries() {
 
 integration_test() {
     echo "Run integration test..."
-    init_pipenv
     add_dns_entries
     testFolder="tests/integration_test"
     rm -rf /tmp/nvflare*
@@ -78,28 +62,47 @@ integration_test() {
     popd
     rm -rf /tmp/nvflare*
     remove_dns_entries
-    remove_pipenv
 }
+
+unit_test() {
+    echo "Run unit test..."
+    pipenv run ./runtest.sh
+}
+
+wheel_build() {
+    echo "Run wheel build..."
+    pipenv install build twine
+    pipenv run python -m build --wheel
+}
+
 
 case $BUILD_TYPE in
 
     all)
         echo "Run all tests..."
+        init_pipenv
         unit_test
         integration_test
         wheel_build
+        remove_pipenv
         ;;
 
     unit_test)
+        init_pipenv
         unit_test
+        remove_pipenv
         ;;
 
     integration_test)
+        init_pipenv
         integration_test
+        remove_pipenv
         ;;
 
     wheel_build )
+        init_pipenv
         wheel_build
+        remove_pipenv
         ;;
 
     *)

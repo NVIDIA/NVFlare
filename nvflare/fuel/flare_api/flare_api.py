@@ -14,7 +14,7 @@
 
 import os
 import time
-from typing import List
+from typing import List, Optional
 
 from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.apis.job_def import JobMetaKey, RunStatus
@@ -161,10 +161,11 @@ class Session(SessionSpec):
             raise SessionClosed("the session is closed on server")
         elif status in [APIStatus.ERROR_PROTOCOL, APIStatus.ERROR_SYNTAX]:
             raise InternalError(f"protocol error: {status}")
-        elif status in [APIStatus.ERROR_INVALID_CLIENT, APIStatus.ERROR_SERVER_CONNECTION]:
+        elif status in [APIStatus.ERROR_SERVER_CONNECTION]:
             raise ConnectionError(f"cannot connect to server: {status}")
         elif status != APIStatus.SUCCESS:
-            raise RuntimeError(f"runtime error encountered: {status}")
+            details = result.get(ResultKey.DETAILS, "")
+            raise RuntimeError(f"runtime error encountered: {status}: {details}")
 
         meta = result.get(ResultKey.META, None)
         if not meta:
@@ -250,7 +251,7 @@ class Session(SessionSpec):
         Args:
             job_id: ID of the job
 
-        Returns: a dict of job meta data
+        Returns: a dict of job metadata
 
         """
         self._validate_job_id(job_id)
@@ -262,7 +263,12 @@ class Session(SessionSpec):
         return job_meta
 
     def list_jobs(
-        self, detailed: bool = False, all: bool = False, limit: int = 5, id_prefix: str = None, name_prefix: str = None
+        self,
+        detailed: bool = False,
+        all: bool = False,
+        limit: Optional[int] = None,
+        id_prefix: str = None,
+        name_prefix: str = None,
     ) -> List[dict]:
         """Get the job info from the server
 

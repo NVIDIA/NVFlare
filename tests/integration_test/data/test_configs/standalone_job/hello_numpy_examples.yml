@@ -22,7 +22,7 @@ tests:
           "type": "run_state"
           "data": { "run_finished": True }
     validators:
-      - path: tests.integration_test.validators.NumpySAGResultValidator
+      - path: tests.integration_test.src.validators.NumpySAGResultValidator
         args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }
   - test_name: "run hello-numpy-cross-val"
     event_sequence:
@@ -41,7 +41,7 @@ tests:
           "type": "run_state"
           "data": { "run_finished": True }
     validators:
-      - path: tests.integration_test.validators.CrossValResultValidator
+      - path: tests.integration_test.src.validators.CrossValResultValidator
         args: { server_model_names: ["server"] }
-      - path: tests.integration_test.validators.NumpySAGResultValidator
+      - path: tests.integration_test.src.validators.NumpySAGResultValidator
         args: { expected_result: [ [ 4, 5, 6 ], [ 7, 8, 9 ], [ 10, 11, 12 ] ] }

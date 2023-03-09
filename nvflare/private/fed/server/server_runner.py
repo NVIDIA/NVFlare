@@ -115,6 +115,7 @@ class ServerRunner(FLComponent):
             except BaseException as e:
                 with self.engine.new_context() as fl_ctx:
                     self.log_exception(fl_ctx, "Exception in workflow {}: {}".format(wf.id, secure_format_exception(e)))
+                self.system_panic("Exception in workflow {}: {}".format(wf.id, secure_format_exception(e)), fl_ctx)
             finally:
                 with self.engine.new_context() as fl_ctx:
                     # do not execute finalize_run() until the wf_lock is acquired
@@ -166,7 +167,12 @@ class ServerRunner(FLComponent):
 
                     # ask all clients to end run!
                     self.engine.send_aux_request(
-                        targets=None, topic=ReservedTopic.END_RUN, request=Shareable(), timeout=0.0, fl_ctx=fl_ctx
+                        targets=None,
+                        topic=ReservedTopic.END_RUN,
+                        request=Shareable(),
+                        timeout=0.0,
+                        fl_ctx=fl_ctx,
+                        optional=True,
                     )
 
                     self.fire_event(EventType.END_RUN, fl_ctx)

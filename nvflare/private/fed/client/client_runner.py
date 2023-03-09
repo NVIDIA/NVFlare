@@ -386,7 +386,8 @@ class ClientRunner(FLComponent):
             self.log_debug(fl_ctx, "server asked to try again - will try in {} secs".format(task_fetch_interval))
             return task_fetch_interval, False
 
-        self.log_info(fl_ctx, "got task assignment: name={}, id={}".format(task.name, task.task_id))
+        if task.name not in [SpecialTaskName.END_RUN, SpecialTaskName.TRY_AGAIN]:
+            self.log_info(fl_ctx, "got task assignment: name={}, id={}".format(task.name, task.task_id))
 
         task_data = task.data
         if not isinstance(task_data, Shareable):

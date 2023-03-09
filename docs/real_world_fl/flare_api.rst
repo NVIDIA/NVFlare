@@ -15,7 +15,7 @@ Initialize the FLARE API with :func:`new_secure_session<nvflare.fuel.flare_api.f
 the username and the path to the startup kit folder of the provisioned user containing the startup folder with the admin client's
 certs and keys:
 
-.. code:: python
+.. code-block:: python
 
     from nvflare.fuel.flare_api.flare_api import new_secure_session
 
@@ -44,7 +44,7 @@ There is no more ``logout()``, instead, use ``close()`` to end the session. One 
 to execute commands inside a try block and then close
 the session in a finally clause::
 
-.. code:: python
+.. code-block:: python
 
     try:
         print(sess.get_system_info())
@@ -66,7 +66,7 @@ Additional and Complex Commands
 With a ``job_id`` for example after submit_job in the code block above, here are some examples of other commands that
 can be run::
 
-.. code:: python
+.. code-block:: python
 
     # get job meta dictionary with job info
     job_meta_dict = sess.get_job_meta(job_id)
@@ -84,7 +84,7 @@ the job specified as the first argument is finished, but it can be used in more 
 including your own callback with custom code to be called after each status poll. The following is the API spec for
 monitor_job:
 
-.. code:: python
+.. code-block:: python
 
     def monitor_job(
         self, job_id: str, timeout: int = 0, poll_interval: float = 2.0, cb=None, *cb_args, **cb_kwargs
@@ -112,7 +112,7 @@ anything you want to do. The following is an example where you can see the usage
 This callback always returns True, keeping the default behavior of ``monitor_job()`` of waiting until the job specified
 as the first argument is finished, but you can customize this to behave as you want.
 
-.. code:: python
+.. code-block:: python
 
     def sample_cb(
         session: Session, job_id: str, job_meta, *cb_args, **cb_kwargs

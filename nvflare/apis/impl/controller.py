@@ -647,7 +647,7 @@ class Controller(Responder, ControllerSpec, ABC):
         """Ask all clients to abort the execution of the specified task.
 
         Args:
-            task (str): the task to be aborted
+            task (Task): the task to be aborted
             fl_ctx (FLContext): FLContext associated with this action
         """
         self.log_info(fl_ctx, "asked all clients to abort task {}".format(task.name))
@@ -657,7 +657,9 @@ class Controller(Responder, ControllerSpec, ABC):
         engine = self._engine
         request = Shareable()
         request["task_names"] = task_names
-        engine.send_aux_request(targets=None, topic=ReservedTopic.ABORT_ASK, request=request, timeout=0, fl_ctx=fl_ctx)
+        engine.send_aux_request(
+            targets=None, topic=ReservedTopic.ABORT_ASK, request=request, timeout=0, fl_ctx=fl_ctx, optional=True
+        )
 
     def abort_all_tasks(self, fl_ctx: FLContext):
         """Ask clients to abort the execution of all tasks.

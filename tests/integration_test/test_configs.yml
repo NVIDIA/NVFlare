@@ -1,6 +1,6 @@
 test_configs:
   auth:
-    - ./data/test_configs/test_diff_job_config.yml
+    - ./data/test_configs/authorization/test_diff_job_config.yml
     - ./data/test_configs/authorization/submit_job.yml
     - ./data/test_configs/authorization/clone_job.yml
     - ./data/test_configs/authorization/abort_job.yml

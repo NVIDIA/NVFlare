@@ -26,7 +26,7 @@ new active server.
 ``logout()`` function can be called to log out. Both ``login()`` and ``logout()`` are
 inherited from AdminAPI.
 
-.. code:: python
+.. code-block:: python
 
     api.logout()
 

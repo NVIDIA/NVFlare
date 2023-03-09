@@ -17,7 +17,6 @@ import logging
 
 from nvflare.apis.fl_constant import FLContextKey, ServerCommandKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import ReservedHeaderKey
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.fuel.f3.cellnet.cell import Cell, MessageHeaderKey, ReturnCode, make_reply
 from nvflare.fuel.f3.message import Message as CellMessage
@@ -60,10 +59,11 @@ class ServerCommandAgent(object):
         command_name = request.get_header(MessageHeaderKey.TOPIC)
         data = fobs.loads(request.payload)
 
-        token = request.get_header(CellMessageHeaderKeys.TOKEN, None)
+        # token = request.get_header(CellMessageHeaderKeys.TOKEN, None)
+        client_name = request.get_header(CellMessageHeaderKeys.CLIENT_NAME, None)
         client = None
-        if token:
-            client = self._get_client(token)
+        if client_name:
+            client = self._get_client(client_name)
             if client:
                 data.set_header(ServerCommandKey.FL_CLIENT, client)
         if command_name in ServerCommands.client_request_commands_names and not client:
@@ -82,11 +82,14 @@ class ServerCommandAgent(object):
         else:
             return make_reply(ReturnCode.INVALID_REQUEST, "No server command found", fobs.dumps(None))
 
-    def _get_client(self, token):
+    def _get_client(self, client_name):
         fl_server = self.engine.server
         client_manager = fl_server.client_manager
         clients = client_manager.clients
-        return clients.get(token)
+        for _, client in clients.items():
+            if client_name == client.name:
+                return client
+        return None
 
     def aux_communicate(self, request: CellMessage) -> CellMessage:
 
@@ -95,11 +98,6 @@ class ServerCommandAgent(object):
 
         topic = request.get_header(MessageHeaderKey.TOPIC)
         with self.engine.new_context() as fl_ctx:
-            shared_fl_ctx = data.get_header(ReservedHeaderKey.PEER_PROPS)
-            # shared_fl_ctx.set_prop(FLContextKey.SHAREABLE, data, private=True)
-
-            fl_ctx.set_peer_context(shared_fl_ctx)
-
             engine = fl_ctx.get_engine()
             reply = engine.dispatch(topic=topic, request=data, fl_ctx=fl_ctx)
 

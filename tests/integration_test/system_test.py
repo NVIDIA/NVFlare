@@ -22,8 +22,14 @@ import time
 
 import pytest
 
-from tests.integration_test.src import FLTestDriver, POCSiteLauncher, ProvisionSiteLauncher, cleanup_path, read_yaml
-from tests.integration_test.src.fl_test_driver import FLTestError
+from tests.integration_test.src import (
+    NVFTestDriver,
+    NVFTestError,
+    POCSiteLauncher,
+    ProvisionSiteLauncher,
+    cleanup_path,
+    read_yaml,
+)
 
 
 def get_module_class_from_full_path(full_path):
@@ -41,31 +47,32 @@ def get_test_config(test_config_yaml: str):
     test_config["ha"] = test_config.get("ha", False)
     for x in ["cleanup", "single_app_as_job"]:
         if x not in test_config:
-            raise FLTestError(f"Test config: {test_config_yaml} missing required attributes {x}.")
+            raise NVFTestError(f"Test config: {test_config_yaml} missing required attributes {x}.")
         print(f"\t{x}: {test_config[x]}")
 
     if test_config["single_app_as_job"]:
         if "apps_root_dir" not in test_config:
-            raise FLTestError(f"Test config: {test_config_yaml} missing apps_root_dir.")
+            raise NVFTestError(f"Test config: {test_config_yaml} missing apps_root_dir.")
         print(f"\tapps_root_dir: {test_config['apps_root_dir']}")
     else:
         if "jobs_root_dir" not in test_config:
-            raise FLTestError(f"Test config: {test_config_yaml} missing jobs_root_dir.")
+            raise NVFTestError(f"Test config: {test_config_yaml} missing jobs_root_dir.")
         print(f"\tjobs_root_dir: {test_config['jobs_root_dir']}")
 
     if test_config["ha"]:
         if "project_yaml" not in test_config:
-            raise FLTestError(f"Test config: {test_config_yaml} missing project_yaml.")
+            raise NVFTestError(f"Test config: {test_config_yaml} missing project_yaml.")
     else:
         for x in ["n_servers", "n_clients"]:
             if x not in test_config:
-                raise FLTestError(f"Test config: {test_config_yaml} missing required attributes {x}.")
+                raise NVFTestError(f"Test config: {test_config_yaml} missing required attributes {x}.")
 
     return test_config
 
 
-test_configs = read_yaml("test_configs.yml")
 framework = os.environ.get("NVFLARE_TEST_FRAMEWORK", "numpy")
+test_configs_yaml = "auto_test_configs.yml" if framework == "auto" else "test_configs.yml"
+test_configs = read_yaml(test_configs_yaml)
 if framework not in test_configs["test_configs"]:
     print(f"Framework/test {framework} is not supported, using default numpy.")
     framework = "numpy"
@@ -86,24 +93,24 @@ def setup_and_teardown_system(request):
     poll_period = test_config.get("poll_period", 5)
     additional_python_paths = test_config.get("additional_python_paths", [])
     for additional_python_path in additional_python_paths:
-        sys.path.append(additional_python_path)
+        sys.path.append(os.path.abspath(additional_python_path))
 
     test_temp_dir = tempfile.mkdtemp()
 
-    fl_test_driver = None
+    test_driver = None
     site_launcher = None
     try:
         if ha:
             project_yaml_path = test_config.get("project_yaml")
             if not os.path.isfile(project_yaml_path):
-                raise FLTestError(f"Missing project_yaml at {project_yaml_path}.")
+                raise NVFTestError(f"Missing project_yaml at {project_yaml_path}.")
             site_launcher = ProvisionSiteLauncher(project_yaml=project_yaml_path)
             poc = False
             super_user_name = "super@test.org"
         else:
             POC_PATH = "../../nvflare/poc"
             if not os.path.isdir(POC_PATH):
-                raise FLTestError(f"Missing POC folder at {POC_PATH}.")
+                raise NVFTestError(f"Missing POC folder at {POC_PATH}.")
             n_servers = int(test_config["n_servers"])
             n_clients = int(test_config["n_clients"])
             site_launcher = POCSiteLauncher(poc_dir=POC_PATH, n_servers=n_servers, n_clients=n_clients)
@@ -135,26 +142,26 @@ def setup_and_teardown_system(request):
 
         download_root_dir = os.path.join(test_temp_dir, "download_result")
         os.mkdir(download_root_dir)
-        fl_test_driver = FLTestDriver(
+        test_driver = NVFTestDriver(
             site_launcher=site_launcher, download_root_dir=download_root_dir, poll_period=poll_period
         )
-        if not fl_test_driver.initialize_super_user(
+        if not test_driver.initialize_super_user(
             workspace_root_dir=workspace_root, upload_root_dir=jobs_root_dir, poc=poc, super_user_name=super_user_name
         ):
-            raise FLTestError("FLTestDriver initialize_super_user failed.")
+            raise NVFTestError("NVFTestDriver initialize_super_user failed.")
         if ha:
-            if not fl_test_driver.initialize_admin_users(
+            if not test_driver.initialize_admin_users(
                 workspace_root_dir=workspace_root,
                 upload_root_dir=jobs_root_dir,
                 poc=poc,
                 admin_user_names=site_launcher.admin_user_names,
             ):
-                raise FLTestError("FLTestDriver initialize_admin_users failed.")
-        fl_test_driver.ensure_clients_started(num_clients=len(site_launcher.client_properties.keys()))
-        yield ha, test_cases, site_launcher, fl_test_driver
+                raise NVFTestError("NVFTestDriver initialize_admin_users failed.")
+        test_driver.ensure_clients_started(num_clients=len(site_launcher.client_properties.keys()))
+        yield ha, test_cases, site_launcher, test_driver
     finally:
-        if fl_test_driver:
-            fl_test_driver.finalize()
+        if test_driver:
+            test_driver.finalize()
         if site_launcher:
             site_launcher.stop_all_sites()
         if cleanup:
@@ -167,10 +174,10 @@ def setup_and_teardown_system(request):
 @pytest.mark.xdist_group(name="system_tests_group")
 class TestSystem:
     def test_run_job_complete(self, setup_and_teardown_system):
-        ha, test_cases, site_launcher, fl_test_driver = setup_and_teardown_system
+        ha, test_cases, site_launcher, test_driver = setup_and_teardown_system
 
-        print(f"Server status: {fl_test_driver.server_status()}.")
-        print(f"Client status: {fl_test_driver.client_status()}")
+        print(f"Server status: {test_driver.server_status()}.")
+        print(f"Client status: {test_driver.client_status()}")
 
         test_validate_results = []
         for test_data in test_cases:
@@ -183,7 +190,7 @@ class TestSystem:
                 process = subprocess.Popen(shlex.split(command))
                 process.wait()
 
-            fl_test_driver.run_event_sequence(event_sequence)
+            test_driver.run_event_sequence(event_sequence)
 
             # Get the job validator
             if validators:
@@ -196,7 +203,7 @@ class TestSystem:
                     job_validator_cls = getattr(importlib.import_module(module_name), class_name)
                     job_validator = job_validator_cls(**validator_args)
 
-                    job_result = fl_test_driver.get_job_result(fl_test_driver.job_id)
+                    job_result = test_driver.get_job_result(test_driver.job_id)
                     job_validate_res = job_validator.validate_results(
                         job_result=job_result,
                         client_props=list(site_launcher.client_properties.values()),
@@ -215,7 +222,7 @@ class TestSystem:
                 print(f"Running teardown command: {command}")
                 process = subprocess.Popen(shlex.split(command))
                 process.wait()
-            fl_test_driver.reset_test_info(reset_job_info=reset_job_info)
+            test_driver.reset_test_info(reset_job_info=reset_job_info)
             print("\n\n\n\n\n")
 
         _print_validate_result(validate_result=test_validate_results)

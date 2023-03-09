@@ -154,10 +154,15 @@ class BaseServer(ABC):
             credentials = {}
         parent_url = None
 
+        if scheme == "uds":
+            listen_target = target
+        else:
+            listen_target = "0:" + target.split(":")[1]
+
         my_fqcn = FQCN.ROOT_SERVER
         self.cell = Cell(
             fqcn=my_fqcn,
-            root_url=scheme + "://" + target,
+            root_url=scheme + "://" + listen_target,
             secure=secure_train,
             credentials=credentials,
             create_internal_listener=True,
@@ -336,12 +341,13 @@ class FederatedServer(BaseServer):
             return make_cellnet_reply(F3ReturnCode.OK, "", fobs.dumps(return_data))
         elif command == ServerCommandNames.UPDATE_RUN_STATUS:
             execution_error = data.get("execution_error")
-            if execution_error:
-                with self.lock:
-                    run_process_info = self.engine.run_processes.get(job_id)
+            with self.lock:
+                run_process_info = self.engine.run_processes.get(job_id)
+                if execution_error:
                     self.engine.exception_run_processes[job_id] = run_process_info
-                    reply = make_cellnet_reply(F3ReturnCode.OK, "", None)
-                    return reply
+                run_process_info[RunProcessKey.PROCESS_FINISHED] = True
+                reply = make_cellnet_reply(F3ReturnCode.OK, "", None)
+                return reply
         elif command == ServerCommandNames.HEARTBEAT:
             return make_cellnet_reply(F3ReturnCode.OK, "", None)
         else:
