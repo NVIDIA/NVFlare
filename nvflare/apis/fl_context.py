@@ -298,7 +298,7 @@ class FLContextManager(object):
 
         # set permanent props
         ctx.put(key=ReservedKey.ENGINE, value=self.engine, private=True, sticky=False)
-        ctx.put(key=ReservedKey.RUN_NUM, value=self.job_id, private=False, sticky=False)
+        ctx.put(key=ReservedKey.RUN_NUM, value=self.job_id, private=False, sticky=True)
 
         if self.identity_name:
             ctx.put(key=ReservedKey.IDENTITY_NAME, value=self.identity_name, private=False, sticky=False)
