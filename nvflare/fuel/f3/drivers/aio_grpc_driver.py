@@ -198,7 +198,7 @@ class Server:
         params = connector.params
         host = params.get(DriverParams.HOST.value)
         if not host:
-            host = 0
+            host = "0.0.0.0"
         port = int(params.get(DriverParams.PORT.value))
         addr = f"{host}:{port}"
         try:

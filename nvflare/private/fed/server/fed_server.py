@@ -154,10 +154,15 @@ class BaseServer(ABC):
             credentials = {}
         parent_url = None
 
+        if scheme == "uds":
+            listen_target = target
+        else:
+            listen_target = "0:" + target.split(":")[1]
+
         my_fqcn = FQCN.ROOT_SERVER
         self.cell = Cell(
             fqcn=my_fqcn,
-            root_url=scheme + "://" + target,
+            root_url=scheme + "://" + listen_target,
             secure=secure_train,
             credentials=credentials,
             create_internal_listener=True,
