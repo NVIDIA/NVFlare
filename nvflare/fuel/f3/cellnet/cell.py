@@ -66,6 +66,13 @@ class TargetMessage:
         self.channel = channel
         self.topic = topic
         self.message = message
+        message.add_headers(
+            {
+                MessageHeaderKey.TOPIC: topic,
+                MessageHeaderKey.CHANNEL: channel,
+                MessageHeaderKey.DESTINATION: target,
+            }
+        )
 
     def to_dict(self):
         return {
