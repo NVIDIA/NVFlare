@@ -993,7 +993,7 @@ azure_start_svr_sh: |
   echo "If the client requires additional dependencies, please copy the requirements.txt to ${DIR}."
   prompt ans "Press ENTER when it's done or no additional dependencies. "
 
-  az login --use-device-code
+  az login --use-device-code -o none
 
   # Start provisioning
 
@@ -1020,7 +1020,8 @@ azure_start_svr_sh: |
       --admin-password $PASSWORD \
       --authentication-type password \
       --public-ip-address nvflare_server_ip \
-      --public-ip-address-allocation static > /tmp/vm.json
+      --public-ip-address-allocation static \
+      --public-ip-sku Standard > /tmp/vm.json
   else
     az vm create \
       --output json \
@@ -1034,6 +1035,7 @@ azure_start_svr_sh: |
       --authentication-type password \
       --public-ip-address nvflare_server_ip \
       --public-ip-address-allocation static \
+      --public-ip-sku Standard \
       --public-ip-address-dns-name $DNS_TAG > /tmp/vm.json
   fi
   report_status "$?" "creating virtual machine"
@@ -1111,7 +1113,7 @@ azure_start_svr_sh: |
   echo "System was provisioned"
   echo "To delete the resource group (also delete the VM), run the following command"
   echo "az group delete -n ${RESOURCE_GROUP}"
-  # echo "The VM was created with user: ${ADMIN_USERNAME} and password: ${PASSWORD}"
+  echo "To login to the VM with SSH, use ${ADMIN_USERNAME} : ${PASSWORD}" > vm_credential.txt
 
 azure_start_cln_sh: |
   #!/usr/bin/env bash
@@ -1199,7 +1201,7 @@ azure_start_cln_sh: |
   echo "If the client requires additional dependencies, please copy the requirements.txt to ${DIR}."
   prompt ans "Press ENTER when it's done or no additional dependencies. "
 
-  az login --use-device-code
+  az login --use-device-code -o none
 
   # Start provisioning
 
@@ -1222,7 +1224,8 @@ azure_start_cln_sh: |
     --size $VM_SIZE \
     --admin-username $ADMIN_USERNAME \
     --admin-password $PASSWORD \
-    --authentication-type password > /tmp/vm.json
+    --authentication-type password \
+    --public-ip-sku Standard > /tmp/vm.json
   report_status "$?" "creating virtual machine"
 
   IP_ADDRESS=$(jq -r .publicIpAddress /tmp/vm.json)
@@ -1280,7 +1283,7 @@ azure_start_cln_sh: |
   echo "System was provisioned"
   echo "To delete the resource group (also delete the VM), run the following command"
   echo "az group delete -n ${RESOURCE_GROUP}"
-  # echo "To login to the VM with SSH, use ${ADMIN_USERNAME} : ${PASSWORD}"
+  echo "To login to the VM with SSH, use ${ADMIN_USERNAME} : ${PASSWORD}" > vm_credential.txt
 
 azure_start_dsb_sh: |
   #!/usr/bin/env bash
@@ -1334,8 +1337,9 @@ azure_start_dsb_sh: |
   echo "One initial user will be created when starting dashboard."
   echo "Please enter the email address for this user."
   read email
+  credential="${email}:$RANDOM"
 
-  az login --use-device-code
+  az login --use-device-code -o none
 
   # Start provisioning
   if [ $(az group exists -n $RESOURCE_GROUP) == 'false' ]
@@ -1357,7 +1361,8 @@ azure_start_dsb_sh: |
     --size $VM_SIZE \
     --admin-username $ADMIN_USERNAME \
     --admin-password $PASSWORD \
-    --authentication-type password > /tmp/vm.json
+    --authentication-type password \
+    --public-ip-sku Standard > /tmp/vm.json
   report_status "$?" "creating virtual machine"
 
   IP_ADDRESS=$(jq -r .publicIpAddress /tmp/vm.json)
@@ -1453,9 +1458,9 @@ azure_start_dsb_sh: |
     --name $VM_NAME \
     --scripts \
     "cd ${DEST_FOLDER} && \
-     echo ${email} | nvflare dashboard --start -f ${DEST_FOLDER}" > /tmp/dashboard.json
+     python3 -m nvflare.dashboard.cli --start -f ${DEST_FOLDER} --cred ${credential}" > /tmp/dashboard.json
 
-  credential=$(jq -r .value[0].message /tmp/dashboard.json | grep "Project admin")
+  # credential=$(jq -r .value[0].message /tmp/dashboard.json | grep "Project admin")
   # echo "The VM was created with user: ${ADMIN_USERNAME} and password: ${PASSWORD}"
   if [ "$secure" = true ]
   then
@@ -1466,6 +1471,7 @@ azure_start_dsb_sh: |
   echo "Note: you may need to configure DNS server with your DNS hostname and the above IP address."
   echo "Project admin credential (username:password) is ${credential} ."
   echo "To stop the dashboard, run az group delete -n ${RESOURCE_GROUP}"
+  echo "To login to the VM with SSH, use ${ADMIN_USERNAME} : ${PASSWORD}" > vm_credential.txt
 
 adm_notebook: |
   {
