@@ -44,10 +44,12 @@ Please refer to :ref:`application` for more details.
    programming_guide/serialization
    programming_guide/filters
    programming_guide/event_system
+   programming_guide/component_configuration
    programming_guide/provisioning_system
    programming_guide/high_availability
    programming_guide/system_architecture
    programming_guide/resource_manager_and_consumer
+   programming_guide/global_model_initialization
 
 
 Code Structure
