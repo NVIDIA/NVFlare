@@ -209,6 +209,9 @@ def stop_poc(poc_workspace: str, excluded=None, white_list=None):
 
         print("shutdown NVFLARE")
         sess.api.do_command("shutdown all")
+
+        wait_for_system_shutdown(sess)
+
     except NoConnection:
         print("fail to connect FL server")
         pass
@@ -217,8 +220,27 @@ def stop_poc(poc_workspace: str, excluded=None, white_list=None):
     finally:
         if sess:
             sess.close()
-
+    # give system a chance to shutdown
+    time.sleep(3)
     _run_poc(SC.CMD_STOP, poc_workspace, gpu_ids, excluded=excluded, white_list=white_list)
+
+
+def wait_for_system_shutdown(sess):
+    sys_info = sess.get_system_info()
+    status = sys_info.server_info.status
+    timeout = 30
+    start = time.time()
+    duration = 0
+    cnt = 0
+    while status == "started" and duration < timeout:
+        sys_info = sess.get_system_info()
+        status = sys_info.server_info.status
+        curr = time.time()
+        duration = curr - start
+        if cnt % 25 == 0:
+            print("waiting system to shutdown")
+        cnt += 1
+        time.sleep(0.1)
 
 
 def _abort_jobs(sess, job_ids):
