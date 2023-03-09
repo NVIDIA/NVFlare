@@ -17,7 +17,7 @@ import time
 
 import numpy as np
 
-from nvflare.apis.dxo import DXO, DataKind, from_shareable, MetaKey
+from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
