@@ -205,7 +205,7 @@ class BaseServer(ABC):
         return client
 
     def notify_dead_client(self, client):
-        """Called to do further processing of the dead client.
+        """Called to do further processing of the dead client
 
         Args:
             client: the dead client
@@ -638,8 +638,14 @@ class FederatedServer(BaseServer):
             self.logger.error(f"FL server execution exception: {secure_format_exception(e)}")
         finally:
             self.engine.update_job_run_status()
+            self.stop_run_engine_cell()
 
         self.engine.engine_info.status = MachineStatus.STOPPED
+
+    def stop_run_engine_cell(self):
+        # self.cell.stop()
+        # mpm.stop()
+        pass
 
     def deploy(self, args, grpc_args=None, secure_train=False):
         super().deploy(args, grpc_args, secure_train)
@@ -697,11 +703,11 @@ class FederatedServer(BaseServer):
         with self.snapshot_lock:
             fl_snapshot = self.snapshot_persistor.retrieve()
             if fl_snapshot:
-                for job_id, snapshot in fl_snapshot.run_snapshots.items():
+                for run_number, snapshot in fl_snapshot.run_snapshots.items():
                     if snapshot and not snapshot.completed:
                         # Restore the workspace
                         workspace_data = snapshot.get_component_snapshot(SnapshotKey.WORKSPACE).get("content")
-                        dst = os.path.join(self.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(job_id))
+                        dst = os.path.join(self.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_number))
                         if os.path.exists(dst):
                             shutil.rmtree(dst, ignore_errors=True)
 
@@ -710,9 +716,10 @@ class FederatedServer(BaseServer):
 
                         job_id = snapshot.get_component_snapshot(SnapshotKey.JOB_INFO).get(SnapshotKey.JOB_ID)
                         job_clients = snapshot.get_component_snapshot(SnapshotKey.JOB_INFO).get(SnapshotKey.JOB_CLIENTS)
-                        self.logger.info(f"Restore the previous snapshot. JOB ID: {job_id}")
+                        self.logger.info(f"Restore the previous snapshot. Run_number: {run_number}")
                         with self.engine.new_context() as fl_ctx:
                             self.engine.job_runner.restore_running_job(
+                                run_number=run_number,
                                 job_id=job_id,
                                 job_clients=job_clients,
                                 snapshot=snapshot,
