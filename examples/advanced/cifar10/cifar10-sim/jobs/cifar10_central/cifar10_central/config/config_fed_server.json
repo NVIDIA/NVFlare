@@ -16,7 +16,8 @@
       "args": {
         "model": {
           "path": "pt.networks.cifar10_nets.ModerateCNN",
-	      "args": {}
+	      "args": {
+          }
         }
       }
     },
