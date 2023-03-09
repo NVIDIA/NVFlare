@@ -11,19 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from nvflare.fuel.flare_api.config import FL_PACKAGES, FL_MODULES
 from nvflare.fuel.utils.class_utils import ModuleScanner
 from nvflare.fuel.utils.component_builder import ComponentBuilder
 
 
 class MockComponentBuilder(ComponentBuilder):
-
-    def __init__(self, config: dict):
+    def __init__(self):
         self.module_scanner = ModuleScanner(["nvflare"], ["api", "app_commons", "app_opt", "fuel", "private", "utils"])
-        self.config = config
 
     def get_module_scanner(self):
         return self.module_scanner
-
-    def build_component2(self):
-        super().build_component(self.config)
