@@ -300,7 +300,7 @@ class Session(SessionSpec):
                 command = command + " " + id_prefix
         result = self._do_command(command)
         meta = result[ResultKey.META]
-        jobs_list = meta.get(MetaKey.JOBS, None)
+        jobs_list = meta.get(MetaKey.JOBS, [])
         return jobs_list
 
     def download_job_result(self, job_id: str) -> str:
