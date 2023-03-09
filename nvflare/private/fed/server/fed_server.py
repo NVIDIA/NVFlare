@@ -271,9 +271,8 @@ class FederatedServer(BaseServer):
         self.tokens = None
         self.round_started = time.time()
 
-        self.tokens = dict()
-        for token, client in self.get_all_clients().items():
-            self.tokens[token] = self.task_meta_info(client.name)
+        with self.lock:
+            self.reset_tokens()
 
         self.cmd_modules = cmd_modules
 

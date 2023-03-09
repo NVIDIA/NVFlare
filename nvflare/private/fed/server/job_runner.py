@@ -294,9 +294,6 @@ class JobRunner(FLComponent):
         engine = fl_ctx.get_engine()
         job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
         while not self.ask_to_stop:
-            if not isinstance(engine.server.server_state, HotState):
-                time.sleep(1.0)
-                continue
             for job_id in list(self.running_jobs.keys()):
                 if job_id not in engine.run_processes.keys():
                     job = self.running_jobs.get(job_id)
