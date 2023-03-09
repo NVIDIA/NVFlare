@@ -358,7 +358,7 @@ class ScatterAndGather(Controller):
                     self.system_panic("Execution result is not a shareable. ScatterAndGather exiting.", fl_ctx=fl_ctx)
                     return False
 
-        fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=False)
+        fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=True)
         fl_ctx.set_prop(AppConstants.TRAINING_RESULT, result, private=True, sticky=False)
         self.fire_event(AppEventType.BEFORE_CONTRIBUTION_ACCEPT, fl_ctx)
 
