@@ -31,6 +31,7 @@ from nvflare.lighter.utils import verify_folder_signature
 from nvflare.private.admin_defs import Message, MsgHeader, ReturnCode
 from nvflare.private.defs import RequestHeader, TrainingTopic
 from nvflare.private.fed.server.admin import check_client_replies
+from nvflare.private.fed.server.server_state import HotState
 from nvflare.private.fed.utils.app_deployer import AppDeployer
 from nvflare.security.logging import secure_format_exception
 
@@ -61,6 +62,8 @@ class JobRunner(FLComponent):
             self.scheduler = engine.get_component(SystemComponents.JOB_SCHEDULER)
         elif event_type in [EventType.JOB_COMPLETED, EventType.JOB_ABORTED, EventType.JOB_CANCELLED]:
             self._save_workspace(fl_ctx)
+        elif event_type == EventType.SYSTEM_END:
+            self.stop()
 
     def _make_deploy_message(self, job: Job, app_data, app_name):
         message = Message(topic=TrainingTopic.DEPLOY, body=app_data)
@@ -293,7 +296,6 @@ class JobRunner(FLComponent):
         while not self.ask_to_stop:
             for job_id in list(self.running_jobs.keys()):
                 if job_id not in engine.run_processes.keys():
-                    # with self.lock:
                     job = self.running_jobs.get(job_id)
                     if job:
                         exception_run_processes = engine.exception_run_processes
@@ -328,16 +330,21 @@ class JobRunner(FLComponent):
         shutil.rmtree(run_dir)
 
     def run(self, fl_ctx: FLContext):
+        """Starts job runner."""
         engine = fl_ctx.get_engine()
-
-        thread = threading.Thread(target=self._job_complete_process, args=[fl_ctx])
-        thread.start()
-
         job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
         if job_manager:
+            thread = threading.Thread(target=self._job_complete_process, args=[fl_ctx])
+            thread.start()
+
             while not self.ask_to_stop:
-                # approved_jobs = job_manager.get_jobs_by_status(RunStatus.APPROVED, fl_ctx)
+                if not isinstance(engine.server.server_state, HotState):
+                    time.sleep(1.0)
+                    continue
                 approved_jobs = job_manager.get_jobs_by_status(RunStatus.SUBMITTED, fl_ctx)
+                self.log_debug(
+                    fl_ctx, f"{fl_ctx.get_identity_name()} Got approved_jobs: {approved_jobs} from the job_manager"
+                )
 
                 if self.scheduler:
                     ready_job, sites = self.scheduler.schedule_job(
@@ -345,11 +352,10 @@ class JobRunner(FLComponent):
                     )
 
                     if ready_job:
-                        # with self.lock:
                         client_sites = {k: v for k, v in sites.items() if k != "server"}
                         job_id = None
                         try:
-                            self.log_info(fl_ctx, f"Got the job:{ready_job.job_id} from the scheduler to run")
+                            self.log_info(fl_ctx, f"Got the job: {ready_job.job_id} from the scheduler to run")
                             fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, ready_job.job_id)
                             job_id, failed_clients = self._deploy_job(ready_job, sites, fl_ctx)
                             job_manager.set_status(ready_job.job_id, RunStatus.DISPATCHED, fl_ctx)
@@ -407,10 +413,13 @@ class JobRunner(FLComponent):
                             )
 
                 time.sleep(1.0)
+
+            thread.join()
         else:
             self.log_error(fl_ctx, "There's no Job Manager defined. Won't be able to run the jobs.")
 
-        thread.join()
+    def stop(self):
+        self.ask_to_stop = True
 
     def restore_running_job(self, run_number: str, job_id: str, job_clients, snapshot, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
@@ -433,7 +442,6 @@ class JobRunner(FLComponent):
         job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
         self._stop_run(job_id, fl_ctx)
 
-        # with self.lock:
         job = self.running_jobs.get(job_id)
         if job:
             self.log_info(fl_ctx, f"Stop the job run: {job_id}")
