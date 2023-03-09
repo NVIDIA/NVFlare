@@ -293,7 +293,10 @@ class JobRunner(FLComponent):
     def _job_complete_process(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
         job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
-        while not self.ask_to_stop and isinstance(engine.server.server_state, HotState):
+        while not self.ask_to_stop:
+            if not isinstance(engine.server.server_state, HotState):
+                time.sleep(1.0)
+                continue
             for job_id in list(self.running_jobs.keys()):
                 if job_id not in engine.run_processes.keys():
                     job = self.running_jobs.get(job_id)
@@ -334,13 +337,13 @@ class JobRunner(FLComponent):
         engine = fl_ctx.get_engine()
         job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
         if job_manager:
-            while not isinstance(engine.server.server_state, HotState):
-                time.sleep(1.0)
-
             thread = threading.Thread(target=self._job_complete_process, args=[fl_ctx])
             thread.start()
 
-            while not self.ask_to_stop and isinstance(engine.server.server_state, HotState):
+            while not self.ask_to_stop:
+                if not isinstance(engine.server.server_state, HotState):
+                    time.sleep(1.0)
+                    continue
                 approved_jobs = job_manager.get_jobs_by_status(RunStatus.SUBMITTED, fl_ctx)
                 self.log_debug(
                     fl_ctx, f"{fl_ctx.get_identity_name()} Got approved_jobs: {approved_jobs} from the job_manager"
