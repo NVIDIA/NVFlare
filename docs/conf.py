@@ -44,12 +44,12 @@ print(sys.path)
 # -- Project information -----------------------------------------------------
 
 project = "NVIDIA FLARE"
-copyright = "2022, NVIDIA"
+copyright = "2023, NVIDIA"
 author = "NVIDIA"
 
 # The full version, including alpha/beta/rc tags
-release = "2.2.1"
-version = "2.2.1"
+release = "2.3.0"
+version = "2.3.0"
 
 
 # -- General configuration ---------------------------------------------------
@@ -77,6 +77,7 @@ extensions = [
     "sphinx.ext.viewcode",
     "sphinx.ext.autosectionlabel",
     "sphinx_copybutton",
+    "sphinxcontrib.jquery"
 ]
 
 autoclass_content = "both"

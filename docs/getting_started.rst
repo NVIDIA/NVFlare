@@ -1,12 +1,16 @@
 .. _getting_started:
 
-###########
-Quick Start
-###########
+###############
+Getting Started
+###############
 
+.. _quickstart:
 
-**Install NVFLARE**
-======================
+Getting Started: Quick Start
+============================
+
+Install NVFLARE
+---------------
 
 .. code-block:: shell
 
@@ -21,18 +25,17 @@ Clone NVFLARE repo to get examples, switch main branch (latest stable branch)
   $ git switch main
 
 
-Note on branches
+Note on branches:
 
-* The [dev](https://github.com/NVIDIA/NVFlare/tree/dev) branch is the default (unstable) development branch
+* The `dev <https://github.com/NVIDIA/NVFlare/tree/dev>`_ branch is the default (unstable) development branch
 
-* The [main](https://github.com/NVIDIA/NVFlare/tree/main) branch is the stable branch, reflect the latest release
+* The `main <https://github.com/NVIDIA/NVFlare/tree/main>`_ branch is the stable branch, reflecting the latest release
 
-* The 2.0, 2.1, 2.2 and 2.3 etc. are the branches for each major release and minor patches
+* The 2.0, 2.1, 2.2, and 2.3 etc. branches are the branches for each major release and minor patches
 
 
-**Quick Start with Simulator**
-==============================
-
+Quick Start with Simulator
+--------------------------
 
 .. code-block:: shell
 
@@ -41,11 +44,8 @@ Note on branches
 Now you can watch the simulator run two clients (n=2) with two threads (t=2)
 and logs are saved in the `/tmp/nvflare/hello-numpy-sag` workspace.
 
-
-
-###############
-Getting Started
-###############
+Getting Started Guide
+=====================
 
 This Getting Started guide is geared towards new users of NVIDIA FLARE and walks through installation, the FL Simulator,
 and a simple "hello world" application.
@@ -66,7 +66,7 @@ Installation
 Python Version
 --------------
 
-NVIDIA FLARE requires Python 3.8+.  It may work with Python 3.7.
+NVIDIA FLARE requires Python 3.8+.
 
 Install NVIDIA FLARE in a virtual environment
 ---------------------------------------------
@@ -75,7 +75,7 @@ It is highly recommended to install NVIDIA FLARE in a virtual environment if you
 This guide briefly describes how to create a virtual environment with venv.
 
 Virtual Environments and Packages
-.................................
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Python's official document explains the main idea about virtual environments.
 The module used to create and manage virtual environments is called `venv <https://docs.python.org/3.8/library/venv.html#module-venv>`_.
@@ -283,32 +283,32 @@ and codes, logs of the output, site and global models, cross-site validation res
   simulator-example/workspace/
   ├── audit.log
   ├── local
-      │  └── log.config
+      │  └── log.config
       ├── simulate_job
-      │  ├── app_server
-      │  │   ├── config
-      │  │   ├── custom
-      │  │   └── FL_global_model.pt
-      │  ├── app_site-1
-      │  │   ├── audit.log
-      │  │   ├── config
-      │  │   ├── custom
-      │  │   └── log.txt
-      │  ├── app_site-2
-      │  │   ├── audit.log
-      │  │   ├── config
-      │  │   ├── custom
-      │  │   └── log.txt
-      │  ├── cross_site_val
-      │  │   ├── cross_val_results.json
-      │  │   ├── model_shareables
-      │  │   └── result_shareables
-      │  ├── log.txt
-      │  ├── models
-      │  │   └── local_model.pt
-      │  └── tb_events
-      │      ├── site-1
-      │      └── site-2
+      │  ├── app_server
+      │  │   ├── config
+      │  │   ├── custom
+      │  │   └── FL_global_model.pt
+      │  ├── app_site-1
+      │  │   ├── audit.log
+      │  │   ├── config
+      │  │   ├── custom
+      │  │   └── log.txt
+      │  ├── app_site-2
+      │  │   ├── audit.log
+      │  │   ├── config
+      │  │   ├── custom
+      │  │   └── log.txt
+      │  ├── cross_site_val
+      │  │   ├── cross_val_results.json
+      │  │   ├── model_shareables
+      │  │   └── result_shareables
+      │  ├── log.txt
+      │  ├── models
+      │  │   └── local_model.pt
+      │  └── tb_events
+      │      ├── site-1
+      │      └── site-2
       └── startup
 
 

@@ -10,21 +10,21 @@ execution and the running of multiple experiments in parallel.
 Concepts
 ********
 
+.. _job:
+
 Job
 ===
-In NVIDIA FLARE 2.1.0, to be able to run multiple experiments in parallel, the system needs to be able to make decisions
-as to when to run which experiments.
+In NVIDIA FLARE 2.1.0, to be able to run multiple experiments in parallel, the concept of jobs was introduced for better
+management of experiments. With jobs, the admin can submit a job and let the
+system manage the rest instead of previously, where the admin uploaded apps, set the run number, deployed, then started the app
+at the server and client sites.
 
 To be able to do this, the system now has to know everything about the experiment: which app(s)
 go to which clients or server, what are the resource requirements for this experiment, etc.
-The total definition of such needed information is called a Job.
+The total definition of such needed information is called a job.
 
-Many underlying assumptions about the operation of the system changed, with the admin now submitting a job and letting the
-system manage the rest, instead of before when the admin uploaded apps, set the run number, deployed, then started the app
-at the server and client sites.
-
-Jobs now contain all of the :ref:`apps<application>` and the information of which apps to deploy to which sites as the
-:ref:`deploy_map<deploy_map>` inside a meta.json that should be included with a job to be submitted::
+Jobs now contain all of the :ref:`apps <application>` and the information of which apps to deploy to which sites as the
+:ref:`deploy_map <deploy_map>` inside a meta.json that should be included with a job to be submitted::
 
     JOB_FOLDER:
         - meta.json
@@ -39,37 +39,39 @@ Jobs now contain all of the :ref:`apps<application>` and the information of whic
    automatically be created for it with the app being deployed to all participants. As such, apps can have both
    config_fed_server.json and config_fed_client.json and can be deployed to multiple participants.
 
-Here is an example for meta.json::
+Here is an example for meta.json:
+
+.. code-block:: json
 
     {
-      "name": "try_algo1",
-      "resource_spec": {
-        "client1": {
-          "num_gpus": 1,
-          "mem_per_gpu_in_GiB": 1
+        "name": "try_algo1",
+        "resource_spec": {
+            "client1": {
+                "num_gpus": 1,
+                "mem_per_gpu_in_GiB": 1
+            },
+            "client2": {
+                "num_gpus": 1,
+                "mem_per_gpu_in_GiB": 1
+            }
         },
-        "client2": {
-          "num_gpus": 1,
-          "mem_per_gpu_in_GiB": 1
-        }
-      },
-      "deploy_map": {
-        "hello-numpy-sag-server": [
-          "server"
-        ],
-        "hello-numpy-sag-client": [
-          "client1",
-          "client2"
-        ],
-        "hello-numpy-sag-client3": [
-          "client3"
+        "deploy_map": {
+            "hello-numpy-sag-server": [
+                "server"
+            ],
+            "hello-numpy-sag-client": [
+                "client1",
+                "client2"
+            ],
+            "hello-numpy-sag-client3": [
+                "client3"
+            ]
+        },
+        "min_clients": 2,
+        "mandatory_clients": [
+            "client1",
+            "client2"
         ]
-      },
-      "min_clients": 2,
-      "mandatory_clients": [
-        "client1",
-        "client2"
-      ]
     }
 
 Pay attention to the following:

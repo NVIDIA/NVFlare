@@ -55,7 +55,7 @@ with two clients and one server.
 
 Before you start, let's see what a simplified MNIST network looks like.
 
-.. literalinclude:: ../../examples/hello-world/hello-tf2/app/custom/tf2_net.py
+.. literalinclude:: ../../examples/hello-world/hello-tf2/jobs/hello-tf2/app/custom/tf2_net.py
    :language: python
    :lines: 15-
    :lineno-start: 15
@@ -79,7 +79,7 @@ Additionally, you must setup the optimizer, loss function and transform to proce
 Since every step will be encapsulated in the ``SimpleTrainer`` class,
 let's put this preparation stage into one method ``setup``:
 
-.. literalinclude:: ../../examples/hello-world/hello-tf2/app/custom/trainer.py
+.. literalinclude:: ../../examples/hello-world/hello-tf2/jobs/hello-tf2/app/custom/trainer.py
    :language: python
    :lines: 41-71
    :lineno-start: 41
@@ -94,7 +94,7 @@ NVIDIA FLARE enters or leaves a certain stage.
 In this case, there is an ``Event`` called ``EventType.START_RUN`` which perfectly matches these requirements. 
 Because our trainer is a subclass of ``FLComponent``, you can implement the handler to handle the event and call the setup method:
 
-.. literalinclude:: ../../examples/hello-world/hello-tf2/app/custom/trainer.py
+.. literalinclude:: ../../examples/hello-world/hello-tf2/jobs/hello-tf2/app/custom/trainer.py
    :language: python
    :lines: 37-39
    :lineno-start: 37
@@ -119,14 +119,14 @@ Link NVIDIA FLARE with Local Train
 
 Take a look at the following code:
 
-.. literalinclude:: ../../examples/hello-world/hello-tf2/app/custom/trainer.py
+.. literalinclude:: ../../examples/hello-world/hello-tf2/jobs/hello-tf2/app/custom/trainer.py
    :language: python
    :pyobject: SimpleTrainer.execute
 
 Every NVIDIA FLARE client receives the model weights from the server in the :ref:`shareable <shareable>`.
 This application uses the ``exclude_var`` filter, so make sure to replace the missing layer with weights from the clients' previous training round:
 
-.. literalinclude:: ../../examples/hello-world/hello-tf2/app/custom/trainer.py
+.. literalinclude:: ../../examples/hello-world/hello-tf2/jobs/hello-tf2/app/custom/trainer.py
    :language: python
    :lines: 111-115
    :lineno-start: 111
@@ -134,7 +134,7 @@ This application uses the ``exclude_var`` filter, so make sure to replace the mi
 
 Now update the local model with those received weights:
 
-.. literalinclude:: ../../examples/hello-world/hello-tf2/app/custom/trainer.py
+.. literalinclude:: ../../examples/hello-world/hello-tf2/jobs/hello-tf2/app/custom/trainer.py
    :language: python
    :lines: 118
    :lineno-start: 118
@@ -142,7 +142,7 @@ Now update the local model with those received weights:
 
 Then perform a simple :code:`self.model.fit` so the client's model is trained with its own dataset:
 
-.. literalinclude:: ../../examples/hello-world/hello-tf2/app/custom/trainer.py
+.. literalinclude:: ../../examples/hello-world/hello-tf2/jobs/hello-tf2/app/custom/trainer.py
    :language: python
    :lines: 122-127
    :lineno-start: 122
@@ -165,7 +165,7 @@ For this exercise, we use a basic ``exclude_var`` filter to exclude the variable
 as it goes outbound from the client to the server. The excluded layer is replaced with all zeros of the same shape,
 which reduces compression size and ensures that the clients' weights for this variable are not shared with the server.
 
-.. literalinclude:: ../../examples/hello-world/hello-tf2/app/custom/filter.py
+.. literalinclude:: ../../examples/hello-world/hello-tf2/jobs/hello-tf2/app/custom/filter.py
    :language: python
    :lines: 15-
    :lineno-start: 15
@@ -192,7 +192,7 @@ Model Persistor
 
 The model persistor is used to load and save models on the server.
 
-.. literalinclude:: ../../examples/hello-world/hello-tf2/app/custom/tf2_model_persistor.py
+.. literalinclude:: ../../examples/hello-world/hello-tf2/jobs/hello-tf2/app/custom/tf2_model_persistor.py
    :language: python
    :lines: 15-
    :lineno-start: 15
@@ -212,7 +212,7 @@ Application Configuration
 
 Finally, inside the config folder there are two files, ``config_fed_client.json`` and ``config_fed_server.json``.
 
-.. literalinclude:: ../../examples/hello-world/hello-tf2/app/config/config_fed_server.json
+.. literalinclude:: ../../examples/hello-world/hello-tf2/jobs/hello-tf2/app/config/config_fed_server.json
    :language: json
    :linenos:
    :caption: config_fed_server.json
@@ -225,7 +225,7 @@ The ``persistor`` is configured to use ``TF2ModelPersistor`` in the custom direc
 Python module paths.
 
 
-.. literalinclude:: ../../examples/hello-world/hello-tf2/app/config/config_fed_client.json
+.. literalinclude:: ../../examples/hello-world/hello-tf2/jobs/hello-tf2/app/config/config_fed_client.json
    :language: json
    :linenos:
    :caption: config_fed_client.json
@@ -251,3 +251,10 @@ You've successfully built and run a federated learning system using TensorFlow 2
 
 The full source code for this exercise can be found in
 `examples/hello-tf2 <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-tf2>`_.
+
+Previous Versions of Hello TensorFlow 2
+---------------------------------------
+
+   - `hello-tf2 for 2.0 <https://github.com/NVIDIA/NVFlare/tree/2.0/examples/hello-tf2>`_
+   - `hello-tf2 for 2.1 <https://github.com/NVIDIA/NVFlare/tree/2.1/examples/hello-tf2>`_
+   - `hello-tf2 for 2.2 <https://github.com/NVIDIA/NVFlare/tree/2.2/examples/hello-tf2>`_

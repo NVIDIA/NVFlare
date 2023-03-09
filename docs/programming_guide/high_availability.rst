@@ -29,6 +29,8 @@ Automatic Server Failover
 The most important feature of HA is automatic cutover to a standby server when the current hot or active server is out of
 service, without human intervention. The Overseer and Overseer Agents help support this automatic SP cutover.
 
+.. _overseer:
+
 Overseer
 ========
 The Overseer provides the authoritative endpoint info of the hot FL server. All other system entities (FL servers, FL
@@ -92,68 +94,68 @@ The Overseer client is responsible for handling Overseer responses (or the lack 
 
 FL Client
 ---------
-No response from Overseer (connection error, etc.)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-If I already have a hot SP, I’ll continue using it. I’ll keep retrying to communicate with the Overseer to obtain a response.
+FL Client: No response from Overseer (connection error, etc.)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+If I already have a hot SP, I'll continue using it. I'll keep retrying to communicate with the Overseer to obtain a response.
 
-No hot SP available
-^^^^^^^^^^^^^^^^^^^
-If I already have a hot SP, I’ll continue using it. I’ll keep retrying to communicate with the Overseer to obtain a
+FL Client: No hot SP available
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+If I already have a hot SP, I'll continue using it. I'll keep retrying to communicate with the Overseer to obtain a
 different response.
 
-Hot SP has not changed
-^^^^^^^^^^^^^^^^^^^^^^
-I’ll continue to use the current hot FL Server.
+FL Client: Hot SP has not changed
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+I'll continue to use the current hot FL Server.
 
-Hot SP has changed
-^^^^^^^^^^^^^^^^^^
-I’ll suspend current jobs and abort current running tasks (if any), and try to login to the new hot FL server. After that,
+FL Client: Hot SP has changed
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+I'll suspend current jobs and abort current running tasks (if any), and try to login to the new hot FL server. After that,
 I will resume current jobs, if any. If I run into any communication issues with the new server, I will keep retrying
 until success or the hot server endpoint changes again.
 
 FL Server
 ---------
-No response from Overseer (connection error, etc.)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-I’ll stay in my current mode (hot or cold). I’ll keep retrying to communicate with the Overseer to obtain a response.
+FL Server: No response from Overseer (connection error, etc.)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+I'll stay in my current mode (hot or cold). I'll keep retrying to communicate with the Overseer to obtain a response.
 
-No hot SP available
-^^^^^^^^^^^^^^^^^^^
-I’ll stay in my current mode (hot or cold). I’ll keep retrying to communicate with the Overseer to obtain a
+FL Server: No hot SP available
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+I'll stay in my current mode (hot or cold). I'll keep retrying to communicate with the Overseer to obtain a
 different response.
 
-Hot SP is available
-^^^^^^^^^^^^^^^^^^^
-If I’m currently cold, and the hot SP is not me, then I stay cold.
+FL Server: Hot SP is available
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+If I'm currently cold, and the hot SP is not me, then I stay cold.
 
-If I’m currently hot, and the hot SP is me, then I stay hot.
+If I'm currently hot, and the hot SP is me, then I stay hot.
 
-If I’m currently cold, and the hot SP has changed to me, then I transition to the Cold-to-Hot state. In this state, I
+If I'm currently cold, and the hot SP has changed to me, then I transition to the Cold-to-Hot state. In this state, I
 will try to restart the unfinished jobs and get ready for client requests. Once ready, I transition to the hot state. If
-any requests are received during the Cold-to-Hot state, I’ll tell them to try later.
+any requests are received during the Cold-to-Hot state, I'll tell them to try later.
 
-If I’m currently hot, and the hot SP has changed to not me, then I transition to the Hot-to-Cold state. In this state,
+If I'm currently hot, and the hot SP has changed to not me, then I transition to the Hot-to-Cold state. In this state,
 I will prepare to stop serving the client requests. If any requests are received during the Hot-to-Cold state, I will
 tell them I am not in service. This is a transition state to the cold state.
 
 Admin Client
 ------------
-No response from Overseer (connection error, etc.)
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-If I already have a hot SP, I’ll keep using it. I’ll keep retrying to communicate with the Overseer to obtain a response.
+Admin Client: No response from Overseer (connection error, etc.)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+If I already have a hot SP, I'll keep using it. I'll keep retrying to communicate with the Overseer to obtain a response.
 
-No hot SP available
-^^^^^^^^^^^^^^^^^^^
-If I already have a hot SP, I’ll keep using it. I’ll keep retrying to communicate with the Overseer to obtain a
+Admin Client: No hot SP available
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+If I already have a hot SP, I'll keep using it. I'll keep retrying to communicate with the Overseer to obtain a
 different response.
 
-Hot SP has not changed
-^^^^^^^^^^^^^^^^^^^^^^
-I’ll continue to use the current hot FL server.
+Admin Client: Hot SP has not changed
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+I'll continue to use the current hot FL server.
 
-Hot SP has changed
-^^^^^^^^^^^^^^^^^^
-I’ll try to login to the new hot FL server. After that, I will issue commands to the new hot server. If I run
+Admin Client: Hot SP has changed
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+I'll try to login to the new hot FL server. After that, I will issue commands to the new hot server. If I run
 into any communication issues with the new server, I will keep retrying until success or the hot server
 endpoint changes again.
 
@@ -168,9 +170,9 @@ snapshot-based job continuation mechanism.
     - During the execution of the job, the Controller initiates the creation of additional snapshots, based on its
       own control logic. Some controllers may decide not to create additional snapshots. For example, the
       Scatter-and-Gather controller works based on the concept of rounds, and it creates a snapshot after each round;
-      whereas the cross-site-validation controller doesn’t create any snapshots.
+      whereas the cross-site-validation controller doesn't create any snapshots.
     - After the SP cutover, the Controller will initiate the restoration of job execution state from the latest snapshot.
-      If the Controller didn’t create additional snapshots, then the job will be executed from the beginning after the SP cutover.
+      If the Controller didn't create additional snapshots, then the job will be executed from the beginning after the SP cutover.
     - Note that if clients detect the SP change, they will call "abort_task" to abort the current running task, because
       that task came from the previous SP. If at that moment there is a task running, it will be aborted with the "TASK_ABORTED"
       return code.
