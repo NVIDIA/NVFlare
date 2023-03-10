@@ -12,7 +12,7 @@ Cloud Deployment Support
 ========================
 The Dashboard UI now has expanded support for cloud deployments for both Azure and AWS.
 Simple CLI commands now exist to create the infrastructure, deploy, and start the Dashboard UI,
-FL Server, and FL Client(s)::
+FL Server, and FL Client(s):
 
 .. code-block:: bash
 
@@ -116,6 +116,5 @@ Previous Releases of FLARE
 .. toctree::
    :maxdepth: 1
 
-   release_notes/flare_221
    release_notes/flare_220
    release_notes/flare_210

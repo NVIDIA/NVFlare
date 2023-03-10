@@ -22,11 +22,11 @@ from nvflare.app_common.utils.component_utils import check_component_type
 
 
 class PSI(InitFinalComponent, ABC):
-    """
-    PSI interface is intended for end-user interface to
-    get intersection of items of clients specified without knowing
-    1) the details of PSI algorithms
-    2) real client's own items to other FL clients and FL Servers
+    """The PSI interface is intended for the end-user interface to
+    get an intersection of items of clients specified without knowing::
+
+        1) the details of PSI algorithms
+        2) real client's own items to other FL clients and FL Servers
     """
 
     def __init__(self, psi_writer_id: str):
@@ -50,9 +50,8 @@ class PSI(InitFinalComponent, ABC):
 
     @abstractmethod
     def load_items(self) -> List[str]:
-        """
-            This method needs to be implemented to provide the list of items to PSI algorithm in order to
-            calculate intersection.
+        """This method needs to be implemented to provide the list of items to PSI algorithm in order to
+        calculate intersection.
 
         Returns: List of Items to be used for intersection calculation
 
@@ -60,8 +59,8 @@ class PSI(InitFinalComponent, ABC):
         pass
 
     def get_intersection(self) -> Optional[List[str]]:
-        """
-            This method will return the calculated intersection once PSI job is completed and successful
+        """This method will return the calculated intersection once PSI job is completed and successful.
+
         Returns: Intersection result or None
         """
         return self.intersection

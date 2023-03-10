@@ -21,11 +21,15 @@ from nvflare.apis.fl_context import FLContext
 class StatisticsWriter(FLComponent, ABC):
     @abstractmethod
     def save(self, data: dict, overwrite_existing: bool, fl_ctx: FLContext):
-        """
-            save data
-        :param data: the data to be saved
-        :param overwrite_existing
-        :param fl_ctx: FLContext
-        :return: None
+        """Save data.
+
+        To perform data privacy min_count check, failure_count is always required.
+
+        Args:
+            data: the data to be saved
+            overwrite_existing: whether or not to overwrite existing
+            fl_ctx: FLContext
+
+        Returns: None
         """
         pass
