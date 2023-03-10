@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .cifar10_learner_splitnn import CIFAR10LearnerSplitNN
-from .cifar10_splitnn_dataset import CIFAR10SplitNN
-from .cifar10_vertical_data_splitter import Cifar10VerticalDataSplitter
-from .split_nn import SplitNN
+from splitnn.cifar10_learner_splitnn import CIFAR10LearnerSplitNN
+from splitnn.cifar10_splitnn_dataset import CIFAR10SplitNN
+from splitnn.cifar10_vertical_data_splitter import Cifar10VerticalDataSplitter
+from splitnn.split_nn import SplitNN
