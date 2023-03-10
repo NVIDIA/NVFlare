@@ -105,7 +105,7 @@ class Statistics(InitFinalComponent, ABC):
         bin_ranges: Optional[Dict[str, Optional[List[float]]]],
     ):
         """This method is the initial hand-shake, where controller pass all the requested statistics configuration to client.
-        
+
         This method invocation is optional and Configured via controller argument. If it is configured,
         this method will be called before all other statistic calculation methods
 

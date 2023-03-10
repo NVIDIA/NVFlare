@@ -27,12 +27,12 @@ class AddNoiseToMinMax(FLComponent, StatisticsPrivacyCleanser):
         Args:
             min_noise_level: minimum noise -- used to protect min/max values before sending to server
             max_noise_level: maximum noise -- used to protect min/max values before sending to server
-                       
+
         For example, the random noise is to be within (0.1 and 0.3), i.e. 10% to 30% level.
         This component will make local min values smaller than the true local min values, and max values larger than
         the true local max values. As result, the estimate global max and min values (i.e. with noise)
         are still bound to the true global min/max values, such that:
-        
+
         .. code-block:: text
 
             est. global min value <

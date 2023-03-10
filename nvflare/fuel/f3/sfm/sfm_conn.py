@@ -30,7 +30,7 @@ log = logging.getLogger(__name__)
 
 class SfmConnection:
     """A wrapper of driver connection.
-    
+
     Driver connection deals with frame. This connection handles messages.
 
     The frame format:

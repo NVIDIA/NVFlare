@@ -91,7 +91,7 @@ class Controller(Responder, ControllerSpec, ABC):
 
     def initialize_run(self, fl_ctx: FLContext):
         """Called by runners to initialize controller with information in fl_ctx.
-        
+
         .. attention::
 
             Controller subclasses must not overwrite this method.
@@ -142,7 +142,7 @@ class Controller(Responder, ControllerSpec, ABC):
 
     def process_task_request(self, client: Client, fl_ctx: FLContext) -> Tuple[str, str, Shareable]:
         """Called by runner when a client asks for a task.
-        
+
         .. note::
 
             This is called in a separate thread.
@@ -325,7 +325,7 @@ class Controller(Responder, ControllerSpec, ABC):
 
     def process_submission(self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext):
         """Called to process a submission from one client.
-        
+
         .. note::
 
             This method is called by a separate thread.
@@ -628,7 +628,7 @@ class Controller(Responder, ControllerSpec, ABC):
         """Cancel the specified task.
 
         Change the task completion_status, which will inform task monitor to clean up this task
-        
+
         .. note::
 
             We only mark the task as completed and leave it to the task monitor to clean up. This is to avoid potential deadlock of task_lock.
@@ -671,7 +671,7 @@ class Controller(Responder, ControllerSpec, ABC):
 
     def abort_all_tasks(self, fl_ctx: FLContext):
         """Ask clients to abort the execution of all tasks.
-        
+
         .. note::
 
             The server should send a notification to all clients, regardless of whether the server has any standing tasks.
@@ -683,7 +683,7 @@ class Controller(Responder, ControllerSpec, ABC):
 
     def finalize_run(self, fl_ctx: FLContext):
         """Do cleanup of the coordinator implementation.
-        
+
         .. attention::
 
             Subclass controllers should not overwrite finalize_run.

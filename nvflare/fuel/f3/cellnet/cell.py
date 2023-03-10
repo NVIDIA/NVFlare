@@ -286,12 +286,12 @@ class Cell(MessageReceiver, EndpointMonitor):
             parent_url: url for connecting to parent cell
 
         FQCN is the names of all ancestor, concatenated with dots.
-        
-        
+
+
         .. note::
 
             Internal listener is automatically created for root cells.
-        
+
         .. code-block:: text
 
             Example:
