@@ -28,9 +28,7 @@ class ComponentBuilder:
         pass
 
     def is_class_config(self, config_dict: dict) -> bool:
-        # the dict has both path/name or args, it's likely a component,
-        # test if it has a valid class path
-        if "args" in config_dict and ("path" in config_dict or "name" in config_dict):
+        def has_valid_class_path():
             try:
                 _ = self.get_class_path(config_dict)
                 # we have valid class path
@@ -38,6 +36,11 @@ class ComponentBuilder:
             except ConfigError:
                 # this is not a valid class path
                 return False
+
+        # regardless it has args or not. if path/name and valid class path, very likely we have
+        # class config.
+        if ("path" in config_dict or "name" in config_dict) and has_valid_class_path():
+            return True
         else:
             return False
 
