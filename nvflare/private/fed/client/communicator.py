@@ -195,10 +195,11 @@ class Communicator:
             size = len(task.payload)
             task.payload = fobs.loads(task.payload)
             task_name = task.payload.get_header(ServerCommandKey.TASK_NAME)
-            self.logger.debug(
-                f"Received from {project_name} server "
-                f" ({size} Bytes). getTask: {task_name} time: {end_time - start_time} seconds"
-            )
+            if task_name not in [SpecialTaskName.END_RUN, SpecialTaskName.TRY_AGAIN]:
+                self.logger.info(
+                    f"Received from {project_name} server "
+                    f" ({size} Bytes). getTask: {task_name} time: {end_time - start_time} seconds"
+                )
         else:
             simulate_mode = fl_ctx.get_prop(FLContextKey.SIMULATE_MODE, False)
             if simulate_mode:

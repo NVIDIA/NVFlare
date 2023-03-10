@@ -19,8 +19,9 @@ import threading
 import time
 from abc import ABC, abstractmethod
 from threading import Lock
-from typing import List, Optional
+from typing import Dict, List, Optional
 
+from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import (
@@ -87,13 +88,11 @@ class BaseServer(ABC):
 
         self.heart_beat_timeout = heart_beat_timeout
         self.handlers = handlers
-        # self.cmd_modules = cmd_modules
 
         self.client_manager = ClientManager(
             project_name=self.project_name, min_num_clients=self.min_num_clients, max_num_clients=self.max_num_clients
         )
 
-        # self.grpc_server = None
         self.cell = None
         self.admin_server = None
         self.lock = Lock()
@@ -110,7 +109,12 @@ class BaseServer(ABC):
 
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def get_all_clients(self):
+    def get_all_clients(self) -> Dict[str, Client]:
+        """Get the list of registered clients.
+
+        Returns:
+            A dict of {client_token: client}
+        """
         return self.client_manager.get_clients()
 
     @abstractmethod
@@ -134,12 +138,9 @@ class BaseServer(ABC):
 
     def deploy(self, args, grpc_args=None, secure_train=False):
         """Start a grpc server and listening the designated port."""
-        # num_server_workers = grpc_args.get("num_server_workers", 1)
-        # num_server_workers = max(self.client_manager.get_min_clients(), num_server_workers)
         target = grpc_args["service"].get("target", "0.0.0.0:6007")
         scheme = grpc_args["service"].get("scheme", "grpc")
 
-        # grpc_options = grpc_args["service"].get("options", GRPC_DEFAULT_OPTIONS)
         if secure_train:
             root_cert = grpc_args[SecureTrainConst.SSL_ROOT_CERT]
             ssl_cert = grpc_args[SecureTrainConst.SSL_CERT]
@@ -277,9 +278,6 @@ class FederatedServer(BaseServer):
 
         self.builder = None
 
-        # Additional fields for CurrentTask meta_data in GetModel API.
-        self.current_model_meta_data = {}
-
         self.engine = self._create_server_engine(args, snapshot_persistor)
         self.run_manager = None
         self.server_runner = None
@@ -295,9 +293,6 @@ class FederatedServer(BaseServer):
         self.overseer_agent = overseer_agent
         self.server_state: ServerState = ColdState()
         self.snapshot_persistor = snapshot_persistor
-
-        # self._register_cellnet_cbs()
-        # mpm.add_cleanup_cb(self.engine.close)
 
     def _register_cellnet_cbs(self):
         self.cell.register_request_cb(
@@ -323,17 +318,13 @@ class FederatedServer(BaseServer):
         )
 
     def _listen_command(self, request: Message) -> Message:
-
-        assert isinstance(request, Message), "request must be CellMessage but got {}".format(type(request))
-
         job_id = request.get_header(CellMessageHeaderKeys.JOB_ID)
         command = request.get_header(MessageHeaderKey.TOPIC)
         data = fobs.loads(request.payload)
 
         if command == ServerCommandNames.GET_CLIENTS:
             if job_id in self.engine.run_processes:
-                clients = self.engine.run_processes.get(job_id).get(RunProcessKey.PARTICIPANTS)
-                # job_id = self.engine.run_processes.get(job_id).get(RunProcessKey.JOB_ID)
+                clients = self.engine.run_processes[job_id].get(RunProcessKey.PARTICIPANTS)
                 return_data = {ServerCommandKey.CLIENTS: clients, ServerCommandKey.JOB_ID: job_id}
             else:
                 return_data = {ServerCommandKey.CLIENTS: None, ServerCommandKey.JOB_ID: job_id}
@@ -383,12 +374,10 @@ class FederatedServer(BaseServer):
 
         cell.start()
         net_agent = NetAgent(cell)
-        # self.cell = cell
 
         self.command_agent = ServerCommandAgent(self.engine, cell)
         self.command_agent.start()
 
-        # mpm.add_cleanup_cb(self.command_agent.shutdown)
         mpm.add_cleanup_cb(net_agent.close)
         mpm.add_cleanup_cb(cell.stop)
 
@@ -418,8 +407,8 @@ class FederatedServer(BaseServer):
         This function is not thread-safe.
         """
         self.tokens = dict()
-        for client in self.get_all_clients().keys():
-            self.tokens[client] = self.task_meta_info(client.name)
+        for token, client in self.get_all_clients().items():
+            self.tokens[token] = self.task_meta_info(client.name)
 
     def _before_service(self, fl_ctx: FLContext):
         # before the service processing
@@ -457,9 +446,7 @@ class FederatedServer(BaseServer):
             state_check = self.server_state.register(fl_ctx)
 
             self._handle_state_check(state_check, fl_ctx)
-            # if state_check.get(ACTION) in [NIS, ABORT_RUN]:
-            #     return make_cellnet_reply(rc=F3ReturnCode.COMM_ERROR, error=state_check.get(MESSAGE))
-            # else:
+
             client = self.client_manager.authenticate(request, fl_ctx)
             if client and client.token:
                 self.tokens[client.token] = self.task_meta_info(client.name)
@@ -478,8 +465,6 @@ class FederatedServer(BaseServer):
         if state_check.get(ACTION) in [NIS, ABORT_RUN]:
             fl_ctx.set_prop(FLContextKey.COMMUNICATION_ERROR, state_check.get(MESSAGE), sticky=False)
 
-    # def Quit(self, request, context):
-    # @request_processing
     def quit_client(self, request: Message) -> Message:
         """Existing client quits the federated training process.
 
@@ -488,7 +473,6 @@ class FederatedServer(BaseServer):
 
         This function does not change min_num_clients and max_num_clients.
         """
-        # fire_event(EventType.CLIENT_QUIT, self.handlers, self.fl_ctx)
 
         with self.engine.new_context() as fl_ctx:
             client = self.client_manager.validate_client(request, fl_ctx)
@@ -557,7 +541,7 @@ class FederatedServer(BaseServer):
                 shareable.set_header(ServerCommandKey.FL_CLIENT, client.name)
                 fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
                 request = new_cell_message({}, fobs.dumps(shareable))
-                return_data = self.cell.fire_and_forget(
+                self.cell.fire_and_forget(
                     targets=fqcn,
                     channel=CellChannel.SERVER_COMMAND,
                     topic=ServerCommandNames.HANDLE_DEAD_JOB,
@@ -625,9 +609,6 @@ class FederatedServer(BaseServer):
 
                 time.sleep(self.check_engine_frequency)
 
-            # if engine_thread.is_alive():
-            #     engine_thread.join()
-
         finally:
             self.engine.engine_info.status = MachineStatus.STOPPED
             self.run_manager = None
@@ -669,8 +650,9 @@ class FederatedServer(BaseServer):
         super().deploy(args, grpc_args, secure_train)
 
         target = grpc_args["service"].get("target", "0.0.0.0:6007")
-        self.server_state.host = target.split(":")[0]
-        self.server_state.service_port = target.split(":")[1]
+        with self.lock:
+            self.server_state.host = target.split(":")[0]
+            self.server_state.service_port = target.split(":")[1]
 
         self.overseer_agent = self._init_agent(args)
 
@@ -686,7 +668,6 @@ class FederatedServer(BaseServer):
         self._register_cellnet_cbs()
 
         self.overseer_agent.start(self.overseer_callback)
-        # mpm.add_cleanup_cb(self.overseer_agent.end)
 
     def _init_agent(self, args=None):
         kv_list = parse_vars(args.set)
@@ -705,17 +686,16 @@ class FederatedServer(BaseServer):
             return
 
         sp = overseer_agent.get_primary_sp()
-        # print(sp)
-        with self.engine.new_context() as fl_ctx:
-            self.server_state = self.server_state.handle_sd_callback(sp, fl_ctx)
+
+        with self.lock:
+            with self.engine.new_context() as fl_ctx:
+                self.server_state = self.server_state.handle_sd_callback(sp, fl_ctx)
 
         if isinstance(self.server_state, Cold2HotState):
-            server_thread = threading.Thread(target=self._turn_to_hot)
-            server_thread.start()
+            self._turn_to_hot()
 
-        if isinstance(self.server_state, Hot2ColdState):
-            server_thread = threading.Thread(target=self._turn_to_cold)
-            server_thread.start()
+        elif isinstance(self.server_state, Hot2ColdState):
+            self._turn_to_cold()
 
     def _turn_to_hot(self):
         # Restore Snapshot
@@ -737,8 +717,7 @@ class FederatedServer(BaseServer):
                         job_clients = snapshot.get_component_snapshot(SnapshotKey.JOB_INFO).get(SnapshotKey.JOB_CLIENTS)
                         self.logger.info(f"Restore the previous snapshot. Run_number: {run_number}")
                         with self.engine.new_context() as fl_ctx:
-                            job_runner = self.engine.job_runner
-                            job_runner.restore_running_job(
+                            self.engine.job_runner.restore_running_job(
                                 run_number=run_number,
                                 job_id=job_id,
                                 job_clients=job_clients,
@@ -746,13 +725,15 @@ class FederatedServer(BaseServer):
                                 fl_ctx=fl_ctx,
                             )
 
+        with self.lock:
             self.server_state = HotState(
                 host=self.server_state.host, port=self.server_state.service_port, ssid=self.server_state.ssid
             )
 
     def _turn_to_cold(self):
-        # Wrap-up server operations
-        self.server_state = ColdState(host=self.server_state.host, port=self.server_state.service_port)
+        self.engine.stop_all_jobs()
+        with self.lock:
+            self.server_state = ColdState(host=self.server_state.host, port=self.server_state.service_port)
 
     def stop_training(self):
         self.status = ServerStatus.STOPPED

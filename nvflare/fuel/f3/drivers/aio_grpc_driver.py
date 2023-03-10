@@ -102,13 +102,13 @@ class AioStreamSession(Connection):
                 if error.code() == grpc.StatusCode.CANCELLED:
                     self.logger.debug(f"Connection {self} is closed by peer")
                 else:
-                    self.logger.error(f"Connection {self} Error: {error.details()}")
+                    self.logger.debug(f"Connection {self} Error: {error.details()}")
                     self.logger.debug(traceback.format_exc())
             else:
                 self.logger.debug(f"Connection {self} is closed locally")
         except Exception as ex:
             if not self.closing:
-                self.logger.error(f"{self}: exception {type(ex)} in read_loop: {ex}")
+                self.logger.debug(f"{self}: exception {type(ex)} in read_loop: {ex}")
                 self.logger.debug(traceback.format_exc())
 
         self.logger.debug(f"{self}: in {ct.name}: done read_loop")
@@ -124,7 +124,7 @@ class AioStreamSession(Connection):
             if self.closing:
                 self.logger.debug(f"{self}: connection closed by {type(ex)}: {ex}")
             else:
-                self.logger.error(f"{self}: generate_output exception {type(ex)}: {ex}")
+                self.logger.debug(f"{self}: generate_output exception {type(ex)}: {ex}")
             self.logger.debug(traceback.format_exc())
 
         self.logger.debug(f"{self}: done generate_output")
@@ -143,7 +143,7 @@ class Servicer(StreamerServicer):
                 f = await connection.oq.get()
                 await grpc_context.write(f)
         except Exception as ex:
-            self.logger.error(f"_write_loop except: {type(ex)}: {ex}")
+            self.logger.debug(f"_write_loop except: {type(ex)}: {ex}")
         self.logger.debug("finished _write_loop")
 
     async def Stream(self, request_iterator, context):
@@ -173,11 +173,11 @@ class Servicer(StreamerServicer):
             except asyncio.CancelledError:
                 self.logger.debug("SERVER: RPC cancelled")
             except Exception as ex:
-                self.logger.error(f"await gather except: {type(ex)}: {ex}")
+                self.logger.debug(f"await gather except: {type(ex)}: {ex}")
             self.logger.debug(f"SERVER: done await gather in thread {ct.name}")
 
         except Exception as ex:
-            self.logger.error(f"Connection closed due to error: {ex}")
+            self.logger.debug(f"Connection closed due to error: {ex}")
         finally:
             if connection:
                 with connection.lock:
@@ -212,7 +212,7 @@ class Server:
                 self.grpc_server.add_insecure_port(addr)
         except Exception as ex:
             conn_ctx.error = f"cannot listen on {addr}: {type(ex)}: {ex}"
-            self.logger.error(conn_ctx.error)
+            self.logger.debug(conn_ctx.error)
 
     async def start(self, conn_ctx: _ConnCtx):
         self.logger.debug("starting grpc server")
@@ -262,7 +262,7 @@ class AioGrpcDriver(BaseDriver):
                 await self.server.start(conn_ctx)
             except Exception as ex:
                 if not self.closing:
-                    self.logger.error(traceback.format_exc())
+                    self.logger.debug(traceback.format_exc())
                 conn_ctx.error = f"failed to start server: {type(ex)}: {ex}"
         conn_ctx.waiter.set()
 
@@ -321,7 +321,7 @@ class AioGrpcDriver(BaseDriver):
                     if self.closing:
                         self.logger.debug(f"Connection {connection} closed by {type(ex)}: {ex}")
                     else:
-                        self.logger.error(f"Connection {connection} client read exception {type(ex)}: {ex}")
+                        self.logger.debug(f"Connection {connection} client read exception {type(ex)}: {ex}")
                     self.logger.debug(traceback.format_exc())
 
             with connection.lock:
@@ -335,7 +335,7 @@ class AioGrpcDriver(BaseDriver):
                 self.logger.debug(conn_ctx.error)
             else:
                 self.logger.debug(conn_ctx.error)
-            self.logger.error(traceback.format_exc())
+            self.logger.debug(traceback.format_exc())
 
         conn_ctx.waiter.set()
 

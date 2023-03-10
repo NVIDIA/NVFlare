@@ -9,13 +9,11 @@ client_token.txt
 audit.log
 transfer
 workspaces
+*__nvfl*
 
 # python
 __pycache__
 .pyc
-
-# virtual environments
-nvflare_cifar10
 
 # data
 dataset

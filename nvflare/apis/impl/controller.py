@@ -72,7 +72,7 @@ def _get_client_task(target, task: Task):
 
 
 class Controller(Responder, ControllerSpec, ABC):
-    def __init__(self, task_check_period=0.5):
+    def __init__(self, task_check_period=0.05):
         """Manage life cycles of tasks and their destinations.
 
         Args:
@@ -355,11 +355,11 @@ class Controller(Responder, ControllerSpec, ABC):
         with self._task_lock:
             # task_id is the uuid associated with the client_task
             client_task = self._client_task_map.get(task_id, None)
-            self.logger.debug("Get submission from client task={} id={}".format(client_task, task_id))
+            self.log_debug(fl_ctx, "Get submission from client task={} id={}".format(client_task, task_id))
 
         if client_task is None:
             # cannot find a standing task for the submission
-            self.log_info(fl_ctx, "no standing task found for {}:{}".format(task_name, task_id))
+            self.log_debug(fl_ctx, "no standing task found for {}:{}".format(task_name, task_id))
             self.process_result_of_unknown_task(client, task_name, task_id, result, fl_ctx)
             return
 
@@ -382,7 +382,7 @@ class Controller(Responder, ControllerSpec, ABC):
 
             if task.result_received_cb is not None:
                 try:
-                    self.log_info(fl_ctx, "invoking result_received_cb ...")
+                    self.log_debug(fl_ctx, "invoking result_received_cb ...")
                     task.result_received_cb(client_task=client_task, fl_ctx=fl_ctx)
                 except BaseException as e:
                     # this task cannot proceed anymore
@@ -395,7 +395,7 @@ class Controller(Responder, ControllerSpec, ABC):
                     task.completion_status = TaskCompletionStatus.ERROR
                     task.exception = e
             else:
-                self.log_info(fl_ctx, "no result_received_cb")
+                self.log_debug(fl_ctx, "no result_received_cb")
 
             client_task.result_received_time = time.time()
 
