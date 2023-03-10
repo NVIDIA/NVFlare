@@ -111,8 +111,9 @@ def prepare_examples(poc_workspace: str):
 
 def prepare_poc(number_of_clients: int, poc_workspace: str):
     print(f"prepare_poc at {poc_workspace} for {number_of_clients} clients")
-    generate_poc(number_of_clients, poc_workspace)
-    prepare_examples(poc_workspace)
+    ret_code = generate_poc(number_of_clients, poc_workspace)
+    if ret_code:
+        prepare_examples(poc_workspace)
 
 
 def sort_package_cmds(cmd_type, package_cmds: list) -> list:
