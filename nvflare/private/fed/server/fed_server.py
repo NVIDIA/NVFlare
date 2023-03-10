@@ -546,6 +546,7 @@ class FederatedServer(BaseServer):
                     channel=CellChannel.SERVER_COMMAND,
                     topic=ServerCommandNames.HANDLE_DEAD_JOB,
                     message=request,
+                    optional=True,
                 )
         except BaseException:
             self.logger.info("Could not connect to server runner process")
