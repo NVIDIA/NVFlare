@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import re
+from platform import python_version
 
 import pytest
-from platform import python_version
 
 from nvflare.app_common.np.np_model_locator import NPModelLocator
 from tests.unit_test.fuel.utils.mock_component_builder import MockComponentBuilder
@@ -141,14 +141,14 @@ class TestComponentBuilder:
         builder = MockComponentBuilder()
         assert isinstance(config, dict)
 
-        with pytest.raises(ValueError, match=re.escape(msg),):
+        with pytest.raises(
+            ValueError,
+            match=re.escape(msg),
+        ):
             b = builder.build_component(config)
 
     def test_component_wo_args(self):
-        config = {
-            "id": "id",
-            "path": "tests.unit_test.fuel.utils.component_builder_test.MyComponentWithDictArgs"
-        }
+        config = {"id": "id", "path": "tests.unit_test.fuel.utils.component_builder_test.MyComponentWithDictArgs"}
         builder = MockComponentBuilder()
         assert isinstance(config, dict)
         b = builder.build_component(config)
@@ -177,9 +177,7 @@ class TestComponentBuilder:
             "args": {
                 "model": {
                     "path": "tests.unit_test.fuel.utils.component_builder_test.MyComponentWithPathArgs",
-                    "args": {
-                        "path": "/tmp/nvflare"
-                    }
+                    "args": {"path": "/tmp/nvflare"},
                 }
             },
         }
