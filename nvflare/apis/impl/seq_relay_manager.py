@@ -107,11 +107,13 @@ class SequentialRelayTaskManager(TaskManager):
 
         """
         # adjust client window
-        last_send_idx = task.props[_KEY_LAST_SEND_IDX]
         task_result_timeout = task.props[_KEY_TASK_RESULT_TIMEOUT]
-        if last_send_idx >= 0:
+        last_send_idx = task.props[_KEY_LAST_SEND_IDX]
+        last_send_target = task.targets[last_send_idx]
+
+        if last_send_idx >= 0 and last_send_target in task.last_client_task_map:
             # see whether the result has been received
-            last_task = task.last_client_task_map[task.targets[last_send_idx]]
+            last_task = task.last_client_task_map[last_send_target]
             self.logger.debug("last_task={}".format(last_task))
 
             if last_task.result_received_time is None:
