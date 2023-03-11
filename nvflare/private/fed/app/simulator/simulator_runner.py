@@ -77,6 +77,8 @@ class SimulatorRunner(FLComponent):
         self.deploy_args = None
         self.build_ctx = None
 
+        self.clients_created = 0
+
     def _generate_args(
         self, job_folder: str, workspace: str, clients=None, n_clients=None, threads=None, gpu=None, max_clients=100
     ):
@@ -286,17 +288,29 @@ class SimulatorRunner(FLComponent):
     def create_clients(self):
         # Deploy the FL clients
         self.logger.info("Create the simulate clients.")
+        client_count_lock = threading.Lock()
+        clients_created_waiter = threading.Event()
         for client_name in self.client_names:
-            client, self.client_config, self.deploy_args, self.build_ctx = self.deployer.create_fl_client(
-                client_name, self.args
-            )
-            self.federated_clients.append(client)
-            app_root = os.path.join(self.simulator_root, "app_" + client_name)
-            app_custom_folder = os.path.join(app_root, "custom")
-            sys.path.append(app_custom_folder)
+            threading.Thread(
+                target=self.create_client, args=[client_name, client_count_lock, clients_created_waiter]
+            ).start()
 
+        clients_created_waiter.wait()
         self.logger.info("Set the client status ready.")
         self._set_client_status()
+
+    def create_client(self, client_name, client_count_lock, clients_created_waiter):
+        client, self.client_config, self.deploy_args, self.build_ctx = self.deployer.create_fl_client(
+            client_name, self.args
+        )
+        self.federated_clients.append(client)
+        app_root = os.path.join(self.simulator_root, "app_" + client_name)
+        app_custom_folder = os.path.join(app_root, "custom")
+        sys.path.append(app_custom_folder)
+        with client_count_lock:
+            self.clients_created += 1
+            if self.clients_created == len(self.client_names):
+                clients_created_waiter.set()
 
     def _set_client_status(self):
         for client in self.federated_clients:
