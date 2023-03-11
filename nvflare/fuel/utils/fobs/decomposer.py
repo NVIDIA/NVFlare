@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Any, Type, TypeVar
@@ -43,6 +44,7 @@ class Decomposer(ABC):
 
         Args:
             target: The instance to be serialized
+
         Returns:
             The decomposed serializable objects
         """
@@ -54,6 +56,7 @@ class Decomposer(ABC):
 
         Args:
             data: The decomposed components
+
         Returns:
             The reconstructed object
         """
@@ -80,13 +83,15 @@ class DictDecomposer(Decomposer):
 
 
 class DataClassDecomposer(Decomposer):
-    """Generic decomposers for data classes, which must meet following requirements,
+    """Generic decomposers for data classes, which must meet following requirements:
+
     1. All class members must be serializable. The type of member must be one of the
        types supported by MessagePack or a decomposer is registered for the type.
     2. The __new__ method only takes one argument which is the class type.
     3. The __init__ method has no side effects. It can only change the states of the
        object. The side effects include creating files, initializing loggers, modifying
        global variables.
+
     """
 
     def __init__(self, data_type: Type[T]):
@@ -105,7 +110,7 @@ class DataClassDecomposer(Decomposer):
 
 
 class EnumTypeDecomposer(Decomposer):
-    """Generic decomposers for enum types"""
+    """Generic decomposers for enum types."""
 
     def __init__(self, data_type: Type[Enum]):
         if not issubclass(data_type, Enum):

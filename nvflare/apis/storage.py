@@ -27,6 +27,7 @@ class StorageSpec(ABC):
 
     An object is identified by a URI (unique resource identifier).
     Each object contains:
+
         - content (data)
         - meta info that describes the control info of the object.
 

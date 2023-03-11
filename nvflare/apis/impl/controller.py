@@ -92,7 +92,9 @@ class Controller(Responder, ControllerSpec, ABC):
     def initialize_run(self, fl_ctx: FLContext):
         """Called by runners to initialize controller with information in fl_ctx.
 
-        Note: Controller subclasses must not overwrite this method.
+        .. attention::
+
+            Controller subclasses must not overwrite this method.
 
         Args:
             fl_ctx (FLContext): FLContext information
@@ -141,7 +143,9 @@ class Controller(Responder, ControllerSpec, ABC):
     def process_task_request(self, client: Client, fl_ctx: FLContext) -> Tuple[str, str, Shareable]:
         """Called by runner when a client asks for a task.
 
-        Note: this is called in a separate thread.
+        .. note::
+
+            This is called in a separate thread.
 
         Args:
             client (Client): The record of one client requesting tasks
@@ -320,7 +324,9 @@ class Controller(Responder, ControllerSpec, ABC):
     def process_submission(self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext):
         """Called to process a submission from one client.
 
-        Note: this method is called by a separate thread.
+        .. note::
+
+            This method is called by a separate thread.
 
         Args:
             client (Client): the client that submitted this task
@@ -620,8 +626,10 @@ class Controller(Responder, ControllerSpec, ABC):
         """Cancel the specified task.
 
         Change the task completion_status, which will inform task monitor to clean up this task
-        NOTE: we only mark the task as completed and leave it to the task monitor to clean up
-        This is to avoid potential deadlock of task_lock
+
+        .. note::
+
+            We only mark the task as completed and leave it to the task monitor to clean up. This is to avoid potential deadlock of task_lock.
 
         Args:
             task (Task): the task to be cancelled
@@ -662,8 +670,9 @@ class Controller(Responder, ControllerSpec, ABC):
     def abort_all_tasks(self, fl_ctx: FLContext):
         """Ask clients to abort the execution of all tasks.
 
-        NOTE: the server should send a notification to all clients, regardless of whether the server
-        has any standing tasks.
+        .. note::
+
+            The server should send a notification to all clients, regardless of whether the server has any standing tasks.
 
         Args:
             fl_ctx (FLContext): FLContext associated with this action
@@ -673,7 +682,9 @@ class Controller(Responder, ControllerSpec, ABC):
     def finalize_run(self, fl_ctx: FLContext):
         """Do cleanup of the coordinator implementation.
 
-        NOTE: subclass controllers should not overwrite finalize_run.
+        .. attention::
+
+            Subclass controllers should not overwrite finalize_run.
 
         Args:
             fl_ctx (FLContext): FLContext associated with this action

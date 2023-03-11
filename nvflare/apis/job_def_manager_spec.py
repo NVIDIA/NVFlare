@@ -103,11 +103,8 @@ class JobDefManagerSpec(FLComponent, ABC):
             fl_ctx (FLContext): FLContext information
 
         Returns:
-            a dict to hold the job data and workspace.
-            Format: {
-                        JobDataKey.JOB_DATA.value: stored_data,
-                        JobDataKey.WORKSPACE_DATA: workspace_data
-                    }
+            a dict to hold the job data and workspace. With the format: {JobDataKey.JOB_DATA.value: stored_data, JobDataKey.WORKSPACE_DATA: workspace_data}
+
         """
         pass
 
