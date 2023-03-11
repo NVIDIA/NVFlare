@@ -25,8 +25,8 @@ The downloaded archive contains subfolders for four different classes: `COVID`, 
 Here we assume each class of image corresponds to a different sites.
 
 ```
-cd NVFlare/examples/advanced/federated-statistics/image_stats
-./prepare_data.sh
+cd NVFlare/examples/advanced/federated-statistics/
+image_stats/prepare_data.sh
 ```
 
 With this ratio setting, site-3 will have the largest number of images. You should see the following output
@@ -49,7 +49,7 @@ cd NVFlare/examples/federated-statistics
 nvflare simulator image_stats/jobs/image_stats -w /tmp/nvflare/image_stats -n 4 -t 4
 ```
 
-The results are stored in workspace "/tmp/nvflare"
+The results are stored in workspace "/tmp/nvflare/image_stats"
 ```
 /tmp/nvflare/image_stats/simulate_job/statistics/image_histogram.json
 ```

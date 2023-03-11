@@ -293,6 +293,7 @@ class FederatedServer(BaseServer):
         self.overseer_agent = overseer_agent
         self.server_state: ServerState = ColdState()
         self.snapshot_persistor = snapshot_persistor
+        self.checking_server_state = False
 
     def _register_cellnet_cbs(self):
         self.cell.register_request_cb(
@@ -681,7 +682,7 @@ class FederatedServer(BaseServer):
 
         return self.overseer_agent
 
-    def overseer_callback(self, overseer_agent):
+    def _check_server_state(self, overseer_agent):
         if overseer_agent.is_shutdown():
             self.engine.shutdown_server()
             return
@@ -697,6 +698,19 @@ class FederatedServer(BaseServer):
 
         elif isinstance(self.server_state, Hot2ColdState):
             self._turn_to_cold()
+
+    def overseer_callback(self, overseer_agent):
+        if self.checking_server_state:
+            self.logger.debug("busy checking server state")
+            return
+
+        self.checking_server_state = True
+        try:
+            self._check_server_state(overseer_agent)
+        except BaseException as ex:
+            self.logger.error(f"exception in checking server state: {secure_format_exception(ex)}")
+        finally:
+            self.checking_server_state = False
 
     def _turn_to_hot(self):
         # Restore Snapshot

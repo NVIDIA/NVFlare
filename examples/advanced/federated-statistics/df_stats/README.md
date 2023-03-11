@@ -1,11 +1,11 @@
 # Data Frame Federated Statistics 
 
-In this example, we will show how to generate federated statistics for data that be represented as Pandas Data Frame
+In this example, we will show how to generate federated statistics for data that can be represented as Pandas Data Frame
 
-## setup NVFLARE
-follow the [Quick Start Guide](https://nvflare.readthedocs.io/en/main/quickstart.html) to setup virtual environment and install NVFLARE
+## Setup NVFLARE
+follow the [Getting Started](https://nvflare.readthedocs.io/en/main/getting_started.html) to setup virtual environment and install NVFLARE
 
-install required packages.
+Let's first install required packages.
 
 ```
 pip install --upgrade pip
@@ -23,7 +23,7 @@ so we assigned the training data and test data into two clients.
  
 Now we use data utility to download UCI datasets to separate client package directory to /tmp/nvflare/data/ directory
 ```shell
-./prepare_data.sh
+df_stats/prepare_data.sh
 ```
 it should showing something like
 ```
