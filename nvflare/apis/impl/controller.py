@@ -181,12 +181,6 @@ class Controller(Responder, ControllerSpec, ABC):
 
                 if client_task_to_check is not None:
                     # this client has been sent the task already
-                    if not isinstance(client_task_to_check, ClientTask):
-                        raise TypeError(
-                            "client_task_to_check must be an instance of ClientTask, but got {}".format(
-                                type(client_task_to_check)
-                            )
-                        )
                     if client_task_to_check.result_received_time is None:
                         # controller has not received result from client
                         # something wrong happens when client working on this task, so resend the task
@@ -213,14 +207,11 @@ class Controller(Responder, ControllerSpec, ABC):
                         # do not send this task, but continue to check next task
                         continue
                     else:
-                        # send the task and remember the client_task
+                        # creates the client_task to be checked for sending
                         client_task_to_send = ClientTask(client, task)
-                        task.last_client_task_map[client.name] = client_task_to_send
-                        task.client_tasks.append(client_task_to_send)
-                        self._client_task_map[client_task_to_send.id] = client_task_to_send
                         break
 
-        # NOTE: move task sending process outside the lock
+        # NOTE: move task sending process outside the task lock
         # This is to minimize the locking time and to avoid potential deadlock:
         # the CB could schedule another task, which requires lock
         self.logger.debug("Determining based on client_task_to_send: {}".format(client_task_to_send))
@@ -282,9 +273,16 @@ class Controller(Responder, ControllerSpec, ABC):
 
             self.logger.debug("after_task_sent_cb done on client_task_to_send: {}".format(client_task_to_send))
 
+        with self._task_lock:
+            # sent the ClientTask and remember it
             now = time.time()
             client_task_to_send.task_sent_time = now
             client_task_to_send.task_send_count += 1
+
+            if not resend_task:
+                task.last_client_task_map[client.name] = client_task_to_send
+                task.client_tasks.append(client_task_to_send)
+                self._client_task_map[client_task_to_send.id] = client_task_to_send
             return task_name, client_task_to_send.id, task_data
 
     def handle_exception(self, task_id: str, fl_ctx: FLContext) -> None:
