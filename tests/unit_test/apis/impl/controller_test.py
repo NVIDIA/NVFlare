@@ -1148,9 +1148,7 @@ class TestBroadcastBehavior(TestController):
 
     @pytest.mark.parametrize("min_responses", [1, 2, 3, 4])
     @pytest.mark.parametrize("wait_time_after_min_received", [1, 2])
-    def test_task_exit_quickly_when_all_responses_received(
-        self, method, min_responses, wait_time_after_min_received
-    ):
+    def test_task_exit_quickly_when_all_responses_received(self, method, min_responses, wait_time_after_min_received):
         controller, fl_ctx, clients = self.setup_system(num_of_clients=min_responses)
 
         input_data = Shareable()

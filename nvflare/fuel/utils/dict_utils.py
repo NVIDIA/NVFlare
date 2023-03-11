@@ -53,11 +53,10 @@ def extract_first_level_primitive(d):
 def augment(to_dict: dict, from_dict: dict, from_override_to=False) -> str:
     """Augments the to_dict with the content from the from_dict.
 
-
-    - Items in from_dict but not in to_dict are added to the to_dict
-    - Items in both from_dict and to_dict must be ether dicts or list of dicts,
-    and augment will be done on these items recursively
-    - Non-dict/list items in both from_dict and to_dict are considered conflicts.
+        - Items in from_dict but not in to_dict are added to the to_dict
+        - Items in both from_dict and to_dict must be ether dicts or list of dicts,
+          and augment will be done on these items recursively
+        - Non-dict/list items in both from_dict and to_dict are considered conflicts.
 
     Args:
         to_dict: the dict to be augmented
@@ -67,8 +66,10 @@ def augment(to_dict: dict, from_dict: dict, from_override_to=False) -> str:
     Returns:
         An error message if any; empty str if success.
 
-    Note:
-        The content of the to_dict is updated
+    .. note::
+
+       The content of the to_dict is updated
+
     """
     if not isinstance(to_dict, dict):
         return f"to_dict must be dict but got {type(to_dict)}"

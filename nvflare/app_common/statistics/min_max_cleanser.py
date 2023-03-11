@@ -22,21 +22,26 @@ from nvflare.app_common.statistics.statistics_privacy_cleanser import Statistics
 
 class AddNoiseToMinMax(FLComponent, StatisticsPrivacyCleanser):
     def __init__(self, min_noise_level: float, max_noise_level: float):
-        """
-        min_noise_level: minimum noise -- used to protect min/max values before sending to server
-        max_noise_level: maximum noise -- used to protect min/max values before sending to server
-                       min/max random is used to generate random noise between (min_random and max_random).
-                       for example, the random noise is to be within (0.1 and 0.3),i.e. 10% to 30% level. These noise
-                       will make local min values smaller than the true local min values, and max values larger than
-                       the true local max values. As result, the estimate global max and min values (i.e. with noise)
-                       are still bound the true global min/max values, in such that
+        """Random is used to generate random noise between (min_random and max_random).
 
-                          est. global min value <
-                                    true global min value <
-                                              client's min value <
-                                                      client's max value <
-                                                              true global max <
-                                                                       est. global max value
+        Args:
+            min_noise_level: minimum noise -- used to protect min/max values before sending to server
+            max_noise_level: maximum noise -- used to protect min/max values before sending to server
+
+        For example, the random noise is to be within (0.1 and 0.3), i.e. 10% to 30% level.
+        This component will make local min values smaller than the true local min values, and max values larger than
+        the true local max values. As result, the estimate global max and min values (i.e. with noise)
+        are still bound to the true global min/max values, such that:
+
+        .. code-block:: text
+
+            est. global min value <
+                      true global min value <
+                                client's min value <
+                                        client's max value <
+                                                true global max <
+                                                        est. global max value
+
         """
         super().__init__()
         self.noise_level = (min_noise_level, max_noise_level)

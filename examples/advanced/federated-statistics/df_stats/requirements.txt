@@ -2,5 +2,4 @@ numpy
 pandas
 wget
 matplotlib
-jupyter
-notebook
+jupyterlab

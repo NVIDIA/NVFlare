@@ -265,7 +265,6 @@ class Session(SessionSpec):
     def list_jobs(
         self,
         detailed: bool = False,
-        all: bool = False,
         limit: Optional[int] = None,
         id_prefix: str = None,
         name_prefix: str = None,
@@ -274,19 +273,18 @@ class Session(SessionSpec):
 
         Args:
             detailed: True to get the detailed information for each job, False by default
-            all: True to get jobs submitted by all users (default is to only list jobs submitted by the same user)
             limit: maximum number of jobs to show, with 0 to show all (defaults to 5)
             id_prefix: if included, only return jobs with the beginning of the job ID matching the id_prefix
             name_prefix: if included, only return jobs with the beginning of the job name matching the name_prefix
-        Returns: a dict of job meta data
+        Returns: a dict of job metadata
 
         """
         command = AdminCommandNames.LIST_JOBS
         if detailed:
             command = command + " -d"
-        if all:
-            command = command + " -a"
         if limit:
+            if not isinstance(limit, int):
+                raise InvalidArgumentError(f"limit must be int but got {type(limit)}")
             command = command + " -m " + str(limit)
         if name_prefix:
             if not isinstance(name_prefix, str):

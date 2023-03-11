@@ -1596,7 +1596,6 @@ aws_start_svr_sh: |
 
   set +e
   DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-  cd $DIR/..
 
   function report_status() {
     status="$1"
@@ -1655,20 +1654,35 @@ aws_start_svr_sh: |
   check_binary sshpass "Please install it first."
   check_binary jq "Please install it first."
 
-  while true
-  do
-    prompt AMI_IMAGE "Cloud AMI image, press ENTER to accept default ${AMI_IMAGE}: "
-    prompt EC2_TYPE "Cloud EC2 type, press ENTER to accept default ${EC2_TYPE}: "
-    prompt ans "region = ${REGION}, ami image = ${AMI_IMAGE}, EC2 type = ${EC2_TYPE}, OK? (Y/n) "
-    if [[ $ans = "" ]] || [[ $ans =~ ^(y|Y)$ ]]
-    then
-      break
-    fi
-  done
+  if [ -z ${config_file+x} ]
+  then
+      useDefault=true
+  else
+      useDefault=false
+      . $config_file
+      report_status "$?" "Loading config file"
+  fi
+
+
+  if [ $useDefault = true ]
+  then
+    while true
+    do
+      prompt AMI_IMAGE "Cloud AMI image, press ENTER to accept default ${AMI_IMAGE}: "
+      prompt EC2_TYPE "Cloud EC2 type, press ENTER to accept default ${EC2_TYPE}: "
+      prompt REGIION "Cloud EC2 region, press ENTER to accept default ${REGION}: "
+      prompt ans "region = ${REGION}, ami image = ${AMI_IMAGE}, EC2 type = ${EC2_TYPE}, OK? (Y/n) "
+      if [[ $ans = "" ]] || [[ $ans =~ ^(y|Y)$ ]]
+      then
+        break
+      fi
+    done
+  fi
 
   echo "If the server requires additional dependencies, please copy the requirements.txt to ${DIR}."
   prompt ans "Press ENTER when it's done or no additional dependencies. "
 
+  cd $DIR/..
   # Generate key pair
 
   echo "Generating key pair for VM"
@@ -1676,6 +1690,7 @@ aws_start_svr_sh: |
   aws ec2 delete-key-pair --key-name $KEY_PAIR > /dev/null 2>&1
   rm -rf $KEY_FILE
   aws ec2 create-key-pair --key-name $KEY_PAIR --query 'KeyMaterial' --output text > $KEY_FILE
+  report_status "$?" "creating key pair"
   chmod 400 $KEY_FILE
 
   # Generate Security Group
@@ -1683,14 +1698,17 @@ aws_start_svr_sh: |
   aws ec2 delete-security-group --group-name $SECURITY_GROUP > /dev/null 2>&1
   sleep 10
   sg_id=$(aws ec2 create-security-group --group-name $SECURITY_GROUP --description "NVFlare security group" | jq -r .GroupId)
+  report_status "$?" "creating security group"
   aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr 0.0.0.0/0 > /tmp/sec_grp.log
   aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 8002-8003 --cidr 0.0.0.0/0 >> /tmp/sec_grp.log
+  report_status "$?" "creating security group rules"
 
   # Start provisioning
 
   echo "Creating VM at region $REGION, may take a few minutes."
 
   aws ec2 run-instances --region $REGION --image-id $AMI_IMAGE --count 1 --instance-type $EC2_TYPE --key-name $KEY_PAIR --security-group-ids $sg_id > vm_create.json
+  report_status "$?" "creating VM"
   instance_id=$(jq -r .Instances[0].InstanceId vm_create.json)
 
   aws ec2 wait instance-status-ok --instance-ids $instance_id
@@ -1716,7 +1734,6 @@ aws_start_svr_sh: |
   python3 -m pip install -r ${DEST_FOLDER}/startup/requirements.txt && \
   nohup ${DEST_FOLDER}/startup/start.sh && sleep 20 && \
   exit" > /tmp/nvflare.log 2>&1 
-
   report_status "$?" "installing packages"
 
   echo "System was provisioned"
@@ -1731,7 +1748,6 @@ aws_start_cln_sh: |
 
   set +e
   DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-  cd $DIR/..
 
   function report_status() {
     status="$1"
@@ -1790,20 +1806,34 @@ aws_start_cln_sh: |
   check_binary sshpass "Please install it first."
   check_binary jq "Please install it first."
 
-  while true
-  do
-    prompt AMI_IMAGE "Cloud AMI image, press ENTER to accept default ${AMI_IMAGE}: "
-    prompt EC2_TYPE "Cloud EC2 type, press ENTER to accept default ${EC2_TYPE}: "
-    prompt ans "region = ${REGION}, ami image = ${AMI_IMAGE}, EC2 type = ${EC2_TYPE}, OK? (Y/n) "
-    if [[ $ans = "" ]] || [[ $ans =~ ^(y|Y)$ ]]
-    then
-      break
-    fi
-  done
+  if [ -z ${config_file+x} ]
+  then
+      useDefault=true
+  else
+      useDefault=false
+      . $config_file
+      report_status "$?" "Loading config file"
+  fi
+
+  if [ $useDefault = true ]
+  then
+    while true
+    do
+      prompt AMI_IMAGE "Cloud AMI image, press ENTER to accept default ${AMI_IMAGE}: "
+      prompt EC2_TYPE "Cloud EC2 type, press ENTER to accept default ${EC2_TYPE}: "
+      prompt REGIION "Cloud EC2 region, press ENTER to accept default ${REGION}: "
+      prompt ans "region = ${REGION}, ami image = ${AMI_IMAGE}, EC2 type = ${EC2_TYPE}, OK? (Y/n) "
+      if [[ $ans = "" ]] || [[ $ans =~ ^(y|Y)$ ]]
+      then
+        break
+      fi
+    done
+  fi
 
   echo "If the client requires additional dependencies, please copy the requirements.txt to ${DIR}."
   prompt ans "Press ENTER when it's done or no additional dependencies. "
 
+  cd $DIR/..
   # Generate key pair
 
   echo "Generating key pair for VM"
@@ -1811,18 +1841,22 @@ aws_start_cln_sh: |
   aws ec2 delete-key-pair --key-name $KEY_PAIR > /dev/null 2>&1
   rm -rf $KEY_FILE
   aws ec2 create-key-pair --key-name $KEY_PAIR --query 'KeyMaterial' --output text > $KEY_FILE
+  report_status "$?" "creating key pair"
   chmod 400 $KEY_FILE
 
   # Generate Security Group
   # Try not reusing existing security group because we have to modify it for our own need.
   sg_id=$(aws ec2 create-security-group --group-name $SECURITY_GROUP --description "NVFlare security group" | jq -r .GroupId)
+  report_status "$?" "creating security group"
   aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr 0.0.0.0/0 > /tmp/sec_grp.log
+  report_status "$?" "creating security group rules"
 
   # Start provisioning
 
   echo "Creating VM at region $REGION, may take a few minutes."
 
   aws ec2 run-instances --region $REGION --image-id $AMI_IMAGE --count 1 --instance-type $EC2_TYPE --key-name $KEY_PAIR --security-group-ids $sg_id > vm_create.json
+  report_status "$?" "creating VM"
   instance_id=$(jq -r .Instances[0].InstanceId vm_create.json)
 
   aws ec2 wait instance-status-ok --instance-ids $instance_id
@@ -1919,20 +1953,24 @@ aws_start_dsb_sh: |
   aws ec2 delete-key-pair --key-name $KEY_PAIR > /dev/null 2>&1
   rm -rf $KEY_FILE
   aws ec2 create-key-pair --key-name $KEY_PAIR --query 'KeyMaterial' --output text > $KEY_FILE
+  report_status "$?" "creating key pair"
   chmod 400 $KEY_FILE
 
   # Generate Security Group
 
   sg_id=$(aws ec2 create-security-group --group-name $SECURITY_GROUP --description "NVFlare security group" | jq -r .GroupId)
+  report_status "$?" "creating security group"
   echo "Security group id: ${sg_id}"
   aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr 0.0.0.0/0 > /tmp/sec_grp.log
   aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 443 --cidr 0.0.0.0/0 >> /tmp/sec_grp.log
+  report_status "$?" "creating security group rules"
 
   # Start provisioning
 
   echo "Creating VM at region $REGION, may take a few minutes."
 
   aws ec2 run-instances --region $REGION --image-id $AMI_IMAGE --count 1 --instance-type $EC2_TYPE --key-name $KEY_PAIR --security-group-ids $sg_id > vm_create.json
+  report_status "$?" "creating VM"
   instance_id=$(jq -r .Instances[0].InstanceId vm_create.json)
 
   aws ec2 wait instance-status-ok --instance-ids $instance_id

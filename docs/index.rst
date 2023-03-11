@@ -16,6 +16,7 @@ NVIDIA FLARE
    best_practices
    programming_guide
    faq
+   publications_and_talks
    contributing
    API <apidocs/modules>
    glossary

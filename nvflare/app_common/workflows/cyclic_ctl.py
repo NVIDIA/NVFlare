@@ -67,10 +67,11 @@ class CyclicController(Controller):
                 If FIXED means the same order for every round.
                 If RANDOM means random order for every round.
                 If RANDOM_WITHOUT_SAME_IN_A_ROW means every round the order gets shuffled but a client will never be
-                    run twice in a row (in different round).
+                run twice in a row (in different round).
 
         Raises:
             TypeError: when any of input arguments does not have correct type
+
         """
         super().__init__(task_check_period=task_check_period)
 
