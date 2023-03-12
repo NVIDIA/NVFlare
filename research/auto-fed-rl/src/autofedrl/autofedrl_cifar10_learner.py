@@ -20,7 +20,7 @@ import torch
 import torch.nn.functional as F
 import torch.optim as optim
 from pt.learners.cifar10_learner import CIFAR10Learner
-from pt.utils.cifar10_data_splitter import CIFAR10_ROOT
+from pt.utils.cifar10_data_utils import CIFAR10_ROOT
 from pt.utils.cifar10_dataset import CIFAR10_Idx
 from torchvision import datasets
 

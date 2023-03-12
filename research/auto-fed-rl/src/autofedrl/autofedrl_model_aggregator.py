@@ -40,7 +40,7 @@ class AutoFedRLWeightedAggregator(InTimeAccumulateWeightedAggregator):
             received_aggregation_weights = hps.get("aw")
         # Assign current aggregation weights to aggregator
         if received_aggregation_weights is not None:
-            # NOTE(pg): Here, we assume contributor_name is "site-*".
+            # TODO: Here, we assume contributor_name is "site-*".
             # This will be wrong if contributor_name is not in this pattern.
             aggregation_weights_dict = {
                 f"site-{i+1}": received_aggregation_weights[i] for i in range(len(received_aggregation_weights))
