@@ -51,6 +51,8 @@ from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initia
 from nvflare.security.logging import secure_format_exception
 from nvflare.security.security import EmptyAuthorizer
 
+CLIENT_CREATE_POOL_SIZE = 200
+
 
 class SimulatorRunner(FLComponent):
     def __init__(
@@ -288,12 +290,11 @@ class SimulatorRunner(FLComponent):
     def create_clients(self):
         # Deploy the FL clients
         self.logger.info("Create the simulate clients.")
+        executor = ThreadPoolExecutor(max_workers=CLIENT_CREATE_POOL_SIZE)
         client_count_lock = threading.Lock()
         clients_created_waiter = threading.Event()
         for client_name in self.client_names:
-            threading.Thread(
-                target=self.create_client, args=[client_name, client_count_lock, clients_created_waiter]
-            ).start()
+            executor.submit(lambda p: self.create_client(*p), [client_name, client_count_lock, clients_created_waiter])
 
         clients_created_waiter.wait()
         self.logger.info("Set the client status ready.")
