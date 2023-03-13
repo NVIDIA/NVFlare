@@ -1152,10 +1152,15 @@ class Cell(MessageReceiver, EndpointMonitor):
             # if waiter.received_replies:
             #     self.logger.info(f"{self.my_info.fqcn}: the network is extremely fast - response already received!")
 
+            topics = []
             for t, err in send_errs.items():
                 if not err:
                     send_count += 1
                     result[t] = timeout_reply
+                    tm = target_msgs[t]
+                    topic = tm.message.get_header(MessageHeaderKey.TOPIC, "?")
+                    if topic not in topics:
+                        topics.append(topic)
                 else:
                     result[t] = make_reply(rc=err)
                     waiter.reply_time[t] = now
@@ -1170,7 +1175,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                 self.logger.debug(f"{self.my_info.fqcn}: set up waiter {waiter.id} to wait for {timeout} secs")
                 if not waiter.wait(timeout=timeout):
                     # timeout
-                    self.log_error(f"timeout on Request {waiter.id} after {timeout} secs", None)
+                    self.log_error(f"timeout on Request {waiter.id} for {topics} after {timeout} secs", None)
                     with self.stats_lock:
                         self.num_timeout_reqs += 1
         except Exception as ex:
