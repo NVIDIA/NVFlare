@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 from abc import abstractmethod
 
 from nvflare.fuel.common.excepts import ConfigError
@@ -28,6 +27,23 @@ class ComponentBuilder:
         """
         pass
 
+    def is_class_config(self, config_dict: dict) -> bool:
+        def has_valid_class_path():
+            try:
+                _ = self.get_class_path(config_dict)
+                # we have valid class path
+                return True
+            except ConfigError:
+                # this is not a valid class path
+                return False
+
+        # regardless it has args or not. if path/name and valid class path, very likely we have
+        # class config.
+        if ("path" in config_dict or "name" in config_dict) and has_valid_class_path():
+            return True
+        else:
+            return False
+
     def build_component(self, config_dict):
         if not config_dict:
             return None
@@ -40,13 +56,14 @@ class ComponentBuilder:
 
         class_args = config_dict.get("args", dict())
         for k, v in class_args.items():
-            if isinstance(v, dict):
+            if isinstance(v, dict) and self.is_class_config(v):
                 # try to replace the arg with a component
                 try:
                     t = self.build_component(v)
                     class_args[k] = t
-                except BaseException:
-                    pass
+                except BaseException as e:
+                    raise ValueError(f"failed to instantiate class: {e} ")
+
         class_path = self.get_class_path(config_dict)
 
         # Handle the special case, if config pass in the class_attributes, use the user defined class attributes

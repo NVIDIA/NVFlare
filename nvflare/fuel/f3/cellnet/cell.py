@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import copy
 import logging
 import os
@@ -18,7 +19,7 @@ import random
 import threading
 import time
 import uuid
-from typing import Dict, List, Union
+from typing import Dict, List, Tuple, Union
 from urllib.parse import urlparse
 
 from nvflare.fuel.f3.cellnet.connector_manager import ConnectorManager
@@ -90,9 +91,7 @@ class TargetMessage:
 
 
 class CellAgent:
-    """
-    A CellAgent represents a cell in another cell.
-    """
+    """A CellAgent represents a cell in another cell."""
 
     def __init__(self, fqcn: str, endpoint: Endpoint):
         """
@@ -287,14 +286,20 @@ class Cell(MessageReceiver, EndpointMonitor):
             parent_url: url for connecting to parent cell
 
         FQCN is the names of all ancestor, concatenated with dots.
-        Note: internal listener is automatically created for root cells.
 
-        Example:
-            server.J12345       (the cell for job J12345 on the server)
-            server              (the root cell of server)
-            nih_1.J12345        (the cell for job J12345 on client_1's site)
-            client_1.J12345.R0  (the cell for rank R0 of J12345 on client_1 site)
-            client_1            (he root cell of client_1)
+
+        .. note::
+
+            Internal listener is automatically created for root cells.
+
+        .. code-block:: text
+
+            Example:
+                server.J12345       (the cell for job J12345 on the server)
+                server              (the root cell of server)
+                nih_1.J12345        (the cell for job J12345 on client_1's site)
+                client_1.J12345.R0  (the cell for rank R0 of J12345 on client_1 site)
+                client_1            (he root cell of client_1)
 
         """
         comm_configurator = CommConfigurator()
@@ -478,7 +483,8 @@ class Cell(MessageReceiver, EndpointMonitor):
         return agent is not None
 
     def is_backbone_ready(self):
-        """Check if backbone is ready
+        """Check if backbone is ready.
+
         Backbone is the preconfigured network connections, like all the connections from clients to server.
         Adhoc connections are not part of the backbone.
         """
@@ -525,8 +531,7 @@ class Cell(MessageReceiver, EndpointMonitor):
             self._create_internal_listener()
 
     def change_server_root(self, to_url: str):
-        """
-        Change to a different server url
+        """Change to a different server url
 
         Args:
             to_url: the new url of the server root
@@ -608,8 +613,8 @@ class Cell(MessageReceiver, EndpointMonitor):
         self._create_internal_listener()
 
     def get_internal_listener_url(self) -> Union[None, str]:
-        """
-        Get the cell's internal listener url.
+        """Get the cell's internal listener url.
+
         This method should only be used for cells that need to have child cells.
         The url returned is to be passed to child of this cell to create connection
 
@@ -899,7 +904,7 @@ class Cell(MessageReceiver, EndpointMonitor):
             return None
         return self._try_path(fqcn_path[:-1])
 
-    def _find_endpoint(self, target_fqcn: str, for_msg: Message) -> (str, Union[None, Endpoint]):
+    def _find_endpoint(self, target_fqcn: str, for_msg: Message) -> Tuple[str, Union[None, Endpoint]]:
         err = FQCN.validate(target_fqcn)
         if err:
             self.log_error(msg=None, log_text=f"invalid target FQCN '{target_fqcn}': {err}")
@@ -1299,13 +1304,13 @@ class Cell(MessageReceiver, EndpointMonitor):
         return self._send_target_messages(target_msgs)
 
     def send_reply(self, reply: Message, to_cell: str, for_req_ids: List[str], optional=False) -> str:
-        """
-        Send a reply to respond to one or more requests.
+        """Send a reply to respond to one or more requests.
+
         This is useful if the request receiver needs to delay its reply as follows:
-        - When a request is received, if it's not ready to reply (e.g. waiting for additional requests from
-         other cells), simply remember the REQ_ID and returns None;
-        - The receiver may queue up multiple such requests
-        - When ready, call this method to send the reply for all the queued requests
+            - When a request is received, if it's not ready to reply (e.g. waiting for additional requests from
+              other cells), simply remember the REQ_ID and returns None;
+            - The receiver may queue up multiple such requests
+            - When ready, call this method to send the reply for all the queued requests
 
         Args:
             reply:
@@ -1814,7 +1819,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                 except Exception as ex:
                     self.log_error(f"exception in cell_disconnected_cb: {ex}", None, log_except=True)
 
-    def get_sub_cell_names(self) -> (List[str], List[str]):
+    def get_sub_cell_names(self) -> Tuple[List[str], List[str]]:
         """
         Get cell FQCNs of all subs, which are children or top-level client cells (if my cell is server).
 

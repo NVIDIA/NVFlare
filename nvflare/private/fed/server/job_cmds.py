@@ -61,6 +61,7 @@ def _create_list_job_cmd_parser():
     parser.add_argument("job_id", nargs="?", help="Job ID prefix")
     parser.add_argument("-d", action="store_true", help="Show detailed list")
     parser.add_argument("-u", action="store_true", help="List jobs submitted by the same user")
+    parser.add_argument("-r", action="store_true", help="List jobs in reverse order of submission time")
     parser.add_argument("-n", help="Filter by job name prefix")
     parser.add_argument(
         "-m",
@@ -322,7 +323,8 @@ class JobCommandModule(CommandModule, CommandUtil):
                     conn.append_string("No jobs matching the specified criteria.")
                     return
 
-                filtered_jobs.sort(key=lambda job: job.meta.get(JobMetaKey.SUBMIT_TIME.value, 0.0), reverse=True)
+                reverse = True if parsed_args.r else False
+                filtered_jobs.sort(key=lambda job: job.meta.get(JobMetaKey.SUBMIT_TIME.value, 0.0), reverse=reverse)
 
                 if max_jobs_listed:
                     filtered_jobs = filtered_jobs[:max_jobs_listed]

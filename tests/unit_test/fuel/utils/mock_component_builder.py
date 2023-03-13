@@ -11,25 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-from abc import ABC, abstractmethod
-
-from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_context import FLContext
+from nvflare.fuel.utils.class_utils import ModuleScanner
+from nvflare.fuel.utils.component_builder import ComponentBuilder
 
 
-class StatisticsWriter(FLComponent, ABC):
-    @abstractmethod
-    def save(self, data: dict, overwrite_existing: bool, fl_ctx: FLContext):
-        """Save data.
+class MockComponentBuilder(ComponentBuilder):
+    def __init__(self):
+        self.module_scanner = ModuleScanner(["nvflare"], ["api", "app_commons", "app_opt", "fuel", "private", "utils"])
 
-        To perform data privacy min_count check, failure_count is always required.
-
-        Args:
-            data: the data to be saved
-            overwrite_existing: whether or not to overwrite existing
-            fl_ctx: FLContext
-
-        Returns: None
-        """
-        pass
+    def get_module_scanner(self):
+        return self.module_scanner

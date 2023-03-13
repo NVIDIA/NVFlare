@@ -49,6 +49,7 @@ def _format_exc_securely() -> str:
 
     Returns:
         A formatted string of current exception and call stack.
+
     """
     exc_type, exc_obj, tb = sys.exc_info()
     result = ["Traceback (most recent call last):"]
@@ -83,7 +84,7 @@ def secure_format_traceback() -> str:
     """Formats the traceback of the current exception and returns a string without sensitive info.
 
     If secure mode is set, only include file names, line numbers and func names.
-        Exception info only includes the type of the exception.
+    Exception info only includes the type of the exception.
     If secure mode is not set, return the result of traceback.format_exc().
 
     Returns:
@@ -99,7 +100,7 @@ def secure_log_traceback(logger: logging.Logger = None):
     """Logs the traceback.
 
     If secure mode is set, the traceback only includes file names, line numbers and func names;
-        and only the type of the exception.
+    and only the type of the exception.
     If secure mode is not set, the traceback will be logged normally as traceback.print_exc().
 
     Args:

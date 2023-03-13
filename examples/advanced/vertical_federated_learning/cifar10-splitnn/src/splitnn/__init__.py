@@ -12,24 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from abc import ABC, abstractmethod
-
-from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_context import FLContext
-
-
-class StatisticsWriter(FLComponent, ABC):
-    @abstractmethod
-    def save(self, data: dict, overwrite_existing: bool, fl_ctx: FLContext):
-        """Save data.
-
-        To perform data privacy min_count check, failure_count is always required.
-
-        Args:
-            data: the data to be saved
-            overwrite_existing: whether or not to overwrite existing
-            fl_ctx: FLContext
-
-        Returns: None
-        """
-        pass
+from splitnn.cifar10_learner_splitnn import CIFAR10LearnerSplitNN
+from splitnn.cifar10_splitnn_dataset import CIFAR10SplitNN
+from splitnn.cifar10_vertical_data_splitter import Cifar10VerticalDataSplitter
+from splitnn.split_nn import SplitNN

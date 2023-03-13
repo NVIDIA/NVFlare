@@ -52,8 +52,7 @@ Please refer to :ref:`application` for more details.
    programming_guide/global_model_initialization
 
 
-Code Structure
-==============
+.. rubric:: Code Structure
 
 Different components can be built on top of the APIs(:mod:`nvflare.apis`) in NVIDIA FLARE core, and you can now
 implement your own custom workflows. The concepts of aggregator, learnable, persistors, and shareable_generator which

@@ -23,7 +23,7 @@ from .task_manager import TaskCheckStatus, TaskManager
 
 _KEY_DYNAMIC_TARGETS = "__dynamic_targets"
 _KEY_TASK_RESULT_TIMEOUT = "__task_result_timeout"
-_KEY_FINISHED_TARGETS = "__finished_targets"
+_KEY_SEND_TARGET_COUNTS = "__sent_target_count"
 _KEY_PENDING_CLIENT = "__pending_client"
 
 
@@ -43,7 +43,7 @@ class AnyRelayTaskManager(TaskManager):
 
         task.props[_KEY_DYNAMIC_TARGETS] = dynamic_targets
         task.props[_KEY_TASK_RESULT_TIMEOUT] = task_result_timeout
-        task.props[_KEY_FINISHED_TARGETS] = {}  # target name => times sent
+        task.props[_KEY_SEND_TARGET_COUNTS] = {}  # target name => times sent
         task.props[_KEY_PENDING_CLIENT] = None
 
     def check_task_send(self, client_task: ClientTask, fl_ctx: FLContext) -> TaskCheckStatus:
@@ -73,8 +73,8 @@ class AnyRelayTaskManager(TaskManager):
             return TaskCheckStatus.NO_BLOCK
 
         client_occurrences = task.targets.count(client_name)
-        finished_targets = task.props[_KEY_FINISHED_TARGETS]
-        send_count = finished_targets.get(client_name, 0)
+        sent_target_count = task.props[_KEY_SEND_TARGET_COUNTS]
+        send_count = sent_target_count.get(client_name, 0)
         if send_count >= client_occurrences:
             # already sent enough times to this client
             return TaskCheckStatus.NO_BLOCK
@@ -96,7 +96,7 @@ class AnyRelayTaskManager(TaskManager):
                 if task_result_timeout and time.time() - pending_task.task_sent_time > task_result_timeout:
                     # timeout!
                     # give up on the pending task and move to the next target
-                    finished_targets[pending_client_name] -= 1
+                    sent_target_count[pending_client_name] -= 1
                     pass
                 else:
                     # continue to wait
@@ -104,7 +104,7 @@ class AnyRelayTaskManager(TaskManager):
 
         # can send
         task.props[_KEY_PENDING_CLIENT] = client_name
-        finished_targets[client_name] = send_count + 1
+        sent_target_count[client_name] = send_count + 1
         return TaskCheckStatus.SEND
 
     def check_task_exit(self, task: Task) -> Tuple[bool, TaskCompletionStatus]:
@@ -124,14 +124,18 @@ class AnyRelayTaskManager(TaskManager):
             # nothing has been sent
             return False, TaskCompletionStatus.IGNORED
 
-        # see whether all targets are done
-        finished_targets = task.props[_KEY_FINISHED_TARGETS]
+        # see whether all targets are sent
+        sent_target_count = task.props[_KEY_SEND_TARGET_COUNTS]
 
         total_sent = 0
-        for v in finished_targets.values():
+        for v in sent_target_count.values():
             total_sent += v
 
         if total_sent < num_targets:
+            return False, TaskCompletionStatus.IGNORED
+
+        # client_tasks might have not been added to task
+        if len(task.client_tasks) < num_targets:
             return False, TaskCompletionStatus.IGNORED
 
         for c_t in task.client_tasks:
