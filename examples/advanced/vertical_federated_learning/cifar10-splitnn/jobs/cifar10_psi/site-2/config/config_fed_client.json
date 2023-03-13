@@ -17,7 +17,7 @@
   "components": [
     {
       "id": "local_psi",
-      "path": "psi.cifar10_local_psi.Cifar10LocalPSI",
+      "path": "psi.Cifar10LocalPSI",
       "args": {
         "psi_writer_id": "psi_writer",
         "data_path": "/tmp/cifar10_vert_splits/site-2.npy"

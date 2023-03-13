@@ -6,9 +6,11 @@ The provided examples cover different aspects of [NVIDIA FLARE](https://nvflare.
 
 > **_NOTE:_** To run examples, please follow the instructions for [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) and any additional steps specified in the example readmes.
 
-## 0. Quickstart
+## Quickstart
 To get started with these examples, please follow the [Quickstart](https://nvflare.readthedocs.io/en/main/quickstart.html) in the NVIDIA FLARE Documentation.  This walks you through installation, creating a POC workspace, and deploying your first NVIDIA FLARE Application.  The following examples will detail any additional requirements in their `requirements.txt`.
-## (Optional) Set up a virtual environment
+
+## Set up a virtual environment
+We recommend setting up a virtual environment before installing the dependencies of the examples.
 ```
 python3 -m pip install --user --upgrade pip
 python3 -m pip install --user virtualenv
@@ -17,7 +19,7 @@ python3 -m pip install --user virtualenv
 ```
 find . -name ".sh" -exec chmod +x {} \;
 ```
-initialize virtual environment.
+activate your virtual environment.
 ```
 source ./virtualenv/set_env.sh
 ```
@@ -30,6 +32,25 @@ pip install -r requirements.txt
 ```
 pip install -r plot-requirements.txt
 ```
+
+## Notebooks
+To run examples including notebooks, we recommend using [JupyterLab](https://jupyter.org).
+
+After activating your virtual environment, install JupyterLab
+```
+pip install --upgrade pip
+pip install jupyterlab
+```
+Register the virtual environment kernel
+```
+python -m ipykernel install --user --name="nvflare_example"
+```
+Start a Jupyter Lab
+```
+jupyter lab .
+```
+When you open a notebook, select the kernel `nvflare_example` using the dropdown menu at the top right.
+![Selecting a JupyterLab kernel](./jupyterlab_kernel.png)
 
 ## 1. Hello World Examples
 ### 1.1 Workflows
