@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import logging
 import threading
 import time
@@ -28,10 +29,13 @@ log = logging.getLogger(__name__)
 
 
 class SfmConnection:
-    """A wrapper of driver connection. Driver connection deals with frame.
-    This connection handles messages.
+    """A wrapper of driver connection.
+
+    Driver connection deals with frame. This connection handles messages.
 
     The frame format:
+
+    .. code-block::
 
         +--------------------------------------------------------+
         |                    length (4 bytes)                    |
@@ -50,6 +54,7 @@ class SfmConnection:
         |              (length-header_len-16) bytes              |
         |                                                        |
         +--------------------------------------------------------+
+
     """
 
     def __init__(self, conn: Connection, local_endpoint: Endpoint):
@@ -64,8 +69,9 @@ class SfmConnection:
         return self.conn.name
 
     def next_sequence(self) -> int:
-        """Get next sequence number for the connection
-        Sequence is used to detect lost frames
+        """Get next sequence number for the connection.
+
+        Sequence is used to detect lost frames.
         """
 
         with self.lock:

@@ -21,7 +21,7 @@ pip install -r ./requirements.txt
 ## 2. Start Jupyter notebook
 Set `PYTHONPATH` to include custom files of this example and some reused files from the [CIFAR-10](../cifar10) examples:
 ```
-export PYTHONPATH=${PWD}/src:${PWD}/../../../cifar10
+export PYTHONPATH=${PWD}/src:${PWD}/../../cifar10
 ```
 Start a Jupyter Lab
 ```

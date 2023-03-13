@@ -19,3 +19,7 @@ __pycache__
 dataset
 dataset*
 *results*
+
+# venv
+nvflare_example
+

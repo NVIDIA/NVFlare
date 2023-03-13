@@ -17,7 +17,7 @@ from timeit import default_timer as timer
 import numpy as np
 import torch
 import torch.optim as optim
-from cifar10_splitnn_dataset import CIFAR10SplitNN
+from splitnn.cifar10_splitnn_dataset import CIFAR10SplitNN
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-DATASET_PATH="DATASET_ROOT/HIGGS.csv"
+DATASET_PATH="${1}/HIGGS.csv"
 OUTPUT_PATH="/tmp/nvflare/random_forest/HIGGS/data_splits"
 
 if [ ! -f "${DATASET_PATH}" ]

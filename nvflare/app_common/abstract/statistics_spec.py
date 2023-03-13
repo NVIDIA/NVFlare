@@ -90,9 +90,9 @@ class Statistics(InitFinalComponent, ABC):
         """
         This is called when client is start Run. At this point
         the server hasn't communicated to the Statistics calculator yet.
+
         Args:
             fl_ctx: fl_ctx: FLContext of the running environment
-        Returns:
 
         """
 
@@ -104,11 +104,11 @@ class Statistics(InitFinalComponent, ABC):
         num_of_bins: Optional[Dict[str, Optional[int]]],
         bin_ranges: Optional[Dict[str, Optional[List[float]]]],
     ):
-        """
-            This method is the initial hand-shake, where controller pass all the requested statistics configuration
-            to client.
-            This method invocation is optional and Configured via controller argument. If it is configured,
-            this method will be called before all other statistic calculation methods
+        """This method is the initial hand-shake, where controller pass all the requested statistics configuration to client.
+
+        This method invocation is optional and Configured via controller argument. If it is configured,
+        this method will be called before all other statistic calculation methods
+
         Args:
             statistics: list of statistics to be calculated, count, sum, etc.
             num_of_bins: if histogram statistic is required, num_of_bins will be specified for each feature.
@@ -126,15 +126,14 @@ class Statistics(InitFinalComponent, ABC):
 
     @abstractmethod
     def features(self) -> Dict[str, List[Feature]]:
-        """
-           return Features for each dataset.
+        """Return Features for each dataset.
 
-           For example, we have training and test datasets.
-           the method will return
-           { "train": features1, "test": features2}
-           where features1,2 are the list of Features with contains feature name and DataType
+        For example, if we have training and test datasets,
+        the method will return
+        { "train": features1, "test": features2}
+        where features1,2 are the list of Features which contains feature name and DataType
 
-        Returns:Dict[<dataset_name>, List[Feature]]
+        Returns: Dict[<dataset_name>, List[Feature]]
 
         Raises:
             NotImplementedError
@@ -143,9 +142,9 @@ class Statistics(InitFinalComponent, ABC):
 
     @abstractmethod
     def count(self, dataset_name: str, feature_name: str) -> int:
-        """
-           return record count for given dataset and feature
+        """Returns record count for given dataset and feature.
            to perform data privacy min_count check, count is always required
+
         Args:
             dataset_name:
             feature_name:
@@ -159,11 +158,12 @@ class Statistics(InitFinalComponent, ABC):
         raise NotImplementedError
 
     def sum(self, dataset_name: str, feature_name: str) -> float:
-        """
-            calculate local sums for given dataset and feature
+        """Calculate local sums for given dataset and feature.
+
         Args:
             dataset_name:
             feature_name:
+
         Returns: sum of all records
 
         Raises:
@@ -191,8 +191,8 @@ class Statistics(InitFinalComponent, ABC):
         raise NotImplementedError
 
     def stddev(self, dataset_name: str, feature_name: str) -> float:
-        """
-            get local stddev value for given dataset and feature
+        """Get local stddev value for given dataset and feature.
+
         Args:
             dataset_name: dataset name
             feature_name: feature name
@@ -212,16 +212,17 @@ class Statistics(InitFinalComponent, ABC):
         global_mean: float,
         global_count: float,
     ) -> float:
-        """
-            calculate the variance with the given mean and count values
-            This is not local variance based on the local mean values.
-            The calculation should be
+        """Calculate the variance with the given mean and count values.
+
+        This is not local variance based on the local mean values.
+        The calculation should be::
+
             m = global mean
             N = global Count
             variance = (sum ( x - m)^2))/ (N-1)
 
-            This is used to calculate global standard deviation.
-            Therefore, this method must implement if stddev statistic is requested
+        This is used to calculate global standard deviation.
+        Therefore, this method must be implemented if stddev statistic is requested
 
         Args:
             dataset_name: dataset name
@@ -250,6 +251,7 @@ class Statistics(InitFinalComponent, ABC):
             global_max_value: global max value for the histogram range
 
         Returns: histogram
+
         Raises:
             NotImplementedError will be raised when histogram statistic is configured but not implemented. If the histogram
              is not configured to be calculated, no need to implement this method and NotImplementedError will not be raised.
@@ -258,11 +260,12 @@ class Statistics(InitFinalComponent, ABC):
         raise NotImplementedError
 
     def max_value(self, dataset_name: str, feature_name: str) -> float:
-        """
-            This method is only needed when "histogram" statistic is configured and the histogram range is not specified.
-            And the histogram range needs to dynamically estimated based on the client's local min/max values.
-            this method returns local max value. The actual max value will not directly return to the FL server.
-            the data privacy policy will add additional noise to the estimated value.
+        """Returns max value.
+
+        This method is only needed when "histogram" statistic is configured and the histogram range is not specified.
+        And the histogram range needs to dynamically estimated based on the client's local min/max values.
+        this method returns local max value. The actual max value will not directly return to the FL server.
+        the data privacy policy will add additional noise to the estimated value.
 
         Args:
             dataset_name: dataset name
@@ -280,11 +283,12 @@ class Statistics(InitFinalComponent, ABC):
         raise NotImplementedError
 
     def min_value(self, dataset_name: str, feature_name: str) -> float:
-        """
-            This method is only needed when "histogram" statistic is configured and the histogram range is not specified.
-            And the histogram range needs to dynamically estimated based on the client's local min/max values.
-            this method returns local min value. The actual min value will not directly return to the FL server.
-            the data privacy policy will add additional noise to the estimated value.
+        """Returns min value.
+
+        This method is only needed when "histogram" statistic is configured and the histogram range is not specified.
+        And the histogram range needs to dynamically estimated based on the client's local min/max values.
+        this method returns local min value. The actual min value will not directly return to the FL server.
+        the data privacy policy will add additional noise to the estimated value.
 
         Args:
             dataset_name: dataset name
@@ -302,9 +306,10 @@ class Statistics(InitFinalComponent, ABC):
         raise NotImplementedError
 
     def failure_count(self, dataset_name: str, feature_name: str) -> int:
-        """
-           return failed count for given dataset and feature
-           to perform data privacy min_count check, failure_count is always required
+        """Return failed count for given dataset and feature.
+
+        To perform data privacy min_count check, failure_count is always required.
+
         Args:
             dataset_name:
             feature_name:
@@ -314,8 +319,8 @@ class Statistics(InitFinalComponent, ABC):
         return 0
 
     def finalize(self):
-        """
-        Called to finalize the Statistic calculator (close/release resources gracefully).
+        """Called to finalize the Statistic calculator (close/release resources gracefully).
+
         After this call, the Learner will be destroyed.
 
         """

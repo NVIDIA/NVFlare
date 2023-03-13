@@ -36,7 +36,6 @@ No further training will be performed, `num_boost_round` should be 1 to align wi
 To run the examples, we first download the dataset from the HIGGS link above, which is a single `.csv` file.
 By default, we assume the dataset is downloaded, uncompressed, and stored in `DATASET_ROOT/HIGGS.csv`.
 
-> **_NOTE:_** make sure to modify the corresponding `DATASET_ROOT` inside `data_split_gen.sh`.
 
 ### Data Split
 Since HIGGS dataset is already randomly recorded,
@@ -58,8 +57,9 @@ If the number of clients is large (e.g. 20), exponential split will be too aggre
 
 Data splits used in this example can be generated with
 ```
-bash data_split_gen.sh
+bash data_split_gen.sh DATASET_ROOT
 ```
+> **_NOTE:_** make sure to put the correct path for `DATASET_ROOT`.
 
 This will generate data splits for two client sizes: 5 and 20, and 3 split conditions: uniform, square, and exponential.
 If you want to customize for your experiments, please check `utils/prepare_data_split.py`.
