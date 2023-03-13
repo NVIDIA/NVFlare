@@ -850,10 +850,10 @@ class Controller(Responder, ControllerSpec, ABC):
                     continue
 
                 # check whether clients that the task is waiting are all dead
-                dead_client = self._get_task_dead_client(task)
-                if dead_client:
-                    self.logger.info(f"client {dead_client} is dead - set task {task.name} to TIMEOUT")
-                    task.completion_status = TaskCompletionStatus.TIMEOUT
+                dead_clients = self._get_task_dead_clients(task)
+                if dead_clients:
+                    self.logger.info(f"client {dead_clients} is dead - set task {task.name} to TIMEOUT")
+                    task.completion_status = TaskCompletionStatus.CLIENT_DEAD
                     exit_tasks.append(task)
                     continue
 
@@ -892,9 +892,9 @@ class Controller(Responder, ControllerSpec, ABC):
                             exit_task.completion_status = TaskCompletionStatus.ERROR
                             exit_task.exception = e
 
-    def _get_task_dead_client(self, task: Task):
+    def _get_task_dead_clients(self, task: Task):
         """
-        See whether the task is waiting for response from a dead client
+        See whether the task is only waiting for response from a dead client
         """
         now = time.time()
         if now - task.schedule_time < 60:
@@ -902,17 +902,25 @@ class Controller(Responder, ControllerSpec, ABC):
             # is started before checking dead clients.
             return None
 
+        dead_clients = []
         with self._dead_clients_lock:
             for target in task.targets:
                 ct = _get_client_task(target, task)
                 if ct is not None and ct.result_received_time:
-                    # response has been received
+                    # response has been received from this client
                     continue
 
+                # either we have not sent the task to this client or we have not received response
                 # is the client already dead?
-                if not self._client_still_alive(target):
-                    return target
-        return None
+                if self._client_still_alive(target):
+                    # this client is still alive
+                    # we let the task continue its course since we still have live clients
+                    return None
+                else:
+                    # this client is dead - remember it
+                    dead_clients.append(target)
+
+        return dead_clients
 
     @staticmethod
     def _process_finished_task(task, func):
