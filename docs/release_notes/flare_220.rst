@@ -1,6 +1,9 @@
+************************
 What's New in FLARE v2.2
-========================
+************************
 
+Goals of v2.2 and New Features
+==============================
 With FLARE v2.2, the primary goals were to:
  - Accelerate the federated learning workflow
  - Simplify deploying a federated learning project in the real-world
@@ -112,6 +115,9 @@ logging, when enabled, limits client output to only file and line numbers in the
 traceback, preventing unintentionally disclosing site-specific information to the project administrator.  Secure
 auditing keeps a site-specific log of all access and commands performed by the project admin.
 
+Migration to 2.2.1: Notes and Tips
+==================================
+
 Stop using Pickle in favor of using FOBS to serialize/deserialize data between Client and Server
 ------------------------------------------------------------------------------------------------
 Prior to NVFLARE 2.1.4, NVFLARE used python's `pickle <https://docs.python.org/3/library/pickle.html>`_ to transfer data between the FL clients and server.
@@ -187,6 +193,14 @@ On the receiving end:
   
     shareable[CUSTOM_DATA] = custom_data
 
+Replace TLS certificates
+------------------------
+With 2.2.1, the authorization model has been changed so previous startup kits (which contain the old TLS certificates) will no longer work. You will need to clean up
+the old setartup kits and re-provision your project.
+
+Use new Project.yml template
+----------------------------
+With 2.2.1, federated site policies require the new project.yml template. Please refer to :ref:`project_yml`.
 
 New local directory
 -------------------
@@ -194,7 +208,7 @@ With 2.2.1, the provision command will produce not only the ``startup`` director
 The resource allocation that used to be in ``project.yml`` is now expected in a ``resources.json`` file in this new ``local`` directory, and each
 sites/clients needs to manage this separately for each location.
 You need to place/modify your own site's ``authorization.json`` and ``privacy.json`` files in the ``local`` directory as well if you want to
-change the default policies. 
+change the default policies.
 
 The default configurations are provided in each site's local directory:
 
