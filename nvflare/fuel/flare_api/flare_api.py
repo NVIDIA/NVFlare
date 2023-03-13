@@ -268,6 +268,7 @@ class Session(SessionSpec):
         limit: Optional[int] = None,
         id_prefix: str = None,
         name_prefix: str = None,
+        reverse: bool = False,
     ) -> List[dict]:
         """Get the job info from the server
 
@@ -276,12 +277,15 @@ class Session(SessionSpec):
             limit: maximum number of jobs to show, with 0 to show all (defaults to 5)
             id_prefix: if included, only return jobs with the beginning of the job ID matching the id_prefix
             name_prefix: if included, only return jobs with the beginning of the job name matching the name_prefix
+            reverse: if specified, list jobs in the reverse order of submission times
         Returns: a dict of job metadata
 
         """
         command = AdminCommandNames.LIST_JOBS
         if detailed:
             command = command + " -d"
+        if reverse:
+            command = command + " -r"
         if limit:
             if not isinstance(limit, int):
                 raise InvalidArgumentError(f"limit must be int but got {type(limit)}")
