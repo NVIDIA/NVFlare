@@ -51,6 +51,8 @@ from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initia
 from nvflare.security.logging import secure_format_exception
 from nvflare.security.security import EmptyAuthorizer
 
+CLIENT_CREATE_POOL_SIZE = 200
+
 
 class SimulatorRunner(FLComponent):
     def __init__(
@@ -76,6 +78,8 @@ class SimulatorRunner(FLComponent):
         self.client_config = None
         self.deploy_args = None
         self.build_ctx = None
+
+        self.clients_created = 0
 
     def _generate_args(
         self, job_folder: str, workspace: str, clients=None, n_clients=None, threads=None, gpu=None, max_clients=100
@@ -286,17 +290,28 @@ class SimulatorRunner(FLComponent):
     def create_clients(self):
         # Deploy the FL clients
         self.logger.info("Create the simulate clients.")
+        executor = ThreadPoolExecutor(max_workers=CLIENT_CREATE_POOL_SIZE)
+        client_count_lock = threading.Lock()
+        clients_created_waiter = threading.Event()
         for client_name in self.client_names:
-            client, self.client_config, self.deploy_args, self.build_ctx = self.deployer.create_fl_client(
-                client_name, self.args
-            )
-            self.federated_clients.append(client)
-            app_root = os.path.join(self.simulator_root, "app_" + client_name)
-            app_custom_folder = os.path.join(app_root, "custom")
-            sys.path.append(app_custom_folder)
+            executor.submit(lambda p: self.create_client(*p), [client_name, client_count_lock, clients_created_waiter])
 
+        clients_created_waiter.wait()
         self.logger.info("Set the client status ready.")
         self._set_client_status()
+
+    def create_client(self, client_name, client_count_lock, clients_created_waiter):
+        client, self.client_config, self.deploy_args, self.build_ctx = self.deployer.create_fl_client(
+            client_name, self.args
+        )
+        self.federated_clients.append(client)
+        app_root = os.path.join(self.simulator_root, "app_" + client_name)
+        app_custom_folder = os.path.join(app_root, "custom")
+        sys.path.append(app_custom_folder)
+        with client_count_lock:
+            self.clients_created += 1
+            if self.clients_created == len(self.client_names):
+                clients_created_waiter.set()
 
     def _set_client_status(self):
         for client in self.federated_clients:
