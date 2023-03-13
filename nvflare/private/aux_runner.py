@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from threading import Lock
+from typing import List
 
 from nvflare.apis.client import Client
 from nvflare.apis.fl_component import FLComponent
@@ -36,15 +37,20 @@ class AuxRunner(FLComponent):
 
     def register_aux_message_handler(self, topic: str, message_handle_func):
         """Register aux message handling function with specified topics.
+
         This method should be called by ServerEngine's register_aux_message_handler method.
+
         Args:
             topic: the topic to be handled by the func
             message_handle_func: the func to handle the message. Must follow aux_message_handle_func_signature.
+
         Returns: N/A
+
         Exception is raised when:
             a handler is already registered for the topic;
             bad topic - must be a non-empty string
             bad message_handle_func - must be callable
+
         """
         if not isinstance(topic, str):
             raise TypeError(f"topic must be str, but got {type(topic)}")
@@ -65,12 +71,18 @@ class AuxRunner(FLComponent):
 
     def _process_request(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         """Call to process the request.
-        NOTE: peer_ctx props must have been set into the PEER_PROPS header of the request by Engine.
+
+        .. note::
+
+            peer_ctx props must have been set into the PEER_PROPS header of the request by Engine.
+
         Args:
             topic: topic of the message
             request: message to be handled
             fl_ctx: fl context
+
         Returns: reply message
+
         """
         handler_f = self.topic_table.get(topic, None)
         if handler_f is None:
@@ -102,12 +114,18 @@ class AuxRunner(FLComponent):
 
     def dispatch(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         """This method is to be called by the Engine when an aux message is received from peer.
-        NOTE: peer_ctx props must have been set into the PEER_PROPS header of the request by Engine.
+
+        .. note::
+
+            peer_ctx props must have been set into the PEER_PROPS header of the request by Engine.
+
         Args:
             topic: message topic
             request: request message
             fl_ctx: FLContext
+
         Returns: reply message
+
         """
         peer_props = request.get_peer_props()
         if peer_props:
@@ -176,7 +194,7 @@ class AuxRunner(FLComponent):
 
     def _send_to_cell(
         self,
-        targets: [],
+        targets: List[str],
         channel: str,
         topic: str,
         request: Shareable,
@@ -186,6 +204,7 @@ class AuxRunner(FLComponent):
         optional=False,
     ) -> dict:
         """Send request to the job cells of other target sites.
+
         Args:
             targets (list): list of client names that the request will be sent to
             channel (str): channel of the request
@@ -195,8 +214,10 @@ class AuxRunner(FLComponent):
             fl_ctx (FLContext): the FL context
             bulk_send: whether to bulk send this request (only applies in the fire-and-forget situation)
             optional: whether the request is optional
+
         Returns:
             A dict of Shareables
+
         """
         request.set_header(ReservedHeaderKey.TOPIC, topic)
         request.set_peer_props(fl_ctx.get_all_public_props())

@@ -44,7 +44,13 @@ class Person(object):
         self.role = _normalize_str(role, FieldNames.USER_ROLE)
 
     def __str__(self):
-        return f"{self.name}:{self.org}:{self.role}"
+        name = self.name if self.name else "None"
+        org = self.org if self.org else "None"
+        role = self.role if self.role else "None"
+        if (not name) and (not org) and (not role):
+            return "None"
+        else:
+            return f"{name}:{org}:{role}"
 
 
 class AuthzContext(object):

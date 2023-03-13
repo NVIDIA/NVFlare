@@ -270,7 +270,7 @@ do
         ;;
 
         -u |--unit*)
-            cmd_prefix="python3 -m pytest --numprocesses=auto "
+            cmd_prefix="python3 -m pytest --numprocesses=auto -v "
 
             echo "coverage_report=" ${coverage_report}
             if [ "${coverage_report}" == true ]; then
@@ -308,7 +308,7 @@ if [[ -z $cmd ]]; then
         check_style_type_import nvflare tests;
         fix_style_import nvflare;
         fix_style_import tests;
-        python3 -m pytest --numprocesses=auto --cov=nvflare --cov-report html:cov_html --cov-report xml:cov.xml --junitxml=unit_test.xml tests/unit_test;
+        python3 -m pytest --numprocesses=auto -v --cov=nvflare --cov-report html:cov_html --cov-report xml:cov.xml --junitxml=unit_test.xml tests/unit_test;
         "
 else
     cmd="$cmd $target"

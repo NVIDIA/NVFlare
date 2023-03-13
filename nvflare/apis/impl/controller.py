@@ -92,7 +92,9 @@ class Controller(Responder, ControllerSpec, ABC):
     def initialize_run(self, fl_ctx: FLContext):
         """Called by runners to initialize controller with information in fl_ctx.
 
-        Note: Controller subclasses must not overwrite this method.
+        .. attention::
+
+            Controller subclasses must not overwrite this method.
 
         Args:
             fl_ctx (FLContext): FLContext information
@@ -141,7 +143,9 @@ class Controller(Responder, ControllerSpec, ABC):
     def process_task_request(self, client: Client, fl_ctx: FLContext) -> Tuple[str, str, Shareable]:
         """Called by runner when a client asks for a task.
 
-        Note: this is called in a separate thread.
+        .. note::
+
+            This is called in a separate thread.
 
         Args:
             client (Client): The record of one client requesting tasks
@@ -181,12 +185,6 @@ class Controller(Responder, ControllerSpec, ABC):
 
                 if client_task_to_check is not None:
                     # this client has been sent the task already
-                    if not isinstance(client_task_to_check, ClientTask):
-                        raise TypeError(
-                            "client_task_to_check must be an instance of ClientTask, but got {}".format(
-                                type(client_task_to_check)
-                            )
-                        )
                     if client_task_to_check.result_received_time is None:
                         # controller has not received result from client
                         # something wrong happens when client working on this task, so resend the task
@@ -213,14 +211,11 @@ class Controller(Responder, ControllerSpec, ABC):
                         # do not send this task, but continue to check next task
                         continue
                     else:
-                        # send the task and remember the client_task
+                        # creates the client_task to be checked for sending
                         client_task_to_send = ClientTask(client, task)
-                        task.last_client_task_map[client.name] = client_task_to_send
-                        task.client_tasks.append(client_task_to_send)
-                        self._client_task_map[client_task_to_send.id] = client_task_to_send
                         break
 
-        # NOTE: move task sending process outside the lock
+        # NOTE: move task sending process outside the task lock
         # This is to minimize the locking time and to avoid potential deadlock:
         # the CB could schedule another task, which requires lock
         self.logger.debug("Determining based on client_task_to_send: {}".format(client_task_to_send))
@@ -282,9 +277,16 @@ class Controller(Responder, ControllerSpec, ABC):
 
             self.logger.debug("after_task_sent_cb done on client_task_to_send: {}".format(client_task_to_send))
 
+        with self._task_lock:
+            # sent the ClientTask and remember it
             now = time.time()
             client_task_to_send.task_sent_time = now
             client_task_to_send.task_send_count += 1
+
+            if not resend_task:
+                task.last_client_task_map[client.name] = client_task_to_send
+                task.client_tasks.append(client_task_to_send)
+                self._client_task_map[client_task_to_send.id] = client_task_to_send
             return task_name, client_task_to_send.id, task_data
 
     def handle_exception(self, task_id: str, fl_ctx: FLContext) -> None:
@@ -322,7 +324,9 @@ class Controller(Responder, ControllerSpec, ABC):
     def process_submission(self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext):
         """Called to process a submission from one client.
 
-        Note: this method is called by a separate thread.
+        .. note::
+
+            This method is called by a separate thread.
 
         Args:
             client (Client): the client that submitted this task
@@ -622,8 +626,10 @@ class Controller(Responder, ControllerSpec, ABC):
         """Cancel the specified task.
 
         Change the task completion_status, which will inform task monitor to clean up this task
-        NOTE: we only mark the task as completed and leave it to the task monitor to clean up
-        This is to avoid potential deadlock of task_lock
+
+        .. note::
+
+            We only mark the task as completed and leave it to the task monitor to clean up. This is to avoid potential deadlock of task_lock.
 
         Args:
             task (Task): the task to be cancelled
@@ -664,8 +670,9 @@ class Controller(Responder, ControllerSpec, ABC):
     def abort_all_tasks(self, fl_ctx: FLContext):
         """Ask clients to abort the execution of all tasks.
 
-        NOTE: the server should send a notification to all clients, regardless of whether the server
-        has any standing tasks.
+        .. note::
+
+            The server should send a notification to all clients, regardless of whether the server has any standing tasks.
 
         Args:
             fl_ctx (FLContext): FLContext associated with this action
@@ -675,7 +682,9 @@ class Controller(Responder, ControllerSpec, ABC):
     def finalize_run(self, fl_ctx: FLContext):
         """Do cleanup of the coordinator implementation.
 
-        NOTE: subclass controllers should not overwrite finalize_run.
+        .. attention::
+
+            Subclass controllers should not overwrite finalize_run.
 
         Args:
             fl_ctx (FLContext): FLContext associated with this action
