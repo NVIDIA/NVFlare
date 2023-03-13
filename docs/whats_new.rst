@@ -109,6 +109,10 @@ There should be no visible changes in terms of the configuration and usage patte
 layer has been improved to allow for greater flexibility and performance. These new communication features will be made generally available in next release.
 
 
+Migration to 2.3: Notes and Tips
+================================
+See :ref:`migrating_to_flare_api` for details on migrating to the new FLARE API.
+
 **************************
 Previous Releases of FLARE
 **************************
