@@ -32,7 +32,7 @@ New FLARE API to provide better user experience
 ===============================================
 The new FLARE API is an improved version of the FLAdminAPI with better ease of use. FLARE API currently supports selected commands. See
 :ref:`migrating_to_flare_api` for details on migrating to the new FLARE API. For now, the FLAdminAPI should still remain functional.
-For details on the FLARE API, you can see this notebook: https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorial/flare_api.ipynb.
+For details on the FLARE API, you can see this notebook: https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/flare_api.ipynb.
 
 Job Signing for Improved Security
 =================================
