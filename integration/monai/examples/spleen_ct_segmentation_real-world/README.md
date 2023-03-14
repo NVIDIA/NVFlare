@@ -22,8 +22,8 @@ And go to the folder containing this tutorial
 To execute the below commands, please open a terminal
 and go to the folder containing this tutorial.
 
-We recommend following the instructions for setting up a [virtual environment](../../examples/README.md#set-up-a-virtual-environment),
-and using it in [JupyterLab](../../examples/README.md#notebooks) for running the notebooks the MONAI integration examples.
+We recommend following the instructions for setting up a [virtual environment](../../../../examples/README.md#set-up-a-virtual-environment),
+and using it in [JupyterLab](../../../../examples/README.md#notebooks) for running the notebooks the MONAI integration examples.
 
 ### 1. Download the Spleen Bundle
 
