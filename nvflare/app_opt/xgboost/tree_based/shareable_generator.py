@@ -26,7 +26,10 @@ def _get_xgboost_model_attr(xgb_model):
     num_parallel_tree = int(
         xgb_model["learner"]["gradient_booster"]["model"]["gbtree_model_param"]["num_parallel_tree"]
     )
-    best_iteration = int(xgb_model["learner"]["attributes"]["best_iteration"])
+    if "best_iteration" in xgb_model["learner"]["attributes"].keys():
+        best_iteration = int(xgb_model["learner"]["attributes"]["best_iteration"])
+    else:
+        best_iteration = 1
     best_ntree_limit = int(xgb_model["learner"]["attributes"]["best_ntree_limit"])
     num_trees = int(xgb_model["learner"]["gradient_booster"]["model"]["gbtree_model_param"]["num_trees"])
     return num_parallel_tree, best_iteration, best_ntree_limit, num_trees
