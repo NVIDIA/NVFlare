@@ -166,6 +166,8 @@ class MultiProcessExecutor(Executor):
             self.engine = fl_ctx.get_engine()
             simulate_mode = fl_ctx.get_prop(FLContextKey.SIMULATE_MODE, False)
             cell = self.engine.client.cell
+            # Create the internal listener for grand child process
+            cell.make_internal_listener()
             command = (
                 self.get_multi_process_command()
                 + " -m nvflare.private.fed.app.client.sub_worker_process"

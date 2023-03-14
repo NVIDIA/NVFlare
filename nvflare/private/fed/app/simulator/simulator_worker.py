@@ -161,7 +161,7 @@ class ClientTaskWorker(FLComponent):
             root_url=root_url,
             secure=False,
             credentials=credentials,
-            create_internal_listener=True,
+            create_internal_listener=False,
             parent_url=parent_url,
         )
         cell.start()

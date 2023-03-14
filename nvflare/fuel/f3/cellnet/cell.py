@@ -603,7 +603,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                 self.logger.debug(f"{self.my_info.fqcn}: removing agent {a}")
                 self.agents.pop(a, None)
 
-    def create_internal_listener(self):
+    def make_internal_listener(self):
         """
         Create the internal listener for child cells of this cell to connect to.
 
