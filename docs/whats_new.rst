@@ -92,7 +92,7 @@ Research Areas
 
 FedSM
 -----
-The FedSM `example <https://github.com/NVIDIA/NVFlare/blob/main/research/fed-sm/README.md>`_ illustrates the personalized federated learning algorithm `FedSM <https://arxiv.org/abs/2203.10144>`_
+The `FedSM example <https://github.com/NVIDIA/NVFlare/blob/main/research/fed-sm/README.md>`_ illustrates the personalized federated learning algorithm `FedSM <https://arxiv.org/abs/2203.10144>`_
 accepted to CVPR2022. It bridges the different data distributions across clients via a SoftPull mechanism and utilizes
 a Super Model. A model selector is trained to predict the belongings of a particular sample to any of the clients'
 personalized models or global model. The training of this model also illustrates a challenging federated learning scenario
@@ -102,14 +102,14 @@ Adam optimizer are also averaged and synced together with model updates.
 
 Quantifying Data Leakage in Federated Learning
 ----------------------------------------------
-This research `example <https://github.com/NVIDIA/NVFlare/blob/main/research/quantifying-data-leakage/README.md>`_ contains the tools necessary to recreate the chest X-ray experiments described in
+This research `example <https://github.com/NVIDIA/NVFlare/blob/main/research/quantifying-data-leakage/README.md>`__ contains the tools necessary to recreate the chest X-ray experiments described in
 `Do Gradient Inversion Attacks Make Federated Learning Unsafe? <https://arxiv.org/abs/2202.06924>`_, accepted to IEEE Transactions on Medical Imaging.
 It presents new ways to measure and visualize potential data leakage in FL using a new FLARE filter
 that can quantify the data leakage for each client and visualize it as a function of the FL training rounds.
 Quantifying the data leakage in FL can help determine the optimal tradeoffs between privacy-preserving techniques, such as differential privacy, and model accuracy based on quantifiable metrics.
 
 Communication Framework Upgrades
-===============================
+================================
 There should be no visible changes in terms of the configuration and usage patterns for the end user, but the underlying communication
 layer has been improved to allow for greater flexibility and performance. These new communication features will be made generally available in next release.
 
