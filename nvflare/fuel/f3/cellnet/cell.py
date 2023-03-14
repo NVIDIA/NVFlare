@@ -1119,6 +1119,7 @@ class Cell(MessageReceiver, EndpointMonitor):
         Args:
             target_msgs: messages to be sent
             timeout: timeout value
+            optional: whether the message is optional
 
         Returns: a dict of: target name => reply message
 
@@ -1153,6 +1154,7 @@ class Cell(MessageReceiver, EndpointMonitor):
             #     self.logger.info(f"{self.my_info.fqcn}: the network is extremely fast - response already received!")
 
             topics = []
+            for_msg = None
             for t, err in send_errs.items():
                 if not err:
                     send_count += 1
@@ -1161,6 +1163,8 @@ class Cell(MessageReceiver, EndpointMonitor):
                     topic = tm.message.get_header(MessageHeaderKey.TOPIC, "?")
                     if topic not in topics:
                         topics.append(topic)
+                    if not for_msg:
+                        for_msg = tm.message
                 else:
                     result[t] = make_reply(rc=err)
                     waiter.reply_time[t] = now
@@ -1175,7 +1179,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                 self.logger.debug(f"{self.my_info.fqcn}: set up waiter {waiter.id} to wait for {timeout} secs")
                 if not waiter.wait(timeout=timeout):
                     # timeout
-                    self.log_error(f"timeout on Request {waiter.id} for {topics} after {timeout} secs", None)
+                    self.log_error(f"timeout on Request {waiter.id} for {topics} after {timeout} secs", for_msg)
                     with self.stats_lock:
                         self.num_timeout_reqs += 1
         except Exception as ex:
@@ -1202,6 +1206,7 @@ class Cell(MessageReceiver, EndpointMonitor):
             targets: FQCN of the destination cell(s)
             request: message to be sent
             timeout: how long to wait for replies
+            optional: whether the message is optional
 
         Returns: a dict of: cell_id => reply message
 
@@ -1224,6 +1229,7 @@ class Cell(MessageReceiver, EndpointMonitor):
             topic: topic of the message
             targets: one or more destination cell IDs. None means all.
             message: message to be sent
+            optional: whether the message is optional
 
         Returns: None
 
@@ -1318,9 +1324,10 @@ class Cell(MessageReceiver, EndpointMonitor):
             - When ready, call this method to send the reply for all the queued requests
 
         Args:
-            reply:
-            to_cell:
-            for_req_ids:
+            reply: the reply message
+            to_cell: the target cell
+            for_req_ids: the list of req IDs that the reply is for
+            optional: whether the message is optional
 
         Returns: an error message if any
 
