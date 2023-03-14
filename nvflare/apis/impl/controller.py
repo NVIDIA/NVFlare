@@ -319,6 +319,7 @@ class Controller(Responder, ControllerSpec, ABC):
         """
         # record the report and to be used by the task monitor
         with self._dead_clients_lock:
+            self.log_info(fl_ctx, f"received dead job report from client {client_name}")
             self._dead_client_reports[client_name] = time.time()
 
     def process_submission(self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext):
@@ -849,8 +850,10 @@ class Controller(Responder, ControllerSpec, ABC):
                     continue
 
                 # check whether clients that the task is waiting are all dead
-                if not self._task_has_running_client(task):
-                    task.completion_status = TaskCompletionStatus.TIMEOUT
+                dead_clients = self._get_task_dead_clients(task)
+                if dead_clients:
+                    self.logger.info(f"client {dead_clients} is dead - set task {task.name} to TIMEOUT")
+                    task.completion_status = TaskCompletionStatus.CLIENT_DEAD
                     exit_tasks.append(task)
                     continue
 
@@ -889,26 +892,35 @@ class Controller(Responder, ControllerSpec, ABC):
                             exit_task.completion_status = TaskCompletionStatus.ERROR
                             exit_task.exception = e
 
-    def _task_has_running_client(self, task: Task):
+    def _get_task_dead_clients(self, task: Task):
+        """
+        See whether the task is only waiting for response from a dead client
+        """
         now = time.time()
         if now - task.schedule_time < 60:
             # due to potential race conditions, we'll wait for at least 1 minute after the task
             # is started before checking dead clients.
-            return True
+            return None
 
+        dead_clients = []
         with self._dead_clients_lock:
             for target in task.targets:
                 ct = _get_client_task(target, task)
                 if ct is not None and ct.result_received_time:
-                    # response has been received
+                    # response has been received from this client
                     continue
 
-                # is the client that the task is waiting for is dead?
+                # either we have not sent the task to this client or we have not received response
+                # is the client already dead?
                 if self._client_still_alive(target):
-                    return True
+                    # this client is still alive
+                    # we let the task continue its course since we still have live clients
+                    return None
+                else:
+                    # this client is dead - remember it
+                    dead_clients.append(target)
 
-        # either all client tasks are done or unfinished clients are all dead
-        return False
+        return dead_clients
 
     @staticmethod
     def _process_finished_task(task, func):

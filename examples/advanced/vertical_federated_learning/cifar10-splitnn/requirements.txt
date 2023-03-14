@@ -4,4 +4,3 @@ torchvision
 tensorboard
 openmined.psi
 pandas
-jupyterlab

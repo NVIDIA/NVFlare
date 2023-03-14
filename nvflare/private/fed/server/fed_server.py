@@ -369,7 +369,7 @@ class FederatedServer(BaseServer):
             root_url=root_url,
             secure=secure_train,
             credentials=credentials,
-            create_internal_listener=True,
+            create_internal_listener=False,
             parent_url=parent_url,
         )
 

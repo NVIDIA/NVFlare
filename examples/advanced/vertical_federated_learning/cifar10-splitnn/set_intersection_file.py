@@ -38,6 +38,7 @@ def main():
 
     with open(args.config_file, "w") as f:
         json.dump(config, f, indent=4)
+        f.write("\n")
 
     print(f"Modified {args.config_file} to use INTERSECTION_FILE={config['INTERSECTION_FILE']}")
 

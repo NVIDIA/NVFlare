@@ -126,7 +126,7 @@ class MainProcessMonitor:
         waiter.set()
 
     @classmethod
-    def run(cls, main_func, shutdown_grace_time=2.0, cleanup_grace_time=3.0):
+    def run(cls, main_func, shutdown_grace_time=1.5, cleanup_grace_time=1.5):
         if not callable(main_func):
             raise ValueError("main_func must be runnable")
 
