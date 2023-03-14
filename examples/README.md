@@ -6,8 +6,10 @@ The provided examples cover different aspects of [NVIDIA FLARE](https://nvflare.
 
 > **_NOTE:_** To run examples, please follow the instructions for [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) and any additional steps specified in the example readmes.
 
-## Quickstart
-To get started with these examples, please follow the [Quickstart](https://nvflare.readthedocs.io/en/main/quickstart.html) in the NVIDIA FLARE Documentation.  This walks you through installation, creating a POC workspace, and deploying your first NVIDIA FLARE Application.  The following examples will detail any additional requirements in their `requirements.txt`.
+## Getting started
+To get started with these examples, please follow the [Getting Started Guide](https://nvflare.readthedocs.io/en/main/getting_started.html) in the NVIDIA FLARE Documentation.
+This walks you through installation, creating a POC workspace, and deploying your first NVIDIA FLARE Application.
+The following examples will detail any additional requirements in their `requirements.txt`.
 
 ## Set up a virtual environment
 We recommend setting up a virtual environment before installing the dependencies of the examples.
@@ -34,11 +36,10 @@ pip install -r plot-requirements.txt
 ```
 
 ## Notebooks
-To run examples including notebooks, we recommend using [JupyterLab](https://jupyter.org).
+To run examples including notebooks, we recommend using [JupyterLab](https://jupyterlab.readthedocs.io).
 
 After activating your virtual environment, install JupyterLab
 ```
-pip install --upgrade pip
 pip install jupyterlab
 ```
 Register the virtual environment kernel

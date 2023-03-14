@@ -30,4 +30,5 @@ and open [cifar10_split_learning.ipynb](./cifar10_split_learning.ipynb).
 ## 3. Example results
 An example training and validation curve with an overlap of 10,000 samples is shown below.
 On a Linux box with an NVIDIA TitanX GPU, completing this training job took just over 24 minutes.
+
 ![Split learning training curves](./figs/sl_training_curve_o10000.png)
