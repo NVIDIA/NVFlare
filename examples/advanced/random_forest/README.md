@@ -7,7 +7,7 @@ This example show how to use [NVIDIA FLARE](https://nvflare.readthedocs.io/en/ma
 It illustrates the [Random Forest](https://xgboost.readthedocs.io/en/stable/tutorials/rf.html) functionality using [XGBoost] (https://github.com/dmlc/xgboost) library,
 which is an optimized distributed gradient boosting library covering random forest.
 
-### HIGGS
+### Dataset
 This example illustrate a binary classification task based on [HIGGS dataset](https://archive.ics.uci.edu/ml/datasets/HIGGS).
 This dataset contains 11 million instances, each with 28 attributes.
 
@@ -31,7 +31,7 @@ Random forest training with multiple clients can be achieved in two steps:
 No further training will be performed, `num_boost_round` should be 1 to align with the basic setting of random forest.
 
 
-## HIGGS Data Preparation
+## Data Preparation
 ### Download and Store Data
 To run the examples, we first download the dataset from the HIGGS link above, which is a single `HIGGS.csv` file.
 By default, we assume the dataset is downloaded, uncompressed, and stored in `DATASET_ROOT/HIGGS.csv`.
