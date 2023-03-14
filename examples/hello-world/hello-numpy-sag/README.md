@@ -14,7 +14,7 @@ Follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html
 Use nvflare simulator to run the hello-examples:
 
 ```
-nvflare simulator -w /tmp/nvflare/ -n 2 -t 2 hello-numpy-sag/jobs/hello-numpy-sag
+nvflare simulator -w /tmp/nvflare/hello-numpy-sag -n 2 -t 2 hello-world/hello-numpy-sag/jobs/hello-numpy-sag
 ```
 
 ### 3. Access the logs and results
@@ -22,7 +22,7 @@ nvflare simulator -w /tmp/nvflare/ -n 2 -t 2 hello-numpy-sag/jobs/hello-numpy-sa
 You can find the running logs and results inside the simulator's workspace/simulate_job
 
 ```bash
-$ ls /tmp/nvflare/simulate_job/
+$ ls /tmp/nvflare/hello-numpy-sag/simulate_job/
 app_server  app_site-1  app_site-2  log.txt  model  models
 
 ```

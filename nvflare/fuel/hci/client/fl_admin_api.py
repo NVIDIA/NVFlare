@@ -396,11 +396,10 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
             command = command + " " + options
         success, _, reply = self._get_processed_cmd_reply_data(command)
         if success:
-            if reply.get("data"):
-                for data in reply["data"]:
-                    if data["type"] == "table":
-                        details = data["rows"]
-                        return FLAdminAPIResponse(APIStatus.SUCCESS, details, reply)
+            meta = reply.get("meta")
+            if meta:
+                jobs_list = meta.get("jobs", [])
+                return FLAdminAPIResponse(APIStatus.SUCCESS, jobs_list, reply)
         return FLAdminAPIResponse(
             APIStatus.ERROR_RUNTIME, {"message": "Runtime error: could not handle server reply."}, reply
         )
