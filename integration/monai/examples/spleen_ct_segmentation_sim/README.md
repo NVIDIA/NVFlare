@@ -7,26 +7,10 @@ For an example with real-world deployment settings, see [here](../spleen_ct_segm
 ## Setup environment
 
 To execute the below commands, please open a terminal
-and go to the folder containing this tutorial:
+and go to the folder containing this tutorial.
 
-#### (Optional) Set up a virtual environment
-```
-python3 -m pip install --user --upgrade pip
-python3 -m pip install --user virtualenv
-```
-(If needed) make all shell scripts executable using
-```
-find . -name ".sh" -exec chmod +x {} \;
-```
-initialize virtual environment.
-```
-source ./virtualenv/set_env.sh
-```
-install required packages for training
-```
-pip install --upgrade pip
-pip install -r virtualenv/requirements.txt
-```
+We recommend following the instructions for setting up a [virtual environment](../../../../examples/README.md#set-up-a-virtual-environment),
+and using it in [JupyterLab](../../../../examples/README.md#notebooks) for running the notebooks the MONAI integration examples.
 
 ### 1. Download the Spleen Bundle
 
