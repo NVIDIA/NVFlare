@@ -1,6 +1,6 @@
 # Federated Linear Model with Scikit-learn
 
-## Introduction to Scikit-learn, tabular data, and federated SVM
+## Introduction to Scikit-learn, tabular data, and federated linear model 
 ### Scikit-learn
 This example shows how to use [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) on tubular data.
 It uses [Scikit-learn](https://scikit-learn.org/), a widely used 
@@ -30,10 +30,7 @@ This can be achieved by setting the `warm_start` flag of SGDClassifier to
 The examples illustrate a binary classification task based on [HIGGS dataset](https://archive.ics.uci.edu/ml/datasets/HIGGS).
 This dataset contains 11 million instances, each with 28 attributes. Download the dataset from the HIGGS link above, containing a single `.csv` file.
 By default, we assume the dataset is downloaded, uncompressed, and stored 
-in `~/dataset/HIGGS.csv`. Note that this `data_path` will be needed in 
-the client config file (`config_fed_client.json`).
-Users can either change it in the config generation script of 
-`prepare_job_config.sh` or the config JSON directly.
+in `DATASET_ROOT/HIGGS.csv`. 
 
 ## Prepare clients' configs with proper data information 
 For real-world FL applications, the config JSON files are expected to be 
