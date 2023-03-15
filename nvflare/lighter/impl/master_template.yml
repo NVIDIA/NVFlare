@@ -1657,10 +1657,11 @@ aws_start_svr_sh: |
   KEY_PAIR=NVFlareServerKeyPair
   KEY_FILE=${KEY_PAIR}.pem
 
-  echo "This script requires aws (AWS CLI), sshpass and jq.  Now checking if they are installed."
+  echo "This script requires aws (AWS CLI), sshpass, dig and jq.  Now checking if they are installed."
 
   check_binary aws "Please see https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html on how to install it on your system."
   check_binary sshpass "Please install it first."
+  check_binary dig "Please install it first."
   check_binary jq "Please install it first."
 
   if [ -z ${config_file+x} ]
@@ -1708,7 +1709,9 @@ aws_start_svr_sh: |
   sleep 10
   sg_id=$(aws ec2 create-security-group --group-name $SECURITY_GROUP --description "NVFlare security group" | jq -r .GroupId)
   report_status "$?" "creating security group"
-  aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr 0.0.0.0/0 > /tmp/sec_grp.log
+  my_public_ip=$(dig +short myip.opendns.com @resolver1.opendns.com)
+  report_status "$?" "getting my public IP"
+  aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr ${my_public_ip}/32 > /tmp/sec_grp.log
   aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 8002-8003 --cidr 0.0.0.0/0 >> /tmp/sec_grp.log
   report_status "$?" "creating security group rules"
 
@@ -1809,10 +1812,11 @@ aws_start_cln_sh: |
   KEY_PAIR=NVFlareClientKeyPair
   KEY_FILE=${KEY_PAIR}.pem
 
-  echo "This script requires aws (AWS CLI), sshpass and jq.  Now checking if they are installed."
+  echo "This script requires aws (AWS CLI), sshpass, dig and jq.  Now checking if they are installed."
 
   check_binary aws "Please see https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html on how to install it on your system."
   check_binary sshpass "Please install it first."
+  check_binary dig "Please install it first."
   check_binary jq "Please install it first."
 
   if [ -z ${config_file+x} ]
@@ -1857,7 +1861,9 @@ aws_start_cln_sh: |
   # Try not reusing existing security group because we have to modify it for our own need.
   sg_id=$(aws ec2 create-security-group --group-name $SECURITY_GROUP --description "NVFlare security group" | jq -r .GroupId)
   report_status "$?" "creating security group"
-  aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr 0.0.0.0/0 > /tmp/sec_grp.log
+  my_public_ip=$(dig +short myip.opendns.com @resolver1.opendns.com)
+  report_status "$?" "getting my public IP"
+  aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr ${my_public_ip}/32 > /tmp/sec_grp.log
   report_status "$?" "creating security group rules"
 
   # Start provisioning
@@ -1944,10 +1950,11 @@ aws_start_dsb_sh: |
   KEY_PAIR=NVFlareDashboardKeyPair
   KEY_FILE=${KEY_PAIR}.pem
   
-  echo "This script requires aws (AWS CLI), sshpass and jq.  Now checking if they are installed."
+  echo "This script requires aws (AWS CLI), sshpass, dig and jq.  Now checking if they are installed."
 
   check_binary aws "Please see https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html on how to install it on your system."
   check_binary sshpass "Please install it first."
+  check_binary dig "Please install it first."
   check_binary jq "Please install it first."
 
   echo "One initial user will be created when starting dashboard."
@@ -1970,7 +1977,9 @@ aws_start_dsb_sh: |
   sg_id=$(aws ec2 create-security-group --group-name $SECURITY_GROUP --description "NVFlare security group" | jq -r .GroupId)
   report_status "$?" "creating security group"
   echo "Security group id: ${sg_id}"
-  aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr 0.0.0.0/0 > /tmp/sec_grp.log
+  my_public_ip=$(dig +short myip.opendns.com @resolver1.opendns.com)
+  report_status "$?" "getting my public IP"
+  aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr ${my_public_ip}/32 > /tmp/sec_grp.log
   aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 443 --cidr 0.0.0.0/0 >> /tmp/sec_grp.log
   report_status "$?" "creating security group rules"
 
