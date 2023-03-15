@@ -16,6 +16,7 @@ import threading
 from abc import ABC
 from typing import Dict, Optional
 
+from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.connection import Connection, ConnState
 from nvflare.fuel.f3.drivers.driver import ConnectorInfo, Driver
 
@@ -61,6 +62,6 @@ class BaseDriver(Driver, ABC):
 
     def _notify_monitor(self, conn: Connection):
         if not self.conn_monitor:
-            log.error(f"Connection monitor not registered for driver {self.get_name()}")
-        else:
-            self.conn_monitor.state_change(conn)
+            raise CommError(CommError.ERROR, f"Connection monitor not registered for driver {self.get_name()}")
+
+        self.conn_monitor.state_change(conn)
