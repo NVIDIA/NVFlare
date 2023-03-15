@@ -194,6 +194,13 @@ Operational
     The :ref:`Admin client <operating_nvflare>` is used to orchestrate the FL study, including starting and stopping server
     and clients, deploying applications, and managing FL experiments.
 
+#. How can I get the global model at the end of training? What can I do to resolve keys not matching with the model defined?
+
+    You can use the download_job command with the :ref:`Admin client <operating_nvflare>` to get the job result into the admin
+    transfer folder. The model is saved in a dict depending on the persistor you used, so you might need to access it with
+    ``model.load_state_dict(torch.load(path_to_model)["model"])`` if you used PTFileModelPersistor because
+    PTModelPersistenceFormatManager saves the model under the key "model".
+
 #. Why am I getting an error about my custom files not being found?
 
     Make sure that BYOC is enabled. BYOC is always enabled in POC mode, but disabled by default in secure mode when

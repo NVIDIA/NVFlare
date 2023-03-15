@@ -12,13 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import warnings
+import time
 
-warnings.warn(
-    f"This module: {__file__} is deprecated. Please use nvflare.app_opt.pt.multi_process_executor",
-    category=FutureWarning,
-    stacklevel=2,
-)
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.shareable import Shareable
+from nvflare.apis.signal import Signal
+from nvflare.app_common.np.np_trainer import NPTrainer
 
-# flake8: noqa: F401
-from nvflare.app_opt.pt.multi_process_executor import PTMultiProcessExecutor
+
+class SlowTrainer(NPTrainer):
+    def _train(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal):
+        time.sleep(10.0)
+        return super()._train(shareable, fl_ctx, abort_signal)

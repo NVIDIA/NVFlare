@@ -50,14 +50,14 @@ The client-side model initialization avoids server-side custom code as well as w
 client side initialization asks every client to send the initialized model as a pre-task in the workflow, before the training starts.
 On the server side, once the server receive the initial models from clients, server can choose different strategies to leverage the models
 from different clients:
-* Select one model randomly among all clients’ models, then use it as the global initial model
+* Select one model randomly among all clients' models, then use it as the global initial model
 * Apply aggregation function to generate the global initial model
 
 In this example,we use _InitializeGlobalWeights_ controller, which have implemented the following strategies ( weight_method)
 * Weight_method = "first" , then use the weights reported from the first client;
 * weight_method = "client", then only use the weights reported from the specified client.
 
-If one’s use case demands a different strategy, then you can implement a new model initialization controller.
+If one's use case demands a different strategy, then you can implement a new model initialization controller.
 
 Looking at the job workflow, we have defined three workflows in config_fed_server.json
   * pre_train ( model initialization )  with _InitializeGlobalWeights_ controller
