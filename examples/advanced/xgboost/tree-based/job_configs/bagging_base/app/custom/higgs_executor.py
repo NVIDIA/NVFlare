@@ -46,7 +46,7 @@ class FedXGBTreeHiggsExecutor(FedXGBTreeExecutor):
         learning_rate: float = 0.1,
         objective: str = "binary:logistic",
         num_local_parallel_tree: int = 1,
-        local_subsample: float = 0.8,
+        local_subsample: float = 1,
         max_depth: int = 8,
         eval_metric: str = "auc",
         nthread: int = 16,
