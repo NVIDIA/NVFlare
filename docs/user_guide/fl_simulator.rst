@@ -743,7 +743,8 @@ This command will run the same ``hello-numpy-sag`` app on the server and 8 clien
 Run an NVFlare job
 ===================
 
-This command will run the job following the meta.json in the job. The executing client list is provided in the command line ("client0,client1,client2,client3"). If there is any client not defined in the deploy_map of the meta.json, the simulator will report an error and not run.
+This command will run the job following the meta.json in the job. The executing client list is provided in the command line ("client0,client1,client2,client3").
+If there is any client not defined in the deploy_map of the meta.json, the simulator will report an error and not run.
 
 .. code-block:: python
 
@@ -754,7 +755,8 @@ The output should be similar to above but with only four clients.
 Run a job with no client name list
 ===================================
 
-If there is no client name list provided and no number of clients (-n) option provided, the simulator extracts the list of client names from the deployment_map in meta.json to run.
+If there is no client name list provided and no number of clients (-n) option provided, the simulator extracts the list of client names from the deployment_map
+in meta.json to run.
 
 .. code-block:: python
 
@@ -769,7 +771,10 @@ If there is no client name list provided and no number of clients (-n) option pr
 Debug NVFlare Application
 **************************
 
-One of the goals for the Simulator is to enable researchers easily debug the NVFlare application. The FL simulator is implemented in a way of API design. Actually, the Simulator application is also implemented using the Simulator API. The researchers can simply write a "main" python script like the Simulator App, then place the script into their familiar Python IDE, add the NVFlare app into the python source codes path, then add the breakpoints to debug the application run.
+One of the goals for the Simulator is to enable researchers easily debug the NVFlare application. The FL simulator is implemented in a way of API design.
+Actually, the Simulator application is also implemented using the Simulator API. The researchers can simply write a "main" python script like the Simulator
+App, then place the script into their familiar Python IDE, add the NVFlare app into the python source codes path, then add the breakpoints to debug the
+application run.
 
 .. code-block:: python
 
@@ -813,15 +818,42 @@ One of the goals for the Simulator is to enable researchers easily debug the NVF
         status = run_simulator(args)
         sys.exit(status)
 
-***************************
-SWAP_IN and SWAP_OUT events
-***************************
-During the FLARE simulator execution, the client Apps are executed in turn in the same execution thread. Each executing client App will go fetching the task from the controller on the server, executing the task, and then submitting the task results to the controller. Once submitting results finished, the current client App will yield the executing thread to the next client App to execute. If the client App needs to preserve some states for the next "execution turn" to continue, the client executor can make use of the "SWAP_OUT" event fired by the simulator engine to save the current states. When the client App gets the turn to execute again, then use the "SWAP_IN" event to recover the previous saved states.
+****************************
+Threads, Clients, and Events
+****************************
 
-****************************************************
+Specifying threads
+==================
+The simulator ``-t`` option provides the ability to specify how many threads to run the simulator with.
+
+When you run the simulator with ``-t 1``, there is only one client active and running at a time, and the clients will be running in
+turn. This is to enable the simulation of large number of clients using a single machine with limited resources.
+
+Note that if you have fewer threads than the number of clients, ClientRunner/learner object will go thorugh setup and
+teardown in every round.
+
+With ``-t=num_client``, the simulator will run the number of clients in separate threads at the same time. Each
+client will always be running in memory with no swap_in / swap_out, but it will require more resources available.
+
+For the dataset / tensorboard initialization, you could make use of EventType.SWAP_IN and EventType.SWAP_OUT
+in the application.
+
+SWAP_IN and SWAP_OUT events
+===========================
+During FLARE simulator execution, the client Apps are executed in turn in the same execution thread. Each executing client App will go
+fetch the task from the controller on the server, execute the task, and then submit the task results to the controller. Once finished submitting
+results, the current client App will yield the executing thread to the next client App to execute.
+
+If the client App needs to preserve some states for the next "execution turn" to continue, the client executor can make use of the ``SWAP_OUT``
+event fired by the simulator engine to save the current states. When the client App gets the turn to execute again, use the ``SWAP_IN``
+event to recover the previous saved states.
+
 Multi-GPU and Separate Client Process with Simulator
-****************************************************
-The simulator "-t" option provides the ability to specify how many threads to run the simulator with. The simulator runs within the same process, and it will make use of a single GPU (if it is detected with ``nvidia-smi``). If there are multiple GPUs available and you want to make use of them all for the simulator run, you can use the "-gpu" option for this. The "-gpu" option provides the "," list of GPUs for the simulator to run on. The clients list will be distributed among the GPUs.
+====================================================
+The simulator runs within the same process, and it will make use of a single GPU if it is detected with ``nvidia-smi``.
+If there are multiple GPUs available and you want to make use of them all for the simulator run, you can use the
+``-gpu`` option for this. The ``-gpu`` option provides the list of GPUs for the simulator to run on. The
+clients list will be distributed among the GPUs.
 
 For example: 
 
@@ -831,13 +863,16 @@ For example:
 
 The clients c1, c3, and c5 will run on GPU 0 in one process, and clients c2 and c4 will run on GPU 1 in another process.
 
-The GPU numbers do not have to be unique. If you use "-gpu 0,0", this will run 2 separate client processes on GPU 0, assuming this GPU will have enough memory to support the applications.
+The GPU numbers do not have to be unique. If you use ``-gpu 0,0``, this will run 2 separate client processes on GPU 0, assuming this GPU will have
+enough memory to support the applications.
 
 .. note::
 
-    If you have invalid GPU IDs assigned and ``nvidia-smi`` is available, the simuilation will be aborted. Otherwise if ``nvidia-smi`` is not available, the simulation will run on CPU.
+    If you have invalid GPU IDs assigned and ``nvidia-smi`` is available, the simuilation will be aborted. Otherwise if ``nvidia-smi`` is not available,
+    the simulation will run on CPU.
 
-*************************
 To change the MAX_CLIENTS
-*************************
-By default, the simulator runs with a maximum number of 100 clients. If you need to simulate larger number of clients, use the "-m MAX_CLIENTS" option to set the number of clients to run. The simulator can support more than 1000 clients with one run. You just need to make sure that the machine that the simulator is running on has enough resources to support the parallel execution of the number of clients set.
+=========================
+By default, the simulator runs with a maximum number of 100 clients. If you need to simulate a larger number of clients, use the "-m MAX_CLIENTS" option
+to set the number of clients to run. The simulator can support more than 1000 clients with one run. You just need to make sure that the machine that the
+simulator is running on has enough resources to support the parallel execution of the number of clients set.

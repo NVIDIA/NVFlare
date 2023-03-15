@@ -4,10 +4,8 @@
     1. [Checking the coding style](#checking-the-coding-style)
     1. [Unit testing](#unit-testing)
     1. [Building the documentation](#building-the-documentation)
-    1. [Automatic code formatting](#automatic-code-formatting)
     1. [Signing your work](#signing-your-work)
-    1. [Utility functions](#utility-functions)
-    1. [Backwards compatibility](#backwards-compatibility)
+    1. [Commit signature verification](#commit-signature-verification)
   * [Submitting pull requests](#submitting-pull-requests)
 - [The code reviewing process (for the maintainers)](#the-code-reviewing-process)
   * [Reviewing pull requests](#reviewing-pull-requests)
@@ -73,24 +71,24 @@ The unit test file names follow the `[module_name]_test.py` pattern.
 
 The bash script `runtest.sh` will run unit tests also.
 
-#### Building docs
+#### Building the documentation
 To build the docs, first make sure you have all requirements
 
 ```bash
-python -m pip upgrade
-python -m pip install -r requirements-dev.txt
+python3 -m pip install -U pip
+python3 -m pip install nvflare[dev]
 ```
 
 To build the docs, please run. 
 
 ```bash
-./build_docs --html
+./build_docs.sh --html
 ```
 
 Once built, you can view the docs in `docs/_build folder`. To clean the docs, please run
 
 ```bash
-./build_docs --clean
+./build_docs.sh --clean
 ```
 
 #### Signing your work

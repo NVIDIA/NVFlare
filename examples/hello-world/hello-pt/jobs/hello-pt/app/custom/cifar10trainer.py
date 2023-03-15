@@ -31,7 +31,7 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.model import make_model_learnable, model_learnable_to_dxo
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_opt.pt import PTModelPersistenceFormatManager
+from nvflare.app_opt.pt.model_persistence_format_manager import PTModelPersistenceFormatManager
 
 
 class Cifar10Trainer(Executor):

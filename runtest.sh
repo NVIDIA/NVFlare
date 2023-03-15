@@ -19,6 +19,7 @@ fi
 
 WORK_DIR="$( cd -P "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 NUM_PARALLEL=1
+DIR_TO_CHECK="nvflare tests"
 
 target="${@: -1}"
 if [[ "${target}" == -* ]] ;then
@@ -32,11 +33,6 @@ function install_deps {
 }
 
 function clean {
-    echo "remove flare_deps_installed flag"
-    if [[ -f /tmp/.flare_deps_installed ]]; then
-        rm -r /tmp/.flare_deps_installed
-    fi;
-
     echo "remove coverage history"
     python3 -m coverage erase
 
@@ -244,15 +240,14 @@ do
         -s |--check-format) # check format and styles
             cmd="check_style_type_import"
             if [[ -z $target ]]; then
-                target="nvflare tests"
+                target="${DIR_TO_CHECK}"
             fi
         ;;
 
         -f |--fix-format)
-            if [ -n "${target}" ]; then
-                cmd="fix_style_import ${target}"
-            else
-                cmd="fix_style_import nvflare && fix_style_import tests"
+            cmd="fix_style_import"
+            if [[ -z $target ]]; then
+                target="${DIR_TO_CHECK}"
             fi
         ;;
         -c|--coverage)
@@ -305,9 +300,8 @@ done
 
 if [[ -z $cmd ]]; then
     cmd="check_license;
-        check_style_type_import nvflare tests;
-        fix_style_import nvflare;
-        fix_style_import tests;
+        check_style_type_import "${DIR_TO_CHECK}";
+        fix_style_import "${DIR_TO_CHECK}";
         python3 -m pytest --numprocesses=auto -v --cov=nvflare --cov-report html:cov_html --cov-report xml:cov.xml --junitxml=unit_test.xml tests/unit_test;
         "
 else
