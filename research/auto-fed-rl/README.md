@@ -53,7 +53,7 @@ Next, let's try to run Auto-FedRL on a heterogeneous split (alpha=0.1):
 
 ## 4. Exeperiments on CIFAR-10
 
-Here, we show the experiment using the continous search on CIFAR-10 (alpha=0.5) with 8 clients.
+Here, we show the experiment using the continous search on CIFAR-10 (alpha=0.5) with 8 clients. The experiemts was conducted on 1 NVIDIA V100 GPU (16GB) and took about 8 hours.
 
 The TensorBoard curves for test accuracy during training are shown below:
 ![curves](./assets/fig.png)
