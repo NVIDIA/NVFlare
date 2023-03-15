@@ -1,5 +1,5 @@
 pandas
-xgboost==1.7.0rc1
+xgboost
 sklearn
 torch
 tensorboard
