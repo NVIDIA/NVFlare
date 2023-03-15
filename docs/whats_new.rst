@@ -103,7 +103,7 @@ Adam optimizer are also averaged and synced together with model updates.
 Auto-FedRL
 ----------
 The `Auto-FedRL example <https://github.com/NVIDIA/NVFlare/blob/main/research/auto-fed-rl/README.md>`_ implements the automated machine learning solution described in
-`Auto-FedRL: Federated Hyperparameter Optimization for Multi-institutional Medical Image Segmentation <https://arxiv.org/abs/2203.06338>`_ accepted to ECCV 2023.
+`Auto-FedRL: Federated Hyperparameter Optimization for Multi-institutional Medical Image Segmentation <https://arxiv.org/abs/2203.06338>`_ accepted to ECCV 2022.
 Conventional hyperparameter optimization algorithms are often impractical in real-world FL applications as they involve numerous training trials,
 which are often not affordable with limited computing budgets.
 Auto-FedRL proposes an efficient reinforcement learning (RL)-based federated hyperparameter optimization algorithm,
