@@ -47,7 +47,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_opt.pt import PTFedProxLoss
+from nvflare.app_opt.pt.fedproxloss import PTFedProxLoss
 
 
 class SupervisedMonaiBratsLearner(SupervisedLearner):

@@ -20,8 +20,14 @@ import pytest
 from nvflare.private.fed.server.job_cmds import _create_list_job_cmd_parser
 
 TEST_CASES = [
-    (["-d", "-u", "12345", "-n", "hello_", "-m", "3"], Namespace(u=True, d=True, job_id="12345", m=3, n="hello_", r=False)),
-    (["12345", "-d", "-u", "-n", "hello_", "-m", "3"], Namespace(u=True, d=True, job_id="12345", m=3, n="hello_", r=False)),
+    (
+        ["-d", "-u", "12345", "-n", "hello_", "-m", "3"],
+        Namespace(u=True, d=True, job_id="12345", m=3, n="hello_", r=False),
+    ),
+    (
+        ["12345", "-d", "-u", "-n", "hello_", "-m", "3"],
+        Namespace(u=True, d=True, job_id="12345", m=3, n="hello_", r=False),
+    ),
     (["-d", "-u", "-n", "hello_", "-m", "3"], Namespace(u=True, d=True, job_id=None, m=3, n="hello_", r=False)),
     (["-u", "-n", "hello_", "-m", "5"], Namespace(u=True, d=False, job_id=None, m=5, n="hello_", r=False)),
     (["-u"], Namespace(u=True, d=False, job_id=None, m=None, n=None, r=False)),
