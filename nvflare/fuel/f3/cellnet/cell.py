@@ -21,6 +21,7 @@ import time
 import uuid
 from typing import Dict, List, Tuple, Union
 from urllib.parse import urlparse
+from concurrent.futures import ThreadPoolExecutor
 
 from nvflare.fuel.f3.cellnet.connector_manager import ConnectorManager
 from nvflare.fuel.f3.cellnet.defs import (
@@ -260,6 +261,10 @@ class Cell(MessageReceiver, EndpointMonitor):
     APP_ID = 1
     ERR_TYPE_MSG_TOO_BIG = "MsgTooBig"
     ERR_TYPE_COMM = "CommErr"
+    DIRECT_MSG_POOL_SIZE = 1000
+
+    ALL_CELLS = {}  # cell name => Cell
+    DIRECT_MSG_EXECUTOR = ThreadPoolExecutor(DIRECT_MSG_POOL_SIZE, "direct_msg")
 
     def __init__(
         self,
@@ -302,6 +307,9 @@ class Cell(MessageReceiver, EndpointMonitor):
                 client_1            (he root cell of client_1)
 
         """
+        if fqcn in self.ALL_CELLS:
+            raise ValueError(f"there is already a cell named {fqcn}")
+
         comm_configurator = CommConfigurator()
         self._name = self.__class__.__name__
         self.logger = logging.getLogger(self._name)
@@ -461,6 +469,7 @@ class Cell(MessageReceiver, EndpointMonitor):
             counter_names=counter_names,
             scope=self.my_info.fqcn,
         )
+        self.ALL_CELLS[fqcn] = self
 
     def log_error(self, log_text: str, msg: Union[None, Message], log_except=False):
         log_messaging_error(logger=self.logger, log_text=log_text, cell=self, msg=msg, log_except=log_except)
@@ -505,10 +514,13 @@ class Cell(MessageReceiver, EndpointMonitor):
 
     def _set_bb_for_client_root(self):
         self._create_bb_external_connector()
-        self._create_internal_listener()
+        if self.create_internal_listener:
+            self._create_internal_listener()
 
     def _set_bb_for_client_child(self, parent_url: str, create_internal_listener: bool):
-        self._create_internal_connector(parent_url)
+        if parent_url:
+            self._create_internal_connector(parent_url)
+
         if create_internal_listener:
             self._create_internal_listener()
 
@@ -522,11 +534,14 @@ class Cell(MessageReceiver, EndpointMonitor):
                 self._create_external_listener(url)
         else:
             self.logger.info(f"{self.my_info.fqcn}: creating listener on {self.root_url}")
-            self._create_external_listener(self.root_url)
-        self._create_internal_listener()
+            if self.root_url:
+                self._create_external_listener(self.root_url)
+        if self.create_internal_listener:
+            self._create_internal_listener()
 
     def _set_bb_for_server_child(self, parent_url: str, create_internal_listener: bool):
-        self._create_internal_connector(parent_url)
+        if parent_url:
+            self._create_internal_connector(parent_url)
         if create_internal_listener:
             self._create_internal_listener()
 
@@ -703,6 +718,9 @@ class Cell(MessageReceiver, EndpointMonitor):
             return listener
 
     def _create_bb_external_connector(self):
+        if not self.root_url:
+            return
+        
         self.logger.debug(f"{self.my_info.fqcn}: creating connector to {self.root_url}")
         self.bb_ext_connector = self.connector_manager.get_external_connector(self.root_url, False)
         if self.bb_ext_connector:
@@ -927,6 +945,9 @@ class Cell(MessageReceiver, EndpointMonitor):
         target_info = FqcnInfo(target_fqcn)
 
         # is there a direct path to the target?
+        if target_fqcn in self.ALL_CELLS:
+            return Endpoint(target_fqcn)
+
         agent = self.agents.get(target_fqcn)
         if agent:
             return agent.endpoint
@@ -993,7 +1014,12 @@ class Cell(MessageReceiver, EndpointMonitor):
                 self.log_error(err_text, message)
                 err = ReturnCode.MSG_TOO_BIG
             else:
-                self.communicator.send(to_endpoint, Cell.APP_ID, message)
+                direct_cell = self.ALL_CELLS.get(to_endpoint.name)
+                if direct_cell:
+                    # create a thread and fire the cell's process_message!
+                    self.DIRECT_MSG_EXECUTOR.submit(self._send_direct_message, direct_cell, message)
+                else:
+                    self.communicator.send(to_endpoint, Cell.APP_ID, message)
                 self.sent_msg_size_pool.record_value(
                     category=self._stats_category(message), value=self._msg_size_mbs(message)
                 )
@@ -1003,6 +1029,13 @@ class Cell(MessageReceiver, EndpointMonitor):
             self.logger.debug(secure_format_traceback())
             err = ReturnCode.COMM_ERROR
         return err
+
+    def _send_direct_message(self, target_cell, message):
+        target_cell.process_message(
+            endpoint=Endpoint(self.my_info.fqcn),
+            connection=None,
+            app_id=self.APP_ID,
+            message=message)
 
     def _send_target_messages(
         self,
@@ -1602,10 +1635,11 @@ class Cell(MessageReceiver, EndpointMonitor):
         self.logger.debug(f"{self.my_info.fqcn}: received message: {message.headers}")
         message.set_prop(MessagePropKey.ENDPOINT, endpoint)
 
-        conn_props = connection.get_conn_properties()
-        cn = conn_props.get(DriverParams.PEER_CN.value)
-        if cn:
-            message.set_prop(MessagePropKey.COMMON_NAME, cn)
+        if connection:
+            conn_props = connection.get_conn_properties()
+            cn = conn_props.get(DriverParams.PEER_CN.value)
+            if cn:
+                message.set_prop(MessagePropKey.COMMON_NAME, cn)
 
         msg_type = message.get_header(MessageHeaderKey.MSG_TYPE)
         if not msg_type:
