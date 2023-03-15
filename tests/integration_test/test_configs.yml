@@ -13,6 +13,7 @@ test_configs:
     - ./data/test_configs/ha/kill_server_during_training_after_first_round.yml
     - ./data/test_configs/ha/kill_server_during_training_before_first_round.yml
     - ./data/test_configs/ha/kill_server_during_training_sending_model.yml
+    - ./data/test_configs/ha/two_servers.yml
     - ./data/test_configs/ha/fladminapi.yml
   numpy:
     - ./data/test_configs/standalone_job/hello_numpy_examples.yml

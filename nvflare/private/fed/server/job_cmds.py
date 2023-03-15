@@ -61,6 +61,7 @@ def _create_list_job_cmd_parser():
     parser.add_argument("job_id", nargs="?", help="Job ID prefix")
     parser.add_argument("-d", action="store_true", help="Show detailed list")
     parser.add_argument("-u", action="store_true", help="List jobs submitted by the same user")
+    parser.add_argument("-r", action="store_true", help="List jobs in reverse order of submission time")
     parser.add_argument("-n", help="Filter by job name prefix")
     parser.add_argument(
         "-m",
@@ -100,7 +101,7 @@ class JobCommandModule(CommandModule, CommandUtil):
                 CommandSpec(
                     name=AdminCommandNames.LIST_JOBS,
                     description="list submitted jobs",
-                    usage=f"{AdminCommandNames.LIST_JOBS} [-n name_prefix] [-d] [-u] [-m num_of_jobs] [job_id_prefix]",
+                    usage=f"{AdminCommandNames.LIST_JOBS} [-n name_prefix] [-d] [-u] [-r] [-m num_of_jobs] [job_id_prefix]",
                     handler_func=self.list_jobs,
                     authz_func=self.command_authz_required,
                 ),
@@ -212,7 +213,7 @@ class JobCommandModule(CommandModule, CommandUtil):
         run_process = engine.run_processes.get(job_id, {})
         if not run_process:
             conn.append_error(f"Job: {job_id} is not running.")
-            return
+            return False
 
         participants = run_process.get(RunProcessKey.PARTICIPANTS, [])
         wrong_clients = []
@@ -228,7 +229,7 @@ class JobCommandModule(CommandModule, CommandUtil):
         if wrong_clients:
             display_clients = ",".join(wrong_clients)
             conn.append_error(f"{display_clients} are not in the job running list.")
-            return
+            return False
 
         err = engine.check_app_start_readiness(job_id)
         if err:
@@ -322,7 +323,8 @@ class JobCommandModule(CommandModule, CommandUtil):
                     conn.append_string("No jobs matching the specified criteria.")
                     return
 
-                filtered_jobs.sort(key=lambda job: job.meta.get(JobMetaKey.SUBMIT_TIME.value, 0.0), reverse=True)
+                reverse = True if parsed_args.r else False
+                filtered_jobs.sort(key=lambda job: job.meta.get(JobMetaKey.SUBMIT_TIME.value, 0.0), reverse=reverse)
 
                 if max_jobs_listed:
                     filtered_jobs = filtered_jobs[:max_jobs_listed]

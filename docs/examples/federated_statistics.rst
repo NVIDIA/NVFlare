@@ -57,7 +57,7 @@ The main steps are:
     * provide server side configuration to specify target statistics and their configurations and output location
     * implement the local statistics generator (statistics_spec)
     * provide client side configuration to specify data input location
-    * The detailed example instructions can be found in `Data frame statistics <https://github.com/NVIDIA/NVFlare/tree/main/examples/federated_statistics/df_stats/README.md>`_
+    * The detailed example instructions can be found in `Data frame statistics <https://github.com/NVIDIA/NVFlare/tree/main/examples/federated_statistics/df_stats/README.md>`__
 
 COVID 19 Radiology Image Examples
 ---------------------------------
@@ -66,7 +66,7 @@ The second example provided is an image histogram example. Different from the ta
 * The `image_statistics.py <https://github.com/NVIDIA/NVFlare/tree/main/examples/federated_statistics/image_stats/image_stats_job/custom/image_statistics.py>`_ only needs to calculate the count and histogram target statistics, then user only needs to provide the calculation count, failure_count and histogram functions. There is no need to implement other metrics functions (sum, mean,std_dev etc.) ( get_failure_count by default return 0 )
 * For each site's dataset, there are several thousands of images, the local histogram is aggregate histogram of all the image histograms.
 * The image files are large, we can't load everything in memory, then calculate the statistics. We will need to iterate through files for each calculation. For single feature, such as example. This is ok. If there are multiple features, such as multiple channels, reload image to memory for each channel to do histogram calculation is really wasteful.
-* Unlike `Data frame statistics <https://github.com/NVIDIA/NVFlare/blob/dev/examples/federated_statistics/df_stats/README.md>`_, the histogram bin's global range is pre-defined by user [0, 256] where in Data frame statistics, besides "Age", all other features histogram global bin range is dynamically estimated based on local min/max values
+* Unlike `Data frame statistics <https://github.com/NVIDIA/NVFlare/blob/dev/examples/federated_statistics/df_stats/README.md>`__, the histogram bin's global range is pre-defined by user [0, 256] where in Data frame statistics, besides "Age", all other features histogram global bin range is dynamically estimated based on local min/max values
 
 Here some of the image histogram ( the underline image files have only 1 channel)
 

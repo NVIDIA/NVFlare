@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import time
 from typing import Callable, Dict, List, Optional
 
@@ -41,75 +42,87 @@ class StatisticsController(Controller):
         min_clients: Optional[int] = None,
         enable_pre_run_task: bool = True,
     ):
-        """
+        """Controller for Statistics.
+
         Args:
-            statistic_configs: defines the input statistic to be computed and each statistic's configuration.
-                            The key is one of statistic names sum, count, mean, stddev, histogram
-                            the value is the arguments needed.
-                            all other statistics except histogram require no argument.
-                             "statistic_configs": {
-                                  "count": {},
-                                  "mean": {},
-                                  "sum": {},
-                                  "stddev": {},
-                                  "histogram": { "*": {"bins": 20 },
-                                                 "Age": {"bins": 10, "range":[0,120]}
-                                               }
-                              },
-
-                            Histogram requires the following
-                            arguments:
-                               1) numbers of bins or buckets of the histogram
-                               2) the histogram range values [min, max]
-                               These arguments are different for each feature. Here are few examples:
-                                "histogram": { "*": {"bins": 20 },
-                                              "Age": {"bins": 10, "range":[0,120]
-                                              }
-                                The configuration specify that
-                                    feature 'Age' will have 10 bins for histogram and the range is within [0, 120)
-                                    for all other features, the default ("*") configuration is used, with bins = 20.
-                                    but the range of histogram is not specified, thus requires the Statistics controller
-                                    to dynamically estimate histogram range for each feature. Then this estimated global
-                                    range (est global min, est. global max) will be used as histogram range.
-
-                                    to dynamically estimated such histogram range, we need client to provide the local
-                                    min and max values in order to calculate the global bin and max value. But to protect
-                                    data privacy and avoid the data leak, the noise level is added to the local min/max
-                                    value before send to the controller. Therefore the controller only get the 'estimated'
-                                    values, the global min/max are estimated, or more accurately, noised global min/max
-                                    values.
-
-                                    Here is another example:
-
-                                    "histogram": { "density": {"bins": 10, "range":[0,120] }
-
-                                    in this example, there is no default histogram configuration for other features.
-
-                                    This will work correctly if there is only one feature called "density"
-                                    but will fail if there are other features in the dataset
-
-                                In the following configuration
-                                 "statistic_configs": {
-                                      "count": {},
-                                      "mean": {},
-                                      "stddev": {}
-                                }
-                                only count, mean and stddev statistics are specified, then the statistics_controller
-                                will only set tasks to calculate these three statistics
-
-
-            writer_id:    ID for StatisticsWriter. The StatisticWriter will save the result to output specified by the
-                          StatisticsWriter
-
+            statistic_configs: defines the input statistic to be computed and each statistic's configuration, see below for details.
+            writer_id: ID for StatisticsWriter. The StatisticWriter will save the result to output specified by the
+               StatisticsWriter
             wait_time_after_min_received: numbers of seconds to wait after minimum numer of clients specified has received.
-
             result_wait_timeout: numbers of seconds to wait until we received all results.
-                                 Notice this is after the min_clients have arrived, and we wait for result process
-                                 callback, this becomes important if the data size to be processed is large
-
+               Notice this is after the min_clients have arrived, and we wait for result process
+               callback, this becomes important if the data size to be processed is large
             precision:  number of precision digits
             min_clients: if specified, min number of clients we have to wait before process.
 
+        For statistic_configs, the key is one of statistics' names sum, count, mean, stddev, histogram, and
+        the value is the arguments needed. All other statistics except histogram require no argument.
+
+        .. code-block:: text
+
+            "statistic_configs": {
+                "count": {},
+                "mean": {},
+                "sum": {},
+                "stddev": {},
+                "histogram": {
+                    "*": {"bins": 20},
+                    "Age": {"bins": 10, "range": [0, 120]}
+                }
+            },
+
+        Histogram requires the following arguments:
+            1) numbers of bins or buckets of the histogram
+            2) the histogram range values [min, max]
+
+        These arguments are different for each feature. Here are few examples:
+
+        .. code-block:: text
+
+            "histogram": {
+                            "*": {"bins": 20 },
+                            "Age": {"bins": 10, "range":[0,120]}
+                         }
+
+        The configuration specifies that the
+        feature 'Age' will have 10 bins for and the range is within [0, 120).
+        For all other features, the default ("*") configuration is used, with bins = 20.
+        The range of histogram is not specified, thus requires the Statistics controller
+        to dynamically estimate histogram range for each feature. Then this estimated global
+        range (est global min, est. global max) will be used as the histogram range.
+
+        To dynamically estimate such a histogram range, we need the client to provide the local
+        min and max values in order to calculate the global bin and max value. In order to protect
+        data privacy and avoid data leakage, a noise level is added to the local min/max
+        value before sending to the controller. Therefore the controller only gets the 'estimated'
+        values, and the global min/max are estimated, or more accurately, they are noised global min/max
+        values.
+
+        Here is another example:
+
+        .. code-block:: text
+
+            "histogram": {
+                            "density": {"bins": 10, "range":[0,120]}
+                         }
+
+        In this example, there is no default histogram configuration for other features.
+
+        This will work correctly if there is only one feature called "density"
+        but will fail if there are other features in the dataset.
+
+        In the following configuration:
+
+        .. code-block:: text
+
+            "statistic_configs": {
+                "count": {},
+                "mean": {},
+                "stddev": {}
+            }
+
+        Only count, mean and stddev statistics are specified, so the statistics_controller
+        will only set tasks to calculate these three statistics.
 
         """
         super().__init__()
@@ -478,11 +491,13 @@ class StatisticsController(Controller):
         sleep_time: float = 1,
         abort_signal=None,
     ) -> bool:
-        """
-            for each statistic, we check if the number of requested clients (min_clients or all clients)
-            is available, if not, we wait until result_wait_timeout.
-            result_wait_timeout is reset for next statistic. result_wait_timeout is per statistic, not overall
-            timeout for all results.
+        """Waits for all results.
+
+        For each statistic, we check if the number of requested clients (min_clients or all clients)
+        is available, if not, we wait until result_wait_timeout.
+        result_wait_timeout is reset for next statistic. result_wait_timeout is per statistic, not overall
+        timeout for all results.
+
         Args:
             result_wait_timeout: timeout we have to wait for each statistic. reset for each statistic
             requested_client_size: requested client size, usually min_clients or all clients
@@ -490,6 +505,7 @@ class StatisticsController(Controller):
             abort_signal:  abort signal
 
         Returns: False, when job is aborted else True
+
         """
 
         # record of each statistic, number of clients processed

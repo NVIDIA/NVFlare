@@ -34,6 +34,7 @@ class TaskCompletionStatus(Enum):
     CANCELLED = "cancelled"
     ABORTED = "aborted"
     IGNORED = "ignored"
+    CLIENT_DEAD = "client_dead"
 
 
 class Task(object):

@@ -103,7 +103,7 @@ class FederatedClientBase:
             compression=compression,
             cell=cell,
             client_register_interval=client_args.get("client_register_interval", 2.0),
-            timeout=client_args.get("communication_timeout", 10.0),
+            timeout=client_args.get("communication_timeout", 30.0),
         )
 
         self.secure_train = secure_train
@@ -181,9 +181,11 @@ class FederatedClientBase:
         if self.args.job_id:
             fqcn = FQCN.join([self.client_name, self.args.job_id])
             parent_url = self.args.parent_url
+            create_internal_listener = False
         else:
             fqcn = self.client_name
             parent_url = None
+            create_internal_listener = True
         if self.secure_train:
             root_cert = self.client_args[SecureTrainConst.SSL_ROOT_CERT]
             ssl_cert = self.client_args[SecureTrainConst.SSL_CERT]
@@ -201,7 +203,7 @@ class FederatedClientBase:
             root_url=scheme + "://" + location,
             secure=self.secure_train,
             credentials=credentials,
-            create_internal_listener=True,
+            create_internal_listener=create_internal_listener,
             parent_url=parent_url,
         )
         self.cell.start()
