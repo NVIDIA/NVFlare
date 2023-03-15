@@ -23,7 +23,7 @@ find . -name ".sh" -exec chmod +x {} \;
 ```
 activate your virtual environment.
 ```
-source ./virtualenv/set_env.sh
+source ./set_env.sh
 ```
 within each example folder, install required packages for training
 ```
