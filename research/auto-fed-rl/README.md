@@ -16,7 +16,7 @@ The code in this directory is released under Apache v2 License.
 ## 1. Set PYTHONPATH
 Set `PYTHONPATH` to include custom files of this example:
 
-We use both the utils from the [CIFAR-10 examples](../../examples/cifar10)
+We use both the utils from the [CIFAR-10 examples](../../examples/advanced/cifar10) (e.g., pt.learners, and pt.utils)
 and files under [./src](./src):
 ```
 export PYTHONPATH=${PWD}/../../examples/advanced/cifar10:${PWD}/../../examples/advanced/cifar10/pt/utils:${PWD}/src

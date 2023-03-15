@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-algorithms_dir="${PWD}/job_configs"
+algorithms_dir="${PWD}/jobs"
 
 config=$1
 alpha=$2

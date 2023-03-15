@@ -18,4 +18,4 @@ fi
 # run FL simulator
 ./set_alpha.sh "${config}" "${alpha}"
 echo "Running ${config} using FL simulator with ${threads} threads and ${n_clients} clients. Save results to ${out_workspace}"
-nvflare simulator "job_configs/${config}" --workspace "${out_workspace}" --threads "${threads}" --n_clients "${n_clients}"
+nvflare simulator "jobs/${config}" --workspace "${out_workspace}" --threads "${threads}" --n_clients "${n_clients}"
