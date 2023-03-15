@@ -1,4 +1,3 @@
-nvflare>=2.3.0
 pandas
 scikit-learn
 joblib
