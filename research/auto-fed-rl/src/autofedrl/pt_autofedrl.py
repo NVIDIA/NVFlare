@@ -102,7 +102,7 @@ class PTAutoFedRLSearchSpace(FLComponent):
         self.search_type = search_type
         self.cutoff_interval = cutoff_interval
 
-        # set default search ranges
+        # Set default search ranges
         if self.lr_range is None:
             self.lr_range = [0.0005, 0.05]
         if self.ne_range is None:
@@ -151,8 +151,8 @@ class PTAutoFedRLSearchSpace(FLComponent):
                 )
                 self.hp_dist.to(self.device)
                 self.log_info(fl_ctx, "Initialized Continuous Search Space")
-
             elif self.search_type == "drl":
+                # TODO: Deep  RL agent requires torch==1.4.0
                 self.hp_dist = LearnableGaussianContinuousSearchDRL(
                     hyperparams_points, self.initial_precision, self.device
                 )
@@ -161,14 +161,14 @@ class PTAutoFedRLSearchSpace(FLComponent):
             else:
                 raise NotImplementedError
 
-            # set up optimizer
+            # Set up optimizer
             try:
-                # use provided or default optimizer arguments and add the model parameters
+                # Use provided or default optimizer arguments and add the model parameters
                 if "args" not in self.optimizer_args:
                     self.optimizer_args["args"] = {}
                 self.optimizer_args["args"]["params"] = self.hp_dist.parameters()
                 self.optimizer = engine.build_component(self.optimizer_args)
-                # get optimizer name for log
+                # Get optimizer name for log
                 self.optimizer_name = self._get_component_name(self.optimizer_args)
             except BaseException as e:
                 self.system_panic(
@@ -176,7 +176,7 @@ class PTAutoFedRLSearchSpace(FLComponent):
                     fl_ctx,
                 )
                 return
-            # initialize
+            # Initialize
             self.logprob_history = []
             self.val_losses = [-np.inf]
             self.log_info(fl_ctx, "Initialized validation loss fpr Search space")
@@ -207,15 +207,14 @@ class PTAutoFedRLSearchSpace(FLComponent):
             weight = [aw_tensor[:, i].item() for i in range(self.n_clients)]
         if self.search_slr:
             slr = hparam_list.pop(0)
-        # add constrains to prevent negative value
-        if self.search_type == "cs" or self.search_type == "drl":
-            if self.search_lr:
-                lrate = lrate if lrate > 0.0001 else 0.0001
-            if self.search_ne:
-                train_iters_per_round = int(train_iters_per_round + 0.5) if train_iters_per_round >= 1 else 1
-            if self.search_slr:
-                slr = slr if slr > 0.0001 else 0.0001
-            self.logprob_history.append(logprob)
+        # Add constrains to prevent negative value
+        if self.search_lr:
+            lrate = lrate if lrate > 0.0001 else 0.0001
+        if self.search_ne:
+            train_iters_per_round = int(train_iters_per_round + 0.5) if train_iters_per_round >= 1 else 1
+        if self.search_slr:
+            slr = slr if slr > 0.0001 else 0.0001
+        self.logprob_history.append(logprob)
 
         self.log_info(fl_ctx, f"Hyperparameter Search at round {fl_ctx.get_prop(AppConstants.CURRENT_ROUND)}")
         if self.search_lr:
@@ -240,8 +239,6 @@ class PTAutoFedRLSearchSpace(FLComponent):
 
         fl_ctx.set_prop(AutoFedRLConstants.HYPERPARAMTER_COLLECTION, hps, private=True, sticky=False)
 
-        # TODO: write HPs to tensorboard
-
     def update_search_space(self, shareable, fl_ctx: FLContext) -> None:
         if not isinstance(shareable, Shareable):
             raise TypeError("shareable must be Shareable, but got {}.".format(type(shareable)))
@@ -251,36 +248,31 @@ class PTAutoFedRLSearchSpace(FLComponent):
             val_loss = dxo.data["val_loss"]
         else:
             raise ValueError("data_kind should be DataKind.METRICS, but got {}".format(dxo.data_kind))
-        # self.val_losses.append(val_loss)
         self.val_losses.append(torch.tensor(val_loss, dtype=torch.float32, device=self.device))
 
         start = time.time()
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
-        # get cutoff val losses for windowed updates
+        # Get cutoff val losses for windowed updates
         cutoff_round = max(0, current_round - self.cutoff_interval)
-        # val_losses_np = np.array([x for x in np.array(self.val_losses)[1:]])
-        # val_losses_cut = val_losses_np[cutoff_round:]
-        # # ignore initial loss
+        # Ignore initial loss
         val_losses_torch = torch.tensor(list(self.val_losses[1:]), dtype=torch.float32, device=self.device)
         val_losses_cut = val_losses_torch[cutoff_round:]
 
-        # # ignore initial loss
-        # val_losses_cut = self.val_losses[1:][cutoff_round:]
         current_loss = 0
         current_improvements = [0]
-        # compute hp search loss
+        # Compute hp search loss
         if len(val_losses_cut) > 1:
             current_improvements = -((val_losses_cut[1:] / val_losses_cut[:-1]) - 1)
             current_mean_improvements = current_improvements.mean()
             updates_limit = len(current_improvements) + 1
             for j in range(1, updates_limit):
                 current_loss = self.logprob_history[-j - 1] * (current_improvements[-j] - current_mean_improvements)
-        # update search space
+        # Update search space
         if not (type(current_loss) == int):  # TODO: Is this needed?
             self.optimizer.zero_grad()
             (-current_loss).backward(retain_graph=True)
             self.optimizer.step()
-            # we need release the memory based on cutoff interval
+            # We need release the memory based on cutoff interval
             if len(self.logprob_history) > self.cutoff_interval:
                 self.log_info(fl_ctx, (f"Release Memory......at round {current_round}"))
                 release_list = self.logprob_history[: -self.cutoff_interval]
@@ -299,7 +291,6 @@ class PTAutoFedRLSearchSpace(FLComponent):
         )
         self.log_debug(fl_ctx, f"val loss: {self.val_losses}) ")
         self.log_debug(fl_ctx, f"logprob_history: {self.logprob_history}) ")
-        # TODO: write hp val loss to tensorboard
 
 
 class LearnableGaussianContinuousSearch(torch.nn.Module):
@@ -308,9 +299,6 @@ class LearnableGaussianContinuousSearch(torch.nn.Module):
 
         self.dim = len(hyperparams_points)
         self.hps = [np.array(x) for x in hyperparams_points]
-
-        # self.hps_center = np.array([(x[0] + x[-1])/2 for x in self.hps])
-        # self.hps_scale = np.array([x[-1] - x[0] for x in self.hps])
 
         self.hps_center = torch.tensor([(x[0] + x[-1]) / 2 for x in self.hps]).to(device)
         self.hps_scale = torch.tensor([x[-1] - x[0] for x in self.hps]).to(device)
@@ -331,7 +319,6 @@ class LearnableGaussianContinuousSearch(torch.nn.Module):
 
         return sample, logprob
 
-
 class LearnableGaussianContinuousSearchDRL(torch.nn.Module):
     def __init__(self, hyperparams_points, initial_precision=None, device="cpu", rl_nettype="mlp"):
         super(LearnableGaussianContinuousSearchDRL, self).__init__()
@@ -351,7 +338,6 @@ class LearnableGaussianContinuousSearchDRL(torch.nn.Module):
 
         precision_val = 5.0 if initial_precision is None else initial_precision
         precision_component = torch.sqrt(torch.eye(self.dim) * precision_val) + 10e-8
-        # precision_component = (torch.eye(self.dim) * precision_val)+ 10e-8
         self.precision_component = precision_component
 
     def forward(self):
@@ -361,13 +347,12 @@ class LearnableGaussianContinuousSearchDRL(torch.nn.Module):
         self.precision_component = self.precision_component + precision_component_update
         self.mean.data.copy_(torch.clamp(self.mean.data, -1.0, 1.0))
 
-        dist = MultivariateNormal(loc=self.mean, precision_matrix=self.precision_component)
+        dist = MultivariateNormal(loc=self.mean, precision_matrix=torch.mm(self.precision_component , self.precision_component .t()))
         sample = dist.sample()
         logprob = dist.log_prob(sample)
         sample = sample * self.hps_scale + self.hps_center
 
         return sample, logprob
-
 
 class PolicyNet(torch.nn.Module):
     def __init__(self, input_dim):
@@ -377,18 +362,18 @@ class PolicyNet(torch.nn.Module):
         in_chanel = input_dim * input_dim + input_dim
         self.fc_layer = nn.Sequential(
             nn.Linear(in_chanel, 256),
-            nn.ReLU(inplace=True),
+            nn.ReLU(),
             nn.Linear(256, 256),
-            nn.ReLU(inplace=True),
+            nn.ReLU(),
             nn.Linear(256, in_chanel),
             nn.Tanh(),
         )
 
     def forward(self, mean, precision_component):
-        tmp = torch.cat([mean, precision_component.view(-1)])
+        tmp = torch.cat([mean, precision_component.reshape((-1,))])
         input = torch.unsqueeze(tmp, 0)
         x = torch.squeeze(self.fc_layer(input)) / 100.0
         mean_update = x[: self.input_dim]
-        precision_component_update = x[self.input_dim :].reshape([self.input_dim, self.input_dim])
+        precision_component_update = x[self.input_dim :].reshape((self.input_dim, self.input_dim))
 
         return mean_update, precision_component_update

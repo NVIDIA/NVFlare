@@ -50,3 +50,23 @@ Next, let's try to run Auto-FedRL on a heterogeneous split (alpha=0.1):
 ```
 ./run_simulator.sh cifar10_autofedrl 0.1 8 8
 ```
+
+## 4. Exeperiments on CIFAR-10
+
+Here, we show the experiment using the continous search on CIFAR-10 (alpha=0.5) with 8 clients.
+
+The TensorBoard curves for test accuracy during training are shown below:
+![curves](./assets/fig.png)
+
+## 5. BibTeX
+
+```
+@inproceedings{guo2022auto,
+  title={Auto-FedRL: Federated hyperparameter optimization for multi-institutional medical image segmentation},
+  author={Guo, Pengfei and Yang, Dong and Hatamizadeh, Ali and Xu, An and Xu, Ziyue and Li, Wenqi and Zhao, Can and Xu, Daguang and Harmon, Stephanie and Turkbey, Evrim and Turkbey, Baris and Wood, Bradford and Patella, Francesca and Stellato, Elvira and Carrafiello, Gianpaolo and Patel, Vishal M. and Roth, Holger R.},
+  booktitle={Computer Vision--ECCV 2022: 17th European Conference, Tel Aviv, Israel, October 23--27, 2022, Proceedings, Part XXI},
+  pages={437--455},
+  year={2022},
+  organization={Springer}
+}
+```

@@ -88,7 +88,7 @@ class CIFAR10AutoFedRLearner(CIFAR10Learner):  # TODO: also support CIFAR10Scaff
         self.current_round = 0
         self.best_global_acc = 0
 
-        # use FOBS serializing/deserializing PyTorch tensors
+        # Use FOBS serializing/deserializing PyTorch tensors
         fobs.register(TensorDecomposer)
 
     def initialize(self, parts: dict, fl_ctx: FLContext):
@@ -116,9 +116,9 @@ class CIFAR10AutoFedRLearner(CIFAR10Learner):  # TODO: also support CIFAR10Scaff
             else:
                 site_idx = None  # use whole training dataset if self.central=True
 
-            # self.log_debug(fl_ctx, msg)(fl_ctx, f"site_idx: {site_idx}")
+            self.log_debug(fl_ctx, msg)(fl_ctx, f"site_idx: {site_idx}")
 
-            # train set
+            # Train set
             n_img_for_search = self.batch_size * 10
             self.train_dataset = CIFAR10_Idx(
                 root=CIFAR10_ROOT,
@@ -130,7 +130,7 @@ class CIFAR10AutoFedRLearner(CIFAR10Learner):  # TODO: also support CIFAR10Scaff
             self.train_loader = torch.utils.data.DataLoader(
                 self.train_dataset, batch_size=self.batch_size, shuffle=True
             )
-            # val set for search
+            # Val set for search
             self.val_dataset_for_search = CIFAR10_Idx(
                 root=CIFAR10_ROOT,
                 data_idx=site_idx[-n_img_for_search:],
@@ -170,7 +170,7 @@ class CIFAR10AutoFedRLearner(CIFAR10Learner):  # TODO: also support CIFAR10Scaff
                 if abort_signal.triggered:
                     return
                 inputs, labels = inputs.to(self.device), labels.to(self.device)
-                # forward
+                # Forward
                 outputs = self.model(inputs)
                 loss = self.criterion(outputs, labels)
 
@@ -186,9 +186,9 @@ class CIFAR10AutoFedRLearner(CIFAR10Learner):  # TODO: also support CIFAR10Scaff
                     entropy_cost = self.entropy_coeff * F.relu(self.entropy_threshold - entropy)
                     loss += entropy_cost
 
-                # zero the parameter gradients
+                # Zero the parameter gradients
                 self.optimizer.zero_grad()
-                # backward + optimize
+                # Backward + Optimize
                 loss.backward()
                 self.optimizer.step()
                 current_step = epoch_len * self.epoch_global + i
@@ -207,14 +207,14 @@ class CIFAR10AutoFedRLearner(CIFAR10Learner):  # TODO: also support CIFAR10Scaff
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
 
-        # get round information
+        # Get round information
         current_round = shareable.get_header(AppConstants.CURRENT_ROUND)
         total_rounds = shareable.get_header(AppConstants.NUM_ROUNDS)
         self.log_info(fl_ctx, f"Current/Total Round: {current_round + 1}/{total_rounds}")
         self.log_info(fl_ctx, f"Client identity: {fl_ctx.get_identity_name()}")
         self.current_round = current_round
 
-        # get lr and ne from server
+        # Get lr and ne from server
         current_lr, current_ne = None, None
         hps = fobs.loads(shareable.get_header(AutoFedRLConstants.HYPERPARAMTER_COLLECTION))
         if hps is not None:
@@ -222,8 +222,6 @@ class CIFAR10AutoFedRLearner(CIFAR10Learner):  # TODO: also support CIFAR10Scaff
             self.lr = current_lr
             current_ne = hps.get("ne")
         if current_lr is not None:
-            # refresh optimizer
-            # self.optimizer = optim.SGD(self.model.parameters(), lr=self.lr, momentum=0.9, weight_decay = 0.0, nesterov=True)  TODO: is this needed?
             for param_group in self.optimizer.param_groups:
                 param_group["lr"] = current_lr
             self.log_info(fl_ctx, f"Received and override current learning rate as: {current_lr}")
@@ -231,7 +229,7 @@ class CIFAR10AutoFedRLearner(CIFAR10Learner):  # TODO: also support CIFAR10Scaff
             self.aggregation_epochs = current_ne
             self.log_info(fl_ctx, f"Received and override current number of local epochs: {current_ne}")
 
-        # update local model weights with received weights
+        # Update local model weights with received weights
         dxo = from_shareable(shareable)
         global_weights = dxo.data
 
@@ -242,24 +240,24 @@ class CIFAR10AutoFedRLearner(CIFAR10Learner):  # TODO: also support CIFAR10Scaff
             if var_name in model_keys:
                 weights = global_weights[var_name]
                 try:
-                    # reshape global weights to compute difference later on
+                    # Reshape global weights to compute difference later on
                     global_weights[var_name] = np.reshape(weights, local_var_dict[var_name].shape)
-                    # update the local dict
+                    # Update the local dict
                     local_var_dict[var_name] = torch.as_tensor(global_weights[var_name])
                 except Exception as e:
                     raise ValueError(f"Convert weight from {var_name} failed!") from e
         self.model.load_state_dict(local_var_dict)
 
-        # local steps
+        # Local steps
         epoch_len = len(self.train_loader)
         self.log_info(fl_ctx, f"Local steps per epoch: {epoch_len}")
 
-        # make a copy of model_global as reference for potential FedProx loss or SCAFFOLD
+        # Make a copy of model_global as reference for potential FedProx loss or SCAFFOLD
         model_global = copy.deepcopy(self.model)
         for param in model_global.parameters():
             param.requires_grad = False
 
-        # local train
+        # Local train
         self.local_train(
             fl_ctx=fl_ctx,
             train_loader=self.train_loader,
@@ -271,19 +269,19 @@ class CIFAR10AutoFedRLearner(CIFAR10Learner):  # TODO: also support CIFAR10Scaff
             return make_reply(ReturnCode.TASK_ABORTED)
         self.epoch_of_start_time += self.aggregation_epochs
 
-        # perform valid after local train
+        # Perform valid after local train
         acc = self.local_valid(self.valid_loader, abort_signal, tb_id="val_acc_local_model", fl_ctx=fl_ctx)
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
         self.log_info(fl_ctx, f"val_acc_local_model: {acc:.4f}")
 
-        # save model
+        # Save model
         self.save_model(is_best=False)
         if acc > self.best_acc:
             self.best_acc = acc
             self.save_model(is_best=True)
 
-        # compute delta model, global model has the primary key set
+        # Compute delta model, global model has the primary key set
         local_weights = self.model.state_dict()
         model_diff = {}
         for name in global_weights:
@@ -294,10 +292,10 @@ class CIFAR10AutoFedRLearner(CIFAR10Learner):  # TODO: also support CIFAR10Scaff
                 self.system_panic(f"{name} weights became NaN...", fl_ctx)
                 return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-        # build the shareable
+        # Build the shareable
         dxo = DXO(data_kind=DataKind.WEIGHT_DIFF, data=model_diff)
         if hps.get("aw") is not None:
-            # when search aggregation weights, we have to override it
+            # When search aggregation weights, we have to override it
             # to 1, since we will manually assign weights to aggregator.
             # Search space will discover which client is more informative.
             # It might not be related to the number of data in a client.
@@ -321,8 +319,7 @@ class CIFAR10AutoFedRLearner(CIFAR10Learner):  # TODO: also support CIFAR10Scaff
                 _, pred_label = torch.max(outputs.data, 1)
 
                 if get_loss:
-                    # return val loss instead of accuracy
-                    # over the number batches
+                    # Return val loss instead of accuracy over the number batches
                     total += inputs.data.size()[0]
                     correct += loss.item()
                 else:
@@ -342,15 +339,16 @@ class CIFAR10AutoFedRLearner(CIFAR10Learner):  # TODO: also support CIFAR10Scaff
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
 
-        # get validation information
+        # Get validation information
         self.log_info(fl_ctx, f"Client identity: {fl_ctx.get_identity_name()}")
         model_owner = shareable.get(ReservedHeaderKey.HEADERS).get(AppConstants.MODEL_OWNER)
         if model_owner:
             self.log_info(fl_ctx, f"Evaluating model from {model_owner} on {fl_ctx.get_identity_name()}")
         else:
-            model_owner = "global_model"  # evaluating global model during training
+            # Evaluating global model during training
+            model_owner = "global_model"
 
-        # update local model weights with received weights
+        # Update local model weights with received weights
         dxo = from_shareable(shareable)
         global_weights = dxo.data
 
@@ -362,7 +360,7 @@ class CIFAR10AutoFedRLearner(CIFAR10Learner):  # TODO: also support CIFAR10Scaff
             if var_name in model_keys:
                 weights = torch.as_tensor(global_weights[var_name], device=self.device)
                 try:
-                    # update the local dict
+                    # Update the local dict
                     local_var_dict[var_name] = torch.as_tensor(torch.reshape(weights, local_var_dict[var_name].shape))
                     n_loaded += 1
                 except Exception as e:
@@ -373,7 +371,7 @@ class CIFAR10AutoFedRLearner(CIFAR10Learner):  # TODO: also support CIFAR10Scaff
 
         validate_type = shareable.get_header(AppConstants.VALIDATE_TYPE)
         if validate_type == ValidateType.BEFORE_TRAIN_VALIDATE:
-            # perform valid before local train
+            # Perform valid before local train
             global_acc = self.local_valid(self.valid_loader, abort_signal, tb_id="val_acc_global_model", fl_ctx=fl_ctx)
             if abort_signal.triggered:
                 return make_reply(ReturnCode.TASK_ABORTED)
@@ -381,13 +379,13 @@ class CIFAR10AutoFedRLearner(CIFAR10Learner):  # TODO: also support CIFAR10Scaff
 
             if global_acc > self.best_global_acc:
                 self.best_global_acc = global_acc
-            # log the best global model_accuracy
+            # Log the best global model_accuracy
             self.writer.add_scalar("best_val_acc_global_model", self.best_global_acc, self.current_round)
 
             return DXO(data_kind=DataKind.METRICS, data={MetaKey.INITIAL_METRICS: global_acc}, meta={}).to_shareable()
 
         elif validate_type == ValidateType.MODEL_VALIDATE:
-            # perform valid
+            # Perform valid
             train_acc = self.local_valid(self.train_loader, abort_signal)
             if abort_signal.triggered:
                 return make_reply(ReturnCode.TASK_ABORTED)

@@ -38,10 +38,10 @@ class AutoFedRLWeightedAggregator(InTimeAccumulateWeightedAggregator):
         hps = fl_ctx.get_prop(AutoFedRLConstants.HYPERPARAMTER_COLLECTION)
         if hps is not None:
             received_aggregation_weights = hps.get("aw")
-        # Assign current aggregation weights to aggregator
+        # assign current aggregation weights to aggregator
         if received_aggregation_weights is not None:
             # TODO: Here, we assume contributor_name is "site-*".
-            # This will be wrong if contributor_name is not in this pattern.
+            # this will be wrong if contributor_name is not in this pattern.
             aggregation_weights_dict = {
                 f"site-{i+1}": received_aggregation_weights[i] for i in range(len(received_aggregation_weights))
             }

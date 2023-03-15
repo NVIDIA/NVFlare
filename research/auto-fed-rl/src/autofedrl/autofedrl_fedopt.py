@@ -94,7 +94,7 @@ class AutoFedRLFedOptModelShareableGenerator(FullModelShareableGenerator):
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
-            # Initialize the optimizer with current global model params
+            # initialize the optimizer with current global model params
             engine = fl_ctx.get_engine()
 
             if isinstance(self.source_model, str):
