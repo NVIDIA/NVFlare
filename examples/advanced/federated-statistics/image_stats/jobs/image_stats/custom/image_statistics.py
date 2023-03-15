@@ -71,10 +71,10 @@ class ImageStatistics(Statistics):
         return True
 
     def pre_run(
-            self,
-            statistics: List[str],
-            num_of_bins: Optional[Dict[str, Optional[int]]],
-            bin_ranges: Optional[Dict[str, Optional[List[float]]]],
+        self,
+        statistics: List[str],
+        num_of_bins: Optional[Dict[str, Optional[int]]],
+        bin_ranges: Optional[Dict[str, Optional[List[float]]]],
     ):
         pass
 
@@ -90,8 +90,7 @@ class ImageStatistics(Statistics):
         return self.failure_images
 
     def histogram(
-            self, dataset_name: str, feature_name: str, num_of_bins: int, global_min_value: float,
-            global_max_value: float
+        self, dataset_name: str, feature_name: str, num_of_bins: int, global_min_value: float, global_max_value: float
     ) -> Histogram:
         histogram_bins: List[Bin] = []
         histogram = np.zeros((num_of_bins,), dtype=np.int64)
