@@ -77,7 +77,8 @@ class ScatterAndGather(Controller):
             train_timeout (int, optional): Time to wait for clients to do local training.
             ignore_result_error (bool, optional): whether this controller can proceed if client result has errors.
                 Defaults to False.
-            allow_empty_global_weights (bool, optional): whether to allow empty global weights.
+            allow_empty_global_weights (bool, optional): whether to allow empty global weights. Some pipelines can have
+                empty global weights at first round, such that clients start training from scratch without any global info.
                 Defaults to False.
             task_check_period (float, optional): interval for checking status of tasks. Defaults to 0.5.
             persist_every_n_rounds (int, optional): persist the global model every n rounds. Defaults to 1.
