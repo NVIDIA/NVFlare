@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import logging
+import time
 from typing import Dict, List, Optional, Union
 
 from nvflare.apis.fl_component import FLComponent
@@ -21,6 +22,7 @@ from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.cell import FQCN
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellReturnCode
 from nvflare.fuel.utils import fobs
 from nvflare.private.aux_runner import AuxRunner
@@ -47,6 +49,9 @@ class ClientRunInfo(object):
         self.job_id = job_id
         self.current_task_name = ""
         self.start_time = None
+
+
+GET_CLIENTS_RETRY = 3
 
 
 class ClientRunManager(ClientEngineExecutorSpec):
@@ -150,8 +155,6 @@ class ClientRunManager(ClientEngineExecutorSpec):
     def validate_targets(self, inputs) -> ([], []):
         valid_inputs = []
         invalid_inputs = []
-        if not self.all_clients:
-            self._get_all_clients(self.new_context())
         for item in inputs:
             if item == FQCN.ROOT_SERVER:
                 valid_inputs.append(item)
@@ -200,8 +203,6 @@ class ClientRunManager(ClientEngineExecutorSpec):
         else:
             if isinstance(targets, str):
                 if targets == SiteType.ALL:
-                    if not self.all_clients:
-                        self._get_all_clients(fl_ctx)
                     targets = [FQCN.ROOT_SERVER]
                     for _, t in self.all_clients.items():
                         if t.name != self.client.client_name:
@@ -213,7 +214,7 @@ class ClientRunManager(ClientEngineExecutorSpec):
         else:
             return {}
 
-    def _get_all_clients(self, fl_ctx):
+    def get_all_clients_from_server(self, fl_ctx, retry=0):
         job_id = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
         get_clients_message = new_cell_message({CellMessageHeaderKeys.JOB_ID: job_id}, fobs.dumps({}))
         return_data = self.client.cell.send_request(
@@ -222,9 +223,24 @@ class ClientRunManager(ClientEngineExecutorSpec):
             topic=ServerCommandNames.GET_CLIENTS,
             request=get_clients_message,
             timeout=5.0,
+            optional=True,
         )
-        data = fobs.loads(return_data.payload)
-        self.all_clients = data.get(ServerCommandKey.CLIENTS)
+        return_code = return_data.get_header(MessageHeaderKey.RETURN_CODE)
+
+        if return_code == CellReturnCode.OK:
+            if return_data.payload:
+                data = fobs.loads(return_data.payload)
+                self.all_clients = data.get(ServerCommandKey.CLIENTS)
+            else:
+                raise RuntimeError("Empty clients data from server")
+        else:
+            # retry to handle the server connect has not been established scenario.
+            retry += 1
+            if retry < GET_CLIENTS_RETRY:
+                time.sleep(0.5)
+                self.get_all_clients_from_server(fl_ctx, retry)
+            else:
+                raise RuntimeError("Failed to get the clients from the server.")
 
     def register_aux_message_handler(self, topic: str, message_handle_func):
         self.aux_runner.register_aux_message_handler(topic, message_handle_func)

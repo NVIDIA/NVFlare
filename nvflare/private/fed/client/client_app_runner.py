@@ -43,6 +43,9 @@ class ClientAppRunner(Runner):
             time.sleep(1.0)
             if time.time() - start > self.timeout:
                 raise RuntimeError("No cell created for communicator. Failed to start the ClientAppRunner.")
+
+        self.sync_up_parents_process(federated_client)
+
         federated_client.status = ClientStatus.STARTED
         self.client_runner.run(app_root, args)
 
@@ -111,6 +114,11 @@ class ClientAppRunner(Runner):
         self.command_agent = CommandAgent(federated_client, client_runner)
         self.command_agent.start(fl_ctx)
         client_runner.command_agent = self.command_agent
+
+    def sync_up_parents_process(self, federated_client):
+        run_manager = federated_client.run_manager
+        with run_manager.new_context() as fl_ctx:
+            run_manager.get_all_clients_from_server(fl_ctx)
 
     def close(self):
         if self.command_agent:
