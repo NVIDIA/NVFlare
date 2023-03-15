@@ -92,7 +92,7 @@ Research Areas
 
 FedSM
 -----
-The FedSM `example <https://github.com/NVIDIA/NVFlare/blob/main/research/fed-sm/README.md>`_ illustrates the personalized federated learning algorithm `FedSM <https://arxiv.org/abs/2203.10144>`_
+The `FedSM example <https://github.com/NVIDIA/NVFlare/blob/main/research/fed-sm/README.md>`_ illustrates the personalized federated learning algorithm `FedSM <https://arxiv.org/abs/2203.10144>`_
 accepted to CVPR2022. It bridges the different data distributions across clients via a SoftPull mechanism and utilizes
 a Super Model. A model selector is trained to predict the belongings of a particular sample to any of the clients'
 personalized models or global model. The training of this model also illustrates a challenging federated learning scenario
@@ -102,21 +102,133 @@ Adam optimizer are also averaged and synced together with model updates.
 
 Quantifying Data Leakage in Federated Learning
 ----------------------------------------------
-This research `example <https://github.com/NVIDIA/NVFlare/blob/main/research/quantifying-data-leakage/README.md>`_ contains the tools necessary to recreate the chest X-ray experiments described in
+This research `example <https://github.com/NVIDIA/NVFlare/blob/main/research/quantifying-data-leakage/README.md>`__ contains the tools necessary to recreate the chest X-ray experiments described in
 `Do Gradient Inversion Attacks Make Federated Learning Unsafe? <https://arxiv.org/abs/2202.06924>`_, accepted to IEEE Transactions on Medical Imaging.
 It presents new ways to measure and visualize potential data leakage in FL using a new FLARE filter
 that can quantify the data leakage for each client and visualize it as a function of the FL training rounds.
 Quantifying the data leakage in FL can help determine the optimal tradeoffs between privacy-preserving techniques, such as differential privacy, and model accuracy based on quantifiable metrics.
 
 Communication Framework Upgrades
-===============================
+================================
 There should be no visible changes in terms of the configuration and usage patterns for the end user, but the underlying communication
 layer has been improved to allow for greater flexibility and performance. These new communication features will be made generally available in next release.
 
+**********************************
+Migration to 2.3.0: Notes and Tips
+**********************************
+2.3.0 introduces a few API and behavior changes. This migration guide will help you to migrate from the previous NVFLARE version to the current version.
 
-Migration to 2.3: Notes and Tips
-================================
-See :ref:`migrating_to_flare_api` for details on migrating to the new FLARE API.
+1. FLARE API
+============
+FLARE API is the FLAdminAPI redesigned for a better user experience in version 2.3. To understand the FLARE API usage, the relationship to
+the FLAdmin API, and migration steps, please refer to :ref:`migrating_to_flare_api`.
+
+2. Enhancements to the ``list_jobs`` command
+============================================
+The ``list_jobs`` command now has an option ``-r`` to display the results in reverse chronological order by submitted time. A ``-m`` option
+has been added to limit the maximum number of jobs returned.
+
+3. Redesign of communication layer
+==================================
+NVFLARE 2.3.0 comes with a new communication layer. Although the full-fledged features will not be generally available until the next release, the
+underlying communication engine is already replaced, and you might see changes in logging.
+
+As such, we have to change a few communication related APIs in :class:`ClientEngineExecutorSpec<nvflare.private.fed.client.client_engine_executor_spec.ClientEngineExecutorSpec>`:
+
+
+FLARE 2.2.x
+
+.. code-block:: python
+
+    @abstractmethod
+    def send_aux_request(self, topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> Shareable:
+      """Send a request to Server via the aux channel.
+
+      Implementation: simply calls the ClientAuxRunner's send_aux_request method.
+
+      Args:
+          topic: topic of the request
+          request: request to be sent
+          timeout: number of secs to wait for replies. 0 means fire-and-forget.
+          fl_ctx: FL context
+
+      Returns: a reply Shareable
+
+      """
+      pass
+
+FLARE 2.3.0
+
+.. code-block:: python
+
+    @abstractmethod
+    def send_aux_request(
+      self,
+      targets: Union[None, str, List[str]],
+      topic: str,
+      request: Shareable,
+      timeout: float,
+      fl_ctx: FLContext,
+      optional=False,
+    ) -> dict:
+      """Send a request to Server via the aux channel.
+
+      Implementation: simply calls the ClientAuxRunner's send_aux_request method.
+
+      Args:
+          targets: aux messages targets. None or empty list means the server.
+          topic: topic of the request
+          request: request to be sent
+          timeout: number of secs to wait for replies. 0 means fire-and-forget.
+          fl_ctx: FL context
+          optional: whether the request is optional
+
+      Returns:
+          a dict of reply Shareable in the format of:
+              { site_name: reply_shareable }
+
+      """
+
+4. Controller behavior changes
+==============================
+Inside :class:`ControllerSpec<nvflare.apis.controller_spec.ControllerSpec>`, the usage of ``wait_time_after_min_received``
+has been changed to no longer wait if all responses are received.
+
+.. code-block:: python
+
+    class ControllerSpec(ABC):
+
+        def broadcast(
+          self,
+          task: Task,
+          fl_ctx: FLContext,
+          targets: Union[List[Client], List[str], None] = None,
+          min_responses: int = 0,
+          wait_time_after_min_received: int = 0,
+        ):
+
+Prior to release 2.3.0,
+
+Wait_time_after_min_received: this means after min_response received, we will wait wait_time_after_min_received.
+
+In Release 2.3.0: 
+
+Wait_time_after_min_received: If min_response received, but not all responses are received, we will wait wait_time_after_min_received.
+If all responses are received, there is no wait.
+
+5. Behavior changes to POC ``–stop``
+====================================
+In 2.2.x version, the POC stop will try to kill the process directly regardless the system state. 
+
+In 2.3.0 version, the stop command will try with the following:
+
+  #. Connect to the server
+  #. If server can be connected, then list active jobs
+  #. Abort all active jobs
+  #. Call system shutdown, and wait for system to gradually shutdown
+  #. Wait for system to shut down with max_timeout of 30 seconds
+  #. After that, we try kill the process (this was the entirety of the 2.2.x behavior)
+
 
 **************************
 Previous Releases of FLARE
