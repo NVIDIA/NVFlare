@@ -175,6 +175,7 @@ class FedXGBTreeExecutor(Executor, ABC):
             self.writer.add_scalar(
                 "AUC", auc, int((self.bst.num_boosted_rounds() - self.num_local_round - 1) / self.num_client_bagging)
             )
+
         return bst
 
     def _local_boost_cyclic(self, fl_ctx: FLContext):
