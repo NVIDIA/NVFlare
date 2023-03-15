@@ -30,26 +30,27 @@ from nvflare.app_common.abstract.statistics_spec import (
 from nvflare.app_common.statistics.numpy_utils import get_std_histogram_buckets
 
 
+def load_data() -> Dict[str, pd.DataFrame]:
+    try:
+        train_data = [["tom", 10], ["nick", 15], ["juli", 14], ["tom2", 10], ["nick1", 25], ["juli1", 24]]
+        test_data = [["john", 100], ["mary", 25], ["rose", 34], ["tom1", 20], ["nick2", 35], ["juli1", 34]]
+        train = pd.DataFrame(train_data, columns=["Name", "Age"])
+        test = pd.DataFrame(test_data, columns=["Name", "Age"])
+
+        return {"train": train, "test": test}
+
+    except BaseException as e:
+        raise Exception(f"Load data failed! {e}")
+
+
 class MockDFStatistics(Statistics):
     def __init__(self, data_path):
         super().__init__()
         self.data_path = data_path
         self.data: Optional[Dict[str, pd.DataFrame]] = None
 
-    def load_data(self) -> Dict[str, pd.DataFrame]:
-        try:
-            train_data = [["tom", 10], ["nick", 15], ["juli", 14], ["tom2", 10], ["nick1", 25], ["juli1", 24]]
-            test_data = [["john", 100], ["mary", 25], ["rose", 34], ["tom1", 20], ["nick2", 35], ["juli1", 34]]
-            train = pd.DataFrame(train_data, columns=["Name", "Age"])
-            test = pd.DataFrame(test_data, columns=["Name", "Age"])
-
-            return {"train": train, "test": test}
-
-        except BaseException as e:
-            raise Exception(f"Load data for client {client_name} failed! {e}")
-
     def initialize(self, fl_ctx: FLContext):
-        self.data = self.load_data()
+        self.data = load_data()
         if self.data is None:
             raise ValueError("data is not loaded. make sure the data is loaded")
 
