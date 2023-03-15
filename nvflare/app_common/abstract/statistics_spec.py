@@ -119,10 +119,10 @@ class Statistics(InitFinalComponent, ABC):
                         if bins_range is not None, but bins_ranges['feature_A'] is None, means that for specific feature
                         'feature_A', the bin_range is not provided by user.
 
-        Returns: None
+        Returns: Dict
 
         """
-        pass
+        return {}
 
     @abstractmethod
     def features(self) -> Dict[str, List[Feature]]:

@@ -949,7 +949,8 @@ azure_start_svr_sh: |
   if [[ "$SERVER_NAME" = *".cloudapp.azure.com"* ]]
   then
     DNS_TAG=$(echo $SERVER_NAME | cut -d "." -f 1)
-    LOCATION=$(echo $SERVER_NAME | cut -d "." -f 2)
+    DERIVED_LOCATION=$(echo $SERVER_NAME | cut -d "." -f 2)
+    LOCATION=$DERIVED_LOCATION
     self_dns=false
   else
     echo "Warning: ${SERVER_NAME} does not end with .cloudapp.azure.com."
@@ -965,6 +966,11 @@ azure_start_svr_sh: |
     useDefault=false
     . $config_file
     report_status "$?" "Loading config file"
+    if [ $self_dns = false ] && [ $DERIVED_LOCATION != $LOCATION ]
+    then
+      echo "Server name implies LOCATION=${DERIVED_LOCATION} but the config file specifies LOCATION=${LOCATION}.  Unable to continue provisioning."
+      exit 1
+    fi
   fi
 
   echo "This script requires az (Azure CLI), sshpass and jq.  Now checking if they are installed."
@@ -994,6 +1000,7 @@ azure_start_svr_sh: |
   prompt ans "Press ENTER when it's done or no additional dependencies. "
 
   az login --use-device-code -o none
+  report_status "$?" "login"
 
   # Start provisioning
 
@@ -1202,6 +1209,7 @@ azure_start_cln_sh: |
   prompt ans "Press ENTER when it's done or no additional dependencies. "
 
   az login --use-device-code -o none
+  report_status "$?" "login"
 
   # Start provisioning
 
@@ -1340,6 +1348,7 @@ azure_start_dsb_sh: |
   credential="${email}:$RANDOM"
 
   az login --use-device-code -o none
+  report_status "$?" "login"
 
   # Start provisioning
   if [ $(az group exists -n $RESOURCE_GROUP) == 'false' ]

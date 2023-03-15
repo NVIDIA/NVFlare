@@ -101,7 +101,7 @@ class JobCommandModule(CommandModule, CommandUtil):
                 CommandSpec(
                     name=AdminCommandNames.LIST_JOBS,
                     description="list submitted jobs",
-                    usage=f"{AdminCommandNames.LIST_JOBS} [-n name_prefix] [-d] [-u] [-m num_of_jobs] [job_id_prefix]",
+                    usage=f"{AdminCommandNames.LIST_JOBS} [-n name_prefix] [-d] [-u] [-r] [-m num_of_jobs] [job_id_prefix]",
                     handler_func=self.list_jobs,
                     authz_func=self.command_authz_required,
                 ),
@@ -213,7 +213,7 @@ class JobCommandModule(CommandModule, CommandUtil):
         run_process = engine.run_processes.get(job_id, {})
         if not run_process:
             conn.append_error(f"Job: {job_id} is not running.")
-            return
+            return False
 
         participants = run_process.get(RunProcessKey.PARTICIPANTS, [])
         wrong_clients = []
@@ -229,7 +229,7 @@ class JobCommandModule(CommandModule, CommandUtil):
         if wrong_clients:
             display_clients = ",".join(wrong_clients)
             conn.append_error(f"{display_clients} are not in the job running list.")
-            return
+            return False
 
         err = engine.check_app_start_readiness(job_id)
         if err:

@@ -36,14 +36,17 @@ from nvflare.private.fed.utils.app_deployer import AppDeployer
 from nvflare.security.logging import secure_format_exception
 
 
-def _send_to_clients(admin_server, client_sites: List[str], engine, message):
+def _send_to_clients(admin_server, client_sites: List[str], engine, message, timeout=None, optional=False):
     clients, invalid_inputs = engine.validate_targets(client_sites)
     if invalid_inputs:
         raise RuntimeError(f"invalid clients: {invalid_inputs}.")
     requests = {}
     for c in clients:
         requests.update({c.token: message})
-    replies = admin_server.send_requests(requests, timeout_secs=admin_server.timeout)
+
+    if timeout is None:
+        timeout = admin_server.timeout
+    replies = admin_server.send_requests(requests, timeout_secs=timeout, optional=optional)
     return replies
 
 
@@ -259,8 +262,9 @@ class JobRunner(FLComponent):
         message.set_header(RequestHeader.JOB_ID, str(job_id))
         self.log_debug(fl_ctx, f"Send abort command to the clients for run: {job_id}")
         try:
-            replies = _send_to_clients(admin_server, client_sites, engine, message)
-            check_client_replies(replies=replies, client_sites=client_sites, command="abort the run")
+            _ = _send_to_clients(admin_server, client_sites, engine, message, timeout=2.0, optional=True)
+            # There isn't much we can do here if a client didn't get the message or send a reply
+            # check_client_replies(replies=replies, client_sites=client_sites, command="abort the run")
         except RuntimeError as e:
             self.log_error(fl_ctx, f"Failed to abort run ({job_id}) on the clients: {secure_format_exception(e)}")
 
