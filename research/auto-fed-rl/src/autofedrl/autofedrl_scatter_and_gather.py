@@ -100,7 +100,7 @@ class ScatterAndGatherAutoFedRL(ScatterAndGather):
         # use FOBS serializing/deserializing PyTorch tensors (if torch is available)
         torch, torch_available = optional_import(module="torch")
         if torch_available:
-            from nvflare.app_opt.pt.pt_decomposers import TensorDecomposer
+            from nvflare.app_opt.pt.decomposers import TensorDecomposer
 
             fobs.register(TensorDecomposer)
 

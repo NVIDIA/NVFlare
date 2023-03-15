@@ -30,7 +30,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants, ValidateType
-from nvflare.app_opt.pt.pt_decomposers import TensorDecomposer
+from nvflare.app_opt.pt.decomposers import TensorDecomposer
 from nvflare.fuel.utils import fobs
 
 from .autofedrl_constants import AutoFedRLConstants
