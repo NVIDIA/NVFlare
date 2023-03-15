@@ -47,6 +47,8 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.cell import FQCN, Cell
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellMsgReturnCode
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.network_utils import get_open_ports
@@ -59,7 +61,6 @@ from nvflare.private.scheduler_constants import ShareableHeader
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
-from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode as CellMsgReturnCode
 
 from .client_manager import ClientManager
 from .job_runner import JobRunner
@@ -308,11 +309,7 @@ class ServerEngine(ServerEngineInternalSpec):
 
         try:
             status_message = self.send_command_to_child_runner_process(
-                job_id=job_id,
-                command_name=AdminCommandNames.ABORT,
-                command_data={},
-                timeout=1.0,
-                optional=True
+                job_id=job_id, command_name=AdminCommandNames.ABORT, command_data={}, timeout=1.0, optional=True
             )
             self.logger.info(f"Abort server status: {status_message}")
         except BaseException:
@@ -565,13 +562,17 @@ class ServerEngine(ServerEngineInternalSpec):
                     channel=CellChannel.SERVER_COMMAND,
                     topic=command_name,
                     request=request,
-                    optional=optional
+                    optional=optional,
                 )
                 return None
 
             return_data = self.server.cell.send_request(
-                target=fqcn, channel=CellChannel.SERVER_COMMAND, topic=command_name,
-                request=request, timeout=timeout, optional=optional
+                target=fqcn,
+                channel=CellChannel.SERVER_COMMAND,
+                topic=command_name,
+                request=request,
+                timeout=timeout,
+                optional=optional,
             )
             rc = return_data.get_header(MessageHeaderKey.RETURN_CODE, CellMsgReturnCode.OK)
             if rc == CellMsgReturnCode.OK:
