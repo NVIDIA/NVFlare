@@ -198,7 +198,8 @@ Operational
 
     You can use the download_job command with the :ref:`Admin client <operating_nvflare>` to get the job result into the admin
     transfer folder. The model is saved in a dict depending on the persistor you used, so you might need to access it with
-    ``model.load_state_dict(torch.load(path_to_model)["model"])``.
+    ``model.load_state_dict(torch.load(path_to_model)["model"])`` if you used PTFileModelPersistor because
+    PTModelPersistenceFormatManager saves the model under the key "model".
 
 #. Why am I getting an error about my custom files not being found?
 

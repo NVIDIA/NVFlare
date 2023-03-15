@@ -29,7 +29,9 @@ Server/Client
 After downloading the startup kit from NVIDIA FLARE dashboard, unzip it and run ``start.sh`` with ``--cloud aws`` (or ``--cloud azure``) to launch the server
 or client in AWS (or Azure).
 
-You can also provide a configuration file with ``--config $FILE_NAME`` to the ``start.sh`` script.  The configuration file is Bash setting variables.
+You can also provide a configuration file with ``--config $FILE_NAME`` to the ``start.sh`` script. The configuration
+file will take the place of the user responding to prompts when starting the server or client.
+The configuration file is in the format of Bash setting variables.
 
 .. attention:: The variable names are different in AWS and Azure.
 
