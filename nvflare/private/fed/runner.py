@@ -14,8 +14,10 @@
 
 from abc import abstractmethod
 
+from nvflare.apis.fl_component import FLComponent
 
-class Runner:
+
+class Runner(FLComponent):
     def start(self):
         """Method call at the start of the Runner process."""
         pass

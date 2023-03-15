@@ -18,5 +18,7 @@ warnings.warn(
     f"This module: {__file__} is deprecated. Please use nvflare.app_opt.pt.", category=FutureWarning, stacklevel=2
 )
 
+from nvflare.app_opt.pt.model_persistence_format_manager import PTModelPersistenceFormatManager
+
 # flake8: noqa: F401
-from nvflare.app_opt.pt import PTModelPersistenceFormatManager, feed_vars
+from nvflare.app_opt.pt.utils import feed_vars
