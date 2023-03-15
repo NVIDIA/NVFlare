@@ -22,6 +22,7 @@ import sys
 import threading
 import time
 
+from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey
@@ -70,6 +71,7 @@ class EventRelayer(FLComponent):
         self.local_rank = local_rank
 
         self.event_lock = threading.Lock()
+        self.start_run_fired = False
 
     def relay_event(self, run_manager, data):
         """To relay the event.
@@ -81,6 +83,11 @@ class EventRelayer(FLComponent):
         """
         with run_manager.new_context() as fl_ctx:
             event_type = data[CommunicationMetaData.EVENT_TYPE]
+            if event_type == EventType.START_RUN:
+                if self.start_run_fired:
+                    return
+                else:
+                    self.start_run_fired = True
             fl_ctx.props.update(data[CommunicationMetaData.FL_CTX].props)
 
             fl_ctx.set_prop(
@@ -126,6 +133,8 @@ class EventRelayer(FLComponent):
 
 class SubWorkerExecutor(Runner):
     def __init__(self, args, workspace, num_of_processes, local_rank) -> None:
+        super().__init__()
+
         self.args = args
         self.workspace = workspace
         self.components = {}
@@ -205,6 +214,12 @@ class SubWorkerExecutor(Runner):
         with self.run_manager.new_context() as fl_ctx:
             fl_ctx.set_prop(FLContextKey.RANK_NUMBER, self.local_rank, private=True, sticky=True)
             fl_ctx.set_prop(FLContextKey.NUM_OF_PROCESSES, self.num_of_processes, private=True, sticky=True)
+
+            event_data = {
+                CommunicationMetaData.EVENT_TYPE: EventType.START_RUN,
+                CommunicationMetaData.FL_CTX: data[CommunicationMetaData.FL_CTX],
+            }
+            relayer.relay_event(self.run_manager, event_data)
 
         return make_reply(ReturnCode.OK, "", None)
 
