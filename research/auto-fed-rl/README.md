@@ -4,6 +4,10 @@ Components for running the algorithm proposed in
 ["Auto-FedRL: Federated Hyperparameter Optimization for Multi-institutional Medical Image Segmentation"](https://arxiv.org/abs/2203.06338) (ECCV 2022)
 with [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html).
 
+###### Abstract:
+
+> Federated learning (FL) is a distributed machine learning technique that enables collaborative model training while avoiding explicit data sharing. The inherent privacy-preserving property of FL algorithms makes them especially attractive to the medical field. However, in case of heterogeneous client data distributions, standard FL methods are unstable and require intensive hyperparameter tuning to achieve optimal performance. Conventional hyperparameter optimization algorithms are impractical in real-world FL applications as they involve numerous training trials, which are often not affordable with limited compute budgets. In this work, we propose an efficient reinforcement learning (RL)-based federated hyperparameter optimization algorithm, termed Auto-FedRL, in which an online RL agent can dynamically adjust hyperparameters of each client based on the current training progress.
+
 You can find the original experimental implementation [here](https://github.com/guopengf/Auto-FedRL).
 
 > **Note:** For more examples of FL algorithms with the CIFAR-10 dataset,
