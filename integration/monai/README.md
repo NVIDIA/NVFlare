@@ -29,6 +29,9 @@ For an example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/in
 
 ## Requirements
 
+We recommend following the instructions for setting up a [virtual environment](../../examples/README.md#set-up-a-virtual-environment),
+and using it in [JupyterLab](../../examples/README.md#notebooks) for running the notebooks the MONAI integration examples.
+
 Install MONAI-NVFlare integration from [PyPI](https://pypi.org/):
 ```
 pip install monai_nvflare
