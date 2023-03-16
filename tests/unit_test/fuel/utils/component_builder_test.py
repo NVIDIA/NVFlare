@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import re
 from platform import python_version
 
@@ -186,3 +187,40 @@ class TestComponentBuilder:
         b = builder.build_component(config)
         assert isinstance(b, MyComponent)
         assert isinstance(b.mode, MyComponentWithPathArgs)
+
+    def test_nested_component_component_type(self):
+        config = {
+            "id": "id",
+            "path": "tests.unit_test.fuel.utils.component_builder_test.MyComponent",
+            "args": {
+                "model": {
+                    "path": "tests.unit_test.fuel.utils.component_builder_test.MyComponentWithDictArgs",
+                    "config_type": "component",
+                }
+            },
+        }
+        builder = MockComponentBuilder()
+        assert isinstance(config, dict)
+        b = builder.build_component(config)
+        assert isinstance(b, MyComponent)
+        assert isinstance(b.mode, MyComponentWithDictArgs)
+
+    def test_nested_dict_component_type(self):
+        config = {
+            "id": "id",
+            "path": "tests.unit_test.fuel.utils.component_builder_test.MyComponent",
+            "args": {
+                "model": {
+                    "path": "tests.unit_test.fuel.utils.component_builder_test.MyComponentWithDictArgs",
+                    "config_type": "dict",
+                }
+            },
+        }
+        builder = MockComponentBuilder()
+        assert isinstance(config, dict)
+        b = builder.build_component(config)
+        assert isinstance(b, MyComponent)
+        assert b.mode == {
+            "path": "tests.unit_test.fuel.utils.component_builder_test.MyComponentWithDictArgs",
+            "config_type": "dict",
+        }
