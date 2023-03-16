@@ -93,12 +93,21 @@ Research Areas
 FedSM
 -----
 The `FedSM example <https://github.com/NVIDIA/NVFlare/blob/main/research/fed-sm/README.md>`_ illustrates the personalized federated learning algorithm `FedSM <https://arxiv.org/abs/2203.10144>`_
-accepted to CVPR2022. It bridges the different data distributions across clients via a SoftPull mechanism and utilizes
+accepted to CVPR 2022. It bridges the different data distributions across clients via a SoftPull mechanism and utilizes
 a Super Model. A model selector is trained to predict the belongings of a particular sample to any of the clients'
 personalized models or global model. The training of this model also illustrates a challenging federated learning scenario
 with extreme label-imbalance, where each local training is only based on a single label towards the optimization for
 classification of a number of classes equivalent to the number of clients. In this case, the higher-order moments of the
 Adam optimizer are also averaged and synced together with model updates.
+
+Auto-FedRL
+----------
+The `Auto-FedRL example <https://github.com/NVIDIA/NVFlare/blob/main/research/auto-fed-rl/README.md>`_ implements the automated machine learning solution described in
+`Auto-FedRL: Federated Hyperparameter Optimization for Multi-institutional Medical Image Segmentation <https://arxiv.org/abs/2203.06338>`_ accepted to ECCV 2022.
+Conventional hyperparameter optimization algorithms are often impractical in real-world FL applications as they involve numerous training trials,
+which are often not affordable with limited computing budgets.
+Auto-FedRL proposes an efficient reinforcement learning (RL)-based federated hyperparameter optimization algorithm,
+in which an online RL agent can dynamically adjust the hyperparameters of each client based on the current training progress.
 
 Quantifying Data Leakage in Federated Learning
 ----------------------------------------------
@@ -228,6 +237,13 @@ In 2.3.0 version, the stop command will try with the following:
   #. Call system shutdown, and wait for system to gradually shutdown
   #. Wait for system to shut down with max_timeout of 30 seconds
   #. After that, we try kill the process (this was the entirety of the 2.2.x behavior)
+
+6. Scatter and Gather Controller API changes
+============================================
+A new argument has been added to :class:`ScatterAndGather<nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather>`. ``allow_empty_global_weights`` is
+an optional boolean to determine whether or not to allow empty global weights and defaults to False.
+
+Some pipelines can have empty global weights at the first round, such that clients start training from scratch without any global info.
 
 
 **************************

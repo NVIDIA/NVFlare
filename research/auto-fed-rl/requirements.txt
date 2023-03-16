@@ -1,6 +1,4 @@
 nvflare>=2.3.0
-pandas
-xgboost
-scikit-learn
 torch
+torchvision
 tensorboard

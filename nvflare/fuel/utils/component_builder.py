@@ -11,10 +11,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 from abc import abstractmethod
 
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.utils.class_utils import instantiate_class
+
+
+class ConfigType:
+    COMPONENT = "component"
+    DICT = "dict"
 
 
 class ComponentBuilder:
@@ -36,6 +42,11 @@ class ComponentBuilder:
             except ConfigError:
                 # this is not a valid class path
                 return False
+
+        # use config_type to distinguish between components and regular dictionaries
+        config_type = config_dict.get("config_type", ConfigType.COMPONENT)
+        if config_type != ConfigType.COMPONENT:
+            return False
 
         # regardless it has args or not. if path/name and valid class path, very likely we have
         # class config.
