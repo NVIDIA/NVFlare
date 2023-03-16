@@ -973,10 +973,11 @@ azure_start_svr_sh: |
     fi
   fi
 
-  echo "This script requires az (Azure CLI), sshpass and jq.  Now checking if they are installed."
+  echo "This script requires az (Azure CLI), sshpass, dig and jq.  Now checking if they are installed."
 
   check_binary az "Please see https://learn.microsoft.com/en-us/cli/azure/install-azure-cli on how to install it on your system."
   check_binary sshpass "Please install it first."
+  check_binary dig "Please install it first."
   check_binary jq "Please install it first."
 
   if [ $useDefault = true ]
@@ -1049,6 +1050,13 @@ azure_start_svr_sh: |
 
   IP_ADDRESS=$(jq -r .publicIpAddress /tmp/vm.json)
   echo "Setting up network related configuration"
+
+  my_public_ip=$(dig +short myip.opendns.com @resolver1.opendns.com)
+  report_status "$?" "getting my public IP"
+
+  IFS=. read -r i1 i2 i3 i4 <<< $my_public_ip
+  IFS=. read -r m1 m2 m3 m4 <<< "255.255.255.0"
+  my_public_ip=$(printf "%d.%d.%d.%d" "$((i1 & m1))" "$((i2 & m2))" "$((i3 & m3))" "$((i4 & m4))")
   az network nsg create \
     --output none \
     --resource-group $RESOURCE_GROUP \
@@ -1063,6 +1071,7 @@ azure_start_svr_sh: |
     --nsg-name $NSG_NAME \
     --priority 1000 \
     --protocol Tcp \
+    --source-address-prefixes ${my_public_ip}/24 \
     --destination-port-ranges 22
   report_status "$?" "creating network security group rule for SSH"
 
@@ -1187,10 +1196,11 @@ azure_start_cln_sh: |
       report_status "$?" "Loading config file"
   fi
 
-  echo "This script requires az (Azure CLI), sshpass and jq.  Now checking if they are installed."
+  echo "This script requires az (Azure CLI), sshpass, dig and jq.  Now checking if they are installed."
 
   check_binary az "Please see https://learn.microsoft.com/en-us/cli/azure/install-azure-cli on how to install it on your system."
   check_binary sshpass "Please install it first."
+  check_binary dig "Please install it first."
   check_binary jq "Please install it first."
 
   if [ $useDefault = true ]
@@ -1238,8 +1248,14 @@ azure_start_cln_sh: |
 
   IP_ADDRESS=$(jq -r .publicIpAddress /tmp/vm.json)
 
-  echo "Setting up network related configuration"
+  my_public_ip=$(dig +short myip.opendns.com @resolver1.opendns.com)
+  report_status "$?" "getting my public IP"
 
+  IFS=. read -r i1 i2 i3 i4 <<< $my_public_ip
+  IFS=. read -r m1 m2 m3 m4 <<< "255.255.255.0"
+  my_public_ip=$(printf "%d.%d.%d.%d" "$((i1 & m1))" "$((i2 & m2))" "$((i3 & m3))" "$((i4 & m4))")
+
+  echo "Setting up network related configuration"
   az network nsg create \
     --output none \
     --resource-group $RESOURCE_GROUP \
@@ -1254,6 +1270,7 @@ azure_start_cln_sh: |
     --nsg-name $NSG_NAME \
     --priority 1000 \
     --protocol Tcp \
+    --source-address-prefixes ${my_public_ip}/24 \
     --destination-port-ranges 22
   report_status "$?" "creating network security group rule for SSH"
 
@@ -1336,10 +1353,11 @@ azure_start_dsb_sh: |
   LOCATION=westus2
   NIC_NAME=${VM_NAME}VMNic
 
-  echo "This script requires az (Azure CLI), sshpass and jq.  Now checking if they are installed."
+  echo "This script requires az (Azure CLI), sshpass, dig and jq.  Now checking if they are installed."
 
   check_binary az "Please see https://learn.microsoft.com/en-us/cli/azure/install-azure-cli on how to install it on your system."
   check_binary sshpass "Please install it first."
+  check_binary dig "Please install it first."
   check_binary jq "Please install it first."
 
   echo "One initial user will be created when starting dashboard."
@@ -1377,6 +1395,13 @@ azure_start_dsb_sh: |
   IP_ADDRESS=$(jq -r .publicIpAddress /tmp/vm.json)
   report_status "$?" "extracting ip address"
 
+  my_public_ip=$(dig +short myip.opendns.com @resolver1.opendns.com)
+  report_status "$?" "getting my public IP"
+
+  IFS=. read -r i1 i2 i3 i4 <<< $my_public_ip
+  IFS=. read -r m1 m2 m3 m4 <<< "255.255.255.0"
+  my_public_ip=$(printf "%d.%d.%d.%d" "$((i1 & m1))" "$((i2 & m2))" "$((i3 & m3))" "$((i4 & m4))")
+
   echo "Setting up network related configuration"
   az network nsg create \
     --output none \
@@ -1392,6 +1417,7 @@ azure_start_dsb_sh: |
     --nsg-name $NSG_NAME \
     --priority 1000 \
     --protocol Tcp \
+    --source-address-prefixes ${my_public_ip}/24 \
     --destination-port-ranges 22
   report_status "$?" "creating network security group rule for SSH"
 
@@ -1711,7 +1737,7 @@ aws_start_svr_sh: |
   report_status "$?" "creating security group"
   my_public_ip=$(dig +short myip.opendns.com @resolver1.opendns.com)
   report_status "$?" "getting my public IP"
-  aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr ${my_public_ip}/32 > /tmp/sec_grp.log
+  aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr ${my_public_ip}/24 > /tmp/sec_grp.log
   aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 8002-8003 --cidr 0.0.0.0/0 >> /tmp/sec_grp.log
   report_status "$?" "creating security group rules"
 
@@ -1863,7 +1889,7 @@ aws_start_cln_sh: |
   report_status "$?" "creating security group"
   my_public_ip=$(dig +short myip.opendns.com @resolver1.opendns.com)
   report_status "$?" "getting my public IP"
-  aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr ${my_public_ip}/32 > /tmp/sec_grp.log
+  aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr ${my_public_ip}/24 > /tmp/sec_grp.log
   report_status "$?" "creating security group rules"
 
   # Start provisioning
@@ -1979,7 +2005,7 @@ aws_start_dsb_sh: |
   echo "Security group id: ${sg_id}"
   my_public_ip=$(dig +short myip.opendns.com @resolver1.opendns.com)
   report_status "$?" "getting my public IP"
-  aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr ${my_public_ip}/32 > /tmp/sec_grp.log
+  aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr ${my_public_ip}/24 > /tmp/sec_grp.log
   aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 443 --cidr 0.0.0.0/0 >> /tmp/sec_grp.log
   report_status "$?" "creating security group rules"
 
