@@ -149,24 +149,7 @@ class Session(SessionSpec):
         if not isinstance(result, dict):
             raise InternalError(f"result from server must be dict but got {type(result)}")
 
-        status = result.get(ResultKey.STATUS, None)
-        if not status:
-            raise InternalError("missing status in result")
-
-        if status in [APIStatus.ERROR_CERT, APIStatus.ERROR_AUTHENTICATION]:
-            raise AuthenticationError(f"user not authenticated: {status}")
-        elif status == APIStatus.ERROR_AUTHORIZATION:
-            raise AuthorizationError(f"user not authorized for the action '{command}'")
-        elif status == APIStatus.ERROR_INACTIVE_SESSION:
-            raise SessionClosed("the session is closed on server")
-        elif status in [APIStatus.ERROR_PROTOCOL, APIStatus.ERROR_SYNTAX]:
-            raise InternalError(f"protocol error: {status}")
-        elif status in [APIStatus.ERROR_SERVER_CONNECTION]:
-            raise ConnectionError(f"cannot connect to server: {status}")
-        elif status != APIStatus.SUCCESS:
-            details = result.get(ResultKey.DETAILS, "")
-            raise RuntimeError(f"runtime error encountered: {status}: {details}")
-
+        # check meta status first
         meta = result.get(ResultKey.META, None)
         if not meta:
             raise InternalError("missing meta from result")
@@ -188,6 +171,25 @@ class Session(SessionSpec):
             raise JobNotDone(f"job {info} is still running")
         elif cmd_status != MetaStatusValue.OK:
             raise InternalError(f"server internal error {cmd_status}: {info}")
+
+        status = result.get(ResultKey.STATUS, None)
+        if not status:
+            raise InternalError("missing status in result")
+
+        if status in [APIStatus.ERROR_CERT, APIStatus.ERROR_AUTHENTICATION]:
+            raise AuthenticationError(f"user not authenticated: {status}")
+        elif status == APIStatus.ERROR_AUTHORIZATION:
+            raise AuthorizationError(f"user not authorized for the action '{command}'")
+        elif status == APIStatus.ERROR_INACTIVE_SESSION:
+            raise SessionClosed("the session is closed on server")
+        elif status in [APIStatus.ERROR_PROTOCOL, APIStatus.ERROR_SYNTAX]:
+            raise InternalError(f"protocol error: {status}")
+        elif status in [APIStatus.ERROR_SERVER_CONNECTION]:
+            raise ConnectionError(f"cannot connect to server: {status}")
+        elif status != APIStatus.SUCCESS:
+            details = result.get(ResultKey.DETAILS, "")
+            raise RuntimeError(f"runtime error encountered: {status}: {details}")
+
         return result
 
     def _validate_job_id(self, job_id: str):
