@@ -626,6 +626,19 @@ class FederatedServer(BaseServer):
             handlers=self.runner_config.handlers,
         )
 
+    def authentication_check(self, request: Message, state_check):
+        error = None
+        # server_state = self.engine.server.server_state
+        if state_check.get(ACTION) in [NIS, ABORT_RUN]:
+            # return make_reply(ReturnCode.AUTHENTICATION_ERROR, state_check.get(MESSAGE), fobs.dumps(None))
+            error = state_check.get(MESSAGE)
+        client_ssid = request.get_header(CellMessageHeaderKeys.SSID, None)
+        if client_ssid != self.server_state.ssid:
+            # return make_reply(ReturnCode.AUTHENTICATION_ERROR, "Request from invalid client SSID",
+            #                   fobs.dumps(None))
+            error = "Request from invalid client SSID"
+        return error
+
     def abort_run(self):
         with self.engine.new_context() as fl_ctx:
             if self.server_runner:
