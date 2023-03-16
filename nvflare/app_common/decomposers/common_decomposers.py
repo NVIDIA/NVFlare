@@ -28,8 +28,7 @@ from nvflare.fuel.utils.fobs.decomposer import DictDecomposer
 
 
 class ModelLearnableDecomposer(fobs.Decomposer):
-    @staticmethod
-    def supported_type():
+    def supported_type(self):
         return ModelLearnable
 
     def decompose(self, target: ModelLearnable) -> Any:
