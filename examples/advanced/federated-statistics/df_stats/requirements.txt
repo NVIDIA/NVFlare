@@ -1,3 +1,4 @@
+nvflare>=2.3.0
 numpy
 pandas
 wget

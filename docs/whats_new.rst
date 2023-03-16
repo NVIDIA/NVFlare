@@ -238,6 +238,13 @@ In 2.3.0 version, the stop command will try with the following:
   #. Wait for system to shut down with max_timeout of 30 seconds
   #. After that, we try kill the process (this was the entirety of the 2.2.x behavior)
 
+6. Scatter and Gather Controller API changes
+============================================
+A new argument has been added to :class:`ScatterAndGather<nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather>`. ``allow_empty_global_weights`` is
+an optional boolean to determine whether or not to allow empty global weights and defaults to False.
+
+Some pipelines can have empty global weights at the first round, such that clients start training from scratch without any global info.
+
 
 **************************
 Previous Releases of FLARE
