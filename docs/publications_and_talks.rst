@@ -59,6 +59,10 @@ Talks
 =====
 Recent talks and Webinars covering federated learning research and NVIDIA FLARE.
 
+Talks: 2023
+-----------
+* **2023-01** `MONAI Federated Learning APIs (and their use with NVIDIA FLARE) <https://youtu.be/18Fmmyx-QXE>`__ (`MONAI Bootcamp 2023 <https://events.nvidia.com/janmonaibootcamp>`__)
+
 Talks: 2022
 -----------
 * **2022-10** `Modern Tools for Collaborative Medical Image Analysis <https://drive.google.com/file/d/1hmlyG7g1SU8vhQ5wdTFhkqFO9Ty8BiYG/view?usp=sharing>`__ (`Keynote - DART @ MICCAI 2022 <https://sites.google.com/view/dart2022/home?authuser=0>`__) 

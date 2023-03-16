@@ -1,7 +1,7 @@
+nvflare>=2.3.0
 pytorch-ignite>=0.4.10
 torchvision
 monai>=1.0.1
-nvflare>=2.2.0
 tqdm
 tensorboard
 scikit-learn

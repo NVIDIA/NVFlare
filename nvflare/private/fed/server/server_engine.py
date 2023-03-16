@@ -47,6 +47,8 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.cellnet.cell import FQCN, Cell
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellMsgReturnCode
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.network_utils import get_open_ports
@@ -208,18 +210,18 @@ class ServerEngine(ServerEngineInternalSpec):
         process.wait()
         run_process_info = self.run_processes.get(job_id)
         if run_process_info:
-            process_finished = run_process_info.get(RunProcessKey.PROCESS_FINISHED, False)
             # Wait for the job process to finish UPDATE_RUN_STATUS process
             start_time = time.time()
-            while not process_finished:
-                if time.time() - start_time > 5.0:
-                    self.logger.error(f"Job:{job_id} UPDATE_RUN_STATUS didn't finish fast enough.")
+            max_wait = 2.0
+            while True:
+                process_finished = run_process_info.get(RunProcessKey.PROCESS_FINISHED, False)
+                if process_finished:
+                    break
+                if time.time() - start_time >= max_wait:
+                    self.logger.debug(f"Job:{job_id} UPDATE_RUN_STATUS didn't finish fast enough.")
                     break
                 time.sleep(0.1)
-
-            with self.lock:
-                if job_id in self.run_processes:
-                    run_process_info = self.run_processes.pop(job_id)
+            self.run_processes.pop(job_id, None)
         self.engine_info.status = MachineStatus.STOPPED
 
     def _start_runner_process(
@@ -307,9 +309,7 @@ class ServerEngine(ServerEngineInternalSpec):
 
         try:
             status_message = self.send_command_to_child_runner_process(
-                job_id=job_id,
-                command_name=AdminCommandNames.ABORT,
-                command_data={},
+                job_id=job_id, command_name=AdminCommandNames.ABORT, command_data={}, timeout=1.0, optional=True
             )
             self.logger.info(f"Abort server status: {status_message}")
         except BaseException:
@@ -325,10 +325,16 @@ class ServerEngine(ServerEngineInternalSpec):
 
     def _remove_run_processes(self, job_id):
         # wait for the run process to gracefully terminated, and ensure to remove from run_processes.
-        time.sleep(60.0)
-        if job_id in self.run_processes:
-            with self.lock:
-                self.run_processes.pop(job_id)
+        max_wait = 5.0
+        start = time.time()
+        while True:
+            if job_id not in self.run_processes:
+                # job already gone
+                return
+            if time.time() - start >= max_wait:
+                break
+            time.sleep(0.1)
+        self.run_processes.pop(job_id, None)
 
     def check_app_start_readiness(self, job_id: str) -> str:
         if job_id not in self.run_processes.keys():
@@ -474,7 +480,6 @@ class ServerEngine(ServerEngineInternalSpec):
     ) -> dict:
         try:
             if not targets:
-                # self.sync_clients_from_main_process()
                 targets = []
                 for t in self.get_clients():
                     targets.append(t.name)
@@ -488,12 +493,30 @@ class ServerEngine(ServerEngineInternalSpec):
             self.logger.error(f"Failed to send the aux_message: {topic} with exception: {secure_format_exception(e)}.")
 
     def sync_clients_from_main_process(self):
-        return_data = self._get_clients_data(self.args.job_id)
-        clients = return_data.get(ServerCommandKey.CLIENTS)
-        self.client_manager.clients = clients
-
-    def _get_clients_data(self, job_id):
+        # repeatedly ask the parent process to get participating clients until we receive the result
+        # or timed out after 30 secs (already tried 30 times).
         start = time.time()
+        max_wait = 30.0
+        job_id = self.args.job_id
+        while True:
+            clients = self._retrieve_clients_data(job_id)
+            if clients:
+                self.client_manager.clients = clients
+                self.logger.debug(f"received participating clients {clients}")
+                return
+
+            if time.time() - start >= max_wait:
+                self.logger.critical(f"Cannot get participating clients for job {job_id} after {max_wait} seconds")
+                raise RuntimeError("Exiting job process: Cannot get participating clients for job {job_id}")
+
+            self.logger.debug("didn't receive clients info - retry in 1 second")
+            time.sleep(1.0)
+
+    def _get_participating_clients(self):
+        # called from server's job cell
+        return self.client_manager.clients
+
+    def _retrieve_clients_data(self, job_id):
         request = new_cell_message({CellMessageHeaderKeys.JOB_ID: job_id}, fobs.dumps({}))
         return_data = self.server.cell.send_request(
             target=FQCN.ROOT_SERVER,
@@ -501,15 +524,18 @@ class ServerEngine(ServerEngineInternalSpec):
             topic=ServerCommandNames.GET_CLIENTS,
             request=request,
             timeout=5.0,
+            optional=True,
         )
+        rc = return_data.get_header(MessageHeaderKey.RETURN_CODE, CellMsgReturnCode.OK)
+        if rc != CellMsgReturnCode.OK:
+            self.logger.debug(f"cannot retrieve clients from parent: {rc}")
+            return None
+
         data = fobs.loads(return_data.payload)
-        if data.get(ServerCommandKey.CLIENTS):
-            return data
-        else:
-            if time.time() - start > self.kv_list.get("get_client_timeout", 10.0):
-                raise RuntimeError("Could not get the participants from parent process.")
-            time.sleep(1.0)
-            return self._get_clients_data(job_id)
+        clients = data.get(ServerCommandKey.CLIENTS, None)
+        if clients is None:
+            self.logger.error(f"parent failed to return clients info for job {job_id}")
+        return clients
 
     def update_job_run_status(self):
         with self.new_context() as fl_ctx:
@@ -525,17 +551,34 @@ class ServerEngine(ServerEngineInternalSpec):
             )
 
     def send_command_to_child_runner_process(
-        self, job_id: str, command_name: str, command_data, return_result=True, timeout=5.0
+        self, job_id: str, command_name: str, command_data, timeout=5.0, optional=False
     ):
-        result = None
         with self.lock:
             fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
             request = new_cell_message({}, fobs.dumps(command_data))
-            return_data = self.server.cell.send_request(
-                target=fqcn, channel=CellChannel.SERVER_COMMAND, topic=command_name, request=request, timeout=timeout
-            )
-            result = fobs.loads(return_data.payload)
+            if timeout <= 0.0:
+                self.server.cell.fire_and_forget(
+                    targets=fqcn,
+                    channel=CellChannel.SERVER_COMMAND,
+                    topic=command_name,
+                    request=request,
+                    optional=optional,
+                )
+                return None
 
+            return_data = self.server.cell.send_request(
+                target=fqcn,
+                channel=CellChannel.SERVER_COMMAND,
+                topic=command_name,
+                request=request,
+                timeout=timeout,
+                optional=optional,
+            )
+            rc = return_data.get_header(MessageHeaderKey.RETURN_CODE, CellMsgReturnCode.OK)
+            if rc == CellMsgReturnCode.OK:
+                result = fobs.loads(return_data.payload)
+            else:
+                result = None
         return result
 
     def persist_components(self, fl_ctx: FLContext, completed: bool):
@@ -565,9 +608,7 @@ class ServerEngine(ServerEngineInternalSpec):
 
             job_info = fl_ctx.get_prop(FLContextKey.JOB_INFO)
             if not job_info:
-                return_data = self._get_clients_data(job_id)
-                job_id = return_data.get(ServerCommandKey.JOB_ID)
-                job_clients = return_data.get(ServerCommandKey.CLIENTS)
+                job_clients = self._get_participating_clients()
                 fl_ctx.set_prop(FLContextKey.JOB_INFO, (job_id, job_clients))
             else:
                 (job_id, job_clients) = job_info

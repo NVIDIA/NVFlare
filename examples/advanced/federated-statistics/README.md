@@ -134,7 +134,7 @@ by simply set the "task_result_filters" to empty list to avoid **double filterin
 #### Job filter vs filters in private.json
 
 Privacy filters are defined within a privacy scope.
-If a job's privacy scope is defined or has default scope, then the scope’s filters (if any) are applied
+If a job's privacy scope is defined or has default scope, then the scope's filters (if any) are applied
 before the job-specified filters (if any). This rule is enforced during task execution time.
 
 With such rules, if we have both task result filters and privacy scoped filters, we need to understand
