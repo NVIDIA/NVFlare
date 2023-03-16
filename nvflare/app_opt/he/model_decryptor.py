@@ -24,13 +24,15 @@ from nvflare.apis.dxo_filter import DXOFilter
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
+from nvflare.app_opt.he import decomposers
 from nvflare.app_opt.he.constant import HE_ALGORITHM_CKKS
 from nvflare.app_opt.he.homomorphic_encrypt import count_encrypted_layers, load_tenseal_context_from_workspace
 
 
 class HEModelDecryptor(DXOFilter):
     def __init__(self, tenseal_context_file="client_context.tenseal", data_kinds: [str] = None):
-        """Filter to decrypt Shareable object using homomorphic encryption (HE) with TenSEAL https://github.com/OpenMined/TenSEAL.
+        """Filter to decrypt Shareable object using homomorphic encryption (HE) with TenSEAL
+        https://github.com/OpenMined/TenSEAL.
 
         Args:
             tenseal_context_file: tenseal context files containing decryption keys and parameters
@@ -45,6 +47,8 @@ class HEModelDecryptor(DXOFilter):
         self.logger.info("Using HE model decryptor.")
         self.tenseal_context = None
         self.tenseal_context_file = tenseal_context_file
+
+        decomposers.register()
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
@@ -110,6 +114,7 @@ class HEModelDecryptor(DXOFilter):
         """Filter process apply to the Shareable object.
 
         Args:
+            dxo: Data Exchange Object
             shareable: shareable
             fl_ctx: FLContext
 
