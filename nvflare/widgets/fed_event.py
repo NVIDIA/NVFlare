@@ -149,7 +149,6 @@ class FedEventRunner(Widget):
                 sleep_time = self.regular_interval
                 continue
 
-            self.logger.info(f"========== got fed event: {event_type}")
             with self.engine.new_context() as fl_ctx:
                 if self.asked_to_stop:
                     self.log_warning(fl_ctx, f"{n} items remained in in_events.  Will stop when it reaches 0.")
