@@ -14,7 +14,7 @@ Goals are more specific than the objective, listing specific deliverables.
 
 ### Non-goals:
 
-List items that people might think are part of the goal of this doc at a first glance, but it isn’t.
+List items that people might think are part of the goal of this doc at a first glance, but it isn't.
 The idea is to clarify to readers what is not intended in this project
 
 **it is not intend to provide the actual runnable code scripts in this sample project**

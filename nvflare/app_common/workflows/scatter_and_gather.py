@@ -77,7 +77,8 @@ class ScatterAndGather(Controller):
             train_timeout (int, optional): Time to wait for clients to do local training.
             ignore_result_error (bool, optional): whether this controller can proceed if client result has errors.
                 Defaults to False.
-            allow_empty_global_weights (bool, optional): whether to allow empty global weights.
+            allow_empty_global_weights (bool, optional): whether to allow empty global weights. Some pipelines can have
+                empty global weights at first round, such that clients start training from scratch without any global info.
                 Defaults to False.
             task_check_period (float, optional): interval for checking status of tasks. Defaults to 0.5.
             persist_every_n_rounds (int, optional): persist the global model every n rounds. Defaults to 1.
@@ -176,6 +177,7 @@ class ScatterAndGather(Controller):
         fl_ctx.set_prop(AppConstants.START_ROUND, self._start_round, private=True, sticky=True)
         fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self._num_rounds, private=True, sticky=False)
         self._global_weights = self.persistor.load(fl_ctx)
+
         if not isinstance(self._global_weights, ModelLearnable):
             self.system_panic(
                 reason=f"Expected global weights to be of type `ModelLearnable` but received {type(ModelLearnable)}",
@@ -184,19 +186,15 @@ class ScatterAndGather(Controller):
             return
 
         if self._global_weights.is_empty():
-            # see whether it is available from fl_ctx
-            self._global_weights = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
-            if not isinstance(self._global_weights, ModelLearnable):
-                self.system_panic(
-                    reason=f"Expected global weights to be of type `ModelLearnable` but received {type(ModelLearnable)}",
-                    fl_ctx=fl_ctx,
-                )
-                return
-
-        if not self.allow_empty_global_weights:
-            if self._global_weights.is_empty():
-                self.system_panic(reason="Missing initial global model weights", fl_ctx=fl_ctx)
-                return
+            if not self.allow_empty_global_weights:
+                # if empty not allowed, further check whether it is available from fl_ctx
+                self._global_weights = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
+                if not isinstance(self._global_weights, ModelLearnable):
+                    self.system_panic(
+                        reason=f"Expected global weights to be of type `ModelLearnable` but received {type(ModelLearnable)}",
+                        fl_ctx=fl_ctx,
+                    )
+                    return
 
         fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._global_weights, private=True, sticky=True)
         self.fire_event(AppEventType.INITIAL_MODEL_LOADED, fl_ctx)

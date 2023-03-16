@@ -32,11 +32,11 @@ You can quickly get started using the [FL simulator](https://nvflare.readthedocs
 
 A detailed [getting started](https://nvflare.readthedocs.io/en/main/getting_started.html) guide is available in the [documentation](https://nvflare.readthedocs.io/en/main/index.html).
  
-Examples and notebook tutorials are located [here](https://github.com/NVIDIA/NVFlare/tree/main/examples/).
+Examples and notebook tutorials are located [here](./examples).
 
 ## Related talks and publications
 
-For a list of talks, blogs, and publications related to NVIDIA FLARE, see [here](docs/publications_and_talks.md).
+For a list of talks, blogs, and publications related to NVIDIA FLARE, see [here](https://nvflare.readthedocs.io/en/main/publications_and_talks.html).
 
 ## License
 

@@ -3,7 +3,8 @@
 ################
 Cloud Deployment
 ################
-To deploy NVIDIA FLARE dashboards, servers or clients to Azure or AWS, you must have the account with proper permissions.  In Azure, your role in Azure subscription must be able to create Resource Group, Virtual Machine and configure Network Security Group and its rules.
+To deploy NVIDIA FLARE dashboards, servers or clients to Azure or AWS, you must have the account with proper permissions.  In Azure, your role in Azure
+subscription must be able to create Resource Group, Virtual Machine and configure Network Security Group and its rules.
 In AWS, your role should have AmazonEC2FullAccess.
 
 Dashboard
@@ -25,10 +26,14 @@ To launch a dashboard in Azure, run
 Server/Client
 =============
 
-After downloading the startup kits from NVIDIA FLARE dashboard, unzip it and run the start.sh with --cloud aws (or azure) to launch the server or client in AWS (or Azure).
+After downloading the startup kit from NVIDIA FLARE dashboard, unzip it and run ``start.sh`` with ``--cloud aws`` (or ``--cloud azure``) to launch the server
+or client in AWS (or Azure).
 
-You can also provide a configuration file with --config $FILE_NAME to the start.sh script.  The configuration file follows Bash variable file.
-Note that the variable names are different in AWS and Azure.
+You can also provide a configuration file with ``--config $FILE_NAME`` to the ``start.sh`` script. The configuration
+file will take the place of the user responding to prompts when starting the server or client.
+The configuration file is in the format of Bash setting variables.
+
+.. attention:: The variable names are different in AWS and Azure.
 
 In AWS:
 
@@ -47,7 +52,7 @@ In Azure:
     VM_SIZE=Standard_B2ms
     LOCATION=westus2
 
-For example, launch a NVIDIA FLARE server in AWS with a configuration file my_config.txt, run 
+For example, launch a NVIDIA FLARE server in AWS with a configuration file ``my_config.txt``, run 
 
 .. code-block::
 
