@@ -20,7 +20,6 @@ from nvflare.fuel.utils import fobs
 
 
 class CKKSVectorDecomposer(fobs.Decomposer):
-
     def supported_type(self):
         return ts.CKKSVector
 

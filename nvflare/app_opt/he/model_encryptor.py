@@ -82,8 +82,9 @@ class HEModelEncryptor(DXOFilter):
             for encrypt_layer in encrypt_layers:
                 if not isinstance(encrypt_layer, str):
                     raise ValueError(
-                        "encrypt_layers needs to be a list of layer names to encrypt, but found element of type {}".
-                        format(type(encrypt_layer))
+                        "encrypt_layers needs to be a list of layer names to encrypt, but found element of type {}".format(
+                            type(encrypt_layer)
+                        )
                     )
             self.encrypt_layers = encrypt_layers
             self.logger.info(f"Encrypting {len(encrypt_layers)} layers")
