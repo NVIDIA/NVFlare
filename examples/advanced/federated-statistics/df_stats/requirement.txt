@@ -1,6 +1,0 @@
-numpy
-pandas
-wget
-matplotlib
-jupyter
-notebook

@@ -293,7 +293,7 @@ def _replace_config_fed_client(client_json_path: str):
         f.truncate()
 
 
-def simplify_job(job_folder_path: str, postfix: str = "_copy"):
+def simplify_job(job_folder_path: str, postfix: str = POSTFIX):
     new_job_folder_path = job_folder_path + postfix
     shutil.copytree(job_folder_path, new_job_folder_path, dirs_exist_ok=True)
 
@@ -310,7 +310,18 @@ def simplify_job(job_folder_path: str, postfix: str = "_copy"):
                 _replace_config_fed_client(client_json_path=os.path.join(root, file))
 
 
-def generate_test_config_yaml_for_example(example: Example) -> List[str]:
+def generate_test_config_yaml_for_example(
+    example: Example,
+    project_yaml: str = PROJECT_YAML,
+    postfix: str = POSTFIX,
+) -> List[str]:
+    """Generates test configuration yaml for NVFlare example.
+
+    Args:
+        example: A well-formatted NVFlare example.
+        project_yaml: Project yaml file for the testing of this example.
+        postfix: Postfix for the newly generated job.
+    """
 
     output_yamls = []
     os.makedirs(OUTPUT_YAML_DIR, exist_ok=True)
@@ -320,7 +331,7 @@ def generate_test_config_yaml_for_example(example: Example) -> List[str]:
 
         setup = [
             f"pip install -r {os.path.join(example.root, example.requirements_file)}",
-            f"python convert_to_test_job.py --job {job_dir} --post {POSTFIX}",
+            f"python convert_to_test_job.py --job {job_dir} --post {postfix}",
         ]
         if example.prepare_data_script is not None:
             setup.insert(0, f"bash {example.prepare_data_script}")
@@ -329,7 +340,7 @@ def generate_test_config_yaml_for_example(example: Example) -> List[str]:
             "ha": True,
             "jobs_root_dir": example.jobs_root_dir,
             "cleanup": True,
-            "project_yaml": PROJECT_YAML,
+            "project_yaml": project_yaml,
             "additional_python_paths": example.additional_python_paths,
             "tests": [
                 {
@@ -337,7 +348,7 @@ def generate_test_config_yaml_for_example(example: Example) -> List[str]:
                     "event_sequence": [
                         {
                             "trigger": {"type": "server_log", "data": "Server started"},
-                            "actions": [f"submit_job {job}{POSTFIX}"],
+                            "actions": [f"submit_job {job}{postfix}"],
                             "result": {"type": "run_state", "data": {}},
                         },
                         {
@@ -347,7 +358,7 @@ def generate_test_config_yaml_for_example(example: Example) -> List[str]:
                         },
                     ],
                     "setup": setup,
-                    "teardown": [f"rm -rf {job_dir}{POSTFIX}"],
+                    "teardown": [f"rm -rf {job_dir}{postfix}"],
                 }
             ],
         }

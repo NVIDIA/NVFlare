@@ -949,7 +949,8 @@ azure_start_svr_sh: |
   if [[ "$SERVER_NAME" = *".cloudapp.azure.com"* ]]
   then
     DNS_TAG=$(echo $SERVER_NAME | cut -d "." -f 1)
-    LOCATION=$(echo $SERVER_NAME | cut -d "." -f 2)
+    DERIVED_LOCATION=$(echo $SERVER_NAME | cut -d "." -f 2)
+    LOCATION=$DERIVED_LOCATION
     self_dns=false
   else
     echo "Warning: ${SERVER_NAME} does not end with .cloudapp.azure.com."
@@ -965,6 +966,11 @@ azure_start_svr_sh: |
     useDefault=false
     . $config_file
     report_status "$?" "Loading config file"
+    if [ $self_dns = false ] && [ $DERIVED_LOCATION != $LOCATION ]
+    then
+      echo "Server name implies LOCATION=${DERIVED_LOCATION} but the config file specifies LOCATION=${LOCATION}.  Unable to continue provisioning."
+      exit 1
+    fi
   fi
 
   echo "This script requires az (Azure CLI), sshpass and jq.  Now checking if they are installed."
@@ -993,13 +999,19 @@ azure_start_svr_sh: |
   echo "If the client requires additional dependencies, please copy the requirements.txt to ${DIR}."
   prompt ans "Press ENTER when it's done or no additional dependencies. "
 
-  az login --use-device-code
+  az login --use-device-code -o none
+  report_status "$?" "login"
 
   # Start provisioning
 
-  echo "Creating Resource Group $RESOURCE_GROUP at Location $LOCATION"
-  az group create --output none --name $RESOURCE_GROUP --location $LOCATION
-  report_status "$?" "creating resource group"
+  if [ $(az group exists -n $RESOURCE_GROUP) == 'false' ]
+  then
+    echo "Creating Resource Group $RESOURCE_GROUP at Location $LOCATION"
+    az group create --output none --name $RESOURCE_GROUP --location $LOCATION
+    report_status "$?" "creating resource group"
+  else
+    echo "Resource Group $RESOURCE_GROUP exists, will reuse it."
+  fi
 
   echo "Creating Virtual Machine, will take a few minutes"
   if [ $self_dns = true ]
@@ -1015,7 +1027,8 @@ azure_start_svr_sh: |
       --admin-password $PASSWORD \
       --authentication-type password \
       --public-ip-address nvflare_server_ip \
-      --public-ip-address-allocation static > /tmp/vm.json
+      --public-ip-address-allocation static \
+      --public-ip-sku Standard > /tmp/vm.json
   else
     az vm create \
       --output json \
@@ -1029,6 +1042,7 @@ azure_start_svr_sh: |
       --authentication-type password \
       --public-ip-address nvflare_server_ip \
       --public-ip-address-allocation static \
+      --public-ip-sku Standard \
       --public-ip-address-dns-name $DNS_TAG > /tmp/vm.json
   fi
   report_status "$?" "creating virtual machine"
@@ -1106,8 +1120,7 @@ azure_start_svr_sh: |
   echo "System was provisioned"
   echo "To delete the resource group (also delete the VM), run the following command"
   echo "az group delete -n ${RESOURCE_GROUP}"
-  # echo "The VM was created with user: ${ADMIN_USERNAME} and password: ${PASSWORD}"
-
+  echo "To login to the VM with SSH, use ${ADMIN_USERNAME} : ${PASSWORD}" > vm_credential.txt
 
 azure_start_cln_sh: |
   #!/usr/bin/env bash
@@ -1195,13 +1208,19 @@ azure_start_cln_sh: |
   echo "If the client requires additional dependencies, please copy the requirements.txt to ${DIR}."
   prompt ans "Press ENTER when it's done or no additional dependencies. "
 
-  az login --use-device-code
+  az login --use-device-code -o none
+  report_status "$?" "login"
 
   # Start provisioning
 
-  echo "Creating Resource Group $RESOURCE_GROUP at Location $LOCATION"
-  az group create --output none --name $RESOURCE_GROUP --location $LOCATION
-  report_status "$?" "creating resource group"
+  if [ $(az group exists -n $RESOURCE_GROUP) == 'false' ]
+  then
+    echo "Creating Resource Group $RESOURCE_GROUP at Location $LOCATION"
+    az group create --output none --name $RESOURCE_GROUP --location $LOCATION
+    report_status "$?" "creating resource group"
+  else
+    echo "Resource Group $RESOURCE_GROUP exists, will reuse it."
+  fi
 
   echo "Creating Virtual Machine, will take a few minutes"
   az vm create \
@@ -1213,7 +1232,8 @@ azure_start_cln_sh: |
     --size $VM_SIZE \
     --admin-username $ADMIN_USERNAME \
     --admin-password $PASSWORD \
-    --authentication-type password > /tmp/vm.json
+    --authentication-type password \
+    --public-ip-sku Standard > /tmp/vm.json
   report_status "$?" "creating virtual machine"
 
   IP_ADDRESS=$(jq -r .publicIpAddress /tmp/vm.json)
@@ -1271,7 +1291,7 @@ azure_start_cln_sh: |
   echo "System was provisioned"
   echo "To delete the resource group (also delete the VM), run the following command"
   echo "az group delete -n ${RESOURCE_GROUP}"
-  # echo "To login to the VM with SSH, use ${ADMIN_USERNAME} : ${PASSWORD}"
+  echo "To login to the VM with SSH, use ${ADMIN_USERNAME} : ${PASSWORD}" > vm_credential.txt
 
 azure_start_dsb_sh: |
   #!/usr/bin/env bash
@@ -1325,12 +1345,20 @@ azure_start_dsb_sh: |
   echo "One initial user will be created when starting dashboard."
   echo "Please enter the email address for this user."
   read email
+  credential="${email}:$RANDOM"
 
-  az login --use-device-code
+  az login --use-device-code -o none
+  report_status "$?" "login"
+
   # Start provisioning
-  echo "Creating Resource Group $RESOURCE_GROUP at Location $LOCATION"
-  az group create --output none --name $RESOURCE_GROUP --location $LOCATION
-  report_status "$?" "creating resource group"
+  if [ $(az group exists -n $RESOURCE_GROUP) == 'false' ]
+  then
+    echo "Creating Resource Group $RESOURCE_GROUP at Location $LOCATION"
+    az group create --output none --name $RESOURCE_GROUP --location $LOCATION
+    report_status "$?" "creating resource group"
+  else
+    echo "Resource Group $RESOURCE_GROUP exists, will reuse it."
+  fi
 
   echo "Creating Virtual Machine, will take a few minutes"
   az vm create \
@@ -1342,7 +1370,8 @@ azure_start_dsb_sh: |
     --size $VM_SIZE \
     --admin-username $ADMIN_USERNAME \
     --admin-password $PASSWORD \
-    --authentication-type password > /tmp/vm.json
+    --authentication-type password \
+    --public-ip-sku Standard > /tmp/vm.json
   report_status "$?" "creating virtual machine"
 
   IP_ADDRESS=$(jq -r .publicIpAddress /tmp/vm.json)
@@ -1438,12 +1467,10 @@ azure_start_dsb_sh: |
     --name $VM_NAME \
     --scripts \
     "cd ${DEST_FOLDER} && \
-     echo ${email} | nvflare dashboard --start -f ${DEST_FOLDER}" > /tmp/dashboard.json
+     python3 -m nvflare.dashboard.cli --start -f ${DEST_FOLDER} --cred ${credential}" > /tmp/dashboard.json
 
-  credential=$(jq -r .value[0].message /tmp/dashboard.json | grep "Project admin")
+  # credential=$(jq -r .value[0].message /tmp/dashboard.json | grep "Project admin")
   # echo "The VM was created with user: ${ADMIN_USERNAME} and password: ${PASSWORD}"
-  echo "Dashboard: ${credential}, running at IP address ${IP_ADDRESS}"
-  echo "To stop the dashboard, run az group delete -n ${RESOURCE_GROUP}"
   if [ "$secure" = true ]
   then
     echo "URL is https://${IP_ADDRESS}"
@@ -1451,6 +1478,9 @@ azure_start_dsb_sh: |
     echo "URL is http://${IP_ADDRESS}:443"
   fi
   echo "Note: you may need to configure DNS server with your DNS hostname and the above IP address."
+  echo "Project admin credential (username:password) is ${credential} ."
+  echo "To stop the dashboard, run az group delete -n ${RESOURCE_GROUP}"
+  echo "To login to the VM with SSH, use ${ADMIN_USERNAME} : ${PASSWORD}" > vm_credential.txt
 
 adm_notebook: |
   {
@@ -1509,12 +1539,11 @@ adm_notebook: |
       "import os\n",
       "from nvflare.fuel.flare_api.flare_api import new_secure_session\n",
       "\n",
-      "username = \"admin@nvidia.com\"  # change this to your own username\n",
-      "admin_user_dir = os.path.join(os.getcwd(), username)\n",
+      "username = \"{~~admin_name~~}\"  # change this to your own username\n",
       "\n",
       "sess = new_secure_session(\n",
       "    username=username,\n",
-      "    startup_kit_location=admin_user_dir\n",
+      "    startup_kit_location=os.getcwd()\n",
       ")\n",
       "print(sess.get_system_info())"
     ]
@@ -1576,7 +1605,6 @@ aws_start_svr_sh: |
 
   set +e
   DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-  cd $DIR/..
 
   function report_status() {
     status="$1"
@@ -1629,26 +1657,42 @@ aws_start_svr_sh: |
   KEY_PAIR=NVFlareServerKeyPair
   KEY_FILE=${KEY_PAIR}.pem
 
-  echo "This script requires aws (AWS CLI), sshpass and jq.  Now checking if they are installed."
+  echo "This script requires aws (AWS CLI), sshpass, dig and jq.  Now checking if they are installed."
 
   check_binary aws "Please see https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html on how to install it on your system."
   check_binary sshpass "Please install it first."
+  check_binary dig "Please install it first."
   check_binary jq "Please install it first."
 
-  while true
-  do
-    prompt AMI_IMAGE "Cloud AMI image, press ENTER to accept default ${AMI_IMAGE}: "
-    prompt EC2_TYPE "Cloud EC2 type, press ENTER to accept default ${EC2_TYPE}: "
-    prompt ans "region = ${REGION}, ami image = ${AMI_IMAGE}, EC2 type = ${EC2_TYPE}, OK? (Y/n) "
-    if [[ $ans = "" ]] || [[ $ans =~ ^(y|Y)$ ]]
-    then
-      break
-    fi
-  done
+  if [ -z ${config_file+x} ]
+  then
+      useDefault=true
+  else
+      useDefault=false
+      . $config_file
+      report_status "$?" "Loading config file"
+  fi
+
+
+  if [ $useDefault = true ]
+  then
+    while true
+    do
+      prompt AMI_IMAGE "Cloud AMI image, press ENTER to accept default ${AMI_IMAGE}: "
+      prompt EC2_TYPE "Cloud EC2 type, press ENTER to accept default ${EC2_TYPE}: "
+      prompt REGIION "Cloud EC2 region, press ENTER to accept default ${REGION}: "
+      prompt ans "region = ${REGION}, ami image = ${AMI_IMAGE}, EC2 type = ${EC2_TYPE}, OK? (Y/n) "
+      if [[ $ans = "" ]] || [[ $ans =~ ^(y|Y)$ ]]
+      then
+        break
+      fi
+    done
+  fi
 
   echo "If the server requires additional dependencies, please copy the requirements.txt to ${DIR}."
   prompt ans "Press ENTER when it's done or no additional dependencies. "
 
+  cd $DIR/..
   # Generate key pair
 
   echo "Generating key pair for VM"
@@ -1656,6 +1700,7 @@ aws_start_svr_sh: |
   aws ec2 delete-key-pair --key-name $KEY_PAIR > /dev/null 2>&1
   rm -rf $KEY_FILE
   aws ec2 create-key-pair --key-name $KEY_PAIR --query 'KeyMaterial' --output text > $KEY_FILE
+  report_status "$?" "creating key pair"
   chmod 400 $KEY_FILE
 
   # Generate Security Group
@@ -1663,14 +1708,19 @@ aws_start_svr_sh: |
   aws ec2 delete-security-group --group-name $SECURITY_GROUP > /dev/null 2>&1
   sleep 10
   sg_id=$(aws ec2 create-security-group --group-name $SECURITY_GROUP --description "NVFlare security group" | jq -r .GroupId)
-  aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr 0.0.0.0/0 > /tmp/sec_grp.log
+  report_status "$?" "creating security group"
+  my_public_ip=$(dig +short myip.opendns.com @resolver1.opendns.com)
+  report_status "$?" "getting my public IP"
+  aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr ${my_public_ip}/32 > /tmp/sec_grp.log
   aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 8002-8003 --cidr 0.0.0.0/0 >> /tmp/sec_grp.log
+  report_status "$?" "creating security group rules"
 
   # Start provisioning
 
   echo "Creating VM at region $REGION, may take a few minutes."
 
   aws ec2 run-instances --region $REGION --image-id $AMI_IMAGE --count 1 --instance-type $EC2_TYPE --key-name $KEY_PAIR --security-group-ids $sg_id > vm_create.json
+  report_status "$?" "creating VM"
   instance_id=$(jq -r .Instances[0].InstanceId vm_create.json)
 
   aws ec2 wait instance-status-ok --instance-ids $instance_id
@@ -1696,19 +1746,20 @@ aws_start_svr_sh: |
   python3 -m pip install -r ${DEST_FOLDER}/startup/requirements.txt && \
   nohup ${DEST_FOLDER}/startup/start.sh && sleep 20 && \
   exit" > /tmp/nvflare.log 2>&1 
-
   report_status "$?" "installing packages"
 
   echo "System was provisioned"
   echo "To terminate the EC2 instance, run the following command."
   echo "aws ec2 terminate-instances --instance-ids ${instance_id}"
+  echo "Other resources provisioned"
+  echo "security group: ${SECURITY_GROUP}"
+  echo "key pair: ${KEY_PAIR}"
 
 aws_start_cln_sh: |
   #!/usr/bin/env bash
 
   set +e
   DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-  cd $DIR/..
 
   function report_status() {
     status="$1"
@@ -1755,32 +1806,47 @@ aws_start_cln_sh: |
   VM_NAME=nvflare_client
   AMI_IMAGE=ami-04bad3c587fe60d89
   EC2_TYPE=t2.small
-  SECURITY_GROUP=nvflare_client_sg
+  SECURITY_GROUP=nvflare_client_sg_$RANDOM
   DEST_FOLDER=/var/tmp/cloud
   REGION=us-west-2
   KEY_PAIR=NVFlareClientKeyPair
   KEY_FILE=${KEY_PAIR}.pem
 
-  echo "This script requires aws (AWS CLI), sshpass and jq.  Now checking if they are installed."
+  echo "This script requires aws (AWS CLI), sshpass, dig and jq.  Now checking if they are installed."
 
   check_binary aws "Please see https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html on how to install it on your system."
   check_binary sshpass "Please install it first."
+  check_binary dig "Please install it first."
   check_binary jq "Please install it first."
 
-  while true
-  do
-    prompt AMI_IMAGE "Cloud AMI image, press ENTER to accept default ${AMI_IMAGE}: "
-    prompt EC2_TYPE "Cloud EC2 type, press ENTER to accept default ${EC2_TYPE}: "
-    prompt ans "region = ${REGION}, ami image = ${AMI_IMAGE}, EC2 type = ${EC2_TYPE}, OK? (Y/n) "
-    if [[ $ans = "" ]] || [[ $ans =~ ^(y|Y)$ ]]
-    then
-      break
-    fi
-  done
+  if [ -z ${config_file+x} ]
+  then
+      useDefault=true
+  else
+      useDefault=false
+      . $config_file
+      report_status "$?" "Loading config file"
+  fi
+
+  if [ $useDefault = true ]
+  then
+    while true
+    do
+      prompt AMI_IMAGE "Cloud AMI image, press ENTER to accept default ${AMI_IMAGE}: "
+      prompt EC2_TYPE "Cloud EC2 type, press ENTER to accept default ${EC2_TYPE}: "
+      prompt REGIION "Cloud EC2 region, press ENTER to accept default ${REGION}: "
+      prompt ans "region = ${REGION}, ami image = ${AMI_IMAGE}, EC2 type = ${EC2_TYPE}, OK? (Y/n) "
+      if [[ $ans = "" ]] || [[ $ans =~ ^(y|Y)$ ]]
+      then
+        break
+      fi
+    done
+  fi
 
   echo "If the client requires additional dependencies, please copy the requirements.txt to ${DIR}."
   prompt ans "Press ENTER when it's done or no additional dependencies. "
 
+  cd $DIR/..
   # Generate key pair
 
   echo "Generating key pair for VM"
@@ -1788,20 +1854,24 @@ aws_start_cln_sh: |
   aws ec2 delete-key-pair --key-name $KEY_PAIR > /dev/null 2>&1
   rm -rf $KEY_FILE
   aws ec2 create-key-pair --key-name $KEY_PAIR --query 'KeyMaterial' --output text > $KEY_FILE
+  report_status "$?" "creating key pair"
   chmod 400 $KEY_FILE
 
   # Generate Security Group
-
-  aws ec2 delete-security-group --group-name $SECURITY_GROUP > /dev/null 2>&1
-  sleep 10
+  # Try not reusing existing security group because we have to modify it for our own need.
   sg_id=$(aws ec2 create-security-group --group-name $SECURITY_GROUP --description "NVFlare security group" | jq -r .GroupId)
-  aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr 0.0.0.0/0 > /tmp/sec_grp.log
+  report_status "$?" "creating security group"
+  my_public_ip=$(dig +short myip.opendns.com @resolver1.opendns.com)
+  report_status "$?" "getting my public IP"
+  aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr ${my_public_ip}/32 > /tmp/sec_grp.log
+  report_status "$?" "creating security group rules"
 
   # Start provisioning
 
   echo "Creating VM at region $REGION, may take a few minutes."
 
   aws ec2 run-instances --region $REGION --image-id $AMI_IMAGE --count 1 --instance-type $EC2_TYPE --key-name $KEY_PAIR --security-group-ids $sg_id > vm_create.json
+  report_status "$?" "creating VM"
   instance_id=$(jq -r .Instances[0].InstanceId vm_create.json)
 
   aws ec2 wait instance-status-ok --instance-ids $instance_id
@@ -1833,6 +1903,10 @@ aws_start_cln_sh: |
   echo "System was provisioned"
   echo "To terminate the EC2 instance, run the following command."
   echo "aws ec2 terminate-instances --instance-ids ${instance_id}"
+  echo "Other resources provisioned"
+  echo "security group: ${SECURITY_GROUP}"
+  echo "key pair: ${KEY_PAIR}"
+
 
 aws_start_dsb_sh: |
   #!/usr/bin/env bash
@@ -1869,30 +1943,19 @@ aws_start_dsb_sh: |
   VM_NAME=nvflare_dashboard
   AMI_IMAGE=ami-04bad3c587fe60d89
   EC2_TYPE=t2.small
-  SECURITY_GROUP=nvflare_dashboard_sg
+  SECURITY_GROUP=nvflare_dashboard_sg_$RANDOM
   REGION=us-west-2
   ADMIN_USERNAME=ubuntu
   DEST_FOLDER=/home/${ADMIN_USERNAME}
   KEY_PAIR=NVFlareDashboardKeyPair
   KEY_FILE=${KEY_PAIR}.pem
   
-  echo "This script requires aws (AWS CLI), sshpass and jq.  Now checking if they are installed."
+  echo "This script requires aws (AWS CLI), sshpass, dig and jq.  Now checking if they are installed."
 
   check_binary aws "Please see https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html on how to install it on your system."
   check_binary sshpass "Please install it first."
+  check_binary dig "Please install it first."
   check_binary jq "Please install it first."
-
-  while true
-  do
-    prompt AMI_IMAGE "Cloud AMI image, press ENTER to accept default ${AMI_IMAGE}: "
-    prompt EC2_TYPE "Cloud EC2 type, press ENTER to accept default ${EC2_TYPE}: "
-    prompt ans "region = ${REGION}, ami image = ${AMI_IMAGE}, EC2 type = ${EC2_TYPE}, OK? (Y/n) "
-    if [[ $ans = "" ]] || [[ $ans =~ ^(y|Y)$ ]]
-    then
-      break
-    fi
-  done
-
 
   echo "One initial user will be created when starting dashboard."
   echo "Please enter the email address for this user."
@@ -1906,22 +1969,26 @@ aws_start_dsb_sh: |
   aws ec2 delete-key-pair --key-name $KEY_PAIR > /dev/null 2>&1
   rm -rf $KEY_FILE
   aws ec2 create-key-pair --key-name $KEY_PAIR --query 'KeyMaterial' --output text > $KEY_FILE
+  report_status "$?" "creating key pair"
   chmod 400 $KEY_FILE
 
   # Generate Security Group
 
-  aws ec2 delete-security-group --group-name $SECURITY_GROUP > /dev/null 2>&1
-  sleep 10  
   sg_id=$(aws ec2 create-security-group --group-name $SECURITY_GROUP --description "NVFlare security group" | jq -r .GroupId)
+  report_status "$?" "creating security group"
   echo "Security group id: ${sg_id}"
-  aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr 0.0.0.0/0 > /tmp/sec_grp.log
+  my_public_ip=$(dig +short myip.opendns.com @resolver1.opendns.com)
+  report_status "$?" "getting my public IP"
+  aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr ${my_public_ip}/32 > /tmp/sec_grp.log
   aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 443 --cidr 0.0.0.0/0 >> /tmp/sec_grp.log
+  report_status "$?" "creating security group rules"
 
   # Start provisioning
 
   echo "Creating VM at region $REGION, may take a few minutes."
 
   aws ec2 run-instances --region $REGION --image-id $AMI_IMAGE --count 1 --instance-type $EC2_TYPE --key-name $KEY_PAIR --security-group-ids $sg_id > vm_create.json
+  report_status "$?" "creating VM"
   instance_id=$(jq -r .Instances[0].InstanceId vm_create.json)
 
   aws ec2 wait instance-status-ok --instance-ids $instance_id
@@ -1981,4 +2048,6 @@ aws_start_dsb_sh: |
   echo "Project admin credential (username:password) is ${credential} ."
   echo "To terminate the EC2 instance, run the following command."
   echo "aws ec2 terminate-instances --instance-ids ${instance_id}"
-
+  echo "Other resources provisioned"
+  echo "security group: ${SECURITY_GROUP}"
+  echo "key pair: ${KEY_PAIR}"

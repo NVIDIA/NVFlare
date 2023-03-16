@@ -33,7 +33,9 @@ class ClientReply(object):
         self.reply = reply
 
 
-def send_requests(cell, command: str, requests: dict, clients, job_id=None, timeout_secs=2.0) -> [ClientReply]:
+def send_requests(
+    cell, command: str, requests: dict, clients, job_id=None, timeout_secs=2.0, optional=False
+) -> [ClientReply]:
     """Send requests to clients.
 
     NOTE::
@@ -43,8 +45,13 @@ def send_requests(cell, command: str, requests: dict, clients, job_id=None, time
         This is a blocking call - returned only after all responses are received or timeout.
 
     Args:
+        cell: the source cell
+        command: the command to be sent
+        clients: the clients the command will be sent to
         requests: A dict of requests: {client token: request or list of requests}
+        job_id: id of the job that the command is applied to
         timeout_secs: how long to wait for reply before timeout
+        optional: whether the message is optional
 
     Returns:
         A list of ClientReply
@@ -82,11 +89,11 @@ def send_requests(cell, command: str, requests: dict, clients, job_id=None, time
 
     if timeout_secs <= 0.0:
         # this is fire-and-forget!
-        cell.fire_multi_requests_and_forget(target_msgs)
+        cell.fire_multi_requests_and_forget(target_msgs, optional=optional)
         return []
     else:
         result = []
-        replies = cell.broadcast_multi_requests(target_msgs, timeout_secs)
+        replies = cell.broadcast_multi_requests(target_msgs, timeout_secs, optional=optional)
         for name, reply in replies.items():
             assert isinstance(reply, CellMessage)
             result.append(ClientReply(client_token=name_to_token[name], req=name_to_req[name], reply=reply.payload))

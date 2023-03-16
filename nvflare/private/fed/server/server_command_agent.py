@@ -17,7 +17,6 @@ import logging
 
 from nvflare.apis.fl_constant import FLContextKey, ServerCommandKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import ReservedHeaderKey
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.fuel.f3.cellnet.cell import Cell, MessageHeaderKey, ReturnCode, make_reply
 from nvflare.fuel.f3.message import Message as CellMessage
@@ -99,11 +98,6 @@ class ServerCommandAgent(object):
 
         topic = request.get_header(MessageHeaderKey.TOPIC)
         with self.engine.new_context() as fl_ctx:
-            shared_fl_ctx = data.get_header(ReservedHeaderKey.PEER_PROPS)
-            # shared_fl_ctx.set_prop(FLContextKey.SHAREABLE, data, private=True)
-
-            fl_ctx.set_peer_context(shared_fl_ctx)
-
             engine = fl_ctx.get_engine()
             reply = engine.dispatch(topic=topic, request=data, fl_ctx=fl_ctx)
 

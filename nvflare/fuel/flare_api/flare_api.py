@@ -161,10 +161,11 @@ class Session(SessionSpec):
             raise SessionClosed("the session is closed on server")
         elif status in [APIStatus.ERROR_PROTOCOL, APIStatus.ERROR_SYNTAX]:
             raise InternalError(f"protocol error: {status}")
-        elif status in [APIStatus.ERROR_INVALID_CLIENT, APIStatus.ERROR_SERVER_CONNECTION]:
+        elif status in [APIStatus.ERROR_SERVER_CONNECTION]:
             raise ConnectionError(f"cannot connect to server: {status}")
         elif status != APIStatus.SUCCESS:
-            raise RuntimeError(f"runtime error encountered: {status}")
+            details = result.get(ResultKey.DETAILS, "")
+            raise RuntimeError(f"runtime error encountered: {status}: {details}")
 
         meta = result.get(ResultKey.META, None)
         if not meta:
@@ -250,7 +251,7 @@ class Session(SessionSpec):
         Args:
             job_id: ID of the job
 
-        Returns: a dict of job meta data
+        Returns: a dict of job metadata
 
         """
         self._validate_job_id(job_id)
@@ -264,28 +265,30 @@ class Session(SessionSpec):
     def list_jobs(
         self,
         detailed: bool = False,
-        all: bool = False,
         limit: Optional[int] = None,
         id_prefix: str = None,
         name_prefix: str = None,
+        reverse: bool = False,
     ) -> List[dict]:
         """Get the job info from the server
 
         Args:
             detailed: True to get the detailed information for each job, False by default
-            all: True to get jobs submitted by all users (default is to only list jobs submitted by the same user)
             limit: maximum number of jobs to show, with 0 to show all (defaults to 5)
             id_prefix: if included, only return jobs with the beginning of the job ID matching the id_prefix
             name_prefix: if included, only return jobs with the beginning of the job name matching the name_prefix
-        Returns: a dict of job meta data
+            reverse: if specified, list jobs in the reverse order of submission times
+        Returns: a dict of job metadata
 
         """
         command = AdminCommandNames.LIST_JOBS
         if detailed:
             command = command + " -d"
-        if all:
-            command = command + " -a"
+        if reverse:
+            command = command + " -r"
         if limit:
+            if not isinstance(limit, int):
+                raise InvalidArgumentError(f"limit must be int but got {type(limit)}")
             command = command + " -m " + str(limit)
         if name_prefix:
             if not isinstance(name_prefix, str):
@@ -299,7 +302,7 @@ class Session(SessionSpec):
                 command = command + " " + id_prefix
         result = self._do_command(command)
         meta = result[ResultKey.META]
-        jobs_list = meta.get(MetaKey.JOBS, None)
+        jobs_list = meta.get(MetaKey.JOBS, [])
         return jobs_list
 
     def download_job_result(self, job_id: str) -> str:

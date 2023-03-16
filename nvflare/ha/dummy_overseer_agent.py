@@ -31,6 +31,7 @@ class DummyOverseerAgent(OverseerAgent):
         self._base_init(sp_end_point)
 
         self._report_and_query = threading.Thread(target=self._rnq_worker, args=())
+        self._report_and_query.daemon = True
         self._flag = threading.Event()
         self._asked_to_exit = False
         self._update_callback = None
@@ -95,7 +96,7 @@ class DummyOverseerAgent(OverseerAgent):
     def end(self):
         self._flag.set()
         self._asked_to_exit = True
-        self._report_and_query.join()
+        # self._report_and_query.join()
 
     def set_secure_context(self, ca_path: str, cert_path: str = "", prv_key_path: str = ""):
         pass

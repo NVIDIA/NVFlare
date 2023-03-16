@@ -25,8 +25,8 @@ pd_readers = {
 def _to_data_tuple(data):
     data_num = data.shape[0]
     # split to feature and label
-    x = data.iloc[:, 1:].copy()
-    y = data.iloc[:, 0].copy()
+    x = data.iloc[:, 1:]
+    y = data.iloc[:, 0]
     return x.to_numpy(), y.to_numpy(), data_num
 
 

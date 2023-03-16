@@ -1,5 +1,6 @@
+nvflare>=2.3.0
 pandas
-xgboost==1.7.0rc1
-sklearn
+xgboost
+scikit-learn
 torch
 tensorboard

@@ -37,11 +37,18 @@ from nvflare.app_common.abstract.model import (
     model_learnable_to_dxo,
 )
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_opt.pt import PTModelPersistenceFormatManager
+from nvflare.app_opt.pt.model_persistence_format_manager import PTModelPersistenceFormatManager
 
 
 class PTLearner(Learner):
-    def __init__(self, data_path="/tmp/nvflare/tensorboard-streaming", lr=0.01, epochs=5, exclude_vars=None, analytic_sender_id="analytic_sender"):
+    def __init__(
+        self,
+        data_path="/tmp/nvflare/tensorboard-streaming",
+        lr=0.01,
+        epochs=5,
+        exclude_vars=None,
+        analytic_sender_id="analytic_sender",
+    ):
         """Simple PyTorch Learner that trains and validates a simple network on the CIFAR10 dataset.
 
         Args:

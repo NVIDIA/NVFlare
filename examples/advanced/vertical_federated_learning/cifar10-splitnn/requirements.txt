@@ -1,0 +1,6 @@
+nvflare>=2.3.0
+torch
+torchvision
+tensorboard
+openmined.psi
+pandas

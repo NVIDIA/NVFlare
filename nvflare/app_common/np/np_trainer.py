@@ -17,7 +17,7 @@ import time
 
 import numpy as np
 
-from nvflare.apis.dxo import DXO, DataKind, from_shareable
+from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
@@ -124,7 +124,7 @@ class NPTrainer(Executor):
             return make_reply(ReturnCode.TASK_ABORTED)
 
         # Prepare a DXO for our updated model. Create shareable and return
-        outgoing_dxo = DXO(data_kind=incoming_dxo.data_kind, data=np_data, meta={})
+        outgoing_dxo = DXO(data_kind=incoming_dxo.data_kind, data=np_data, meta={MetaKey.NUM_STEPS_CURRENT_ROUND: 1})
         return outgoing_dxo.to_shareable()
 
     def _submit_model(self, fl_ctx: FLContext, abort_signal: Signal):

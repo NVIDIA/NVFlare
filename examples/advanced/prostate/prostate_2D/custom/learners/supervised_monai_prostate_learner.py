@@ -39,7 +39,7 @@ from utils.custom_client_datalist_json_path import custom_client_datalist_json_p
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_opt.pt import PTFedProxLoss
+from nvflare.app_opt.pt.fedproxloss import PTFedProxLoss
 
 
 class SupervisedMonaiProstateLearner(SupervisedLearner):

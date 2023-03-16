@@ -26,7 +26,10 @@ def _get_xgboost_model_attr(xgb_model):
     num_parallel_tree = int(
         xgb_model["learner"]["gradient_booster"]["model"]["gbtree_model_param"]["num_parallel_tree"]
     )
-    best_iteration = int(xgb_model["learner"]["attributes"]["best_iteration"])
+    if "best_iteration" in xgb_model["learner"]["attributes"].keys():
+        best_iteration = int(xgb_model["learner"]["attributes"]["best_iteration"])
+    else:
+        best_iteration = 1
     best_ntree_limit = int(xgb_model["learner"]["attributes"]["best_ntree_limit"])
     num_trees = int(xgb_model["learner"]["gradient_booster"]["model"]["gbtree_model_param"]["num_trees"])
     return num_parallel_tree, best_iteration, best_ntree_limit, num_trees
@@ -41,21 +44,23 @@ def update_model(prev_model, model_update):
         pre_num_parallel_tree, pre_best_iteration, pre_best_ntree_limit, pre_num_trees = _get_xgboost_model_attr(
             prev_model
         )
-        add_num_parallel_tree, add_best_iteration, add_best_ntree_limit, add_num_trees = _get_xgboost_model_attr(
+        cur_num_parallel_tree, add_best_iteration, add_best_ntree_limit, add_num_trees = _get_xgboost_model_attr(
             model_update
         )
-        # adding the updates
-        prev_model["learner"]["gradient_booster"]["model"]["gbtree_model_param"]["num_parallel_tree"] = str(
-            pre_num_parallel_tree + add_num_parallel_tree
-        )
-        prev_model["learner"]["attributes"]["best_iteration"] = str(pre_best_iteration + add_best_iteration)
-        prev_model["learner"]["attributes"]["best_ntree_limit"] = str(pre_best_ntree_limit + add_best_ntree_limit)
+
+        # check num_parallel_tree, should be consistent
+        if cur_num_parallel_tree != pre_num_parallel_tree:
+            raise ValueError(
+                f"add_num_parallel_tree should not change, previous {pre_num_parallel_tree}, current {add_num_parallel_tree}"
+            )
+        prev_model["learner"]["attributes"]["best_iteration"] = str(pre_best_iteration + 1)
+        prev_model["learner"]["attributes"]["best_ntree_limit"] = str(pre_best_ntree_limit + cur_num_parallel_tree)
         prev_model["learner"]["gradient_booster"]["model"]["gbtree_model_param"]["num_trees"] = str(
-            pre_num_trees + add_num_trees
+            pre_num_trees + cur_num_parallel_tree
         )
         # append the new trees
         append_info = model_update["learner"]["gradient_booster"]["model"]["trees"]
-        for tree_ct in range(add_num_trees):
+        for tree_ct in range(cur_num_parallel_tree):
             append_info[tree_ct]["id"] = pre_num_trees + tree_ct
             prev_model["learner"]["gradient_booster"]["model"]["trees"].append(append_info[tree_ct])
             prev_model["learner"]["gradient_booster"]["model"]["tree_info"].append(0)

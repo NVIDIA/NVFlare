@@ -11,15 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import copy
 import logging
 import os
 import random
 import threading
 import time
-import traceback
 import uuid
-from typing import Dict, List, Union
+from typing import Dict, List, Tuple, Union
 from urllib.parse import urlparse
 
 from nvflare.fuel.f3.cellnet.connector_manager import ConnectorManager
@@ -44,7 +44,9 @@ from nvflare.fuel.f3.connection import Connection
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor, EndpointState
 from nvflare.fuel.f3.message import Message
+from nvflare.fuel.f3.mpm import MainProcessMonitor
 from nvflare.fuel.f3.stats_pool import StatsPoolManager
+from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
 _CHANNEL = "cellnet.channel"
 _TOPIC_BULK = "bulk"
@@ -65,6 +67,13 @@ class TargetMessage:
         self.channel = channel
         self.topic = topic
         self.message = message
+        message.add_headers(
+            {
+                MessageHeaderKey.TOPIC: topic,
+                MessageHeaderKey.CHANNEL: channel,
+                MessageHeaderKey.DESTINATION: target,
+            }
+        )
 
     def to_dict(self):
         return {
@@ -82,9 +91,7 @@ class TargetMessage:
 
 
 class CellAgent:
-    """
-    A CellAgent represents a cell in another cell.
-    """
+    """A CellAgent represents a cell in another cell."""
 
     def __init__(self, fqcn: str, endpoint: Endpoint):
         """
@@ -153,6 +160,27 @@ class _Waiter(threading.Event):
         self.received_replies = {}
 
 
+def log_messaging_error(logger, log_text: str, cell, msg: Union[Message, None], log_except=False):
+    debug = False
+    if msg:
+        debug = msg.get_header(MessageHeaderKey.OPTIONAL, default=False)
+        log_text = format_log_message(cell.get_fqcn(), msg, log_text)
+    else:
+        log_text = f"{cell.get_fqcn()}: {log_text}"
+
+    if MainProcessMonitor.is_stopping():
+        debug = True
+
+    if debug:
+        logger.debug(log_text)
+        if log_except:
+            logger.debug(secure_format_traceback())
+    else:
+        logger.error(log_text)
+        if log_except:
+            logger.error(secure_format_traceback())
+
+
 class _BulkSender:
     def __init__(self, cell, target: str, max_queue_size):
         self.cell = cell
@@ -192,9 +220,11 @@ class _BulkSender:
             channel=_CHANNEL, topic=_TOPIC_BULK, targets=[self.target], message=bulk_msg
         )
         if send_errs[self.target]:
-            self.logger.error(
-                f"{self.cell.get_fqcn()}: can't send bulk message ({len(messages_to_send)}) to {self.target}: "
-                f"{send_errs[self.target]}"
+            log_messaging_error(
+                logger=self.logger,
+                msg=bulk_msg,
+                log_text=f"failed to send bulk message: {send_errs[self.target]}",
+                cell=self.cell,
             )
         else:
             self.logger.debug(f"{self.cell.get_fqcn()}: sent bulk messages ({len(messages_to_send)}) to {self.target}")
@@ -256,14 +286,20 @@ class Cell(MessageReceiver, EndpointMonitor):
             parent_url: url for connecting to parent cell
 
         FQCN is the names of all ancestor, concatenated with dots.
-        Note: internal listener is automatically created for root cells.
 
-        Example:
-            server.J12345       (the cell for job J12345 on the server)
-            server              (the root cell of server)
-            nih_1.J12345        (the cell for job J12345 on client_1's site)
-            client_1.J12345.R0  (the cell for rank R0 of J12345 on client_1 site)
-            client_1            (he root cell of client_1)
+
+        .. note::
+
+            Internal listener is automatically created for root cells.
+
+        .. code-block:: text
+
+            Example:
+                server.J12345       (the cell for job J12345 on the server)
+                server              (the root cell of server)
+                nih_1.J12345        (the cell for job J12345 on client_1's site)
+                client_1.J12345.R0  (the cell for rank R0 of J12345 on client_1 site)
+                client_1            (he root cell of client_1)
 
         """
         comm_configurator = CommConfigurator()
@@ -426,6 +462,9 @@ class Cell(MessageReceiver, EndpointMonitor):
             scope=self.my_info.fqcn,
         )
 
+    def log_error(self, log_text: str, msg: Union[None, Message], log_except=False):
+        log_messaging_error(logger=self.logger, log_text=log_text, cell=self, msg=msg, log_except=log_except)
+
     def get_root_url_for_child(self):
         if isinstance(self.root_url, list):
             return self.root_url[0]
@@ -435,8 +474,8 @@ class Cell(MessageReceiver, EndpointMonitor):
     def get_fqcn(self) -> str:
         return self.my_info.fqcn
 
-    def is_cell_reachable(self, target_fqcn: str) -> bool:
-        _, ep = self._find_endpoint(target_fqcn)
+    def is_cell_reachable(self, target_fqcn: str, for_msg=None) -> bool:
+        _, ep = self._find_endpoint(target_fqcn, for_msg)
         return ep is not None
 
     def is_cell_connected(self, target_fqcn: str) -> bool:
@@ -444,7 +483,8 @@ class Cell(MessageReceiver, EndpointMonitor):
         return agent is not None
 
     def is_backbone_ready(self):
-        """Check if backbone is ready
+        """Check if backbone is ready.
+
         Backbone is the preconfigured network connections, like all the connections from clients to server.
         Adhoc connections are not part of the backbone.
         """
@@ -491,8 +531,7 @@ class Cell(MessageReceiver, EndpointMonitor):
             self._create_internal_listener()
 
     def change_server_root(self, to_url: str):
-        """
-        Change to a different server url
+        """Change to a different server url
 
         Args:
             to_url: the new url of the server root
@@ -518,8 +557,6 @@ class Cell(MessageReceiver, EndpointMonitor):
 
             # recreate backbone connector to the root
             if self.my_info.gen <= 2:
-                # self.logger.debug("waiting 5 secs before connecting to new server ...")
-                # time.sleep(5.0)
                 self.logger.debug(f"{self.my_info.fqcn}: recreating bb_external_connector ...")
                 self._create_bb_external_connector()
 
@@ -530,8 +567,9 @@ class Cell(MessageReceiver, EndpointMonitor):
             self.logger.debug(f"{self.my_info.fqcn}: removing bb_ext_connector ...")
             try:
                 self.communicator.remove_connector(self.bb_ext_connector.handle)
+                self.communicator.remove_endpoint(FQCN.ROOT_SERVER)
             except Exception as ex:
-                self.logger.error(f"{self.my_info.fqcn}: error removing bb_ext_connector {ex}")
+                self.log_error(msg=None, log_text=f"{self.my_info.fqcn}: error removing bb_ext_connector {ex}")
             self.bb_ext_connector = None
 
         # drop ad-hoc connectors to cells on server
@@ -541,14 +579,17 @@ class Cell(MessageReceiver, EndpointMonitor):
                 to_cell_info = FqcnInfo(to_cell)
                 if to_cell_info.is_on_server:
                     cells_to_delete.append(to_cell)
-            for c in cells_to_delete:
-                self.logger.debug(f"{self.my_info.fqcn}: removing adhoc connector to {c}")
-                connector = self.adhoc_connectors.pop(c, None)
+            for cell_name in cells_to_delete:
+                self.logger.debug(f"{self.my_info.fqcn}: removing adhoc connector to {cell_name}")
+                connector = self.adhoc_connectors.pop(cell_name, None)
                 if connector:
                     try:
                         self.communicator.remove_connector(connector.handle)
-                    except Exception as ex:
-                        self.logger.error(f"{self.my_info.fqcn}: error removing adhoc connector {ex}")
+                        self.communicator.remove_endpoint(cell_name)
+                    except:
+                        self.log_error(
+                            msg=None, log_text=f"error removing adhoc connector to {cell_name}", log_except=True
+                        )
 
     def drop_agents(self):
         # drop agents
@@ -562,7 +603,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                 self.logger.debug(f"{self.my_info.fqcn}: removing agent {a}")
                 self.agents.pop(a, None)
 
-    def create_internal_listener(self):
+    def make_internal_listener(self):
         """
         Create the internal listener for child cells of this cell to connect to.
 
@@ -572,8 +613,8 @@ class Cell(MessageReceiver, EndpointMonitor):
         self._create_internal_listener()
 
     def get_internal_listener_url(self) -> Union[None, str]:
-        """
-        Get the cell's internal listener url.
+        """Get the cell's internal listener url.
+
         This method should only be used for cells that need to have child cells.
         The url returned is to be passed to child of this cell to create connection
 
@@ -771,7 +812,12 @@ class Cell(MessageReceiver, EndpointMonitor):
                 targets = [peer_name for peer_name in self.agents.keys()]
                 self.logger.debug(f"broadcasting goodbye to {targets}")
                 self.broadcast_request(
-                    channel=_CHANNEL, topic=_TOPIC_BYE, targets=targets, request=new_message(), timeout=1.0
+                    channel=_CHANNEL,
+                    topic=_TOPIC_BYE,
+                    targets=targets,
+                    request=new_message(),
+                    timeout=0.5,
+                    optional=True,
                 )
 
         self.logger.debug(f"{self.my_info.fqcn}: Closing Cell")
@@ -784,8 +830,9 @@ class Cell(MessageReceiver, EndpointMonitor):
             # we can now stop the communicator
             self.communicator.stop()
         except Exception as ex:
-            self.logger.error(f"{self.my_info.fqcn}: error stopping Communicator: {ex}")
-            self.logger.debug(traceback.format_exc())
+            self.log_error(
+                msg=None, log_text=f"error stopping Communicator: {secure_format_exception(ex)}", log_except=True
+            )
 
         self.logger.debug(f"{self.my_info.fqcn}: CELL closed!")
 
@@ -857,28 +904,24 @@ class Cell(MessageReceiver, EndpointMonitor):
             return None
         return self._try_path(fqcn_path[:-1])
 
-    def _find_endpoint(self, target_fqcn: str) -> (str, Union[None, Endpoint]):
+    def _find_endpoint(self, target_fqcn: str, for_msg: Message) -> Tuple[str, Union[None, Endpoint]]:
         err = FQCN.validate(target_fqcn)
         if err:
-            self.logger.error(f"{self.my_info.fqcn}: invalid target FQCN '{target_fqcn}': {err}")
+            self.log_error(msg=None, log_text=f"invalid target FQCN '{target_fqcn}': {err}")
             return ReturnCode.INVALID_TARGET, None
 
         try:
-            ep = self._try_find_ep(target_fqcn)
+            ep = self._try_find_ep(target_fqcn, for_msg)
             if not ep:
                 return ReturnCode.TARGET_UNREACHABLE, None
             return "", ep
-        except Exception as ex:
-            self.logger.error(f"Error when finding {target_fqcn}: {ex}")
-            self.logger.debug(traceback.format_exc())
+        except:
+            self.log_error(msg=for_msg, log_text=f"Error when finding {target_fqcn}", log_except=True)
             return ReturnCode.TARGET_UNREACHABLE, None
 
-    def _try_find_ep(self, target_fqcn: str) -> Union[None, Endpoint]:
+    def _try_find_ep(self, target_fqcn: str, for_msg: Message) -> Union[None, Endpoint]:
         self.logger.debug(f"{self.my_info.fqcn}: finding path to {target_fqcn}")
         if target_fqcn == self.my_info.fqcn:
-            # sending request to myself? Not allowed!
-            # self.logger.error(f"{self.my_info.fqcn}: sending message to self is not allowed")
-            # return None
             return self.endpoint
 
         target_info = FqcnInfo(target_fqcn)
@@ -890,10 +933,10 @@ class Cell(MessageReceiver, EndpointMonitor):
 
         if same_family(self.my_info, target_info):
             if FQCN.is_parent(self.my_info.fqcn, target_fqcn):
-                self.logger.error(f"{self.my_info.fqcn}: backbone broken: no path to child {target_fqcn}")
+                self.log_error(msg=for_msg, log_text=f"backbone broken: no path to child {target_fqcn}")
                 return None
             elif FQCN.is_parent(target_fqcn, self.my_info.fqcn):
-                self.logger.error(f"{self.my_info.fqcn}: backbone broken: no path to parent {target_fqcn}")
+                self.log_error(f"backbone broken: no path to parent {target_fqcn}", for_msg)
 
             self.logger.debug(f"{self.my_info.fqcn}: find path in the same family")
             if FQCN.is_ancestor(self.my_info.fqcn, target_fqcn):
@@ -906,7 +949,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                 parent_fqcn = FQCN.get_parent(self.my_info.fqcn)
                 agent = self.agents.get(parent_fqcn)
                 if not agent:
-                    self.logger.error(f"{self.my_info.fqcn}: broken backbone - no path to parent {parent_fqcn}")
+                    self.log_error(f"broken backbone - no path to parent {parent_fqcn}", for_msg)
                     return None
                 return agent.endpoint
 
@@ -928,11 +971,11 @@ class Cell(MessageReceiver, EndpointMonitor):
             parent_fqcn = FQCN.get_parent(self.my_info.fqcn)
             agent = self.agents.get(parent_fqcn)
             if not agent:
-                self.logger.error(f"{self.my_info.fqcn}: broken backbone - no path to parent {parent_fqcn}")
+                self.log_error(f"broken backbone - no path to parent {parent_fqcn}", for_msg)
                 return None
             return agent.endpoint
 
-        self.logger.error(f"{self.my_info.fqcn}: cannot find path to {target_fqcn}")
+        self.log_error(f"cannot find path to {target_fqcn}", for_msg)
         return None
 
     def _send_to_endpoint(self, to_endpoint: Endpoint, message: Message) -> str:
@@ -947,7 +990,7 @@ class Cell(MessageReceiver, EndpointMonitor):
 
             if msg_size > self.max_msg_size:
                 err_text = f"message is too big ({msg_size} > {self.max_msg_size}"
-                self.logger.error(err_text)
+                self.log_error(err_text, message)
                 err = ReturnCode.MSG_TOO_BIG
             else:
                 self.communicator.send(to_endpoint, Cell.APP_ID, message)
@@ -956,8 +999,8 @@ class Cell(MessageReceiver, EndpointMonitor):
                 )
         except Exception as ex:
             err_text = f"Failed to send message to {to_endpoint.name}: {ex}"
-            self.logger.error(err_text)
-            self.logger.debug(traceback.format_exc())
+            self.log_error(err_text, message)
+            self.logger.debug(secure_format_traceback())
             err = ReturnCode.COMM_ERROR
         return err
 
@@ -970,12 +1013,12 @@ class Cell(MessageReceiver, EndpointMonitor):
 
         send_errs = {}
         reachable_targets = {}  # target fqcn => endpoint
-        for t in target_msgs.keys():
-            err, ep = self._find_endpoint(t)
+        for t, tm in target_msgs.items():
+            err, ep = self._find_endpoint(t, tm.message)
             if ep:
                 reachable_targets[t] = ep
             else:
-                self.logger.error(f"{self.my_info.fqcn}: cannot send to '{t}': {err}")
+                self.log_error(f"cannot send to '{t}': {err}", tm.message)
                 send_errs[t] = err
 
         for t, ep in reachable_targets.items():
@@ -1023,7 +1066,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                         req.set_header(MessageHeaderKey.CONN_URL, conn_url)
             err = self._send_to_endpoint(ep, req)
             if err:
-                self.logger.error(f"{self.my_info.fqcn}: failed to send to endpoint {ep.name}: {err}")
+                self.log_error(f"failed to send to endpoint {ep.name}: {err}", req)
             else:
                 self.sent_msg_counter_pool.increment(category=self._stats_category(req), counter_name=_CounterName.SENT)
             send_errs[t] = err
@@ -1043,13 +1086,17 @@ class Cell(MessageReceiver, EndpointMonitor):
             target_msgs[t] = TargetMessage(t, channel, topic, message)
         return self._send_target_messages(target_msgs)
 
-    def send_request(self, channel: str, topic: str, target: str, request: Message, timeout=None) -> Message:
+    def send_request(
+        self, channel: str, topic: str, target: str, request: Message, timeout=None, optional=False
+    ) -> Message:
         self.logger.debug(f"{self.my_info.fqcn}: sending request {channel}:{topic} to {target}")
-        result = self.broadcast_request(channel, topic, [target], request, timeout)
+        result = self.broadcast_request(channel, topic, [target], request, timeout, optional)
         assert isinstance(result, dict)
         return result.get(target)
 
-    def broadcast_multi_requests(self, target_msgs: Dict[str, TargetMessage], timeout=None) -> Dict[str, Message]:
+    def broadcast_multi_requests(
+        self, target_msgs: Dict[str, TargetMessage], timeout=None, optional=False
+    ) -> Dict[str, Message]:
         """
         This is the core of the request/response handling. Be extremely careful when making any changes!
         To maximize the communication efficiency, we avoid the use of locks.
@@ -1072,6 +1119,7 @@ class Cell(MessageReceiver, EndpointMonitor):
         Args:
             target_msgs: messages to be sent
             timeout: timeout value
+            optional: whether the message is optional
 
         Returns: a dict of: target name => reply message
 
@@ -1094,6 +1142,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                         MessageHeaderKey.REQ_ID: waiter.id,
                         MessageHeaderKey.REPLY_EXPECTED: True,
                         MessageHeaderKey.WAIT_UNTIL: time.time() + timeout,
+                        MessageHeaderKey.OPTIONAL: optional,
                     }
                 )
             send_errs = self._send_target_messages(target_msgs)
@@ -1104,10 +1153,18 @@ class Cell(MessageReceiver, EndpointMonitor):
             # if waiter.received_replies:
             #     self.logger.info(f"{self.my_info.fqcn}: the network is extremely fast - response already received!")
 
+            topics = []
+            for_msg = None
             for t, err in send_errs.items():
                 if not err:
                     send_count += 1
                     result[t] = timeout_reply
+                    tm = target_msgs[t]
+                    topic = tm.message.get_header(MessageHeaderKey.TOPIC, "?")
+                    if topic not in topics:
+                        topics.append(topic)
+                    if not for_msg:
+                        for_msg = tm.message
                 else:
                     result[t] = make_reply(rc=err)
                     waiter.reply_time[t] = now
@@ -1122,7 +1179,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                 self.logger.debug(f"{self.my_info.fqcn}: set up waiter {waiter.id} to wait for {timeout} secs")
                 if not waiter.wait(timeout=timeout):
                     # timeout
-                    self.logger.error(f"{self.my_info.fqcn}: timeout on REQ {waiter.id} after {timeout} secs")
+                    self.log_error(f"timeout on Request {waiter.id} for {topics} after {timeout} secs", for_msg)
                     with self.stats_lock:
                         self.num_timeout_reqs += 1
         except Exception as ex:
@@ -1138,7 +1195,7 @@ class Cell(MessageReceiver, EndpointMonitor):
         return result
 
     def broadcast_request(
-        self, channel: str, topic: str, targets: Union[str, List[str]], request: Message, timeout=None
+        self, channel: str, topic: str, targets: Union[str, List[str]], request: Message, timeout=None, optional=False
     ) -> Dict[str, Message]:
         """
         Send a message over a channel to specified destination cell(s), and wait for reply
@@ -1149,6 +1206,7 @@ class Cell(MessageReceiver, EndpointMonitor):
             targets: FQCN of the destination cell(s)
             request: message to be sent
             timeout: how long to wait for replies
+            optional: whether the message is optional
 
         Returns: a dict of: cell_id => reply message
 
@@ -1158,10 +1216,10 @@ class Cell(MessageReceiver, EndpointMonitor):
         target_msgs = {}
         for t in targets:
             target_msgs[t] = TargetMessage(t, channel, topic, request)
-        return self.broadcast_multi_requests(target_msgs, timeout)
+        return self.broadcast_multi_requests(target_msgs, timeout, optional=optional)
 
     def fire_and_forget(
-        self, channel: str, topic: str, targets: Union[str, List[str]], message: Message
+        self, channel: str, topic: str, targets: Union[str, List[str]], message: Message, optional=False
     ) -> Dict[str, str]:
         """
         Send a message over a channel to specified destination cell(s), and do not wait for replies.
@@ -1171,17 +1229,19 @@ class Cell(MessageReceiver, EndpointMonitor):
             topic: topic of the message
             targets: one or more destination cell IDs. None means all.
             message: message to be sent
+            optional: whether the message is optional
 
         Returns: None
 
         """
-        message.add_headers({MessageHeaderKey.REPLY_EXPECTED: False})
+        message.add_headers({MessageHeaderKey.REPLY_EXPECTED: False, MessageHeaderKey.OPTIONAL: optional})
         return self._send_to_targets(channel, topic, targets, message)
 
-    def queue_message(self, channel: str, topic: str, targets: Union[str, List[str]], message: Message):
+    def queue_message(self, channel: str, topic: str, targets: Union[str, List[str]], message: Message, optional=False):
         if isinstance(targets, str):
             targets = [targets]
 
+        message.set_header(MessageHeaderKey.OPTIONAL, optional)
         with self.bulk_lock:
             for t in targets:
                 sender = self.bulk_senders.get(t)
@@ -1194,7 +1254,7 @@ class Cell(MessageReceiver, EndpointMonitor):
     def _peer_goodbye(self, request: Message):
         peer_ep = request.get_prop(MessagePropKey.ENDPOINT)
         if not peer_ep:
-            self.logger.error(f"{self.my_info.fqcn}: no endpoint prop in message")
+            self.log_error("no endpoint prop in message", request)
             return
 
         assert isinstance(peer_ep, Endpoint)
@@ -1248,29 +1308,26 @@ class Cell(MessageReceiver, EndpointMonitor):
             self.logger.debug(f"{self.get_fqcn()}: bulk item: {req.headers}")
             self._process_request(origin=origin, message=req)
 
-    def fire_multi_requests_and_forget(self, target_msgs: Dict[str, TargetMessage]) -> Dict[str, str]:
+    def fire_multi_requests_and_forget(self, target_msgs: Dict[str, TargetMessage], optional=False) -> Dict[str, str]:
         for _, tm in target_msgs.items():
             request = tm.message
-            request.add_headers(
-                {
-                    MessageHeaderKey.REPLY_EXPECTED: False,
-                }
-            )
+            request.add_headers({MessageHeaderKey.REPLY_EXPECTED: False, MessageHeaderKey.OPTIONAL: optional})
         return self._send_target_messages(target_msgs)
 
-    def send_reply(self, reply: Message, to_cell: str, for_req_ids: List[str]) -> str:
-        """
-        Send a reply to respond to one or more requests.
+    def send_reply(self, reply: Message, to_cell: str, for_req_ids: List[str], optional=False) -> str:
+        """Send a reply to respond to one or more requests.
+
         This is useful if the request receiver needs to delay its reply as follows:
-        - When a request is received, if it's not ready to reply (e.g. waiting for additional requests from
-         other cells), simply remember the REQ_ID and returns None;
-        - The receiver may queue up multiple such requests
-        - When ready, call this method to send the reply for all the queued requests
+            - When a request is received, if it's not ready to reply (e.g. waiting for additional requests from
+              other cells), simply remember the REQ_ID and returns None;
+            - The receiver may queue up multiple such requests
+            - When ready, call this method to send the reply for all the queued requests
 
         Args:
-            reply:
-            to_cell:
-            for_req_ids:
+            reply: the reply message
+            to_cell: the target cell
+            for_req_ids: the list of req IDs that the reply is for
+            optional: whether the message is optional
 
         Returns: an error message if any
 
@@ -1283,10 +1340,11 @@ class Cell(MessageReceiver, EndpointMonitor):
                 MessageHeaderKey.DESTINATION: to_cell,
                 MessageHeaderKey.REQ_ID: for_req_ids,
                 MessageHeaderKey.MSG_TYPE: MessageType.REPLY,
+                MessageHeaderKey.OPTIONAL: optional,
             }
         )
 
-        err, ep = self._find_endpoint(to_cell)
+        err, ep = self._find_endpoint(to_cell, reply)
         if err:
             return err
         reply.set_header(MessageHeaderKey.TO_CELL, ep.name)
@@ -1307,8 +1365,9 @@ class Cell(MessageReceiver, EndpointMonitor):
         except AbortRun:
             return make_reply(ReturnCode.ABORT_RUN)
         except Exception as ex:
-            self.logger.error(f"{self.my_info.fqcn}: exception from CB {cb.__name__}: {ex}")
-            self.logger.debug(traceback.format_exc())
+            self.log_error(
+                f"exception from CB {cb.__name__}: {secure_format_exception(ex)}", msg=message, log_except=True
+            )
             return make_reply(ReturnCode.PROCESS_EXCEPTION)
 
     def process_message(self, endpoint: Endpoint, connection: Connection, app_id: int, message: Message):
@@ -1316,8 +1375,9 @@ class Cell(MessageReceiver, EndpointMonitor):
         try:
             self._process_received_msg(endpoint, connection, message)
         except Exception as ex:
-            self.logger.error(f"Error processing received message: {ex}")
-            self.logger.debug(traceback.format_exc())
+            self.log_error(
+                f"Error processing received message: {secure_format_exception(ex)}", msg=message, log_except=True
+            )
 
     def _process_request(self, origin: str, message: Message) -> Union[None, Message]:
         self.logger.debug(f"{self.my_info.fqcn}: processing incoming request")
@@ -1327,7 +1387,7 @@ class Cell(MessageReceiver, EndpointMonitor):
         topic = message.get_header(MessageHeaderKey.TOPIC, "")
         _cb = self.req_reg.find(channel, topic)
         if not _cb:
-            self.logger.error(f"{self.my_info.fqcn}: no callback for request ({topic}@{channel}) from cell '{origin}'")
+            self.log_error(f"no callback for request ({topic}@{channel}) from cell '{origin}'", message)
             return make_reply(ReturnCode.PROCESS_EXCEPTION, error="no callback")
 
         # invoke incoming request filters
@@ -1353,9 +1413,10 @@ class Cell(MessageReceiver, EndpointMonitor):
             return None
 
         if not isinstance(reply, Message):
-            self.logger.error(
-                f"{self.my_info.fqcn}: bad result from request CB for topic {topic} on channel {channel}: "
-                f"expect Message but got {type(reply)}"
+            self.log_error(
+                f"bad result from request CB for topic {topic} on channel {channel}: "
+                f"expect Message but got {type(reply)}",
+                msg=message,
             )
             reply = make_reply(ReturnCode.PROCESS_EXCEPTION, error="bad cb result")
         return reply
@@ -1366,16 +1427,14 @@ class Cell(MessageReceiver, EndpointMonitor):
             route = []
             message.set_header(MessageHeaderKey.ROUTE, route)
         if not isinstance(route, list):
-            self.logger.error(
-                format_log_message(self.my_info.fqcn, message, "bad route header: expect list but got {type(route)}")
-            )
+            self.log_error(f"bad route header: expect list but got {type(route)}", msg=message)
         else:
             route.append((self.my_info.fqcn, time.time()))
 
     def _forward(self, endpoint: Endpoint, origin: str, destination: str, msg_type: str, message: Message):
         # not for me - need to forward it
         self.logger.debug(f"{self.my_info.fqcn}: forwarding for {origin} to {destination}")
-        err, ep = self._find_endpoint(destination)
+        err, ep = self._find_endpoint(destination, message)
         if ep:
             self.logger.debug(f"{self.my_info.fqcn}: found next leg {ep.name}")
             message.add_headers({MessageHeaderKey.FROM_CELL: self.my_info.fqcn, MessageHeaderKey.TO_CELL: ep.name})
@@ -1385,12 +1444,10 @@ class Cell(MessageReceiver, EndpointMonitor):
                 self.logger.debug(f"{self.my_info.fqcn}: forwarded successfully!")
                 return
             else:
-                self.logger.error(
-                    format_log_message(self.my_info.fqcn, message, f"failed to forward {msg_type}: {err}")
-                )
+                self.log_error(f"failed to forward {msg_type}: {err}", msg=message)
         else:
             # cannot find next leg endpoint
-            self.logger.error(format_log_message(self.my_info.fqcn, message, f"cannot forward {msg_type}: no path"))
+            self.log_error(f"cannot forward {msg_type}: no path", message)
 
         if msg_type == MessageType.REQ:
             reply_expected = message.get_header(MessageHeaderKey.REPLY_EXPECTED, False)
@@ -1424,7 +1481,7 @@ class Cell(MessageReceiver, EndpointMonitor):
             self.logger.debug(f"{self.my_info.fqcn}: sent RETURN message back to {endpoint.name}")
         else:
             # msg_type is either RETURN or REPLY - drop it.
-            self.logger.warning(format_log_message(self.my_info.fqcn, message, "dropped forwarded message"))
+            self.logger.debug(format_log_message(self.my_info.fqcn, message, "dropped forwarded message"))
 
     @staticmethod
     def _stats_category(message: Message):
@@ -1453,7 +1510,7 @@ class Cell(MessageReceiver, EndpointMonitor):
 
         req_destination = origin
         if msg_type == MessageType.RETURN:
-            self.logger.error(f"{self.my_info.fqcn}: got a RETURN!")
+            self.log_error("message is returned", message)
             self.sent_msg_counter_pool.increment(
                 category=self._stats_category(message), counter_name=_CounterName.RETURN
             )
@@ -1482,12 +1539,11 @@ class Cell(MessageReceiver, EndpointMonitor):
             if waiter:
                 assert isinstance(waiter, _Waiter)
                 if req_destination not in waiter.targets:
-                    self.logger.error(
-                        format_log_message(
-                            self.my_info.fqcn, message, f"unexpected reply for {rid} from {req_destination}"
-                        )
+                    self.log_error(
+                        f"unexpected reply for {rid} from {req_destination}"
+                        f"req_destination='{req_destination}', expecting={waiter.targets}",
+                        message,
                     )
-                    self.logger.error(f"req_destination='{req_destination}', expecting={waiter.targets}")
                     return
                 waiter.received_replies[req_destination] = message
                 waiter.reply_time[req_destination] = now
@@ -1520,9 +1576,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                         )
                     )
             else:
-                self.logger.error(
-                    format_log_message(self.my_info.fqcn, message, f"no waiter for req {rid} - the reply is too late")
-                )
+                self.log_error(f"no waiter for req {rid} - the reply is too late", None)
                 self.sent_msg_counter_pool.increment(
                     category=self._stats_category(message), counter_name=_CounterName.LATE
                 )
@@ -1656,6 +1710,8 @@ class Cell(MessageReceiver, EndpointMonitor):
                 )
                 return
 
+            is_optional = message.get_header(MessageHeaderKey.OPTIONAL, False)
+            reply.set_header(MessageHeaderKey.OPTIONAL, is_optional)
             reply_expected = message.get_header(MessageHeaderKey.REPLY_EXPECTED, False)
             if not reply_expected:
                 # this is fire and forget
@@ -1718,7 +1774,7 @@ class Cell(MessageReceiver, EndpointMonitor):
         self.logger.debug(f"Reply message: {reply.headers}")
         err = self._send_to_endpoint(endpoint, reply)
         if err:
-            self.logger.error(f"{self.my_info.fqcn}: error sending reply back to {endpoint.name}: {err}")
+            self.log_error(f"error sending reply back to {endpoint.name}: {err}", reply)
             self.received_msg_counter_pool.increment(category=self._stats_category(reply), counter_name=err)
         else:
             self.received_msg_counter_pool.increment(
@@ -1759,8 +1815,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                     self.logger.debug(f"{self.my_info.fqcn}: calling cell_connected_cb")
                     self.cell_connected_cb(agent, *self.cell_connected_cb_args, **self.cell_connected_cb_kwargs)
                 except Exception as ex:
-                    self.logger.error(f"{self.my_info.fqcn}: exception in cell_connected_cb: {ex}")
-                    self.logger.debug(traceback.format_exc())
+                    self.log_error(f"exception in cell_connected_cb: {ex}", None, log_except=True)
 
         elif endpoint.state in [EndpointState.CLOSING, EndpointState.DISCONNECTED, EndpointState.IDLE]:
             # remove this agent
@@ -1774,10 +1829,9 @@ class Cell(MessageReceiver, EndpointMonitor):
                         agent, *self.cell_disconnected_cb_args, **self.cell_disconnected_cb_kwargs
                     )
                 except Exception as ex:
-                    self.logger.error(f"{self.my_info.fqcn}: exception in cell_disconnected_cb: {ex}")
-                    self.logger.debug(traceback.format_exc())
+                    self.log_error(f"exception in cell_disconnected_cb: {ex}", None, log_except=True)
 
-    def get_sub_cell_names(self) -> (List[str], List[str]):
+    def get_sub_cell_names(self) -> Tuple[List[str], List[str]]:
         """
         Get cell FQCNs of all subs, which are children or top-level client cells (if my cell is server).
 

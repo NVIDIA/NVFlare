@@ -1,18 +1,18 @@
 # Federated Learning for Random Forest based on XGBoost 
 
-## Introduction to XGBoost and HIGGS Data
+## Introduction to Libraries and HIGGS Data
 
-### XGBoost
-These examples show how to use [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) on tabular data applications.
-It illustrates the [Random Forest](https://xgboost.readthedocs.io/en/stable/tutorials/rf.html) algorithm using [XGBoost](https://github.com/dmlc/xgboost),
+### Libraries
+This example show how to use [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) on tabular data applications.
+It illustrates the [Random Forest](https://xgboost.readthedocs.io/en/stable/tutorials/rf.html) functionality using [XGBoost] (https://github.com/dmlc/xgboost) library,
 which is an optimized distributed gradient boosting library covering random forest.
 
-### HIGGS
-The examples illustrate a binary classification task based on [HIGGS dataset](https://archive.ics.uci.edu/ml/datasets/HIGGS).
+### Dataset
+This example illustrate a binary classification task based on [HIGGS dataset](https://archive.ics.uci.edu/ml/datasets/HIGGS).
 This dataset contains 11 million instances, each with 28 attributes.
 
 ## Federated Training of Random Forest using XGBoost
-In this example, we illustrate the use of NVFlare to carry out *horizontal* federated learning with tree-based collaboration.
+In this example, we illustrate the use of NVFlare to carry out *horizontal* federated learning with tree-based collaboration - forming a random forest.
 
 ### Horizontal Federated Learning
 Under horizontal setting, each participant / client joining the federated learning will have part of the whole data / instances / examples/ records, while each instance has all the features.
@@ -31,12 +31,11 @@ Random forest training with multiple clients can be achieved in two steps:
 No further training will be performed, `num_boost_round` should be 1 to align with the basic setting of random forest.
 
 
-## HIGGS Data Preparation
+## Data Preparation
 ### Download and Store Data
-To run the examples, we first download the dataset from the HIGGS link above, which is a single `.csv` file.
+To run the examples, we first download the dataset from the HIGGS link above, which is a single `HIGGS.csv` file.
 By default, we assume the dataset is downloaded, uncompressed, and stored in `DATASET_ROOT/HIGGS.csv`.
 
-> **_NOTE:_** make sure to modify the corresponding `DATASET_ROOT` inside `data_split_gen.sh`.
 
 ### Data Split
 Since HIGGS dataset is already randomly recorded,
@@ -58,8 +57,9 @@ If the number of clients is large (e.g. 20), exponential split will be too aggre
 
 Data splits used in this example can be generated with
 ```
-bash data_split_gen.sh
+bash data_split_gen.sh DATASET_ROOT
 ```
+> **_NOTE:_** make sure to put the correct path for `DATASET_ROOT`.
 
 This will generate data splits for two client sizes: 5 and 20, and 3 split conditions: uniform, square, and exponential.
 If you want to customize for your experiments, please check `utils/prepare_data_split.py`.

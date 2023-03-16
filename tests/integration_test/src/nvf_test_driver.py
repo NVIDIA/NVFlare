@@ -439,10 +439,11 @@ class NVFTestDriver:
             self.action_handlers[command].handle(command_args=args, admin_controller=self, admin_api=admin_api)
 
     def finalize(self):
-        if self.job_id:
-            self.super_admin_api.abort_job(self.job_id)
-        for k in self.admin_apis:
-            self.admin_apis[k].close()
-        self.super_admin_api.shutdown(target_type=TargetType.ALL)
-        self.super_admin_api.close()
+        if self.super_admin_api:
+            if self.job_id:
+                self.super_admin_api.abort_job(self.job_id)
+            for k in self.admin_apis:
+                self.admin_apis[k].close()
+            self.super_admin_api.shutdown(target_type=TargetType.ALL)
+            self.super_admin_api.close()
         time.sleep(1)

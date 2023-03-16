@@ -20,7 +20,11 @@
       "id": "aggregator",
       "path": "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",
       "args": {
-        "expected_data_kind": "WEIGHTS"
+        "expected_data_kind": "WEIGHTS",
+        "aggregation_weights": {
+          "site-1": 1.0,
+          "site-2": 1.0
+        }
       }
     }
   ],

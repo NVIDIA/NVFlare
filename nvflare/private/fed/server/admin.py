@@ -253,7 +253,7 @@ class FedAdminServer(AdminServer):
                 result[r.client_token] = r.reply
         return result
 
-    def send_requests(self, requests: dict, timeout_secs=2.0) -> [ClientReply]:
+    def send_requests(self, requests: dict, timeout_secs=2.0, optional=False) -> [ClientReply]:
         """Send requests to clients.
 
         NOTE::
@@ -265,13 +265,19 @@ class FedAdminServer(AdminServer):
         Args:
             requests: A dict of requests: {client token: request or list of requests}
             timeout_secs: how long to wait for reply before timeout
+            optional: whether the requests are optional
 
         Returns:
             A list of ClientReply
         """
 
         return send_requests(
-            cell=self.cell, command="admin", requests=requests, clients=self.clients, timeout_secs=timeout_secs
+            cell=self.cell,
+            command="admin",
+            requests=requests,
+            clients=self.clients,
+            timeout_secs=timeout_secs,
+            optional=optional,
         )
 
     def stop(self):

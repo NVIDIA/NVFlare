@@ -7,8 +7,8 @@ NVIDIA FLARE
    :hidden:
 
    flare_overview
+   whats_new
    key_features
-   quickstart
    getting_started
    example_applications_algorithms
    real_world_fl
@@ -16,8 +16,10 @@ NVIDIA FLARE
    best_practices
    programming_guide
    faq
+   publications_and_talks
    contributing
    API <apidocs/modules>
+   glossary
 
 NVIDIA FLARE (NVIDIA Federated Learning Application Runtime Environment) is a domain-agnostic, open-source, extensible SDK that allows researchers and data scientists to adaptexisting ML/DL workflows (PyTorch, RAPIDS, Nemo, TensorFlow) to a federated paradigm; and enables platform developers to build a secure, privacy preserving offering for a distributed multi-party collaboration.
 

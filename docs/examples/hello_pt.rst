@@ -77,7 +77,7 @@ architecture are modified from
 
 Let's see what an extremely simplified CIFAR10 training looks like:
 
-.. literalinclude:: ../../examples/hello-world/hello-pt/app/custom/simple_network.py
+.. literalinclude:: ../../examples/hello-world/hello-pt/jobs/hello-pt/app/custom/simple_network.py
    :language: python
    :caption: simple_network.py
 
@@ -98,7 +98,7 @@ You can think of all of this code as part of your local training loop, as every 
 Since you will encapsulate every training-related step in the ``Cifar10Trainer`` class,
 let's put this preparation stage into the ``__init__`` method:
 
-.. literalinclude:: ../../examples/hello-world/hello-pt/app/custom/cifar10trainer.py
+.. literalinclude:: ../../examples/hello-world/hello-pt/jobs/hello-pt/app/custom/cifar10trainer.py
    :language: python
 
 
@@ -108,9 +108,9 @@ Local Train
 Now that you have your network and dataset setup, in the ``Cifar10Trainer`` class.
 Let's also implement a local training loop in a method called ``local_train``:
 
-.. literalinclude:: ../../examples/hello-world/hello-pt/app/custom/cifar10trainer.py
+.. literalinclude:: ../../examples/hello-world/hello-pt/jobs/hello-pt/app/custom/cifar10trainer.py
    :language: python
-   :pyobject: Cifar10Trainer.local_train
+   :pyobject: Cifar10Trainer._local_train
 
 
 .. note::
@@ -138,7 +138,7 @@ We can then call our local train inside the ``execute`` method.
 
 Take a look at the following code:
 
-.. literalinclude:: ../../examples/hello-world/hello-pt/app/custom/cifar10trainer.py
+.. literalinclude:: ../../examples/hello-world/hello-pt/jobs/hello-pt/app/custom/cifar10trainer.py
    :language: python
    :pyobject: Cifar10Trainer.execute
 
@@ -181,7 +181,7 @@ Application Configuration
 
 Inside the config folder there are two files, ``config_fed_client.json`` and ``config_fed_server.json``.
 
-.. literalinclude:: ../../examples/hello-world/hello-pt/app/config/config_fed_client.json
+.. literalinclude:: ../../examples/hello-world/hello-pt/jobs/hello-pt/app/config/config_fed_client.json
    :language: json
    :linenos:
    :caption: config_fed_client.json
@@ -199,7 +199,7 @@ The "validate" task for ``Cifar10Validator`` and the "submit_model" task are use
 so we will be addressing that in a later example.
 
 
-.. literalinclude:: ../../examples/hello-world/hello-pt/app/config/config_fed_server.json
+.. literalinclude:: ../../examples/hello-world/hello-pt/jobs/hello-pt/app/config/config_fed_server.json
    :language: json
    :linenos:
    :caption: config_fed_server.json
@@ -233,3 +233,10 @@ You've successfully built and run your first federated learning system.
 
 The full source code for this exercise can be found in
 `examples/hello-pt <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-pt/>`_.
+
+Previous Versions of Hello PyTorch
+----------------------------------
+
+   - `hello-pt for 2.0 <https://github.com/NVIDIA/NVFlare/tree/2.0/examples/hello-pt>`_
+   - `hello-pt for 2.1 <https://github.com/NVIDIA/NVFlare/tree/2.1/examples/hello-pt>`_
+   - `hello-pt for 2.2 <https://github.com/NVIDIA/NVFlare/tree/2.2/examples/hello-pt>`_

@@ -167,7 +167,12 @@ class ServerRunner(FLComponent):
 
                     # ask all clients to end run!
                     self.engine.send_aux_request(
-                        targets=None, topic=ReservedTopic.END_RUN, request=Shareable(), timeout=0.0, fl_ctx=fl_ctx
+                        targets=None,
+                        topic=ReservedTopic.END_RUN,
+                        request=Shareable(),
+                        timeout=0.0,
+                        fl_ctx=fl_ctx,
+                        optional=True,
                     )
 
                     self.fire_event(EventType.END_RUN, fl_ctx)
@@ -297,7 +302,7 @@ class ServerRunner(FLComponent):
             )
             return self._task_try_again()
 
-    def _try_to_get_task(self, client, fl_ctx, timeout=1.0, retry_interval=0.005):
+    def _try_to_get_task(self, client, fl_ctx, timeout=None, retry_interval=0.005):
         start = time.time()
         while True:
             with self.wf_lock:
@@ -332,10 +337,10 @@ class ServerRunner(FLComponent):
 
                     return task_name, task_id, task_data
 
-                if timeout == 0 or time.time() - start > timeout:
-                    break
+            if timeout is None or time.time() - start > timeout:
+                break
 
-                time.sleep(retry_interval)
+            time.sleep(retry_interval)
 
         # ask client to retry
         return "", "", None

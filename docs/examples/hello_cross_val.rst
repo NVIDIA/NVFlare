@@ -115,7 +115,7 @@ Application Configuration
 
 Inside the config folder there are two files, ``config_fed_client.json`` and ``config_fed_server.json``.
 
-.. literalinclude:: ../../examples/hello-world/hello-numpy-cross-val/app/config/config_fed_server.json
+.. literalinclude:: ../../examples/hello-world/hello-numpy-cross-val/jobs/hello-numpy-cross-val/app/config/config_fed_server.json
    :language: json
    :linenos:
    :caption: config_fed_server.json
@@ -126,7 +126,7 @@ The components "model_locator" and "formatter" have been added to work with the 
 and the rest is the same as in :doc:`Hello Scatter and Gather <hello_scatter_and_gather>`.
 
 
-.. literalinclude:: ../../examples/hello-world/hello-numpy-cross-val/app/config/config_fed_client.json
+.. literalinclude:: ../../examples/hello-world/hello-numpy-cross-val/jobs/hello-numpy-cross-val/app/config/config_fed_client.json
    :language: json
    :linenos:
    :caption: config_fed_client.json
@@ -178,3 +178,10 @@ You've successfully run your numpy federated learning system with cross site val
 
 The full source code for this exercise can be found in
 `examples/hello-numpy-cross-val <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-numpy-cross-val/>`_.
+
+Previous Versions of Hello Cross-Site Validation
+------------------------------------------------
+
+  - `hello-numpy-cross-val for 2.0 <https://github.com/NVIDIA/NVFlare/tree/2.0/examples/hello-numpy-cross-val>`_
+  - `hello-numpy-cross-val for 2.1 <https://github.com/NVIDIA/NVFlare/tree/2.1/examples/hello-numpy-cross-val>`_
+  - `hello-numpy-cross-val for 2.2 <https://github.com/NVIDIA/NVFlare/tree/2.2/examples/hello-numpy-cross-val>`_
