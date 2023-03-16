@@ -45,14 +45,16 @@
           "args": {
             "lr": 1.0,
             "momentum": 0.6
-          }
+          },
+          "config_type": "dict"
         },
         "lr_scheduler_args": {
           "path": "torch.optim.lr_scheduler.CosineAnnealingLR",
           "args": {
             "T_max": "{num_rounds}",
             "eta_min": 0.9
-          }
+          },
+          "config_type": "dict"
         }
       }
     },
