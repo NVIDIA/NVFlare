@@ -1301,7 +1301,7 @@ class Cell(MessageReceiver, EndpointMonitor):
         with self.bulk_lock:
             if self.bulk_checker is None:
                 self.logger.info(f"{self.my_info.fqcn}: starting bulk_checker")
-                self.bulk_checker = threading.Thread(target=self._check_bulk)
+                self.bulk_checker = threading.Thread(target=self._check_bulk, name="check_bulk_msg")
                 self.bulk_checker.start()
                 self.logger.info(f"{self.my_info.fqcn}: started bulk_checker")
             for t in targets:
@@ -1336,7 +1336,7 @@ class Cell(MessageReceiver, EndpointMonitor):
         with self.bulk_msg_lock:
             if self.bulk_processor is None:
                 self.logger.debug(f"{self.my_info.fqcn}: starting bulk message processor")
-                self.bulk_processor = threading.Thread(target=self._process_bulk_messages)
+                self.bulk_processor = threading.Thread(target=self._process_bulk_messages, name="process_bulk_msg")
                 self.bulk_processor.start()
                 self.logger.debug(f"{self.my_info.fqcn}: started bulk message processor")
             self.bulk_messages.append(request)
