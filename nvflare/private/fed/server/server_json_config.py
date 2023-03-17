@@ -82,6 +82,10 @@ class ServerJsonConfigurator(FedJsonConfigurator):
         # workflows to be executed
         self.workflows = []
 
+        # target workflow to be executed
+        # once specified, only specified workflow identified by workflow Id will be executed
+        self.target_wf_id = None
+
     def process_config_element(self, config_ctx: ConfigContext, node: Node):
         FedJsonConfigurator.process_config_element(self, config_ctx, node)
 
@@ -106,6 +110,10 @@ class ServerJsonConfigurator(FedJsonConfigurator):
             if element <= 0:
                 raise ConfigError('"task_request_interval" must > 0, but got {}'.format(element))
 
+            return
+
+        if path == "target_workflow_id":
+            self.target_wf_id = element
             return
 
         if re.search(r"^workflows\.#[0-9]+$", path):
@@ -159,6 +167,7 @@ class ServerJsonConfigurator(FedJsonConfigurator):
             task_result_filters=self.result_filter_table,
             components=self.components,
             handlers=self.handlers,
+            target_wf_id=self.target_wf_id,
         )
 
         ConfigService.initialize(

@@ -14,6 +14,7 @@
 
 import threading
 import time
+from typing import Dict, List, Optional
 
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
@@ -38,8 +39,9 @@ class ServerRunnerConfig(object):
         workflows: [],
         task_data_filters: dict,
         task_result_filters: dict,
-        handlers=None,
-        components=None,
+        handlers: Optional[List] = None,
+        components: Optional[Dict] = None,
+        target_wf_id: Optional[str] = None,
     ):
         """Configuration for ServerRunner.
 
@@ -51,6 +53,7 @@ class ServerRunnerConfig(object):
             task_result_filters (dict): A dict of {task_name: list of filters apply to result (post-process)}
             handlers (list, optional):  A list of event handlers
             components (dict, optional):  A dict of extra python objects {id: object}
+            target_wf_id ( str, Optional) : workflow Id
         """
         self.heartbeat_timeout = heartbeat_timeout
         self.task_request_interval = task_request_interval
@@ -59,6 +62,7 @@ class ServerRunnerConfig(object):
         self.task_result_filters = task_result_filters
         self.handlers = handlers
         self.components = components
+        self.target_wf_id = target_wf_id
 
     def add_component(self, comp_id: str, component: object):
         if not isinstance(comp_id, str):
@@ -83,7 +87,7 @@ class ServerRunner(FLComponent):
         """
         FLComponent.__init__(self)
         self.job_id = job_id
-        self.config = config
+        self.config: ServerRunnerConfig = config
         self.engine = engine
         self.abort_signal = Signal()
         self.wf_lock = threading.Lock()
@@ -92,56 +96,76 @@ class ServerRunner(FLComponent):
         self.status = "init"
         self.turn_to_cold = False
 
+    def _exec_one_workflow(self, wf):
+        try:
+            with self.engine.new_context() as fl_ctx:
+                self.log_info(fl_ctx, "\n\n starting workflow {} ({}) ...\n\n".format(wf.id, type(wf.responder)))
+
+                wf.responder.initialize_run(fl_ctx)
+
+                self.log_info(fl_ctx, "Workflow {} ({}) started".format(wf.id, type(wf.responder)))
+                fl_ctx.set_prop(FLContextKey.WORKFLOW, wf.id, sticky=True)
+                self.log_debug(fl_ctx, "firing event EventType.START_WORKFLOW")
+                self.fire_event(EventType.START_WORKFLOW, fl_ctx)
+
+                # use the wf_lock to ensure state integrity between workflow change and message processing
+                with self.wf_lock:
+                    # we only set self.current_wf to open for business after successful initialize_run!
+                    self.current_wf = wf
+
+            with self.engine.new_context() as fl_ctx:
+                wf.responder.control_flow(self.abort_signal, fl_ctx)
+        except BaseException as e:
+            with self.engine.new_context() as fl_ctx:
+                self.log_exception(fl_ctx, "Exception in workflow {}: {}".format(wf.id, secure_format_exception(e)))
+            self.system_panic("Exception in workflow {}: {}".format(wf.id, secure_format_exception(e)), fl_ctx)
+        finally:
+            with self.engine.new_context() as fl_ctx:
+                # do not execute finalize_run() until the wf_lock is acquired
+                with self.wf_lock:
+                    # unset current_wf to prevent message processing
+                    # then we can release the lock - no need to delay message processing
+                    # during finalization!
+                    # Note: WF finalization may take time since it needs to wait for
+                    # the job monitor to join.
+                    self.current_wf = None
+
+                self.log_info(fl_ctx, f"Workflow: {wf.id} finalizing ...\n")
+                try:
+                    wf.responder.finalize_run(fl_ctx)
+                except BaseException as e:
+                    self.log_exception(
+                        fl_ctx, "Error finalizing workflow {}: {}".format(wf.id, secure_format_exception(e))
+                    )
+
+                self.log_debug(fl_ctx, "firing event EventType.END_WORKFLOW")
+                self.fire_event(EventType.END_WORKFLOW, fl_ctx)
+
+    def _get_target_workflow(self):
+        wf_id = self.config.target_wf_id
+        target_wf = None
+        if wf_id is not None:
+            target_wfs = [wf for wf in self.config.workflows if wf.id == wf_id]
+            if len(target_wfs) > 0:
+                target_wf = target_wfs[0]
+            else:
+                raise ValueError(f"target_workflow_id:{wf_id} is not defined, please check the workflow definitions")
+
+        return target_wf
+
     def _execute_run(self):
-        while self.current_wf_index < len(self.config.workflows):
-            wf = self.config.workflows[self.current_wf_index]
-            try:
-                with self.engine.new_context() as fl_ctx:
-                    self.log_info(fl_ctx, "starting workflow {} ({}) ...".format(wf.id, type(wf.responder)))
-
-                    wf.responder.initialize_run(fl_ctx)
-
-                    self.log_info(fl_ctx, "Workflow {} ({}) started".format(wf.id, type(wf.responder)))
-                    fl_ctx.set_prop(FLContextKey.WORKFLOW, wf.id, sticky=True)
-                    self.log_debug(fl_ctx, "firing event EventType.START_WORKFLOW")
-                    self.fire_event(EventType.START_WORKFLOW, fl_ctx)
-
-                    # use the wf_lock to ensure state integrity between workflow change and message processing
-                    with self.wf_lock:
-                        # we only set self.current_wf to open for business after successful initialize_run!
-                        self.current_wf = wf
-
-                with self.engine.new_context() as fl_ctx:
-                    wf.responder.control_flow(self.abort_signal, fl_ctx)
-            except BaseException as e:
-                with self.engine.new_context() as fl_ctx:
-                    self.log_exception(fl_ctx, "Exception in workflow {}: {}".format(wf.id, secure_format_exception(e)))
-                self.system_panic("Exception in workflow {}: {}".format(wf.id, secure_format_exception(e)), fl_ctx)
-            finally:
-                with self.engine.new_context() as fl_ctx:
-                    # do not execute finalize_run() until the wf_lock is acquired
-                    with self.wf_lock:
-                        # unset current_wf to prevent message processing
-                        # then we can release the lock - no need to delay message processing
-                        # during finalization!
-                        # Note: WF finalization may take time since it needs to wait for
-                        # the job monitor to join.
-                        self.current_wf = None
-
-                    self.log_info(fl_ctx, f"Workflow: {wf.id} finalizing ...")
-                    try:
-                        wf.responder.finalize_run(fl_ctx)
-                    except BaseException as e:
-                        self.log_exception(
-                            fl_ctx, "Error finalizing workflow {}: {}".format(wf.id, secure_format_exception(e))
-                        )
-
-                    self.log_debug(fl_ctx, "firing event EventType.END_WORKFLOW")
-                    self.fire_event(EventType.END_WORKFLOW, fl_ctx)
+        target_wf = self._get_target_workflow()
+        if target_wf is None:
+            while self.current_wf_index < len(self.config.workflows):
+                wf = self.config.workflows[self.current_wf_index]
+                self._exec_one_workflow(wf)
 
                 # Stopped the server runner from the current responder, not continue the following responders.
                 if self.abort_signal.triggered:
                     break
+                self.current_wf_index += 1
+        else:
+            self._exec_one_workflow(target_wf)
             self.current_wf_index += 1
 
     def run(self):
