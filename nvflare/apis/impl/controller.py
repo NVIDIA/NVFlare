@@ -72,11 +72,11 @@ def _get_client_task(target, task: Task):
 
 
 class Controller(Responder, ControllerSpec, ABC):
-    def __init__(self, task_check_period=0.05):
+    def __init__(self, task_check_period=0.2):
         """Manage life cycles of tasks and their destinations.
 
         Args:
-            task_check_period (float, optional): interval for checking status of tasks. Defaults to 0.5.
+            task_check_period (float, optional): interval for checking status of tasks. Defaults to 0.2.
         """
         super().__init__()
         self._engine = None
@@ -835,9 +835,9 @@ class Controller(Responder, ControllerSpec, ABC):
 
     def _check_tasks(self):
         with self._controller_lock:
-            self._do_check_tests()
+            self._do_check_tasks()
 
-    def _do_check_tests(self):
+    def _do_check_tasks(self):
         exit_tasks = []
         with self._task_lock:
             for task in self._tasks:
