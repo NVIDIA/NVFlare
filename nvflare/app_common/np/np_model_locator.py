@@ -22,7 +22,6 @@ from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model_locator import ModelLocator
 from nvflare.security.logging import secure_format_exception
-
 from .constants import NPConstants
 
 
@@ -60,9 +59,8 @@ class NPModelLocator(ModelLocator):
         if model_name == NPModelLocator.SERVER_MODEL_NAME:
             try:
                 job_id = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
-                run_dir = engine.get_workspace().get_run_dir(job_id)
-                model_path = os.path.join(run_dir, self.model_dir)
-
+                ws_dir = engine.get_workspace().get_root_dir()
+                model_path = os.path.join(ws_dir, self.model_dir, job_id)
                 model_load_path = os.path.join(model_path, self.model_file_name)
                 np_data = None
                 try:
