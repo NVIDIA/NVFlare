@@ -180,7 +180,7 @@ class ScatterAndGather(Controller):
 
         if not isinstance(self._global_weights, ModelLearnable):
             self.system_panic(
-                reason=f"Expected global weights to be of type `ModelLearnable` but received {type(ModelLearnable)}",
+                reason=f"Expected global weights to be of type `ModelLearnable` but received {type(self._global_weights)}",
                 fl_ctx=fl_ctx,
             )
             return
@@ -191,7 +191,7 @@ class ScatterAndGather(Controller):
                 self._global_weights = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
                 if not isinstance(self._global_weights, ModelLearnable):
                     self.system_panic(
-                        reason=f"Expected global weights to be of type `ModelLearnable` but received {type(ModelLearnable)}",
+                        reason=f"Expected global weights to be of type `ModelLearnable` but received {type(self._global_weights)}",
                         fl_ctx=fl_ctx,
                     )
                     return

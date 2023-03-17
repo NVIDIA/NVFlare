@@ -209,9 +209,7 @@ Operational
     There is also a setting for ``allow_byoc`` through the authorization rule groups. This controls whether or not apps
     containing BYOC code will be allowed to be uploaded and deployed.
 
-#. I am getting the following errors, does this mean the server is down?
-
-.. code-block::
+#. I am getting the following errors, does this mean the server is down? ::
 
     Trying to obtain server address
     Obtained server address: nvflare1234.westus2.cloudapp.azure.com:8003
@@ -222,8 +220,6 @@ Operational
     Trying to login, please wait ...
     Communication Error - please try later
 
-.. code-block::
-
     2023-03-14 19:36:15,966 - nvflare.fuel.f3.sfm.conn_manager - INFO - Retrying [CH00001 ACTIVE grpc://nvflare1234.westus2.cloudapp.azure.com:8002] in 60 seconds
     2023-03-14 19:36:17,091 - Cell - ERROR - [ME=site1 O=? D=server F=? T=? CH=task TP=hear_beat] cannot find path to server
     2023-03-14 19:36:17,091 - Cell - ERROR - [ME=site1 O=? D=server F=? T=? CH=task TP=hear_beat] cannot send to 'server': target_unreachable
@@ -233,13 +229,12 @@ Operational
     2023-03-14 19:36:37,110 - Cell - ERROR - [ME=site1 O=? D=server F=? T=? CH=task TP=hear_beat] cannot send to 'server': target_unreachable
     2023-03-14 19:36:47,121 - Cell - ERROR - [ME=site1 O=? D=server F=? T=? CH=task TP=hear_beat] cannot find path to server
 
+  There are a few reasons that could cause the above errors.  One of them is the server is down.  Another possible reason is caused by
+  delay or cache of DNS name resolution.  This happens when the IP address of the NVFlare server changes but its domain name remains the same.
+  The DNS name resolution could take up to 72 hours to propagate to the entire world.  Most of the time, it takes tens of minutes.
 
-    There are a few reasons that could cause the above errors.  One of them is the server is down.  Another possible reason is caused by
-     delay or cache of DNS name resolution.  This happens when the IP address of the NVFlare server changes but its domain name remains the same.
-     The DNS name resolution could take up to 72 hours to propagate to the entire world.  Most of the time, it takes tens of minutes.
-    
-    The OS might have tools to flush its DNS cache.  For example, in Ubuntu 20.04, run `sudo systemd-resolve --flush-caches` to 
-    flush DNS cache and force it to get the updated name resolution.
+  The OS might have tools to flush its DNS cache.  For example, in Ubuntu 20.04, run `sudo systemd-resolve --flush-caches` to 
+  flush DNS cache and force it to get the updated name resolution.
 
 ********
 Security

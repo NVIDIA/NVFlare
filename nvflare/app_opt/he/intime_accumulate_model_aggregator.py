@@ -25,6 +25,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_opt.he import decomposers
 from nvflare.app_opt.he.constant import HE_ALGORITHM_CKKS
 from nvflare.app_opt.he.homomorphic_encrypt import count_encrypted_layers, load_tenseal_context_from_workspace
 
@@ -77,6 +78,8 @@ class HEInTimeAccumulateWeightedAggregator(Aggregator):
             self.logger.info("Only divide by sum of local (weighted) iterations.")
         self.warning_count = dict()
         self.warning_limit = 0
+
+        decomposers.register()
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
