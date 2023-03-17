@@ -161,7 +161,9 @@ class _Waiter(threading.Event):
         self.received_replies = {}
 
 
-def log_messaging_error(logger, log_text: str, cell, msg: Union[Message, None], log_except=False, log_warn=False):
+def log_messaging_error(
+    logger, log_text: str, cell, msg: Union[Message, None], log_except=False, log_level=logging.ERROR
+):
     debug = False
     if msg:
         debug = msg.get_header(MessageHeaderKey.OPTIONAL, default=False)
@@ -173,17 +175,11 @@ def log_messaging_error(logger, log_text: str, cell, msg: Union[Message, None], 
         debug = True
 
     if debug:
-        logger.debug(log_text)
-        if log_except:
-            logger.debug(secure_format_traceback())
-    elif log_warn:
-        logger.warning(log_text)
-        if log_except:
-            logger.warning(secure_format_traceback())
-    else:
-        logger.error(log_text)
-        if log_except:
-            logger.error(secure_format_traceback())
+        log_level = logging.DEBUG
+
+    logger.log(log_level, log_text)
+    if log_except:
+        logger.log(log_level, secure_format_traceback())
 
 
 class _BulkSender:
@@ -480,11 +476,13 @@ class Cell(MessageReceiver, EndpointMonitor):
         self.ALL_CELLS[fqcn] = self
 
     def log_error(self, log_text: str, msg: Union[None, Message], log_except=False):
-        log_messaging_error(logger=self.logger, log_text=log_text, cell=self, msg=msg, log_except=log_except)
+        log_messaging_error(
+            logger=self.logger, log_text=log_text, cell=self, msg=msg, log_except=log_except, log_level=logging.ERROR
+        )
 
     def log_warning(self, log_text: str, msg: Union[None, Message], log_except=False):
         log_messaging_error(
-            logger=self.logger, log_text=log_text, cell=self, msg=msg, log_except=log_except, log_warn=True
+            logger=self.logger, log_text=log_text, cell=self, msg=msg, log_except=log_except, log_level=logging.WARNING
         )
 
     def get_root_url_for_child(self):
@@ -1578,7 +1576,7 @@ class Cell(MessageReceiver, EndpointMonitor):
 
         req_destination = origin
         if msg_type == MessageType.RETURN:
-            self.log_error("message is returned", message)
+            self.logger.debug(format_log_message(self.my_info.fqcn, message, "message is returned"))
             self.sent_msg_counter_pool.increment(
                 category=self._stats_category(message), counter_name=_CounterName.RETURN
             )

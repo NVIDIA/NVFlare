@@ -47,7 +47,7 @@ class FedEventRunner(Widget):
         self.last_timestamps = {}  # client name => last_timestamp
         self.in_events = []
         self.in_lock = threading.Lock()
-        self.poster = threading.Thread(target=self._post, args=())
+        self.poster = None
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
@@ -104,7 +104,7 @@ class FedEventRunner(Widget):
         with self.in_lock:
             if self.poster is None:
                 # create the poster thread now
-                self.poster = threading.Thread(target=self._post, args=())
+                self.poster = threading.Thread(target=self._post, name="fed_event_poster")
                 self.poster.start()
 
             last_timestamp = self.last_timestamps.get(peer_name, None)
