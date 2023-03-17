@@ -187,4 +187,5 @@ class DXOAggregator(FLComponent):
         dxo = DXO(data_kind=self.expected_data_kind, data=aggregated_dict)
         dxo.set_meta_prop(MetaKey.PROCESSED_ALGORITHM, processed_algorithm)
 
+        self.processed_algorithms = []
         return dxo
