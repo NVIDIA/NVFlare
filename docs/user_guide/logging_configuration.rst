@@ -93,7 +93,7 @@ we can do the following:
 .. code-block:: shell
 
     [loggers]
-    keys=root
+    keys=root, ScatterAndGather
 
     [handlers]
     keys=consoleHandler

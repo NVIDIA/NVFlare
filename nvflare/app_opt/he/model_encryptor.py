@@ -25,6 +25,7 @@ from nvflare.apis.dxo_filter import DXOFilter
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
+from nvflare.app_opt.he import decomposers
 from nvflare.app_opt.he.constant import HE_ALGORITHM_CKKS
 from nvflare.app_opt.he.homomorphic_encrypt import count_encrypted_layers, load_tenseal_context_from_workspace
 
@@ -38,16 +39,19 @@ class HEModelEncryptor(DXOFilter):
         weigh_by_local_iter=True,
         data_kinds=None,
     ):
-        """Filter to encrypt Shareable object using homomorphic encryption (HE) with TenSEAL https://github.com/OpenMined/TenSEAL.
+        """Filter to encrypt Shareable object using homomorphic encryption (HE) with TenSEAL
+           https://github.com/OpenMined/TenSEAL.
 
         Args:
             tenseal_context_file: tenseal context files containing encryption keys and parameters
             encrypt_layers: if not specified (None), all layers are being encrypted;
                             if list of variable/layer names, only specified variables are encrypted;
-                            if string containing regular expression (e.g. "conv"), only matched variables are being encrypted.
+                            if string containing regular expression (e.g. "conv"), only matched variables are
+                            being encrypted.
             aggregation_weights: dictionary of client aggregation `{"client1": 1.0, "client2": 2.0, "client3": 3.0}`;
                                  defaults to a weight of 1.0 if not specified.
-            weigh_by_local_iter: If true, multiply client weights on first before encryption (default: `True` which is recommended for HE)
+            weigh_by_local_iter: If true, multiply client weights on first before encryption (default: `True`
+            which is recommended for HE)
             data_kinds: data kinds to apply this filter
 
         """
@@ -90,6 +94,8 @@ class HEModelEncryptor(DXOFilter):
         else:
             self.encrypt_layers = [True]  # needs to be list for logic in encryption()
             self.logger.info("Encrypting all layers")
+
+        decomposers.register()
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
@@ -153,7 +159,8 @@ class HEModelEncryptor(DXOFilter):
             f" (encrypted value range [{np.min(vmins)}, {np.max(vmaxs)}])"
             f" {end_time - start_time} seconds.",
         )
-        # params is a dictionary.  keys are layer names.  values are either weights or serialized ckks_vector of weights.
+        # params is a dictionary.  keys are layer names.  values are either weights or
+        # serialized ckks_vector of weights.
         # encryption_dict: keys are layer names.  values are True for serialized ckks_vectors, False elsewhere.
         return params, encryption_dict
 
