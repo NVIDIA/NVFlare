@@ -10,8 +10,7 @@
     {
       "id": "serialize_filter",
       "name": "ModelSerializeFilter",
-      "args": {
-      }
+      "args": {}
     },
     {
       "id": "persistor",

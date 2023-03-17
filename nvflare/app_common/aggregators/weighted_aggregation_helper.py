@@ -33,9 +33,9 @@ class WeightedAggregationHelper(object):
         self.history = list()
 
     def reset_stats(self):
-        self.total = {}
-        self.counts = {}
-        self.history = []
+        self.total = dict()
+        self.counts = dict()
+        self.history = list()
 
     def add(self, data, weight, contributor_name, contribution_round):
         """Compute weighted sum and sum of weights."""

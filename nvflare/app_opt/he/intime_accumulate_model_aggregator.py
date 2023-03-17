@@ -59,7 +59,7 @@ class HEInTimeAccumulateWeightedAggregator(InTimeAccumulateWeightedAggregator):
         if not isinstance(weights, dict):
             raise ValueError(f"Expected weights to be of type dict but got type {type(weights)}")
 
-        encrypted_layers = {}
+        encrypted_layers = dict()
         for k, v in weights.items():
             if isinstance(v, ts.CKKSVector):
                 encrypted_layers[k] = True
