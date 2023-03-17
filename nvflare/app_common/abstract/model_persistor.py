@@ -19,14 +19,51 @@ from nvflare.app_common.model_desc import ModelDescriptor
 
 from .learnable_persistor import LearnablePersistor
 from .model import ModelLearnable
+from .persistor_filter import PersistorFilter
 
 
 class ModelPersistor(LearnablePersistor, ABC):
-    def load(self, fl_ctx: FLContext):
-        return self.load_model(fl_ctx)
+    def __init__(self, filter_id: str = None):
+        """Abstract class.
+        Implementations will need to implement the `load_model()`, `save_model()`,
+        and `get()` methods to persist & load the current ModelLearnable.
+            Args:
+                filter_id: Optional string that defines a filter component that is applied to prepare the model to be saved,
+                    e.g. for serialization of custom Python objects.
+
+        """
+        self.filter_id = filter_id
+
+    def load(self, fl_ctx: FLContext) -> ModelLearnable:
+        learnable = self.load_model(fl_ctx)
+        if self.filter_id:
+            _filter = fl_ctx.get_engine().get_component(self.filter_id)
+            if not isinstance(_filter, PersistorFilter):
+                raise ValueError(f"Expected filter to be of type `PersistorFilter` but got {type(filter)}")
+            learnable = _filter.process_post_load(learnable=learnable, fl_ctx=fl_ctx)
+        return learnable
 
     def save(self, learnable: ModelLearnable, fl_ctx: FLContext):
+        if self.filter_id:
+            _filter = fl_ctx.get_engine().get_component(self.filter_id)
+            if not isinstance(_filter, PersistorFilter):
+                raise ValueError(f"Expected filter to be of type `PersistorFilter` but got {type(filter)}")
+            learnable = _filter.process_pre_save(learnable=learnable, fl_ctx=fl_ctx)
+
         self.save_model(learnable, fl_ctx)
+
+        if self.filter_id:
+            _filter.process_post_save(learnable=learnable, fl_ctx=fl_ctx)
+
+    def get(self, model_file, fl_ctx: FLContext) -> object:
+        learnable = self.get_model(model_file, fl_ctx)
+
+        if self.filter_id:
+            _filter = fl_ctx.get_engine().get_component(self.filter_id)
+            if not isinstance(_filter, PersistorFilter):
+                raise ValueError(f"Expected filter to be of type `PersistorFilter` but got {type(filter)}")
+            learnable = _filter.process_post_load(learnable=learnable, fl_ctx=fl_ctx)
+        return learnable
 
     @abstractmethod
     def load_model(self, fl_ctx: FLContext) -> ModelLearnable:
@@ -52,6 +89,7 @@ class ModelPersistor(LearnablePersistor, ABC):
         """
         pass
 
+    @abstractmethod
     def get_model_inventory(self, fl_ctx: FLContext) -> {str: ModelDescriptor}:
         """Get the model inventory of the ModelPersister.
 
@@ -63,5 +101,6 @@ class ModelPersistor(LearnablePersistor, ABC):
         """
         pass
 
+    @abstractmethod
     def get_model(self, model_file, fl_ctx: FLContext) -> object:
         pass

@@ -139,7 +139,7 @@ class HEModelEncryptor(DXOFilter):
                 vmax = np.max(params[param_name])
                 vmins.append(vmin)
                 vmaxs.append(vmax)
-                params[param_name] = ts.ckks_vector(self.tenseal_context, values).serialize()
+                params[param_name] = ts.ckks_vector(self.tenseal_context, values)
                 encryption_dict[param_name] = True
                 n_encrypted += _n
             elif isinstance(values, CKKSVector):
@@ -159,9 +159,8 @@ class HEModelEncryptor(DXOFilter):
             f" (encrypted value range [{np.min(vmins)}, {np.max(vmaxs)}])"
             f" {end_time - start_time} seconds.",
         )
-        # params is a dictionary.  keys are layer names.  values are either weights or
-        # serialized ckks_vector of weights.
-        # encryption_dict: keys are layer names.  values are True for serialized ckks_vectors, False elsewhere.
+        # params is a dictionary.  keys are layer names.  values are either weights or ckks_vector of weights.
+        # encryption_dict: keys are layer names.  values are True for ckks_vectors, False elsewhere.
         return params, encryption_dict
 
     def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:

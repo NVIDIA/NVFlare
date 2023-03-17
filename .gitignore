@@ -161,8 +161,9 @@ log.txt
 client_token.txt
 *.fl
 audit.log
+*.crt
+.__nvfl_sig.json
 
 # python
 __pycache__
 .pyc
-

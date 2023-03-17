@@ -16,7 +16,6 @@ import re
 import time
 
 import numpy as np
-import tenseal as ts
 
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.event_type import EventType
@@ -181,9 +180,9 @@ class HEInTimeAccumulateWeightedAggregator(Aggregator):
                 continue
             if encrypted_layers[k]:
                 if self.weigh_by_local_iter:
-                    weighted_value = ts.ckks_vector_from(self.tenseal_context, v) * (aggregation_weight * float_n_iter)
+                    weighted_value = v * (aggregation_weight * float_n_iter)
                 else:
-                    weighted_value = ts.ckks_vector_from(self.tenseal_context, v)
+                    weighted_value = v
                 self.merged_encrypted_layers[k] = True  # any client can set this true
             else:
                 if self.weigh_by_local_iter:

@@ -37,7 +37,7 @@ class HEModelShareableGenerator(FullModelShareableGenerator):
         This conversion is done with homomorphic encryption (HE) support using TenSEAL https://github.com/OpenMined/TenSEAL.
 
         Args:
-            tenseal_context_file: tenseal context files containing decryption keys and parameters
+            tenseal_context_file: tenseal context files containing TenSEAL context
         """
         super().__init__()
         self.tenseal_context = None
@@ -52,32 +52,24 @@ class HEModelShareableGenerator(FullModelShareableGenerator):
         elif event_type == EventType.END_RUN:
             self.tenseal_context = None
 
-    def add_to_global_weights(self, fl_ctx: FLContext, new_val, base_weights, v_name, encrypt_layers):
+    def add_to_global_weights(self, new_val, base_weights, v_name, encrypt_layers):
         if encrypt_layers is None:
             raise ValueError("encrypted layers info missing!")
+        try:
+            global_var = base_weights[v_name]
 
-        current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
-        start_round = fl_ctx.get_prop(AppConstants.START_ROUND, 0)
-        if current_round > start_round and encrypt_layers[v_name]:
-            if encrypt_layers.get(v_name, False):
-                try:
-                    binary_global_var = base_weights[v_name]
-                    global_var = ts.ckks_vector_from(
-                        self.tenseal_context, binary_global_var
-                    )  # now the global model weights are encrypted
-                    n_vars_total = global_var.size()
-                except BaseException as e:
-                    raise ValueError(f"add_to_global_weights Exception: {secure_format_exception(e)}")
-        else:
-            global_var = base_weights[v_name].ravel()
-            n_vars_total = np.size(global_var)
+            if isinstance(new_val, np.ndarray):
+                new_val = new_val.ravel()
+            if isinstance(global_var, np.ndarray):
+                global_var = global_var.ravel()
+                n_vars_total = np.size(global_var)
+            if isinstance(global_var, ts.CKKSVector):
+                n_vars_total = global_var.size()
 
-        # update the global model
-        updated_vars = new_val + global_var
-
-        if encrypt_layers[v_name]:  # only works with standard aggregation
-            self.log_info(fl_ctx, f"serialize encrypted {v_name}")
-            updated_vars = updated_vars.serialize()
+            # update the global model
+            updated_vars = new_val + global_var
+        except BaseException as e:
+            raise ValueError(f"add_to_global_weights Exception: {secure_format_exception(e)}") from e
 
         return updated_vars, n_vars_total
 
@@ -112,9 +104,7 @@ class HEModelShareableGenerator(FullModelShareableGenerator):
             for v_name, v_value in model_diff.items():
                 self.log_debug(fl_ctx, f"adding {v_name} to global model...")
                 # v_value += model[v_name]
-                updated_vars, n_vars_total = self.add_to_global_weights(
-                    fl_ctx, v_value, base_weights, v_name, encrypt_layers
-                )
+                updated_vars, n_vars_total = self.add_to_global_weights(v_value, base_weights, v_name, encrypt_layers)
                 n_params += n_vars_total
                 base_weights[v_name] = updated_vars
                 self.log_debug(fl_ctx, f"assigned new {v_name}")
@@ -125,12 +115,7 @@ class HEModelShareableGenerator(FullModelShareableGenerator):
                 f"Updated global model {n_vars} vars with {n_params} params in {end_time - start_time} seconds",
             )
         elif dxo.data_kind == DataKind.WEIGHTS:
-            weights = dxo.data
-            for v_name in weights.keys():
-                if encrypt_layers[v_name]:
-                    self.log_info(fl_ctx, f"serialize encrypted {dxo.data_kind}: {v_name}")
-                    weights[v_name] = weights[v_name].serialize()
-            base_model[ModelLearnableKey.WEIGHTS] = weights
+            base_model[ModelLearnableKey.WEIGHTS] = dxo.data
         else:
             raise NotImplementedError(f"data type {dxo.data_kind} not supported!")
 
@@ -153,4 +138,4 @@ class HEModelShareableGenerator(FullModelShareableGenerator):
             return self._shareable_to_learnable(shareable, fl_ctx)
         except BaseException as e:
             self.log_exception(fl_ctx, "error converting shareable to model")
-            raise ValueError(f"{self._name} Exception {secure_format_exception(e)}")
+            raise ValueError(f"{self._name} Exception {secure_format_exception(e)}") from e

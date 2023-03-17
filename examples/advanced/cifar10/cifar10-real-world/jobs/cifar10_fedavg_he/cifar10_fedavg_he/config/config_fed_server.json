@@ -23,13 +23,20 @@
         }
     },
     {
+      "id": "serialize_filter",
+      "name": "ModelSerializeFilter",
+      "args": {
+      }
+    },
+    {
       "id": "persistor",
       "name": "PTFileModelPersistor",
       "args": {
         "model": {
           "path": "pt.networks.cifar10_nets.ModerateCNN",
 	      "args": {}
-        }
+        },
+        "filter_id": "serialize_filter"
       }
     },
     {

@@ -39,6 +39,7 @@ class PTFileModelPersistor(ModelPersistor):
         global_model_file_name=DefaultCheckpointFileName.GLOBAL_MODEL,
         best_global_model_file_name=DefaultCheckpointFileName.BEST_GLOBAL_MODEL,
         source_ckpt_file_full_name=None,
+        filter_id: str = None,
     ):
         """Persist pytorch-based model to/from file system.
 
@@ -88,11 +89,14 @@ class PTFileModelPersistor(ModelPersistor):
             global_model_file_name (str, optional): file name for saving global model. Defaults to DefaultCheckpointFileName.GLOBAL_MODEL.
             best_global_model_file_name (str, optional): file name for saving best global model. Defaults to DefaultCheckpointFileName.BEST_GLOBAL_MODEL.
             source_ckpt_file_full_name (str, optional): full file name for source model checkpoint file. Defaults to None.
-
+            filter_id: Optional string that defines a filter component that is applied to prepare the model to be saved,
+                e.g. for serialization of custom Python objects.
         Raises:
             ValueError: when source_ckpt_file_full_name does not exist
         """
-        super().__init__()
+        super().__init__(
+            filter_id=filter_id,
+        )
         self.exclude_vars = re.compile(exclude_vars) if exclude_vars else None
         self.model = model
         self.log_dir = None
