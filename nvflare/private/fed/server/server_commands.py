@@ -393,6 +393,30 @@ class HeartbeatCommand(CommandProcessor):
         return None
 
 
+class ServerStateCommand(CommandProcessor):
+    """To implement the ServerStateCommand."""
+
+    def get_command_name(self) -> str:
+        """To get the command name.
+
+        Returns: AdminCommandNames.SERVER_STATE
+
+        """
+        return ServerCommandNames.SERVER_STATE
+
+    def process(self, data: Shareable, fl_ctx: FLContext):
+        """Called to process the SERVER_STATE command.
+
+        Args:
+            data: ServerState object
+            fl_ctx: FLContext
+
+        """
+        engine = fl_ctx.get_engine()
+        engine.server.server_state = data
+        return "Success"
+
+
 class ServerCommands(object):
     """AdminCommands contains all the commands for processing the commands from the parent process."""
 
@@ -407,6 +431,7 @@ class ServerCommands(object):
         GetErrorsCommand(),
         ResetErrorsCommand(),
         HeartbeatCommand(),
+        ServerStateCommand(),
     ]
 
     client_request_commands_names = [

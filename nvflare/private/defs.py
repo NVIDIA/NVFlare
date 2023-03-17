@@ -155,7 +155,6 @@ class CellChannelTopic:
     HEART_BEAT = "hear_beat"
     EXECUTE_RESULT = "execute_result"
     FIRE_EVENT = "fire_event"
-    SERVER_STATE = "server_state"
 
     SIMULATOR_WORKER_INIT = "simulator_worker_init"
 
