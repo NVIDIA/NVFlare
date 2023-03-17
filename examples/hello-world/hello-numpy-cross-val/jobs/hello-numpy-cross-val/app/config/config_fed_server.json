@@ -69,6 +69,5 @@
         "cleanup_models": false
       }
     }
-  ],
-  "target_workflow_id":"cross_site_model_eval"
+  ]
 }

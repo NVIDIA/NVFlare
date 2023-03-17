@@ -97,10 +97,6 @@ class ServerRunner(FLComponent):
 
     def _exec_one_workflow(self, wf):
         try:
-            import os
-            has_model_file = os.path.isfile("/tmp/nvflare/hello-numpy-cross-val/simulate_job/models/server.npy")
-            print("_exec_one_workflow: has_model_file", has_model_file)
-
             with self.engine.new_context() as fl_ctx:
                 self.log_info(fl_ctx, "\n\n starting workflow {} ({}) ...\n\n".format(wf.id, type(wf.responder)))
 
