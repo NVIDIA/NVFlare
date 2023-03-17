@@ -39,6 +39,7 @@ __all__ = [
 
 FOBS_TYPE = "__fobs_type__"
 FOBS_DATA = "__fobs_data__"
+MAX_CONTENT_LEN = 128
 MSGPACK_TYPES = (None, bool, int, float, str, bytes, bytearray, memoryview, list, dict)
 T = TypeVar("T")
 
@@ -215,7 +216,10 @@ def serialize(obj: Any, **kwargs) -> bytes:
     try:
         return msgpack.packb(obj, default=_fobs_packer, strict_types=True, **kwargs)
     except ValueError as ex:
-        raise ValueError(f"Object {type(obj)} is not serializable: {ex}: {obj}")
+        content = str(obj)
+        if len(content) > MAX_CONTENT_LEN:
+            content = content[:MAX_CONTENT_LEN] + " ..."
+        raise ValueError(f"Object {type(obj)} is not serializable: {ex}: {content}")
 
 
 def serialize_stream(obj: Any, stream: BinaryIO, **kwargs):
