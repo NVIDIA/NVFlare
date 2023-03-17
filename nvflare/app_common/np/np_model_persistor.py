@@ -36,6 +36,25 @@ def _get_run_dir(fl_ctx: FLContext):
     return run_dir
 
 
+def _get_job_id(fl_ctx: FLContext):
+    job_id = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
+    if job_id is None:
+        raise RuntimeError("job_id is missing in fl_ctx.")
+    return job_id
+
+
+def _get_model_path(fl_ctx: FLContext, model_dir, model_name):
+    model_root_dir = _get_model_root_dir(fl_ctx, model_dir)
+    return os.path.join(model_root_dir, model_name)
+
+
+def _get_model_root_dir(fl_ctx, model_dir):
+    ws_dir = fl_ctx.get_engine().get_workspace().get_root_dir()
+    job_id = _get_job_id(fl_ctx)
+    model_root_dir = os.path.join(ws_dir, model_dir, job_id)
+    return model_root_dir
+
+
 class NPModelPersistor(ModelPersistor):
     def __init__(self, model_dir="models", model_name="server.npy"):
         super().__init__()
@@ -47,8 +66,7 @@ class NPModelPersistor(ModelPersistor):
         self.default_data = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]], dtype=np.float32)
 
     def load_model(self, fl_ctx: FLContext) -> ModelLearnable:
-        run_dir = _get_run_dir(fl_ctx)
-        model_path = os.path.join(run_dir, self.model_dir, self.model_name)
+        model_path = _get_model_path(fl_ctx, self.model_dir, self.model_name)
         try:
             # try loading previous model
             data = np.load(model_path)
@@ -66,8 +84,7 @@ class NPModelPersistor(ModelPersistor):
         return model_learnable
 
     def save_model(self, model_learnable: ModelLearnable, fl_ctx: FLContext):
-        run_dir = _get_run_dir(fl_ctx)
-        model_root_dir = os.path.join(run_dir, self.model_dir)
+        model_root_dir = _get_model_root_dir(fl_ctx, self.model_dir)
         if not os.path.exists(model_root_dir):
             os.makedirs(model_root_dir)
 
