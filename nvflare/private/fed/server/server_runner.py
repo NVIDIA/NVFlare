@@ -14,7 +14,7 @@
 
 import threading
 import time
-from typing import Optional, List, Dict
+from typing import Dict, List, Optional
 
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
@@ -33,15 +33,15 @@ from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
 class ServerRunnerConfig(object):
     def __init__(
-            self,
-            heartbeat_timeout: int,
-            task_request_interval: float,
-            workflows: [],
-            task_data_filters: dict,
-            task_result_filters: dict,
-            handlers: Optional[List] = None,
-            components: Optional[Dict] = None,
-            target_wf_id: Optional[str] = None
+        self,
+        heartbeat_timeout: int,
+        task_request_interval: float,
+        workflows: [],
+        task_data_filters: dict,
+        task_result_filters: dict,
+        handlers: Optional[List] = None,
+        components: Optional[Dict] = None,
+        target_wf_id: Optional[str] = None,
     ):
         """Configuration for ServerRunner.
 

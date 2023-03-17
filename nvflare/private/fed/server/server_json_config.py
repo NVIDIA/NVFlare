@@ -167,7 +167,7 @@ class ServerJsonConfigurator(FedJsonConfigurator):
             task_result_filters=self.result_filter_table,
             components=self.components,
             handlers=self.handlers,
-            target_wf_id=self.target_wf_id
+            target_wf_id=self.target_wf_id,
         )
 
         ConfigService.initialize(
