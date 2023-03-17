@@ -32,6 +32,7 @@ class ModelPersistor(LearnablePersistor, ABC):
                     e.g. for serialization of custom Python objects.
 
         """
+        super().__init__()
         self.filter_id = filter_id
 
     def load(self, fl_ctx: FLContext) -> ModelLearnable:

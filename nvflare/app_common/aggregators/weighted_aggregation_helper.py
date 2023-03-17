@@ -39,30 +39,38 @@ class WeightedAggregationHelper(object):
 
     def add(self, data, weight, contributor_name, contribution_round):
         """Compute weighted sum and sum of weights."""
+        if weight is None:
+            w = 1.0
+        else:
+            w = weight
+
         with self.lock:
             for k, v in data.items():
                 if self.exclude_vars is not None and self.exclude_vars.search(k):
                     continue
-                weighted_value = v * weight
+                if weight is None:
+                    weighted_value = v
+                else:
+                    weighted_value = v * w
                 current_total = self.total.get(k, None)
                 if current_total is None:
                     self.total[k] = weighted_value
-                    self.counts[k] = weight
+                    self.counts[k] = w
                 else:
                     self.total[k] = current_total + weighted_value
-                    self.counts[k] = self.counts[k] + weight
+                    self.counts[k] = self.counts[k] + w
             self.history.append(
                 {
                     "contributor_name": contributor_name,
                     "round": contribution_round,
-                    "weight": weight,
+                    "weight": w,
                 }
             )
 
     def get_result(self):
         """Divide weighted sum by sum of weights."""
         with self.lock:
-            aggregated_dict = {k: v / self.counts[k] for k, v in self.total.items()}
+            aggregated_dict = {k: v * (1.0 / self.counts[k]) for k, v in self.total.items()}
             self.reset_stats()
             return aggregated_dict
 

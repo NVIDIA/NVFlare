@@ -42,7 +42,6 @@ class HEModelShareableGenerator(FullModelShareableGenerator):
         super().__init__()
         self.tenseal_context = None
         self.tenseal_context_file = tenseal_context_file
-        self.is_encrypted = False
 
         decomposers.register()
 
@@ -52,9 +51,7 @@ class HEModelShareableGenerator(FullModelShareableGenerator):
         elif event_type == EventType.END_RUN:
             self.tenseal_context = None
 
-    def add_to_global_weights(self, new_val, base_weights, v_name, encrypt_layers):
-        if encrypt_layers is None:
-            raise ValueError("encrypted layers info missing!")
+    def add_to_global_weights(self, new_val, base_weights, v_name):
         try:
             global_var = base_weights[v_name]
 
@@ -79,13 +76,6 @@ class HEModelShareableGenerator(FullModelShareableGenerator):
         if enc_algorithm != HE_ALGORITHM_CKKS:
             raise ValueError("expected encryption algorithm {} but got {}".format(HE_ALGORITHM_CKKS, enc_algorithm))
 
-        encrypt_layers = dxo.get_meta_prop(MetaKey.PROCESSED_KEYS)
-        if encrypt_layers is None:
-            raise ValueError("DXO in shareable missing PROCESSED_KEYS property")
-
-        if len(encrypt_layers) == 0:
-            raise ValueError(f"encrypt_layers is empty: {encrypt_layers}")
-
         base_model = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
         if not base_model:
             self.system_panic(reason="No global base model!", fl_ctx=fl_ctx)
@@ -104,7 +94,7 @@ class HEModelShareableGenerator(FullModelShareableGenerator):
             for v_name, v_value in model_diff.items():
                 self.log_debug(fl_ctx, f"adding {v_name} to global model...")
                 # v_value += model[v_name]
-                updated_vars, n_vars_total = self.add_to_global_weights(v_value, base_weights, v_name, encrypt_layers)
+                updated_vars, n_vars_total = self.add_to_global_weights(v_value, base_weights, v_name)
                 n_params += n_vars_total
                 base_weights[v_name] = updated_vars
                 self.log_debug(fl_ctx, f"assigned new {v_name}")

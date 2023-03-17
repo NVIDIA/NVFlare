@@ -15,6 +15,8 @@
 import logging
 from typing import Any, Dict, Optional
 
+import numpy as np
+
 from nvflare.apis.dxo import DXO, DataKind, MetaKey
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
@@ -29,6 +31,7 @@ class DXOAggregator(FLComponent):
         aggregation_weights: Optional[Dict[str, Any]] = None,
         expected_data_kind: DataKind = DataKind.WEIGHT_DIFF,
         name_postfix: str = "",
+        weigh_by_local_iter: bool = True,
     ):
         """Perform accumulated weighted aggregation for one kind of corresponding DXO from contributors.
 
@@ -38,6 +41,11 @@ class DXOAggregator(FLComponent):
                                 Defaults to None.
             expected_data_kind (DataKind): Expected DataKind for this DXO.
             name_postfix: optional postfix to give to class name and show in logger output.
+            weigh_by_local_iter (bool, optional): Whether to weight the contributions by the number of iterations
+                performed in local training in the current round. Defaults to `True`.
+                Note, if `False`, `aggregation_weights` will also be ignored.
+                Setting it to `False` can be useful in applications such as homomorphic encryption to reduce
+                the number of computations on encrypted ciphertext.
         """
         super().__init__()
         self.expected_data_kind = expected_data_kind
@@ -48,6 +56,8 @@ class DXOAggregator(FLComponent):
 
         self.warning_count = {}
         self.warning_limit = 10
+        self.processed_algorithms = []
+        self.weigh_by_local_iter = weigh_by_local_iter
 
         if name_postfix:
             self._name += name_postfix
@@ -82,8 +92,7 @@ class DXOAggregator(FLComponent):
 
         processed_algorithm = dxo.get_meta_prop(MetaKey.PROCESSED_ALGORITHM)
         if processed_algorithm is not None:
-            self.log_error(fl_ctx, f"unable to accept DXO processed by {processed_algorithm}")
-            return False
+            self.processed_algorithms.append(processed_algorithm)
 
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
         if contribution_round != current_round:
@@ -126,7 +135,7 @@ class DXOAggregator(FLComponent):
             n_iter = 1.0
         float_n_iter = float(n_iter)
         aggregation_weight = self.aggregation_weights.get(contributor_name)
-        if aggregation_weight is None:
+        if aggregation_weight is None and self.weigh_by_local_iter:
             if self.warning_count.get(contributor_name, 0) <= self.warning_limit:
                 self.log_warning(
                     fl_ctx,
@@ -140,7 +149,12 @@ class DXOAggregator(FLComponent):
             aggregation_weight = 1.0
 
         # aggregate
-        self.aggregation_helper.add(data, aggregation_weight * float_n_iter, contributor_name, contribution_round)
+        if self.weigh_by_local_iter:
+            w = aggregation_weight * float_n_iter
+        else:
+            w = None
+
+        self.aggregation_helper.add(data, w, contributor_name, contribution_round)
         self.log_debug(fl_ctx, "End accept")
         return True
 
@@ -152,6 +166,17 @@ class DXOAggregator(FLComponent):
             DXO: the weighted mean of accepted DXOs from contributors
         """
 
+        if len(self.processed_algorithms) > 0:
+            processed_algorithms = np.unique(self.processed_algorithms)
+            if len(processed_algorithms) != 1:
+                raise ValueError(
+                    f"Only support aggregation of data processed with "
+                    f"the same type of algorithm but got mixed algorithms: {processed_algorithms}"
+                )
+            processed_algorithm = str(processed_algorithms[0])
+        else:
+            processed_algorithm = None
+
         self.log_debug(fl_ctx, f"Start aggregation with weights {self.aggregation_weights}")
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
         self.log_info(fl_ctx, f"aggregating {self.aggregation_helper.get_len()} update(s) at round {current_round}")
@@ -160,4 +185,6 @@ class DXOAggregator(FLComponent):
         self.log_debug(fl_ctx, "End aggregation")
 
         dxo = DXO(data_kind=self.expected_data_kind, data=aggregated_dict)
+        dxo.set_meta_prop(MetaKey.PROCESSED_ALGORITHM, processed_algorithm)
+
         return dxo

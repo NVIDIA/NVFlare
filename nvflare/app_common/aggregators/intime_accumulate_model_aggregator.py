@@ -14,7 +14,7 @@
 
 from typing import Any, Dict, Union
 
-from nvflare.apis.dxo import DXO, DataKind, from_shareable
+from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.fl_constant import ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
@@ -48,6 +48,7 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
         exclude_vars: Union[str, Dict[str, str], None] = None,
         aggregation_weights: Union[Dict[str, Any], Dict[str, Dict[str, Any]], None] = None,
         expected_data_kind: Union[DataKind, Dict[str, DataKind]] = DataKind.WEIGHT_DIFF,
+        weigh_by_local_iter: bool = True,
     ):
         """Perform accumulated weighted aggregation.
 
@@ -67,6 +68,11 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
                 DataKind for DXO. Defaults to DataKind.WEIGHT_DIFF
                 Can be one DataKind or a dict of {dxo_name: DataKind} corresponding to each aggregated DXO
                 when processing a DXO of `DataKind.COLLECTION`. Only the keys in this dict will be processed.
+            weigh_by_local_iter (bool, optional): Whether to weight the contributions by the number of iterations
+                performed in local training in the current round. Defaults to `True`.
+                Note, if `False`, `aggregation_weights` will also be ignored.
+                Setting it to `False` can be useful in applications such as homomorphic encryption to reduce
+                the number of computations on encrypted ciphertext.
         """
         super().__init__()
         self.logger.debug(f"exclude vars: {exclude_vars}")
@@ -74,6 +80,7 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
         self.logger.debug(f"expected data kind: {expected_data_kind}")
 
         self._single_dxo_key = ""
+        self._weigh_by_local_iter = weigh_by_local_iter
 
         # Check expected data kind
         if isinstance(expected_data_kind, dict):
@@ -149,6 +156,7 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
                         aggregation_weights=self.aggregation_weights[k],
                         expected_data_kind=self.expected_data_kind[k],
                         name_postfix=k,
+                        weigh_by_local_iter=self._weigh_by_local_iter,
                     )
                 }
             )
@@ -232,4 +240,7 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
             result_dxo_dict.update({key: aggregated_dxo})
         # return collection of DXOs with aggregation results
         collection_dxo = DXO(data_kind=DataKind.COLLECTION, data=result_dxo_dict)
+        collection_dxo.set_meta_prop(
+            MetaKey.PROCESSED_ALGORITHM, result_dxo_dict.get_meta_prop(MetaKey.PROCESSED_ALGORITHM)
+        )
         return collection_dxo.to_shareable()
