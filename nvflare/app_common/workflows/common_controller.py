@@ -43,4 +43,4 @@ class CommonController(Controller, ABC):
             )
             self.log_error(fl_ctx, f"Execution failed for {client_name}")
         else:
-            self.log_error(fl_ctx, f"Execution result is not received for {client_name}")
+            raise ValueError(f"Execution result is not received for {client_name}")
