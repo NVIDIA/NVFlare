@@ -14,7 +14,7 @@
 
 from typing import Any, Dict, Union
 
-from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
+from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.fl_constant import ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
@@ -221,10 +221,8 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
 
     def aggregate(self, fl_ctx: FLContext) -> Shareable:
         """Called when workflow determines to generate shareable to send back to contributors
-
         Args:
             fl_ctx (FLContext): context provided by workflow
-
         Returns:
             Shareable: the weighted mean of accepted shareables from contributors
         """
@@ -240,7 +238,4 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
             result_dxo_dict.update({key: aggregated_dxo})
         # return collection of DXOs with aggregation results
         collection_dxo = DXO(data_kind=DataKind.COLLECTION, data=result_dxo_dict)
-        collection_dxo.set_meta_prop(
-            MetaKey.PROCESSED_ALGORITHM, result_dxo_dict.get_meta_prop(MetaKey.PROCESSED_ALGORITHM)
-        )
         return collection_dxo.to_shareable()
