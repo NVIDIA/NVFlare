@@ -62,12 +62,12 @@ class SocketConnection(Connection):
             if error.code == CommError.CLOSED:
                 log.debug(f"Connection {self.name} is closed by peer")
             else:
-                log.error(f"Connection {self.name} is closed due to error: {error}")
+                log.debug(f"Connection {self.name} is closed due to error: {error}")
         except Exception as ex:
             if self.closing:
                 log.debug(f"Connection {self.name} is closed")
             else:
-                log.error(f"Connection {self.name} is closed due to error: {ex}")
+                log.debug(f"Connection {self.name} is closed due to error: {ex}")
 
     def read_frame_loop(self):
         # read_frame throws exception on stale/bad connection so this is not a dead loop
