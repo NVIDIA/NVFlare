@@ -221,8 +221,10 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
 
     def aggregate(self, fl_ctx: FLContext) -> Shareable:
         """Called when workflow determines to generate shareable to send back to contributors
+
         Args:
             fl_ctx (FLContext): context provided by workflow
+
         Returns:
             Shareable: the weighted mean of accepted shareables from contributors
         """
