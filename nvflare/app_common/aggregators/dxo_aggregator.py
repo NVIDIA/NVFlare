@@ -53,12 +53,13 @@ class DXOAggregator(FLComponent):
         self.aggregation_weights = aggregation_weights or {}
         self.logger.debug(f"aggregation weights control: {aggregation_weights}")
 
-        self.aggregation_helper = WeightedAggregationHelper(exclude_vars=exclude_vars)
+        self.aggregation_helper = WeightedAggregationHelper(
+            exclude_vars=exclude_vars, weigh_by_local_iter=weigh_by_local_iter
+        )
 
         self.warning_count = {}
         self.warning_limit = 10
         self.processed_algorithms = []
-        self.weigh_by_local_iter = weigh_by_local_iter
 
         if name_postfix:
             self._name += name_postfix
@@ -150,13 +151,7 @@ class DXOAggregator(FLComponent):
             aggregation_weight = 1.0
 
         # aggregate
-        self.aggregation_helper.add(
-            data,
-            aggregation_weight * float_n_iter,
-            contributor_name,
-            contribution_round,
-            weigh_by_local_iter=self.weigh_by_local_iter,
-        )
+        self.aggregation_helper.add(data, aggregation_weight * float_n_iter, contributor_name, contribution_round)
         self.log_debug(fl_ctx, "End accept")
         return True
 
