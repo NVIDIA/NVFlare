@@ -72,11 +72,11 @@ def _get_client_task(target, task: Task):
 
 
 class Controller(Responder, ControllerSpec, ABC):
-    def __init__(self, task_check_period=0.05):
+    def __init__(self, task_check_period=0.2):
         """Manage life cycles of tasks and their destinations.
 
         Args:
-            task_check_period (float, optional): interval for checking status of tasks. Defaults to 0.5.
+            task_check_period (float, optional): interval for checking status of tasks. Defaults to 0.2.
         """
         super().__init__()
         self._engine = None
@@ -88,6 +88,8 @@ class Controller(Responder, ControllerSpec, ABC):
         self._task_check_period = task_check_period
         self._dead_client_reports = {}  # clients that reported the job is dead on it: name => report time
         self._dead_clients_lock = Lock()  # need lock since dead_clients can be modified from different threads
+        # make sure _check_tasks, process_task_request, process_submission does not interfere with each other
+        self._controller_lock = Lock()
 
     def initialize_run(self, fl_ctx: FLContext):
         """Called by runners to initialize controller with information in fl_ctx.
@@ -159,6 +161,10 @@ class Controller(Responder, ControllerSpec, ABC):
         Returns:
             Tuple[str, str, Shareable]: task_name, an id for the client_task, and the data for this request
         """
+        with self._controller_lock:
+            return self._do_process_task_request(client, fl_ctx)
+
+    def _do_process_task_request(self, client: Client, fl_ctx: FLContext) -> Tuple[str, str, Shareable]:
         if not isinstance(client, Client):
             raise TypeError("client must be an instance of Client, but got {}".format(type(client)))
 
@@ -342,6 +348,12 @@ class Controller(Responder, ControllerSpec, ABC):
             TypeError: when result is not an instance of Shareable
             ValueError: task_name is not found in the client_task
         """
+        with self._controller_lock:
+            self._do_process_submission(client, task_name, task_id, result, fl_ctx)
+
+    def _do_process_submission(
+        self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext
+    ):
         if not isinstance(client, Client):
             raise TypeError("client must be an instance of Client, but got {}".format(type(client)))
 
@@ -822,6 +834,10 @@ class Controller(Responder, ControllerSpec, ABC):
             time.sleep(self._task_check_period)
 
     def _check_tasks(self):
+        with self._controller_lock:
+            self._do_check_tasks()
+
+    def _do_check_tasks(self):
         exit_tasks = []
         with self._task_lock:
             for task in self._tasks:
