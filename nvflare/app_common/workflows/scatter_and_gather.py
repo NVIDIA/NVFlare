@@ -336,15 +336,22 @@ class ScatterAndGather(Controller):
         # Raise errors if bad peer context or execution exception.
         if rc and rc != ReturnCode.OK:
             if self.ignore_result_error:
-                self.log_error(fl_ctx, f"Ignore the client train result. Train result error code: {rc}")
+                self.log_error(
+                    fl_ctx,
+                    f"Ignore the train result from {client_name} at round {self._current_round}. Train result error code: {rc}",
+                )
                 return False
             else:
                 if rc in [ReturnCode.MISSING_PEER_CONTEXT, ReturnCode.BAD_PEER_CONTEXT]:
-                    self.system_panic("Peer context is bad or missing. ScatterAndGather exiting.", fl_ctx=fl_ctx)
+                    self.system_panic(
+                        f"Peer context is bad or missing. ScatterAndGather exiting at round {self._current_round}.",
+                        fl_ctx=fl_ctx,
+                    )
                     return False
                 elif rc in [ReturnCode.EXECUTION_EXCEPTION, ReturnCode.TASK_UNKNOWN]:
                     self.system_panic(
-                        "Execution Exception in client training. ScatterAndGather exiting.", fl_ctx=fl_ctx
+                        f"Execution Exception in client training. ScatterAndGather exiting at round {self._current_round}.",
+                        fl_ctx=fl_ctx,
                     )
                     return False
                 elif rc in [
@@ -352,7 +359,10 @@ class ScatterAndGather(Controller):
                     ReturnCode.TASK_DATA_FILTER_ERROR,
                     ReturnCode.TASK_RESULT_FILTER_ERROR,
                 ]:
-                    self.system_panic("Execution result is not a shareable. ScatterAndGather exiting.", fl_ctx=fl_ctx)
+                    self.system_panic(
+                        f"Execution result is not a shareable. ScatterAndGather exiting at round {self._current_round}.",
+                        fl_ctx=fl_ctx,
+                    )
                     return False
 
         fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=True)
@@ -361,7 +371,9 @@ class ScatterAndGather(Controller):
 
         accepted = self.aggregator.accept(result, fl_ctx)
         accepted_msg = "ACCEPTED" if accepted else "REJECTED"
-        self.log_info(fl_ctx, f"Contribution from {client_name} {accepted_msg} by the aggregator.")
+        self.log_info(
+            fl_ctx, f"Contribution from {client_name} {accepted_msg} by the aggregator at round {self._current_round}."
+        )
 
         fl_ctx.set_prop(AppConstants.AGGREGATION_ACCEPTED, accepted, private=True, sticky=False)
         self.fire_event(AppEventType.AFTER_CONTRIBUTION_ACCEPT, fl_ctx)
