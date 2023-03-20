@@ -22,7 +22,7 @@ from .model import Learnable
 
 class PersistorFilter(FLComponent, ABC):
     def process_post_load(self, learnable: Learnable, fl_ctx: FLContext) -> Learnable:
-        """Filter process applied to the Learnable object after it was loaded.
+        """Filter process applied to the Learnable object after it was loaded in ModelPersistor's `load()` call.
 
         Args:
             learnable: Learnable
@@ -34,7 +34,7 @@ class PersistorFilter(FLComponent, ABC):
         return learnable
 
     def process_pre_save(self, learnable: Learnable, fl_ctx: FLContext) -> Learnable:
-        """Filter process applied to the Learnable object before its being saved.
+        """Filter process applied to the Learnable object before its being saved in ModelPersistor's `save()` call.
 
         Args:
             learnable: Learnable
@@ -46,7 +46,19 @@ class PersistorFilter(FLComponent, ABC):
         return learnable
 
     def process_post_save(self, learnable: Learnable, fl_ctx: FLContext) -> Learnable:
-        """Filter process applied to the Learnable object after it's being saved.
+        """Filter process applied to the Learnable object after it's being saved in ModelPersistor's `save()` call.
+
+        Args:
+            learnable: Learnable
+            fl_ctx: FLContext
+
+        Returns:
+            a Learnable object
+        """
+        return learnable
+
+    def process_post_get(self, learnable: Learnable, fl_ctx: FLContext) -> Learnable:
+        """Filter process applied to the Learnable object after it was returned in ModelPersistor's `get()` call.
 
         Args:
             learnable: Learnable

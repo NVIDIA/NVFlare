@@ -123,7 +123,7 @@ class PTFileModelPersistor(ModelPersistor):
                 try:
                     with open(env_config_file_name) as file:
                         env = json.load(file)
-                except:
+                except BaseException:
                     self.system_panic(
                         reason="error opening env config file {}".format(env_config_file_name), fl_ctx=fl_ctx
                     )
@@ -197,7 +197,7 @@ class PTFileModelPersistor(ModelPersistor):
                 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
                 data = torch.load(src_file_name, map_location=device)
                 # "checkpoint may contain 'model', 'optimizer', 'lr_scheduler', etc. or only contain model dict directly."
-            except:
+            except BaseException:
                 self.log_exception(fl_ctx, "error loading checkpoint from {}".format(src_file_name))
                 self.system_panic(reason="cannot load model checkpoint", fl_ctx=fl_ctx)
                 return None
@@ -206,7 +206,7 @@ class PTFileModelPersistor(ModelPersistor):
             # note that, if set "determinism" in the config, the init model weights will always be the same
             try:
                 data = self.model.state_dict() if self.model is not None else OrderedDict()
-            except:
+            except BaseException:
                 self.log_exception(fl_ctx, "error getting state_dict from model object")
                 self.system_panic(reason="cannot create state_dict from model object", fl_ctx=fl_ctx)
                 return None
@@ -232,7 +232,7 @@ class PTFileModelPersistor(ModelPersistor):
         self.persistence_manager.update(ml)
         self.save_model_file(self._ckpt_save_path)
 
-    def get_model(self, model_file, fl_ctx: FLContext) -> ModelLearnable:
+    def get_model(self, model_file: str, fl_ctx: FLContext) -> ModelLearnable:
         try:
             # device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
             # Use the "cpu" to load the global model weights, avoid GPU out of memory

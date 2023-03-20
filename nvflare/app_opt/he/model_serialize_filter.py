@@ -94,3 +94,15 @@ class HEModelSerializeFilter(PersistorFilter):
             a Learnable object
         """
         return deserialize_nested_dict(learnable, self.tenseal_context)
+
+    def process_post_get(self, learnable: Learnable, fl_ctx: FLContext) -> Learnable:
+        """Filter process applied to the Learnable object after it was returned.
+
+        Args:
+            learnable: Learnable
+            fl_ctx: FLContext
+
+        Returns:
+            a Learnable object
+        """
+        return deserialize_nested_dict(learnable, self.tenseal_context)

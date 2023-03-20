@@ -25,8 +25,8 @@ from .persistor_filter import PersistorFilter
 class ModelPersistor(LearnablePersistor, ABC):
     def __init__(self, filter_id: str = None):
         """Abstract class.
-        Implementations will need to implement the `load_model()`, `save_model()`,
-        and `get()` methods to persist & load the current ModelLearnable.
+        Implementations will need to implement the `load_model()` and `save_model()`
+        methods to persist & load the current ModelLearnable.
             Args:
                 filter_id: Optional string that defines a filter component that is applied to prepare the model to be saved,
                     e.g. for serialization of custom Python objects.
@@ -63,7 +63,7 @@ class ModelPersistor(LearnablePersistor, ABC):
             _filter = fl_ctx.get_engine().get_component(self.filter_id)
             if not isinstance(_filter, PersistorFilter):
                 raise ValueError(f"Expected filter to be of type `PersistorFilter` but got {type(filter)}")
-            learnable = _filter.process_post_load(learnable=learnable, fl_ctx=fl_ctx)
+            learnable = _filter.process_post_get(learnable=learnable, fl_ctx=fl_ctx)
         return learnable
 
     @abstractmethod
@@ -101,5 +101,5 @@ class ModelPersistor(LearnablePersistor, ABC):
         """
         pass
 
-    def get_model(self, model_file, fl_ctx: FLContext) -> object:
+    def get_model(self, model_file: str, fl_ctx: FLContext) -> ModelLearnable:
         pass
