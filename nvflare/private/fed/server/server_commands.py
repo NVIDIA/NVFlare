@@ -15,6 +15,7 @@
 """FL Admin commands."""
 
 import copy
+import logging
 import time
 from abc import ABC, abstractmethod
 from typing import List
@@ -37,6 +38,9 @@ NO_OP_REPLY = "__no_op_reply"
 
 class CommandProcessor(ABC):
     """The CommandProcessor is responsible for processing a command from parent process."""
+
+    def __init__(self) -> None:
+        self.logger = logging.getLogger(self.__class__.__name__)
 
     @abstractmethod
     def get_command_name(self) -> str:
@@ -162,12 +166,6 @@ class GetTaskCommand(CommandProcessor, ServerStateCheck):
             shareable.set_header(TaskConstant.WAIT_TIME, 1.0)
         else:
             taskname, task_id, shareable = server_runner.process_task_request(client, fl_ctx)
-        # data = {
-        #     ServerCommandKey.TASK_NAME: taskname,
-        #     ServerCommandKey.TASK_ID: task_id,
-        #     ServerCommandKey.SHAREABLE: shareable,
-        #     ServerCommandKey.FL_CONTEXT: copy.deepcopy(get_serializable_data(fl_ctx).props),
-        # }
 
         # we need TASK_ID back as a cookie
         if not shareable:
@@ -182,7 +180,10 @@ class GetTaskCommand(CommandProcessor, ServerStateCheck):
         shared_fl_ctx.set_public_props(copy.deepcopy(get_serializable_data(fl_ctx).get_all_public_props()))
         shareable.set_header(key=FLContextKey.PEER_CONTEXT, value=shared_fl_ctx)
 
-        # return fobs.dumps(data)
+        self.logger.info(
+            f"return task to client.  client_name:{client.name}  task_id:{task_id}  "
+            f"sharable_header_task_id: {shareable.get_header(key=FLContextKey.TASK_ID)}"
+        )
         return shareable
 
     def get_state_check(self, fl_ctx: FLContext) -> dict:
@@ -212,13 +213,6 @@ class SubmitUpdateCommand(CommandProcessor, ServerStateCheck):
         Returns:
 
         """
-        # shareable = data.get(ReservedKey.SHAREABLE)
-        # shared_fl_ctx = data.get(ReservedKey.SHARED_FL_CONTEXT)
-        # client = shareable.get_header(ServerCommandKey.FL_CLIENT)
-        # fl_ctx.set_peer_context(shared_fl_ctx)
-        # contribution_task_name = shareable.get_header(ServerCommandKey.TASK_NAME)
-        # task_id = shareable.get_cookie(FLContextKey.TASK_ID)
-        # server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
 
         shared_fl_ctx = data.get_header(ServerCommandKey.PEER_FL_CONTEXT)
         data.set_header(ServerCommandKey.PEER_FL_CONTEXT, FLContext())
@@ -230,6 +224,7 @@ class SubmitUpdateCommand(CommandProcessor, ServerStateCheck):
         task_id = data.get_cookie(FLContextKey.TASK_ID)
         server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
         server_runner.process_submission(client, contribution_task_name, task_id, data, fl_ctx)
+        self.logger.info(f"submit_update process. client_name:{client.name}   task_id:{task_id}")
 
         return ""
 
