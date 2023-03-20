@@ -65,6 +65,22 @@ class CommandProcessor(ABC):
         pass
 
 
+class ServerStateCheck(ABC):
+    """Server command requires the server state check"""
+
+    @abstractmethod
+    def get_state_check(self, fl_ctx: FLContext) -> dict:
+        """Get the state check data for the server command.
+
+        Args:
+            fl_ctx: FLContext
+
+        Returns: server state check dict data
+
+        """
+        pass
+
+
 class AbortCommand(CommandProcessor):
     """To implement the abort command."""
 
@@ -113,7 +129,7 @@ class GetRunInfoCommand(CommandProcessor):
         return NO_OP_REPLY
 
 
-class GetTaskCommand(CommandProcessor):
+class GetTaskCommand(CommandProcessor, ServerStateCheck):
     """To implement the server GetTask command."""
 
     def get_command_name(self) -> str:
@@ -170,8 +186,13 @@ class GetTaskCommand(CommandProcessor):
         )
         return shareable
 
+    def get_state_check(self, fl_ctx: FLContext) -> dict:
+        engine = fl_ctx.get_engine()
+        server_state = engine.server.server_state
+        return server_state.get_task(fl_ctx)
 
-class SubmitUpdateCommand(CommandProcessor):
+
+class SubmitUpdateCommand(CommandProcessor, ServerStateCheck):
     """To implement the server GetTask command."""
 
     def get_command_name(self) -> str:
@@ -206,6 +227,11 @@ class SubmitUpdateCommand(CommandProcessor):
         self.logger.info(f"submit_update process. client_name:{client.name}   task_id:{task_id}")
 
         return ""
+
+    def get_state_check(self, fl_ctx: FLContext) -> dict:
+        engine = fl_ctx.get_engine()
+        server_state = engine.server.server_state
+        return server_state.submit_result(fl_ctx)
 
 
 class HandleDeadJobCommand(CommandProcessor):
@@ -362,6 +388,30 @@ class HeartbeatCommand(CommandProcessor):
         return None
 
 
+class ServerStateCommand(CommandProcessor):
+    """To implement the ServerStateCommand."""
+
+    def get_command_name(self) -> str:
+        """To get the command name.
+
+        Returns: AdminCommandNames.SERVER_STATE
+
+        """
+        return ServerCommandNames.SERVER_STATE
+
+    def process(self, data: Shareable, fl_ctx: FLContext):
+        """Called to process the SERVER_STATE command.
+
+        Args:
+            data: ServerState object
+            fl_ctx: FLContext
+
+        """
+        engine = fl_ctx.get_engine()
+        engine.server.server_state = data
+        return "Success"
+
+
 class ServerCommands(object):
     """AdminCommands contains all the commands for processing the commands from the parent process."""
 
@@ -376,12 +426,13 @@ class ServerCommands(object):
         GetErrorsCommand(),
         ResetErrorsCommand(),
         HeartbeatCommand(),
+        ServerStateCommand(),
     ]
 
     client_request_commands_names = [
         ServerCommandNames.GET_TASK,
         ServerCommandNames.SUBMIT_UPDATE,
-        ServerCommandNames.AUX_COMMUNICATE,
+        # ServerCommandNames.AUX_COMMUNICATE,
     ]
 
     @staticmethod
