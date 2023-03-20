@@ -204,6 +204,7 @@ class ServerCommandNames(object):
     RESET_ERRORS = "reset_errors"
     UPDATE_RUN_STATUS = "update_run_status"
     HANDLE_DEAD_JOB = "handle_dead_job"
+    SERVER_STATE = "server_state"
 
 
 class ServerCommandKey(object):

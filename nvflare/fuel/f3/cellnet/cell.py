@@ -19,6 +19,7 @@ import random
 import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Tuple, Union
 from urllib.parse import urlparse
 
@@ -160,7 +161,9 @@ class _Waiter(threading.Event):
         self.received_replies = {}
 
 
-def log_messaging_error(logger, log_text: str, cell, msg: Union[Message, None], log_except=False):
+def log_messaging_error(
+    logger, log_text: str, cell, msg: Union[Message, None], log_except=False, log_level=logging.ERROR
+):
     debug = False
     if msg:
         debug = msg.get_header(MessageHeaderKey.OPTIONAL, default=False)
@@ -172,13 +175,11 @@ def log_messaging_error(logger, log_text: str, cell, msg: Union[Message, None], 
         debug = True
 
     if debug:
-        logger.debug(log_text)
-        if log_except:
-            logger.debug(secure_format_traceback())
-    else:
-        logger.error(log_text)
-        if log_except:
-            logger.error(secure_format_traceback())
+        log_level = logging.DEBUG
+
+    logger.log(log_level, log_text)
+    if log_except:
+        logger.log(log_level, secure_format_traceback())
 
 
 class _BulkSender:
@@ -260,6 +261,14 @@ class Cell(MessageReceiver, EndpointMonitor):
     APP_ID = 1
     ERR_TYPE_MSG_TOO_BIG = "MsgTooBig"
     ERR_TYPE_COMM = "CommErr"
+    DIRECT_MSG_POOL_SIZE = 1000
+
+    ALL_CELLS = {}  # cell name => Cell
+    DIRECT_MSG_EXECUTOR = ThreadPoolExecutor(DIRECT_MSG_POOL_SIZE, "direct_msg")
+
+    SUB_TYPE_CHILD = 1
+    SUB_TYPE_CLIENT = 2
+    SUB_TYPE_NONE = 0
 
     def __init__(
         self,
@@ -302,6 +311,9 @@ class Cell(MessageReceiver, EndpointMonitor):
                 client_1            (he root cell of client_1)
 
         """
+        if fqcn in self.ALL_CELLS:
+            raise ValueError(f"there is already a cell named {fqcn}")
+
         comm_configurator = CommConfigurator()
         self._name = self.__class__.__name__
         self.logger = logging.getLogger(self._name)
@@ -341,14 +353,13 @@ class Cell(MessageReceiver, EndpointMonitor):
         self.parent_url = parent_url
         self.bulk_check_interval = bulk_check_interval
         self.max_bulk_size = max_bulk_size
+        self.bulk_checker = None
         self.bulk_senders = {}
-        self.bulk_checker = threading.Thread(target=self._check_bulk)
-        self.bulk_lock = threading.Lock()
-
         self.bulk_process_interval = bulk_process_interval
         self.bulk_messages = []
+        self.bulk_processor = None
+        self.bulk_lock = threading.Lock()
         self.bulk_msg_lock = threading.Lock()
-        self.bulk_processor = threading.Thread(target=self._process_bulk_messages)
 
         self.agents = {}  # cell_fqcn => CellAgent
         self.agent_lock = threading.Lock()
@@ -402,6 +413,7 @@ class Cell(MessageReceiver, EndpointMonitor):
         self.max_timeout = max_timeout
         self.asked_to_stop = False
         self.running = False
+        self.stopping = False
 
         # add appropriate drivers based on roles of the cell
         # a cell can have at most two listeners: one for external, one for internal
@@ -461,9 +473,17 @@ class Cell(MessageReceiver, EndpointMonitor):
             counter_names=counter_names,
             scope=self.my_info.fqcn,
         )
+        self.ALL_CELLS[fqcn] = self
 
     def log_error(self, log_text: str, msg: Union[None, Message], log_except=False):
-        log_messaging_error(logger=self.logger, log_text=log_text, cell=self, msg=msg, log_except=log_except)
+        log_messaging_error(
+            logger=self.logger, log_text=log_text, cell=self, msg=msg, log_except=log_except, log_level=logging.ERROR
+        )
+
+    def log_warning(self, log_text: str, msg: Union[None, Message], log_except=False):
+        log_messaging_error(
+            logger=self.logger, log_text=log_text, cell=self, msg=msg, log_except=log_except, log_level=logging.WARNING
+        )
 
     def get_root_url_for_child(self):
         if isinstance(self.root_url, list):
@@ -505,10 +525,13 @@ class Cell(MessageReceiver, EndpointMonitor):
 
     def _set_bb_for_client_root(self):
         self._create_bb_external_connector()
-        self._create_internal_listener()
+        if self.create_internal_listener:
+            self._create_internal_listener()
 
     def _set_bb_for_client_child(self, parent_url: str, create_internal_listener: bool):
-        self._create_internal_connector(parent_url)
+        if parent_url:
+            self._create_internal_connector(parent_url)
+
         if create_internal_listener:
             self._create_internal_listener()
 
@@ -522,11 +545,14 @@ class Cell(MessageReceiver, EndpointMonitor):
                 self._create_external_listener(url)
         else:
             self.logger.info(f"{self.my_info.fqcn}: creating listener on {self.root_url}")
-            self._create_external_listener(self.root_url)
-        self._create_internal_listener()
+            if self.root_url:
+                self._create_external_listener(self.root_url)
+        if self.create_internal_listener:
+            self._create_internal_listener()
 
     def _set_bb_for_server_child(self, parent_url: str, create_internal_listener: bool):
-        self._create_internal_connector(parent_url)
+        if parent_url:
+            self._create_internal_connector(parent_url)
         if create_internal_listener:
             self._create_internal_listener()
 
@@ -703,6 +729,14 @@ class Cell(MessageReceiver, EndpointMonitor):
             return listener
 
     def _create_bb_external_connector(self):
+        if not self.root_url:
+            return
+
+        # if the root server a local cell?
+        if self.ALL_CELLS.get(FQCN.ROOT_SERVER):
+            # no need to connect
+            return
+
         self.logger.debug(f"{self.my_info.fqcn}: creating connector to {self.root_url}")
         self.bb_ext_connector = self.connector_manager.get_external_connector(self.root_url, False)
         if self.bb_ext_connector:
@@ -791,8 +825,6 @@ class Cell(MessageReceiver, EndpointMonitor):
             else:
                 self._set_bb_for_client_child(self.parent_url, self.create_internal_listener)
 
-        self.bulk_checker.start()
-        self.bulk_processor.start()
         self.communicator.start()
         self.running = True
 
@@ -805,6 +837,12 @@ class Cell(MessageReceiver, EndpointMonitor):
         """
         if not self.running:
             return
+
+        if self.stopping:
+            return
+
+        self.stopping = True
+        self.logger.debug(f"{self.my_info.fqcn}: Stopping Cell")
 
         # notify peers that I am gone
         with self.agent_lock:
@@ -820,11 +858,13 @@ class Cell(MessageReceiver, EndpointMonitor):
                     optional=True,
                 )
 
-        self.logger.debug(f"{self.my_info.fqcn}: Closing Cell")
         self.running = False
         self.asked_to_stop = True
-        self.bulk_checker.join()
-        self.bulk_processor.join()
+        if self.bulk_checker is not None and self.bulk_checker.is_alive():
+            self.bulk_checker.join()
+
+        if self.bulk_processor is not None and self.bulk_processor.is_alive():
+            self.bulk_processor.join()
 
         try:
             # we can now stop the communicator
@@ -834,7 +874,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                 msg=None, log_text=f"error stopping Communicator: {secure_format_exception(ex)}", log_except=True
             )
 
-        self.logger.debug(f"{self.my_info.fqcn}: CELL closed!")
+        self.logger.debug(f"{self.my_info.fqcn}: cell stopped!")
 
     def register_request_cb(self, channel: str, topic: str, cb, *args, **kwargs):
         """
@@ -927,16 +967,19 @@ class Cell(MessageReceiver, EndpointMonitor):
         target_info = FqcnInfo(target_fqcn)
 
         # is there a direct path to the target?
+        if target_fqcn in self.ALL_CELLS:
+            return Endpoint(target_fqcn)
+
         agent = self.agents.get(target_fqcn)
         if agent:
             return agent.endpoint
 
         if same_family(self.my_info, target_info):
             if FQCN.is_parent(self.my_info.fqcn, target_fqcn):
-                self.log_error(msg=for_msg, log_text=f"backbone broken: no path to child {target_fqcn}")
+                self.log_warning(msg=for_msg, log_text=f"no connection to child {target_fqcn}")
                 return None
             elif FQCN.is_parent(target_fqcn, self.my_info.fqcn):
-                self.log_error(f"backbone broken: no path to parent {target_fqcn}", for_msg)
+                self.log_warning(f"no connection to parent {target_fqcn}", for_msg)
 
             self.logger.debug(f"{self.my_info.fqcn}: find path in the same family")
             if FQCN.is_ancestor(self.my_info.fqcn, target_fqcn):
@@ -949,7 +992,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                 parent_fqcn = FQCN.get_parent(self.my_info.fqcn)
                 agent = self.agents.get(parent_fqcn)
                 if not agent:
-                    self.log_error(f"broken backbone - no path to parent {parent_fqcn}", for_msg)
+                    self.log_warning(f"no connection to parent {parent_fqcn}", for_msg)
                     return None
                 return agent.endpoint
 
@@ -971,11 +1014,11 @@ class Cell(MessageReceiver, EndpointMonitor):
             parent_fqcn = FQCN.get_parent(self.my_info.fqcn)
             agent = self.agents.get(parent_fqcn)
             if not agent:
-                self.log_error(f"broken backbone - no path to parent {parent_fqcn}", for_msg)
+                self.log_warning(f"no connection to parent {parent_fqcn}", for_msg)
                 return None
             return agent.endpoint
 
-        self.log_error(f"cannot find path to {target_fqcn}", for_msg)
+        self.log_warning(f"no connection to {target_fqcn}", for_msg)
         return None
 
     def _send_to_endpoint(self, to_endpoint: Endpoint, message: Message) -> str:
@@ -993,7 +1036,12 @@ class Cell(MessageReceiver, EndpointMonitor):
                 self.log_error(err_text, message)
                 err = ReturnCode.MSG_TOO_BIG
             else:
-                self.communicator.send(to_endpoint, Cell.APP_ID, message)
+                direct_cell = self.ALL_CELLS.get(to_endpoint.name)
+                if direct_cell:
+                    # create a thread and fire the cell's process_message!
+                    self.DIRECT_MSG_EXECUTOR.submit(self._send_direct_message, direct_cell, message)
+                else:
+                    self.communicator.send(to_endpoint, Cell.APP_ID, message)
                 self.sent_msg_size_pool.record_value(
                     category=self._stats_category(message), value=self._msg_size_mbs(message)
                 )
@@ -1003,6 +1051,11 @@ class Cell(MessageReceiver, EndpointMonitor):
             self.logger.debug(secure_format_traceback())
             err = ReturnCode.COMM_ERROR
         return err
+
+    def _send_direct_message(self, target_cell, message):
+        target_cell.process_message(
+            endpoint=Endpoint(self.my_info.fqcn), connection=None, app_id=self.APP_ID, message=message
+        )
 
     def _send_target_messages(
         self,
@@ -1238,18 +1291,26 @@ class Cell(MessageReceiver, EndpointMonitor):
         return self._send_to_targets(channel, topic, targets, message)
 
     def queue_message(self, channel: str, topic: str, targets: Union[str, List[str]], message: Message, optional=False):
+        if self.max_bulk_size <= 0:
+            raise RuntimeError(f"{self.get_fqcn()}: bulk message is not enabled!")
+
         if isinstance(targets, str):
             targets = [targets]
 
         message.set_header(MessageHeaderKey.OPTIONAL, optional)
         with self.bulk_lock:
+            if self.bulk_checker is None:
+                self.logger.info(f"{self.my_info.fqcn}: starting bulk_checker")
+                self.bulk_checker = threading.Thread(target=self._check_bulk, name="check_bulk_msg")
+                self.bulk_checker.start()
+                self.logger.info(f"{self.my_info.fqcn}: started bulk_checker")
             for t in targets:
                 sender = self.bulk_senders.get(t)
                 if not sender:
                     sender = _BulkSender(cell=self, target=t, max_queue_size=self.max_bulk_size)
                     self.bulk_senders[t] = sender
                 sender.queue_message(channel=channel, topic=topic, message=message)
-                self.logger.debug(f"{self.get_fqcn()}: queued msg for {t}")
+                self.logger.info(f"{self.get_fqcn()}: queued msg for {t}")
 
     def _peer_goodbye(self, request: Message):
         peer_ep = request.get_prop(MessagePropKey.ENDPOINT)
@@ -1273,6 +1334,11 @@ class Cell(MessageReceiver, EndpointMonitor):
         target_msgs = request.payload
         assert isinstance(target_msgs, list)
         with self.bulk_msg_lock:
+            if self.bulk_processor is None:
+                self.logger.debug(f"{self.my_info.fqcn}: starting bulk message processor")
+                self.bulk_processor = threading.Thread(target=self._process_bulk_messages, name="process_bulk_msg")
+                self.bulk_processor.start()
+                self.logger.debug(f"{self.my_info.fqcn}: started bulk message processor")
             self.bulk_messages.append(request)
             self.logger.debug(f"{self.get_fqcn()}: received bulk msg. Pending size {len(self.bulk_messages)}")
 
@@ -1510,7 +1576,7 @@ class Cell(MessageReceiver, EndpointMonitor):
 
         req_destination = origin
         if msg_type == MessageType.RETURN:
-            self.log_error("message is returned", message)
+            self.logger.debug(format_log_message(self.my_info.fqcn, message, "message is returned"))
             self.sent_msg_counter_pool.increment(
                 category=self._stats_category(message), counter_name=_CounterName.RETURN
             )
@@ -1602,10 +1668,11 @@ class Cell(MessageReceiver, EndpointMonitor):
         self.logger.debug(f"{self.my_info.fqcn}: received message: {message.headers}")
         message.set_prop(MessagePropKey.ENDPOINT, endpoint)
 
-        conn_props = connection.get_conn_properties()
-        cn = conn_props.get(DriverParams.PEER_CN.value)
-        if cn:
-            message.set_prop(MessagePropKey.COMMON_NAME, cn)
+        if connection:
+            conn_props = connection.get_conn_properties()
+            cn = conn_props.get(DriverParams.PEER_CN.value)
+            if cn:
+                message.set_prop(MessagePropKey.COMMON_NAME, cn)
 
         msg_type = message.get_header(MessageHeaderKey.MSG_TYPE)
         if not msg_type:
@@ -1837,14 +1904,30 @@ class Cell(MessageReceiver, EndpointMonitor):
 
         Returns: fqcns of child cells, fqcns of top-level client cells
         """
-        children = []
-        clients = []
+        children_dict = {}
+        clients_dict = {}
         with self.agent_lock:
             for fqcn, agent in self.agents.items():
-                if FQCN.is_parent(self.my_info.fqcn, fqcn):
-                    children.append(fqcn)
-                elif self.my_info.is_root and self.my_info.is_on_server:
-                    # see whether the agent is a client cell
-                    if agent.info.is_root and not agent.info.is_on_server:
-                        clients.append(fqcn)
-            return children, clients
+                sub_type = self._is_my_sub(agent.info)
+                if sub_type == self.SUB_TYPE_CHILD:
+                    children_dict[fqcn] = True
+                elif sub_type == self.SUB_TYPE_CLIENT:
+                    clients_dict[fqcn] = True
+
+        # check local cells
+        for fqcn in self.ALL_CELLS.keys():
+            sub_type = self._is_my_sub(FqcnInfo(fqcn))
+            if sub_type == self.SUB_TYPE_CHILD:
+                children_dict[fqcn] = True
+            elif sub_type == self.SUB_TYPE_CLIENT:
+                clients_dict[fqcn] = True
+        return list(children_dict.keys()), list(clients_dict.keys())
+
+    def _is_my_sub(self, candidate_info: FqcnInfo) -> int:
+        if FQCN.is_parent(self.my_info.fqcn, candidate_info.fqcn):
+            return self.SUB_TYPE_CHILD
+        if self.my_info.is_root and self.my_info.is_on_server:
+            # see whether the agent is a client root cell
+            if candidate_info.is_root and not candidate_info.is_on_server:
+                return self.SUB_TYPE_CLIENT
+        return self.SUB_TYPE_NONE
