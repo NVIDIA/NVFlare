@@ -24,7 +24,7 @@
     },
     {
       "id": "serialize_filter",
-      "name": "ModelSerializeFilter",
+      "name": "HEModelSerializeFilter",
       "args": {
       }
     },

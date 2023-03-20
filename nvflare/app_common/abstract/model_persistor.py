@@ -90,7 +90,6 @@ class ModelPersistor(LearnablePersistor, ABC):
         """
         pass
 
-    @abstractmethod
     def get_model_inventory(self, fl_ctx: FLContext) -> {str: ModelDescriptor}:
         """Get the model inventory of the ModelPersister.
 
@@ -102,6 +101,5 @@ class ModelPersistor(LearnablePersistor, ABC):
         """
         pass
 
-    @abstractmethod
     def get_model(self, model_file, fl_ctx: FLContext) -> object:
         pass

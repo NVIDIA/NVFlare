@@ -41,7 +41,7 @@ def deserialize_nested_dict(d, context):
     return d
 
 
-class ModelSerializeFilter(PersistorFilter):
+class HEModelSerializeFilter(PersistorFilter):
     def __init__(self, tenseal_context_file="server_context.tenseal"):
         """Used to serialize TenSEAL encrypted server models for use with
         homomorphic encryption (HE) support using TenSEAL https://github.com/OpenMined/TenSEAL.
