@@ -64,6 +64,7 @@ class ClientTaskWorker(FLComponent):
 
         client_app_runner = SimulatorClientAppRunner()
         client_runner = client_app_runner.create_client_runner(app_client_root, args, args.config_folder, client, False)
+        client_app_runner.sync_up_parents_process(client)
         client_runner.engine.cell = client.cell
         client_runner.init_run(app_client_root, args)
 
