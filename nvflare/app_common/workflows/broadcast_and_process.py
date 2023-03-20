@@ -120,8 +120,8 @@ class BroadcastAndProcess(Controller):
                 reason=f"ResponseProcessor {type(self.processor)} failed to check client {client.name}", fl_ctx=fl_ctx
             )
 
-    def stop_controller(self, fl_ctx: FLContext) -> None:
-        self.cancel_all_tasks()
+    def stop_controller(self, fl_ctx: FLContext):
+        pass
 
     def process_result_of_unknown_task(
         self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext

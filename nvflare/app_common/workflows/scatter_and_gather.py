@@ -291,9 +291,8 @@ class ScatterAndGather(Controller):
             self.log_exception(fl_ctx, error_msg)
             self.system_panic(error_msg, fl_ctx)
 
-    def stop_controller(self, fl_ctx: FLContext) -> None:
+    def stop_controller(self, fl_ctx: FLContext):
         self._phase = AppConstants.PHASE_FINISHED
-        self.cancel_all_tasks()
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         super().handle_event(event_type, fl_ctx)
