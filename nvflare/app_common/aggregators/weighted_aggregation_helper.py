@@ -37,33 +37,28 @@ class WeightedAggregationHelper(object):
         self.counts = dict()
         self.history = list()
 
-    def add(self, data, weight, contributor_name, contribution_round):
+    def add(self, data, weight, contributor_name, contribution_round, weigh_by_local_iter: bool = True):
         """Compute weighted sum and sum of weights."""
-        if weight is None:
-            w = 1.0
-        else:
-            w = weight
-
         with self.lock:
             for k, v in data.items():
                 if self.exclude_vars is not None and self.exclude_vars.search(k):
                     continue
-                if weight is None:
-                    weighted_value = v
+                if weigh_by_local_iter:
+                    weighted_value = v * weight
                 else:
-                    weighted_value = v * w
+                    weighted_value = v  # used in homomorphic encryption to reduce computations on ciphertext
                 current_total = self.total.get(k, None)
                 if current_total is None:
                     self.total[k] = weighted_value
-                    self.counts[k] = w
+                    self.counts[k] = weight
                 else:
                     self.total[k] = current_total + weighted_value
-                    self.counts[k] = self.counts[k] + w
+                    self.counts[k] = self.counts[k] + weight
             self.history.append(
                 {
                     "contributor_name": contributor_name,
                     "round": contribution_round,
-                    "weight": w,
+                    "weight": weight,
                 }
             )
 

@@ -50,6 +50,9 @@ class HEModelEncryptor(DXOFilter):
                             being encrypted.
             aggregation_weights: dictionary of client aggregation `{"client1": 1.0, "client2": 2.0, "client3": 3.0}`;
                                  defaults to a weight of 1.0 if not specified.
+                                 Note, if specified, the same `aggregation_weights` should also be used on the server
+                                 aggregator for the resulting weighted sum to be valid,
+                                 i.e. in `HEInTimeAccumulateWeightedAggregator`.
             weigh_by_local_iter: If true, multiply client weights on first before encryption (default: `True`
             which is recommended for HE)
             data_kinds: data kinds to apply this filter

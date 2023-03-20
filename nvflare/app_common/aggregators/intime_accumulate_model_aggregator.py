@@ -70,9 +70,10 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
                 when processing a DXO of `DataKind.COLLECTION`. Only the keys in this dict will be processed.
             weigh_by_local_iter (bool, optional): Whether to weight the contributions by the number of iterations
                 performed in local training in the current round. Defaults to `True`.
-                Note, if `False`, `aggregation_weights` will also be ignored.
                 Setting it to `False` can be useful in applications such as homomorphic encryption to reduce
                 the number of computations on encrypted ciphertext.
+                The aggregated sum will still be divided by the provided weights and `aggregation_weights` for the
+                resulting weighted sum to be valid.
         """
         super().__init__()
         self.logger.debug(f"exclude vars: {exclude_vars}")

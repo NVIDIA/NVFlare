@@ -43,9 +43,10 @@ class DXOAggregator(FLComponent):
             name_postfix: optional postfix to give to class name and show in logger output.
             weigh_by_local_iter (bool, optional): Whether to weight the contributions by the number of iterations
                 performed in local training in the current round. Defaults to `True`.
-                Note, if `False`, `aggregation_weights` will also be ignored.
                 Setting it to `False` can be useful in applications such as homomorphic encryption to reduce
                 the number of computations on encrypted ciphertext.
+                The aggregated sum will still be divided by the provided weights and `aggregation_weights` for the
+                resulting weighted sum to be valid.
         """
         super().__init__()
         self.expected_data_kind = expected_data_kind
@@ -135,7 +136,7 @@ class DXOAggregator(FLComponent):
             n_iter = 1.0
         float_n_iter = float(n_iter)
         aggregation_weight = self.aggregation_weights.get(contributor_name)
-        if aggregation_weight is None and self.weigh_by_local_iter:
+        if aggregation_weight is None:
             if self.warning_count.get(contributor_name, 0) <= self.warning_limit:
                 self.log_warning(
                     fl_ctx,
@@ -149,12 +150,13 @@ class DXOAggregator(FLComponent):
             aggregation_weight = 1.0
 
         # aggregate
-        if self.weigh_by_local_iter:
-            w = aggregation_weight * float_n_iter
-        else:
-            w = None
-
-        self.aggregation_helper.add(data, w, contributor_name, contribution_round)
+        self.aggregation_helper.add(
+            data,
+            aggregation_weight * float_n_iter,
+            contributor_name,
+            contribution_round,
+            weigh_by_local_iter=self.weigh_by_local_iter,
+        )
         self.log_debug(fl_ctx, "End accept")
         return True
 
