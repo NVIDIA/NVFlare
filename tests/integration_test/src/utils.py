@@ -243,7 +243,7 @@ def run_admin_api_tests(admin_api: FLAdminAPI):
     print("\nList Jobs:")
     list_jobs_return_rows = admin_api.list_jobs().get("details")
     print(list_jobs_return_rows)
-    first_job = str(list_jobs_return_rows[1][0])
+    first_job = str(list_jobs_return_rows[0].get("job_id"))
     print("\nCommand: ls server -a .")
     ls_return_message = admin_api.ls_target("server", "-a", ".").get("details").get("message")
     print(ls_return_message)
