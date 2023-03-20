@@ -76,3 +76,8 @@ For example, launch a NVIDIA FLARE server in AWS with a configuration file ``my_
     security group: nvflare_server_sg
     key pair: NVFlareServerKeyPair
 
+Post Deployment
+===============
+
+After deploying dashboard/server/client to the cloud, you can ssh into the VM.  If you try to run ssh from a computer other than the one you ran the scripts,
+its public IP address might not be within the source IP range of inbound rules.  Please use AWS or Azure web to update the inbound rules.
