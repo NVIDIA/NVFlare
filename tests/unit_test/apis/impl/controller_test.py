@@ -78,9 +78,21 @@ class DummyController(Controller):
 
 def launch_task(controller, method, task, fl_ctx, kwargs):
     if method == "broadcast":
-        controller.broadcast(task=task, fl_ctx=fl_ctx, **kwargs)
+        if "min_responses" in kwargs:
+            min_responses = kwargs.pop("min_responses")
+        elif "targets" in kwargs:
+            min_responses = len(kwargs["targets"])
+        else:
+            min_responses = 1
+        controller.broadcast(task=task, fl_ctx=fl_ctx, min_responses=min_responses, **kwargs)
     elif method == "broadcast_and_wait":
-        controller.broadcast_and_wait(task=task, fl_ctx=fl_ctx, **kwargs)
+        if "min_responses" in kwargs:
+            min_responses = kwargs.pop("min_responses")
+        elif "targets" in kwargs:
+            min_responses = len(kwargs["targets"])
+        else:
+            min_responses = 1
+        controller.broadcast_and_wait(task=task, fl_ctx=fl_ctx, min_responses=min_responses, **kwargs)
     elif method == "send":
         controller.send(task=task, fl_ctx=fl_ctx, **kwargs)
     elif method == "send_and_wait":
@@ -557,6 +569,21 @@ def _get_task_done_callback_test_cases():
     return test_cases
 
 
+def clients_pull_and_submit_result(controller, ctx, clients, task_name):
+    client_task_ids = []
+    num_of_clients = len(clients)
+    for i in range(num_of_clients):
+        task_name_out, client_task_id, data = controller.process_task_request(clients[i], ctx)
+        assert task_name_out == task_name
+        client_task_ids.append(client_task_id)
+
+    for client, client_task_id in zip(clients, client_task_ids):
+        data = Shareable()
+        controller.process_submission(
+            client=client, task_name=task_name, task_id=client_task_id, fl_ctx=ctx, result=data
+        )
+
+
 class TestCallback(TestController):
     @pytest.mark.parametrize("method", TestController.ALL_APIS)
     def test_before_task_sent_cb(self, method):
@@ -600,7 +627,6 @@ class TestCallback(TestController):
         controller, fl_ctx, clients = self.setup_system()
         client = clients[0]
         task = create_task("__test_task", data=input_data, result_received_cb=result_received_cb)
-        kwargs = {"targets": [client]}
         launch_thread = threading.Thread(
             target=launch_task,
             kwargs={
@@ -608,7 +634,7 @@ class TestCallback(TestController):
                 "task": task,
                 "method": method,
                 "fl_ctx": fl_ctx,
-                "kwargs": kwargs,
+                "kwargs": {"targets": [client]},
             },
         )
         get_ready(launch_thread)
@@ -634,7 +660,6 @@ class TestCallback(TestController):
 
         timeout = 0 if task_complete != "timeout" else 1
         task = create_task("__test_task", data=input_data, task_done_cb=cb, timeout=timeout)
-        kwargs = {"targets": clients}
         launch_thread = threading.Thread(
             target=launch_task,
             kwargs={
@@ -642,7 +667,7 @@ class TestCallback(TestController):
                 "task": task,
                 "method": method,
                 "fl_ctx": fl_ctx,
-                "kwargs": kwargs,
+                "kwargs": {"targets": clients},
             },
         )
         get_ready(launch_thread)
@@ -852,6 +877,56 @@ class TestCallback(TestController):
         launch_thread.join()
         self.teardown_system(controller, ctx)
 
+    def test_broadcast_schedule_task_in_result_received_cb(self):
+        num_of_clients = 100
+        controller, ctx, clients = self.setup_system(num_of_clients=num_of_clients)
+
+        # callback needs to have args name client_task and fl_ctx
+        def result_received_cb(client_task: ClientTask, fl_ctx: FLContext):
+            inner_controller = fl_ctx.get_prop(key="controller")
+            client = client_task.client
+            new_task = create_task(f"__new_test_task_{client.name}")
+            inner_launch_thread = threading.Thread(
+                target=launch_task,
+                kwargs={
+                    "controller": inner_controller,
+                    "task": new_task,
+                    "method": "broadcast",
+                    "fl_ctx": fl_ctx,
+                    "kwargs": {"targets": clients},
+                },
+            )
+            get_ready(inner_launch_thread)
+            inner_launch_thread.join()
+
+        ctx.set_prop("controller", controller)
+        task = create_task("__test_task", result_received_cb=result_received_cb)
+        launch_thread = threading.Thread(
+            target=launch_task,
+            kwargs={
+                "controller": controller,
+                "task": task,
+                "method": "broadcast",
+                "fl_ctx": ctx,
+                "kwargs": {"targets": clients},
+            },
+        )
+        launch_thread.start()
+
+        clients_pull_and_submit_result(controller=controller, ctx=ctx, clients=clients, task_name="__test_task")
+        controller._check_tasks()
+        assert controller.get_num_standing_tasks() == num_of_clients
+
+        for i in range(num_of_clients):
+            clients_pull_and_submit_result(
+                controller=controller, ctx=ctx, clients=clients, task_name=f"__new_test_task_{clients[i].name}"
+            )
+            controller._check_tasks()
+            assert controller.get_num_standing_tasks() == num_of_clients - (i + 1)
+
+        launch_thread.join()
+        self.teardown_system(controller, ctx)
+
 
 class TestBasic(TestController):
     @pytest.mark.parametrize("task_name,client_name", [["__test_task", "__test_client0"]])
@@ -898,7 +973,6 @@ class TestBasic(TestController):
         controller, fl_ctx, clients = self.setup_system()
         client = clients[0]
         task = create_task("__test_task")
-        kwargs = {"targets": [client]}
         launch_thread = threading.Thread(
             target=launch_task,
             kwargs={
@@ -906,7 +980,7 @@ class TestBasic(TestController):
                 "task": task,
                 "method": method,
                 "fl_ctx": fl_ctx,
-                "kwargs": kwargs,
+                "kwargs": {"targets": [client]},
             },
         )
         get_ready(launch_thread)
