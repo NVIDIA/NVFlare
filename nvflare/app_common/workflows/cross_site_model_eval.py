@@ -237,8 +237,6 @@ class CrossSiteModelEval(Controller):
             self.system_panic(error_msg, fl_ctx)
 
     def stop_controller(self, fl_ctx: FLContext):
-        self.cancel_all_tasks(fl_ctx=fl_ctx)
-
         if self._cleanup_models:
             self.log_info(fl_ctx, "Removing local models kept for validation.")
             for model_name, model_path in self._server_models.items():
