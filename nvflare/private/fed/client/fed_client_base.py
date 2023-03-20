@@ -214,9 +214,7 @@ class FederatedClientBase:
             self.logger.info("Wait for client_runner to be created.")
             while not self.client_runner:
                 if time.time() - start > self.engine_create_timeout:
-                    raise RuntimeError(
-                        f"Failed get client_runner after {self.engine_create_timeout} seconds"
-                    )
+                    raise RuntimeError(f"Failed get client_runner after {self.engine_create_timeout} seconds")
                 time.sleep(self.cell_check_frequency)
             self.logger.info(f"Got client_runner after {time.time()-start} seconds")
             self.client_runner.engine.cell = self.cell
@@ -226,9 +224,7 @@ class FederatedClientBase:
             self.logger.info("Wait for engine to be created.")
             while not self.engine:
                 if time.time() - start > self.engine_create_timeout:
-                    raise RuntimeError(
-                        f"Failed to get engine after {time.time()-start} seconds"
-                    )
+                    raise RuntimeError(f"Failed to get engine after {time.time()-start} seconds")
                 time.sleep(self.cell_check_frequency)
             self.logger.info(f"Got engine after {time.time() - start} seconds")
             self.engine.cell = self.cell

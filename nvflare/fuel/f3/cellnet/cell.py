@@ -1570,7 +1570,7 @@ class Cell(MessageReceiver, EndpointMonitor):
         if dest and origin:
             if dest != self.my_info.fqcn and origin != self.my_info.fqcn:
                 # this is the case of forwarding
-                type_tag = 'fwd.' + msg_type
+                type_tag = "fwd." + msg_type
 
         if msg_type == MessageType.RETURN:
             orig_headers = message.get_header(MessageHeaderKey.ORIGINAL_HEADERS, None)

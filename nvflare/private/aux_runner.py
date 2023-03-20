@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import time
 from threading import Lock
 from typing import List
-import time
 
 from nvflare.apis.client import Client
 from nvflare.apis.fl_component import FLComponent
