@@ -47,7 +47,7 @@ class FedEventRunner(Widget):
         self.last_timestamps = {}  # client name => last_timestamp
         self.in_events = []
         self.in_lock = threading.Lock()
-        self.poster = threading.Thread(target=self._post, args=())
+        self.poster = None
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
@@ -55,11 +55,9 @@ class FedEventRunner(Widget):
             self.engine.register_aux_message_handler(topic=self.topic, message_handle_func=self._receive)
             self.abort_signal = fl_ctx.get_run_abort_signal()
             self.asked_to_stop = False
-            self.asked_to_flush = False
-            self.poster.start()
         elif event_type == EventType.END_RUN:
             self.asked_to_stop = True
-            if self.poster.is_alive():
+            if self.poster is not None and self.poster.is_alive():
                 self.poster.join()
         else:
             # handle outgoing fed events
@@ -104,6 +102,11 @@ class FedEventRunner(Widget):
             return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
         with self.in_lock:
+            if self.poster is None:
+                # create the poster thread now
+                self.poster = threading.Thread(target=self._post, name="fed_event_poster")
+                self.poster.start()
+
             last_timestamp = self.last_timestamps.get(peer_name, None)
             if last_timestamp is None or timestamp > last_timestamp:
                 # we only keep new items, in case the peer somehow sent old items
