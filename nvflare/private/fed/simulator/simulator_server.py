@@ -18,6 +18,7 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReservedTopic, ServerCommandKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReturnCode, Shareable, make_reply
+from nvflare.fuel.f3.message import Message
 from nvflare.private.fed.server.run_manager import RunManager
 from nvflare.private.fed.server.server_state import HotState
 
@@ -138,3 +139,6 @@ class SimulatorServer(FederatedServer):
         self.engine.ask_to_stop()
         # self.job_cell.stop()
         # super().stop_run_engine_cell()
+
+    def authentication_check(self, request: Message, state_check):
+        return None
