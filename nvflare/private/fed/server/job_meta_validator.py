@@ -117,7 +117,7 @@ class JobMetaValidator:
             ):
                 raise ValueError(f"App {app} will be deployed to server but server config is missing")
 
-            if (all_sites or [site for site in deployments if site != "SERVER_SITE_NAME"]) and not self._entry_exists(
+            if (all_sites or [site for site in deployments if site != SERVER_SITE_NAME]) and not self._entry_exists(
                 zip_file, zip_folder + JobConstants.CLIENT_JOB_CONFIG
             ):
                 raise ValueError(f"App {app} will be deployed to client but client config is missing")
