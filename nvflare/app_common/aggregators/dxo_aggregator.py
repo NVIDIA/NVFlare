@@ -97,7 +97,8 @@ class DXOAggregator(FLComponent):
             elif self.processed_algorithm != processed_algorithm:
                 self.log_error(
                     fl_ctx,
-                    f"Only supports aggregation of data processed with the same algorithm ({self.processed_algorithm}) but got algorithm: {processed_algorithm}",
+                    f"Only supports aggregation of data processed with the same algorithm ({self.processed_algorithm}) "
+                    f"but got algorithm: {processed_algorithm}",
                 )
                 return False
 
