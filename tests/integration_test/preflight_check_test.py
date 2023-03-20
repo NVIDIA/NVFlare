@@ -207,7 +207,6 @@ class TestPreflightCheck:
             # preflight-check on clients
             for client_name, client_props in site_launcher.client_properties.items():
                 output = _run_preflight_check_command(package_path=client_props.root_dir)
-                print(_filter_output(output))
                 assert _filter_output(output) == CLIENT_OUTPUT_PASSED.splitlines()
         except Exception:
             raise
