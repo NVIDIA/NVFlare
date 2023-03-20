@@ -24,12 +24,7 @@
       "filters":[
           {
           "name": "HEModelEncryptor",
-          "args": {
-            "aggregation_weights": {
-              "site1":  1.0,
-              "site2":  1.0
-            }
-          }
+          "args": {}
         }
       ]
     }
