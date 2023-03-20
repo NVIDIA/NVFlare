@@ -1009,8 +1009,11 @@ azure_start_svr_sh: |
     echo "Creating Resource Group $RESOURCE_GROUP at Location $LOCATION"
     az group create --output none --name $RESOURCE_GROUP --location $LOCATION
     report_status "$?" "creating resource group"
+  elif [ $useDefault = true ]
+  then
+    report_status "1" "Only one NVFL server VM and its resource group is allowed.  $RESOURCE_GROUP exists and thus creating duplicate resource group"
   else
-    echo "Resource Group $RESOURCE_GROUP exists, will reuse it."
+    echo "Users require to reuse Resource Group $RESOURCE_GROUP.  This script will modify the group and may not work always."
   fi
 
   echo "Creating Virtual Machine, will take a few minutes"
@@ -1705,10 +1708,9 @@ aws_start_svr_sh: |
 
   # Generate Security Group
 
-  aws ec2 delete-security-group --group-name $SECURITY_GROUP > /dev/null 2>&1
-  sleep 10
-  sg_id=$(aws ec2 create-security-group --group-name $SECURITY_GROUP --description "NVFlare security group" | jq -r .GroupId)
-  report_status "$?" "creating security group"
+  sg_result=$(aws ec2 create-security-group --group-name $SECURITY_GROUP --description "NVFlare security group")
+  report_status "$?" "Only one NVFL server VM and its security group is allowed.  $SECURITY_GROUP exists and thus creating duplicate scecurity group"
+  sg_id=$(echo $sg_result | jq -r .GroupId)
   my_public_ip=$(dig +short myip.opendns.com @resolver1.opendns.com)
   report_status "$?" "getting my public IP"
   aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr ${my_public_ip}/32 > /tmp/sec_grp.log
