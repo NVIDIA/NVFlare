@@ -42,9 +42,15 @@ class CheckResult:
 
 
 class CheckRule(ABC):
-    def __init__(self, name, optional=False):
+    def __init__(self, name: str, required: bool = True):
+        """Creates a CheckRule.
+
+        Args:
+            name (str): name of the rule
+            required (bool): whether this rule is required to pass.
+        """
         self.name = name
-        self.optional = optional
+        self.required = required
 
     @abstractmethod
     def __call__(self, package_path: str, data) -> CheckResult:

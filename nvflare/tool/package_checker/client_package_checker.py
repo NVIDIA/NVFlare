@@ -48,10 +48,10 @@ class ClientPackageChecker(PackageChecker):
                 CheckPrimarySPSocketServerAvailable(name="Check primary SP's socket server available"),
                 CheckPrimarySPGRPCServerAvailable(name="Check primary SP's GRPC server available"),
                 CheckNonPrimarySPSocketServerAvailable(
-                    name="Check non-primary SP's socket server available", optional=True
+                    name="Check non-primary SP's socket server available", required=False
                 ),
                 CheckNonPrimarySPGRPCServerAvailable(
-                    name="Check non-primary SP's GRPC server available", optional=True
+                    name="Check non-primary SP's GRPC server available", required=False
                 ),
             ]
         ]
