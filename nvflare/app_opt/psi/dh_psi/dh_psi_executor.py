@@ -37,6 +37,7 @@ class DhPSIExecutor(ClientExecutor):
         self.intersects: Optional[List[str]] = None
         self.local_psi_handler: Optional[PSI] = None
         self.client_name = None
+        self.items = None
 
     def initialize(self, fl_ctx: FLContext):
         super().initialize(fl_ctx)
@@ -140,13 +141,15 @@ class DhPSIExecutor(ClientExecutor):
         return result
 
     def get_items(self):
-
         if not self.intersects:
-            items = self.local_psi_handler.load_items()
-            self.check_items_uniqueness(items)
+            if self.items is None:
+                items = self.local_psi_handler.load_items()
+                self.check_items_uniqueness(items)
+                self.items = items
         else:
-            items = self.intersects
-        return items
+            self.items = self.intersects
+
+        return self.items
 
     def check_items_uniqueness(self, items):
         import collections

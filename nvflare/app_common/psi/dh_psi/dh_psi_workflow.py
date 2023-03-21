@@ -100,7 +100,7 @@ class DhPSIWorkFlow(PSIWorkflow):
         all_equal = all(value == intersect_site.size for value in self.backward_processed.values())
         if not all_equal:
             raise RuntimeError(
-                f"Intersection calculation failed:\n"
+                f"Intersection calculation failed: the intersection sizes from all sites must be equal.\n"
                 f"backward processed sites:{self.backward_processed},\n"
                 f"intersect sites ={intersect_site} \n"
                 f"ordered sites = {self.ordered_sites} \n"

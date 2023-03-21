@@ -13,7 +13,7 @@
 # limitations under the License.
 from typing import List
 
-# version 1.0.3
+# version>= 1.0.3
 import private_set_intersection.python as psi
 
 # Version 0.3.5

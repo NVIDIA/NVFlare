@@ -94,7 +94,7 @@ class FederatedClientBase:
         self.net_agent = None
         self.args = args
         self.engine_create_timeout = client_args.get("engine_create_timeout", 15.0)
-        self.cell_check_frequency = client_args.get("cell_check_frequency", 0.5)
+        self.cell_check_frequency = client_args.get("cell_check_frequency", 0.005)
 
         self.communicator = Communicator(
             ssl_args=client_args,
@@ -211,25 +211,22 @@ class FederatedClientBase:
         self.net_agent = NetAgent(self.cell)
         if self.args.job_id:
             start = time.time()
+            self.logger.info("Wait for client_runner to be created.")
             while not self.client_runner:
-                self.logger.info("Wait for client_runner to be created.")
                 if time.time() - start > self.engine_create_timeout:
-                    raise RuntimeError(
-                        "Failed to set the cell for engine: " "timeout waiting for client_runner to be created."
-                    )
+                    raise RuntimeError(f"Failed get client_runner after {self.engine_create_timeout} seconds")
                 time.sleep(self.cell_check_frequency)
+            self.logger.info(f"Got client_runner after {time.time()-start} seconds")
             self.client_runner.engine.cell = self.cell
             self.client_runner.command_agent.register_cell_cb()
         else:
             start = time.time()
+            self.logger.info("Wait for engine to be created.")
             while not self.engine:
-                self.logger.info("Wait for engine to be created.")
                 if time.time() - start > self.engine_create_timeout:
-                    raise RuntimeError(
-                        "Failed to set the cell for engine: " "timeout waiting for engine to be created."
-                    )
+                    raise RuntimeError(f"Failed to get engine after {time.time()-start} seconds")
                 time.sleep(self.cell_check_frequency)
-
+            self.logger.info(f"Got engine after {time.time() - start} seconds")
             self.engine.cell = self.cell
             self.engine.admin_agent.register_cell_cb()
         mpm.add_cleanup_cb(self.net_agent.close)

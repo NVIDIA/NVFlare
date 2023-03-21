@@ -50,6 +50,9 @@ class HEModelEncryptor(DXOFilter):
                             being encrypted.
             aggregation_weights: dictionary of client aggregation `{"client1": 1.0, "client2": 2.0, "client3": 3.0}`;
                                  defaults to a weight of 1.0 if not specified.
+                                 Note, if specified, the same `aggregation_weights` should also be used on the server
+                                 aggregator for the resulting weighted sum to be valid,
+                                 i.e. in `HEInTimeAccumulateWeightedAggregator`.
             weigh_by_local_iter: If true, multiply client weights on first before encryption (default: `True`
             which is recommended for HE)
             data_kinds: data kinds to apply this filter
@@ -139,7 +142,7 @@ class HEModelEncryptor(DXOFilter):
                 vmax = np.max(params[param_name])
                 vmins.append(vmin)
                 vmaxs.append(vmax)
-                params[param_name] = ts.ckks_vector(self.tenseal_context, values).serialize()
+                params[param_name] = ts.ckks_vector(self.tenseal_context, values)
                 encryption_dict[param_name] = True
                 n_encrypted += _n
             elif isinstance(values, CKKSVector):
@@ -159,9 +162,8 @@ class HEModelEncryptor(DXOFilter):
             f" (encrypted value range [{np.min(vmins)}, {np.max(vmaxs)}])"
             f" {end_time - start_time} seconds.",
         )
-        # params is a dictionary.  keys are layer names.  values are either weights or
-        # serialized ckks_vector of weights.
-        # encryption_dict: keys are layer names.  values are True for serialized ckks_vectors, False elsewhere.
+        # params is a dictionary.  keys are layer names.  values are either weights or ckks_vector of weights.
+        # encryption_dict: keys are layer names.  values are True for ckks_vectors, False elsewhere.
         return params, encryption_dict
 
     def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:
@@ -175,6 +177,10 @@ class HEModelEncryptor(DXOFilter):
         Returns: DXO object with encrypted weights
 
         """
+        # TODO: could be removed later
+        if self.tenseal_context is None:
+            self.tenseal_context = load_tenseal_context_from_workspace(self.tenseal_context_file, fl_ctx)
+
         peer_ctx = fl_ctx.get_peer_context()
         assert isinstance(peer_ctx, FLContext)
         self.client_name = peer_ctx.get_identity_name(default="?")
