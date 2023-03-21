@@ -28,7 +28,9 @@
     {
       "id": "aggregator",
       "name": "HEInTimeAccumulateWeightedAggregator",
-      "args": {}
+      "args": {
+        "weigh_by_local_iter": false
+      }
     },
     {
       "id": "model_selector",

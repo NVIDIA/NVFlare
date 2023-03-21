@@ -100,7 +100,11 @@ class HEModelDecryptor(DXOFilter):
             fl_ctx: FLContext
 
         Returns: DXO object with decrypted weights
+
         """
+        if self.tenseal_context is None:
+            self.tenseal_context = load_tenseal_context_from_workspace(self.tenseal_context_file, fl_ctx)
+
         self.log_info(fl_ctx, "Running decryption...")
         encrypted_layers = dxo.get_meta_prop(key=MetaKey.PROCESSED_KEYS, default=None)
         if not encrypted_layers:

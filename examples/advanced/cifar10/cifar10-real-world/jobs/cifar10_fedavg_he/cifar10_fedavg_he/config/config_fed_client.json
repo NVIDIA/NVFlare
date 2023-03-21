@@ -20,16 +20,28 @@
   ],
   "task_result_filters": [
     {
-      "tasks": ["train", "validate"],
+      "tasks": ["train"],
       "filters":[
           {
           "name": "HEModelEncryptor",
-          "args": {}
+          "args": {
+            "weigh_by_local_iter": true
+          }
+        }
+      ]
+    },
+    {
+      "tasks": ["submit_model"],
+      "filters":[
+          {
+          "name": "HEModelEncryptor",
+          "args": {
+            "weigh_by_local_iter": false
+          }
         }
       ]
     }
   ],
-
   "task_data_filters": [
     {
       "tasks": ["train", "validate"],
