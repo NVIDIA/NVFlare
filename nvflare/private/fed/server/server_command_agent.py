@@ -59,19 +59,31 @@ class ServerCommandAgent(object):
         command_name = request.get_header(MessageHeaderKey.TOPIC)
         data = fobs.loads(request.payload)
 
-        # token = request.get_header(CellMessageHeaderKeys.TOKEN, None)
-        client_name = request.get_header(CellMessageHeaderKeys.CLIENT_NAME, None)
+        token = request.get_header(CellMessageHeaderKeys.TOKEN, None)
+        # client_name = request.get_header(CellMessageHeaderKeys.CLIENT_NAME, None)
         client = None
-        if client_name:
-            client = self._get_client(client_name)
+        if token:
+            client = self._get_client(token)
             if client:
                 data.set_header(ServerCommandKey.FL_CLIENT, client)
-        if command_name in ServerCommands.client_request_commands_names and not client:
-            return make_reply(ReturnCode.AUTHENTICATION_ERROR, "Request from invalid client", fobs.dumps(None))
-        command = ServerCommands.get_command(command_name)
 
+        command = ServerCommands.get_command(command_name)
         if command:
+            if command_name in ServerCommands.client_request_commands_names:
+                if not client:
+                    return make_reply(
+                        ReturnCode.AUTHENTICATION_ERROR,
+                        "Request from invalid client: missing client token",
+                        fobs.dumps(None),
+                    )
+
             with self.engine.new_context() as new_fl_ctx:
+                if command_name in ServerCommands.client_request_commands_names:
+                    state_check = command.get_state_check(new_fl_ctx)
+                    error = self.engine.server.authentication_check(request, state_check)
+                    if error:
+                        make_reply(ReturnCode.AUTHENTICATION_ERROR, error, fobs.dumps(None))
+
                 reply = command.process(data=data, fl_ctx=new_fl_ctx)
                 if reply is not None:
                     return_message = new_cell_message({}, fobs.dumps(reply))
@@ -82,14 +94,11 @@ class ServerCommandAgent(object):
         else:
             return make_reply(ReturnCode.INVALID_REQUEST, "No server command found", fobs.dumps(None))
 
-    def _get_client(self, client_name):
+    def _get_client(self, token):
         fl_server = self.engine.server
         client_manager = fl_server.client_manager
         clients = client_manager.clients
-        for _, client in clients.items():
-            if client_name == client.name:
-                return client
-        return None
+        return clients.get(token)
 
     def aux_communicate(self, request: CellMessage) -> CellMessage:
 
@@ -98,6 +107,12 @@ class ServerCommandAgent(object):
 
         topic = request.get_header(MessageHeaderKey.TOPIC)
         with self.engine.new_context() as fl_ctx:
+            server_state = self.engine.server.server_state
+            state_check = server_state.aux_communicate(fl_ctx)
+            error = self.engine.server.authentication_check(request, state_check)
+            if error:
+                make_reply(ReturnCode.AUTHENTICATION_ERROR, error, fobs.dumps(None))
+
             engine = fl_ctx.get_engine()
             reply = engine.dispatch(topic=topic, request=data, fl_ctx=fl_ctx)
 
