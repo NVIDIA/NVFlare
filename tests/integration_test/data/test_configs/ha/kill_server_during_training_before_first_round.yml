@@ -2,7 +2,7 @@ ha: True
 jobs_root_dir: ./data/apps
 cleanup: True
 project_yaml: ./data/projects/ha_1_servers_2_clients.yml
-
+poll_period: 0.1
 
 tests:
   - test_name: "upload slow_job, kill the server after we start training but no round is completed in SAG,
@@ -29,7 +29,7 @@ tests:
             }
         "actions": [
           "kill server",
-          "sleep 20",
+          "sleep 10",
           "start server",
         ]
         "result":
