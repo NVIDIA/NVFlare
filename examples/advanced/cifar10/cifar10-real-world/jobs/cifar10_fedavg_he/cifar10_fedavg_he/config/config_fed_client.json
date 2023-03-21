@@ -25,16 +25,23 @@
           {
           "name": "HEModelEncryptor",
           "args": {
-            "aggregation_weights": {
-              "site1":  1.0,
-              "site2":  1.0
-            }
+            "weigh_by_local_iter": true
+          }
+        }
+      ]
+    },
+    {
+      "tasks": ["submit_model"],
+      "filters":[
+          {
+          "name": "HEModelEncryptor",
+          "args": {
+            "weigh_by_local_iter": false
           }
         }
       ]
     }
   ],
-
   "task_data_filters": [
     {
       "tasks": ["train", "validate"],
