@@ -111,8 +111,7 @@ class HEModelDecryptor(DXOFilter):
             self.log_warning(
                 fl_ctx,
                 "DXO does not contain PROCESSED_KEYS (do nothing). "
-                "Note, this is normal in the first round of training and during validation, "
-                "as the initial global model and the local models from other sites are not encrypted.",
+                "Note, this is normal in the first round of training, as the initial global model is not encrypted.",
             )
             return None
 
