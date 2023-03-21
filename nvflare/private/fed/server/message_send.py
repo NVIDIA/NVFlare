@@ -74,6 +74,7 @@ def send_requests(
         if job_id:
             fqcn = FQCN.join([client.name, job_id])
             channel = CellChannel.CLIENT_COMMAND
+            optional = True
         else:
             fqcn = client.name
             channel = CellChannel.CLIENT_MAIN

@@ -73,7 +73,7 @@ class ServerCommandAgent(object):
                 if not client:
                     return make_reply(
                         ReturnCode.AUTHENTICATION_ERROR,
-                        "Request from invalid client: missing client token",
+                        "Request from client: missing client token",
                         fobs.dumps(None),
                     )
 
