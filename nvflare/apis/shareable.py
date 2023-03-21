@@ -11,9 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import copy
 
-from ..fuel.utils import fobs
+from nvflare.fuel.utils import fobs
+
 from .fl_constant import ReservedKey, ReturnCode
 
 
@@ -141,11 +143,10 @@ def make_reply(rc, headers=None) -> Shareable:
 
 
 def make_copy(source: Shareable) -> Shareable:
-    """
-    Make a copy from the source.
+    """Makes a copy from the source.
+
     The content (non-headers) will be kept intact. Headers will be deep-copied into the new instance.
     """
-    assert isinstance(source, Shareable)
     c = copy.copy(source)
     headers = source.get(ReservedHeaderKey.HEADERS, None)
     if headers:
