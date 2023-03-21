@@ -49,24 +49,31 @@ The following tutorials and quickstart guides walk you through some of these exa
     * `Federated Learning with CIFAR-10 (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/cifar10>`_ - Includes examples of using FedAvg, FedProx, FedOpt, SCAFFOLD, homomorphic encryption, and streaming of TensorBoard metrics to the server during training
     * :ref:`Federated XGBoost <federated_xgboost>` - Includes examples of histogram-based and tree-based algorithms. Tree-based algorithms also includes bagging and cyclic approaches
 
-  4. **Medical Image Analysis**
+  4. **Traditional ML examples**
+
+    * `Federated Linear Model with Scikit-learn (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/sklearn-linear>`_ - For an example of using NVIDIA FLARE with `scikit-learn <https://scikit-learn.org/>`_, a widely used open-source machine learning library that supports supervised and unsupervised learning.
+    * `Federated K-Means Clustering with Scikit-learn (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/sklearn-kmeans>`_ - NVIDIA FLARE with `scikit-learn <https://scikit-learn.org/>`_ and k-Means.
+    * `Federated SVM with Scikit-learn (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/sklearn-svm>`_ - NVIDIA FLARE with `scikit-learn <https://scikit-learn.org/>`_ and `SVM <https://scikit-learn.org/stable/modules/generated/sklearn.svm.SVC.html>`_.
+    * `Federated Learning for Random Forest based on XGBoost (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/random_forest>`_ - Example of using NVIDIA FLARE with `scikit-learn <https://scikit-learn.org/>`_ and `Random Forest <https://xgboost.readthedocs.io/en/stable/tutorials/rf.html>`_.
+
+  5. **Medical Image Analysis**
 
     * `MONAI Integration (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/integration/monai>`_ - For an example of using NVIDIA FLARE to train a 3D medical image analysis model using federated averaging (FedAvg) and MONAI Bundle `MONAI <https://monai.io/>`_
     * `Federated Learning with Differential Privacy for BraTS18 segmentation (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/brats18>`_ - Illustrates the use of differential privacy for training brain tumor segmentation models using federated learning
     * `Federated Learning for Prostate Segmentation from Multi-source Data (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/prostate>`_ - Example of training a multi-institutional prostate segmentation model using `FedAvg <https://arxiv.org/abs/1602.05629>`_, `FedProx <https://arxiv.org/abs/1812.06127>`_, and `Ditto <https://arxiv.org/abs/2012.04221>`_
 
-  5. **Federated Statistics**
+  6. **Federated Statistics**
 
     * :ref:`Federated Statistic Overview <federated_statistics>` - Discuss the overall federated statistics features
     * `Federated Statistics for medical imaging (Github) <https://github.com/NVIDIA/NVFlare/tree/main/examples/federated_statistics/image_stats/README.md>`_ - Example of gathering local image histogram to compute the global dataset histograms.
     * `Federated Statistics for tabular data with DataFrame (Github) <https://github.com/NVIDIA/NVFlare/tree/main/examples/federated_statistics/df_stats/README.md>`_ - Example of gathering local statistics summary from Pandas DataFrame to compute the global dataset statistics.
     * `Federated Statistics with Monai Statistics integration for Spleen CT Image (Github) <https://github.com/NVIDIA/NVFlare/tree/main/integration/monai/examples/spleen_ct_segmentation/README.md>`_ - Example demonstrated Monai statistics integration and few other features in federated statistics
 
-  6. **Federated Site Policies**
+  7. **Federated Site Policies**
 
     * `Federated Policies (Github) <https://github.com/NVIDIA/NVFlare/blob/dev/examples/federated-policies/README.rst>`_ - Discuss the federated site policies for authorization, resource and data privacy management
 
-  7. **Experiment tracking**
+  8. **Experiment tracking**
 
     * :ref:`TensorBoard Streaming <tensorboard_streaming>` - Example building on Hello PyTorch with TensorBoard streaming from clients to server
 
