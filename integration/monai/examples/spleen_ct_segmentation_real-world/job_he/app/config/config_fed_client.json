@@ -20,7 +20,7 @@
 
   "task_result_filters": [
     {
-      "tasks": ["train"],
+      "tasks": ["train", "validate"],
       "filters":[
           {
           "name": "HEModelEncryptor",
