@@ -12,33 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import tenseal as ts
-
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.model import Learnable
 from nvflare.app_common.abstract.persistor_filter import PersistorFilter
-from nvflare.app_opt.he.homomorphic_encrypt import load_tenseal_context_from_workspace
-
-
-def serialize_nested_dict(d):
-    for k, v in d.items():
-        if isinstance(v, dict):
-            serialize_nested_dict(v)
-        else:
-            if isinstance(v, ts.CKKSVector):
-                d[k] = v.serialize()
-    return d
-
-
-def deserialize_nested_dict(d, context):
-    for k, v in d.items():
-        if isinstance(v, dict):
-            deserialize_nested_dict(v, context)
-        else:
-            if isinstance(v, bytes):
-                d[k] = ts.ckks_vector_from(context, v)
-    return d
+from nvflare.app_opt.he.homomorphic_encrypt import (
+    deserialize_nested_dict,
+    load_tenseal_context_from_workspace,
+    serialize_nested_dict,
+)
 
 
 class HEModelSerializeFilter(PersistorFilter):
