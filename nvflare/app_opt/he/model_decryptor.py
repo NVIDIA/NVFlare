@@ -25,7 +25,11 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_opt.he import decomposers
 from nvflare.app_opt.he.constant import HE_ALGORITHM_CKKS
-from nvflare.app_opt.he.homomorphic_encrypt import count_encrypted_layers, load_tenseal_context_from_workspace
+from nvflare.app_opt.he.homomorphic_encrypt import (
+    count_encrypted_layers,
+    deserialize_nested_dict,
+    load_tenseal_context_from_workspace,
+)
 
 
 class HEModelDecryptor(DXOFilter):
@@ -55,12 +59,13 @@ class HEModelDecryptor(DXOFilter):
         elif event_type == EventType.END_RUN:
             self.tenseal_context = None
 
-    def decryption(self, params, encrypted_layers, fl_ctx: FLContext):
+    def decryption(self, params: dict, encrypted_layers: dict, fl_ctx: FLContext):
 
         n_params = len(params.keys())
         self.log_info(fl_ctx, f"Running HE Decryption algorithm {n_params} variables")
         if encrypted_layers is None:
             raise ValueError("encrypted_layers is None!")
+        deserialize_nested_dict(params, context=self.tenseal_context)
 
         start_time = time.time()
         n_decrypted, n_total = 0, 0
