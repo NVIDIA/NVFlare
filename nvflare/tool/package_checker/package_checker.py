@@ -80,7 +80,7 @@ class PackageChecker(ABC):
                 if isinstance(rule, CheckRule):
                     result: CheckResult = rule(self.package_path, data=None)
                     self.add_report(rule.name, result.problem, result.solution)
-                    if result.problem != CHECK_PASSED:
+                    if rule.required and result.problem != CHECK_PASSED:
                         all_passed = False
                 elif isinstance(rule, list):
                     result = CheckResult()
@@ -88,7 +88,7 @@ class PackageChecker(ABC):
                     for r in rule:
                         result = r(self.package_path, data=result.data)
                         self.add_report(r.name, result.problem, result.solution)
-                        if result.problem != CHECK_PASSED:
+                        if r.required and result.problem != CHECK_PASSED:
                             all_passed = False
                             break
 
