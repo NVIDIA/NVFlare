@@ -12,15 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from abc import ABC
-
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 
 from .model import Learnable
 
 
-class PersistorFilter(FLComponent, ABC):
+class PersistorFilter(FLComponent):
     def process_post_load(self, learnable: Learnable, fl_ctx: FLContext) -> Learnable:
         """Filter process applied to the Learnable object after it was loaded in ModelPersistor's `load()` call.
 

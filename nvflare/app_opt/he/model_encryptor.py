@@ -177,6 +177,7 @@ class HEModelEncryptor(DXOFilter):
         Returns: DXO object with encrypted weights
 
         """
+        # TODO: could be removed later
         if self.tenseal_context is None:
             self.tenseal_context = load_tenseal_context_from_workspace(self.tenseal_context_file, fl_ctx)
 

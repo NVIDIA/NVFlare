@@ -23,6 +23,7 @@ from nvflare.app_opt.he.homomorphic_encrypt import load_tenseal_context_from_wor
 from nvflare.security.logging import secure_format_exception
 
 
+# TODO: Might be able to use CrossSiteModelEval directly
 class HECrossSiteModelEval(CrossSiteModelEval):
     def __init__(
         self,
