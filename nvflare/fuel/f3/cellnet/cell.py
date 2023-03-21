@@ -495,10 +495,14 @@ class Cell(MessageReceiver, EndpointMonitor):
         return self.my_info.fqcn
 
     def is_cell_reachable(self, target_fqcn: str, for_msg=None) -> bool:
+        if target_fqcn in self.ALL_CELLS:
+            return True
         _, ep = self._find_endpoint(target_fqcn, for_msg)
         return ep is not None
 
     def is_cell_connected(self, target_fqcn: str) -> bool:
+        if target_fqcn in self.ALL_CELLS:
+            return True
         agent = self.agents.get(target_fqcn)
         return agent is not None
 
@@ -517,11 +521,17 @@ class Cell(MessageReceiver, EndpointMonitor):
                 return len(self.ext_listeners) > 0
             else:
                 # client root - must be connected to server root
-                return self.agents.get(FQCN.ROOT_SERVER) is not None
+                if FQCN.ROOT_SERVER in self.ALL_CELLS:
+                    return True
+                else:
+                    return self.agents.get(FQCN.ROOT_SERVER) is not None
         else:
             # child cell - must be connected to parent
             parent_fqcn = FQCN.get_parent(self.my_info.fqcn)
-            return self.agents.get(parent_fqcn) is not None
+            if parent_fqcn in self.ALL_CELLS:
+                return True
+            else:
+                return self.agents.get(parent_fqcn) is not None
 
     def _set_bb_for_client_root(self):
         self._create_bb_external_connector()
@@ -1549,11 +1559,29 @@ class Cell(MessageReceiver, EndpointMonitor):
             # msg_type is either RETURN or REPLY - drop it.
             self.logger.debug(format_log_message(self.my_info.fqcn, message, "dropped forwarded message"))
 
-    @staticmethod
-    def _stats_category(message: Message):
-        channel = message.get_header(MessageHeaderKey.CHANNEL, "")
-        topic = message.get_header(MessageHeaderKey.TOPIC, "")
-        return f"{channel}:{topic}"
+    def _stats_category(self, message: Message):
+        channel = message.get_header(MessageHeaderKey.CHANNEL, "?")
+        topic = message.get_header(MessageHeaderKey.TOPIC, "?")
+        msg_type = message.get_header(MessageHeaderKey.MSG_TYPE, "?")
+        dest = message.get_header(MessageHeaderKey.DESTINATION, "")
+        origin = message.get_header(MessageHeaderKey.ORIGIN, "")
+        to_cell = message.get_header(MessageHeaderKey.TO_CELL, "")
+        type_tag = msg_type
+        if dest and origin:
+            if dest != self.my_info.fqcn and origin != self.my_info.fqcn:
+                # this is the case of forwarding
+                type_tag = "fwd." + msg_type
+
+        if msg_type == MessageType.RETURN:
+            orig_headers = message.get_header(MessageHeaderKey.ORIGINAL_HEADERS, None)
+            if orig_headers:
+                channel = orig_headers.get(MessageHeaderKey.CHANNEL, "??")
+                topic = orig_headers.get(MessageHeaderKey.TOPIC, "??")
+            else:
+                channel = "???"
+                topic = "???"
+
+        return f"{type_tag}:{channel}:{topic}"
 
     def _process_reply(self, origin: str, message: Message, msg_type: str):
         channel = message.get_header(MessageHeaderKey.CHANNEL, "")

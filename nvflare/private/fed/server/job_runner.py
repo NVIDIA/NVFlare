@@ -39,7 +39,7 @@ from nvflare.security.logging import secure_format_exception
 def _send_to_clients(admin_server, client_sites: List[str], engine, message, timeout=None, optional=False):
     clients, invalid_inputs = engine.validate_targets(client_sites)
     if invalid_inputs:
-        raise RuntimeError(f"invalid clients: {invalid_inputs}.")
+        raise RuntimeError(f"unknown clients: {invalid_inputs}.")
     requests = {}
     for c in clients:
         requests.update({c.token: message})
@@ -153,7 +153,7 @@ class JobRunner(FLComponent):
 
                 if invalid_inputs:
                     deploy_detail.append("invalid_clients: {}".format(",".join(invalid_inputs)))
-                    raise RuntimeError(f"invalid clients: {invalid_inputs}.")
+                    raise RuntimeError(f"unknown clients: {invalid_inputs}.")
 
                 for c in clients:
                     assert isinstance(c, Client)
