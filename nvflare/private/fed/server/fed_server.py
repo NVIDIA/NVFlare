@@ -626,6 +626,19 @@ class FederatedServer(BaseServer):
             handlers=self.runner_config.handlers,
         )
 
+    def authentication_check(self, request: Message, state_check):
+        error = None
+        # server_state = self.engine.server.server_state
+        if state_check.get(ACTION) in [NIS, ABORT_RUN]:
+            # return make_reply(ReturnCode.AUTHENTICATION_ERROR, state_check.get(MESSAGE), fobs.dumps(None))
+            error = state_check.get(MESSAGE)
+        client_ssid = request.get_header(CellMessageHeaderKeys.SSID, None)
+        if client_ssid != self.server_state.ssid:
+            # return make_reply(ReturnCode.AUTHENTICATION_ERROR, "Request from invalid client SSID",
+            #                   fobs.dumps(None))
+            error = "Request from invalid client SSID"
+        return error
+
     def abort_run(self):
         with self.engine.new_context() as fl_ctx:
             if self.server_runner:
@@ -689,6 +702,7 @@ class FederatedServer(BaseServer):
 
         sp = overseer_agent.get_primary_sp()
 
+        old_state_name = self.server_state.__class__.__name__
         with self.lock:
             with self.engine.new_context() as fl_ctx:
                 self.server_state = self.server_state.handle_sd_callback(sp, fl_ctx)
@@ -698,6 +712,27 @@ class FederatedServer(BaseServer):
 
         elif isinstance(self.server_state, Hot2ColdState):
             self._turn_to_cold()
+
+        self._notify_state_change(old_state_name)
+
+    def _notify_state_change(self, old_state_name):
+        new_state_name = self.server_state.__class__.__name__
+        if new_state_name != old_state_name:
+            self.logger.info(f"state changed from: {old_state_name} to: {new_state_name}")
+            keys = list(self.engine.run_processes.keys())
+            if keys:
+                target_fqcns = []
+                for job_id in keys:
+                    target_fqcns.append(FQCN.join([FQCN.ROOT_SERVER, job_id]))
+                cell_msg = new_cell_message(headers={}, payload=fobs.dumps(self.server_state))
+                self.cell.broadcast_request(
+                    channel=CellChannel.SERVER_COMMAND,
+                    topic=ServerCommandNames.SERVER_STATE,
+                    request=cell_msg,
+                    targets=target_fqcns,
+                    timeout=5.0,
+                    optional=True,
+                )
 
     def overseer_callback(self, overseer_agent):
         if self.checking_server_state:

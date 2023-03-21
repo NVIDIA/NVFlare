@@ -200,6 +200,10 @@ class Communicator:
                     f"Received from {project_name} server "
                     f" ({size} Bytes). getTask: {task_name} time: {end_time - start_time} seconds"
                 )
+        elif return_code == ReturnCode.AUTHENTICATION_ERROR:
+            self.logger.warning("get_task request authentication failed.")
+            time.sleep(5.0)
+            return None
         else:
             simulate_mode = fl_ctx.get_prop(FLContextKey.SIMULATE_MODE, False)
             if simulate_mode:

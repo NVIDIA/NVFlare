@@ -289,7 +289,7 @@ class ServerRunner(FLComponent):
 
             self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_DATA_FILTER")
             self.fire_event(EventType.AFTER_TASK_DATA_FILTER, fl_ctx)
-            self.log_info(fl_ctx, "sent task assignment to client")
+            self.log_info(fl_ctx, f"sent task assignment to client. client_name:{client.name} task_id:{task_id}")
 
             audit_event_id = add_job_audit_event(fl_ctx=fl_ctx, msg=f'sent task to client "{client.name}"')
             task_data.set_header(ReservedHeaderKey.AUDIT_EVENT_ID, audit_event_id)
