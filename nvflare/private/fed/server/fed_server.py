@@ -636,7 +636,7 @@ class FederatedServer(BaseServer):
         if client_ssid != self.server_state.ssid:
             # return make_reply(ReturnCode.AUTHENTICATION_ERROR, "Request from invalid client SSID",
             #                   fobs.dumps(None))
-            error = "Request from invalid client SSID"
+            error = "Request from unknown client SSID"
         return error
 
     def abort_run(self):

@@ -320,7 +320,10 @@ class JobCommandModule(CommandModule, CommandUtil):
 
                 filtered_jobs = [job for job in jobs if self._job_match(job.meta, id_prefix, name_prefix, user_name)]
                 if not filtered_jobs:
-                    conn.append_string("No jobs matching the specified criteria.")
+                    conn.append_string(
+                        "No jobs matching the specified criteria.",
+                        meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOBS: []}),
+                    )
                     return
 
                 reverse = True if parsed_args.r else False
@@ -335,9 +338,12 @@ class JobCommandModule(CommandModule, CommandUtil):
                     self._send_summary_list(conn, filtered_jobs)
 
             else:
-                conn.append_string("No jobs found.")
+                conn.append_string("No jobs found.", meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOBS: []}))
         except Exception as e:
-            conn.append_error(secure_format_exception(e))
+            conn.append_error(
+                secure_format_exception(e),
+                meta=make_meta(MetaStatusValue.INTERNAL_ERROR, info=secure_format_exception(e)),
+            )
             return
 
         conn.append_success("")
