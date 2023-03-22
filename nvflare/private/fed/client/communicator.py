@@ -205,15 +205,8 @@ class Communicator:
             time.sleep(5.0)
             return None
         else:
-            simulate_mode = fl_ctx.get_prop(FLContextKey.SIMULATE_MODE, False)
-            if simulate_mode:
-                new_shareable = Shareable()
-                new_shareable.set_header(key=ServerCommandKey.TASK_NAME, value=SpecialTaskName.END_RUN)
-                task.payload = new_shareable
-                self.logger.info("Simulator job could not fetch_task. End job run.")
-            else:
-                task = None
-                self.logger.warning(f"Failed to get_task from {project_name} server. Will try it again.")
+            task = None
+            self.logger.warning(f"Failed to get_task from {project_name} server. Will try it again.")
 
         return task
 
