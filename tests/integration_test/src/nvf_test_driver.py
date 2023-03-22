@@ -259,9 +259,11 @@ class NVFTestDriver:
                 # clients not ready
                 continue
 
+            # this coming from private/fed/server/training_cmds.py
             for row in response["details"]["client_statuses"][1:]:
-                if row[3] != "not started":
-                    continue
+                if row[3] != "No Jobs":
+                    return False
+
             # wait for all clients to come up
             if len(response["details"]["client_statuses"]) < num_clients + 1:
                 continue
