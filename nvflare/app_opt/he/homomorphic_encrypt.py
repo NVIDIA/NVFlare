@@ -52,3 +52,23 @@ def count_encrypted_layers(encrypted_layers: dict):
         if encrypted_layers[e]:
             n_encrypted += 1
     return n_encrypted, n_total
+
+
+def serialize_nested_dict(d):
+    for k, v in d.items():
+        if isinstance(v, dict):
+            serialize_nested_dict(v)
+        else:
+            if isinstance(v, ts.CKKSVector):
+                d[k] = v.serialize()
+    return d
+
+
+def deserialize_nested_dict(d, context):
+    for k, v in d.items():
+        if isinstance(v, dict):
+            deserialize_nested_dict(v, context)
+        else:
+            if isinstance(v, bytes):
+                d[k] = ts.ckks_vector_from(context, v)
+    return d

@@ -101,7 +101,8 @@ def parse_overseer_agent_args(overseer_agent_conf: dict, required_args: list) ->
 
 
 def construct_dummy_response(overseer_agent_args: dict) -> Response:
-    response_content = {"primary_sp": {"sp_end_point": overseer_agent_args["sp_end_point"]}}
+    psp = {"sp_end_point": overseer_agent_args["sp_end_point"], "primary": True}
+    response_content = {"primary_sp": psp, "sp_list": [psp]}
     resp = Response()
     resp.status_code = 200
     resp._content = str.encode(json.dumps(response_content))
