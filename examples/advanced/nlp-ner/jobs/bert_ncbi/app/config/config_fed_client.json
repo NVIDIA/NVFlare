@@ -1,6 +1,8 @@
 {
   "format_version": 2,
 
+  "DATASET_ROOT": "/data/NCBI-disease",
+
   "executors": [
     {
       "tasks": [
@@ -27,7 +29,7 @@
       "id": "bert-learner",
       "path": "learners.bert_learner.BertLearner",
       "args": {
-        "data_path": "DATASET_ROOT/4_split",
+        "data_path": "{DATASET_ROOT}/4_split",
         "learning_rate": 1e-5,
         "batch_size": 16,
         "num_labels": 3,

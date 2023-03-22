@@ -1,8 +1,9 @@
 # Federated Natural Language Processing
 
 ## Introduction 
-This example shows how to use [NVIDIA FLARE](https://nvidia.github.io/NVFlare) on Natural Language Processing (NLP) task.
-It uses [BERT](https://github.com/google-research/bert) model via [huggingface](https://huggingface.co/bert-base-uncased)  on a Named Entity Recognition (NER) task using the [NCBI disease](https://pubmed.ncbi.nlm.nih.gov/24393765/) dataset. In this example we select [BERT-base-uncased](https://huggingface.co/bert-base-uncased) model. 
+This example shows how to use [NVIDIA FLARE](https://nvidia.github.io/NVFlare) for Natural Language Processing (NLP) tasks.
+It uses a [BERT](https://github.com/google-research/bert) model from [huggingface](https://huggingface.co/bert-base-uncased)  on a Named Entity Recognition (NER) task using the [NCBI disease](https://pubmed.ncbi.nlm.nih.gov/24393765/) dataset. 
+In this example, we select [BERT-base-uncased](https://huggingface.co/bert-base-uncased) model. 
 
 This example is adapted from this [repo](https://github.com/PL97/federated-multi-modality-learning/). 
 
@@ -16,19 +17,32 @@ pip install -r ./requirements.txt
 ## Download and Preprocess Data 
 
 The data can be downloaded at the [official page](https://www.ncbi.nlm.nih.gov/CBBresearch/Dogan/DISEASE/). 
-After download and unzip, it will result in three individual `.txt` files. The preprocessed dataset can be downloaded from [Google Drive](https://drive.google.com/drive/folders/13wROtEAnMgWpLMIGHB5CY1BQ1Xe2XqhG)
+After downloading and unzipping, it will result in three individual `.txt` files. 
+The preprocessed csv-files can be downloaded from [here](https://drive.google.com/drive/folders/13wROtEAnMgWpLMIGHB5CY1BQ1Xe2XqhG).
 
-We then use the preprocessed data to generate random splits for a 4-client experiment. Please modify the `DATASET_ROOT` blow.
+We then use the preprocessed data to generate random splits for a 4-client experiment. 
+Please modify the `DATASET_ROOT` below to point to folder containing the four downloaded csv-files.
 ```commandline
-python utils/split.py --data_path DATASET_ROOT --num_clients 4
+python3 utils/split.py --data_path DATASET_ROOT --num_clients 4
+```
+The expected output is
+```
+(7594, 5) (2531, 5)
+(5063, 5) (2531, 5)
+(2532, 5) (2531, 5)
+(2532, 5) (2532, 5)
+(950, 5) (316, 5)
+(634, 5) (316, 5)
+(318, 5) (316, 5)
+(318, 5) (318, 5)
 ```
 
 ## Run automated experiments
-We use the NVFlare simulator to run FL training automatically.
+We use the NVFlare [simulator](https://nvflare.readthedocs.io/en/latest/user_guide/fl_simulator.html) to run the FL training.
 ### Prepare local configs
-Please modify the `DATASET_ROOT` within `config_fed_client.json`
+Please modify the `DATASET_ROOT` within [config_fed_client.json](./jobs/bert_ncbi/app/config/config_fed_client.json)
 ### Use NVFlare simulator to run the experiments
-We use NVFlare simulator to run the FL training experiments, following the pattern:
+We use the NVFlare simulator to run the FL training experiments, following the pattern:
 ```
 nvflare simulator jobs/[job] -w ${workspace_path}/[job] -c [clients] -gpu [gpu] -t [thread]
 ```
@@ -44,9 +58,10 @@ nvflare simulator jobs/bert_ncbi -w /tmp/nvflare/workspaces/bert_ncbi -n 4 -gpu 
 
 ### Validation curve on each site
 In this example, each client computes their validation scores using their own
-validation set. We recorded loss, f-1 score, precision, and recall. The curves can be viewed with tensorboard.
+validation set. We recorded the loss, F1 score, precision, and recall. 
+The curves can be viewed with TensorBoard.
 
-The TensorBoard curves for the 50 epochs (50 rounds, 1 local epoch per round) during training are shown below:
+The TensorBoard curves for 50 epochs (50 FL rounds, 1 local epoch per round) during training are shown below:
 ![All training curve](./figs/training.png)
 
 ### Testing score
@@ -56,4 +71,4 @@ Please modify the `DATASET_ROOT` below:
 ```
 python3 ./utils/bert_ner_test_only.py --model_path "/tmp/nvflare/workspaces/bert_ncbi/simulate_job/app_server/" --data_path DATASET_ROOT --num_labels 3
 ```
-The test precision is 0.96, recall is 0.97, and f1-score is 0.96.
+The test precision is 0.96, recall is 0.97, and F1 score is 0.96.
