@@ -204,9 +204,8 @@ class ClientManager:
                             sticky=False,
                         )
                         self.logger.info(
-                            "Failed to re-activate the client:{} with token: {}. Client already exist.".format(
-                                client_name, _token
-                            )
+                            f"Failed to re-activate the client:{client_name} with token: {token}. "
+                            f"Client already exist with token: {_token}."
                         )
                         return False
 
