@@ -175,9 +175,9 @@ class ServerRunner(FLComponent):
                         optional=True,
                     )
 
+                    self.engine.persist_components(fl_ctx, completed=True)
                     self.fire_event(EventType.END_RUN, fl_ctx)
                     self.log_info(fl_ctx, "END_RUN fired")
-                    self.engine.persist_components(fl_ctx, completed=True)
 
             self.log_info(fl_ctx, "Server runner finished.")
 
