@@ -3,8 +3,8 @@ nibabel
 fire
 pytorch-ignite>=0.4.10
 monai>=1.1
-nvflare>=2.2.1
-monai_nvflare>=0.2.1
+nvflare>=2.3.0
+monai_nvflare>=0.2.2
 tensorboard
 scikit-image
 pandas
