@@ -330,7 +330,10 @@ class JobCommandModule(CommandModule, CommandUtil):
                 filtered_jobs.sort(key=lambda job: job.meta.get(JobMetaKey.SUBMIT_TIME.value, 0.0), reverse=reverse)
 
                 if max_jobs_listed:
-                    filtered_jobs = filtered_jobs[:max_jobs_listed]
+                    if reverse:
+                        filtered_jobs = filtered_jobs[:max_jobs_listed]
+                    else:
+                        filtered_jobs = filtered_jobs[-max_jobs_listed:]
 
                 if parsed_args.d:
                     self._send_detail_list(conn, filtered_jobs)
