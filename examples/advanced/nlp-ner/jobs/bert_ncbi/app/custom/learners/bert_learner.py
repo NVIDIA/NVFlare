@@ -83,6 +83,8 @@ class BertLearner(Learner):
         self.model = None
         self.writer = None
         self.best_metric = 0.0
+        self.labels_to_ids = None
+        self.ids_to_labels = None
 
     def initialize(self, parts: dict, fl_ctx: FLContext):
         # when a run starts, this is where the actual settings get initialized for trainer
@@ -104,6 +106,7 @@ class BertLearner(Learner):
 
         # set the training-related contexts, this is task-specific
         # get data from csv files
+        self.log_info(fl_ctx, f"Reading data from {self.data_path}")
         df_train = pd.read_csv(os.path.join(self.data_path, self.client_id + "_train.csv"))
         df_valid = pd.read_csv(os.path.join(self.data_path, self.client_id + "_val.csv"))
         # get labels from data
