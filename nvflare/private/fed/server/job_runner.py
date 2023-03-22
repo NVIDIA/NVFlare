@@ -63,7 +63,7 @@ class JobRunner(FLComponent):
         if event_type == EventType.SYSTEM_START:
             engine = fl_ctx.get_engine()
             self.scheduler = engine.get_component(SystemComponents.JOB_SCHEDULER)
-        elif event_type in [EventType.JOB_COMPLETED, EventType.JOB_ABORTED, EventType.JOB_CANCELLED]:
+        elif event_type in [EventType.JOB_COMPLETED, EventType.END_RUN]:
             self._save_workspace(fl_ctx)
         elif event_type == EventType.SYSTEM_END:
             self.stop()
