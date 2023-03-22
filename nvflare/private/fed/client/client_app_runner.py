@@ -38,12 +38,9 @@ class ClientAppRunner(Runner):
     def start_run(self, app_root, args, config_folder, federated_client, secure_train):
         self.client_runner = self.create_client_runner(app_root, args, config_folder, federated_client, secure_train)
         federated_client.set_client_runner(self.client_runner)
-        # start = time.time()
         while federated_client.communicator.cell is None:
             print("Waiting for the client job cell to be created ....")
             time.sleep(1.0)
-            # if time.time() - start > self.timeout:
-            #     raise RuntimeError("No cell created for communicator. Failed to start the ClientAppRunner.")
 
         self.sync_up_parents_process(federated_client)
 
