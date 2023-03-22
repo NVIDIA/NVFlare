@@ -188,6 +188,10 @@ def check_client_status_ready(response: dict) -> bool:
             if d.get("type") == "error":
                 return False
 
+    # check fuel/hci/client/fl_admin_api.py for parsing
+    if "client_statuses" not in response["details"]:
+        return False
+
     return True
 
 
