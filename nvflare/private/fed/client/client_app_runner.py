@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import logging
 import os
 import sys
 import time
@@ -30,6 +30,9 @@ from nvflare.private.privacy_manager import PrivacyService
 
 
 class ClientAppRunner(Runner):
+
+    logger = logging.getLogger("ClientAppRunner")
+
     def __init__(self, time_out=60.0) -> None:
         self.command_agent = None
         self.timeout = time_out
@@ -39,7 +42,7 @@ class ClientAppRunner(Runner):
         self.client_runner = self.create_client_runner(app_root, args, config_folder, federated_client, secure_train)
         federated_client.set_client_runner(self.client_runner)
         while federated_client.communicator.cell is None:
-            print("Waiting for the client job cell to be created ....")
+            self.logger.info("Waiting for the client job cell to be created ....")
             time.sleep(1.0)
 
         self.sync_up_parents_process(federated_client)
@@ -102,7 +105,7 @@ class ClientAppRunner(Runner):
 
     def start_command_agent(self, args, client_runner, federated_client, fl_ctx):
         while federated_client.cell is None:
-            print("Waiting for the client cell to be created ....")
+            self.logger.info("Waiting for the client cell to be created ....")
             time.sleep(1.0)
 
         # Start the command agent
