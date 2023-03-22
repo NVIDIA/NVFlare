@@ -16,7 +16,6 @@ import time
 from typing import Union
 
 import numpy as np
-import tenseal as ts
 from tenseal.tensors.ckksvector import CKKSVector
 
 from nvflare.apis.dxo import DXO, DataKind, MetaKey
@@ -26,7 +25,11 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_opt.he import decomposers
 from nvflare.app_opt.he.constant import HE_ALGORITHM_CKKS
-from nvflare.app_opt.he.homomorphic_encrypt import count_encrypted_layers, load_tenseal_context_from_workspace
+from nvflare.app_opt.he.homomorphic_encrypt import (
+    count_encrypted_layers,
+    deserialize_nested_dict,
+    load_tenseal_context_from_workspace,
+)
 
 
 class HEModelDecryptor(DXOFilter):
@@ -56,12 +59,13 @@ class HEModelDecryptor(DXOFilter):
         elif event_type == EventType.END_RUN:
             self.tenseal_context = None
 
-    def decryption(self, params, encrypted_layers, fl_ctx: FLContext):
+    def decryption(self, params: dict, encrypted_layers: dict, fl_ctx: FLContext):
 
         n_params = len(params.keys())
         self.log_info(fl_ctx, f"Running HE Decryption algorithm {n_params} variables")
         if encrypted_layers is None:
             raise ValueError("encrypted_layers is None!")
+        deserialize_nested_dict(params, context=self.tenseal_context)
 
         start_time = time.time()
         n_decrypted, n_total = 0, 0
@@ -72,7 +76,7 @@ class HEModelDecryptor(DXOFilter):
                 n_total += _n
                 if isinstance(values, CKKSVector):
                     self.log_info(fl_ctx, f"Decrypting vars {i+1} of {n_params}: {param_name} with {_n} values")
-                    params[param_name] = values.decrypt()
+                    params[param_name] = values.decrypt(secret_key=self.tenseal_context.secret_key())
                     n_decrypted += _n
                 else:
                     self.log_info(
@@ -87,29 +91,6 @@ class HEModelDecryptor(DXOFilter):
 
         return params
 
-    def to_ckks_vector(self, params, encrypted_layers, fl_ctx: FLContext):
-        """Convert encrypted arrays to CKKS vector."""
-        if encrypted_layers is None:
-            raise ValueError("encrypted_layers is None!")
-        start_time = time.time()
-        result = {}
-        n_total = 0
-        self.log_info(fl_ctx, f"params {len(params)} {type(params)}")
-        for v in params:
-            ndarray = params[v]
-            if encrypted_layers[v]:
-                if np.size(ndarray) > 1:
-                    raise ValueError(f"size of {v} should not be larger 1 but is {np.size(ndarray)}!")
-                result[v] = ts.ckks_vector_from(self.tenseal_context, ndarray)
-                n = result[v].size()
-            else:
-                result[v] = ndarray
-                n = np.size(ndarray)
-            n_total += n
-        end_time = time.time()
-        self.log_info(fl_ctx, f"to_ckks_vector time for {n_total} values: {end_time - start_time} seconds.")
-        return result
-
     def process_dxo(self, dxo: DXO, shareable: Shareable, fl_ctx: FLContext) -> Union[None, DXO]:
         """Filter process apply to the Shareable object.
 
@@ -119,11 +100,20 @@ class HEModelDecryptor(DXOFilter):
             fl_ctx: FLContext
 
         Returns: DXO object with decrypted weights
+
         """
+        # TODO: could be removed later
+        if self.tenseal_context is None:
+            self.tenseal_context = load_tenseal_context_from_workspace(self.tenseal_context_file, fl_ctx)
+
         self.log_info(fl_ctx, "Running decryption...")
         encrypted_layers = dxo.get_meta_prop(key=MetaKey.PROCESSED_KEYS, default=None)
         if not encrypted_layers:
-            self.log_warning(fl_ctx, "dxo does not contain PROCESSED_KEYS (do nothing)")
+            self.log_warning(
+                fl_ctx,
+                "DXO does not contain PROCESSED_KEYS (do nothing). "
+                "Note, this is normal in the first round of training, as the initial global model is not encrypted.",
+            )
             return None
 
         encrypted_algo = dxo.get_meta_prop(key=MetaKey.PROCESSED_ALGORITHM, default=None)
@@ -134,7 +124,7 @@ class HEModelDecryptor(DXOFilter):
         n_encrypted, n_total = count_encrypted_layers(encrypted_layers)
         self.log_info(fl_ctx, f"{n_encrypted} of {n_total} layers encrypted")
         decrypted_params = self.decryption(
-            params=self.to_ckks_vector(params=dxo.data, encrypted_layers=encrypted_layers, fl_ctx=fl_ctx),
+            params=dxo.data,
             encrypted_layers=encrypted_layers,
             fl_ctx=fl_ctx,
         )
