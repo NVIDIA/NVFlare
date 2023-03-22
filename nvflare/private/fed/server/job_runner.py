@@ -16,7 +16,7 @@ import json
 import shutil
 import threading
 import time
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
@@ -24,6 +24,7 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, RunProcessKey, SystemComponents
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import ALL_SITES, Job, JobMetaKey, RunStatus
+from nvflare.apis.job_scheduler_spec import DispatchInfo
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
@@ -48,6 +49,27 @@ def _send_to_clients(admin_server, client_sites: List[str], engine, message, tim
         timeout = admin_server.timeout
     replies = admin_server.send_requests(requests, timeout_secs=timeout, optional=optional)
     return replies
+
+
+def _get_active_job_participants(connected_clients: Dict[str, Client], participants: Dict[str, Client]) -> List[str]:
+    """Gets active job participants.
+
+        Some clients might be dropped/dead during job execution.
+        No need to abort those clients.
+
+    Args:
+        connected_clients: Clients that are currently connected.
+        participants: Clients that were participating when the job started.
+
+    Returns:
+        A list of active job participants name.
+    """
+    client_sites_names = []
+    for token, client in participants.items():
+        if token in connected_clients:
+            client_sites_names.append(client.name)
+
+    return client_sites_names
 
 
 class JobRunner(FLComponent):
@@ -209,7 +231,7 @@ class JobRunner(FLComponent):
         self.fire_event(EventType.JOB_DEPLOYED, fl_ctx)
         return run_number, failed_clients
 
-    def _start_run(self, job_id: str, job: Job, client_sites: dict, fl_ctx: FLContext):
+    def _start_run(self, job_id: str, job: Job, client_sites: Dict[str, DispatchInfo], fl_ctx: FLContext):
         """Start the application
 
         Args:
@@ -241,8 +263,12 @@ class JobRunner(FLComponent):
         engine = fl_ctx.get_engine()
         run_process = engine.run_processes.get(job_id)
         if run_process:
-            client_sites = run_process.get(RunProcessKey.PARTICIPANTS)
-            self.abort_client_run(job_id, client_sites, fl_ctx)
+            participants: Dict[str, Client] = run_process.get(RunProcessKey.PARTICIPANTS)
+            active_client_sites_names = _get_active_job_participants(
+                connected_clients=engine.client_manager.clients, participants=participants
+            )
+
+            self.abort_client_run(job_id, active_client_sites_names, fl_ctx)
 
             err = engine.abort_app_on_server(job_id)
             if err:
@@ -308,8 +334,11 @@ class JobRunner(FLComponent):
                             run_process = exception_run_processes[job_id]
 
                             # stop client run
-                            client_sites = run_process.get(RunProcessKey.PARTICIPANTS)
-                            self.abort_client_run(job_id, client_sites, fl_ctx)
+                            participants: Dict[str, Client] = run_process.get(RunProcessKey.PARTICIPANTS)
+                            active_client_sites_names = _get_active_job_participants(
+                                connected_clients=engine.client_manager.clients, participants=participants
+                            )
+                            self.abort_client_run(job_id, active_client_sites_names, fl_ctx)
 
                             job_manager.set_status(job.job_id, RunStatus.FINISHED_EXECUTION_EXCEPTION, fl_ctx)
                         else:
