@@ -23,7 +23,7 @@ from nvflare.apis.controller_spec import ClientTask, ControllerSpec, SendOrder, 
 from nvflare.apis.fl_constant import FLContextKey, ReservedTopic
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.responder import Responder
-from nvflare.apis.shareable import make_copy, Shareable
+from nvflare.apis.shareable import Shareable, make_copy
 from nvflare.apis.signal import Signal
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector

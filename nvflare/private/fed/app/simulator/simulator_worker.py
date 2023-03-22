@@ -41,8 +41,7 @@ from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initia
 from nvflare.security.logging import secure_format_exception
 from nvflare.security.security import EmptyAuthorizer
 
-
-CELL_CONNECT_CHECK_TIMEOUT = 10.
+CELL_CONNECT_CHECK_TIMEOUT = 10.0
 FETCH_TASK_RUN_RETRY = 3
 
 
