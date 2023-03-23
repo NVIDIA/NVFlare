@@ -4,6 +4,8 @@ The cross-site model evaluation workflow uses the data from clients to run evalu
 
 > **_NOTE:_** This example uses a Numpy-based trainer and will generate its data within the code.
 
+You can follow the [hello_world notebook](../hello_world.ipynb) or the following:
+
 ### 1. Install NVIDIA FLARE
 
 Follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions.

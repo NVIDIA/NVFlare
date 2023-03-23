@@ -5,6 +5,8 @@
 
 > **_NOTE:_** This example uses the [MNIST](http://yann.lecun.com/exdb/mnist/) handwritten digits dataset and will load its data within the trainer code.
 
+You can follow the [hello_world notebook](../hello_world.ipynb) or the following:
+
 ### 1. Install NVIDIA FLARE
 
 Follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions.
