@@ -6,6 +6,7 @@
 This example show how to use [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) on tabular data applications.
 It illustrates the [Random Forest](https://xgboost.readthedocs.io/en/stable/tutorials/rf.html) functionality using [XGBoost] (https://github.com/dmlc/xgboost) library,
 which is an optimized distributed gradient boosting library covering random forest.
+Follow along in this [notebook](./random_forest.ipynb) for an interactive experience.
 
 ### Dataset
 This example illustrate a binary classification task based on [HIGGS dataset](https://archive.ics.uci.edu/ml/datasets/HIGGS).
