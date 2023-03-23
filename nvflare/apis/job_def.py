@@ -20,6 +20,7 @@ from nvflare.apis.fl_context import FLContext
 
 # this is treated as all online sites in job deploy_map
 ALL_SITES = "@ALL"
+SERVER_SITE_NAME = "server"
 
 
 class RunStatus(str, Enum):

@@ -67,7 +67,15 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 * [Hello TensorFlow](./hello-world/hello-tf2/README.md)
   * Example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) an image classifier using [FedAvg]([FedAvg](https://arxiv.org/abs/1602.05629)) and [TensorFlow](https://tensorflow.org/) as the deep learning training framework.
 
-## 2. FL algorithms
+## 2. Tutorial notebooks
+* [Intro to the FL Simulator](./tutorials/flare_simulator.ipynb)
+  * Shows how to use the FLARE Simulator to run a local simulation.
+* [Intro to the FL Simulator](./tutorials/flare_api.ipynb)
+  * Goes through the different commnads of the FLARE API.
+* [Intro to the FL Simulator](./tutorials/setup_poc.ipynb)
+  * Shows how to use POC mode.
+
+## 3. FL algorithms
 * [Federated Learning with CIFAR-10](./advanced/cifar10/README.md)
   * [Simulated Federated Learning with CIFAR-10](./advanced/cifar10/cifar10-sim/README.md)
     * This example includes instructions on running [FedAvg](https://arxiv.org/abs/1602.05629), 
@@ -80,7 +88,17 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 * [Federated XGBoost](./advanced/xgboost/README.md)
   * Includes examples of [histogram-based](./advanced/xgboost/histogram-based/README.md) algorithm, [tree-based](./advanced/xgboost/tree-based/README.md). Tree-based algorithms also includes [bagging](./advanced/xgboost/tree-based/job_configs/bagging_base) and [cyclic](./advanced/xgboost/tree-based/job_configs/cyclic_base) approaches 
 
-## 3. Medical Image Analysis
+## 4. Traditional ML examples
+* [Federated Linear Model with Scikit-learn](./advanced/sklearn-linear/README.md)
+  * Shows how to use the NVIDIA FLARE with [scikit-learn](https://scikit-learn.org/), a widely used open-source machine learning library.
+* [Federated K-Means Clustering with Scikit-learn](./advanced/sklearn-kmeans/README.md)
+  * NVIDIA FLARE with [scikit-learn](https://scikit-learn.org/) and k-Means.
+* [Federated SVM with Scikit-learn](./advanced/sklearn-svm/README.md)
+  * NVIDIA FLARE with [scikit-learn](https://scikit-learn.org/) and [SVM](https://scikit-learn.org/stable/modules/generated/sklearn.svm.SVC.html).
+* [Federated Learning for Random Forest based on XGBoost](./advanced/random_forest/README.md)
+  * Example of using NVIDIA FLARE with [scikit-learn](https://scikit-learn.org/) and Random Forest.
+
+## 5. Medical Image Analysis
 * [NVFlare + MONAI integration](../integration/monai/README.md)
   * For an example of using NVIDIA FLARE to train a 3D medical image analysis model using federated averaging (FedAvg) and MONAI Bundle, see [../integration/monai/examples/README.md](../integration/monai/examples/README.md).
 * [Federated Learning with Differential Privacy for BraTS18 segmentation](./advanced/brats18/README.md)
@@ -88,7 +106,7 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 * [Federated Learning for Prostate Segmentation from Multi-source Data](./advanced/prostate/README.md)
   * Example of training a multi-institutional prostate segmentation model using [FedAvg](https://arxiv.org/abs/1602.05629), [FedProx](https://arxiv.org/abs/1812.06127), and [Ditto](https://arxiv.org/abs/2012.04221).
 
-## 4. Federated Statistics
+## 6. Federated Statistics
 * [Federated Statistic Overview](./advanced/federated-statistics/README.md)
   * Discuss the overall federated statistics features 
 * [Federated Statistics for Medical Imaging](./advanced/federated-statistics/image_stats/README.md)
@@ -96,10 +114,10 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 * [Federated Statistics for DataFrame](./advanced/federated-statistics/df_stats/README.md)
   * Example of gathering local statistics summary from Pandas DataFrame to compute the global dataset statistics.
 
-## 5. Federated Policies
+## 7. Federated Policies
 * [Federated Policies](./advanced/federated-policies/README.rst) 
   * Discuss the federated site policies for authorization, resource and data privacy management
 
-## 6. Experiment tracking
+## 8. Experiment tracking
 * [Hello PyTorch with TensorBoard Streaming](./advanced/tensorboard-streaming/README.md)
   * Example building upon [Hello PyTorch](./basic/hello-pt/README.md) showcasing the [TensorBoard](https://tensorflow.org/tensorboard) streaming capability from the clients to the server.

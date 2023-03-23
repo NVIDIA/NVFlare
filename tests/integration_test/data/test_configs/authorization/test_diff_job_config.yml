@@ -163,7 +163,7 @@ tests:
           "data": [
             {
               "type": "error",
-              "data": "App sag1 is will be deployed to server but server config is missing"
+              "data": "App sag1 will be deployed to server but server config is missing"
             }
           ]
       - "trigger":

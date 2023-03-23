@@ -276,13 +276,24 @@ class Session(SessionSpec):
 
         Args:
             detailed: True to get the detailed information for each job, False by default
-            limit: maximum number of jobs to show, with 0 to show all (defaults to 5)
+            limit: maximum number of jobs to show, with 0 or None to show all (defaults to None to show all)
             id_prefix: if included, only return jobs with the beginning of the job ID matching the id_prefix
             name_prefix: if included, only return jobs with the beginning of the job name matching the name_prefix
             reverse: if specified, list jobs in the reverse order of submission times
         Returns: a dict of job metadata
 
         """
+        if not isinstance(detailed, bool):
+            raise ValueError(f"detailed must be bool but got {type(detailed)}")
+        if not isinstance(reverse, bool):
+            raise ValueError(f"reverse must be bool but got {type(reverse)}")
+        if limit is not None and not isinstance(limit, int):
+            raise ValueError(f"limit must be None or int but got {type(limit)}")
+        if id_prefix is not None and not isinstance(id_prefix, str):
+            raise ValueError(f"id_prefix must be None or str but got {type(id_prefix)}")
+        if name_prefix is not None and not isinstance(name_prefix, str):
+            raise ValueError(f"name_prefix must be None or str but got {type(name_prefix)}")
+
         command = AdminCommandNames.LIST_JOBS
         if detailed:
             command = command + " -d"

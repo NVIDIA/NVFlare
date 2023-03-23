@@ -73,7 +73,7 @@ class PTFileModelLocator(ModelLocator):
         if model_name not in list(self.model_inventory.keys()):
             raise ValueError(f"model inventory does not contain: {model_name}")
 
-        model_learnable = self.model_persistor.get_model(model_name, fl_ctx)
+        model_learnable = self.model_persistor.get(model_name, fl_ctx)
         dxo = model_learnable_to_dxo(model_learnable)
 
         return dxo

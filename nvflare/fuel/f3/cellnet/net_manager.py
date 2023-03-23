@@ -88,8 +88,8 @@ class NetManager(CommandModule):
                 ),
                 CommandSpec(
                     name="bulk",
-                    description="test bulk message processing",
-                    usage="bulk",
+                    description="test bulk messaging - each client sends a bulk to server",
+                    usage="bulk [bulk_size]",
                     handler_func=self._cmd_bulk_test,
                     visible=self.diagnose,
                     enabled=self.diagnose,

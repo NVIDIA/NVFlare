@@ -56,6 +56,7 @@ from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
 from nvflare.private.admin_defs import Message, MsgHeader
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, RequestHeader, TrainingTopic, new_cell_message
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
+from nvflare.private.fed.server.server_state import ServerState
 from nvflare.private.fed.utils.fed_utils import security_close
 from nvflare.private.scheduler_constants import ShareableHeader
 from nvflare.security.logging import secure_format_exception
@@ -196,6 +197,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 job_clients,
                 snapshot,
                 self.server.cell,
+                self.server.server_state,
             )
 
             self.engine_info.status = MachineStatus.STARTED
@@ -225,7 +227,17 @@ class ServerEngine(ServerEngineInternalSpec):
         self.engine_info.status = MachineStatus.STOPPED
 
     def _start_runner_process(
-        self, args, app_root, run_number, app_custom_folder, open_ports, job_id, job_clients, snapshot, cell: Cell
+        self,
+        args,
+        app_root,
+        run_number,
+        app_custom_folder,
+        open_ports,
+        job_id,
+        job_clients,
+        snapshot,
+        cell: Cell,
+        server_state: ServerState,
     ):
         new_env = os.environ.copy()
         if app_custom_folder != "":
@@ -252,6 +264,12 @@ class ServerEngine(ServerEngineInternalSpec):
             + str(cell.get_internal_listener_url())
             + " -u "
             + str(cell.get_root_url_for_child())
+            + " --host "
+            + str(server_state.host)
+            + " --port "
+            + str(server_state.service_port)
+            + " --ssid "
+            + str(server_state.ssid)
             + " --set"
             + command_options
             + " print_conf=True restore_snapshot="
