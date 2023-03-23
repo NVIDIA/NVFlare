@@ -1709,7 +1709,7 @@ aws_start_svr_sh: |
   # Generate Security Group
 
   sg_result=$(aws ec2 create-security-group --group-name $SECURITY_GROUP --description "NVFlare security group")
-  report_status "$?" "Only one NVFL server VM and its security group is allowed.  $SECURITY_GROUP exists and thus creating duplicate scecurity group"
+  report_status "$?" "Only one NVFL server VM and its security group is allowed.  $SECURITY_GROUP exists and thus creating duplicate security group"
   sg_id=$(echo $sg_result | jq -r .GroupId)
   my_public_ip=$(dig +short myip.opendns.com @resolver1.opendns.com)
   report_status "$?" "getting my public IP"
