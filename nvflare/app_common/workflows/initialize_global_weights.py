@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import List, Union
+
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.response_processors.global_weights_initializer import GlobalWeightsInitializer, WeightMethod
 
@@ -27,7 +29,7 @@ class InitializeGlobalWeights(BroadcastAndProcess):
         task_timeout: int = 0,
         weights_prop_name=AppConstants.GLOBAL_MODEL,
         weight_method: str = WeightMethod.FIRST,
-        weights_client_name=None,
+        weights_client_name: Union[str, List[str], None] = None,
     ):
         """A controller for initializing global model weights based on reported weights from clients.
 
@@ -40,6 +42,7 @@ class InitializeGlobalWeights(BroadcastAndProcess):
             weight_method: method for determining global model weights. Defaults to `WeightMethod.FIRST`.
             weights_client_name: name of the client if the method is "client". Defaults to None.
                 If `None`, the task will be sent to all clients (to be used with `weight_method=WeightMethod.FIRST`).
+                If list of client names, the task will be only sent to the listed clients.
         """
         BroadcastAndProcess.__init__(
             self,
