@@ -42,7 +42,7 @@ class InitializeGlobalWeights(BroadcastAndProcess):
             weight_method: method for determining global model weights. Defaults to `WeightMethod.FIRST`.
             weights_client_name: name of the client if the method is "client". Defaults to None.
                 If `None`, the task will be sent to all clients (to be used with `weight_method=WeightMethod.FIRST`).
-                If list of client names, the task will be only sent to the listed clients.
+                If list of client names, the task will be only be sent to the listed clients.
         """
         BroadcastAndProcess.__init__(
             self,
