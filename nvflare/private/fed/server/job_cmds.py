@@ -20,6 +20,7 @@ import shutil
 from typing import Dict, List
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
+from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import AdminCommandNames, RunProcessKey
 from nvflare.apis.job_def import Job, JobDataKey, JobMetaKey, TopDir
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
@@ -215,7 +216,7 @@ class JobCommandModule(CommandModule, CommandUtil):
             conn.append_error(f"Job: {job_id} is not running.")
             return False
 
-        participants = run_process.get(RunProcessKey.PARTICIPANTS, [])
+        participants: Dict[str, Client] = run_process.get(RunProcessKey.PARTICIPANTS, {})
         wrong_clients = []
         for client in client_names:
             client_valid = False

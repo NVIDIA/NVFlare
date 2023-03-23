@@ -14,7 +14,7 @@ In addition to basic uniform shrinkage setting where all clients have the same l
 
 ## Run automated experiments
 Please make sure to finish the [preparation steps](../README.md) before running the following steps.
-To run this example with NVFlare, follow the below steps.
+To run this example with NVFlare, follow the steps below or this [notebook](./xgboost_tree_higgs.ipynb).
 
 ### Environment Preparation
 
