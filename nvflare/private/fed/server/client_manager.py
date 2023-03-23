@@ -16,6 +16,7 @@ import logging
 import threading
 import time
 import uuid
+from typing import Optional
 
 from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import FLContextKey
@@ -43,7 +44,7 @@ class ClientManager:
 
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def authenticate(self, request, context):
+    def authenticate(self, request, context) -> Optional[Client]:
         client = self.login_client(request, context)
         if not client:
             return None
@@ -51,11 +52,7 @@ class ClientManager:
         # client_ip = context.peer().split(":")[1]
         client_ip = request.get_header(CellMessageHeaderKeys.CLIENT_IP)
 
-        if len(self.clients) >= self.max_num_clients:
-            # context.abort(grpc.StatusCode.RESOURCE_EXHAUSTED, "Maximum number of clients reached")
-            context.set_prop(FLContextKey.COMMUNICATION_ERROR, "Maximum number of clients reached", sticky=False)
-
-        # new client will join the current round immediately
+        # new client join
         with self.lock:
             self.clients.update({client.token: client})
             self.logger.info(
@@ -87,13 +84,14 @@ class ClientManager:
             context.set_prop(
                 FLContextKey.UNAUTHENTICATED, "Requested task does not match the current server task", sticky=False
             )
+            return None
         return self.authenticated_client(client_login, context)
 
     def validate_client(self, request, fl_ctx: FLContext, allow_new=False):
         """Validate the client state message.
 
         Args:
-            client_state: A ClientState message received by server
+            request: A request from client.
             fl_ctx: FLContext
             allow_new: whether to allow new client. Note that its task should still match server's.
 
@@ -120,20 +118,21 @@ class ClientManager:
             client = self.clients.get(token)
         return client
 
-    def authenticated_client(self, client_login, context) -> Client:
+    def authenticated_client(self, request, context) -> Optional[Client]:
         """Use SSL certificate for authenticate the client.
 
         Args:
-            client_login: client login request Message
+            request: client login request Message
             context: FL_Context
 
         Returns:
             Client object.
         """
-        client_name = client_login.get_header(CellMessageHeaderKeys.CLIENT_NAME)
+        client_name = request.get_header(CellMessageHeaderKeys.CLIENT_NAME)
         client = self.clients.get(client_name)
+
         if not client:
-            fqcn = client_login.get_prop(MessagePropKey.ENDPOINT).conn_props.get(DriverParams.PEER_CN.value)
+            fqcn = request.get_prop(MessagePropKey.ENDPOINT).conn_props.get(DriverParams.PEER_CN.value)
             if fqcn and fqcn != client_name:
                 context.set_prop(
                     FLContextKey.UNAUTHENTICATED,
@@ -147,11 +146,17 @@ class ClientManager:
                     with self.lock:
                         self.clients.pop(token)
                         self.logger.info(
-                            f"Client: {client_name} already registered. Re-login the client " f"with a new token."
+                            f"Client: {client_name} already registered. Re-login the client with a new token."
                         )
                         break
 
             client = Client(client_name, str(uuid.uuid4()))
+
+        if len(self.clients) >= self.max_num_clients:
+            context.set_prop(FLContextKey.UNAUTHENTICATED, "Maximum number of clients reached", sticky=False)
+            self.logger.info(f"Maximum number of clients reached. Reject client: {client_name} login.")
+            return None
+
         return client
 
     def is_from_authorized_client(self, token):
@@ -171,6 +176,7 @@ class ClientManager:
         Returns:
             True if task name is the same as server's project name.
         """
+        # TODO: change the name of this method
         return task == self.project_name
 
     def heartbeat(self, token, client_name, fl_ctx):
