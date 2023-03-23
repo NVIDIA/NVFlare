@@ -5,6 +5,8 @@ This workflow follows the hub and spoke model for communicating the global model
 
 > **_NOTE:_** This example uses a Numpy-based trainer and will generate its data within the code.
 
+You can follow the [hello_world notebook](../hello_world.ipynb) or the following:
+
 ### 1. Install NVIDIA FLARE
 
 Follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions.
@@ -26,3 +28,5 @@ $ ls /tmp/nvflare/hello-numpy-sag/simulate_job/
 app_server  app_site-1  app_site-2  log.txt  model  models
 
 ```
+
+For how to use the FLARE API to run this app, see [this notebook](hello_numpy_sag.ipynb).

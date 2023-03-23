@@ -47,6 +47,7 @@ See [tree-based/README](tree-based/README.md) for more information on two differ
 
 
 ## HIGGS Data Preparation
+For data preparation, you can follow this [notebook](./data_job_setup.ipynb):
 ### Download and Store Data
 To run the examples, we first download the dataset from the HIGGS link above, which is a single `.csv` file.
 By default, we assume the dataset is downloaded, uncompressed, and stored in `~/dataset/HIGGS.csv`.

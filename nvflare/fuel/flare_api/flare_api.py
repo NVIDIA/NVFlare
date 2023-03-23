@@ -276,7 +276,7 @@ class Session(SessionSpec):
 
         Args:
             detailed: True to get the detailed information for each job, False by default
-            limit: maximum number of jobs to show, with 0 to show all (defaults to 5)
+            limit: maximum number of jobs to show, with 0 or None to show all (defaults to None to show all)
             id_prefix: if included, only return jobs with the beginning of the job ID matching the id_prefix
             name_prefix: if included, only return jobs with the beginning of the job name matching the name_prefix
             reverse: if specified, list jobs in the reverse order of submission times
