@@ -33,6 +33,9 @@ You can also provide a configuration file with ``--config $FILE_NAME`` to the ``
 file will take the place of the user responding to prompts when starting the server or client.
 The configuration file is in the format of Bash setting variables.
 
+As only one NVIDIA FLARE server should exist, the server cloud launch script will fail when it detects same resource group or security group exists, which indicates a previously-launched
+server is not terminated by users.  Users should not run again the server scripts before properly cleaning up the existing server.
+
 .. attention:: The variable names are different in AWS and Azure.
 
 In AWS:
