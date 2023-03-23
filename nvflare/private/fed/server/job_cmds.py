@@ -407,9 +407,12 @@ class JobCommandModule(CommandModule, CommandUtil):
         try:
             job_id = conn.get_prop(self.JOB_ID)
             with engine.new_context() as fl_ctx:
-                job_runner.stop_run(job_id, fl_ctx)
-            conn.append_string("Abort signal has been sent to the server app.")
-            conn.append_success("", make_meta(MetaStatusValue.OK))
+                message = job_runner.stop_run(job_id, fl_ctx)
+                if message:
+                    conn.append_error(message, meta=make_meta(MetaStatusValue.INTERNAL_ERROR))
+                else:
+                    conn.append_string("Abort signal has been sent to the server app.")
+                    conn.append_success("", make_meta(MetaStatusValue.OK))
         except BaseException as e:
             conn.append_error(
                 f"Exception occurred trying to abort job: {secure_format_exception(e)}",

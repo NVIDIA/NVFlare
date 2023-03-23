@@ -108,12 +108,9 @@ def main():
         federated_client.use_gpu = False
         federated_client.config_folder = config_folder
 
-        start = time.time()
-        cell_timeout = kv_list.get("cell_timeout", 60.0)
         while federated_client.cell is None:
-            time.sleep(0.1)
-            if time.time() - start > cell_timeout:
-                raise RuntimeError("Could not create the client cell. Failed to start the client.")
+            print("Waiting client cell to be created ....")
+            time.sleep(1.0)
 
         federated_client.register()
 
