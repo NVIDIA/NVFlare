@@ -2,7 +2,7 @@
 
 # NVFLARE INSTALL
 NVFLARE_VERSION="2.3.0rc2"
-! pip install nvflare>=${NVFLARE_VERSION}
+pip install 'nvflare>=${NVFLARE_VERSION}'
 
 # set NVFLARE_HOME
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
@@ -20,8 +20,6 @@ if [ ! -L "${NVFLARE_POC_WORKSPACE}/admin/transfer" ]; then
 fi
 
 nvflare poc --start -ex admin
-
- 
 
 
 
