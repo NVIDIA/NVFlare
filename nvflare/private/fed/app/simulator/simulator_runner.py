@@ -384,6 +384,9 @@ class SimulatorRunner(FLComponent):
                     executor.submit(lambda p: self.client_run(*p), [clients, gpus[index]])
 
                 executor.shutdown()
+
+                # Abort the server after all clients finished run
+                self.server.abort_run()
                 server_thread.join()
                 run_status = 0
             except BaseException as e:
