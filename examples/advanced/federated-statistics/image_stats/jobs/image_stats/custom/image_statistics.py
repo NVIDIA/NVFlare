@@ -14,6 +14,7 @@
 
 import glob
 import os
+import traceback
 from typing import Dict, List, Optional
 
 import numpy as np
@@ -42,8 +43,10 @@ class ImageStatistics(Statistics):
 
         self.loader = None
         self.failure_images = 0
+        self.fl_ctx = None
 
     def initialize(self, fl_ctx: FLContext):
+        self.fl_ctx = fl_ctx
         self.client_name = fl_ctx.get_identity_name()
         self.loader = LoadImage()
         self.loader.register(ITKReader())
@@ -95,7 +98,7 @@ class ImageStatistics(Statistics):
         histogram_bins: List[Bin] = []
         histogram = np.zeros((num_of_bins,), dtype=np.int64)
         bin_edges = []
-        for i, entry in enumerate(self.data_list[dataset_name]):  # TODO: use multi-processing
+        for i, entry in enumerate(self.data_list[dataset_name]):
             file = entry.get("image")
             try:
                 img, meta = self.loader(file)
@@ -111,6 +114,11 @@ class ImageStatistics(Statistics):
                 self.logger.critical(
                     f"Failed to load file {file} with exception: {e.__str__()}. " f"Skipping this image..."
                 )
+
+        if num_of_bins > 0 and len(bin_edges) == 0:
+            self.log_error(self.fl_ctx, traceback.format_exc())
+            raise ValueError(f"bin_edges are not populated for number of bins: {num_of_bins}")
+
         for j in range(num_of_bins):
             low_value = bin_edges[j]
             high_value = bin_edges[j + 1]
