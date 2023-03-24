@@ -181,7 +181,7 @@ class GetTaskCommand(CommandProcessor, ServerStateCheck):
         shareable.set_header(key=FLContextKey.PEER_CONTEXT, value=shared_fl_ctx)
 
         self.logger.info(
-            f"return task to client.  client_name:{client.name}  task_id:{task_id}  "
+            f"return task to client.  client_name:{client.name}  task_name: {taskname}   task_id:{task_id}  "
             f"sharable_header_task_id: {shareable.get_header(key=FLContextKey.TASK_ID)}"
         )
         return shareable

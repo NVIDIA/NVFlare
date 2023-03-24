@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import copy
 import threading
 import time
 from abc import ABC
@@ -23,7 +22,7 @@ from nvflare.apis.controller_spec import ClientTask, ControllerSpec, SendOrder, 
 from nvflare.apis.fl_constant import FLContextKey, ReservedTopic
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.responder import Responder
-from nvflare.apis.shareable import Shareable
+from nvflare.apis.shareable import Shareable, make_copy
 from nvflare.apis.signal import Signal
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
@@ -293,7 +292,7 @@ class Controller(Responder, ControllerSpec, ABC):
                 task.last_client_task_map[client.name] = client_task_to_send
                 task.client_tasks.append(client_task_to_send)
                 self._client_task_map[client_task_to_send.id] = client_task_to_send
-            return task_name, client_task_to_send.id, copy.deepcopy(task_data)
+            return task_name, client_task_to_send.id, make_copy(task_data)
 
     def handle_exception(self, task_id: str, fl_ctx: FLContext) -> None:
         """Called to cancel one task as its client_task is causing exception at upper level.
