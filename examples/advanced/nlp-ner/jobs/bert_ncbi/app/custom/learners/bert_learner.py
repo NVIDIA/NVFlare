@@ -90,6 +90,25 @@ class BertLearner(Learner):
         self.labels_to_ids = None
         self.ids_to_labels = None
 
+    def load_data(self):
+        df_train = pd.read_csv(os.path.join(self.data_path, self.client_id + "_train.csv"))
+        df_valid = pd.read_csv(os.path.join(self.data_path, self.client_id + "_val.csv"))
+        return df_train, df_valid
+
+    def get_labels(self, df_train):
+        labels = []
+        for x in df_train["labels"].values:
+            labels.extend(x.split(" "))
+        unique_labels = set(labels)
+        # check label length
+        if len(unique_labels) != self.num_labels:
+            self.system_panic(
+                f"num_labels {self.num_labels} need to align with dataset, actual data {len(unique_labels)}!", fl_ctx
+            )
+            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+        self.labels_to_ids = {k: v for v, k in enumerate(sorted(unique_labels))}
+        self.ids_to_labels = {v: k for v, k in enumerate(sorted(unique_labels))}
+
     def initialize(self, parts: dict, fl_ctx: FLContext):
         # when a run starts, this is where the actual settings get initialized for trainer
         # set the paths according to fl_ctx
@@ -111,21 +130,11 @@ class BertLearner(Learner):
         # set the training-related contexts, this is task-specific
         # get data from csv files
         self.log_info(fl_ctx, f"Reading data from {self.data_path}")
-        df_train = pd.read_csv(os.path.join(self.data_path, self.client_id + "_train.csv"))
-        df_valid = pd.read_csv(os.path.join(self.data_path, self.client_id + "_val.csv"))
+        df_train, df_valid = self.load_data()
+
         # get labels from data
-        labels = []
-        for x in df_train["labels"].values:
-            labels.extend(x.split(" "))
-        unique_labels = set(labels)
-        # check label length
-        if len(unique_labels) != self.num_labels:
-            self.system_panic(
-                f"num_labels {self.num_labels} need to align with dataset, actual data {len(unique_labels)}!", fl_ctx
-            )
-            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-        self.labels_to_ids = {k: v for v, k in enumerate(sorted(unique_labels))}
-        self.ids_to_labels = {v: k for v, k in enumerate(sorted(unique_labels))}
+        self.get_labels(df_train)
+
         # set model
         self.model = BertModel(model_name=self.model_name, num_labels=self.num_labels)
         tokenizer = self.model.tokenizer
