@@ -114,9 +114,9 @@ def prepare_poc(number_of_clients: int, poc_workspace: str):
     print(f"prepare_poc at {poc_workspace} for {number_of_clients} clients")
     ret_code = generate_poc(number_of_clients, poc_workspace)
     if poc_workspace != DEFAULT_WORKSPACE:
-        update_storage_locations(local_dir=f"{poc_workspace}/server/local",
-                                 default_resource_name="resources.json",
-                                 workspace=poc_workspace)
+        update_storage_locations(
+            local_dir=f"{poc_workspace}/server/local", default_resource_name="resources.json", workspace=poc_workspace
+        )
     if ret_code:
         prepare_examples(poc_workspace)
 
@@ -387,7 +387,7 @@ def def_poc_parser(sub_cmd):
         action="store_const",
         const=prepare_poc,
         help="prepare poc workspace. "
-             + "export NVFLARE_HOME=<NVFLARE github cloned directory> to setup examples with prepare command",
+        + "export NVFLARE_HOME=<NVFLARE github cloned directory> to setup examples with prepare command",
     )
     poc_parser.add_argument("--start", dest="start_poc", action="store_const", const=start_poc, help="start poc")
     poc_parser.add_argument("--stop", dest="stop_poc", action="store_const", const=stop_poc, help="stop poc")
@@ -399,10 +399,10 @@ def def_poc_parser(sub_cmd):
 
 def is_poc(cmd_args) -> bool:
     return (
-            hasattr(cmd_args, "start_poc")
-            or hasattr(cmd_args, "prepare_poc")
-            or hasattr(cmd_args, "stop_poc")
-            or hasattr(cmd_args, "clean_poc")
+        hasattr(cmd_args, "start_poc")
+        or hasattr(cmd_args, "prepare_poc")
+        or hasattr(cmd_args, "stop_poc")
+        or hasattr(cmd_args, "clean_poc")
     )
 
 

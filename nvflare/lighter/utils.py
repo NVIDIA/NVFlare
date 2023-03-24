@@ -148,11 +148,13 @@ def sh_replace(src, mapping_dict):
     return result
 
 
-def update_storage_locations(local_dir: str,
-                             workspace: str,
-                             default_resource_name: str = "resources.json.default",
-                             job_storage_name: str = "jobs-storage",
-                             snapshot_storage_name: str = "snapshot-storage"):
+def update_storage_locations(
+    local_dir: str,
+    workspace: str,
+    default_resource_name: str = "resources.json.default",
+    job_storage_name: str = "jobs-storage",
+    snapshot_storage_name: str = "snapshot-storage",
+):
     default_resource = f"{local_dir}/{default_resource_name}"
     target_resource = f"{local_dir}/resources.json"
     job_storage = f"{workspace}/{job_storage_name}"
