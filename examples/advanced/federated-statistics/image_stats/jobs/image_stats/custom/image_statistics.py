@@ -117,10 +117,7 @@ class ImageStatistics(Statistics):
                 )
 
         if num_of_bins != bin_edges:
-            if is_secure():
-                secure_log_traceback()
-            else:
-                self.log_error(self.fl_ctx, traceback.format_exc())
+            secure_log_traceback()
             raise ValueError(f"bin_edges size: {len(bin_edges)} is not matching with number of bins: {num_of_bins}")
 
         for j in range(num_of_bins):
