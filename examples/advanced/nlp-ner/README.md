@@ -35,6 +35,11 @@ The expected output is
 (318, 5) (316, 5)
 (318, 5) (318, 5)
 ```
+The task here is to categorize each word in the text into three classes specified by the label. For example, the sentence 
+`Recent progress has resulted in part of the gene mutated in Duchenne and the milder Becker muscular dystrophies being cloned and has suggested that the gene itself extends over 1 , 000 to 2 , 000 kilobases ( kb ) .` into label vector `O O O O O O O O O O O B I I I I I I O O O O O O O O O O O O O O O O O O O O O O O`.
+Let's take a closer look at the word-label correspondence:
+![data sample](./figs/sample.png)
+As shown above, the task is to capture the keywords related to medical findings.
 
 ## Run automated experiments
 We use the NVFlare [simulator](https://nvflare.readthedocs.io/en/latest/user_guide/fl_simulator.html) to run the FL training.
