@@ -30,6 +30,7 @@ def data_split_args_parser():
     parser.add_argument("--data_path", type=str, help="Path to data file")
     parser.add_argument("--model_path", type=str, help="Path to workspace server folder")
     parser.add_argument("--num_labels", type=int, help="Number of labels for the candidate dataset")
+    parser.add_argument("--model_name", type=str, default="bert-base-uncased", help="Model name")
     return parser
 
 
@@ -38,10 +39,9 @@ def align_label(
     origional_text,
     labels,
     labels_to_ids,
-    label_all_tokens=False,
+    pad_token,
     tokenizer=None,
 ):
-    null_label_id = -100
     label_ids = []
     origional_text = origional_text.split(" ")
 
@@ -57,7 +57,7 @@ def align_label(
             or (token_id == tokenizer.sep_token_id)
         ):
 
-            label_ids.append(null_label_id)
+            label_ids.append(pad_token)
 
         elif (
             (not partially_mathced)
@@ -78,7 +78,7 @@ def align_label(
             partially_mathced = False
 
         else:
-            label_ids.append(null_label_id)
+            label_ids.append(pad_token)
             sub_str += re.sub("#+", "", cur_str)
             if sub_str == origional_text[orig_labels_i - 1].lower():
                 partially_mathced = False
@@ -88,7 +88,7 @@ def align_label(
 
 
 class DataSequence(torch.utils.data.Dataset):
-    def __init__(self, df, labels_to_ids, tokenizer, max_length=150):
+    def __init__(self, df, labels_to_ids, tokenizer, pad_token=-100, max_length=150):
         lb = [i.split(" ") for i in df["labels"].values.tolist()]
         txt = df["text"].values.tolist()
         self.texts = [
@@ -104,7 +104,7 @@ class DataSequence(torch.utils.data.Dataset):
             for i in txt
         ]
         self.labels = [
-            align_label(t, tt, l, labels_to_ids=labels_to_ids, tokenizer=tokenizer)
+            align_label(t, tt, l, labels_to_ids=labels_to_ids, pad_token=pad_token, tokenizer=tokenizer)
             for t, tt, l in zip(self.texts, txt, lb)
         ]
 
@@ -131,6 +131,8 @@ if __name__ == "__main__":
     model_path = args.model_path
     data_path = args.data_path
     num_labels = args.num_labels
+    model_name = args.model_name
+    pad_token = -100
 
     df_test = pd.read_csv(os.path.join(data_path, "test.csv"))
     # label and id conversion
@@ -142,14 +144,13 @@ if __name__ == "__main__":
     ids_to_labels = {v: k for v, k in enumerate(sorted(unique_labels))}
 
     # model
-    model = BertModel(num_labels=num_labels).to(device)
+    model = BertModel(num_labels=num_labels, model_name=model_name).to(device)
     model_weights = torch.load(os.path.join(model_path, "best_FL_global_model.pt"))
     model.load_state_dict(state_dict=model_weights["model"])
     tokenizer = model.tokenizer
 
     # data
-    test_dataset = DataSequence(df_test, labels_to_ids, tokenizer=tokenizer)
-    test_loader = DataLoader(test_dataset, num_workers=4, batch_size=64, shuffle=False)
+    test_dataset = DataSequence(df_test, labels_to_ids, tokenizer=tokenizer, pad_token=pad_token)
     test_loader = DataLoader(test_dataset, num_workers=4, batch_size=64, shuffle=False)
 
     # validate
@@ -165,8 +166,8 @@ if __name__ == "__main__":
             loss, logits = model(input_id, mask, test_label)
             for i in range(logits.shape[0]):
                 # remove pad tokens
-                logits_clean = logits[i][test_label[i] != -100]
-                label_clean = test_label[i][test_label[i] != -100]
+                logits_clean = logits[i][test_label[i] != pad_token]
+                label_clean = test_label[i][test_label[i] != pad_token]
                 # calcluate acc and store prediciton and true labels
                 predictions = logits_clean.argmax(dim=1)
                 acc = (predictions == label_clean).float().mean()

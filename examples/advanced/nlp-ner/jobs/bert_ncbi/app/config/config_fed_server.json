@@ -1,6 +1,6 @@
 {
   "format_version": 2,
-  "min_clients": 2,
+  "min_clients": 4,
   "num_rounds": 50,
   "server": {
     "heart_beat_timeout": 600
@@ -15,7 +15,8 @@
         "model": {
           "path": "models.bert.BertModel",
           "args": {
-            "num_labels": 3
+            "num_labels": 3,
+            "model_name": "bert-base-uncased"
           }
         }
       }

@@ -23,6 +23,7 @@ def data_split_args_parser():
     parser = argparse.ArgumentParser(description="Generate data split for dataset")
     parser.add_argument("--data_path", type=str, help="Path to data file")
     parser.add_argument("--num_clients", type=int, help="Total number of clients")
+    parser.add_argument("--random_seed", type=int, help="Random seed")
     parser.add_argument("--site_name_prefix", type=str, default="site-", help="Site name prefix")
     return parser
 
@@ -45,6 +46,7 @@ def main():
     num_clients = args.num_clients
     data_path = args.data_path
     site_name_prefix = args.site_name_prefix
+    np.random.seed(args.random_seed)
     for mode in ["train", "dev"]:
         saved_name = "val" if mode == "dev" else mode
         df = pd.read_csv(os.path.join(data_path, mode + ".csv"))

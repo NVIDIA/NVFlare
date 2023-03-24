@@ -16,14 +16,13 @@ pip install -r ./requirements.txt
 
 ## Download and Preprocess Data 
 
-The data can be downloaded at the [official page](https://www.ncbi.nlm.nih.gov/CBBresearch/Dogan/DISEASE/). 
-After downloading and unzipping, it will result in three individual `.txt` files. 
-The preprocessed csv-files can be downloaded from [here](https://drive.google.com/drive/folders/13wROtEAnMgWpLMIGHB5CY1BQ1Xe2XqhG).
+The raw data can be accessed from [official page](https://www.ncbi.nlm.nih.gov/CBBresearch/Dogan/DISEASE/). 
+In this example, we use the preprocessed csv-files, which can be downloaded [here](https://drive.google.com/drive/folders/13wROtEAnMgWpLMIGHB5CY1BQ1Xe2XqhG). Please download three files `train.csv`, `dev.csv`, and `test.csv`.
 
 We then use the preprocessed data to generate random splits for a 4-client experiment. 
 Please modify the `DATASET_ROOT` below to point to folder containing the four downloaded csv-files.
 ```commandline
-python3 utils/split.py --data_path DATASET_ROOT --num_clients 4
+bash prepare_data.sh DATASET_ROOT
 ```
 The expected output is
 ```
@@ -51,7 +50,7 @@ In this example, this is `bert_ncbi`.
 The combination of `-c` and `-gpu`/`-t` controls the resource allocation. 
 
 ## Results on four clients 
-In this example, we run four clients on 2 GPUs with 4 threads. The minimum GPU memory requirement is 12 GB. We put the workspace in `/tmp` folder
+In this example, we run four clients on 2 GPUs with 4 threads. The minimum GPU memory requirement is 10 GB. We put the workspace in `/tmp` folder
 ```
 nvflare simulator jobs/bert_ncbi -w /tmp/nvflare/workspaces/bert_ncbi -n 4 -gpu 0,1,0,1
 ```
@@ -69,6 +68,6 @@ The testing score is computed for the global model over the testing set.
 We provide a script for performing validation on testing data. 
 Please modify the `DATASET_ROOT` below:
 ```
-python3 ./utils/bert_ner_test_only.py --model_path "/tmp/nvflare/workspaces/bert_ncbi/simulate_job/app_server/" --data_path DATASET_ROOT --num_labels 3
+bash test_global_model.sh DATASET_ROOT
 ```
 The test precision is 0.96, recall is 0.97, and F1 score is 0.96.

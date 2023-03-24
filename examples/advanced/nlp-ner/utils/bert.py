@@ -3,10 +3,10 @@ from transformers import AutoModelForTokenClassification, AutoTokenizer
 
 
 class BertModel(nn.Module):
-    def __init__(self, num_labels):
+    def __init__(self, model_name, num_labels):
         super(BertModel, self).__init__()
         num_labels = num_labels
-        self.model_name = "bert-base-uncased"
+        self.model_name = model_name
         self.bert = AutoModelForTokenClassification.from_pretrained(
             self.model_name, num_labels=num_labels, output_attentions=False, output_hidden_states=False
         )

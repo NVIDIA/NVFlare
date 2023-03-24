@@ -42,7 +42,9 @@ class BertLearner(Learner):
         data_path: str,
         learning_rate: float = 1e-5,
         batch_size: int = 32,
+        model_name: str = "bert-base-uncased",
         num_labels: int = 3,
+        pad_token: int = -100,
         aggregation_epochs: int = 1,
         train_task_name: str = AppConstants.TASK_TRAIN,
     ):
@@ -66,7 +68,9 @@ class BertLearner(Learner):
         super().__init__()
         self.aggregation_epochs = aggregation_epochs
         self.train_task_name = train_task_name
+        self.model_name = model_name
         self.num_labels = num_labels
+        self.pad_token = pad_token
         self.lr = learning_rate
         self.bs = batch_size
         self.data_path = data_path
@@ -123,13 +127,13 @@ class BertLearner(Learner):
         self.labels_to_ids = {k: v for v, k in enumerate(sorted(unique_labels))}
         self.ids_to_labels = {v: k for v, k in enumerate(sorted(unique_labels))}
         # set model
-        self.model = BertModel(num_labels=self.num_labels)
+        self.model = BertModel(model_name=self.model_name, num_labels=self.num_labels)
         tokenizer = self.model.tokenizer
         # set data
         train_dataset = DataSequence(df_train, self.labels_to_ids, tokenizer=tokenizer)
         valid_dataset = DataSequence(df_valid, self.labels_to_ids, tokenizer=tokenizer)
-        self.train_loader = DataLoader(train_dataset, num_workers=4, batch_size=self.bs, shuffle=True)
-        self.valid_loader = DataLoader(valid_dataset, num_workers=4, batch_size=self.bs, shuffle=False)
+        self.train_loader = DataLoader(train_dataset, num_workers=2, batch_size=self.bs, shuffle=True)
+        self.valid_loader = DataLoader(valid_dataset, num_workers=2, batch_size=self.bs, shuffle=False)
         self.log_info(
             fl_ctx,
             f"Training Size: {len(self.train_loader.dataset)}, Validation Size: {len(self.valid_loader.dataset)}",
@@ -208,8 +212,8 @@ class BertLearner(Learner):
                 # Add items for metric computation
                 for i in range(logits.shape[0]):
                     # remove pad tokens
-                    logits_clean = logits[i][val_label[i] != -100]
-                    label_clean = val_label[i][val_label[i] != -100]
+                    logits_clean = logits[i][val_label[i] != self.pad_token]
+                    label_clean = val_label[i][val_label[i] != self.pad_token]
                     # calcluate acc and store prediciton and true labels
                     predictions = logits_clean.argmax(dim=1)
                     acc = (predictions == label_clean).float().mean()
