@@ -20,11 +20,11 @@ import pytest
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.statistics_spec import Feature, HistogramType, StatisticConfig
-from nvflare.app_common.executors.statistics.statistics_client_executor import StatisticsClientExecutor
+from nvflare.app_common.executors.statistics.statistics_task_handler import StatisticsTaskHandler
 from tests.unit_test.app_common.executors.statistics.mock_df_stats_executor import MockDFStatistics
 
 
-class MockStatsExecutor(StatisticsClientExecutor):
+class MockStatsExecutor(StatisticsTaskHandler):
     def __init__(self):
         super().__init__(generator_id="")
         self.stats_generator = None
