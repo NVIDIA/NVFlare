@@ -20,5 +20,5 @@ if [ ! -z "${source_url}" ]; then
   fi
 
 else
-  echo "nothing download, you need to provide real URL to download"
+  echo "empty URL, nothing downloaded, you need to provide real URL to download"
 fi
