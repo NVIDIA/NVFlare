@@ -2,8 +2,9 @@
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
-
-mkdir -p /tmp/nvflare/image_stats/data
+if [ ! -d /tmp/nvflare/image_stats/data ]; then
+  mkdir -p /tmp/nvflare/image_stats/data
+fi
 
 source_url="$1"
 echo "download url = ${source_url}"
