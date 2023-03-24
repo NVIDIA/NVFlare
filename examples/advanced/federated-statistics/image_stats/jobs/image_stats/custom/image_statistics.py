@@ -76,7 +76,7 @@ class ImageStatistics(Statistics):
         num_of_bins: Optional[Dict[str, Optional[int]]],
         bin_ranges: Optional[Dict[str, Optional[List[float]]]],
     ):
-        pass
+        return {}
 
     def features(self) -> Dict[str, List[Feature]]:
         return {"train": [Feature("intensity", DataType.FLOAT)]}
@@ -94,7 +94,7 @@ class ImageStatistics(Statistics):
     ) -> Histogram:
         histogram_bins: List[Bin] = []
         histogram = np.zeros((num_of_bins,), dtype=np.int64)
-
+        bin_edges = []
         for i, entry in enumerate(self.data_list[dataset_name]):  # TODO: use multi-processing
             file = entry.get("image")
             try:
