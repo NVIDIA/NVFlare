@@ -5,6 +5,6 @@ echo "Starting server ..."
 ${DIR}/server1/startup/start.sh
 sleep 10
 
-echo "Startign clients ..."
+echo "Starting clients ..."
 ${DIR}/site_a/startup/start.sh
 ${DIR}/site_b/startup/start.sh
