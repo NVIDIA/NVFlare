@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import logging.config
 import os
 import shlex
@@ -33,6 +34,7 @@ from nvflare.apis.utils.job_utils import convert_legacy_zipped_app_to_job
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.multi_process_executor_constants import CommunicationMetaData
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
+from nvflare.fuel.f3.stats_pool import StatsPoolManager
 from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.utils.argument_utils import parse_vars
@@ -295,6 +297,7 @@ class SimulatorRunner(FLComponent):
         clients_created_waiter = threading.Event()
         for client_name in self.client_names:
             executor.submit(lambda p: self.create_client(*p), [client_name, client_count_lock, clients_created_waiter])
+            # self.create_client(client_name, client_count_lock, clients_created_waiter)
 
         clients_created_waiter.wait()
         self.logger.info("Set the client status ready.")
@@ -432,8 +435,18 @@ class SimulatorRunner(FLComponent):
         #     if time.time() - start > 30.:
         #         break
 
+        self.dump_stats(workspace)
+
         self.server.admin_server.stop()
         self.server.close()
+
+    def dump_stats(self, workspace: Workspace):
+        stats_dict = StatsPoolManager.to_dict()
+        json_object = json.dumps(stats_dict, indent=4)
+        os.makedirs(os.path.join(workspace.get_run_dir(SimulatorConstants.JOB_NAME), "pool_stats"))
+        file = os.path.join(workspace.get_run_dir(SimulatorConstants.JOB_NAME), "pool_stats", "simulator_cell_stats.json")
+        with open(file, "w") as outfile:
+            outfile.write(json_object)
 
 
 class SimulatorClientRunner(FLComponent):

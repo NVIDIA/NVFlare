@@ -303,6 +303,7 @@ class ServerRunner(FLComponent):
             return self._task_try_again()
 
     def _try_to_get_task(self, client, fl_ctx, timeout=None, retry_interval=0.005):
+        self.logger.info(f"_try_to_get_task   for client: {client.name}")
         start = time.time()
         while True:
             with self.wf_lock:

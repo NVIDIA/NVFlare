@@ -180,6 +180,7 @@ class Communicator:
         job_id = str(shared_fl_ctx.get_prop(FLContextKey.CURRENT_RUN))
 
         fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
+        self.logger.info("Send GET_TASK request .....")
         task = self.cell.send_request(
             target=fqcn,
             channel=CellChannel.SERVER_COMMAND,
@@ -188,6 +189,7 @@ class Communicator:
             timeout=self.timeout,
             optional=True,
         )
+        self.logger.info("Got GET_TASK response .....")
         end_time = time.time()
         return_code = task.get_header(MessageHeaderKey.RETURN_CODE)
 
