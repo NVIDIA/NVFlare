@@ -23,6 +23,7 @@ from monai.transforms import LoadImage
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.statistics_spec import Bin, DataType, Feature, Histogram, HistogramType, Statistics
+from nvflare.security.logging import secure_log_traceback, is_secure, secure_format_exception
 
 
 class ImageStatistics(Statistics):
@@ -64,7 +65,7 @@ class ImageStatistics(Statistics):
             return False
         dataset_json = dataset_json[0]
         self.log_info(fl_ctx, f"Reading data from {dataset_json}")
-        print(f"Reading data from {dataset_json}")
+
         data_list = load_decathlon_datalist(
             data_list_file_path=dataset_json, data_list_key=self.data_list_key, base_dir=self.data_root
         )
@@ -115,9 +116,12 @@ class ImageStatistics(Statistics):
                     f"Failed to load file {file} with exception: {e.__str__()}. " f"Skipping this image..."
                 )
 
-        if num_of_bins > 0 and len(bin_edges) == 0:
-            self.log_error(self.fl_ctx, traceback.format_exc())
-            raise ValueError(f"bin_edges are not populated for number of bins: {num_of_bins}")
+        if num_of_bins != bin_edges:
+            if is_secure():
+                secure_log_traceback()
+            else:
+                self.log_error(self.fl_ctx, traceback.format_exc())
+            raise ValueError(f"bin_edges size: {len(bin_edges)} is not matching with number of bins: {num_of_bins}")
 
         for j in range(num_of_bins):
             low_value = bin_edges[j]
