@@ -1,5 +1,7 @@
 # Tree-based Federated Learning for XGBoost   
 
+You can also follow along in this [notebook](./xgboost_tree_higgs.ipynb) for an interactive experience.
+
 ## Cyclic Training 
 
 "Cyclic XGBoost" is one way of performing tree-based federated boosting with multiple sites: at each round of tree boosting, instead of relying on the whole data statistics collected from all clients, the boosting relies on only 1 client's local data. The resulting tree sequence is then forwarded to the next client for next round's boosting. Such training scheme have been proposed in literatures [1] [2].

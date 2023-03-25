@@ -2,6 +2,8 @@
 
 ## Introduction to XGBoost and HIGGS Data
 
+You can also follow along in this [notebook](./data_job_setup.ipynb) for an interactive experience.
+
 ### XGBoost
 These examples show how to use [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) on tabular data applications.
 They use [XGBoost](https://github.com/dmlc/xgboost),
