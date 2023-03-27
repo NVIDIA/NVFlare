@@ -141,9 +141,9 @@ class ClientManager:
                 )
                 return None
 
-            for token, client in self.clients.items():
-                if client.name == client_name:
-                    with self.lock:
+            with self.lock:
+                for token, client in self.clients.items():
+                    if client.name == client_name:
                         self.clients.pop(token)
                         self.logger.info(
                             f"Client: {client_name} already registered. Re-login the client with a new token."
