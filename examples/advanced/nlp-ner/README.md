@@ -43,6 +43,10 @@ As shown above, the task is to capture the keywords related to medical findings.
 
 ## Run automated experiments
 We use the NVFlare [simulator](https://nvflare.readthedocs.io/en/latest/user_guide/fl_simulator.html) to run the FL training.
+Set `PYTHONPATH` to include custom files of this example:
+```
+export PYTHONPATH=${PWD}
+```
 ### Prepare local configs
 Please modify the `DATASET_ROOT` within [config_fed_client.json](./jobs/bert_ncbi/app/config/config_fed_client.json)
 ### Use NVFlare simulator to run the experiments
@@ -55,7 +59,7 @@ In this example, this is `bert_ncbi`.
 The combination of `-c` and `-gpu`/`-t` controls the resource allocation. 
 
 ## Results on four clients 
-In this example, we run four clients on 2 GPUs with 4 threads. The minimum GPU memory requirement is 10 GB. We put the workspace in `/tmp` folder
+In this example, we run four clients on 2 GPUs with 4 threads. The minimum GPU memory requirement is 10 GB per GPU. We put the workspace in `/tmp` folder
 ```
 nvflare simulator jobs/bert_ncbi -w /tmp/nvflare/workspaces/bert_ncbi -n 4 -gpu 0,1,0,1
 ```
