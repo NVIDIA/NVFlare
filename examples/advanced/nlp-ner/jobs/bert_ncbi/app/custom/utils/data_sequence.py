@@ -22,9 +22,9 @@ def align_label(
     origional_text,
     labels,
     labels_to_ids,
+    pad_token,
     tokenizer=None,
 ):
-    null_label_id = -100
     label_ids = []
     origional_text = origional_text.split(" ")
 
@@ -40,7 +40,7 @@ def align_label(
             or (token_id == tokenizer.sep_token_id)
         ):
 
-            label_ids.append(null_label_id)
+            label_ids.append(pad_token)
 
         elif (
             (not partially_mathced)
@@ -61,7 +61,7 @@ def align_label(
             partially_mathced = False
 
         else:
-            label_ids.append(null_label_id)
+            label_ids.append(pad_token)
             sub_str += re.sub("#+", "", cur_str)
             if sub_str == origional_text[orig_labels_i - 1].lower():
                 partially_mathced = False
@@ -71,7 +71,7 @@ def align_label(
 
 
 class DataSequence(torch.utils.data.Dataset):
-    def __init__(self, df, labels_to_ids, tokenizer, max_length=150):
+    def __init__(self, df, labels_to_ids, tokenizer, pad_token=-100, max_length=150):
         lb = [i.split(" ") for i in df["labels"].values.tolist()]
         txt = df["text"].values.tolist()
         self.texts = [
@@ -87,7 +87,7 @@ class DataSequence(torch.utils.data.Dataset):
             for i in txt
         ]
         self.labels = [
-            align_label(t, tt, l, labels_to_ids=labels_to_ids, tokenizer=tokenizer)
+            align_label(t, tt, l, labels_to_ids=labels_to_ids, pad_token=pad_token, tokenizer=tokenizer)
             for t, tt, l in zip(self.texts, txt, lb)
         ]
 

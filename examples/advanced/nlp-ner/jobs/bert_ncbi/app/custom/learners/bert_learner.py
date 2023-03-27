@@ -58,7 +58,9 @@ class BertLearner(Learner):
             data_path: path to dataset,
             learning_rate,
             batch_size,
+            model_name: the model name to be used in the pipeline
             num_labels: num_labels for BERT model,
+            pad_token: the value for representing padding / null token
             aggregation_epochs: the number of training epochs for a round. Defaults to 1.
             train_task_name: name of the task to train the model.
 
@@ -139,8 +141,8 @@ class BertLearner(Learner):
         self.model = BertModel(model_name=self.model_name, num_labels=self.num_labels)
         tokenizer = self.model.tokenizer
         # set data
-        train_dataset = DataSequence(df_train, self.labels_to_ids, tokenizer=tokenizer)
-        valid_dataset = DataSequence(df_valid, self.labels_to_ids, tokenizer=tokenizer)
+        train_dataset = DataSequence(df_train, self.labels_to_ids, tokenizer=tokenizer, pad_token=self.pad_token)
+        valid_dataset = DataSequence(df_valid, self.labels_to_ids, tokenizer=tokenizer, pad_token=self.pad_token)
         self.train_loader = DataLoader(train_dataset, num_workers=2, batch_size=self.bs, shuffle=True)
         self.valid_loader = DataLoader(valid_dataset, num_workers=2, batch_size=self.bs, shuffle=False)
         self.log_info(
