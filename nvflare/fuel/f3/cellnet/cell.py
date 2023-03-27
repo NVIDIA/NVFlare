@@ -19,7 +19,6 @@ import random
 import threading
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Tuple, Union
 from urllib.parse import urlparse
 
