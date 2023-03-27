@@ -7,27 +7,19 @@ NVIDIA FLARE has several tutorials and examples to help you get started with fed
 `the examples directory <https://github.com/NVIDIA/NVFlare/tree/main/examples>`_.
 
 .. toctree::
-   :maxdepth: 1
+   :maxdepth: -1
    :hidden:
 
-   examples/hello_scatter_and_gather
-   examples/hello_cross_val
-   Hello Cyclic Weight Transfer (GitHub) <https://github.com/NVIDIA/NVFlare/blob/main/examples/hello-cyclic>
-   examples/hello_pt
-   examples/hello_tf2
-   FL Simulator Notebook (GitHub) <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/flare_simulator.ipynb>
-   Hello FLARE API Notbook (GitHub) <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/flare_api.ipynb>
-   NVFLARE in POC Mode (GitHub) <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/setup_poc.ipynb>
-   Federated Learning with CIFAR-10 (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/cifar10>
-   examples/xgboost
-   Federated Linear Model with Scikit-learn (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/sklearn-linear>
-   Federated K-Means Clustering with Scikit-learn (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/sklearn-kmeans>
-   Federated SVM with Scikit-learn (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/sklearn-svm>
-   Federated Learning for Random Forest based on XGBoost (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/random_forest>
-   Hello MONAI Bundle (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-monai-bundle>
-   Differential Privacy for BraTS18 Segmentation (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/brats18>
-   Prostate Segmentation from Multi-source Data (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/prostate>
+   examples/hello_world_examples
+   examples/tutorial_notebooks
+   examples/fl_algorithms
+   examples/traditional_ml_examples
+   examples/medical_image_analysis
    examples/federated_statistics
+   examples/federated_site_policies
+   examples/experiment_tracking
+   examples/federated_statistics
+   examples/federated_site_policies
    Federated Policies (GitHub) <https://github.com/NVIDIA/NVFlare/blob/main/examples/federated-policies>
    examples/tensorboard_streaming
 
@@ -50,6 +42,7 @@ The following tutorials and quickstart guides walk you through some of these exa
     * `Intro to the FL Simulator <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/flare_simulator.ipynb>`_ - Shows how to use the :ref:`fl_simulator` to run a local simulation of an NVFLARE deployment to test and debug an application without provisioning a real FL project.
     * `Hello FLARE API <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/flare_api.ipynb>`_ - Goes through the different commands of the :ref:`flare_api` to show the syntax and usage of each.
     * `NVFLARE in POC Mode <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/setup_poc.ipynb>`_ - Shows how to use :ref:`POC mode <poc_command>` to test the features of a full FLARE deployment on a single machine.
+    * `Provision and Start NVFLARE <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/provision.ipynb>`_ - Shows how to provision and start a secure FL system.
 
   3. **FL algorithms**
 
