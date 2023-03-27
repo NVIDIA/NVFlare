@@ -292,18 +292,14 @@ class SimulatorRunner(FLComponent):
     def create_clients(self):
         # Deploy the FL clients
         self.logger.info("Create the simulate clients.")
-        executor = ThreadPoolExecutor(max_workers=CLIENT_CREATE_POOL_SIZE)
-        client_count_lock = threading.Lock()
         clients_created_waiter = threading.Event()
         for client_name in self.client_names:
-            executor.submit(lambda p: self.create_client(*p), [client_name, client_count_lock, clients_created_waiter])
-            # self.create_client(client_name, client_count_lock, clients_created_waiter)
+            self.create_client(client_name)
 
-        clients_created_waiter.wait()
         self.logger.info("Set the client status ready.")
         self._set_client_status()
 
-    def create_client(self, client_name, client_count_lock, clients_created_waiter):
+    def create_client(self, client_name):
         client, self.client_config, self.deploy_args, self.build_ctx = self.deployer.create_fl_client(
             client_name, self.args
         )
@@ -311,10 +307,6 @@ class SimulatorRunner(FLComponent):
         app_root = os.path.join(self.simulator_root, "app_" + client_name)
         app_custom_folder = os.path.join(app_root, "custom")
         sys.path.append(app_custom_folder)
-        with client_count_lock:
-            self.clients_created += 1
-            if self.clients_created == len(self.client_names):
-                clients_created_waiter.set()
 
     def _set_client_status(self):
         for client in self.federated_clients:
@@ -487,7 +479,7 @@ class SimulatorClientRunner(FLComponent):
     def _shutdown_client(self, client):
         try:
             client.communicator.heartbeat_done = True
-            time.sleep(3)
+            # time.sleep(3)
             client.terminate()
             # client.close()
             client.status = ClientStatus.STOPPED

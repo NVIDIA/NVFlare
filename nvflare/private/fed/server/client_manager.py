@@ -142,13 +142,16 @@ class ClientManager:
                 return None
 
             with self.lock:
+                clients_to_be_moved = []
                 for token, client in self.clients.items():
                     if client.name == client_name:
-                        self.clients.pop(token)
+                        clients_to_be_moved.append(token)
                         self.logger.info(
                             f"Client: {client_name} already registered. Re-login the client with a new token."
                         )
                         break
+                for item in clients_to_be_moved:
+                    self.clients.pop(item)
 
             client = Client(client_name, str(uuid.uuid4()))
 

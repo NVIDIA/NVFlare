@@ -1050,11 +1050,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                 if direct_cell:
                     # create a thread and fire the cell's process_message!
                     # self.DIRECT_MSG_EXECUTOR.submit(self._send_direct_message, direct_cell, message)
-                    topic = message.get_header(MessageHeaderKey.TOPIC)
-                    start_time = time.time()
                     self._send_direct_message(direct_cell, message)
-                    if topic in ["get_task", "submit_update"]:
-                        self.logger.debug(f"_send_direct_message time, {topic}, time: {time.time()-start_time}")
 
                 else:
                     self.communicator.send(to_endpoint, Cell.APP_ID, message)
