@@ -446,7 +446,9 @@ class SimulatorRunner(FLComponent):
         stats_dict = StatsPoolManager.to_dict()
         json_object = json.dumps(stats_dict, indent=4)
         os.makedirs(os.path.join(workspace.get_run_dir(SimulatorConstants.JOB_NAME), "pool_stats"))
-        file = os.path.join(workspace.get_run_dir(SimulatorConstants.JOB_NAME), "pool_stats", "simulator_cell_stats.json")
+        file = os.path.join(
+            workspace.get_run_dir(SimulatorConstants.JOB_NAME), "pool_stats", "simulator_cell_stats.json"
+        )
         with open(file, "w") as outfile:
             outfile.write(json_object)
 
