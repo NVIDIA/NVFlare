@@ -388,7 +388,10 @@ class FederatedClientBase:
 
     def run_heartbeat(self, interval):
         """Periodically runs the heartbeat."""
-        self.heartbeat(interval)
+        try:
+            self.heartbeat(interval)
+        except:
+            self.logger.error("Failed to start run_heartbeat.")
 
     def start_heartbeat(self, interval=30):
         heartbeat_thread = threading.Thread(target=self.run_heartbeat, args=[interval])

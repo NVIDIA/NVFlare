@@ -71,10 +71,14 @@ class CommonExecutor(Executor, ABC):
             return make_reply(ReturnCode.TASK_ABORTED)
         try:
             result = self.client_executor.client_exec(task_name, shareable, fl_ctx)
-            if result:
+            if result is not None:
                 dxo = DXO(data_kind=self.get_data_kind(), data=result)
                 return dxo.to_shareable()
             else:
+                self.log_error(
+                    fl_ctx,
+                    f"task:{task_name} failed on client:{fl_ctx.get_identity_name()} due to result is '{result}'\n",
+                )
                 return make_reply(ReturnCode.EXECUTION_RESULT_ERROR)
 
         except BaseException as e:

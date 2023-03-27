@@ -26,6 +26,7 @@ from nvflare.fuel.flare_api.flare_api import new_insecure_session
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
 from nvflare.lighter.poc import generate_poc
 from nvflare.lighter.service_constants import FlareServiceConstants as SC
+from nvflare.lighter.utils import update_storage_locations
 
 DEFAULT_WORKSPACE = "/tmp/nvflare/poc"
 
@@ -112,6 +113,10 @@ def prepare_examples(poc_workspace: str):
 def prepare_poc(number_of_clients: int, poc_workspace: str):
     print(f"prepare_poc at {poc_workspace} for {number_of_clients} clients")
     ret_code = generate_poc(number_of_clients, poc_workspace)
+    if poc_workspace != DEFAULT_WORKSPACE:
+        update_storage_locations(
+            local_dir=f"{poc_workspace}/server/local", default_resource_name="resources.json", workspace=poc_workspace
+        )
     if ret_code:
         prepare_examples(poc_workspace)
 

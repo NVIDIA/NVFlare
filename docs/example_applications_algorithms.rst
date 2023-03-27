@@ -12,17 +12,24 @@ NVIDIA FLARE has several tutorials and examples to help you get started with fed
 
    examples/hello_scatter_and_gather
    examples/hello_cross_val
+   Hello Cyclic Weight Transfer (GitHub) <https://github.com/NVIDIA/NVFlare/blob/main/examples/hello-cyclic>
    examples/hello_pt
    examples/hello_tf2
-   examples/tensorboard_streaming
-   examples/federated_statistics
-   examples/xgboost
-   Hello Cyclic Weight Transfer (GitHub) <https://github.com/NVIDIA/NVFlare/blob/main/examples/hello-cyclic>
+   FL Simulator Notebook (GitHub) <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/flare_simulator.ipynb>
+   Hello FLARE API Notbook (GitHub) <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/flare_api.ipynb>
+   NVFLARE in POC Mode (GitHub) <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/setup_poc.ipynb>
    Federated Learning with CIFAR-10 (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/cifar10>
+   examples/xgboost
+   Federated Linear Model with Scikit-learn (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/sklearn-linear>
+   Federated K-Means Clustering with Scikit-learn (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/sklearn-kmeans>
+   Federated SVM with Scikit-learn (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/sklearn-svm>
+   Federated Learning for Random Forest based on XGBoost (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/random_forest>
    Hello MONAI Bundle (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-monai-bundle>
    Differential Privacy for BraTS18 Segmentation (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/brats18>
    Prostate Segmentation from Multi-source Data (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/prostate>
+   examples/federated_statistics
    Federated Policies (GitHub) <https://github.com/NVIDIA/NVFlare/blob/main/examples/federated-policies>
+   examples/tensorboard_streaming
 
 
 The following tutorials and quickstart guides walk you through some of these examples:
