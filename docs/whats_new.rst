@@ -10,7 +10,7 @@ What's New in FLARE v2.3.0
 
 Cloud Deployment Support
 ========================
-The Dashboard UI now has expanded support for cloud deployments for both Azure and AWS.
+The Dashboard UI now has expanded support for :ref:`cloud_deployment` for both Azure and AWS.
 Simple CLI commands now exist to create the infrastructure, deploy, and start the Dashboard UI,
 FL Server, and FL Client(s):
 
