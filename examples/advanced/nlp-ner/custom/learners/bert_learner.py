@@ -17,14 +17,12 @@ import os
 import numpy as np
 import pandas as pd
 import torch
-
+from custom.models.bert import BertModel
+from custom.utils.data_sequence import DataSequence
 from seqeval.metrics import classification_report
 from torch.optim import AdamW
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-
-from custom.models.bert import BertModel
-from custom.utils.data_sequence import DataSequence
 
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
@@ -233,7 +231,7 @@ class BertLearner(Learner):
                     val_y_pred.append([self.ids_to_labels[x.item()] for x in predictions])
                     val_y_true.append([self.ids_to_labels[x.item()] for x in label_clean])
             # compute metric
-            metric_dict = classification_report(y_true=val_y_true, y_pred=val_y_pred,  output_dict=True, zero_division=0)
+            metric_dict = classification_report(y_true=val_y_true, y_pred=val_y_pred, output_dict=True, zero_division=0)
             # tensorboard record id prefix, add to record if provided
             if tb_id_pre:
                 self.writer.add_scalar(tb_id_pre + "_precision", metric_dict["macro avg"]["precision"], record_epoch)
