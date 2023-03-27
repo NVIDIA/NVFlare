@@ -19,10 +19,10 @@ The following steps are based on the ``hello-pt`` example in the NVFLARE repo.
 Step 1: Modify config_fed_server.json
 """""""""""""""""""""""""""""""""""""
 
-Two changes are needed::
+Two changes are needed:
 
-  - Remove the "model" arg from the PTFileModelPersistor component configuration.
-  - Add the InitializeGlobalWeights controller as the first controller in the workflow.
+    - Remove the ``model`` arg from the PTFileModelPersistor component configuration.
+    - Add the ``InitializeGlobalWeights`` controller as the first controller in the workflow.
 
 The updated file should look like the following:
 
@@ -32,7 +32,7 @@ The updated file should look like the following:
 
 Note that ``PTFileModelPersistor`` no longer requires the custom ``SimpleNetwork`` as the model object.
 
-Pay attention to the value of the task_name ("get_weights") in the InitializeGlobalWeights configuration.
+Pay attention to the value of the ``task_name``, "get_weights", in the InitializeGlobalWeights configuration.
 
 Step 2: Modify config_fed_client.json
 """""""""""""""""""""""""""""""""""""
@@ -41,6 +41,7 @@ Add the task "get_weights" for the trainer, as highlighted in below. Note that t
 task_name of the InitializeGlobalWeights config in config_fed_server.json.
 
 .. code-block::
+    :emphasize-lines: 8
 
     {
       "format_version": 2,
@@ -77,7 +78,7 @@ task_name of the InitializeGlobalWeights config in config_fed_server.json.
 
 Step 3: Update the Trainer code
 """""""""""""""""""""""""""""""
-A new "pre_train_task_name" (defaults to "get_weights") is added to Cifar10Trainer, which is an Executor. 
+A new ``pre_train_task_name`` (defaults to "get_weights") is added to Cifar10Trainer, which is an Executor. 
 
 The Trainer is augmented to process this task and return the current model weights (which should be randomly initialized).
 
@@ -121,110 +122,25 @@ The full implementation is in ``cifar10trainer.py`` of the custom folder of ``he
 
 InitializeGlobalWeights Details
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-When processing client responses (which are model weights of the clients), GlobalWeightsInitializer selects one as the global weight.
+When processing client responses (which are model weights of the clients), ``GlobalWeightsInitializer`` selects one as the global weight.
 It supports two weight selection methods (specified with the "weight_method" argument):
 
   - **first** - use the weight reported by the first client responded. This is the default method.
   - **client** - use the weight reported by a designated client. This could be useful for deterministic training.
 
 To be complete, weights reported from all clients should be validated and compared to make sure they are valid and compatible. Currently,
-GlobalWeightsInitializer does not do this, since it is not clear how to do this exactly.
+``GlobalWeightsInitializer`` does not do this, since it is not clear how to do this exactly.
 
 InitializeGlobalWeights Implementation Notes
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-The InitializeGlobalWeights controller is implemented by extending the general-purpose BroadcastAndProcess controller. 
+The ``InitializeGlobalWeights`` controller is implemented by extending the general-purpose ``BroadcastAndProcess`` controller. 
 
-The BroadcastAndProcess controller requires a ResponseProcessor component to process client responses. The BroadcastAndProcess controller works as follows:
+The ``BroadcastAndProcess`` controller requires a ``ResponseProcessor`` component to process client responses. The ``BroadcastAndProcess`` controller works as follows:
 
   - It broadcasts a task of a configured name to all or a configured list of clients to ask for their data.
-  - Each time a response is received from a client, BroadcastAndProcess invokes the ResponseProcessor component to process the response.
-  - Once the task is completed (responses received from all clients or timed out), BroadcastAndProcess invokes the ResponseProcessor component
+  - Each time a response is received from a client, ``BroadcastAndProcess`` invokes the ``ResponseProcessor`` component to process the response.
+  - Once the task is completed (responses received from all clients or timed out), ``BroadcastAndProcess`` invokes the ``ResponseProcessor`` component
     to do the final check.
 
-The InitializeGlobalWeights controller simply extends the BroadcastAndProcess with the GlobalWeightsInitializer as the ResponseProcessor
+The ``InitializeGlobalWeights`` controller simply extends the ``BroadcastAndProcess`` with the ``GlobalWeightsInitializer`` as the ``ResponseProcessor``
 component.
-
-Example: Run hello-pt with ResponseProcessor for Global Model Initialization
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-.. code-block:: shell
-
-    # Setup pip virtual environment
-    python3 -m pip install --user --upgrade pip
-    python3 -m pip install --user virtualenv
-
-.. code-block:: shell
-
-    # Clone repo
-    git clone https://github.com/NVIDIA/NVFlare.git nvflare_model_init
-    cd nvflare_model_init
-    git checkout 2.0.18_model_init
-    export NVFLARE_HOME=${PWD} 
-
-.. code-block:: shell
-
-    # setup virtual environment
-    export projectname='nvflare_model_init'
-    python3 -m venv ${projectname}
-    source ${projectname}/bin/activate
-
-
-.. code-block:: shell
-
-    # install requirements
-    pip install -r requirements-min.txt
-    pip install -e ${NVFLARE_HOME}
-    pip install torch
-    pip install torchvision
-    pip install --upgrade protobuf==3.20.0
-
-
-.. code-block:: shell
-
-    # Create nvflare POC workspace (2 clients). Type "y" when prompted.
-    cd ${NVFLARE_HOME}/nvflare
-    zip -r poc.zip poc
-    export WORKSPACE=/tmp/poc_workspace
-    mkdir ${WORKSPACE}
-    cd ${WORKSPACE}
-    python3 -m nvflare.lighter.poc -n 2
-
-
-.. code-block:: shell
-
-    # link example folder to admin's transfer folder
-    ln -s ${NVFLARE_HOME}/examples poc/admin/transfer
-
-
-.. code-block:: shell
-
-    # Start server and clients
-    ./poc/server/startup/start.sh
-    ./poc/site-1/startup/start.sh
-    ./poc/site-2/startup/start.sh
-
-
-.. code-block:: shell
-
-    # Start admin console (User name & password are "admin")
-    ./poc/admin/startup/fl_admin.sh
-
-
-.. code-block:: shell
-
-    # Run the app by typing these commands into the admin console
-    set_run_number 1
-    upload_app hello-pt
-    deploy_app hello-pt all
-    start_app all
-
-.. code-block:: shell
-
-    # Shut down the server/clients
-    # To shut down the clients and server, run the following Admin command (confirm using the user name "admin"):
-    shutdown all
-
-
-.. note::
-
-    For more information about the Admin console, see :ref:`operating_nvflare`.
