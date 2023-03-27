@@ -15,7 +15,7 @@ The purpose of this example is to demonstrate following features of NVFlare,
 System Requirements
 -------------------
 
-1. Install Python 3.8 and Virtual Environment,
+1. Install Python and Virtual Environment,
 ::
     python3 -m venv nvflare-env
     source nvflare-env/bin/activate
@@ -33,18 +33,13 @@ System Requirements
     127.0.0.1	server1
 
 
-Usage
------
-
-The example is located in :code:`NVFlare/examples/federated-policies`.
-
 Setup
 _____
 
 The :code:`project.yml` file defines all the sites and users (called admin in NVFlare)
 used in the examples. The startup kits will be created by :code:`setup.sh`
 ::
-    cd NVFlare/examples/federated-policies
+    cd NVFlare/examples/advanced/federated-policies
     ./setup.sh
 All the startup kits will be generated in this folder,
 ::
@@ -61,8 +56,8 @@ This script will start up the server and 2 clients,
 ::
    ./start.sh
 
-Logging with Admin Client
-_________________________
+Logging with Admin Console
+__________________________
 
 In secure mode, NVFlare creates one startup kit for each user. There are 5 users in
 this example so there are 5 folders for admin login under :code:`workspace/fed_policy/prod_00` folder.
@@ -71,21 +66,17 @@ To login as an user, the appropriate folder must be selected.
 
 For example, this is how to login as :code:`admin@a.org` user,
 ::
-    cd workspace/fed_policy/prod_00/trainer@a.org
+    cd workspace/fed_policy/prod_00/admin@a.org
     ./startup/fl_admin.sh
 At the prompt, enter the user email :code:`admin@a.org`
 
 Multiple users can login at the same time by using multiple terminals.
 
-The setup.sh copies the jobs folder to the workspace folder. Job can be submitted like this,
+The setup.sh has copied the jobs folder to the workspace folder.
+So jobs can be submitted like this, type the following command in the admin console:
+
 ::
    submit_job ../../job1
-
-Shutting down NVFlare
-_____________________
-All NVFlare server and clients can be stopped by using this script,
-::
-   ./stop.sh
 
 Participants
 ------------
@@ -116,13 +107,15 @@ All the jobs run the same app (numpy-sag) but have different scopes defined in :
 * job5: It defines an non-existent scope :code:`foo`
 
 
-Use Cases
----------
+Test Cases
+----------
 
 Authorization
 _____________
-Following table describe several authorization behaviors. Since authorization decision has
-nothing to do with job, :code:`job1` can be used in all tests.
+We will demo some authorization behaviors.
+
+Since authorization decision is determined using each site's authorization.json and each admin user's role,
+we just use :code:`job1` in all the following tests.
 
 .. list-table:: Authorization Use Cases
     :widths: 14 20 50
@@ -133,20 +126,32 @@ nothing to do with job, :code:`job1` can be used in all tests.
       - Expected behavior
     * - trainer@a.org
       - submit_job ../../job1
-      - Job deployed on all sites
+      - Job deployed and started on all sites
+    * - trainer@a.org
+      - clone_job [the job ID that we previous submitted]
+      - Job deployed and started on all sites
     * - trainer@b.org
-      - clone_job
-      - Rejected because submitter is diff
+      - clone_job [the job ID that we previous submitted]
+      - Rejected because submitter is in a different org
     * - admin@a.org
       - submit_job ../../job1
-      - Rejected because org_admin is not allowed to submit jobs
+      - Rejected because role "org_admin" is not allowed to submit jobs
     * - trainer@b.org
       - submit_job ../../job1
-      - site_a rejected the job due to diff org
+      - site_a rejected the job because the submitter is in a different org, while site_b accepted the job
+        so the job will still run since in meta.json we specify min_clients as 1
 
 Privacy
 _______
-site_a has no privacy policy defined, all these behaviors can be seen on site_b.
+site_a has no privacy policy defined.
+So we will test the following cases on site_b.
+
+In each job's meta.json we specified their "scope" and in site's privacy.json file each site will define its own
+privacy filters to apply for that scope.
+
+Note that default jobs are treated in "public" scope.
+
+Let's just use user trainer@b.org for the following tests.
 
 .. list-table:: Privacy Policy Use Cases
     :widths: 10 50
@@ -165,11 +170,8 @@ site_a has no privacy policy defined, all these behaviors can be seen on site_b.
     * - job5
       - Job rejected by site_b because :code:`foo` doesn't exist
 
-
-
-
-
-
-
-
-
+Shutting down NVFlare
+_____________________
+All NVFlare server and clients can be stopped by using this script,
+::
+   ./stop.sh

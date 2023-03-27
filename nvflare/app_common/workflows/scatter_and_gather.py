@@ -336,34 +336,18 @@ class ScatterAndGather(Controller):
         # Raise errors if bad peer context or execution exception.
         if rc and rc != ReturnCode.OK:
             if self.ignore_result_error:
-                self.log_error(
+                self.log_warning(
                     fl_ctx,
                     f"Ignore the train result from {client_name} at round {self._current_round}. Train result error code: {rc}",
                 )
                 return False
             else:
-                if rc in [ReturnCode.MISSING_PEER_CONTEXT, ReturnCode.BAD_PEER_CONTEXT]:
-                    self.system_panic(
-                        f"Peer context is bad or missing. ScatterAndGather exiting at round {self._current_round}.",
-                        fl_ctx=fl_ctx,
-                    )
-                    return False
-                elif rc in [ReturnCode.EXECUTION_EXCEPTION, ReturnCode.TASK_UNKNOWN]:
-                    self.system_panic(
-                        f"Execution Exception in client training. ScatterAndGather exiting at round {self._current_round}.",
-                        fl_ctx=fl_ctx,
-                    )
-                    return False
-                elif rc in [
-                    ReturnCode.EXECUTION_RESULT_ERROR,
-                    ReturnCode.TASK_DATA_FILTER_ERROR,
-                    ReturnCode.TASK_RESULT_FILTER_ERROR,
-                ]:
-                    self.system_panic(
-                        f"Execution result is not a shareable. ScatterAndGather exiting at round {self._current_round}.",
-                        fl_ctx=fl_ctx,
-                    )
-                    return False
+                self.system_panic(
+                    f"Result from {client_name} is bad, error code: {rc}. "
+                    f"{self.__class__.__name__} exiting at round {self._current_round}.",
+                    fl_ctx=fl_ctx,
+                )
+                return False
 
         fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=True)
         fl_ctx.set_prop(AppConstants.TRAINING_RESULT, result, private=True, sticky=False)
