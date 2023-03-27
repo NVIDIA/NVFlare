@@ -44,6 +44,14 @@ class InitializeGlobalWeights(BroadcastAndProcess):
                 If `None`, the task will be sent to all clients (to be used with `weight_method=WeightMethod.FIRST`).
                 If list of client names, the task will be only be sent to the listed clients.
         """
+
+        if isinstance(weights_client_name, str):
+            clients = [weights_client_name]
+        elif isinstance(weights_client_name, list):
+            clients = weights_client_name
+        else:
+            clients = None
+
         BroadcastAndProcess.__init__(
             self,
             processor=GlobalWeightsInitializer(
@@ -53,5 +61,5 @@ class InitializeGlobalWeights(BroadcastAndProcess):
             min_responses_required=min_responses_required,
             wait_time_after_min_received=wait_time_after_min_received,
             timeout=task_timeout,
-            clients=weights_client_name,
+            clients=clients,
         )
