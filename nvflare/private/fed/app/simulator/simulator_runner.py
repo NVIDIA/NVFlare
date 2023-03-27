@@ -387,6 +387,7 @@ class SimulatorRunner(FLComponent):
                     executor.submit(lambda p: self.client_run(*p), [clients, gpus[index]])
 
                 executor.shutdown()
+                self.server.abort_run()
                 server_thread.join()
                 run_status = 0
             except BaseException as e:
@@ -481,12 +482,16 @@ class SimulatorClientRunner(FLComponent):
                 threading.Thread(target=self._shutdown_client, args=[client]).start()
 
     def _shutdown_client(self, client):
-        client.communicator.heartbeat_done = True
-        time.sleep(3)
-        # client.terminate()
-        client.close()
-        client.status = ClientStatus.STOPPED
-        client.communicator.cell.stop()
+        try:
+            client.communicator.heartbeat_done = True
+            time.sleep(3)
+            client.terminate()
+            # client.close()
+            client.status = ClientStatus.STOPPED
+            client.communicator.cell.stop()
+        except:
+            # Ignore the exception for the simulator client shutdown
+            self.logger.warn(f"Exception happened to client{client.name} during shutdown ")
 
     def run_client_thread(self, num_of_threads, gpu, lock, timeout=60):
         stop_run = False

@@ -161,8 +161,9 @@ class ClientTaskWorker(FLComponent):
 
         client.token = args.token
         self._set_client_status(client, deploy_args, args.simulator_root)
+        start = time.time()
         self._create_client_cell(client, args.root_url, args.parent_url)
-        self.logger.info("Complete _create_client_cell .")
+        self.logger.info(f"Complete _create_client_cell.  Time to create client job cell: {time.time() - start}")
         return client
 
     def _set_client_status(self, client, deploy_args, simulator_root):
@@ -176,7 +177,7 @@ class ClientTaskWorker(FLComponent):
     def _create_client_cell(self, federated_client, root_url, parent_url):
         fqcn = FQCN.join([federated_client.client_name, SimulatorConstants.JOB_NAME])
         credentials = {}
-        # parent_url = None
+        parent_url = None
         cell = Cell(
             fqcn=fqcn,
             root_url=root_url,
