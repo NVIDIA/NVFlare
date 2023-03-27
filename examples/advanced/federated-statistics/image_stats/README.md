@@ -5,10 +5,10 @@ Compute the local and global image statistics
 ## setup NVFLARE
 follow the [Quick Start Guide](https://nvflare.readthedocs.io/en/main/quickstart.html) to setup virtual environment and install NVFLARE
 
+You can also follow the [notebook](../image_stats.ipynb) or the following:
+
 install required packages.
 ```
-pip install --upgrade pip
-
 cd NVFlare/examples/advanced/federated-statistics/
 
 pip install -r image_stats/requirements.txt
