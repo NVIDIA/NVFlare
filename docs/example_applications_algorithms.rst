@@ -16,11 +16,7 @@ NVIDIA FLARE has several tutorials and examples to help you get started with fed
    examples/traditional_ml_examples
    examples/medical_image_analysis
    examples/federated_statistics
-   examples/federated_site_policies
-   examples/experiment_tracking
-   examples/federated_statistics
-   examples/federated_site_policies
-   Federated Policies (GitHub) <https://github.com/NVIDIA/NVFlare/blob/main/examples/federated-policies>
+   Federated Site Policies (GitHub) <https://github.com/NVIDIA/NVFlare/blob/main/examples/federated-policies>
    examples/tensorboard_streaming
 
 
