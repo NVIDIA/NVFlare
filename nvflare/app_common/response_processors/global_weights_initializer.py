@@ -32,7 +32,7 @@ class GlobalWeightsInitializer(ResponseProcessor):
         self,
         weights_prop_name: str = AppConstants.GLOBAL_MODEL,
         weight_method: str = WeightMethod.FIRST,
-        client_name: str = "",
+        client_name: str = None,
     ):
         """Set global model weights based on specified weight setting method.
 
@@ -92,7 +92,7 @@ class GlobalWeightsInitializer(ResponseProcessor):
 
         try:
             dxo = from_shareable(response)
-        except:
+        except BaseException:
             self.log_exception(fl_ctx, f"bad response from client {client.name}: " f"it does not contain DXO")
             return False
 
