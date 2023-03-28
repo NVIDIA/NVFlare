@@ -28,7 +28,11 @@ NVIDIA FLARE has several tutorials and examples to help you get started with fed
    Differential Privacy for BraTS18 Segmentation (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/brats18>
    Prostate Segmentation from Multi-source Data (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/prostate>
    examples/federated_statistics
+<<<<<<< Updated upstream
    Federated Policies (GitHub) <https://github.com/NVIDIA/NVFlare/blob/main/examples/federated-policies>
+=======
+   Federated Site Policies (GitHub) <https://github.com/NVIDIA/NVFlare/blob/main/examples/federated-policies>
+>>>>>>> Stashed changes
    examples/tensorboard_streaming
 
 
