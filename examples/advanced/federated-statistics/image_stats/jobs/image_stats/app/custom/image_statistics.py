@@ -14,7 +14,6 @@
 
 import glob
 import os
-import traceback
 from typing import Dict, List, Optional
 
 import numpy as np
@@ -23,7 +22,7 @@ from monai.transforms import LoadImage
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.statistics_spec import Bin, DataType, Feature, Histogram, HistogramType, Statistics
-from nvflare.security.logging import secure_log_traceback, is_secure, secure_format_exception
+from nvflare.security.logging import secure_log_traceback
 
 
 class ImageStatistics(Statistics):
@@ -107,18 +106,23 @@ class ImageStatistics(Statistics):
                     img, bins=num_of_bins, range=(global_min_value, global_max_value)
                 )
                 histogram += curr_histogram
+                bin_edges = bin_edges.tolist()
 
                 if i % 100 == 0:
-                    self.logger.info(f"{self.client_name}, adding {i + 1} of {len(self.data_list)}: {file}")
+                    self.logger.info(
+                        f"{self.client_name}, adding {i + 1} of {len(self.data_list[dataset_name])}: {file}"
+                    )
             except BaseException as e:
                 self.failure_images += 1
                 self.logger.critical(
                     f"Failed to load file {file} with exception: {e.__str__()}. " f"Skipping this image..."
                 )
 
-        if num_of_bins != bin_edges:
+        if num_of_bins + 1 != len(bin_edges):
             secure_log_traceback()
-            raise ValueError(f"bin_edges size: {len(bin_edges)} is not matching with number of bins: {num_of_bins}")
+            raise ValueError(
+                f"bin_edges size: {len(bin_edges)} is not matching with number of bins + 1: {num_of_bins + 1}"
+            )
 
         for j in range(num_of_bins):
             low_value = bin_edges[j]

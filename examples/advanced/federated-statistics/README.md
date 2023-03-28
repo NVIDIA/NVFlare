@@ -24,7 +24,7 @@ Assume that clients will provide the following:
    * user needs to provide the local statistics for the target statistics (by implementing the statistic_spec)
    * user needs to provide the data sets and dataset features (feature name, data type)
    * * Note: count is always required as we use count to enforce data privacy policy
-We only support **numerical features**, not categorical features. But user can return all types of featurs
+We only support **numerical features**, not categorical features. But user can return all types of features
 the non-numerical features will be removed.
 
 ## Examples
@@ -60,7 +60,7 @@ The detailed example instructions can be found [Data frame statistics](df_stats/
 The second example provided is image histogram example. Different from **Tabular** data example, 
 
 The image examples show the followings
-* The [image_statistics.py](image_stats/jobs/image_stats/custom/image_statistics.py) only needs 
+* The [image_statistics.py](image_stats/jobs/image_stats/app/custom/image_statistics.py) only needs
 to calculate the count and histogram target statistics, then user only needs to provide the calculation count, failure_count and histogram functions. There is no need to implement other metrics functions
  (sum, mean,std_dev etc.) ( get_failure_count by default return 0 )
 * For each site's dataset, there are several thousands of images, the local histogram is aggregate histogram of all the image histograms.  
@@ -71,14 +71,14 @@ such as multiple channels, reload image to memory for each channel to do histogr
 where in [Data frame statistics](df_stats/README.md), besides "Age", all other features histogram global bin range
 is dynamically estimated based on local min/max values
 
-Here some of the image histogram ( the underline image files have only 1 channel)
+An example of image histogram (the underline image files have only 1 channel)
 
 ![histograms](image_stats/figs/image_histogram.png)
 
 
 ### Monai Stats with Spleen CT Image example
 
-This example [Spleen CT Image Statistics](../../../integration/monai/examples/spleen_ct_segmentation/) demonstrated 
+This example [Spleen CT Image Statistics](../../../integration/monai/examples/spleen_ct_segmentation_sim) demonstrated
 few more details in Federated statistics.
 
 * instead of locally calculate the histogram on each image, this example shows how to get the local statistics from monai
@@ -168,7 +168,7 @@ from statistics before sending to server.
 
 #### AddNoiseToMinMax
 For histogram calculations, if the feature's histogram bin's range is not specified, we will need to use local data's min
-and max values to calculate the global min/max values, then use the global min, max values as the bin ragen for histogram
+and max values to calculate the global min/max values, then use the global min, max values as the bin range for histogram
 calculation. But send the server the local min, max values will reveal client's real data.
 To protect data privacy, we add noise to the local min/max values.
 
@@ -188,14 +188,14 @@ est. global min value <
 
 ## How it works
 
-Some of the local statistics (such as count, failure count, sum etc.) can be calculated with one round; while others statistics
+Some local statistics (such as count, failure count, sum etc.) can be calculated with one round; while others statistics
 such as stddev, histogram ( if the global bin range is not specified) will need to two round of calculations.
 We design a workflow to essentially issue three round of trip to client
 
 * pre_run()  -- controller send clients the target metrics information
 * 1st statistics task -- controller  send clients 1st set of target metrics as well as local max/min if the global min/max estimation is needed
 * 2nd statistics task -- based on the aggregated global statistics, we do the 2nd round, we calculate the VAR (with global mean) and histogram
-based on the global rnage (or estimated global range)
+based on the global range (or estimated global range)
 
 The sequence diagram provides the details. 
 
@@ -218,7 +218,7 @@ sequenceDiagram
     end
     PrivacyFilter-->>Server: filtered local statistic
     loop over clients
-        Server->>Server: aggregatation
+        Server->>Server: aggregation
     end
     Server->>Client:  task: Fed_Stats: statistics_task_2: var with input global_mean, global_count, histogram with estimated global min/max
     loop over dataset and features
