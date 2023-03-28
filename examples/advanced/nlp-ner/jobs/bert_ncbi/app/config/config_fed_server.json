@@ -13,7 +13,7 @@
       "name": "PTFileModelPersistor",
       "args": {
         "model": {
-          "path": "models.bert.BertModel",
+          "path": "custom.models.bert.BertModel",
           "args": {
             "num_labels": 3,
             "model_name": "bert-base-uncased"

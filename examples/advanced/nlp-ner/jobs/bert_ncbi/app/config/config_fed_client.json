@@ -27,7 +27,7 @@
   "components": [
     {
       "id": "bert-learner",
-      "path": "learners.bert_learner.BertLearner",
+      "path": "custom.learners.bert_learner.BertLearner",
       "args": {
         "data_path": "{DATASET_ROOT}/4_split",
         "learning_rate": 1e-5,
