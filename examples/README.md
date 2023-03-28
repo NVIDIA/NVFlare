@@ -70,10 +70,12 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 ## 2. Tutorial notebooks
 * [Intro to the FL Simulator](./tutorials/flare_simulator.ipynb)
   * Shows how to use the FLARE Simulator to run a local simulation.
-* [Intro to the FL Simulator](./tutorials/flare_api.ipynb)
+* [Hello FLARE API](./tutorials/flare_api.ipynb)
   * Goes through the different commnads of the FLARE API.
-* [Intro to the FL Simulator](./tutorials/setup_poc.ipynb)
+* [NVFLARE in POC Mode](./tutorials/setup_poc.ipynb)
   * Shows how to use POC mode.
+* [Provision and Start NVFLARE](./tutorials/provision.ipynb)
+  * Shows how to provision and start a secure FL system.
 
 ## 3. FL algorithms
 * [Federated Learning with CIFAR-10](./advanced/cifar10/README.md)
