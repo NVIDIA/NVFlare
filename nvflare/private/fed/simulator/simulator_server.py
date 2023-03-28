@@ -142,3 +142,6 @@ class SimulatorServer(FederatedServer):
 
     def authentication_check(self, request: Message, state_check):
         return None
+
+    def client_cleanup(self):
+        pass
