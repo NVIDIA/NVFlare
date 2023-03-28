@@ -49,6 +49,28 @@ tests:
       - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/cifar10_data', download=True)"
     teardown:
       - rm -rf /tmp/nvflare/cifar10_data
+  - test_name: "run pt_init_client"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job pt_init_client" ]
+        "result":
+          "type": "run_state"
+          "data": { }
+      - "trigger":
+          "type": "run_state"
+          "data": { "run_finished": True }
+        "actions": [ "ensure_current_job_done" ]
+        "result":
+          "type": "run_state"
+          "data": { "run_finished": True }
+    validators:
+      - path: tests.integration_test.src.validators.PTModelValidator
+    setup:
+      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/cifar10_data', download=True)"
+    teardown:
+      - rm -rf /tmp/nvflare/cifar10_data
   - test_name: "run tb_streaming"
     event_sequence:
       - "trigger":

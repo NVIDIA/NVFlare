@@ -3,7 +3,7 @@ NVIDIA FLARE
 ############
 
 .. toctree::
-   :maxdepth: 1
+   :maxdepth: -1
    :hidden:
 
    flare_overview

@@ -40,7 +40,7 @@ Step 2: Modify config_fed_client.json
 Add the task "get_weights" for the trainer, as highlighted in below. Note that this task name must match the
 task_name of the InitializeGlobalWeights config in config_fed_server.json.
 
-.. code-block::
+.. code-block:: json
     :emphasize-lines: 8
 
     {
@@ -73,7 +73,7 @@ task_name of the InitializeGlobalWeights config in config_fed_server.json.
       "task_result_filters": [],
       "task_data_filters": [],
       "components": []
-  }
+    }
 
 
 Step 3: Update the Trainer code

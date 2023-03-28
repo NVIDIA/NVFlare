@@ -73,7 +73,7 @@ bash prepare_job_config.sh
 ```
 In this example, we chose the Radial Basis Function (RBF) kernel to experiment with three clients under the uniform data split. 
 
-Below is a sample config for site-1, saved to `./job_configs/sklearn_svm_3_uniform/app_site-1/config/config_fed_client.json`:
+Below is a sample config for site-1, saved to `./jobs/sklearn_svm_3_uniform/app_site-1/config/config_fed_client.json`:
 ```json
 {
     "format_version": 2,

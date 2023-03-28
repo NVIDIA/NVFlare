@@ -19,7 +19,6 @@ import random
 import threading
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Tuple, Union
 from urllib.parse import urlparse
 
@@ -261,10 +260,8 @@ class Cell(MessageReceiver, EndpointMonitor):
     APP_ID = 1
     ERR_TYPE_MSG_TOO_BIG = "MsgTooBig"
     ERR_TYPE_COMM = "CommErr"
-    DIRECT_MSG_POOL_SIZE = 1000
 
     ALL_CELLS = {}  # cell name => Cell
-    DIRECT_MSG_EXECUTOR = ThreadPoolExecutor(DIRECT_MSG_POOL_SIZE, "direct_msg")
 
     SUB_TYPE_CHILD = 1
     SUB_TYPE_CLIENT = 2
@@ -561,6 +558,9 @@ class Cell(MessageReceiver, EndpointMonitor):
             self._create_internal_listener()
 
     def _set_bb_for_server_child(self, parent_url: str, create_internal_listener: bool):
+        if FQCN.ROOT_SERVER in self.ALL_CELLS:
+            return
+
         if parent_url:
             self._create_internal_connector(parent_url)
         if create_internal_listener:
@@ -1049,7 +1049,9 @@ class Cell(MessageReceiver, EndpointMonitor):
                 direct_cell = self.ALL_CELLS.get(to_endpoint.name)
                 if direct_cell:
                     # create a thread and fire the cell's process_message!
-                    self.DIRECT_MSG_EXECUTOR.submit(self._send_direct_message, direct_cell, message)
+                    # self.DIRECT_MSG_EXECUTOR.submit(self._send_direct_message, direct_cell, message)
+                    self._send_direct_message(direct_cell, message)
+
                 else:
                     self.communicator.send(to_endpoint, Cell.APP_ID, message)
                 self.sent_msg_size_pool.record_value(
