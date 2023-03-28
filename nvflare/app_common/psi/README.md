@@ -89,7 +89,7 @@ sequenceDiagram
     Note over FLServer, PSI : PREPARE 
     FLServer -->> PSIExecutor: initialize()
     PSIExecutor -->> PSIExecutor: get_task_handler()
-    PSIExecutor -->> PSIExecutor: psi_task_delegator = DhPSITaskHandler(local_psi_id)
+    PSIExecutor -->> PSIExecutor: psi_task_handler = DhPSITaskHandler(local_psi_id)
     FLServer -->> PSIExecutor: execute()
         
     Note over FLServer, PSI : PREPARE
