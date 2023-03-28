@@ -66,7 +66,7 @@ This will generate data splits for two client sizes: 5 and 20, and 3 split condi
 If you want to customize for your experiments, please check `utils/prepare_data_split.py`.
 
 > **_NOTE:_** The generated train config files will be stored in the folder `/tmp/nvflare/random_forest/HIGGS/data_splits`,
-> and will be used by job_configs by specifying the path within `config_fed_client.json` 
+> and will be used by jobs by specifying the path within `config_fed_client.json` 
 
 
 ## HIGGS jobs preparation under various training settings
@@ -79,7 +79,7 @@ bash jobs_gen.sh
 ```
 
 This script modifies settings from base job configuration
-(`./job_configs/random_forest_base`),
+(`./jobs/random_forest_base`),
 and copies the correct data split file generated in the data preparation step.
 
 > **_NOTE:_** To customize your own job configs, you can just edit from the generated ones.
