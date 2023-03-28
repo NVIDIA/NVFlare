@@ -93,7 +93,7 @@ class SimulatorDeployer(ServerDeployer):
             root_url=scheme + "://" + target,
             secure=self.secure_train,
             credentials=credentials,
-            create_internal_listener=True,
+            create_internal_listener=False,
             parent_url=parent_url,
         )
         cell.start()
