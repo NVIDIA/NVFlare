@@ -35,6 +35,9 @@ class FinishJobResultValidator(JobResultValidator, ABC):
         pass
 
     def validate_results(self, job_result, client_props) -> bool:
+        if not job_result:
+            return False
+
         # check run folder exist
         server_run_dir = job_result["workspace_root"]
 

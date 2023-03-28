@@ -12,8 +12,7 @@ tests:
           "data": "Server started"
         "actions": [ "submit_job global_model_eval" ]
         "result":
-          "type": "run_state"
-          "data": { }
+          "type": "job_submit_success"
       - "trigger":
           "type": "run_state"
           "data": { "run_finished": True }
@@ -33,8 +32,7 @@ tests:
           "data": "Server started"
         "actions": [ "submit_job cross_val_one_client" ]
         "result":
-          "type": "run_state"
-          "data": { }
+          "type": "job_submit_success"
       - "trigger":
           "type": "run_state"
           "data": { "run_finished": True }
@@ -54,8 +52,7 @@ tests:
           "data": "Server started"
         "actions": [ "submit_job cross_val" ]
         "result":
-          "type": "run_state"
-          "data": { }
+          "type": "job_submit_success"
       - "trigger":
           "type": "run_state"
           "data": { "run_finished": True }
@@ -75,8 +72,7 @@ tests:
           "data": "Server started"
         "actions": [ "submit_job np_sag" ]
         "result":
-          "type": "run_state"
-          "data": { }
+          "type": "job_submit_success"
       - "trigger":
           "type": "run_state"
           "data": { "run_finished": True }
@@ -94,8 +90,7 @@ tests:
           "data": "Server started"
         "actions": [ "submit_job np_sag_weights_diff" ]
         "result":
-          "type": "run_state"
-          "data": { }
+          "type": "job_submit_success"
       - "trigger":
           "type": "run_state"
           "data": { "run_finished": True }
@@ -113,8 +108,7 @@ tests:
           "data": "Server started"
         "actions": [ "submit_job filters" ]
         "result":
-          "type": "run_state"
-          "data": { }
+          "type": "job_submit_success"
       - "trigger":
           "type": "run_state"
           "data": { "run_finished": True }

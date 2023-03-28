@@ -13,8 +13,7 @@ tests:
           data: Server started
         actions: [ "submit_job cifar10_fedavg_he_copy" ]
         result:
-          type: run_state
-          data: {}
+          type: job_submit_success
       - trigger:
           type: run_state
           data: { "run_finished": True }
@@ -37,8 +36,7 @@ tests:
           data: Server started
         actions: [ "submit_job cifar10_fedavg_stream_tb_copy" ]
         result:
-          type: run_state
-          data: {}
+          type: job_submit_success
       - trigger:
           type: run_state
           data: { "run_finished": True }

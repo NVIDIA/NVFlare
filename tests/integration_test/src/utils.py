@@ -338,7 +338,7 @@ def generate_test_config_yaml_for_example(
             f"python convert_to_test_job.py --job {job_dir} --post {postfix}",
         ]
         if example.prepare_data_script is not None:
-            setup.insert(0, f"bash {example.prepare_data_script}")
+            setup.insert(1, f"bash {example.prepare_data_script}")
 
         config = {
             "ha": True,
@@ -353,7 +353,7 @@ def generate_test_config_yaml_for_example(
                         {
                             "trigger": {"type": "server_log", "data": "Server started"},
                             "actions": [f"submit_job {job}{postfix}"],
-                            "result": {"type": "run_state", "data": {}},
+                            "result": {"type": "job_submit_success"},
                         },
                         {
                             "trigger": {"type": "run_state", "data": {"run_finished": True}},

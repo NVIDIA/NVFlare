@@ -12,8 +12,7 @@ tests:
           "data": "Server started"
         "actions": [ "submit_job hello-numpy-sag/jobs/hello-numpy-sag" ]
         "result":
-          "type": "run_state"
-          "data": { }
+          "type": "job_submit_success"
       - "trigger":
           "type": "run_state"
           "data": { "run_finished": True }

@@ -70,7 +70,7 @@ def get_test_config(test_config_yaml: str):
     return test_config
 
 
-framework = os.environ.get("NVFLARE_TEST_FRAMEWORK", "numpy")
+framework = os.environ.get("NVFLARE_TEST_FRAMEWORK")
 test_configs_yaml = "auto_test_configs.yml" if framework == "auto" else "test_configs.yml"
 test_configs = read_yaml(test_configs_yaml)
 if framework not in test_configs["test_configs"]:
@@ -192,6 +192,10 @@ class TestSystem:
 
             test_driver.run_event_sequence(event_sequence)
 
+            job_result = None
+            if test_driver.job_id is not None:
+                job_result = test_driver.get_job_result(test_driver.job_id)
+
             # Get the job validator
             if validators:
                 validate_result = True
@@ -203,7 +207,6 @@ class TestSystem:
                     job_validator_cls = getattr(importlib.import_module(module_name), class_name)
                     job_validator = job_validator_cls(**validator_args)
 
-                    job_result = test_driver.get_job_result(test_driver.job_id)
                     job_validate_res = job_validator.validate_results(
                         job_result=job_result,
                         client_props=list(site_launcher.client_properties.values()),
