@@ -54,6 +54,8 @@ from nvflare.security.logging import secure_format_exception
 from nvflare.security.security import EmptyAuthorizer
 
 CLIENT_CREATE_POOL_SIZE = 200
+POOL_STATS_DIR = "pool_stats"
+SIMULATOR_POOL_STATS = "simulator_cell_stats.json"
 
 
 class SimulatorRunner(FLComponent):
@@ -437,10 +439,8 @@ class SimulatorRunner(FLComponent):
     def dump_stats(self, workspace: Workspace):
         stats_dict = StatsPoolManager.to_dict()
         json_object = json.dumps(stats_dict, indent=4)
-        os.makedirs(os.path.join(workspace.get_run_dir(SimulatorConstants.JOB_NAME), "pool_stats"))
-        file = os.path.join(
-            workspace.get_run_dir(SimulatorConstants.JOB_NAME), "pool_stats", "simulator_cell_stats.json"
-        )
+        os.makedirs(os.path.join(workspace.get_run_dir(SimulatorConstants.JOB_NAME), POOL_STATS_DIR))
+        file = os.path.join(workspace.get_run_dir(SimulatorConstants.JOB_NAME), POOL_STATS_DIR, SIMULATOR_POOL_STATS)
         with open(file, "w") as outfile:
             outfile.write(json_object)
 

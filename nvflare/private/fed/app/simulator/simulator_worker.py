@@ -163,7 +163,7 @@ class ClientTaskWorker(FLComponent):
         self._set_client_status(client, deploy_args, args.simulator_root)
         start = time.time()
         self._create_client_cell(client, args.root_url, args.parent_url)
-        self.logger.info(f"Complete _create_client_cell.  Time to create client job cell: {time.time() - start}")
+        self.logger.debug(f"Complete _create_client_cell.  Time to create client job cell: {time.time() - start}")
         return client
 
     def _set_client_status(self, client, deploy_args, simulator_root):
