@@ -143,8 +143,8 @@ class MainProcessMonitor:
         rc = 0
         try:
             rc = main_func()
-        except:
-            logger.error("main_func execute exception.")
+        except Exception as ex:
+            logger.error(f"main_func execute exception: {secure_format_exception(ex)}")
 
         # start shutdown process
         cls._stopping = True
