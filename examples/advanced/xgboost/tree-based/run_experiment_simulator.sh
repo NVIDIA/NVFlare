@@ -7,7 +7,7 @@ for study in bagging_uniform_split_uniform_lr \
              cyclic_uniform_split_uniform_lr \
              cyclic_exponential_split_uniform_lr
 do
-  nvflare simulator job_configs/higgs_${n}_${study} -w ${PWD}/workspaces/xgboost_workspace_${n}_${study} -n ${n} -t ${n}
+  nvflare simulator jobs/higgs_${n}_${study} -w ${PWD}/workspaces/xgboost_workspace_${n}_${study} -n ${n} -t ${n}
 done
 
 
@@ -18,5 +18,5 @@ for study in bagging_uniform_split_uniform_lr \
             cyclic_uniform_split_uniform_lr \
             cyclic_square_split_uniform_lr
 do
-  nvflare simulator job_configs/higgs_${n}_${study} -w ${PWD}/workspaces/xgboost_workspace_${n}_${study} -n ${n} -t ${n}
+  nvflare simulator jobs/higgs_${n}_${study} -w ${PWD}/workspaces/xgboost_workspace_${n}_${study} -n ${n} -t ${n}
 done
