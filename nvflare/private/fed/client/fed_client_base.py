@@ -209,6 +209,9 @@ class FederatedClientBase:
         self.cell.start()
         self.communicator.cell = self.cell
         self.net_agent = NetAgent(self.cell)
+        mpm.add_cleanup_cb(self.net_agent.close)
+        mpm.add_cleanup_cb(self.cell.stop)
+
         if self.args.job_id:
             start = time.time()
             self.logger.info("Wait for client_runner to be created.")
@@ -229,8 +232,6 @@ class FederatedClientBase:
             self.logger.info(f"Got engine after {time.time() - start} seconds")
             self.engine.cell = self.cell
             self.engine.admin_agent.register_cell_cb()
-        mpm.add_cleanup_cb(self.net_agent.close)
-        mpm.add_cleanup_cb(self.cell.stop)
 
     def _switch_ssid(self):
         if self.engine:
