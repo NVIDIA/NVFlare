@@ -48,6 +48,10 @@ class GlobalWeightsInitializer(ResponseProcessor):
             raise ValueError(f"invalid weight_method '{weight_method}'")
         if weight_method == WeightMethod.CLIENT and not client_name:
             raise ValueError(f"client name not provided for weight method '{WeightMethod.CLIENT}'")
+        if weight_method == WeightMethod.CLIENT and not isinstance(client_name, str):
+            raise ValueError(
+                f"client name should be a single string for weight method '{WeightMethod.CLIENT}' but it is {client_name} "
+            )
 
         ResponseProcessor.__init__(self)
         self.weights_prop_name = weights_prop_name
