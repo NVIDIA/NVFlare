@@ -170,7 +170,7 @@ class Session(SessionSpec):
         elif cmd_status == MetaStatusValue.JOB_RUNNING:
             raise JobNotDone(f"job {info} is still running")
         elif cmd_status != MetaStatusValue.OK:
-            raise InternalError(f"server internal error {cmd_status}: {info}")
+            raise InternalError(f"server internal error ({cmd_status}): {info}")
 
         status = result.get(ResultKey.STATUS, None)
         if not status:
