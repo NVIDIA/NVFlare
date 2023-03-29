@@ -12,8 +12,7 @@ tests:
           "data": "Server started"
         "actions": [ "submit_job pt_use_path" ]
         "result":
-          "type": "run_state"
-          "data": { }
+          "type": "job_submit_success"
       - "trigger":
           "type": "run_state"
           "data": { "run_finished": True }
@@ -34,8 +33,7 @@ tests:
           "data": "Server started"
         "actions": [ "submit_job pt_use_name" ]
         "result":
-          "type": "run_state"
-          "data": { }
+          "type": "job_submit_success"
       - "trigger":
           "type": "run_state"
           "data": { "run_finished": True }
@@ -56,8 +54,7 @@ tests:
           "data": "Server started"
         "actions": [ "submit_job pt_init_client" ]
         "result":
-          "type": "run_state"
-          "data": { }
+          "type": "job_submit_success"
       - "trigger":
           "type": "run_state"
           "data": { "run_finished": True }
@@ -78,8 +75,7 @@ tests:
           "data": "Server started"
         "actions": [ "submit_job tb_streaming" ]
         "result":
-          "type": "run_state"
-          "data": { }
+          "type": "job_submit_success"
       - "trigger":
           "type": "run_state"
           "data": { "run_finished": True }
