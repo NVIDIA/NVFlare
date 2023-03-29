@@ -141,14 +141,11 @@ class ClientManager:
                 )
                 return None
 
-            for token, client in self.clients.items():
-                if client.name == client_name:
-                    with self.lock:
-                        self.clients.pop(token)
-                        self.logger.info(
-                            f"Client: {client_name} already registered. Re-login the client with a new token."
-                        )
-                        break
+            with self.lock:
+                clients_to_be_removed = [token for token, client in self.clients.items() if client.name == client_name]
+                for item in clients_to_be_removed:
+                    self.clients.pop(item)
+                    self.logger.info(f"Client: {client_name} already registered. Re-login the client with a new token.")
 
             client = Client(client_name, str(uuid.uuid4()))
 

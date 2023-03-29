@@ -84,7 +84,7 @@ This will generate data splits for three client sizes: 2, 5 and 20, and 3 split 
 If you want to customize for your experiments, please check `utils/prepare_data_split.py`.
 
 > **_NOTE:_** The generated train config files will be stored in the folder `/tmp/nvflare/xgboost_higgs_dataset/`,
-> and will be used by job_configs by specifying the path within `config_fed_client.json` 
+> and will be used by jobs by specifying the path within `config_fed_client.json` 
 
 
 ## HIGGS job configs preparation under various training schemes
@@ -97,14 +97,14 @@ bash job_config_gen.sh
 ```
 
 This script modifies settings from base job configuration
-(`./tree-based/job_configs/bagging_base` or `./tree-based/job_configs/cyclic_base`
-or `./histogram-based/job_configs/base`),
+(`./tree-based/jobs/bagging_base` or `./tree-based/jobs/cyclic_base`
+or `./histogram-based/jobs/base`),
 and copies the correct data split file generated in the data preparation step.
 
 > **_NOTE:_** To customize your own job configs, you can just edit from the generated ones.
 > Or check the code in `./utils/prepare_job_config.py`.
 
-The script will generate a total of 10 different configs in `tree-based/job_configs` for tree-based algorithm:
+The script will generate a total of 10 different configs in `tree-based/jobs` for tree-based algorithm:
 
 - tree-based cyclic training with uniform data split for 5 clients
 - tree-based cyclic training with non-uniform data split for 5 clients
@@ -118,7 +118,7 @@ The script will generate a total of 10 different configs in `tree-based/job_conf
 - tree-based bagging training with non-uniform data split and scaled shrinkage for 20 clients
 
 
-The script will also generate 2 configs in `histogram-based/job_configs` for histogram-base algorithm:
+The script will also generate 2 configs in `histogram-based/jobs` for histogram-base algorithm:
 
 - histogram-based training with uniform data split for 2 clients
 - histogram-based training with uniform data split for 5 clients
