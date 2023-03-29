@@ -40,8 +40,8 @@ prod_dir=$( ls -td ${workspace}/${project_name}/*/  | head -1)
 
 # update server/local/resources.json
 python <<END1
-import nvflare.lighter.utils import update_storage_locations
-update_storage_locations(local_dir = "${prod_dir}/server1/local", workspace = ${workspace})
+from nvflare.lighter.utils import update_storage_locations
+update_storage_locations(local_dir = "${prod_dir}/server1/local", workspace = "${workspace}")
 END1
 
 
