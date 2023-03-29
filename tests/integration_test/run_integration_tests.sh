@@ -24,12 +24,7 @@ while getopts ":m:c:d" option; do
         m) # framework/backend
             cmd="pytest --junitxml=./integration_test.xml -v --log-cli-level=INFO --capture=no"
             m=${OPTARG}
-            if [[ " ${backends[*]} " =~ " ${m} " ]]; then
-                # whatever you want to do when array contains value
-                prefix="NVFLARE_TEST_FRAMEWORK=$m PYTHONPATH=${PYTHONPATH}"
-            else
-              usage
-            fi
+            prefix="NVFLARE_TEST_FRAMEWORK=$m PYTHONPATH=${PYTHONPATH}"
             ;;
         d) # debug
             export FL_LOG_LEVEL=DEBUG
@@ -63,7 +58,7 @@ run_overseer_test()
 
 run_system_test()
 {
-    echo "Running system integration tests."
+    echo "Running system integration tests with backend $m."
     cmd="$prefix $cmd system_test.py"
     echo "$cmd"
     eval "$cmd"
@@ -78,28 +73,12 @@ run_tensorflow()
     eval "$cmd"
 }
 
-if [[ $m == "numpy" ]]; then
-    echo "Running integration tests using numpy related jobs."
-    run_system_test
-elif [[ $m == "tensorflow" ]]; then
+if [[ $m == "tensorflow" ]]; then
     run_tensorflow
-elif [[ $m == "pytorch" ]]; then
-    echo "Running integration tests using pytorch related jobs."
-    run_system_test
-elif [[ $m == "ha" ]]; then
-    echo "Running HA integration tests."
-    run_system_test
-elif [[ $m == "auth" ]]; then
-    echo "Running federated authorization integration tests."
-    run_system_test
 elif [[ $m == "overseer" ]]; then
     run_overseer_test
 elif [[ $m == "preflight" ]]; then
     run_preflight_check_test
-elif [[ $m == "cifar" ]]; then
-    echo "Running integration tests using cifar jobs."
-    run_system_test
-elif [[ $m == "auto" ]]; then
-    echo "Running integration tests using auto generated jobs."
+else
     run_system_test
 fi
