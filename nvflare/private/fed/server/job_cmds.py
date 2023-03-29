@@ -409,7 +409,7 @@ class JobCommandModule(CommandModule, CommandUtil):
             with engine.new_context() as fl_ctx:
                 message = job_runner.stop_run(job_id, fl_ctx)
                 if message:
-                    conn.append_error(message, meta=make_meta(MetaStatusValue.INTERNAL_ERROR))
+                    conn.append_error(message, meta=make_meta(MetaStatusValue.INTERNAL_ERROR, message))
                 else:
                     conn.append_string("Abort signal has been sent to the server app.")
                     conn.append_success("", make_meta(MetaStatusValue.OK))
