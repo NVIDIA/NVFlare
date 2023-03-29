@@ -21,7 +21,7 @@ from typing import Dict, List
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
 from nvflare.apis.client import Client
-from nvflare.apis.fl_constant import AdminCommandNames, RunProcessKey
+from nvflare.apis.fl_constant import AdminCommandNames, RunProcessKey, SystemComponents
 from nvflare.apis.job_def import Job, JobDataKey, JobMetaKey, TopDir
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.apis.utils.job_utils import convert_legacy_zipped_app_to_job
@@ -407,12 +407,20 @@ class JobCommandModule(CommandModule, CommandUtil):
         try:
             job_id = conn.get_prop(self.JOB_ID)
             with engine.new_context() as fl_ctx:
-                message = job_runner.stop_run(job_id, fl_ctx)
-                if message:
-                    conn.append_error(message, meta=make_meta(MetaStatusValue.INTERNAL_ERROR))
-                else:
-                    conn.append_string("Abort signal has been sent to the server app.")
+                job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
+                job = job_manager.get_job(job_id, fl_ctx)
+                if job.meta.get(JobMetaKey.STATUS) in [RunStatus.SUBMITTED, RunStatus.DISPATCHED]:
+                    job_manager.set_status(job.job_id, RunStatus.FINISHED_ABORTED, fl_ctx)
+                    conn.append_string(f"Abort the job: {job_id} before run.")
                     conn.append_success("", make_meta(MetaStatusValue.OK))
+                    return
+                else:
+                    message = job_runner.stop_run(job_id, fl_ctx)
+                    if message:
+                        conn.append_error(message, meta=make_meta(MetaStatusValue.INTERNAL_ERROR))
+                    else:
+                        conn.append_string("Abort signal has been sent to the server app.")
+                        conn.append_success("", make_meta(MetaStatusValue.OK))
         except BaseException as e:
             conn.append_error(
                 f"Exception occurred trying to abort job: {secure_format_exception(e)}",

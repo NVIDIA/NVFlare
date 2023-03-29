@@ -270,6 +270,8 @@ class ServerEngine(ServerEngineInternalSpec):
             + str(server_state.service_port)
             + " --ssid "
             + str(server_state.ssid)
+            + " --ha_mode "
+            + str(self.server.ha_mode)
             + " --set"
             + command_options
             + " print_conf=True restore_snapshot="
@@ -600,6 +602,9 @@ class ServerEngine(ServerEngineInternalSpec):
         return result
 
     def persist_components(self, fl_ctx: FLContext, completed: bool):
+        if not self.server.ha_mode:
+            return
+
         self.logger.info("Start saving snapshot on server.")
 
         # Call the State Persistor to persist all the component states
