@@ -284,7 +284,7 @@ def _build_commands(cmd_type: str, poc_workspace: str, excluded: list, white_lis
     """
 
     def is_fl_package_dir(p_dir_name: str) -> bool:
-        return p_dir_name == "admin" or p_dir_name == "server" or p_dir_name.startswith('site-')
+        return p_dir_name == "admin" or p_dir_name == "server" or p_dir_name.startswith("site-")
 
     if white_list is None:
         white_list = []
@@ -391,7 +391,7 @@ def def_poc_parser(sub_cmd):
         action="store_const",
         const=prepare_poc,
         help="prepare poc workspace. "
-             + "export NVFLARE_HOME=<NVFLARE github cloned directory> to setup examples with prepare command",
+        + "export NVFLARE_HOME=<NVFLARE github cloned directory> to setup examples with prepare command",
     )
     poc_parser.add_argument("--start", dest="start_poc", action="store_const", const=start_poc, help="start poc")
     poc_parser.add_argument("--stop", dest="stop_poc", action="store_const", const=stop_poc, help="stop poc")
@@ -403,10 +403,10 @@ def def_poc_parser(sub_cmd):
 
 def is_poc(cmd_args) -> bool:
     return (
-            hasattr(cmd_args, "start_poc")
-            or hasattr(cmd_args, "prepare_poc")
-            or hasattr(cmd_args, "stop_poc")
-            or hasattr(cmd_args, "clean_poc")
+        hasattr(cmd_args, "start_poc")
+        or hasattr(cmd_args, "prepare_poc")
+        or hasattr(cmd_args, "stop_poc")
+        or hasattr(cmd_args, "clean_poc")
     )
 
 
