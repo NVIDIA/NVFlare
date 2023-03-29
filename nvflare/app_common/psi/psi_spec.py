@@ -32,7 +32,8 @@ class PSI(InitFinalComponent, ABC):
     def __init__(self, psi_writer_id: str):
         """
         Args:
-            psi_writer_id: psi_writer_id, will get PSIWriter from engine and save the results.
+            psi_writer_id: a PSIWriter id, we will use it to get PSIWriter from engine.
+                PSIWriter will be used save the intersection results.
                 For example, FilePSIWriter implements PSIWriter interface and save to the local disk
         """
         super().__init__()
