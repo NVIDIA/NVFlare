@@ -294,7 +294,6 @@ class SimulatorRunner(FLComponent):
     def create_clients(self):
         # Deploy the FL clients
         self.logger.info("Create the simulate clients.")
-        clients_created_waiter = threading.Event()
         for client_name in self.client_names:
             self.create_client(client_name)
 
@@ -527,8 +526,6 @@ class SimulatorClientRunner(FLComponent):
             + self.simulator_root
             + " --root_url "
             + str(client.cell.get_root_url_for_child())
-            + " --parent_url "
-            + str(client.cell.get_internal_listener_url())
         )
         if gpu:
             command += " --gpu " + str(gpu)

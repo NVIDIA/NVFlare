@@ -126,7 +126,6 @@ class ClientTaskWorker(FLComponent):
 
     def run(self, args, conn):
         self.logger.info("ClientTaskWorker started to run")
-        admin_agent = None
         client = None
         try:
             data = conn.recv()
@@ -157,8 +156,6 @@ class ClientTaskWorker(FLComponent):
         finally:
             if client:
                 client.cell.stop()
-            if admin_agent:
-                admin_agent.shutdown()
 
     def _create_client(self, args, build_ctx, deploy_args):
         deployer = BaseClientDeployer()
@@ -168,7 +165,7 @@ class ClientTaskWorker(FLComponent):
         client.token = args.token
         self._set_client_status(client, deploy_args, args.simulator_root)
         start = time.time()
-        self._create_client_cell(client, args.root_url, args.parent_url)
+        self._create_client_cell(client, args.root_url)
         self.logger.debug(f"Complete _create_client_cell.  Time to create client job cell: {time.time() - start}")
         return client
 
@@ -180,17 +177,16 @@ class ClientTaskWorker(FLComponent):
         client.simulate_running = False
         client.status = ClientStatus.STARTED
 
-    def _create_client_cell(self, federated_client, root_url, parent_url):
+    def _create_client_cell(self, federated_client, root_url):
         fqcn = FQCN.join([federated_client.client_name, SimulatorConstants.JOB_NAME])
         credentials = {}
-        parent_url = None
         cell = Cell(
             fqcn=fqcn,
             root_url=root_url,
             secure=False,
             credentials=credentials,
             create_internal_listener=False,
-            parent_url=parent_url,
+            parent_url=None,
         )
         cell.start()
         mpm.add_cleanup_cb(cell.stop)
@@ -221,7 +217,6 @@ def main():
     parser.add_argument("--parent_pid", type=int, help="parent process pid", required=True)
     parser.add_argument("--simulator_root", "-root", type=str, help="Simulator root folder")
     parser.add_argument("--root_url", "-r", type=str, help="cellnet root_url")
-    parser.add_argument("--parent_url", "-p", type=str, help="cellnet parent_url")
     args = parser.parse_args()
 
     # start parent process checking thread
