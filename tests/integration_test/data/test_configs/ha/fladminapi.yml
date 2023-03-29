@@ -13,8 +13,7 @@ tests:
           "data": "Server started"
         "actions": [ "submit_job slow_job" ]
         "result":
-          "type": "run_state"
-          "data": { }
+          "type": "job_submit_success"
       - "trigger":
           "type": "server_job_log"
           "data": "sent task assignment to client"

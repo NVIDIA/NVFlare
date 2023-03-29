@@ -184,7 +184,7 @@ class NVFTestDriver:
         self.logger = logging.getLogger(self.__class__.__name__)
         self.test_done = False
         self.job_id = None
-        self.last_job_name = ""
+        self.last_job_name = None
 
         self.action_handlers = {
             "start": _StartHandler(),
@@ -345,7 +345,7 @@ class NVFTestDriver:
         self.admin_api_response = None
         if reset_job_info:
             self.job_id = None
-            self.last_job_name = ""
+            self.last_job_name = None
 
     def run_event_sequence(self, event_sequence):
         run_state = {"run_finished": None, "workflows": None}
@@ -416,6 +416,10 @@ class NVFTestDriver:
                         if not self.admin_api_response:
                             raise RuntimeError("Missing admin_api_response.")
                         assert self.admin_api_response == result["data"]
+                        event_idx += 1
+                    elif result["type"] == "job_submit_success":
+                        if self.job_id is None or self.last_job_name is None:
+                            raise RuntimeError(f"Job submission failed with: {self.admin_api_response}")
                         event_idx += 1
 
             time.sleep(self.poll_period)
