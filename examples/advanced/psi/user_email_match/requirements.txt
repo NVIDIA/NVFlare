@@ -1,2 +1,3 @@
+nvflare>=2.3.0rc3
 openmined.psi==1.1.1
 pandas

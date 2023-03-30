@@ -11,22 +11,33 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+
+import collections
 from typing import List, Optional
 
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
+from nvflare.apis.signal import Signal
+from nvflare.app_common.abstract.task_handler import TaskHandler
 from nvflare.app_common.app_constant import PSIConst
-from nvflare.app_common.executors.client_executor import ClientExecutor
 from nvflare.app_common.psi.psi_spec import PSI
-from nvflare.app_opt.psi.dh_psi.dh_psi_client import PsiClient
-from nvflare.app_opt.psi.dh_psi.dh_psi_server import PsiServer
+from nvflare.app_opt.psi.dh_psi.dh_psi_client import PSIClient
+from nvflare.app_opt.psi.dh_psi.dh_psi_server import PSIServer
 
 
-class DhPSIExecutor(ClientExecutor):
-    """
-    DhPSIExecutor is the executor for Diffie-Hellman-based Algorithm PSI.It handles the communication and FLARE server task delegation
-    User will interface local component : PSI to provide client items and  get intersection
+def check_items_uniqueness(items):
+    duplicates = {item: count for item, count in collections.Counter(items).items() if count > 1}
+    if duplicates:
+        raise ValueError(f"the items must be unique, the following items with duplicates {duplicates}")
+
+
+class DhPSITaskHandler(TaskHandler):
+    """Executor for Diffie-Hellman-based Algorithm PSI.
+
+    It handles the communication and FLARE server task delegation
+    User will write an interface local component : PSI to provide client items and  get intersection
     """
 
     def __init__(self, local_psi_id: str):
@@ -43,7 +54,7 @@ class DhPSIExecutor(ClientExecutor):
         super().initialize(fl_ctx)
         self.local_psi_handler = self.local_comp
 
-    def client_exec(self, task_name: str, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
+    def execute_task(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         client_name = fl_ctx.get_identity_name()
         self.client_name = client_name
         self.log_info(fl_ctx, f"Executing task '{task_name}' for {client_name}")
@@ -55,8 +66,8 @@ class DhPSIExecutor(ClientExecutor):
             if psi_stage_task == PSIConst.TASK_PREPARE:
                 self.bloom_filter_fpr = shareable[PSIConst.BLOOM_FILTER_FPR]
                 items = self.get_items()
-                self.psi_client = PsiClient(items)
-                self.psi_server = PsiServer(items, self.bloom_filter_fpr)
+                self.psi_client = PSIClient(items)
+                self.psi_server = PSIServer(items, self.bloom_filter_fpr)
                 return self.get_items_size()
             else:
                 if psi_stage_task == PSIConst.TASK_SETUP:
@@ -84,8 +95,8 @@ class DhPSIExecutor(ClientExecutor):
             raise RuntimeError(f"site {client_name} doesn't have any items for to perform PSI")
 
         # note, each interaction with client requires a new client,server keys to be secure.
-        self.psi_client = PsiClient(items)
-        self.psi_server = PsiServer(items, self.bloom_filter_fpr)
+        self.psi_client = PSIClient(items)
+        self.psi_server = PSIServer(items, self.bloom_filter_fpr)
 
         if PSIConst.ITEMS_SIZE in shareable:
             target_item_size = shareable.get(PSIConst.ITEMS_SIZE)
@@ -144,16 +155,9 @@ class DhPSIExecutor(ClientExecutor):
         if not self.intersects:
             if self.items is None:
                 items = self.local_psi_handler.load_items()
-                self.check_items_uniqueness(items)
+                check_items_uniqueness(items)
                 self.items = items
         else:
             self.items = self.intersects
 
         return self.items
-
-    def check_items_uniqueness(self, items):
-        import collections
-
-        duplicates = {item: count for item, count in collections.Counter(items).items() if count > 1}
-        if duplicates:
-            raise ValueError(f"the items must be unique, the following items with duplicates {duplicates}")

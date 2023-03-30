@@ -11,11 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 from nvflare.apis.dxo import DataKind
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.executors.client_executor import ClientExecutor
-from nvflare.app_common.executors.common_executor import CommonExecutor
-from nvflare.app_common.executors.statistics.statistics_client_executor import StatisticsClientExecutor
+from nvflare.app_common.executors.error_handling_executor import ErrorHandlingExecutor
+from nvflare.app_common.executors.statistics.statistics_task_handler import StatisticsTaskHandler
 
 """
     StatisticsExecutor is client-side executor that perform local statistics generation and communication to
@@ -24,7 +24,7 @@ from nvflare.app_common.executors.statistics.statistics_client_executor import S
 """
 
 
-class StatisticsExecutor(CommonExecutor):
+class StatisticsExecutor(ErrorHandlingExecutor):
     def __init__(
         self,
         generator_id: str,
@@ -33,12 +33,9 @@ class StatisticsExecutor(CommonExecutor):
         """
 
         Args:
-            generator_id:  Id of the statistics component
-
+            generator_id: id of the statistics component
             precision: number of precision digits
-
         """
-
         super().__init__()
         self.generator_id = generator_id
         self.precision = precision
@@ -46,7 +43,7 @@ class StatisticsExecutor(CommonExecutor):
     def get_data_kind(self) -> str:
         return DataKind.STATISTICS
 
-    def get_client_executor(self, fl_ctx: FLContext) -> ClientExecutor:
-        client_executor = StatisticsClientExecutor(self.generator_id, self.precision)
-        client_executor.initialize(fl_ctx)
-        return client_executor
+    def get_task_handler(self, fl_ctx: FLContext):
+        task_handler = StatisticsTaskHandler(self.generator_id, self.precision)
+        task_handler.initialize(fl_ctx)
+        return task_handler

@@ -196,6 +196,30 @@ FL Simulator (described in the next section), you can simply mount in any direct
 your FLARE application code, and run the Simulator within the Docker container with
 all dependencies installed.
 
+Ways to Run NVFLARE
+===================
+NVFLARE can currently support running with the FL Simulator, POC mode, or Production mode.
+
+FL Simulator is lightweight and uses threads to simulate different clients.
+The code used for the simulator can be directly used in production mode.
+
+POC mode is an insecure deployment run locally on one machine without worry about TLS certificates. Each client 
+and Server are running on different processes
+
+Production mode is secure with TLS certificates - depending the choice the deployment, you can further choose:
+
+  - HA or non-HA
+  - Local or remote
+  - On-premise or on cloud
+
+Using non-HA, secure, local mode (all clients and server running on the same host), production mode is very similar to POC mode except it is secure.
+
+Which mode should I choose for running NVFLARE?
+
+  - For a quick research run, use the FL Simulator
+  - For simulating real cases within the same machine, use POC or production (local, non-HA, secure) mode. POC has convenient ``nvflare poc`` commands for ease of use.
+  - For all other cases, use production mode.
+
 .. _starting_fl_simulator:
 
 The FL Simulator

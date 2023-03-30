@@ -10,7 +10,7 @@ sequenceDiagram
     Server->>Client: task: Fed_Stats: statistics_task_1: count, sum, mean,std_dev, min, max 
     Client-->>Server: local statistics
     loop over clients
-        Server->>Server: aggregatation
+        Server->>Server: aggregation
     end
     Server->>Client:  task: Fed_Stats: statistics_task_2: var with input global_mean, global_count, histogram with estimated global min/max
     loop over dataset and features

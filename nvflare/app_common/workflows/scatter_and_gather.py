@@ -323,7 +323,11 @@ class ScatterAndGather(Controller):
     def process_result_of_unknown_task(
         self, client: Client, task_name, client_task_id, result: Shareable, fl_ctx: FLContext
     ) -> None:
-        self.log_warning(fl_ctx, "Ignoring result from unknown task.")
+        if self._phase == AppConstants.PHASE_TRAIN and task_name == self.train_task_name:
+            self._accept_train_result(client_name=client.name, result=result, fl_ctx=fl_ctx)
+            self.log_info(fl_ctx, f"Result of unknown task {task_name} sent to aggregator.")
+        else:
+            self.log_error(fl_ctx, "Ignoring result from unknown task.")
 
     def _accept_train_result(self, client_name: str, result: Shareable, fl_ctx: FLContext) -> bool:
 

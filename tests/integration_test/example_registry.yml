@@ -13,3 +13,5 @@ examples:
     prepare_data_script: prepare_data.sh
   - root: advanced/sklearn-svm
     prepare_data_script: prepare_data.sh
+  - root: advanced/psi/user_email_match
+    prepare_data_script: prepare_data.sh

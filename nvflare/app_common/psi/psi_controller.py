@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 from typing import Optional
 
 from nvflare.apis.client import Client
@@ -18,12 +19,12 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import PSIConst
-from nvflare.app_common.executors.client_executor import check_component_type
 from nvflare.app_common.psi.psi_workflow_spec import PSIWorkflow
-from nvflare.app_common.workflows.common_controller import CommonController
+from nvflare.app_common.utils.component_utils import check_component_type
+from nvflare.app_common.workflows.error_handling_controller import ErrorHandlingController
 
 
-class PSIController(CommonController):
+class PSIController(ErrorHandlingController):
     def __init__(self, psi_workflow_id: str):
         super().__init__()
         self.psi_workflow_id = psi_workflow_id
@@ -55,20 +56,20 @@ class PSIController(CommonController):
 
     def start_controller(self, fl_ctx: FLContext):
         self.fl_ctx = fl_ctx
-        psi_workflow = self.load_psi_workflow(fl_ctx, self.psi_workflow_id)
+        psi_workflow = self.load_psi_workflow(fl_ctx)
         self.psi_workflow = psi_workflow
 
     def stop_controller(self, fl_ctx: FLContext):
-        self.psi_workflow.finalize()
+        self.psi_workflow.finalize(fl_ctx)
 
     def process_result_of_unknown_task(
         self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
     ):
         pass
 
-    def load_psi_workflow(self, fl_ctx: FLContext, psi_workflow_id: str) -> PSIWorkflow:
+    def load_psi_workflow(self, fl_ctx: FLContext) -> PSIWorkflow:
         engine = fl_ctx.get_engine()
-        psi_workflow: PSIWorkflow = engine.get_component(psi_workflow_id)
+        psi_workflow: PSIWorkflow = engine.get_component(self.psi_workflow_id)
         psi_workflow.initialize(fl_ctx, controller=self)
         check_component_type(psi_workflow, PSIWorkflow)
         return psi_workflow

@@ -11,16 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 from typing import List
 
 # version>= 1.0.3
 import private_set_intersection.python as psi
 
-# Version 0.3.5
-# import openmined_psi as psi
 
-
-class PsiClient:
+class PSIClient:
     """
     Class to represent the psi Client in a two-party client, server PSI model.
     """
@@ -45,7 +43,6 @@ class PsiClient:
         """
         Args:
             setup_msg: serialized setup str
-        Returns: None
         """
         s_setup_sub = psi.ServerSetup()
         s_setup_sub.ParseFromString(setup_msg)
@@ -57,11 +54,11 @@ class PsiClient:
         return request
 
     def get_intersection(self, server_response_msg: str) -> List[str]:
-        """
-            Return the intersection of client and server items.
+        """Returns the intersection of client and server items.
 
         Args: server_response_msg (PsiProtoResponse): The server response serialized string
-        Returns: The intersection set (List[str]) of client and server items
+        Returns:
+            The intersection set (List[str]) of client and server items
         """
         resp_sub = psi.Response()
         resp_sub.ParseFromString(server_response_msg)
