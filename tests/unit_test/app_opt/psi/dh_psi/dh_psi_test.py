@@ -14,8 +14,8 @@
 import pytest
 
 # temp disable import
-# from nvflare.app_opt.psi.dh_psi.dh_psi_client import PsiClient
-# from nvflare.app_opt.psi.dh_psi.dh_psi_server import PsiServer
+# from nvflare.app_opt.psi.dh_psi.dh_psi_client import PSIClient
+# from nvflare.app_opt.psi.dh_psi.dh_psi_server import PSIServer
 #
 
 
@@ -123,8 +123,8 @@ class TestPSIAlgo:
         #
         # server_items = test_input["server_items"]
         # client_items = test_input["client_items"]
-        # client = PsiClient(client_items)
-        # server = PsiServer(server_items)
+        # client = PSIClient(client_items)
+        # server = PSIServer(server_items)
         # setup_msg = server.setup(len(client_items))
         #
         # client.receive_setup(setup_msg)

@@ -20,7 +20,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
 
 
-class CommonController(Controller, ABC):
+class ErrorHandlingController(Controller, ABC):
     def __init__(self):
         super().__init__()
         self.abort_job_in_error = {
