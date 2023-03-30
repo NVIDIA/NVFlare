@@ -532,4 +532,3 @@ class JobRunner(FLComponent):
             self.stop_run(job_id, fl_ctx)
 
         self.log_info(fl_ctx, "Stop all the running jobs.")
-        self.ask_to_stop = True

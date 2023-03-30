@@ -509,18 +509,19 @@ class FederatedServer(BaseServer):
             if self.admin_server:
                 self.admin_server.client_heartbeat(token, client_name)
 
-            abort_runs = self._sync_client_jobs(request, token)
             reply = self._generate_reply(
                 headers={CellMessageHeaderKeys.MESSAGE: "Heartbeat response"}, payload=None, fl_ctx=fl_ctx
             )
-            if abort_runs:
-                reply.set_header(CellMessageHeaderKeys.ABORT_JOBS, abort_runs)
+            if isinstance(self.server_state, HotState):
+                abort_runs = self._sync_client_jobs(request, token)
+                if abort_runs:
+                    reply.set_header(CellMessageHeaderKeys.ABORT_JOBS, abort_runs)
 
-                display_runs = ",".join(abort_runs)
-                self.logger.debug(
-                    f"These jobs: {display_runs} are not running on the server. "
-                    f"Ask client: {client_name} to abort these runs."
-                )
+                    display_runs = ",".join(abort_runs)
+                    self.logger.debug(
+                        f"These jobs: {display_runs} are not running on the server. "
+                        f"Ask client: {client_name} to abort these runs."
+                    )
             return reply
 
     def _sync_client_jobs(self, request, client_token):
@@ -532,7 +533,7 @@ class FederatedServer(BaseServer):
         # also check jobs that are running on server but not on the client
         jobs_on_server_but_not_on_client = list(set(server_jobs).difference(client_jobs))
         if jobs_on_server_but_not_on_client:
-            # should this job be running on the client?
+            # notify all the participating clients these jobs are not running on server anymore
             for job_id in jobs_on_server_but_not_on_client:
                 job_info = self.engine.run_processes[job_id]
                 participating_clients = job_info.get(RunProcessKey.PARTICIPANTS, None)
@@ -799,7 +800,7 @@ class FederatedServer(BaseServer):
             )
 
     def _turn_to_cold(self):
-        self.engine.stop_all_jobs()
+        self.engine.pause_server_jobs()
         with self.lock:
             self.server_state = ColdState(host=self.server_state.host, port=self.server_state.service_port)
 

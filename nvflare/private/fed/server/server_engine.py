@@ -227,6 +227,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 return_code = process.poll()
                 # if process exit but with Execution exception
                 if return_code and return_code != 0:
+                    self.logger.info(f"Job: {job_id} child process exit with return code {return_code}")
                     run_process_info[RunProcessKey.PROCESS_RETURN_CODE] = return_code
                     self.exception_run_processes[job_id] = run_process_info
                 self.run_processes.pop(job_id, None)
@@ -779,6 +780,12 @@ class ServerEngine(ServerEngineInternalSpec):
     def stop_all_jobs(self):
         fl_ctx = self.new_context()
         self.job_runner.stop_all_runs(fl_ctx)
+        self.job_runner.stop()
+
+    def pause_server_jobs(self):
+        running_jobs = list(self.run_processes.keys())
+        for job_id in running_jobs:
+            self.abort_app_on_server(job_id)
 
     def close(self):
         self.executor.shutdown()
