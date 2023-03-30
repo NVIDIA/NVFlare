@@ -34,7 +34,6 @@ class ClientAppRunner(Runner):
     logger = logging.getLogger("ClientAppRunner")
 
     def __init__(self, time_out=60.0) -> None:
-        super().__init__()
         self.command_agent = None
         self.timeout = time_out
         self.client_runner = None
