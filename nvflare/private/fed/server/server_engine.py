@@ -227,6 +227,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 return_code = process.poll()
                 # if process exit but with Execution exception
                 if return_code and return_code != 0:
+                    run_process_info[RunProcessKey.PROCESS_RETURN_CODE] = return_code
                     self.exception_run_processes[job_id] = run_process_info
                 self.run_processes.pop(job_id, None)
         self.engine_info.status = MachineStatus.STOPPED
