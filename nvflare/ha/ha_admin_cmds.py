@@ -60,7 +60,13 @@ def shutdown_system(args, ctx: CommandContext):
     api = ctx.get_api()
     overseer_agent = api.service_finder.overseer_agent
     try:
-        status = api.do_command("check_status server").get("data")
+        admin_status_result =  api.do_command("admin_check_status server")
+        if admin_status_result.get("status") != APIStatus.SUCCESS:
+            return {
+                "status": APIStatus.ERROR_RUNTIME,
+                "details": "Error: Make sure you are authorized to shutdown the system. Only the prject admin is authorized for shutdown_system.",
+            }
+        status = admin_status_result.get("data")
         if status[0].get("data") != "Engine status: stopped":
             return {
                 "status": APIStatus.ERROR_RUNTIME,
@@ -154,7 +160,13 @@ class HACommandModule(CommandModule):
 
     def shutdown_system(self, args, api):
         try:
-            status = api.do_command("check_status server").get("data")
+            admin_status_result =  api.do_command("admin_check_status server")
+            if admin_status_result.get("status") != APIStatus.SUCCESS:
+                return {
+                    "status": APIStatus.ERROR_RUNTIME,
+                    "details": "Error: Make sure you are authorized to shutdown the system. Only the prject admin is authorized for shutdown_system.",
+                }
+            status = admin_status_result.get("data")
             if status[0].get("data") != "Engine status: stopped":
                 return {
                     "status": APIStatus.ERROR_RUNTIME,

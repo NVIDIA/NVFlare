@@ -61,6 +61,14 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                     confirm=ConfirmMethod.AUTH,
                 ),
                 CommandSpec(
+                    name=AdminCommandNames.ADMIN_CHECK_STATUS,
+                    description="check status for shutdown system command",
+                    usage="admin_check_status",
+                    handler_func=self.admin_check_status,
+                    authz_func=self.command_authz_required,
+                    visible=False,
+                ),
+                CommandSpec(
                     name=AdminCommandNames.SHUTDOWN,
                     description="shutdown the FL server/client",
                     usage="shutdown server|client|all",
@@ -232,6 +240,40 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         server.timeout = timeout
         conn.append_string("admin command timeout has been set to: {}".format(timeout))
         conn.append_success("")
+
+    # Check status server copy specifically for the shutdown_system HA command
+    def admin_check_status(self, conn: Connection, args: List[str]):
+        engine = conn.app_ctx
+        if not isinstance(engine, ServerEngineInternalSpec):
+            raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
+
+        engine_info = engine.get_engine_info()
+        conn.append_string(
+            f"Engine status: {engine_info.status.value}",
+            meta=make_meta(
+                MetaStatusValue.OK,
+                extra={
+                    MetaKey.SERVER_STATUS: engine_info.status.value,
+                    MetaKey.SERVER_START_TIME: engine_info.start_time,
+                },
+            ),
+        )
+        table = conn.append_table(["job_id", "app name"], name=MetaKey.JOBS)
+        for job_id, app_name in engine_info.app_names.items():
+            table.add_row([job_id, app_name], meta={MetaKey.APP_NAME: app_name, MetaKey.JOB_ID: job_id})
+
+        clients = engine.get_clients()
+        conn.append_string("Registered clients: {} ".format(len(clients)))
+
+        if clients:
+            table = conn.append_table(["client", "token", "last connect time"], name=MetaKey.CLIENTS)
+            for c in clients:
+                if not isinstance(c, Client):
+                    raise TypeError("c must be Client but got {}".format(type(c)))
+                table.add_row(
+                    [c.name, str(c.token), time.asctime(time.localtime(c.last_connect_time))],
+                    meta={MetaKey.CLIENT_NAME: c.name, MetaKey.CLIENT_LAST_CONNECT_TIME: c.last_connect_time},
+                )
 
     # Check status
     def check_status(self, conn: Connection, args: List[str]):
