@@ -136,7 +136,7 @@ class CommandUtil(object):
     def must_be_project_admin(self, conn: Connection, args: List[str]):
         if args[0] == AdminCommandNames.ADMIN_CHECK_STATUS and len(args) == 1:
             args.extend(["server"])
-        role=conn.get_prop(ConnProps.USER_ROLE, "")
+        role = conn.get_prop(ConnProps.USER_ROLE, "")
         if role != "project_admin":
             conn.append_error(f"Not authorized as project_admin.", meta=make_meta(MetaStatusValue.NOT_AUTHORIZED))
             return PreAuthzReturnCode.ERROR
