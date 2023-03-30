@@ -28,7 +28,7 @@ class HACommandModule(CommandModule):
     """Command module with commands for management in relation to the high availability framework."""
 
     def __init__(self, overseer_agent: OverseerAgent):
-        self.overseer_agent = overseer_agent  # we should not need self.overseer_agent anymore
+        self.overseer_agent = overseer_agent
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def get_spec(self):
@@ -68,7 +68,7 @@ class HACommandModule(CommandModule):
         Details are used for displaying the response in the CLI, and data is the data in a dict that is provided in FLAdminAPI.
 
         """
-        overseer_agent = ctx.get_api().service_finder.overseer_agent
+        overseer_agent = self.overseer_agent
         return {
             "status": APIStatus.SUCCESS,
             "details": str(overseer_agent.overseer_info),
@@ -76,11 +76,11 @@ class HACommandModule(CommandModule):
         }
 
     def get_active_sp(self, args, ctx: CommandContext):
-        overseer_agent = ctx.get_api().service_finder.overseer_agent
+        overseer_agent = self.overseer_agent
         return {"status": APIStatus.SUCCESS, "details": str(overseer_agent.get_primary_sp())}
 
     def promote_sp(self, args, ctx: CommandContext):
-        overseer_agent = ctx.get_api().service_finder.overseer_agent
+        overseer_agent = self.overseer_agent
         if len(args) != 2:
             return {"status": APIStatus.ERROR_SYNTAX, "details": "usage: promote_sp example1.com:8002:8003"}
 
@@ -99,13 +99,13 @@ class HACommandModule(CommandModule):
 
     def shutdown_system(self, args, ctx: CommandContext):
         api = ctx.get_api()
-        overseer_agent = api.service_finder.overseer_agent
+        overseer_agent = self.overseer_agent
         try:
             admin_status_result = api.do_command(AdminCommandNames.ADMIN_CHECK_STATUS)
             if admin_status_result.get("meta").get("status") == MetaStatusValue.NOT_AUTHORIZED:
                 return {
-                    "status": APIStatus.ERROR_RUNTIME,
-                    "details": "Error: Make sure you are authorized to shut down the system. Only the project admin is authorized for shutdown_system.",
+                    "status": APIStatus.ERROR_AUTHORIZATION,
+                    "details": "Error: Not authorized for this command.",
                 }
             status = admin_status_result.get("data")
             if status[0].get("data") != "Engine status: stopped":
