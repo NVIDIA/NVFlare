@@ -61,7 +61,7 @@ def shutdown_system(args, ctx: CommandContext):
     api = ctx.get_api()
     overseer_agent = api.service_finder.overseer_agent
     try:
-        admin_status_result =  api.do_command(AdminCommandNames.ADMIN_CHECK_STATUS)
+        admin_status_result = api.do_command(AdminCommandNames.ADMIN_CHECK_STATUS)
         if admin_status_result.get("status") != APIStatus.SUCCESS:
             return {
                 "status": APIStatus.ERROR_RUNTIME,
@@ -161,7 +161,7 @@ class HACommandModule(CommandModule):
 
     def shutdown_system(self, args, api):
         try:
-            admin_status_result =  api.do_command(AdminCommandNames.ADMIN_CHECK_STATUS)
+            admin_status_result = api.do_command(AdminCommandNames.ADMIN_CHECK_STATUS)
             if admin_status_result.get("status") != APIStatus.SUCCESS:
                 return {
                     "status": APIStatus.ERROR_RUNTIME,
