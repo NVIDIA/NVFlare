@@ -385,8 +385,8 @@ class JobRunner(FLComponent):
                     )
 
                     if ready_job:
-                        reload_job = job_manager.get_job(ready_job.job_id, fl_ctx)
-                        if reload_job.meta.get(JobMetaKey.STATUS) != RunStatus.SUBMITTED:
+                        if self._check_job_status(job_manager, ready_job.job_id, RunStatus.SUBMITTED, fl_ctx):
+                            self.log_info(fl_ctx, f"Job: {ready_job.job_id} is not in SUBMITTED. It won't be deployed.")
                             continue
                         client_sites = {k: v for k, v in sites.items() if k != "server"}
                         job_id = None
@@ -420,8 +420,10 @@ class JobRunner(FLComponent):
                             else:
                                 deployable_clients = client_sites
 
-                            job = job_manager.get_job(ready_job.job_id, fl_ctx)
-                            if job.meta.get(JobMetaKey.STATUS) != RunStatus.DISPATCHED:
+                            if self._check_job_status(job_manager, ready_job.job_id, RunStatus.DISPATCHED, fl_ctx):
+                                self.log_info(
+                                    fl_ctx, f"Job: {ready_job.job_id} is not in DISPATCHED. It won't be start to run."
+                                )
                                 continue
 
                             self._start_run(
@@ -458,6 +460,10 @@ class JobRunner(FLComponent):
         else:
             self.log_error(fl_ctx, "There's no Job Manager defined. Won't be able to run the jobs.")
 
+    def _check_job_status(self, job_manager, job_id, job_run_status, fl_ctx: FLContext):
+        reload_job = job_manager.get_job(job_id, fl_ctx)
+        return reload_job.meta.get(JobMetaKey.STATUS) != job_run_status
+
     def stop(self):
         self.ask_to_stop = True
 
@@ -489,10 +495,10 @@ class JobRunner(FLComponent):
         for job in all_jobs:
             try:
                 job_manager.set_status(job.job_id, RunStatus.ABANDONED, fl_ctx)
-                self.logger.info(f"Update the previous running job: {job.job_id} to FAILED_TO_FINISH.")
+                self.logger.info(f"Update the previous running job: {job.job_id} to ABANDONED.")
             except Exception as e:
                 self.log_error(
-                    fl_ctx, f"Failed to update the job: {job.job_id} to FAILED_TO_FINISH: {secure_format_exception(e)}."
+                    fl_ctx, f"Failed to update the job: {job.job_id} to ABANDONED: {secure_format_exception(e)}."
                 )
 
     def stop_run(self, job_id: str, fl_ctx: FLContext):

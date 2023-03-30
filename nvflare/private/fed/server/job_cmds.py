@@ -21,7 +21,7 @@ from typing import Dict, List
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
 from nvflare.apis.client import Client
-from nvflare.apis.fl_constant import AdminCommandNames, RunProcessKey, SystemComponents
+from nvflare.apis.fl_constant import AdminCommandNames, RunProcessKey
 from nvflare.apis.job_def import Job, JobDataKey, JobMetaKey, TopDir
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.apis.utils.job_utils import convert_legacy_zipped_app_to_job
@@ -407,13 +407,18 @@ class JobCommandModule(CommandModule, CommandUtil):
         try:
             job_id = conn.get_prop(self.JOB_ID)
             with engine.new_context() as fl_ctx:
-                job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
+                job_manager = engine.job_def_manager
                 job = job_manager.get_job(job_id, fl_ctx)
-                if job.meta.get(JobMetaKey.STATUS) in [RunStatus.SUBMITTED, RunStatus.DISPATCHED]:
+                job_status = job.meta.get(JobMetaKey.STATUS)
+                if job_status in [RunStatus.SUBMITTED, RunStatus.DISPATCHED]:
                     job_manager.set_status(job.job_id, RunStatus.FINISHED_ABORTED, fl_ctx)
                     conn.append_string(f"Abort the job: {job_id} before run.")
                     conn.append_success("", make_meta(MetaStatusValue.OK))
                     return
+                elif job_status.startswith("FINISHED:"):
+                    message = f"Job for {job_id} is already completed."
+                    conn.append_string(message)
+                    conn.append_success("", make_meta(MetaStatusValue.OK, message))
                 else:
                     message = job_runner.stop_run(job_id, fl_ctx)
                     if message:
