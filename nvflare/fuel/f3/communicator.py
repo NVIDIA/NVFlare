@@ -201,7 +201,7 @@ class Communicator:
 
         if not connector:
             log.error(f"Connector {driver.get_name()}:{handle} is not found")
-            raise CommError(CommError.ERROR, "Logic error. Connector {driver.get_name()}:{handle} not found")
+            raise CommError(CommError.ERROR, f"Logic error. Connector {driver.get_name()}:{handle} not found")
 
         self.conn_manager.start_connector(connector)
 

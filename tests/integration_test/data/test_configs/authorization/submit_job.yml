@@ -13,8 +13,7 @@ tests:
         "actions": [ "submit_job np_sag" ]
         "admin_user_name": "trainer@a.org"
         "result":
-          "type": "run_state"
-          "data": {}
+          "type": "job_submit_success"
       - "trigger":
           "type": "run_state"
           "data": { "run_finished": True }
@@ -33,8 +32,7 @@ tests:
         "actions": [ "submit_job np_sag" ]
         "admin_user_name": "trainer@b.org"
         "result":
-          "type": "run_state"
-          "data": {}
+          "type": "job_submit_success"
       - "trigger":
           "type": "run_state"
           "data": { "run_finished": True }

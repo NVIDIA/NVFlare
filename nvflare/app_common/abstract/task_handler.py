@@ -11,22 +11,19 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 from abc import ABC, abstractmethod
 from typing import Optional
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-from nvflare.app_common.executors.init_final_component import InitFinalComponent
+from nvflare.apis.signal import Signal
+from nvflare.app_common.abstract.init_final_component import InitFinalComponent
 from nvflare.app_common.utils.component_utils import check_component_type
 
 
-class ClientExecutor(InitFinalComponent, ABC):
-    """
-    ClientExecutor is to be used together with CommonExecutor,
-    where most of the error handling, local component initialization exception handling, finalize are implemented.
-    how sharable return to server by converting to DXO is also handled by Common Executor
-    This class is focused on compute and return results only for given task
-    """
+class TaskHandler(InitFinalComponent, ABC):
+    """TaskHandler focuses on computing and returning results only for given task."""
 
     def __init__(self, local_comp_id: str, local_comp_type: type):
         super().__init__()
@@ -41,9 +38,7 @@ class ClientExecutor(InitFinalComponent, ABC):
         the server hasn't communicated to the local component yet.
         Args:
             fl_ctx: fl_ctx: FLContext of the running environment
-        Returns:
         """
-
         self.fl_ctx = fl_ctx
         self.load_and_init_local_comp(fl_ctx)
 
@@ -55,14 +50,17 @@ class ClientExecutor(InitFinalComponent, ABC):
         self.local_comp = local_comp
 
     @abstractmethod
-    def client_exec(self, task_name: str, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
-        """
+    def execute_task(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
+        """Executes a task.
+
         Args:
             task_name: task name
-            shareable: input from server
+            shareable: input data
             fl_ctx: FLContext
+            abort_signal (Signal): signal to check during execution to determine whether this task is aborted.
 
-        Returns: DataKind, Shareable Tuple
+        Returns:
+            Output data
         """
         pass
 

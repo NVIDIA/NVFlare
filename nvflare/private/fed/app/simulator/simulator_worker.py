@@ -119,6 +119,7 @@ class ClientTaskWorker(FLComponent):
         self.logger.info(f"Clean up ClientRunner for : {client.client_name} ")
 
     def run(self, args, conn):
+        self.logger.info("ClientTaskWorker started to run")
         admin_agent = None
         client = None
         try:
@@ -160,7 +161,9 @@ class ClientTaskWorker(FLComponent):
 
         client.token = args.token
         self._set_client_status(client, deploy_args, args.simulator_root)
+        start = time.time()
         self._create_client_cell(client, args.root_url, args.parent_url)
+        self.logger.debug(f"Complete _create_client_cell.  Time to create client job cell: {time.time() - start}")
         return client
 
     def _set_client_status(self, client, deploy_args, simulator_root):
@@ -174,6 +177,7 @@ class ClientTaskWorker(FLComponent):
     def _create_client_cell(self, federated_client, root_url, parent_url):
         fqcn = FQCN.join([federated_client.client_name, SimulatorConstants.JOB_NAME])
         credentials = {}
+        parent_url = None
         cell = Cell(
             fqcn=fqcn,
             root_url=root_url,

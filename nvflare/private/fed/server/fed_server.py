@@ -173,6 +173,11 @@ class BaseServer(ABC):
         self.cell.start()
         mpm.add_cleanup_cb(self.cell.stop)
 
+        # return self.start()
+        cleanup_thread = threading.Thread(target=self.client_cleanup)
+        # heartbeat_thread.daemon = True
+        cleanup_thread.start()
+
     def client_cleanup(self):
         while not self.shutdown:
             self.remove_dead_clients()
