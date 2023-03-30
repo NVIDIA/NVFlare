@@ -3,7 +3,7 @@
   "workflows": [
     {
       "id": "DhPSIController",
-      "path": "nvflare.app_common.workflows.dh_psi_controller.DhPSIController",
+      "name": "DhPSIController",
       "args": {
       }
     }
