@@ -30,7 +30,6 @@ class ReservedHeaderKey(object):
     WORKFLOW = ReservedKey.WORKFLOW
     AUDIT_EVENT_ID = ReservedKey.AUDIT_EVENT_ID
     CONTENT_TYPE = "__content_type__"
-    SSID = "__ssid__"
 
 
 class Shareable(dict):

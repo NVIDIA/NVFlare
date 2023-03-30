@@ -23,7 +23,7 @@ from nvflare.apis.fl_constant import ReturnCode as ShareableRC
 from nvflare.apis.fl_constant import ServerCommandKey, ServerCommandNames
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
-from nvflare.apis.shareable import ReservedHeaderKey, Shareable
+from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.fuel.f3.cellnet.cell import FQCN, Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
@@ -195,26 +195,26 @@ class Communicator:
             size = len(task.payload)
             task.payload = fobs.loads(task.payload)
             task_name = task.payload.get_header(ServerCommandKey.TASK_NAME)
-            task.payload.add_cookie(ReservedHeaderKey.SSID, ssid)
+            fl_ctx.set_prop(FLContextKey.SSID, ssid)
             if task_name not in [SpecialTaskName.END_RUN, SpecialTaskName.TRY_AGAIN]:
                 self.logger.info(
                     f"Received from {project_name} server "
-                    f" ({size} Bytes). pull_task: {task_name} time: {end_time - start_time} seconds"
+                    f" ({size} Bytes). getTask: {task_name} time: {end_time - start_time} seconds"
                 )
         elif return_code == ReturnCode.AUTHENTICATION_ERROR:
-            self.logger.warning("pull_task request authentication failed.")
+            self.logger.warning("get_task request authentication failed.")
             time.sleep(5.0)
             return None
         else:
             task = None
-            self.logger.warning(f"Failed to pull_task from {project_name} server. Will try it again.")
+            self.logger.warning(f"Failed to get_task from {project_name} server. Will try it again.")
 
         return task
 
     def submit_update(
         self, servers, project_name, token, ssid, fl_ctx: FLContext, client_name, shareable, execute_task_name
     ):
-        """Submits the task execution result back to the server.
+        """Submit the task execution result back to the server.
 
         Args:
             servers: FL servers
@@ -236,7 +236,7 @@ class Communicator:
 
         # shareable.add_cookie(name=FLContextKey.TASK_ID, data=task_id)
         shareable.set_header(FLContextKey.TASK_NAME, execute_task_name)
-        task_ssid = shareable.get_cookie(ReservedHeaderKey.SSID)
+        task_ssid = fl_ctx.get_prop(FLContextKey.SSID)
         if task_ssid != ssid:
             self.logger.warning("submit_update request failed because SSID mismatch.")
             return ReturnCode.INVALID_SESSION
