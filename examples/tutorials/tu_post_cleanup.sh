@@ -10,9 +10,10 @@ workspace="/tmp/workspace"
 # if the project name changed, you need to change here too
 project_name="example_project"
 
-prod_dir=$( ls -td /tmp/workspace/${project_name}/*/  | head -1)
+prod_dir=$(ls -td ${workspace}/${project_name}/prod_* | head -1)
+server_name="localhost"
 
-server_startup_dir="${prod_dir}/server1/startup"
+server_startup_dir="${prod_dir}/${server_name}/startup"
 site_1_startup_dir="${prod_dir}/site-1/startup"
 site_2_startup_dir="${prod_dir}/site-2/startup"
 
@@ -23,5 +24,6 @@ done
 
 # remove workspace
 if [ -f "${workspace}" ]; then
+  echo "removing ${workspace}"
   rm -r "${workspace}"
 fi

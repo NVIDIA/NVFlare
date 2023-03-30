@@ -29,23 +29,33 @@ if [ ! -f "${workspace}/project.yml" ]; then
      mv "project.yml" ${workspace}/.
 fi
 
+server_name="localhost"
+
+python <<END2
+from nvflare.lighter.utils import update_project_server_name
+
+project_config_file = "${workspace}/project.yml"
+default_server_name = "server1"
+server_name = "${server_name}"
+
+update_project_server_name(project_config_file, default_server_name, server_name)
+END2
+
 nvflare provision  -p "${workspace}/project.yml" -w ${workspace}
 
 # get last provision project directory
 # note the default project name is called "example_project"
 # if the project name changed, you need to change here too
 project_name="example_project"
-
-prod_dir=$( ls -td ${workspace}/${project_name}/*/  | head -1)
+prod_dir=$(ls -td ${workspace}/${project_name}/prod_* | head -1)
 
 # update server/local/resources.json
 python <<END1
 from nvflare.lighter.utils import update_storage_locations
-update_storage_locations(local_dir = "${prod_dir}/server1/local", workspace = "${workspace}")
+update_storage_locations(local_dir = "${prod_dir}/${server_name}/local", workspace = "${workspace}")
 END1
 
-
-server_startup_dir="${prod_dir}/server1/startup"
+server_startup_dir="${prod_dir}/${server_name}/startup"
 site_1_startup_dir="${prod_dir}/site-1/startup"
 site_2_startup_dir="${prod_dir}/site-2/startup"
 
@@ -55,13 +65,14 @@ for s in $server_startup_dir $site_1_startup_dir $site_2_startup_dir ; do
 done
 
 # Check if the FL system is ready
-sleep 20
-
 python <<END
 
 import os, time
 from nvflare.fuel.flare_api.flare_api import new_secure_session
 from nvflare.fuel.flare_api.flare_api import NoConnection
+
+print("wait for 20 seconds before FL system is up")
+time.sleep(20)
 
 project_name = "${project_name}"
 username = "admin@nvidia.com"
