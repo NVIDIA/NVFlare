@@ -55,12 +55,9 @@ from nvflare.lighter.utils import update_storage_locations
 update_storage_locations(local_dir = "${prod_dir}/${server_name}/local", workspace = "${workspace}")
 END1
 
-server_startup_dir="${prod_dir}/${server_name}/startup"
-site_1_startup_dir="${prod_dir}/site-1/startup"
-site_2_startup_dir="${prod_dir}/site-2/startup"
-
-for s in $server_startup_dir $site_1_startup_dir $site_2_startup_dir ; do
-   cmd="${s}/start.sh"
+for s in "site-1" "site-2" $server_name ; do
+  startup_dir="${prod_dir}/${s}/startup"
+   cmd="${startup_dir}/start.sh"
    eval $cmd
 done
 
