@@ -431,11 +431,7 @@ class Session(SessionSpec):
             if not job_status:
                 raise InternalError(f"missing status in job {job_id}")
 
-            if job_status in [
-                RunStatus.FINISHED_EXECUTION_EXCEPTION.value,
-                RunStatus.FINISHED_COMPLETED.value,
-                RunStatus.FINISHED_ABORTED,
-            ]:
+            if job_status.startswith("FINISHED"):
                 return MonitorReturnCode.JOB_FINISHED
 
             time.sleep(poll_interval)
