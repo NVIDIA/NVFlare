@@ -10,12 +10,12 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 workspace="/tmp/workspace"
 # clean up to get a fresh restart
-if [ -f "${workspace}" ]; then
+if [ -d "${workspace}" ]; then
    rm -r workspace
 fi
 
 # create the workspace directory if not exists
-if [ ! -f "${workspace}" ]; then
+if [ ! -d "${workspace}" ]; then
    mkdir -p ${workspace}
 fi
 
