@@ -1,7 +1,7 @@
 # Calculate Image Histogram with NVIDIA FLARE
 
 Compute the local and global image statistics.
-You can also follow the [notebook](./image_stats.ipynb) or the following:
+You can also follow the [notebook](../image_stats.ipynb) or the following:
 
 ## Setup NVFLARE
 Follow the [Getting Started](https://nvflare.readthedocs.io/en/main/getting_started.html) to setup virtual environment and install NVFLARE
@@ -119,7 +119,7 @@ and generator_id = "local_hist_generator". Where local_hist_generator will be lo
         "id": "Executor",
         "path": "nvflare.app_common.executors.statistics.statistics_executor.StatisticsExecutor",
         "args": {
-          "generator_id": "image_stats_generator"
+          "generator_id": "local_hist_generator"
         }
       }
     }
@@ -128,7 +128,7 @@ and generator_id = "local_hist_generator". Where local_hist_generator will be lo
 the local stats generator is defined as FLComponent (ImageStatistics)
 ```
     {
-      "id": "image_stats_generator",
+      "id": "local_hist_generator",
       "path": "image_statistics.ImageStatistics",
       "args": {
         "data_root": "/tmp/nvflare/data"

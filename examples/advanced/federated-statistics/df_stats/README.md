@@ -1,7 +1,7 @@
 # Data Frame Federated Statistics 
 
 In this example, we will show how to generate federated statistics for data that can be represented as Pandas Data Frame.
-You can also follow the [notebook](./df_stats.ipynb) or the following:
+You can also follow the [notebook](../df_stats.ipynb) or the following:
 
 
 ## Setup NVFLARE
