@@ -108,7 +108,6 @@ class ClientAppRunner(Runner):
         # Start the command agent
         self.command_agent = CommandAgent(federated_client)
         self.command_agent.start(fl_ctx)
-        self.command_agent.register_cell_cb()
 
     def sync_up_parents_process(self, federated_client):
         run_manager = federated_client.run_manager
