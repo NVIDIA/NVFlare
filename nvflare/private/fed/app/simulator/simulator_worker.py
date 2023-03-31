@@ -90,10 +90,11 @@ class ClientTaskWorker(FLComponent):
                 run_task_tries = 0
                 while True:
                     interval, task_processed = client_runner.fetch_and_run_one_task(fl_ctx)
-                    self.logger.info(
-                        f"Finished one task run for client: {client.client_name} "
-                        f"interval: {interval} task_processed: {task_processed}"
-                    )
+                    if task_processed:
+                        self.logger.info(
+                            f"Finished one task run for client: {client.client_name} "
+                            f"interval: {interval} task_processed: {task_processed}"
+                        )
 
                     # if any client got the END_RUN event, stop the simulator run.
                     if client_runner.end_run_fired or client_runner.asked_to_stop:
