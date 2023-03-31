@@ -9,7 +9,7 @@ which is a PyTorch-based, open-source framework for deep learning in healthcare 
 
 ### FedCE
 This example illustrates the fair federated learning algorithm [FedCE](https://arxiv.org/abs/2303.16520) accepted to [CVPR2023](https://cvpr2023.thecvf.com/). 
-It estimates client contribution in gradient and data spaces, and utilizes this client Contribution Estimation to guide the federated learning process towards  better collaboration and performance fairness.
+It estimates client contribution in gradient and data spaces, and utilizes this client Contribution Estimation to guide the federated learning process towards better collaboration and performance fairness.
 
 ## License
 - The code in this directory is released under Apache v2 License.
