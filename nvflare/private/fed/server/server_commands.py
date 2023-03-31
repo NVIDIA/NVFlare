@@ -184,7 +184,7 @@ class GetTaskCommand(CommandProcessor, ServerStateCheck):
 
         if taskname != SpecialTaskName.TRY_AGAIN:
             self.logger.info(
-                f"return task to client.  client_name:{client.name}  task_name: {taskname}   task_id:{task_id}  "
+                f"return task to client.  client_name: {client.name}  task_name: {taskname}   task_id: {task_id}  "
                 f"sharable_header_task_id: {shareable.get_header(key=FLContextKey.TASK_ID)}"
             )
         self.logger.debug(f"Get_task processing time: {time.time()-start_time} for client: {client.name}")
