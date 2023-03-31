@@ -37,7 +37,7 @@ class ClientRunnerConfig(object):
         task_result_filters: dict,  # task_name => list of filters
         handlers=None,  # list of event handlers
         components=None,  # dict of extra python objects: id => object
-        default_task_fetch_interval=None,
+        default_task_fetch_interval: float = 0.5,
     ):
         """To init ClientRunnerConfig.
 
@@ -48,14 +48,14 @@ class ClientRunnerConfig(object):
             handlers: list of event handlers
             components: dict of extra python objects: id => object
             default_task_fetch_interval: default task fetch interval before getting the correct value from server.
-                if not set, will be set to 0.1.
+                default is set to 0.5.
         """
         self.task_table = task_table
         self.task_data_filters = task_data_filters
         self.task_result_filters = task_result_filters
         self.handlers = handlers
         self.components = components
-        self.default_task_fetch_interval = 0.1 if default_task_fetch_interval is None else default_task_fetch_interval
+        self.default_task_fetch_interval = default_task_fetch_interval
 
         if not components:
             self.components = {}
