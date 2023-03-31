@@ -14,7 +14,6 @@
 import logging
 import os
 import sys
-import time
 
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.workspace import Workspace
@@ -38,12 +37,14 @@ class ClientAppRunner(Runner):
         self.timeout = time_out
         self.client_runner = None
 
-    def start_run(self, app_root, args, config_folder, federated_client, secure_train):
+    def start_run(self, app_root, args, config_folder, federated_client, secure_train, sp):
         self.client_runner = self.create_client_runner(app_root, args, config_folder, federated_client, secure_train)
+
         federated_client.set_client_runner(self.client_runner)
-        while federated_client.communicator.cell is None:
-            self.logger.info("Waiting for the client job cell to be created ....")
-            time.sleep(1.0)
+        federated_client.set_primary_sp(sp)
+
+        with self.client_runner.engine.new_context() as fl_ctx:
+            self.start_command_agent(args, federated_client, fl_ctx)
 
         self.sync_up_parents_process(federated_client)
 
@@ -89,7 +90,7 @@ class ClientAppRunner(Runner):
             run_manager.add_handler(client_runner)
             fl_ctx.set_prop(FLContextKey.RUNNER, client_runner, private=True)
 
-            self.start_command_agent(args, client_runner, federated_client, fl_ctx)
+            # self.start_command_agent(args, client_runner, federated_client, fl_ctx)
         return client_runner
 
     def create_run_manager(self, args, conf, federated_client, workspace):
@@ -103,16 +104,10 @@ class ClientAppRunner(Runner):
             conf=conf,
         )
 
-    def start_command_agent(self, args, client_runner, federated_client, fl_ctx):
-        while federated_client.cell is None:
-            self.logger.info("Waiting for the client cell to be created ....")
-            time.sleep(1.0)
-
+    def start_command_agent(self, args, federated_client, fl_ctx):
         # Start the command agent
-        # self.command_agent = CommandAgent(federated_client, int(args.listen_port), client_runner)
-        self.command_agent = CommandAgent(federated_client, client_runner)
+        self.command_agent = CommandAgent(federated_client)
         self.command_agent.start(fl_ctx)
-        client_runner.command_agent = self.command_agent
 
     def sync_up_parents_process(self, federated_client):
         run_manager = federated_client.run_manager

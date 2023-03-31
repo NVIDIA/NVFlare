@@ -158,12 +158,12 @@ class FederatedClientBase:
     def set_sp(self, project_name, sp: SP):
         if sp and sp.primary is True:
             server = self.servers[project_name].get("target")
-            scheme = self.servers[project_name].get("scheme", "grpc")
             location = sp.name + ":" + sp.fl_port
             if server != location:
                 self.servers[project_name]["target"] = location
                 self.sp_established = True
 
+                scheme = self.servers[project_name].get("scheme", "grpc")
                 scheme_location = scheme + "://" + location
                 if self.cell:
                     self.cell.change_server_root(scheme_location)
@@ -221,7 +221,6 @@ class FederatedClientBase:
                 time.sleep(self.cell_check_frequency)
             self.logger.info(f"Got client_runner after {time.time()-start} seconds")
             self.client_runner.engine.cell = self.cell
-            self.client_runner.command_agent.register_cell_cb()
         else:
             start = time.time()
             self.logger.info("Wait for engine to be created.")
