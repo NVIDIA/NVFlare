@@ -19,6 +19,7 @@ import subprocess
 import sys
 
 import docker
+import nvflare
 from nvflare.apis.utils.format_check import name_check
 from nvflare.dashboard.application.blob import _write
 from nvflare.lighter import utils
@@ -58,47 +59,59 @@ def start(args):
         pwd = utils.generate_password(8)
         print(f"Project admin credential is {answer} and the password is {pwd}")
         environment.update({"NVFL_CREDENTIAL": f"{answer}:{pwd}"})
-    try:
-        client = docker.from_env()
-    except docker.errors.DockerException:
-        print("Unable to communicate to docker daemon/socket.  Please make sure your docker is up and running.")
-        exit(0)
-    dashboard_image = "nvflare/nvflare"
-    try:
-        print(f"Pulling {dashboard_image}, may take some time to finish.")
-        _ = client.images.pull(dashboard_image)
-    except docker.errors.APIError:
-        print(f"unable to pull {dashboard_image}")
-        exit(1)
-    print(f"Launching {dashboard_image}")
-    print(f"Dashboard will listen to port {args.port}")
-    print(f"{folder} on host mounted to /var/tmp/nvflare/dashboard in container")
-    if environment:
-        print(f"environment vars set to {environment}")
+    if args.image:
+        try:
+            client = docker.from_env()
+        except docker.errors.DockerException:
+            print("Unable to communicate to docker daemon/socket.  Please make sure your docker is up and running.")
+            exit(0)
+        dashboard_image = args.image
+        try:
+            print(f"Pulling {dashboard_image}, may take some time to finish.")
+            _ = client.images.pull(dashboard_image)
+        except docker.errors.APIError:
+            print(f"unable to pull {dashboard_image}")
+            exit(1)
+        print(f"Launching {dashboard_image}")
+        print(f"Dashboard will listen to port {args.port}")
+        print(f"{folder} on host mounted to /var/tmp/nvflare/dashboard in container")
+        if environment:
+            print(f"environment vars set to {environment}")
+        else:
+            print("No additional environment variables set to the launched container.")
+        try:
+            container_obj = client.containers.run(
+                dashboard_image,
+                entrypoint=["/usr/local/bin/python3", "nvflare/dashboard/wsgi.py"],
+                detach=True,
+                auto_remove=True,
+                name="nvflare-dashboard",
+                ports={8443: args.port},
+                volumes={folder: {"bind": "/var/tmp/nvflare/dashboard", "model": "rw"}},
+                environment=environment,
+            )
+        except docker.errors.APIError as e:
+            print(f"Either {dashboard_image} image does not exist or another nvflare-dashboard instance is still running.")
+            print("Please either provide an existing container image or stop the running container instance.")
+            print(e)
+            exit(1)
+        if container_obj:
+            print("Dashboard container started")
+            print("Container name nvflare-dashboard")
+            print(f"id is {container_obj.id}")
+        else:
+            print("Container failed to start")
     else:
-        print("No additional environment variables set to the launched container.")
-    try:
-        container_obj = client.containers.run(
-            dashboard_image,
-            entrypoint=["/usr/local/bin/python3", "nvflare/dashboard/wsgi.py"],
-            detach=True,
-            auto_remove=True,
-            name="nvflare-dashboard",
-            ports={8443: args.port},
-            volumes={folder: {"bind": "/var/tmp/nvflare/dashboard", "model": "rw"}},
-            environment=environment,
+        print(f"Launching dashboard locally from {folder}")
+        print(f"Dashboard will listen to port {args.port}")
+        environment.update({
+            "NVFL_WEB_ROOT": folder,
+            "NVFL_WEB_PORT": args.port,
+        })
+        dashboard_process = subprocess.run(
+            [sys.executable, f"{nvflare.__path__[0]}/dashboard/wsgi.py"],  # HACK: Any better way to reference this file?
+            env=environment
         )
-    except docker.errors.APIError as e:
-        print(f"Either {dashboard_image} image does not exist or another nvflare-dashboard instance is still running.")
-        print("Please either provide an existing container image or stop the running container instance.")
-        print(e)
-        exit(1)
-    if container_obj:
-        print("Dashboard container started")
-        print("Container name nvflare-dashboard")
-        print(f"id is {container_obj.id}")
-    else:
-        print("Container failed to start")
 
 
 def stop():
@@ -165,6 +178,13 @@ def define_dashboard_parser(parser):
     )
     parser.add_argument("-e", "--env", action="append", help="additonal environment variables: var1=value1")
     parser.add_argument("--cred", help="set credential directly in the form of USER_EMAIL:PASSWORD")
+    parser.add_argument(
+        "-i", "--image",
+        type=str,
+        nargs='?',
+        const="nvflare/nvflare:latest",
+        help="launch dashboard in a container using this image (default if provided: latest official nvflare image)",
+    )
 
 
 def handle_dashboard(args):
