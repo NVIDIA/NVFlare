@@ -311,3 +311,23 @@ def new_message_size_pool(name: str, description="", marks=None) -> HistPool:
     if not marks:
         marks = (0.01, 0.1, 1, 10, 50, 100, 200, 500, 800, 1000)
     return HistPool(name=name, description=description, marks=marks, unit="MB")
+
+
+VALID_HIST_MODES = [StatsMode.COUNT, StatsMode.PERCENT, StatsMode.AVERAGE, StatsMode.MAX, StatsMode.MIN]
+
+
+def parse_hist_mode(mode: str) -> str:
+    if not mode:
+        return StatsMode.COUNT
+
+    if mode.startswith("p"):
+        return StatsMode.PERCENT
+    elif mode.startswith("c"):
+        return StatsMode.COUNT
+    elif mode.startswith("a"):
+        return StatsMode.AVERAGE
+
+    if mode not in VALID_HIST_MODES:
+        return ""
+    else:
+        return mode

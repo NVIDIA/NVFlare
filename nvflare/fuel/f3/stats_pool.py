@@ -98,3 +98,22 @@ class StatsPoolManager:
                     raise ValueError(f"unknown type of pool '{k}'")
                 result[k] = {"type": t, "pool": v.to_dict()}
             return result
+
+    @classmethod
+    def from_dict(cls, d: dict):
+        cls.pools = {}
+        for k, v in d.items():
+            t = v.get("type")
+            if not t:
+                raise ValueError("missing pool type")
+            pd = v.get("pool")
+            if not pd:
+                raise ValueError("missing pool data")
+
+            if t == "hist":
+                p = HistPool.from_dict(pd)
+            elif t == "counter":
+                p = CounterPool.from_dict(pd)
+            else:
+                raise ValueError(f"invalid pool type {t}")
+            cls.pools[k] = p
