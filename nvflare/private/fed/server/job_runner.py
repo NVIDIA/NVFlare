@@ -340,7 +340,11 @@ class JobRunner(FLComponent):
                             )
                             self.abort_client_run(job_id, active_client_sites_names, fl_ctx)
 
-                            job_manager.set_status(job.job_id, RunStatus.FINISHED_EXECUTION_EXCEPTION, fl_ctx)
+                            process_return_code = run_process.get(RunProcessKey.PROCESS_RETURN_CODE)
+                            if process_return_code == -9:
+                                job_manager.set_status(job.job_id, RunStatus.FINISHED_ABNORMAL, fl_ctx)
+                            else:
+                                job_manager.set_status(job.job_id, RunStatus.FINISHED_EXECUTION_EXCEPTION, fl_ctx)
                         else:
                             job_manager.set_status(job.job_id, RunStatus.FINISHED_COMPLETED, fl_ctx)
                         with self.lock:

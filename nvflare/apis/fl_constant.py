@@ -284,6 +284,7 @@ class RunProcessKey(object):
     JOB_ID = "_job_id"
     PARTICIPANTS = "_participants"
     PROCESS_FINISHED = "_process_finished"
+    PROCESS_RETURN_CODE = "_process_return_code"
 
 
 class SystemComponents(object):
