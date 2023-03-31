@@ -1,0 +1,16 @@
+{
+  "root_url": "grpc://localhost:8002",
+  "admin": {
+    "host": "localhost",
+    "port": "8003"
+  },
+  "server": {
+    "clients": ["ca"]
+  },
+  "ca": {
+    "children": ["ca_1"]
+  },
+  "ca_1": {
+    "children": ["ca_1_1"]
+  }
+}

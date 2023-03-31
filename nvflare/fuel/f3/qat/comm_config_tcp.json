@@ -1,0 +1,16 @@
+{
+  "internal": {
+    "scheme": "tcp",
+    "resources": {
+      "host": "localhost",
+      "ports": ["30000-40000"]
+    }
+  },
+  "external": {
+    "scheme": "tcp",
+    "resources": {
+      "host": "localhost",
+      "ports": ["20000-30000"]
+    }
+  }
+}
