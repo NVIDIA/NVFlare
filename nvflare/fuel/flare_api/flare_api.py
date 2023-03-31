@@ -17,7 +17,7 @@ import time
 from typing import List, Optional
 
 from nvflare.apis.fl_constant import AdminCommandNames
-from nvflare.apis.job_def import JobMetaKey, RunStatus
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.client.api import AdminAPI, APIStatus, ResultKey
