@@ -156,10 +156,12 @@ class BaseServer(ABC):
             credentials = {}
         parent_url = None
 
-        if scheme == "uds":
-            listen_target = target
+        parts = target.split(":")
+        if len(parts) > 1:
+            # "0" means all interfaces for all protocols (ipv4 and ipv6)
+            listen_target = "0:" + parts[1]
         else:
-            listen_target = "0:" + target.split(":")[1]
+            listen_target = target
 
         my_fqcn = FQCN.ROOT_SERVER
         self.cell = Cell(

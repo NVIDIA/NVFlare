@@ -1,0 +1,10 @@
+{
+  "root_url": "tcp://localhost:8002",
+  "admin": {
+    "host": "localhost",
+    "port": "8003"
+  },
+  "server": {
+    "clients": ["ca"]
+  }
+}
