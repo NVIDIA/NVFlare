@@ -17,7 +17,7 @@ import time
 from typing import List, Optional
 
 from nvflare.apis.fl_constant import AdminCommandNames
-from nvflare.apis.job_def import JobMetaKey, RunStatus
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.client.api import AdminAPI, APIStatus, ResultKey
@@ -431,11 +431,7 @@ class Session(SessionSpec):
             if not job_status:
                 raise InternalError(f"missing status in job {job_id}")
 
-            if job_status in [
-                RunStatus.FINISHED_EXECUTION_EXCEPTION.value,
-                RunStatus.FINISHED_COMPLETED.value,
-                RunStatus.FINISHED_ABORTED,
-            ]:
+            if job_status.startswith("FINISHED"):
                 return MonitorReturnCode.JOB_FINISHED
 
             time.sleep(poll_interval)
