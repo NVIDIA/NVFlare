@@ -223,7 +223,13 @@ class ServerEngine(ServerEngineInternalSpec):
                     self.logger.debug(f"Job:{job_id} UPDATE_RUN_STATUS didn't finish fast enough.")
                     break
                 time.sleep(0.1)
-            self.run_processes.pop(job_id, None)
+            with self.lock:
+                return_code = process.poll()
+                # if process exit but with Execution exception
+                if return_code and return_code != 0:
+                    run_process_info[RunProcessKey.PROCESS_RETURN_CODE] = return_code
+                    self.exception_run_processes[job_id] = run_process_info
+                self.run_processes.pop(job_id, None)
         self.engine_info.status = MachineStatus.STOPPED
 
     def _start_runner_process(

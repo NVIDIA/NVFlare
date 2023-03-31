@@ -169,6 +169,7 @@ class AdminCommandNames(object):
     DEPLOY_APP = "deploy_app"
     START_APP = "start_app"
     CHECK_STATUS = "check_status"
+    ADMIN_CHECK_STATUS = "admin_check_status"
     ABORT = "abort"
     ABORT_TASK = "abort_task"
     REMOVE_CLIENT = "remove_client"
@@ -283,6 +284,7 @@ class RunProcessKey(object):
     JOB_ID = "_job_id"
     PARTICIPANTS = "_participants"
     PROCESS_FINISHED = "_process_finished"
+    PROCESS_RETURN_CODE = "_process_return_code"
 
 
 class SystemComponents(object):

@@ -140,10 +140,10 @@ class MainProcessMonitor:
         # call and wait for the main_func to complete
         logger = cls.logger()
         logger.debug(f"=========== {cls.name}: started to run forever")
-        rc = 0
         try:
             rc = main_func()
         except Exception as ex:
+            rc = -1
             logger.error(f"main_func execute exception: {secure_format_exception(ex)}")
 
         # start shutdown process

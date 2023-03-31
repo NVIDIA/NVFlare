@@ -383,12 +383,11 @@ class FederatedServer(BaseServer):
 
         cell.start()
         net_agent = NetAgent(cell)
+        mpm.add_cleanup_cb(net_agent.close)
+        mpm.add_cleanup_cb(cell.stop)
 
         self.command_agent = ServerCommandAgent(self.engine, cell)
         self.command_agent.start()
-
-        mpm.add_cleanup_cb(net_agent.close)
-        mpm.add_cleanup_cb(cell.stop)
 
         return cell
 
@@ -659,7 +658,7 @@ class FederatedServer(BaseServer):
         except BaseException as e:
             self.logger.error(f"FL server execution exception: {secure_format_exception(e)}")
         finally:
-            self.engine.update_job_run_status()
+            # self.engine.update_job_run_status()
             self.stop_run_engine_cell()
 
         self.engine.engine_info.status = MachineStatus.STOPPED
