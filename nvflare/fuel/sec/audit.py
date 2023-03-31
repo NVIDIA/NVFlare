@@ -43,6 +43,10 @@ class Auditor(object):
         if action in EXCLUDED_ACTIONS:
             return ""
 
+        # server might already shut down, the audit_file could be None
+        if self.audit_file is None:
+            return ""
+
         event_id = uuid.uuid4()
         parts = [
             f"[E:{event_id}]",
