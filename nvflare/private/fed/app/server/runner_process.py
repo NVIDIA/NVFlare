@@ -150,4 +150,5 @@ if __name__ == "__main__":
     This is the program when starting the child process for running the NVIDIA FLARE server runner.
     """
     # main()
-    mpm.run(main_func=main)
+    rc = mpm.run(main_func=main)
+    exit(rc)

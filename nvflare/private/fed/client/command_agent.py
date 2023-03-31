@@ -28,16 +28,13 @@ from .admin_commands import AdminCommands
 
 
 class CommandAgent(object):
-    def __init__(self, federated_client, client_runner) -> None:
+    def __init__(self, federated_client) -> None:
         """To init the CommandAgent.
 
         Args:
             federated_client: FL client object
-            listen_port: port to listen the command
-            client_runner: ClientRunner object
         """
         self.federated_client = federated_client
-        self.client_runner = client_runner
         self.thread = None
         self.asked_to_stop = False
 
