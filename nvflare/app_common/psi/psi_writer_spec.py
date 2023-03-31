@@ -13,25 +13,23 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
+from typing import List
 
-from nvflare.apis.signal import Signal
-from nvflare.app_common.abstract.init_final_component import InitFinalArgsComponent
+from nvflare.apis.fl_component import FLComponent
+from nvflare.apis.fl_context import FLContext
 
 
-class PSIWorkflow(InitFinalArgsComponent, ABC):
-    """
-    PSIWorkflow is an interface for different PSI algorithms
-    for example, DDH-Based PSI, Homomorphic-based PSI etc.
-    """
+class PSIWriter(FLComponent, ABC):
+    """Interface for saving PSI intersection."""
 
     @abstractmethod
-    def pre_process(self, abort_signal: Signal) -> bool:
-        pass
+    def save(self, intersection: List[str], overwrite_existing: bool, fl_ctx: FLContext):
+        """Saves PSI intersection.
 
-    @abstractmethod
-    def run(self, abort_signal: Signal) -> bool:
-        pass
+        Args:
+            intersection: (List[str]) - Intersection to be saved
+            overwrite_existing: (bool) overwrite the existing one if true
+            fl_ctx: (FLContext)
 
-    @abstractmethod
-    def post_process(self, abort_signal: Signal) -> bool:
+        """
         pass
