@@ -68,7 +68,7 @@ class ClientJsonConfigurator(FedJsonConfigurator):
         self.runner_config = None
         self.executors = []
         self.current_exe = None
-        self._default_task_fetch_interval = None
+        self._default_task_fetch_interval = 0.5
 
     def process_config_element(self, config_ctx: ConfigContext, node: Node):
         FedJsonConfigurator.process_config_element(self, config_ctx, node)
@@ -78,6 +78,12 @@ class ClientJsonConfigurator(FedJsonConfigurator):
 
         # default task fetch interval
         if re.search(r"default_task_fetch_interval", path):
+            if not isinstance(element, int) and not isinstance(element, float):
+                raise ConfigError('"default_task_fetch_interval" must be a number, but got {}'.format(type(element)))
+
+            if element <= 0:
+                raise ConfigError('"default_task_fetch_interval" must > 0, but got {}'.format(element))
+
             self._default_task_fetch_interval = element
             return
 
