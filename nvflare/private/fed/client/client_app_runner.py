@@ -14,7 +14,6 @@
 import logging
 import os
 import sys
-import time
 
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.workspace import Workspace
