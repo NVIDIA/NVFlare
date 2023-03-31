@@ -9,6 +9,9 @@ sleep 30
 
 jupyter nbconvert --to notebook --inplace --execute "${SCRIPT_DIR}/hello_world.ipynb"
 
+#wait for system to stop
+sleep 10
+
 "${SCRIPT_DIR}"/hw_post_cleanup.sh
 
 echo "finished"

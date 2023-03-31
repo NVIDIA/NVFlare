@@ -50,6 +50,7 @@ def main():
     parser.add_argument("--port", "-port", type=str, help="service port", required=True)
     parser.add_argument("--ssid", "-id", type=str, help="SSID", required=True)
     parser.add_argument("--parent_url", "-p", type=str, help="parent_url", required=True)
+    parser.add_argument("--ha_mode", "-ha_mode", type=str, help="HA mode", required=True)
 
     parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
 
@@ -114,6 +115,7 @@ def main():
         try:
             # create the FL server
             server_config, server = deployer.create_fl_server(args, secure_train=secure_train)
+            server.ha_mode = eval(args.ha_mode)
 
             server.cell = server.create_job_cell(
                 args.job_id, args.root_url, args.parent_url, secure_train, server_config

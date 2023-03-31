@@ -146,6 +146,7 @@ class FLContextKey(object):
     CLIENT_RESOURCE_SPECS = "__client_resource_specs"
     JOB_PARTICIPANTS = "__job_participants"
     JOB_BLOCK_REASON = "__job_block_reason"  # why the job should be blocked from scheduling
+    SSID = "__ssid__"
 
 
 class ReservedTopic(object):
@@ -168,6 +169,7 @@ class AdminCommandNames(object):
     DEPLOY_APP = "deploy_app"
     START_APP = "start_app"
     CHECK_STATUS = "check_status"
+    ADMIN_CHECK_STATUS = "admin_check_status"
     ABORT = "abort"
     ABORT_TASK = "abort_task"
     REMOVE_CLIENT = "remove_client"
