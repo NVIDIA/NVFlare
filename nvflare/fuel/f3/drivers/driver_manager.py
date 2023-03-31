@@ -15,6 +15,7 @@ import importlib
 import inspect
 import logging
 import os
+import sys
 from typing import Optional, Type
 
 from nvflare.fuel.f3.comm_error import CommError
@@ -27,8 +28,8 @@ class DriverManager:
     """Transport driver manager"""
 
     def __init__(self):
-        # scheme-<
         self.drivers = {}
+        self.class_cache = set()
 
     def register(self, driver_class: Type[Driver]):
         """Register a driver with Driver Manager
@@ -51,29 +52,45 @@ class DriverManager:
                 self.drivers[key] = driver_class
                 log.debug(f"Driver {driver_class.__name__} is registered for {scheme}")
 
-    def register_folder(self, folder: str, package: str):
-        """Scan the folder and register all drivers
+    def search_folder(self, folder: str, package: Optional[str]):
+        """Search the folder recursively and register all drivers
 
         Args:
             folder: The folder to scan
-            package: The root package for all the drivers
+            package: The root package for all the drivers. If none, the folder is the
+            root of the packages
         """
 
-        class_cache = set()
+        if package is None and folder not in sys.path:
+            sys.path.append(folder)
 
-        for file_name in os.listdir(folder):
-            if file_name != "__init__.py" and file_name[-3:] == ".py":
-                module = package + "." + file_name[:-3]
-                imported = importlib.import_module(module)
-                for _, cls_obj in inspect.getmembers(imported, inspect.isclass):
-                    if cls_obj.__name__ in class_cache:
-                        continue
-                    class_cache.add(cls_obj.__name__)
+        for root, dirs, files in os.walk(folder):
+            for filename in files:
+                if filename.endswith(".py"):
+                    module = filename[:-3]
+                    sub_folder = root[len(folder) :]
+                    if sub_folder:
+                        sub_folder = sub_folder.strip("/").replace("/", ".")
 
-                    spec = inspect.getfullargspec(cls_obj.__init__)
-                    # classes who are abstract or take extra args in __init__ can't be auto-registered
-                    if issubclass(cls_obj, Driver) and not inspect.isabstract(cls_obj) and len(spec.args) == 1:
-                        self.register(cls_obj)
+                    if sub_folder:
+                        module = sub_folder + "." + module
+
+                    if package:
+                        module = package + "." + module
+
+                    imported = importlib.import_module(module)
+                    for _, cls_obj in inspect.getmembers(imported, inspect.isclass):
+                        if cls_obj.__name__ in self.class_cache:
+                            continue
+                        self.class_cache.add(cls_obj.__name__)
+
+                        if issubclass(cls_obj, Driver) and not inspect.isabstract(cls_obj):
+                            spec = inspect.getfullargspec(cls_obj.__init__)
+                            if len(spec.args) == 1:
+                                self.register(cls_obj)
+                            else:
+                                # Can't handle argument in constructor
+                                log.warning(f"Invalid driver, __init__ with extra arguments: {module}")
 
     def find_driver_class(self, scheme_or_url: str) -> Optional[Type[Driver]]:
         """Find the driver class based on scheme or URL
