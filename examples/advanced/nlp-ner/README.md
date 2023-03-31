@@ -81,6 +81,7 @@ The curves can be viewed with TensorBoard, each training for 50 epochs (50 FL ro
 
 For BERT model, the TensorBoard curves are shown below:
 ![All training curve](./figs/training_bert.png)
+
 For GPT-2 model, the TensorBoard curves are shown below:
 ![All training curve](./figs/training_gpt2.png)
 
