@@ -136,7 +136,11 @@ class NLPLearner(Learner):
         # get labels from data
         self.get_labels(df_train)
 
-        # set model
+        # initialize model
+        self.log_info(
+            fl_ctx,
+            f"Creating model {self.model_name}",
+        )
         if self.model_name == "bert-base-uncased":
             self.model = BertModel(model_name=self.model_name, num_labels=self.num_labels)
         elif self.model_name == "gpt2":
