@@ -238,14 +238,18 @@ def wait_for_system_shutdown(sess):
     duration = 0
     cnt = 0
     while status == "started" and duration < timeout:
-        sys_info = sess.get_system_info()
-        status = sys_info.server_info.status
-        curr = time.time()
-        duration = curr - start
-        if cnt % 25 == 0:
-            print("waiting system to shutdown")
-        cnt += 1
-        time.sleep(0.1)
+        try:
+            sys_info = sess.get_system_info()
+            status = sys_info.server_info.status
+            curr = time.time()
+            duration = curr - start
+            if cnt % 25 == 0:
+                print("waiting system to shutdown")
+            cnt += 1
+            time.sleep(0.1)
+        except BaseException:
+            # Server is already shutdown
+            return
 
 
 def _abort_jobs(sess, job_ids):
