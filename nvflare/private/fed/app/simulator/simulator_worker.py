@@ -66,10 +66,15 @@ class ClientTaskWorker(FLComponent):
         args.token = client.token
 
         client_app_runner = SimulatorClientAppRunner()
-        client_runner = client_app_runner.create_client_runner(app_client_root, args, args.config_folder, client, False)
-        client_app_runner.sync_up_parents_process(client)
-        client_runner.engine.cell = client.cell
-        client_runner.init_run(app_client_root, args)
+        client_app_runner.client_runner = client_app_runner.create_client_runner(
+            app_client_root, args, args.config_folder, client, False
+        )
+        client_runner = client_app_runner.client_runner
+        with client_runner.engine.new_context() as fl_ctx:
+            client_app_runner.start_command_agent(args, client, fl_ctx)
+            client_app_runner.sync_up_parents_process(client)
+            client_runner.engine.cell = client.cell
+            client_runner.init_run(app_client_root, args)
 
     def do_one_task(self, client):
         stop_run = False
