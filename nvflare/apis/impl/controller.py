@@ -24,6 +24,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.responder import Responder
 from nvflare.apis.shareable import Shareable, make_copy
 from nvflare.apis.signal import Signal
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
@@ -36,6 +37,12 @@ from .task_manager import TaskCheckStatus, TaskManager
 _TASK_KEY_ENGINE = "___engine"
 _TASK_KEY_MANAGER = "___mgr"
 _TASK_KEY_DONE = "___done"
+
+# wait this long since client death report before treating the client as dead
+_CONFIG_VAR_DEAD_CLIENT_GRACE_PERIOD = "dead_client_grace_period"
+
+# wait this long since job schedule time before starting to check dead clients
+_CONFIG_VAR_DEAD_CLIENT_CHECK_LEAD_TIME = "dead_client_check_lead_time"
 
 
 def _check_positive_int(name, value):
@@ -325,7 +332,8 @@ class Controller(Responder, ControllerSpec, ABC):
         # record the report and to be used by the task monitor
         with self._dead_clients_lock:
             self.log_info(fl_ctx, f"received dead job report from client {client_name}")
-            self._dead_client_reports[client_name] = time.time()
+            if not self._dead_client_reports.get(client_name):
+                self._dead_client_reports[client_name] = time.time()
 
     def process_submission(self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext):
         """Called to process a submission from one client.
@@ -912,7 +920,8 @@ class Controller(Responder, ControllerSpec, ABC):
         See whether the task is only waiting for response from a dead client
         """
         now = time.time()
-        if now - task.schedule_time < 60:
+        lead_time = ConfigService.get_float_var(name=_CONFIG_VAR_DEAD_CLIENT_CHECK_LEAD_TIME, default=30.0)
+        if now - task.schedule_time < lead_time:
             # due to potential race conditions, we'll wait for at least 1 minute after the task
             # is started before checking dead clients.
             return None
@@ -979,10 +988,12 @@ class Controller(Responder, ControllerSpec, ABC):
     def _client_still_alive(self, client_name):
         now = time.time()
         report_time = self._dead_client_reports.get(client_name, None)
+        grace_period = ConfigService.get_float_var(name=_CONFIG_VAR_DEAD_CLIENT_GRACE_PERIOD, default=30.0)
+
         if not report_time:
             # this client is still alive
             return True
-        elif now - report_time < 60:
+        elif now - report_time < grace_period:
             # this report is still fresh - consider the client to be still alive
             return True
 
