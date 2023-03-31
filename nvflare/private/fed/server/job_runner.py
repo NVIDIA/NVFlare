@@ -328,27 +328,30 @@ class JobRunner(FLComponent):
                 if job_id not in engine.run_processes.keys():
                     job = self.running_jobs.get(job_id)
                     if job:
-                        exception_run_processes = engine.exception_run_processes
-                        if job_id in exception_run_processes:
-                            self.log_info(fl_ctx, f"Try to abort run ({job_id}) on clients.")
-                            run_process = exception_run_processes[job_id]
-
-                            # stop client run
-                            participants: Dict[str, Client] = run_process.get(RunProcessKey.PARTICIPANTS)
-                            active_client_sites_names = _get_active_job_participants(
-                                connected_clients=engine.client_manager.clients, participants=participants
-                            )
-                            self.abort_client_run(job_id, active_client_sites_names, fl_ctx)
-
-                            process_return_code = run_process.get(RunProcessKey.PROCESS_RETURN_CODE)
-                            if process_return_code == -9:
-                                job_manager.set_status(job.job_id, RunStatus.FINISHED_ABNORMAL, fl_ctx)
-                            else:
-                                job_manager.set_status(job.job_id, RunStatus.FINISHED_EXECUTION_EXCEPTION, fl_ctx)
+                        if job.run_aborted:
+                            job_manager.set_status(job.job_id, RunStatus.FINISHED_ABORTED, fl_ctx)
                         else:
-                            job_manager.set_status(job.job_id, RunStatus.FINISHED_COMPLETED, fl_ctx)
-                        with self.lock:
-                            del self.running_jobs[job_id]
+                            exception_run_processes = engine.exception_run_processes
+                            if job_id in exception_run_processes:
+                                self.log_info(fl_ctx, f"Try to abort run ({job_id}) on clients.")
+                                run_process = exception_run_processes[job_id]
+
+                                # stop client run
+                                participants: Dict[str, Client] = run_process.get(RunProcessKey.PARTICIPANTS)
+                                active_client_sites_names = _get_active_job_participants(
+                                    connected_clients=engine.client_manager.clients, participants=participants
+                                )
+                                self.abort_client_run(job_id, active_client_sites_names, fl_ctx)
+
+                                process_return_code = run_process.get(RunProcessKey.PROCESS_RETURN_CODE)
+                                if process_return_code == -9:
+                                    job_manager.set_status(job.job_id, RunStatus.FINISHED_ABNORMAL, fl_ctx)
+                                else:
+                                    job_manager.set_status(job.job_id, RunStatus.FINISHED_EXECUTION_EXCEPTION, fl_ctx)
+                            else:
+                                job_manager.set_status(job.job_id, RunStatus.FINISHED_COMPLETED, fl_ctx)
+                            with self.lock:
+                                del self.running_jobs[job_id]
                         fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id)
                         self.fire_event(EventType.JOB_COMPLETED, fl_ctx)
                         self.log_debug(fl_ctx, f"Finished running job:{job.job_id}")
@@ -506,17 +509,13 @@ class JobRunner(FLComponent):
                 )
 
     def stop_run(self, job_id: str, fl_ctx: FLContext):
-        engine = fl_ctx.get_engine()
-        job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
         self._stop_run(job_id, fl_ctx)
 
         job = self.running_jobs.get(job_id)
         if job:
             self.log_info(fl_ctx, f"Stop the job run: {job_id}")
             fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id)
-            job_manager.set_status(job.job_id, RunStatus.FINISHED_ABORTED, fl_ctx)
-            with self.lock:
-                del self.running_jobs[job_id]
+            job.run_aborted = True
             self.fire_event(EventType.JOB_ABORTED, fl_ctx)
             return ""
         else:
