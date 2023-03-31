@@ -16,9 +16,7 @@ from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.constants import ConnProps
-from nvflare.fuel.utils.stats_utils import StatsMode
-
-_VALID_MODES = [StatsMode.COUNT, StatsMode.PERCENT, StatsMode.AVERAGE, StatsMode.MAX, StatsMode.MIN]
+from nvflare.fuel.utils.stats_utils import VALID_HIST_MODES, parse_hist_mode
 
 
 def _to_int(s: str):
@@ -329,22 +327,6 @@ class NetManager(CommandModule):
         conn.append_dict(result)
 
     @staticmethod
-    def _parse_mode(mode: str) -> str:
-        if not mode:
-            return StatsMode.COUNT
-
-        if mode.startswith("p"):
-            return StatsMode.PERCENT
-        elif mode.startswith("c"):
-            return StatsMode.COUNT
-        elif mode.startswith("a"):
-            return StatsMode.AVERAGE
-
-        if mode not in _VALID_MODES:
-            return ""
-        return mode
-
-    @staticmethod
     def _show_table_dict(conn: Connection, d: dict):
         t = conn.append_table(d.get("headers"))
         rows = d.get("rows")
@@ -361,10 +343,10 @@ class NetManager(CommandModule):
         mode = ""
         if len(args) > 2:
             mode = args[2]
-        mode = self._parse_mode(mode)
+        mode = parse_hist_mode(mode)
 
         if not mode:
-            conn.append_error(f"invalid mode '{mode}': must be one of {_VALID_MODES}")
+            conn.append_error(f"invalid mode '{mode}': must be one of {VALID_HIST_MODES}")
             return
 
         reply = self.agent.get_msg_stats_table(target, mode)
@@ -387,10 +369,10 @@ class NetManager(CommandModule):
         mode = ""
         if len(args) > 3:
             mode = args[3]
-        mode = self._parse_mode(mode)
+        mode = parse_hist_mode(mode)
 
         if not mode:
-            conn.append_error(f"invalid mode '{mode}': must be one of {_VALID_MODES}")
+            conn.append_error(f"invalid mode '{mode}': must be one of {VALID_HIST_MODES}")
             return
 
         reply = self.agent.show_pool(target, pool_name, mode)

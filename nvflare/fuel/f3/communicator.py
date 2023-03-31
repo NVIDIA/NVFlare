@@ -11,8 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import atexit
 import logging
 import os
+import weakref
 from typing import Optional
 
 from nvflare.fuel.f3 import drivers
@@ -26,6 +28,16 @@ from nvflare.fuel.f3.message import Message, MessageReceiver
 from nvflare.fuel.f3.sfm.conn_manager import ConnManager, Mode
 
 log = logging.getLogger(__name__)
+_running_instances = weakref.WeakSet()
+
+
+def _exit_func():
+    for c in _running_instances:
+        c.stop()
+        log.debug(f"Communicator {c.local_endpoint.name} was left running, stopped on exit")
+
+
+atexit.register(_exit_func)
 
 
 class Communicator:
@@ -39,6 +51,7 @@ class Communicator:
         self.local_endpoint = local_endpoint
         self.monitors = []
         self.conn_manager = ConnManager(local_endpoint)
+        self.stopped = False
 
     def start(self):
         """Start the communicator and establishing all the connections
@@ -48,6 +61,7 @@ class Communicator:
         """
         self.conn_manager.start()
         log.debug(f"Communicator for local endpoint: {self.local_endpoint.name} is started")
+        _running_instances.add(self)
 
     def stop(self):
         """Stop the communicator and shutdown all the connections
@@ -55,8 +69,17 @@ class Communicator:
         Raises:
             CommError: If any error encountered while shutting down
         """
+        if self.stopped:
+            return
+
         self.conn_manager.stop()
-        log.debug(f"Communicator for local endpoint: {self.local_endpoint.name} has stopped")
+        self.stopped = True
+        try:
+            _running_instances.remove(self)
+        except KeyError as ex:
+            log.error(f"Logical error, communicator {self.local_endpoint.name} is not started: {ex}")
+
+        log.debug(f"Communicator endpoint: {self.local_endpoint.name} has stopped")
 
     def register_monitor(self, monitor: EndpointMonitor):
         """Register a monitor for endpoint lifecycle changes

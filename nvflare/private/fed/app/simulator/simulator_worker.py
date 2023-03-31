@@ -187,6 +187,7 @@ class ClientTaskWorker(FLComponent):
             parent_url=parent_url,
         )
         cell.start()
+        mpm.add_cleanup_cb(cell.stop)
         federated_client.cell = cell
         federated_client.communicator.cell = cell
 
@@ -195,8 +196,6 @@ class ClientTaskWorker(FLComponent):
             time.sleep(0.1)
             if time.time() - start > CELL_CONNECT_CHECK_TIMEOUT:
                 raise RuntimeError("Could not connect to the server cell.")
-
-        mpm.add_cleanup_cb(cell.stop)
 
 
 def _create_connection(listen_port):
