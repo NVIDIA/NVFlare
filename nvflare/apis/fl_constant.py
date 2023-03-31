@@ -169,6 +169,7 @@ class AdminCommandNames(object):
     DEPLOY_APP = "deploy_app"
     START_APP = "start_app"
     CHECK_STATUS = "check_status"
+    ADMIN_CHECK_STATUS = "admin_check_status"
     ABORT = "abort"
     ABORT_TASK = "abort_task"
     REMOVE_CLIENT = "remove_client"
