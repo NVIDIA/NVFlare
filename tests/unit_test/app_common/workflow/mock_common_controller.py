@@ -21,17 +21,17 @@ from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
-from nvflare.app_common.workflows.common_controller import CommonController
+from nvflare.app_common.workflows.error_handling_controller import ErrorHandlingController
 
 
-class MockController(CommonController):
+class MockController(ErrorHandlingController):
     def __init__(self, mock_client_task_result):
         super().__init__()
         self.fl_ctx = FLContext()
         self.task_name = "MockTask"
         self.mock_client_task_result = mock_client_task_result
 
-    @patch.object(CommonController, "broadcast_and_wait")
+    @patch.object(ErrorHandlingController, "broadcast_and_wait")
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         self.log_info(fl_ctx, f"{self.task_name} control flow started.")
         task_input = Shareable()

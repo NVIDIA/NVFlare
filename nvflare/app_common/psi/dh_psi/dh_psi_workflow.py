@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 from typing import Dict, List, NamedTuple, Set
 
 from nvflare.apis.dxo import DXO
@@ -118,7 +119,8 @@ class DhPSIWorkFlow(PSIWorkflow):
     def finalize(self):
         pass
 
-    def get_ordered_sites(self, results: Dict[str, DXO]):
+    @staticmethod
+    def get_ordered_sites(results: Dict[str, DXO]):
         def compare_fn(e):
             return e.size
 

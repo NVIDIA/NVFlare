@@ -283,12 +283,16 @@ def _build_commands(cmd_type: str, poc_workspace: str, excluded: list, white_lis
     :return:
     """
 
+    def is_fl_package_dir(p_dir_name: str) -> bool:
+        return p_dir_name == "admin" or p_dir_name == "server" or p_dir_name.startswith("site-")
+
     if white_list is None:
         white_list = []
     package_commands = []
     for root, dirs, files in os.walk(poc_workspace):
         if root == poc_workspace:
-            for package_dir_name in dirs:
+            fl_dirs = [d for d in dirs if is_fl_package_dir(d)]
+            for package_dir_name in fl_dirs:
                 if package_dir_name not in excluded:
                     if len(white_list) == 0 or package_dir_name in white_list:
                         cmd = get_package_command(cmd_type, poc_workspace, package_dir_name)

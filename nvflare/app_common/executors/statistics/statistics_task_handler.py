@@ -17,21 +17,19 @@ from typing import Dict, List, Optional
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
+from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.statistics_spec import Feature, Histogram, HistogramType, StatisticConfig, Statistics
+from nvflare.app_common.abstract.task_handler import TaskHandler
 from nvflare.app_common.app_constant import StatisticsConstants as StC
-from nvflare.app_common.executors.client_executor import ClientExecutor
 from nvflare.app_common.statistics.numeric_stats import filter_numeric_features
 from nvflare.app_common.statistics.statisitcs_objects_decomposer import fobs_registration
 from nvflare.app_common.statistics.statistics_config_utils import get_feature_bin_range
 from nvflare.fuel.utils import fobs
 
 
-class StatisticsClientExecutor(ClientExecutor):
+class StatisticsTaskHandler(TaskHandler):
     """
-    StatisticsClientExecutor is to be used together with CommonExecutor,
-    where most of the error handling, local component initialization, finalization are implemented.
-    how sharable return to server by converting to DXO is also handled by Common Executor
-    This class is focused on compute and return results only for given task
+    StatisticsTaskHandler is to be used together with StatisticsExecutor.
 
     StatisticsExecutor is client-side executor that perform local statistics generation and communication to
     FL Server global statistics controller. The actual local statistics calculation would delegate to
@@ -41,7 +39,7 @@ class StatisticsClientExecutor(ClientExecutor):
 
     def __init__(self, generator_id: str, precision: int = 4):
         super().__init__(generator_id, Statistics)
-        self.stats_generator: Optional[Statistics] = self.local_comp
+        self.stats_generator: Optional[Statistics] = None
         self.precision = precision
         fobs_registration()
 
@@ -49,7 +47,7 @@ class StatisticsClientExecutor(ClientExecutor):
         super().initialize(fl_ctx)
         self.stats_generator = self.local_comp
 
-    def client_exec(self, task_name: str, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
+    def execute_task(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         client_name = fl_ctx.get_identity_name()
         self.log_info(fl_ctx, f"Executing task '{task_name}' for client: '{client_name}'")
         result = Shareable()

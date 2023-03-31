@@ -151,9 +151,11 @@ class GetTaskCommand(CommandProcessor, ServerStateCheck):
 
         """
 
+        start_time = time.time()
         shared_fl_ctx = data.get_header(ServerCommandKey.PEER_FL_CONTEXT)
         data.set_header(ServerCommandKey.PEER_FL_CONTEXT, FLContext())
         client = data.get_header(ServerCommandKey.FL_CLIENT)
+        self.logger.debug(f"Got the GET_TASK request from client: {client.name}")
         fl_ctx.set_peer_context(shared_fl_ctx)
         server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
         if not server_runner:
@@ -184,6 +186,7 @@ class GetTaskCommand(CommandProcessor, ServerStateCheck):
             f"return task to client.  client_name:{client.name}  task_name: {taskname}   task_id:{task_id}  "
             f"sharable_header_task_id: {shareable.get_header(key=FLContextKey.TASK_ID)}"
         )
+        self.logger.debug(f"Get_task processing time: {time.time()-start_time} for client: {client.name}")
         return shareable
 
     def get_state_check(self, fl_ctx: FLContext) -> dict:
@@ -214,6 +217,7 @@ class SubmitUpdateCommand(CommandProcessor, ServerStateCheck):
 
         """
 
+        start_time = time.time()
         shared_fl_ctx = data.get_header(ServerCommandKey.PEER_FL_CONTEXT)
         data.set_header(ServerCommandKey.PEER_FL_CONTEXT, FLContext())
         shared_fl_ctx.set_prop(FLContextKey.SHAREABLE, data, private=True)
@@ -226,6 +230,7 @@ class SubmitUpdateCommand(CommandProcessor, ServerStateCheck):
         server_runner.process_submission(client, contribution_task_name, task_id, data, fl_ctx)
         self.logger.info(f"submit_update process. client_name:{client.name}   task_id:{task_id}")
 
+        self.logger.debug(f"Submit_result processing time: {time.time()-start_time} for client: {client.name}")
         return ""
 
     def get_state_check(self, fl_ctx: FLContext) -> dict:

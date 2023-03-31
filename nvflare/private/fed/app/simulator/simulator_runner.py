@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import logging.config
 import os
 import shlex
@@ -33,6 +34,7 @@ from nvflare.apis.utils.job_utils import convert_legacy_zipped_app_to_job
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.multi_process_executor_constants import CommunicationMetaData
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
+from nvflare.fuel.f3.stats_pool import StatsPoolManager
 from nvflare.fuel.hci.server.authz import AuthorizationService
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.utils.argument_utils import parse_vars
@@ -52,6 +54,8 @@ from nvflare.security.logging import secure_format_exception
 from nvflare.security.security import EmptyAuthorizer
 
 CLIENT_CREATE_POOL_SIZE = 200
+POOL_STATS_DIR = "pool_stats"
+SIMULATOR_POOL_STATS = "simulator_cell_stats.json"
 
 
 class SimulatorRunner(FLComponent):
@@ -290,17 +294,14 @@ class SimulatorRunner(FLComponent):
     def create_clients(self):
         # Deploy the FL clients
         self.logger.info("Create the simulate clients.")
-        executor = ThreadPoolExecutor(max_workers=CLIENT_CREATE_POOL_SIZE)
-        client_count_lock = threading.Lock()
         clients_created_waiter = threading.Event()
         for client_name in self.client_names:
-            executor.submit(lambda p: self.create_client(*p), [client_name, client_count_lock, clients_created_waiter])
+            self.create_client(client_name)
 
-        clients_created_waiter.wait()
         self.logger.info("Set the client status ready.")
         self._set_client_status()
 
-    def create_client(self, client_name, client_count_lock, clients_created_waiter):
+    def create_client(self, client_name):
         client, self.client_config, self.deploy_args, self.build_ctx = self.deployer.create_fl_client(
             client_name, self.args
         )
@@ -308,10 +309,6 @@ class SimulatorRunner(FLComponent):
         app_root = os.path.join(self.simulator_root, "app_" + client_name)
         app_custom_folder = os.path.join(app_root, "custom")
         sys.path.append(app_custom_folder)
-        with client_count_lock:
-            self.clients_created += 1
-            if self.clients_created == len(self.client_names):
-                clients_created_waiter.set()
 
     def _set_client_status(self):
         for client in self.federated_clients:
@@ -367,9 +364,9 @@ class SimulatorRunner(FLComponent):
                     if not server_thread.is_alive():
                         raise RuntimeError("Could not start the Server App.")
 
-                # Start the client heartbeat calls.
-                for client in self.federated_clients:
-                    client.start_heartbeat(interval=2)
+                # # Start the client heartbeat calls.
+                # for client in self.federated_clients:
+                #     client.start_heartbeat(interval=2)
 
                 if self.args.gpu:
                     gpus = self.args.gpu.split(",")
@@ -384,7 +381,6 @@ class SimulatorRunner(FLComponent):
                     executor.submit(lambda p: self.client_run(*p), [clients, gpus[index]])
 
                 executor.shutdown()
-
                 # Abort the server after all clients finished run
                 self.server.abort_run()
                 server_thread.join()
@@ -435,8 +431,18 @@ class SimulatorRunner(FLComponent):
         #     if time.time() - start > 30.:
         #         break
 
+        self.dump_stats(workspace)
+
         self.server.admin_server.stop()
         self.server.close()
+
+    def dump_stats(self, workspace: Workspace):
+        stats_dict = StatsPoolManager.to_dict()
+        json_object = json.dumps(stats_dict, indent=4)
+        os.makedirs(os.path.join(workspace.get_run_dir(SimulatorConstants.JOB_NAME), POOL_STATS_DIR))
+        file = os.path.join(workspace.get_run_dir(SimulatorConstants.JOB_NAME), POOL_STATS_DIR, SIMULATOR_POOL_STATS)
+        with open(file, "w") as outfile:
+            outfile.write(json_object)
 
 
 class SimulatorClientRunner(FLComponent):
@@ -471,12 +477,16 @@ class SimulatorClientRunner(FLComponent):
                 threading.Thread(target=self._shutdown_client, args=[client]).start()
 
     def _shutdown_client(self, client):
-        client.communicator.heartbeat_done = True
-        time.sleep(3)
-        # client.terminate()
-        client.close()
-        client.status = ClientStatus.STOPPED
-        client.communicator.cell.stop()
+        try:
+            client.communicator.heartbeat_done = True
+            # time.sleep(3)
+            client.terminate()
+            # client.close()
+            client.status = ClientStatus.STOPPED
+            client.communicator.cell.stop()
+        except:
+            # Ignore the exception for the simulator client shutdown
+            self.logger.warn(f"Exception happened to client{client.name} during shutdown ")
 
     def run_client_thread(self, num_of_threads, gpu, lock, timeout=60):
         stop_run = False

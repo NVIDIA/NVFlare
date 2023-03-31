@@ -16,7 +16,7 @@ from enum import IntEnum
 from typing import Dict, List, NamedTuple, Optional
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.executors.init_final_component import InitFinalComponent
+from nvflare.app_common.abstract.init_final_component import InitFinalComponent
 
 """
     Statistics defines methods that user need to implement in order to calculate the local statistics
