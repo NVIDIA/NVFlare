@@ -5,23 +5,29 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 workspace="/tmp/workspace"
 
+if [ ! -d "${workspace}" ]; then
+  echo "workspace ${workspace} doesn't exist, quit"
+  exit
+fi
+
 # get last provision project directory
 # note the default project name is called "example_project"
 # if the project name changed, you need to change here too
 project_name="example_project"
 
-prod_dir=$( ls -td /tmp/workspace/${project_name}/*/  | head -1)
+prod_dir=$(ls -td ${workspace}/${project_name}/prod_* | head -1)
+server_name="localhost"
 
-server_startup_dir="${prod_dir}/server1/startup"
-site_1_startup_dir="${prod_dir}/site-1/startup"
-site_2_startup_dir="${prod_dir}/site-2/startup"
-
-for s in $site_1_startup_dir $site_2_startup_dir $server_startup_dir ; do
-   cmd="echo 'y' | ${s}/stop_fl.sh"
-   eval $cmd
+for s in "site-1" "site-2" $server_name ; do
+  startup_dir="${prod_dir}/${s}/startup"
+  echo "stop $s"
+  cmd="echo 'y' | ${startup_dir}/stop_fl.sh"
+  eval $cmd
 done
 
 # remove workspace
-if [ -f "${workspace}" ]; then
-  rm -r "${workspace}"
+if [ -d "${workspace}" ]; then
+  echo "wait for 30 seconds, then remove ${workspace}"
+  sleep 30
+  rm -r ${workspace}
 fi

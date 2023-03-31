@@ -385,6 +385,9 @@ class JobRunner(FLComponent):
                     )
 
                     if ready_job:
+                        if self._check_job_status(job_manager, ready_job.job_id, RunStatus.SUBMITTED, fl_ctx):
+                            self.log_info(fl_ctx, f"Job: {ready_job.job_id} is not in SUBMITTED. It won't be deployed.")
+                            continue
                         client_sites = {k: v for k, v in sites.items() if k != "server"}
                         job_id = None
                         try:
@@ -416,6 +419,12 @@ class JobRunner(FLComponent):
                                 deployable_clients = {k: v for k, v in client_sites.items() if k not in failed_clients}
                             else:
                                 deployable_clients = client_sites
+
+                            if self._check_job_status(job_manager, ready_job.job_id, RunStatus.DISPATCHED, fl_ctx):
+                                self.log_info(
+                                    fl_ctx, f"Job: {ready_job.job_id} is not in DISPATCHED. It won't be start to run."
+                                )
+                                continue
 
                             self._start_run(
                                 job_id=job_id,
@@ -451,6 +460,10 @@ class JobRunner(FLComponent):
         else:
             self.log_error(fl_ctx, "There's no Job Manager defined. Won't be able to run the jobs.")
 
+    def _check_job_status(self, job_manager, job_id, job_run_status, fl_ctx: FLContext):
+        reload_job = job_manager.get_job(job_id, fl_ctx)
+        return reload_job.meta.get(JobMetaKey.STATUS) != job_run_status
+
     def stop(self):
         self.ask_to_stop = True
 
@@ -469,6 +482,24 @@ class JobRunner(FLComponent):
             self.log_error(
                 fl_ctx, f"Failed to restore the job: {job_id} to the running job table: {secure_format_exception(e)}."
             )
+
+    def update_unfinished_jobs(self, fl_ctx: FLContext):
+        engine = fl_ctx.get_engine()
+        job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
+        all_jobs = []
+        dispatched_jobs = job_manager.get_jobs_by_status(RunStatus.DISPATCHED, fl_ctx)
+        all_jobs.extend(dispatched_jobs)
+        running_jobs = job_manager.get_jobs_by_status(RunStatus.RUNNING, fl_ctx)
+        all_jobs.extend(running_jobs)
+
+        for job in all_jobs:
+            try:
+                job_manager.set_status(job.job_id, RunStatus.ABANDONED, fl_ctx)
+                self.logger.info(f"Update the previous running job: {job.job_id} to ABANDONED.")
+            except Exception as e:
+                self.log_error(
+                    fl_ctx, f"Failed to update the job: {job.job_id} to ABANDONED: {secure_format_exception(e)}."
+                )
 
     def stop_run(self, job_id: str, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()

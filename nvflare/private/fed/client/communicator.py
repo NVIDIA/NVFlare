@@ -195,6 +195,7 @@ class Communicator:
             size = len(task.payload)
             task.payload = fobs.loads(task.payload)
             task_name = task.payload.get_header(ServerCommandKey.TASK_NAME)
+            fl_ctx.set_prop(FLContextKey.SSID, ssid)
             if task_name not in [SpecialTaskName.END_RUN, SpecialTaskName.TRY_AGAIN]:
                 self.logger.info(
                     f"Received from {project_name} server "
@@ -226,7 +227,7 @@ class Communicator:
             execute_task_name: execution task name
 
         Returns:
-            A FederatedSummary message from the server.
+            ReturnCode
         """
         start_time = time.time()
         shared_fl_ctx = FLContext()
@@ -235,6 +236,10 @@ class Communicator:
 
         # shareable.add_cookie(name=FLContextKey.TASK_ID, data=task_id)
         shareable.set_header(FLContextKey.TASK_NAME, execute_task_name)
+        task_ssid = fl_ctx.get_prop(FLContextKey.SSID)
+        if task_ssid != ssid:
+            self.logger.warning("submit_update request failed because SSID mismatch.")
+            return ReturnCode.INVALID_SESSION
         rc = shareable.get_return_code()
         optional = rc == ShareableRC.TASK_ABORTED
 

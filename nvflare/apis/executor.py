@@ -22,6 +22,26 @@ from .shareable import Shareable
 
 
 class Executor(FLComponent, ABC):
+    """Executors run on federated client side.
+
+    Each job can contain multiple applications or apps folder.
+    Each site (server or client) will have 1 app deployed for that job.
+    The server side app contains a Controller that will schedule `Task`.
+    The client side app contains an Executor that will execute corresponding logic based on `Task`'s name.
+
+    """
+
     @abstractmethod
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
+        """Executes a task.
+
+        Args:
+            task_name (str): task name.
+            shareable (Shareable): input shareable.
+            fl_ctx (FLContext): fl context.
+            abort_signal (Signal): signal to check during execution to determine whether this task is aborted.
+
+        Returns:
+            An output shareable.
+        """
         pass

@@ -48,6 +48,7 @@ from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.zip_utils import unzip_all_from_bytes
+from nvflare.ha.overseer_agent import HttpOverseerAgent
 from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeaderKeys, new_cell_message
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.server.server_runner import ServerRunner
@@ -299,6 +300,7 @@ class FederatedServer(BaseServer):
         self.server_state: ServerState = ColdState()
         self.snapshot_persistor = snapshot_persistor
         self.checking_server_state = False
+        self.ha_mode = False
 
     def _register_cellnet_cbs(self):
         self.cell.register_request_cb(
@@ -676,6 +678,8 @@ class FederatedServer(BaseServer):
             self.server_state.service_port = target.split(":")[1]
 
         self.overseer_agent = self._init_agent(args)
+        if isinstance(self.overseer_agent, HttpOverseerAgent):
+            self.ha_mode = True
 
         if secure_train:
             if self.overseer_agent:
@@ -755,31 +759,38 @@ class FederatedServer(BaseServer):
 
     def _turn_to_hot(self):
         # Restore Snapshot
-        with self.snapshot_lock:
-            fl_snapshot = self.snapshot_persistor.retrieve()
-            if fl_snapshot:
-                for run_number, snapshot in fl_snapshot.run_snapshots.items():
-                    if snapshot and not snapshot.completed:
-                        # Restore the workspace
-                        workspace_data = snapshot.get_component_snapshot(SnapshotKey.WORKSPACE).get("content")
-                        dst = os.path.join(self.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_number))
-                        if os.path.exists(dst):
-                            shutil.rmtree(dst, ignore_errors=True)
+        if self.ha_mode:
+            with self.snapshot_lock:
+                fl_snapshot = self.snapshot_persistor.retrieve()
+                if fl_snapshot:
+                    for run_number, snapshot in fl_snapshot.run_snapshots.items():
+                        if snapshot and not snapshot.completed:
+                            # Restore the workspace
+                            workspace_data = snapshot.get_component_snapshot(SnapshotKey.WORKSPACE).get("content")
+                            dst = os.path.join(self.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_number))
+                            if os.path.exists(dst):
+                                shutil.rmtree(dst, ignore_errors=True)
 
-                        os.makedirs(dst, exist_ok=True)
-                        unzip_all_from_bytes(workspace_data, dst)
+                            os.makedirs(dst, exist_ok=True)
+                            unzip_all_from_bytes(workspace_data, dst)
 
-                        job_id = snapshot.get_component_snapshot(SnapshotKey.JOB_INFO).get(SnapshotKey.JOB_ID)
-                        job_clients = snapshot.get_component_snapshot(SnapshotKey.JOB_INFO).get(SnapshotKey.JOB_CLIENTS)
-                        self.logger.info(f"Restore the previous snapshot. Run_number: {run_number}")
-                        with self.engine.new_context() as fl_ctx:
-                            self.engine.job_runner.restore_running_job(
-                                run_number=run_number,
-                                job_id=job_id,
-                                job_clients=job_clients,
-                                snapshot=snapshot,
-                                fl_ctx=fl_ctx,
+                            job_id = snapshot.get_component_snapshot(SnapshotKey.JOB_INFO).get(SnapshotKey.JOB_ID)
+                            job_clients = snapshot.get_component_snapshot(SnapshotKey.JOB_INFO).get(
+                                SnapshotKey.JOB_CLIENTS
                             )
+                            self.logger.info(f"Restore the previous snapshot. Run_number: {run_number}")
+                            with self.engine.new_context() as fl_ctx:
+                                self.engine.job_runner.restore_running_job(
+                                    run_number=run_number,
+                                    job_id=job_id,
+                                    job_clients=job_clients,
+                                    snapshot=snapshot,
+                                    fl_ctx=fl_ctx,
+                                )
+        else:
+            with self.engine.new_context() as fl_ctx:
+                self.snapshot_persistor.delete()
+                self.engine.job_runner.update_unfinished_jobs(fl_ctx=fl_ctx)
 
         with self.lock:
             self.server_state = HotState(
