@@ -16,7 +16,7 @@ import json
 import shutil
 import threading
 import time
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 
 from nvflare.apis.client import Client
 from nvflare.apis.event_type import EventType
@@ -24,6 +24,7 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import AdminCommandNames, FLContextKey, RunProcessKey, SystemComponents
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import ALL_SITES, Job, JobMetaKey, RunStatus
+from nvflare.apis.job_scheduler_spec import DispatchInfo
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
@@ -39,7 +40,7 @@ from nvflare.security.logging import secure_format_exception
 def _send_to_clients(admin_server, client_sites: List[str], engine, message, timeout=None, optional=False):
     clients, invalid_inputs = engine.validate_targets(client_sites)
     if invalid_inputs:
-        raise RuntimeError(f"invalid clients: {invalid_inputs}.")
+        raise RuntimeError(f"unknown clients: {invalid_inputs}.")
     requests = {}
     for c in clients:
         requests.update({c.token: message})
@@ -48,6 +49,27 @@ def _send_to_clients(admin_server, client_sites: List[str], engine, message, tim
         timeout = admin_server.timeout
     replies = admin_server.send_requests(requests, timeout_secs=timeout, optional=optional)
     return replies
+
+
+def _get_active_job_participants(connected_clients: Dict[str, Client], participants: Dict[str, Client]) -> List[str]:
+    """Gets active job participants.
+
+        Some clients might be dropped/dead during job execution.
+        No need to abort those clients.
+
+    Args:
+        connected_clients: Clients that are currently connected.
+        participants: Clients that were participating when the job started.
+
+    Returns:
+        A list of active job participants name.
+    """
+    client_sites_names = []
+    for token, client in participants.items():
+        if token in connected_clients:
+            client_sites_names.append(client.name)
+
+    return client_sites_names
 
 
 class JobRunner(FLComponent):
@@ -63,7 +85,7 @@ class JobRunner(FLComponent):
         if event_type == EventType.SYSTEM_START:
             engine = fl_ctx.get_engine()
             self.scheduler = engine.get_component(SystemComponents.JOB_SCHEDULER)
-        elif event_type in [EventType.JOB_COMPLETED, EventType.JOB_ABORTED, EventType.JOB_CANCELLED]:
+        elif event_type in [EventType.JOB_COMPLETED, EventType.END_RUN]:
             self._save_workspace(fl_ctx)
         elif event_type == EventType.SYSTEM_END:
             self.stop()
@@ -153,7 +175,7 @@ class JobRunner(FLComponent):
 
                 if invalid_inputs:
                     deploy_detail.append("invalid_clients: {}".format(",".join(invalid_inputs)))
-                    raise RuntimeError(f"invalid clients: {invalid_inputs}.")
+                    raise RuntimeError(f"unknown clients: {invalid_inputs}.")
 
                 for c in clients:
                     assert isinstance(c, Client)
@@ -209,7 +231,7 @@ class JobRunner(FLComponent):
         self.fire_event(EventType.JOB_DEPLOYED, fl_ctx)
         return run_number, failed_clients
 
-    def _start_run(self, job_id: str, job: Job, client_sites: dict, fl_ctx: FLContext):
+    def _start_run(self, job_id: str, job: Job, client_sites: Dict[str, DispatchInfo], fl_ctx: FLContext):
         """Start the application
 
         Args:
@@ -241,8 +263,12 @@ class JobRunner(FLComponent):
         engine = fl_ctx.get_engine()
         run_process = engine.run_processes.get(job_id)
         if run_process:
-            client_sites = run_process.get(RunProcessKey.PARTICIPANTS)
-            self.abort_client_run(job_id, client_sites, fl_ctx)
+            participants: Dict[str, Client] = run_process.get(RunProcessKey.PARTICIPANTS)
+            active_client_sites_names = _get_active_job_participants(
+                connected_clients=engine.client_manager.clients, participants=participants
+            )
+
+            self.abort_client_run(job_id, active_client_sites_names, fl_ctx)
 
             err = engine.abort_app_on_server(job_id)
             if err:
@@ -302,18 +328,28 @@ class JobRunner(FLComponent):
                 if job_id not in engine.run_processes.keys():
                     job = self.running_jobs.get(job_id)
                     if job:
-                        exception_run_processes = engine.exception_run_processes
-                        if job_id in exception_run_processes:
-                            self.log_info(fl_ctx, f"Try to abort run ({job_id}) on clients.")
-                            run_process = exception_run_processes[job_id]
-
-                            # stop client run
-                            client_sites = run_process.get(RunProcessKey.PARTICIPANTS)
-                            self.abort_client_run(job_id, client_sites, fl_ctx)
-
-                            job_manager.set_status(job.job_id, RunStatus.FINISHED_EXECUTION_EXCEPTION, fl_ctx)
+                        if job.run_aborted:
+                            job_manager.set_status(job.job_id, RunStatus.FINISHED_ABORTED, fl_ctx)
                         else:
-                            job_manager.set_status(job.job_id, RunStatus.FINISHED_COMPLETED, fl_ctx)
+                            exception_run_processes = engine.exception_run_processes
+                            if job_id in exception_run_processes:
+                                self.log_info(fl_ctx, f"Try to abort run ({job_id}) on clients.")
+                                run_process = exception_run_processes[job_id]
+
+                                # stop client run
+                                participants: Dict[str, Client] = run_process.get(RunProcessKey.PARTICIPANTS)
+                                active_client_sites_names = _get_active_job_participants(
+                                    connected_clients=engine.client_manager.clients, participants=participants
+                                )
+                                self.abort_client_run(job_id, active_client_sites_names, fl_ctx)
+
+                                process_return_code = run_process.get(RunProcessKey.PROCESS_RETURN_CODE)
+                                if process_return_code == -9:
+                                    job_manager.set_status(job.job_id, RunStatus.FINISHED_ABNORMAL, fl_ctx)
+                                else:
+                                    job_manager.set_status(job.job_id, RunStatus.FINISHED_EXECUTION_EXCEPTION, fl_ctx)
+                            else:
+                                job_manager.set_status(job.job_id, RunStatus.FINISHED_COMPLETED, fl_ctx)
                         with self.lock:
                             del self.running_jobs[job_id]
                         fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id)
@@ -356,6 +392,9 @@ class JobRunner(FLComponent):
                     )
 
                     if ready_job:
+                        if self._check_job_status(job_manager, ready_job.job_id, RunStatus.SUBMITTED, fl_ctx):
+                            self.log_info(fl_ctx, f"Job: {ready_job.job_id} is not in SUBMITTED. It won't be deployed.")
+                            continue
                         client_sites = {k: v for k, v in sites.items() if k != "server"}
                         job_id = None
                         try:
@@ -387,6 +426,12 @@ class JobRunner(FLComponent):
                                 deployable_clients = {k: v for k, v in client_sites.items() if k not in failed_clients}
                             else:
                                 deployable_clients = client_sites
+
+                            if self._check_job_status(job_manager, ready_job.job_id, RunStatus.DISPATCHED, fl_ctx):
+                                self.log_info(
+                                    fl_ctx, f"Job: {ready_job.job_id} is not in DISPATCHED. It won't be start to run."
+                                )
+                                continue
 
                             self._start_run(
                                 job_id=job_id,
@@ -422,6 +467,10 @@ class JobRunner(FLComponent):
         else:
             self.log_error(fl_ctx, "There's no Job Manager defined. Won't be able to run the jobs.")
 
+    def _check_job_status(self, job_manager, job_id, job_run_status, fl_ctx: FLContext):
+        reload_job = job_manager.get_job(job_id, fl_ctx)
+        return reload_job.meta.get(JobMetaKey.STATUS) != job_run_status
+
     def stop(self):
         self.ask_to_stop = True
 
@@ -441,22 +490,37 @@ class JobRunner(FLComponent):
                 fl_ctx, f"Failed to restore the job: {job_id} to the running job table: {secure_format_exception(e)}."
             )
 
-    def stop_run(self, job_id: str, fl_ctx: FLContext):
+    def update_unfinished_jobs(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
         job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
+        all_jobs = []
+        dispatched_jobs = job_manager.get_jobs_by_status(RunStatus.DISPATCHED, fl_ctx)
+        all_jobs.extend(dispatched_jobs)
+        running_jobs = job_manager.get_jobs_by_status(RunStatus.RUNNING, fl_ctx)
+        all_jobs.extend(running_jobs)
+
+        for job in all_jobs:
+            try:
+                job_manager.set_status(job.job_id, RunStatus.ABANDONED, fl_ctx)
+                self.logger.info(f"Update the previous running job: {job.job_id} to ABANDONED.")
+            except Exception as e:
+                self.log_error(
+                    fl_ctx, f"Failed to update the job: {job.job_id} to ABANDONED: {secure_format_exception(e)}."
+                )
+
+    def stop_run(self, job_id: str, fl_ctx: FLContext):
         self._stop_run(job_id, fl_ctx)
 
         job = self.running_jobs.get(job_id)
         if job:
             self.log_info(fl_ctx, f"Stop the job run: {job_id}")
             fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id)
-            job_manager.set_status(job.job_id, RunStatus.FINISHED_ABORTED, fl_ctx)
-            with self.lock:
-                del self.running_jobs[job_id]
+            job.run_aborted = True
             self.fire_event(EventType.JOB_ABORTED, fl_ctx)
+            return ""
         else:
             self.log_error(fl_ctx, f"Job {job_id} is not running. It can not be stopped.")
-            raise RuntimeError(f"Job {job_id} is not running.")
+            return f"Job {job_id} is not running."
 
     def stop_all_runs(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()

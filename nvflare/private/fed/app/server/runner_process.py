@@ -31,6 +31,7 @@ from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger
 from nvflare.private.fed.app.utils import monitor_parent_process
 from nvflare.private.fed.server.server_app_runner import ServerAppRunner
+from nvflare.private.fed.server.server_state import HotState
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
@@ -45,7 +46,11 @@ def main():
     parser.add_argument("--app_root", "-r", type=str, help="App Root", required=True)
     parser.add_argument("--job_id", "-n", type=str, help="job id", required=True)
     parser.add_argument("--root_url", "-u", type=str, help="root_url", required=True)
+    parser.add_argument("--host", "-host", type=str, help="server host", required=True)
+    parser.add_argument("--port", "-port", type=str, help="service port", required=True)
+    parser.add_argument("--ssid", "-id", type=str, help="SSID", required=True)
     parser.add_argument("--parent_url", "-p", type=str, help="parent_url", required=True)
+    parser.add_argument("--ha_mode", "-ha_mode", type=str, help="HA mode", required=True)
 
     parser.add_argument("--set", metavar="KEY=VALUE", nargs="*")
 
@@ -110,10 +115,12 @@ def main():
         try:
             # create the FL server
             server_config, server = deployer.create_fl_server(args, secure_train=secure_train)
+            server.ha_mode = eval(args.ha_mode)
 
             server.cell = server.create_job_cell(
                 args.job_id, args.root_url, args.parent_url, secure_train, server_config
             )
+            server.server_state = HotState(host=args.host, port=args.port, ssid=args.ssid)
 
             snapshot = None
             if args.snapshot:
@@ -143,4 +150,5 @@ if __name__ == "__main__":
     This is the program when starting the child process for running the NVIDIA FLARE server runner.
     """
     # main()
-    mpm.run(main_func=main)
+    rc = mpm.run(main_func=main)
+    exit(rc)

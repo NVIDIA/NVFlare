@@ -9,7 +9,7 @@ cp -r policies/site_b/* $WORKSPACE/site_b/local
 
 for i in {1..5}
 do
-  cp -r ../hello-numpy-sag $WORKSPACE/job$i
+  cp -r ../../hello-world/hello-numpy-sag/jobs/hello-numpy-sag $WORKSPACE/job$i
   cp -r jobs/job$i/* $WORKSPACE/job$i
 done
 

@@ -94,7 +94,7 @@ class FederatedClientBase:
         self.net_agent = None
         self.args = args
         self.engine_create_timeout = client_args.get("engine_create_timeout", 15.0)
-        self.cell_check_frequency = client_args.get("cell_check_frequency", 0.5)
+        self.cell_check_frequency = client_args.get("cell_check_frequency", 0.005)
 
         self.communicator = Communicator(
             ssl_args=client_args,
@@ -133,6 +133,7 @@ class FederatedClientBase:
                     prv_key_path=client_args["ssl_private_key"],
                 )
 
+    def start_overseer_agent(self):
         if self.overseer_agent:
             self.overseer_agent.start(self.overseer_callback)
 
@@ -158,12 +159,12 @@ class FederatedClientBase:
     def set_sp(self, project_name, sp: SP):
         if sp and sp.primary is True:
             server = self.servers[project_name].get("target")
-            scheme = self.servers[project_name].get("scheme", "grpc")
             location = sp.name + ":" + sp.fl_port
             if server != location:
                 self.servers[project_name]["target"] = location
                 self.sp_established = True
 
+                scheme = self.servers[project_name].get("scheme", "grpc")
                 scheme_location = scheme + "://" + location
                 if self.cell:
                     self.cell.change_server_root(scheme_location)
@@ -209,31 +210,28 @@ class FederatedClientBase:
         self.cell.start()
         self.communicator.cell = self.cell
         self.net_agent = NetAgent(self.cell)
-        if self.args.job_id:
-            start = time.time()
-            while not self.client_runner:
-                self.logger.info("Wait for client_runner to be created.")
-                if time.time() - start > self.engine_create_timeout:
-                    raise RuntimeError(
-                        "Failed to set the cell for engine: " "timeout waiting for client_runner to be created."
-                    )
-                time.sleep(self.cell_check_frequency)
-            self.client_runner.engine.cell = self.cell
-            self.client_runner.command_agent.register_cell_cb()
-        else:
-            start = time.time()
-            while not self.engine:
-                self.logger.info("Wait for engine to be created.")
-                if time.time() - start > self.engine_create_timeout:
-                    raise RuntimeError(
-                        "Failed to set the cell for engine: " "timeout waiting for engine to be created."
-                    )
-                time.sleep(self.cell_check_frequency)
-
-            self.engine.cell = self.cell
-            self.engine.admin_agent.register_cell_cb()
         mpm.add_cleanup_cb(self.net_agent.close)
         mpm.add_cleanup_cb(self.cell.stop)
+
+        if self.args.job_id:
+            start = time.time()
+            self.logger.info("Wait for client_runner to be created.")
+            while not self.client_runner:
+                if time.time() - start > self.engine_create_timeout:
+                    raise RuntimeError(f"Failed get client_runner after {self.engine_create_timeout} seconds")
+                time.sleep(self.cell_check_frequency)
+            self.logger.info(f"Got client_runner after {time.time()-start} seconds")
+            self.client_runner.engine.cell = self.cell
+        else:
+            start = time.time()
+            self.logger.info("Wait for engine to be created.")
+            while not self.engine:
+                if time.time() - start > self.engine_create_timeout:
+                    raise RuntimeError(f"Failed to get engine after {time.time()-start} seconds")
+                time.sleep(self.cell_check_frequency)
+            self.logger.info(f"Got engine after {time.time() - start} seconds")
+            self.engine.cell = self.cell
+            self.engine.admin_agent.register_cell_cb()
 
     def _switch_ssid(self):
         if self.engine:
@@ -391,7 +389,10 @@ class FederatedClientBase:
 
     def run_heartbeat(self, interval):
         """Periodically runs the heartbeat."""
-        self.heartbeat(interval)
+        try:
+            self.heartbeat(interval)
+        except:
+            self.logger.error("Failed to start run_heartbeat.")
 
     def start_heartbeat(self, interval=30):
         heartbeat_thread = threading.Thread(target=self.run_heartbeat, args=[interval])

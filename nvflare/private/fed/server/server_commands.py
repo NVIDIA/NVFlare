@@ -15,6 +15,7 @@
 """FL Admin commands."""
 
 import copy
+import logging
 import time
 from abc import ABC, abstractmethod
 from typing import List
@@ -38,6 +39,9 @@ NO_OP_REPLY = "__no_op_reply"
 class CommandProcessor(ABC):
     """The CommandProcessor is responsible for processing a command from parent process."""
 
+    def __init__(self) -> None:
+        self.logger = logging.getLogger(self.__class__.__name__)
+
     @abstractmethod
     def get_command_name(self) -> str:
         """Gets the command name that this processor will handle.
@@ -57,6 +61,22 @@ class CommandProcessor(ABC):
 
         Return:
             A reply message
+        """
+        pass
+
+
+class ServerStateCheck(ABC):
+    """Server command requires the server state check"""
+
+    @abstractmethod
+    def get_state_check(self, fl_ctx: FLContext) -> dict:
+        """Get the state check data for the server command.
+
+        Args:
+            fl_ctx: FLContext
+
+        Returns: server state check dict data
+
         """
         pass
 
@@ -109,7 +129,7 @@ class GetRunInfoCommand(CommandProcessor):
         return NO_OP_REPLY
 
 
-class GetTaskCommand(CommandProcessor):
+class GetTaskCommand(CommandProcessor, ServerStateCheck):
     """To implement the server GetTask command."""
 
     def get_command_name(self) -> str:
@@ -131,9 +151,11 @@ class GetTaskCommand(CommandProcessor):
 
         """
 
+        start_time = time.time()
         shared_fl_ctx = data.get_header(ServerCommandKey.PEER_FL_CONTEXT)
         data.set_header(ServerCommandKey.PEER_FL_CONTEXT, FLContext())
         client = data.get_header(ServerCommandKey.FL_CLIENT)
+        self.logger.debug(f"Got the GET_TASK request from client: {client.name}")
         fl_ctx.set_peer_context(shared_fl_ctx)
         server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
         if not server_runner:
@@ -146,12 +168,6 @@ class GetTaskCommand(CommandProcessor):
             shareable.set_header(TaskConstant.WAIT_TIME, 1.0)
         else:
             taskname, task_id, shareable = server_runner.process_task_request(client, fl_ctx)
-        # data = {
-        #     ServerCommandKey.TASK_NAME: taskname,
-        #     ServerCommandKey.TASK_ID: task_id,
-        #     ServerCommandKey.SHAREABLE: shareable,
-        #     ServerCommandKey.FL_CONTEXT: copy.deepcopy(get_serializable_data(fl_ctx).props),
-        # }
 
         # we need TASK_ID back as a cookie
         if not shareable:
@@ -166,11 +182,21 @@ class GetTaskCommand(CommandProcessor):
         shared_fl_ctx.set_public_props(copy.deepcopy(get_serializable_data(fl_ctx).get_all_public_props()))
         shareable.set_header(key=FLContextKey.PEER_CONTEXT, value=shared_fl_ctx)
 
-        # return fobs.dumps(data)
+        if taskname != SpecialTaskName.TRY_AGAIN:
+            self.logger.info(
+                f"return task to client.  client_name: {client.name}  task_name: {taskname}   task_id: {task_id}  "
+                f"sharable_header_task_id: {shareable.get_header(key=FLContextKey.TASK_ID)}"
+            )
+        self.logger.debug(f"Get_task processing time: {time.time()-start_time} for client: {client.name}")
         return shareable
 
+    def get_state_check(self, fl_ctx: FLContext) -> dict:
+        engine = fl_ctx.get_engine()
+        server_state = engine.server.server_state
+        return server_state.get_task(fl_ctx)
 
-class SubmitUpdateCommand(CommandProcessor):
+
+class SubmitUpdateCommand(CommandProcessor, ServerStateCheck):
     """To implement the server GetTask command."""
 
     def get_command_name(self) -> str:
@@ -191,14 +217,8 @@ class SubmitUpdateCommand(CommandProcessor):
         Returns:
 
         """
-        # shareable = data.get(ReservedKey.SHAREABLE)
-        # shared_fl_ctx = data.get(ReservedKey.SHARED_FL_CONTEXT)
-        # client = shareable.get_header(ServerCommandKey.FL_CLIENT)
-        # fl_ctx.set_peer_context(shared_fl_ctx)
-        # contribution_task_name = shareable.get_header(ServerCommandKey.TASK_NAME)
-        # task_id = shareable.get_cookie(FLContextKey.TASK_ID)
-        # server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
 
+        start_time = time.time()
         shared_fl_ctx = data.get_header(ServerCommandKey.PEER_FL_CONTEXT)
         data.set_header(ServerCommandKey.PEER_FL_CONTEXT, FLContext())
         shared_fl_ctx.set_prop(FLContextKey.SHAREABLE, data, private=True)
@@ -209,8 +229,15 @@ class SubmitUpdateCommand(CommandProcessor):
         task_id = data.get_cookie(FLContextKey.TASK_ID)
         server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
         server_runner.process_submission(client, contribution_task_name, task_id, data, fl_ctx)
+        self.logger.info(f"submit_update process. client_name:{client.name}   task_id:{task_id}")
 
+        self.logger.debug(f"Submit_result processing time: {time.time()-start_time} for client: {client.name}")
         return ""
+
+    def get_state_check(self, fl_ctx: FLContext) -> dict:
+        engine = fl_ctx.get_engine()
+        server_state = engine.server.server_state
+        return server_state.submit_result(fl_ctx)
 
 
 class HandleDeadJobCommand(CommandProcessor):
@@ -367,6 +394,30 @@ class HeartbeatCommand(CommandProcessor):
         return None
 
 
+class ServerStateCommand(CommandProcessor):
+    """To implement the ServerStateCommand."""
+
+    def get_command_name(self) -> str:
+        """To get the command name.
+
+        Returns: AdminCommandNames.SERVER_STATE
+
+        """
+        return ServerCommandNames.SERVER_STATE
+
+    def process(self, data: Shareable, fl_ctx: FLContext):
+        """Called to process the SERVER_STATE command.
+
+        Args:
+            data: ServerState object
+            fl_ctx: FLContext
+
+        """
+        engine = fl_ctx.get_engine()
+        engine.server.server_state = data
+        return "Success"
+
+
 class ServerCommands(object):
     """AdminCommands contains all the commands for processing the commands from the parent process."""
 
@@ -381,12 +432,13 @@ class ServerCommands(object):
         GetErrorsCommand(),
         ResetErrorsCommand(),
         HeartbeatCommand(),
+        ServerStateCommand(),
     ]
 
     client_request_commands_names = [
         ServerCommandNames.GET_TASK,
         ServerCommandNames.SUBMIT_UPDATE,
-        ServerCommandNames.AUX_COMMUNICATE,
+        # ServerCommandNames.AUX_COMMUNICATE,
     ]
 
     @staticmethod

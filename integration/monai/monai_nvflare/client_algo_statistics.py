@@ -46,7 +46,7 @@ class ClientAlgoStatistics(Statistics):
         self.req_bin_ranges = None
         self.feature_names = None
 
-    def initialize(self,  fl_ctx: FLContext):
+    def initialize(self, fl_ctx: FLContext):
         self.fl_ctx = fl_ctx
         self.client_name = fl_ctx.get_identity_name()
         engine = fl_ctx.get_engine()

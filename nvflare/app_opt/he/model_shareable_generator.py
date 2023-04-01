@@ -21,28 +21,56 @@ from nvflare.apis.dxo import DataKind, MetaKey, from_shareable
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey
+from nvflare.app_common.abstract.model import ModelLearnable, ModelLearnableKey, model_learnable_to_dxo
+from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.shareablegenerators.full_model_shareable_generator import FullModelShareableGenerator
 from nvflare.app_opt.he import decomposers
 from nvflare.app_opt.he.constant import HE_ALGORITHM_CKKS
-from nvflare.app_opt.he.homomorphic_encrypt import load_tenseal_context_from_workspace
+from nvflare.app_opt.he.homomorphic_encrypt import (
+    deserialize_nested_dict,
+    load_tenseal_context_from_workspace,
+    serialize_nested_dict,
+)
 from nvflare.security.logging import secure_format_exception
 
 
-class HEModelShareableGenerator(FullModelShareableGenerator):
+def add_to_global_weights(new_val, base_weights, v_name):
+    try:
+        global_var = base_weights[v_name]
+
+        if isinstance(new_val, np.ndarray):
+            new_val = new_val.ravel()
+
+        if isinstance(global_var, np.ndarray):
+            global_var = global_var.ravel()
+            n_vars_total = np.size(global_var)
+        elif isinstance(global_var, ts.CKKSVector):
+            n_vars_total = global_var.size()
+        else:
+            raise ValueError(f"global_var has type {type(global_var)} which is not supported.")
+
+        # update the global model
+        updated_vars = new_val + global_var
+
+    except BaseException as e:
+        raise ValueError(f"add_to_global_weights Exception: {secure_format_exception(e)}") from e
+
+    return updated_vars, n_vars_total
+
+
+class HEModelShareableGenerator(ShareableGenerator):
     def __init__(self, tenseal_context_file="server_context.tenseal"):
         """This ShareableGenerator converts between Shareable and Learnable objects.
 
-        This conversion is done with homomorphic encryption (HE) support using TenSEAL https://github.com/OpenMined/TenSEAL.
+        This conversion is done with homomorphic encryption (HE) support using
+        TenSEAL https://github.com/OpenMined/TenSEAL.
 
         Args:
-            tenseal_context_file: tenseal context files containing decryption keys and parameters
+            tenseal_context_file: tenseal context files containing TenSEAL context
         """
         super().__init__()
         self.tenseal_context = None
         self.tenseal_context_file = tenseal_context_file
-        self.is_encrypted = False
 
         decomposers.register()
 
@@ -52,52 +80,17 @@ class HEModelShareableGenerator(FullModelShareableGenerator):
         elif event_type == EventType.END_RUN:
             self.tenseal_context = None
 
-    def add_to_global_weights(self, fl_ctx: FLContext, new_val, base_weights, v_name, encrypt_layers):
-        if encrypt_layers is None:
-            raise ValueError("encrypted layers info missing!")
-
-        current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
-        start_round = fl_ctx.get_prop(AppConstants.START_ROUND, 0)
-        if current_round > start_round and encrypt_layers[v_name]:
-            if encrypt_layers.get(v_name, False):
-                try:
-                    binary_global_var = base_weights[v_name]
-                    global_var = ts.ckks_vector_from(
-                        self.tenseal_context, binary_global_var
-                    )  # now the global model weights are encrypted
-                    n_vars_total = global_var.size()
-                except BaseException as e:
-                    raise ValueError(f"add_to_global_weights Exception: {secure_format_exception(e)}")
-        else:
-            global_var = base_weights[v_name].ravel()
-            n_vars_total = np.size(global_var)
-
-        # update the global model
-        updated_vars = new_val + global_var
-
-        if encrypt_layers[v_name]:  # only works with standard aggregation
-            self.log_info(fl_ctx, f"serialize encrypted {v_name}")
-            updated_vars = updated_vars.serialize()
-
-        return updated_vars, n_vars_total
-
     def _shareable_to_learnable(self, shareable: Shareable, fl_ctx: FLContext) -> ModelLearnable:
         dxo = from_shareable(shareable)
         enc_algorithm = dxo.get_meta_prop(MetaKey.PROCESSED_ALGORITHM)
         if enc_algorithm != HE_ALGORITHM_CKKS:
             raise ValueError("expected encryption algorithm {} but got {}".format(HE_ALGORITHM_CKKS, enc_algorithm))
 
-        encrypt_layers = dxo.get_meta_prop(MetaKey.PROCESSED_KEYS)
-        if encrypt_layers is None:
-            raise ValueError("DXO in shareable missing PROCESSED_KEYS property")
-
-        if len(encrypt_layers) == 0:
-            raise ValueError(f"encrypt_layers is empty: {encrypt_layers}")
-
         base_model = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
         if not base_model:
             self.system_panic(reason="No global base model!", fl_ctx=fl_ctx)
             return base_model
+        deserialize_nested_dict(base_model, context=self.tenseal_context)
 
         base_weights = base_model[ModelLearnableKey.WEIGHTS]
 
@@ -107,14 +100,13 @@ class HEModelShareableGenerator(FullModelShareableGenerator):
             if not model_diff:
                 raise ValueError(f"{self._name} DXO data is empty!")
 
+            deserialize_nested_dict(model_diff, context=self.tenseal_context)
+
             n_vars = len(model_diff.items())
             n_params = 0
             for v_name, v_value in model_diff.items():
                 self.log_debug(fl_ctx, f"adding {v_name} to global model...")
-                # v_value += model[v_name]
-                updated_vars, n_vars_total = self.add_to_global_weights(
-                    fl_ctx, v_value, base_weights, v_name, encrypt_layers
-                )
+                updated_vars, n_vars_total = add_to_global_weights(v_value, base_weights, v_name)
                 n_params += n_vars_total
                 base_weights[v_name] = updated_vars
                 self.log_debug(fl_ctx, f"assigned new {v_name}")
@@ -125,12 +117,7 @@ class HEModelShareableGenerator(FullModelShareableGenerator):
                 f"Updated global model {n_vars} vars with {n_params} params in {end_time - start_time} seconds",
             )
         elif dxo.data_kind == DataKind.WEIGHTS:
-            weights = dxo.data
-            for v_name in weights.keys():
-                if encrypt_layers[v_name]:
-                    self.log_info(fl_ctx, f"serialize encrypted {dxo.data_kind}: {v_name}")
-                    weights[v_name] = weights[v_name].serialize()
-            base_model[ModelLearnableKey.WEIGHTS] = weights
+            base_model[ModelLearnableKey.WEIGHTS] = dxo.data
         else:
             raise NotImplementedError(f"data type {dxo.data_kind} not supported!")
 
@@ -153,4 +140,19 @@ class HEModelShareableGenerator(FullModelShareableGenerator):
             return self._shareable_to_learnable(shareable, fl_ctx)
         except BaseException as e:
             self.log_exception(fl_ctx, "error converting shareable to model")
-            raise ValueError(f"{self._name} Exception {secure_format_exception(e)}")
+            raise ValueError(f"{self._name} Exception {secure_format_exception(e)}") from e
+
+    def learnable_to_shareable(self, model_learnable: ModelLearnable, fl_ctx: FLContext) -> Shareable:
+        """Convert ModelLearnable to Shareable.
+
+        Args:
+            model_learnable (ModelLearnable): model to be converted
+            fl_ctx (FLContext): FL context
+
+        Returns:
+            Shareable: a shareable containing a DXO object.
+        """
+        # serialize model_learnable
+        serialize_nested_dict(model_learnable)
+        dxo = model_learnable_to_dxo(model_learnable)
+        return dxo.to_shareable()

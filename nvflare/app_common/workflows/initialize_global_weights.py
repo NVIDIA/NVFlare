@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import List, Union
+
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.response_processors.global_weights_initializer import GlobalWeightsInitializer, WeightMethod
 
@@ -27,8 +29,7 @@ class InitializeGlobalWeights(BroadcastAndProcess):
         task_timeout: int = 0,
         weights_prop_name=AppConstants.GLOBAL_MODEL,
         weight_method: str = WeightMethod.FIRST,
-        weights_client_name=None,
-        clients=None,
+        weights_client_name: Union[str, List[str], None] = None,
     ):
         """A controller for initializing global model weights based on reported weights from clients.
 
@@ -38,10 +39,19 @@ class InitializeGlobalWeights(BroadcastAndProcess):
             wait_time_after_min_received: how long (secs) to wait after min responses are received
             task_timeout: max amount of time to wait for the task to end. 0 means never time out.
             weights_prop_name: name of the FL Context property to store the global weights
-            weight_method: method for determining global model weights
-            weights_client_name: name of the client if the method is "client".
-            clients: list of clients to send the task to. None means all clients.
+            weight_method: method for determining global model weights. Defaults to `WeightMethod.FIRST`.
+            weights_client_name: name of the client if the method is "client". Defaults to None.
+                If `None`, the task will be sent to all clients (to be used with `weight_method=WeightMethod.FIRST`).
+                If list of client names, the task will be only be sent to the listed clients.
         """
+
+        if isinstance(weights_client_name, str):
+            clients = [weights_client_name]
+        elif isinstance(weights_client_name, list):
+            clients = weights_client_name
+        else:
+            clients = None
+
         BroadcastAndProcess.__init__(
             self,
             processor=GlobalWeightsInitializer(

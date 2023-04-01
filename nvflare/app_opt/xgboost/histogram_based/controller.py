@@ -119,7 +119,6 @@ class XGBFedController(Controller):
         self._started = True
 
     def stop_controller(self, fl_ctx: FLContext):
-        self.cancel_all_tasks()
         if self._xgb_fl_server:
             self._xgb_fl_server.terminate()
         self._started = False

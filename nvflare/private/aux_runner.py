@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import time
 from threading import Lock
 from typing import List
 
@@ -25,6 +26,7 @@ from nvflare.fuel.f3.cellnet.cell import ReturnCode as CellReturnCode
 from nvflare.fuel.f3.cellnet.cell import new_message
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.private.defs import CellChannel
+from nvflare.security.logging import secure_format_traceback
 
 
 class AuxRunner(FLComponent):
@@ -187,9 +189,11 @@ class AuxRunner(FLComponent):
             )
         except BaseException:
             if optional:
-                self.logger.debug(f"Failed to send the message to targets: {targets}")
+                self.logger.debug(f"Failed to send aux message {topic} to targets: {targets}")
+                self.logger.debug(secure_format_traceback())
             else:
-                self.logger.error(f"Failed to send the message to targets: {targets}")
+                self.logger.error(f"Failed to send aux message {topic} to targets: {targets}")
+                self.logger.error(secure_format_traceback())
             return {}
 
     def _send_to_cell(
@@ -223,7 +227,18 @@ class AuxRunner(FLComponent):
         request.set_peer_props(fl_ctx.get_all_public_props())
 
         job_id = fl_ctx.get_job_id()
-        cell = self.engine.get_cell()
+        start = time.time()
+        self.logger.debug("waiting for cell...")
+        max_wait = 5.0
+        while True:
+            cell = self.engine.get_cell()
+            if cell:
+                break
+            if time.time() - start > max_wait:
+                self.logger.error(f"Cannot get cell after {max_wait} seconds!")
+                return {}
+            time.sleep(0.01)
+        self.logger.debug(f"Got cell in {time.time() - start} secs")
 
         target_names = []
         for t in targets:

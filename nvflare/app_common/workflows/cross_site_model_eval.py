@@ -55,13 +55,13 @@ class CrossSiteModelEval(Controller):
             task_check_period (float, optional): How often to check for new tasks or tasks being finished.
                 Defaults to 0.5.
             cross_val_dir (str, optional): Path to cross site validation directory relative to run directory.
-                Defaults to "cross_site_val".
+                Defaults to `AppConstants.CROSS_VAL_DIR`.
             submit_model_timeout (int, optional): Timeout of submit_model_task. Defaults to 600 secs.
             validation_timeout (int, optional): Timeout for validate_model task. Defaults to 6000 secs.
             model_locator_id (str, optional): ID for model_locator component. Defaults to "".
             formatter_id (str, optional): ID for formatter component. Defaults to "".
-            submit_model_task_name (str, optional): Name of submit_model task. Defaults to "".
-            validation_task_name (str, optional): Name of validate_model task. Defaults to "validate".
+            submit_model_task_name (str, optional): Name of submit_model task. Defaults to `AppConstants.TASK_SUBMIT_MODEL`.
+            validation_task_name (str, optional): Name of validate_model task. Defaults to `AppConstants.TASK_VALIDATION`.
             cleanup_models (bool, optional): Whether or not models should be deleted after run. Defaults to False.
             participating_clients (list, optional): List of participating client names. If not provided, defaults
                 to all clients connected at start of controller.
@@ -237,8 +237,6 @@ class CrossSiteModelEval(Controller):
             self.system_panic(error_msg, fl_ctx)
 
     def stop_controller(self, fl_ctx: FLContext):
-        self.cancel_all_tasks(fl_ctx=fl_ctx)
-
         if self._cleanup_models:
             self.log_info(fl_ctx, "Removing local models kept for validation.")
             for model_name, model_path in self._server_models.items():

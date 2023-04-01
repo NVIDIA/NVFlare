@@ -61,6 +61,14 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                     confirm=ConfirmMethod.AUTH,
                 ),
                 CommandSpec(
+                    name=AdminCommandNames.ADMIN_CHECK_STATUS,
+                    description="check status for shutdown system command",
+                    usage="admin_check_status",
+                    handler_func=self.check_status,
+                    authz_func=self.must_be_project_admin,
+                    visible=False,
+                ),
+                CommandSpec(
                     name=AdminCommandNames.SHUTDOWN,
                     description="shutdown the FL server/client",
                     usage="shutdown server|client|all",

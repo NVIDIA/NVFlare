@@ -4,6 +4,9 @@ Example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.htm
 
 > **_NOTE:_** This example uses the [CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html) dataset and will load its data within the trainer code.
 
+You can follow the [hello_world notebook](../hello_world.ipynb) or the following:
+
+
 ### 1. Install NVIDIA FLARE
 
 Follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions.

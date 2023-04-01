@@ -56,6 +56,7 @@ from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
 from nvflare.private.admin_defs import Message, MsgHeader
 from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, RequestHeader, TrainingTopic, new_cell_message
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
+from nvflare.private.fed.server.server_state import ServerState
 from nvflare.private.fed.utils.fed_utils import security_close
 from nvflare.private.scheduler_constants import ShareableHeader
 from nvflare.security.logging import secure_format_exception
@@ -196,6 +197,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 job_clients,
                 snapshot,
                 self.server.cell,
+                self.server.server_state,
             )
 
             self.engine_info.status = MachineStatus.STARTED
@@ -221,11 +223,27 @@ class ServerEngine(ServerEngineInternalSpec):
                     self.logger.debug(f"Job:{job_id} UPDATE_RUN_STATUS didn't finish fast enough.")
                     break
                 time.sleep(0.1)
-            self.run_processes.pop(job_id, None)
+            with self.lock:
+                return_code = process.poll()
+                # if process exit but with Execution exception
+                if return_code and return_code != 0:
+                    run_process_info[RunProcessKey.PROCESS_RETURN_CODE] = return_code
+                    self.exception_run_processes[job_id] = run_process_info
+                self.run_processes.pop(job_id, None)
         self.engine_info.status = MachineStatus.STOPPED
 
     def _start_runner_process(
-        self, args, app_root, run_number, app_custom_folder, open_ports, job_id, job_clients, snapshot, cell: Cell
+        self,
+        args,
+        app_root,
+        run_number,
+        app_custom_folder,
+        open_ports,
+        job_id,
+        job_clients,
+        snapshot,
+        cell: Cell,
+        server_state: ServerState,
     ):
         new_env = os.environ.copy()
         if app_custom_folder != "":
@@ -252,6 +270,14 @@ class ServerEngine(ServerEngineInternalSpec):
             + str(cell.get_internal_listener_url())
             + " -u "
             + str(cell.get_root_url_for_child())
+            + " --host "
+            + str(server_state.host)
+            + " --port "
+            + str(server_state.service_port)
+            + " --ssid "
+            + str(server_state.ssid)
+            + " --ha_mode "
+            + str(self.server.ha_mode)
             + " --set"
             + command_options
             + " print_conf=True restore_snapshot="
@@ -582,6 +608,9 @@ class ServerEngine(ServerEngineInternalSpec):
         return result
 
     def persist_components(self, fl_ctx: FLContext, completed: bool):
+        if not self.server.ha_mode:
+            return
+
         self.logger.info("Start saving snapshot on server.")
 
         # Call the State Persistor to persist all the component states

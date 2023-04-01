@@ -20,7 +20,7 @@ from typing import Optional, Set, Tuple
 from zipfile import ZipFile
 
 from nvflare.apis.fl_constant import JobConstants
-from nvflare.apis.job_def import ALL_SITES, JobMetaKey
+from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME, JobMetaKey
 from nvflare.security.logging import secure_format_exception
 
 MAX_CLIENTS = 1000000
@@ -88,6 +88,8 @@ class JobMetaValidator:
                 raise ValueError(f"No other site can be specified if {ALL_SITES} is used for job {job_name}")
             else:
                 site_list = [ALL_SITES]
+        elif SERVER_SITE_NAME not in site_list:
+            raise ValueError(f"Missing server site in deploy_map for job {job_name}")
         else:
             duplicates = [site for site, count in collections.Counter(site_list).items() if count > 1]
             if duplicates:
@@ -110,12 +112,12 @@ class JobMetaValidator:
 
             all_sites = ALL_SITES.casefold() in (site.casefold() for site in deployments)
 
-            if (all_sites or "server" in deployments) and not self._entry_exists(
+            if (all_sites or SERVER_SITE_NAME in deployments) and not self._entry_exists(
                 zip_file, zip_folder + JobConstants.SERVER_JOB_CONFIG
             ):
-                raise ValueError(f"App {app} is will be deployed to server but server config is missing")
+                raise ValueError(f"App {app} will be deployed to server but server config is missing")
 
-            if (all_sites or [client for client in deployments if client != "server"]) and not self._entry_exists(
+            if (all_sites or [site for site in deployments if site != SERVER_SITE_NAME]) and not self._entry_exists(
                 zip_file, zip_folder + JobConstants.CLIENT_JOB_CONFIG
             ):
                 raise ValueError(f"App {app} will be deployed to client but client config is missing")
@@ -182,7 +184,7 @@ class JobMetaValidator:
         if site_list[0] == ALL_SITES:
             return {ALL_SITES}
 
-        return set([site for site in site_list if site != "server"])
+        return set([site for site in site_list if site != SERVER_SITE_NAME])
 
     @staticmethod
     def _entry_exists(zip_file: ZipFile, path: str) -> bool:

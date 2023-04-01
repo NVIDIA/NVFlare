@@ -90,6 +90,7 @@ INVALID_JOBS = [
     pytest.param("missing_app", id="missing_app"),
     pytest.param("missing_client_config", id="missing_client_config"),
     pytest.param("missing_server_config", id="missing_server_config"),
+    pytest.param("missing_server_in_deployment", id="missing_server_in_deploy_map"),
     pytest.param("no_deployment", id="no_deployment"),
     pytest.param("not_enough_clients", id="not_enough_clients"),
 ]

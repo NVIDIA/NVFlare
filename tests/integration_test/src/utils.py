@@ -188,6 +188,10 @@ def check_client_status_ready(response: dict) -> bool:
             if d.get("type") == "error":
                 return False
 
+    # check fuel/hci/client/fl_admin_api.py for parsing
+    if "client_statuses" not in response["details"]:
+        return False
+
     return True
 
 
@@ -243,7 +247,7 @@ def run_admin_api_tests(admin_api: FLAdminAPI):
     print("\nList Jobs:")
     list_jobs_return_rows = admin_api.list_jobs().get("details")
     print(list_jobs_return_rows)
-    first_job = str(list_jobs_return_rows[1][0])
+    first_job = str(list_jobs_return_rows[0].get("job_id"))
     print("\nCommand: ls server -a .")
     ls_return_message = admin_api.ls_target("server", "-a", ".").get("details").get("message")
     print(ls_return_message)
@@ -334,7 +338,7 @@ def generate_test_config_yaml_for_example(
             f"python convert_to_test_job.py --job {job_dir} --post {postfix}",
         ]
         if example.prepare_data_script is not None:
-            setup.insert(0, f"bash {example.prepare_data_script}")
+            setup.insert(1, f"bash {example.prepare_data_script}")
 
         config = {
             "ha": True,
@@ -349,7 +353,7 @@ def generate_test_config_yaml_for_example(
                         {
                             "trigger": {"type": "server_log", "data": "Server started"},
                             "actions": [f"submit_job {job}{postfix}"],
-                            "result": {"type": "run_state", "data": {}},
+                            "result": {"type": "job_submit_success"},
                         },
                         {
                             "trigger": {"type": "run_state", "data": {"run_finished": True}},

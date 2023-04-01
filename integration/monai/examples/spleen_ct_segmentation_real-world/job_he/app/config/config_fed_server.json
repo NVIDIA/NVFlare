@@ -8,10 +8,16 @@
   "task_result_filters": [],
   "components": [
     {
+      "id": "serialize_filter",
+      "name": "HEModelSerializeFilter",
+      "args": {}
+    },
+    {
       "id": "persistor",
       "path": "monai_nvflare.monai_bundle_persistor.MonaiBundlePersistor",
       "args": {
-        "bundle_root": "config/spleen_ct_segmentation"
+        "bundle_root": "config/spleen_ct_segmentation",
+        "filter_id": "serialize_filter"
       }
     },
     {
@@ -22,7 +28,9 @@
     {
       "id": "aggregator",
       "name": "HEInTimeAccumulateWeightedAggregator",
-      "args": {}
+      "args": {
+        "weigh_by_local_iter": false
+      }
     },
     {
       "id": "model_selector",
@@ -60,7 +68,7 @@
       },
       {
         "id": "cross_site_model_eval",
-        "name": "CrossSiteModelEval",
+        "name": "HECrossSiteModelEval",
         "args": {
           "model_locator_id": "model_locator",
           "submit_model_timeout": 600,

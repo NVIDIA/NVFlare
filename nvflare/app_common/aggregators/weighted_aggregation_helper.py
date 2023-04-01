@@ -18,24 +18,31 @@ from typing import Optional
 
 
 class WeightedAggregationHelper(object):
-    def __init__(self, exclude_vars: Optional[str] = None):
+    def __init__(self, exclude_vars: Optional[str] = None, weigh_by_local_iter: bool = True):
         """Perform weighted aggregation.
 
         Args:
             exclude_vars (str, optional): regex string to match excluded vars during aggregation. Defaults to None.
+            weigh_by_local_iter (bool, optional): Whether to weight the contributions by the number of iterations
+                performed in local training in the current round. Defaults to `True`.
+                Setting it to `False` can be useful in applications such as homomorphic encryption to reduce
+                the number of computations on encrypted ciphertext.
+                The aggregated sum will still be divided by the provided weights and `aggregation_weights` for the
+                resulting weighted sum to be valid.
         """
         super().__init__()
         self.lock = threading.Lock()
         self.exclude_vars = re.compile(exclude_vars) if exclude_vars else None
+        self.weigh_by_local_iter = weigh_by_local_iter
         self.reset_stats()
         self.total = dict()
         self.counts = dict()
         self.history = list()
 
     def reset_stats(self):
-        self.total = {}
-        self.counts = {}
-        self.history = []
+        self.total = dict()
+        self.counts = dict()
+        self.history = list()
 
     def add(self, data, weight, contributor_name, contribution_round):
         """Compute weighted sum and sum of weights."""
@@ -43,7 +50,10 @@ class WeightedAggregationHelper(object):
             for k, v in data.items():
                 if self.exclude_vars is not None and self.exclude_vars.search(k):
                     continue
-                weighted_value = v * weight
+                if self.weigh_by_local_iter:
+                    weighted_value = v * weight
+                else:
+                    weighted_value = v  # used in homomorphic encryption to reduce computations on ciphertext
                 current_total = self.total.get(k, None)
                 if current_total is None:
                     self.total[k] = weighted_value
@@ -62,7 +72,7 @@ class WeightedAggregationHelper(object):
     def get_result(self):
         """Divide weighted sum by sum of weights."""
         with self.lock:
-            aggregated_dict = {k: v / self.counts[k] for k, v in self.total.items()}
+            aggregated_dict = {k: v * (1.0 / self.counts[k]) for k, v in self.total.items()}
             self.reset_stats()
             return aggregated_dict
 

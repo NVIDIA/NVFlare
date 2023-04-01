@@ -11,8 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import threading
-from abc import ABC
 from typing import Dict, List, Optional, Union
 
 from nvflare.apis.client import Client
@@ -23,11 +23,11 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import ClientTask, Task
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
-from nvflare.app_common.workflows.common_controller import CommonController
+from nvflare.app_common.workflows.error_handling_controller import ErrorHandlingController
 
 
-class BroadcastAndWait(FLComponent, ABC):
-    def __init__(self, fl_ctx: FLContext, controller: CommonController):
+class BroadcastAndWait(FLComponent):
+    def __init__(self, fl_ctx: FLContext, controller: ErrorHandlingController):
         super().__init__()
         self.lock = threading.Lock()
         self.fl_ctx = fl_ctx
@@ -75,8 +75,8 @@ class BroadcastAndWait(FLComponent, ABC):
         return tasks
 
     def update_result(self, client_name: str, dxo: DXO):
-        self.lock.acquire()
         try:
+            self.lock.acquire()
             self.log_debug(self.fl_ctx, "Acquired a lock")
             self.results.update({client_name: dxo})
         finally:

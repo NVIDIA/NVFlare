@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 from typing import Dict, List, NamedTuple, Set
 
 from nvflare.apis.dxo import DXO
@@ -100,7 +101,7 @@ class DhPSIWorkFlow(PSIWorkflow):
         all_equal = all(value == intersect_site.size for value in self.backward_processed.values())
         if not all_equal:
             raise RuntimeError(
-                f"Intersection calculation failed:\n"
+                f"Intersection calculation failed: the intersection sizes from all sites must be equal.\n"
                 f"backward processed sites:{self.backward_processed},\n"
                 f"intersect sites ={intersect_site} \n"
                 f"ordered sites = {self.ordered_sites} \n"
@@ -118,7 +119,8 @@ class DhPSIWorkFlow(PSIWorkflow):
     def finalize(self):
         pass
 
-    def get_ordered_sites(self, results: Dict[str, DXO]):
+    @staticmethod
+    def get_ordered_sites(results: Dict[str, DXO]):
         def compare_fn(e):
             return e.size
 

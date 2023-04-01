@@ -16,10 +16,12 @@ import os
 import sys
 
 from .check_rule import (
+    CheckNonPrimarySPGRPCServerAvailable,
+    CheckNonPrimarySPSocketServerAvailable,
     CheckOverseerRunning,
-    CheckPrimarySPInResponse,
-    CheckSPGRPCServerAvailable,
-    CheckSPSocketServerAvailable,
+    CheckPrimarySPGRPCServerAvailable,
+    CheckPrimarySPSocketServerAvailable,
+    CheckSPListInResponse,
 )
 from .package_checker import PackageChecker
 from .utils import NVFlareConfig, NVFlareRole
@@ -42,9 +44,15 @@ class ClientPackageChecker(PackageChecker):
         self.rules = [
             [
                 CheckOverseerRunning(name="Check overseer running", role=self.NVF_ROLE),
-                CheckPrimarySPInResponse(name="Check primary service provider available"),
-                CheckSPSocketServerAvailable(name="Check SP's socket server available"),
-                CheckSPGRPCServerAvailable(name="Check SP's GRPC server available"),
+                CheckSPListInResponse(name="Check service provider list available"),
+                CheckPrimarySPSocketServerAvailable(name="Check primary SP's socket server available"),
+                CheckPrimarySPGRPCServerAvailable(name="Check primary SP's GRPC server available"),
+                CheckNonPrimarySPSocketServerAvailable(
+                    name="Check non-primary SP's socket server available", required=False
+                ),
+                CheckNonPrimarySPGRPCServerAvailable(
+                    name="Check non-primary SP's GRPC server available", required=False
+                ),
             ]
         ]
 

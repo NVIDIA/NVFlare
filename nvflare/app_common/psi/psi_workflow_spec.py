@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021-2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,10 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 from abc import ABC, abstractmethod
 
 from nvflare.apis.signal import Signal
-from nvflare.app_common.executors.init_final_component import InitFinalArgsComponent
+from nvflare.app_common.abstract.init_final_component import InitFinalArgsComponent
 
 
 class PSIWorkflow(InitFinalArgsComponent, ABC):

@@ -48,6 +48,7 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
         exclude_vars: Union[str, Dict[str, str], None] = None,
         aggregation_weights: Union[Dict[str, Any], Dict[str, Dict[str, Any]], None] = None,
         expected_data_kind: Union[DataKind, Dict[str, DataKind]] = DataKind.WEIGHT_DIFF,
+        weigh_by_local_iter: bool = True,
     ):
         """Perform accumulated weighted aggregation.
 
@@ -67,6 +68,12 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
                 DataKind for DXO. Defaults to DataKind.WEIGHT_DIFF
                 Can be one DataKind or a dict of {dxo_name: DataKind} corresponding to each aggregated DXO
                 when processing a DXO of `DataKind.COLLECTION`. Only the keys in this dict will be processed.
+            weigh_by_local_iter (bool, optional): Whether to weight the contributions by the number of iterations
+                performed in local training in the current round. Defaults to `True`.
+                Setting it to `False` can be useful in applications such as homomorphic encryption to reduce
+                the number of computations on encrypted ciphertext.
+                The aggregated sum will still be divided by the provided weights and `aggregation_weights` for the
+                resulting weighted sum to be valid.
         """
         super().__init__()
         self.logger.debug(f"exclude vars: {exclude_vars}")
@@ -74,6 +81,7 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
         self.logger.debug(f"expected data kind: {expected_data_kind}")
 
         self._single_dxo_key = ""
+        self._weigh_by_local_iter = weigh_by_local_iter
 
         # Check expected data kind
         if isinstance(expected_data_kind, dict):
@@ -149,6 +157,7 @@ class InTimeAccumulateWeightedAggregator(Aggregator):
                         aggregation_weights=self.aggregation_weights[k],
                         expected_data_kind=self.expected_data_kind[k],
                         name_postfix=k,
+                        weigh_by_local_iter=self._weigh_by_local_iter,
                     )
                 }
             )

@@ -26,6 +26,7 @@ from nvflare.fuel.flare_api.flare_api import new_insecure_session
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
 from nvflare.lighter.poc import generate_poc
 from nvflare.lighter.service_constants import FlareServiceConstants as SC
+from nvflare.lighter.utils import update_storage_locations
 
 DEFAULT_WORKSPACE = "/tmp/nvflare/poc"
 
@@ -112,6 +113,10 @@ def prepare_examples(poc_workspace: str):
 def prepare_poc(number_of_clients: int, poc_workspace: str):
     print(f"prepare_poc at {poc_workspace} for {number_of_clients} clients")
     ret_code = generate_poc(number_of_clients, poc_workspace)
+    if poc_workspace != DEFAULT_WORKSPACE:
+        update_storage_locations(
+            local_dir=f"{poc_workspace}/server/local", default_resource_name="resources.json", workspace=poc_workspace
+        )
     if ret_code:
         prepare_examples(poc_workspace)
 
@@ -233,14 +238,18 @@ def wait_for_system_shutdown(sess):
     duration = 0
     cnt = 0
     while status == "started" and duration < timeout:
-        sys_info = sess.get_system_info()
-        status = sys_info.server_info.status
-        curr = time.time()
-        duration = curr - start
-        if cnt % 25 == 0:
-            print("waiting system to shutdown")
-        cnt += 1
-        time.sleep(0.1)
+        try:
+            sys_info = sess.get_system_info()
+            status = sys_info.server_info.status
+            curr = time.time()
+            duration = curr - start
+            if cnt % 25 == 0:
+                print("waiting system to shutdown")
+            cnt += 1
+            time.sleep(0.1)
+        except BaseException:
+            # Server is already shutdown
+            return
 
 
 def _abort_jobs(sess, job_ids):
@@ -278,12 +287,16 @@ def _build_commands(cmd_type: str, poc_workspace: str, excluded: list, white_lis
     :return:
     """
 
+    def is_fl_package_dir(p_dir_name: str) -> bool:
+        return p_dir_name == "admin" or p_dir_name == "server" or p_dir_name.startswith("site-")
+
     if white_list is None:
         white_list = []
     package_commands = []
     for root, dirs, files in os.walk(poc_workspace):
         if root == poc_workspace:
-            for package_dir_name in dirs:
+            fl_dirs = [d for d in dirs if is_fl_package_dir(d)]
+            for package_dir_name in fl_dirs:
                 if package_dir_name not in excluded:
                     if len(white_list) == 0 or package_dir_name in white_list:
                         cmd = get_package_command(cmd_type, poc_workspace, package_dir_name)

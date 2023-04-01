@@ -20,6 +20,7 @@ from nvflare.apis.fl_context import FLContext
 
 # this is treated as all online sites in job deploy_map
 ALL_SITES = "@ALL"
+SERVER_SITE_NAME = "server"
 
 
 class RunStatus(str, Enum):
@@ -31,8 +32,10 @@ class RunStatus(str, Enum):
     FINISHED_COMPLETED = "FINISHED:COMPLETED"
     FINISHED_ABORTED = "FINISHED:ABORTED"
     FINISHED_EXECUTION_EXCEPTION = "FINISHED:EXECUTION_EXCEPTION"
+    FINISHED_ABNORMAL = "FINISHED:ABNORMAL"
     FINISHED_CANT_SCHEDULE = "FINISHED:CAN_NOT_SCHEDULE"
-    FAILED_TO_RUN = "FAILED_TO_RUN"
+    FAILED_TO_RUN = "FINISHED:FAILED_TO_RUN"
+    ABANDONED = "FINISHED:ABANDONED"
 
 
 class JobDataKey(str, Enum):
@@ -113,6 +116,7 @@ class Job:
         self.submit_time = None
 
         self.run_record = None  # job id, dispatched time/UUID, finished time, completion code (normal, aborted)
+        self.run_aborted = False
 
     def get_deployment(self) -> Dict[str, List[str]]:
         """Returns the deployment configuration.

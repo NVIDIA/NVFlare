@@ -21,6 +21,7 @@ import sys
 import threading
 
 from nvflare.apis.fl_constant import FLContextKey, JobConstants
+from nvflare.apis.overseer_spec import SP
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.sec.audit import AuditService
@@ -131,7 +132,8 @@ def main():
         thread = threading.Thread(target=monitor_parent_process, args=(client_app_runner, parent_pid, stop_event))
         thread.start()
 
-        client_app_runner.start_run(app_root, args, config_folder, federated_client, secure_train)
+        sp = _create_sp(args)
+        client_app_runner.start_run(app_root, args, config_folder, federated_client, secure_train, sp)
 
     except BaseException as e:
         if logger:
@@ -148,6 +150,16 @@ def main():
         if thread and thread.is_alive():
             thread.join()
         AuditService.close()
+
+
+def _create_sp(args):
+    sp = SP()
+    target = args.sp_target.split(":")
+    sp.name = target[0]
+    sp.fl_port = target[1]
+    sp.service_session_id = args.ssid
+    sp.primary = True
+    return sp
 
 
 def remove_restart_file(workspace: Workspace):

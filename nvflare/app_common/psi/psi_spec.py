@@ -16,8 +16,8 @@ from abc import ABC, abstractmethod
 from typing import List, Optional
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.executors.init_final_component import InitFinalComponent
-from nvflare.app_common.psi.psi_persistor import PsiPersistor
+from nvflare.app_common.abstract.init_final_component import InitFinalComponent
+from nvflare.app_common.psi.psi_writer_spec import PSIWriter
 from nvflare.app_common.utils.component_utils import check_component_type
 
 
@@ -32,20 +32,21 @@ class PSI(InitFinalComponent, ABC):
     def __init__(self, psi_writer_id: str):
         """
         Args:
-            psi_writer_id: psi write that will save result to provide the store if provide. For example, FilePsiWriter
-            will implement PsiPersistor interface and save to the local disk
+            psi_writer_id: a PSIWriter id, we will use it to get PSIWriter from engine.
+                PSIWriter will be used save the intersection results.
+                For example, FilePSIWriter implements PSIWriter interface and save to the local disk
         """
         super().__init__()
         self.psi_writer_id = psi_writer_id
-        self.psi_writer: Optional[PsiPersistor] = None
+        self.psi_writer: Optional[PSIWriter] = None
         self.fl_ctx = None
         self.intersection: Optional[List[str]] = None
 
     def initialize(self, fl_ctx: FLContext):
         self.fl_ctx = fl_ctx
         engine = fl_ctx.get_engine()
-        psi_writer: PsiPersistor = engine.get_component(self.psi_writer_id)
-        check_component_type(psi_writer, PsiPersistor)
+        psi_writer: PSIWriter = engine.get_component(self.psi_writer_id)
+        check_component_type(psi_writer, PSIWriter)
         self.psi_writer = psi_writer
 
     @abstractmethod
@@ -68,7 +69,7 @@ class PSI(InitFinalComponent, ABC):
     def save(self, intersection: List[str]):
         self.intersection = intersection
         if self.psi_writer:
-            self.psi_writer.save(items=intersection, overwrite_existing=True, fl_ctx=self.fl_ctx)
+            self.psi_writer.save(intersection=intersection, overwrite_existing=True, fl_ctx=self.fl_ctx)
 
     def finalize(self):
         pass

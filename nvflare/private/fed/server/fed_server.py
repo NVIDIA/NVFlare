@@ -48,6 +48,7 @@ from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.zip_utils import unzip_all_from_bytes
+from nvflare.ha.overseer_agent import HttpOverseerAgent
 from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeaderKeys, new_cell_message
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.server.server_runner import ServerRunner
@@ -155,10 +156,12 @@ class BaseServer(ABC):
             credentials = {}
         parent_url = None
 
-        if scheme == "uds":
-            listen_target = target
+        parts = target.split(":")
+        if len(parts) > 1:
+            # "0" means all interfaces for all protocols (ipv4 and ipv6)
+            listen_target = "0:" + parts[1]
         else:
-            listen_target = "0:" + target.split(":")[1]
+            listen_target = target
 
         my_fqcn = FQCN.ROOT_SERVER
         self.cell = Cell(
@@ -172,6 +175,11 @@ class BaseServer(ABC):
 
         self.cell.start()
         mpm.add_cleanup_cb(self.cell.stop)
+
+        # return self.start()
+        cleanup_thread = threading.Thread(target=self.client_cleanup)
+        # heartbeat_thread.daemon = True
+        cleanup_thread.start()
 
     def client_cleanup(self):
         while not self.shutdown:
@@ -294,6 +302,7 @@ class FederatedServer(BaseServer):
         self.server_state: ServerState = ColdState()
         self.snapshot_persistor = snapshot_persistor
         self.checking_server_state = False
+        self.ha_mode = False
 
     def _register_cellnet_cbs(self):
         self.cell.register_request_cb(
@@ -335,9 +344,10 @@ class FederatedServer(BaseServer):
             execution_error = data.get("execution_error")
             with self.lock:
                 run_process_info = self.engine.run_processes.get(job_id)
-                if execution_error:
-                    self.engine.exception_run_processes[job_id] = run_process_info
-                run_process_info[RunProcessKey.PROCESS_FINISHED] = True
+                if run_process_info is not None:
+                    if execution_error:
+                        self.engine.exception_run_processes[job_id] = run_process_info
+                    run_process_info[RunProcessKey.PROCESS_FINISHED] = True
                 reply = make_cellnet_reply(F3ReturnCode.OK, "", None)
                 return reply
         elif command == ServerCommandNames.HEARTBEAT:
@@ -375,12 +385,11 @@ class FederatedServer(BaseServer):
 
         cell.start()
         net_agent = NetAgent(cell)
+        mpm.add_cleanup_cb(net_agent.close)
+        mpm.add_cleanup_cb(cell.stop)
 
         self.command_agent = ServerCommandAgent(self.engine, cell)
         self.command_agent.start()
-
-        mpm.add_cleanup_cb(net_agent.close)
-        mpm.add_cleanup_cb(cell.stop)
 
         return cell
 
@@ -508,7 +517,7 @@ class FederatedServer(BaseServer):
                 reply.set_header(CellMessageHeaderKeys.ABORT_JOBS, abort_runs)
 
                 display_runs = ",".join(abort_runs)
-                self.logger.info(
+                self.logger.debug(
                     f"These jobs: {display_runs} are not running on the server. "
                     f"Ask client: {client_name} to abort these runs."
                 )
@@ -626,6 +635,19 @@ class FederatedServer(BaseServer):
             handlers=self.runner_config.handlers,
         )
 
+    def authentication_check(self, request: Message, state_check):
+        error = None
+        # server_state = self.engine.server.server_state
+        if state_check.get(ACTION) in [NIS, ABORT_RUN]:
+            # return make_reply(ReturnCode.AUTHENTICATION_ERROR, state_check.get(MESSAGE), fobs.dumps(None))
+            error = state_check.get(MESSAGE)
+        client_ssid = request.get_header(CellMessageHeaderKeys.SSID, None)
+        if client_ssid != self.server_state.ssid:
+            # return make_reply(ReturnCode.AUTHENTICATION_ERROR, "Request from invalid client SSID",
+            #                   fobs.dumps(None))
+            error = "Request from unknown client SSID"
+        return error
+
     def abort_run(self):
         with self.engine.new_context() as fl_ctx:
             if self.server_runner:
@@ -638,7 +660,7 @@ class FederatedServer(BaseServer):
         except BaseException as e:
             self.logger.error(f"FL server execution exception: {secure_format_exception(e)}")
         finally:
-            self.engine.update_job_run_status()
+            # self.engine.update_job_run_status()
             self.stop_run_engine_cell()
 
         self.engine.engine_info.status = MachineStatus.STOPPED
@@ -657,6 +679,8 @@ class FederatedServer(BaseServer):
             self.server_state.service_port = target.split(":")[1]
 
         self.overseer_agent = self._init_agent(args)
+        if isinstance(self.overseer_agent, HttpOverseerAgent):
+            self.ha_mode = True
 
         if secure_train:
             if self.overseer_agent:
@@ -689,6 +713,7 @@ class FederatedServer(BaseServer):
 
         sp = overseer_agent.get_primary_sp()
 
+        old_state_name = self.server_state.__class__.__name__
         with self.lock:
             with self.engine.new_context() as fl_ctx:
                 self.server_state = self.server_state.handle_sd_callback(sp, fl_ctx)
@@ -698,6 +723,27 @@ class FederatedServer(BaseServer):
 
         elif isinstance(self.server_state, Hot2ColdState):
             self._turn_to_cold()
+
+        self._notify_state_change(old_state_name)
+
+    def _notify_state_change(self, old_state_name):
+        new_state_name = self.server_state.__class__.__name__
+        if new_state_name != old_state_name:
+            self.logger.info(f"state changed from: {old_state_name} to: {new_state_name}")
+            keys = list(self.engine.run_processes.keys())
+            if keys:
+                target_fqcns = []
+                for job_id in keys:
+                    target_fqcns.append(FQCN.join([FQCN.ROOT_SERVER, job_id]))
+                cell_msg = new_cell_message(headers={}, payload=fobs.dumps(self.server_state))
+                self.cell.broadcast_request(
+                    channel=CellChannel.SERVER_COMMAND,
+                    topic=ServerCommandNames.SERVER_STATE,
+                    request=cell_msg,
+                    targets=target_fqcns,
+                    timeout=5.0,
+                    optional=True,
+                )
 
     def overseer_callback(self, overseer_agent):
         if self.checking_server_state:
@@ -714,31 +760,38 @@ class FederatedServer(BaseServer):
 
     def _turn_to_hot(self):
         # Restore Snapshot
-        with self.snapshot_lock:
-            fl_snapshot = self.snapshot_persistor.retrieve()
-            if fl_snapshot:
-                for run_number, snapshot in fl_snapshot.run_snapshots.items():
-                    if snapshot and not snapshot.completed:
-                        # Restore the workspace
-                        workspace_data = snapshot.get_component_snapshot(SnapshotKey.WORKSPACE).get("content")
-                        dst = os.path.join(self.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_number))
-                        if os.path.exists(dst):
-                            shutil.rmtree(dst, ignore_errors=True)
+        if self.ha_mode:
+            with self.snapshot_lock:
+                fl_snapshot = self.snapshot_persistor.retrieve()
+                if fl_snapshot:
+                    for run_number, snapshot in fl_snapshot.run_snapshots.items():
+                        if snapshot and not snapshot.completed:
+                            # Restore the workspace
+                            workspace_data = snapshot.get_component_snapshot(SnapshotKey.WORKSPACE).get("content")
+                            dst = os.path.join(self.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(run_number))
+                            if os.path.exists(dst):
+                                shutil.rmtree(dst, ignore_errors=True)
 
-                        os.makedirs(dst, exist_ok=True)
-                        unzip_all_from_bytes(workspace_data, dst)
+                            os.makedirs(dst, exist_ok=True)
+                            unzip_all_from_bytes(workspace_data, dst)
 
-                        job_id = snapshot.get_component_snapshot(SnapshotKey.JOB_INFO).get(SnapshotKey.JOB_ID)
-                        job_clients = snapshot.get_component_snapshot(SnapshotKey.JOB_INFO).get(SnapshotKey.JOB_CLIENTS)
-                        self.logger.info(f"Restore the previous snapshot. Run_number: {run_number}")
-                        with self.engine.new_context() as fl_ctx:
-                            self.engine.job_runner.restore_running_job(
-                                run_number=run_number,
-                                job_id=job_id,
-                                job_clients=job_clients,
-                                snapshot=snapshot,
-                                fl_ctx=fl_ctx,
+                            job_id = snapshot.get_component_snapshot(SnapshotKey.JOB_INFO).get(SnapshotKey.JOB_ID)
+                            job_clients = snapshot.get_component_snapshot(SnapshotKey.JOB_INFO).get(
+                                SnapshotKey.JOB_CLIENTS
                             )
+                            self.logger.info(f"Restore the previous snapshot. Run_number: {run_number}")
+                            with self.engine.new_context() as fl_ctx:
+                                self.engine.job_runner.restore_running_job(
+                                    run_number=run_number,
+                                    job_id=job_id,
+                                    job_clients=job_clients,
+                                    snapshot=snapshot,
+                                    fl_ctx=fl_ctx,
+                                )
+        else:
+            with self.engine.new_context() as fl_ctx:
+                self.snapshot_persistor.delete()
+                self.engine.job_runner.update_unfinished_jobs(fl_ctx=fl_ctx)
 
         with self.lock:
             self.server_state = HotState(

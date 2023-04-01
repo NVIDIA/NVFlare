@@ -41,6 +41,9 @@ from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initia
 from nvflare.security.logging import secure_format_exception
 from nvflare.security.security import EmptyAuthorizer
 
+CELL_CONNECT_CHECK_TIMEOUT = 10.0
+FETCH_TASK_RUN_RETRY = 3
+
 
 class ClientTaskWorker(FLComponent):
     def create_client_engine(self, federated_client: FederatedClient, args, rank=0):
@@ -63,9 +66,15 @@ class ClientTaskWorker(FLComponent):
         args.token = client.token
 
         client_app_runner = SimulatorClientAppRunner()
-        client_runner = client_app_runner.create_client_runner(app_client_root, args, args.config_folder, client, False)
-        client_runner.engine.cell = client.cell
-        client_runner.init_run(app_client_root, args)
+        client_app_runner.client_runner = client_app_runner.create_client_runner(
+            app_client_root, args, args.config_folder, client, False
+        )
+        client_runner = client_app_runner.client_runner
+        with client_runner.engine.new_context() as fl_ctx:
+            client_app_runner.start_command_agent(args, client, fl_ctx)
+            client_app_runner.sync_up_parents_process(client)
+            client_runner.engine.cell = client.cell
+            client_runner.init_run(app_client_root, args)
 
     def do_one_task(self, client):
         stop_run = False
@@ -78,13 +87,28 @@ class ClientTaskWorker(FLComponent):
                 client_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
                 self.fire_event(EventType.SWAP_IN, fl_ctx)
 
-                interval, task_processed = client_runner.fetch_and_run_one_task(fl_ctx)
-                self.logger.info(f"Finished one task run for client: {client.client_name}")
+                run_task_tries = 0
+                while True:
+                    interval, task_processed = client_runner.fetch_and_run_one_task(fl_ctx)
+                    if task_processed:
+                        self.logger.info(
+                            f"Finished one task run for client: {client.client_name} "
+                            f"interval: {interval} task_processed: {task_processed}"
+                        )
 
-                # if any client got the END_RUN event, stop the simulator run.
-                if client_runner.end_run_fired or client_runner.asked_to_stop:
-                    stop_run = True
-                    self.logger.info("End the Simulator run.")
+                    # if any client got the END_RUN event, stop the simulator run.
+                    if client_runner.end_run_fired or client_runner.asked_to_stop:
+                        stop_run = True
+                        self.logger.info("End the Simulator run.")
+                        break
+                    else:
+                        if task_processed:
+                            break
+                        else:
+                            run_task_tries += 1
+                            if run_task_tries >= FETCH_TASK_RUN_RETRY:
+                                break
+                            time.sleep(0.5)
         except Exception as e:
             self.logger.error(f"do_one_task execute exception: {e}")
             interval = 1.0
@@ -101,6 +125,7 @@ class ClientTaskWorker(FLComponent):
         self.logger.info(f"Clean up ClientRunner for : {client.client_name} ")
 
     def run(self, args, conn):
+        self.logger.info("ClientTaskWorker started to run")
         admin_agent = None
         client = None
         try:
@@ -142,7 +167,9 @@ class ClientTaskWorker(FLComponent):
 
         client.token = args.token
         self._set_client_status(client, deploy_args, args.simulator_root)
+        start = time.time()
         self._create_client_cell(client, args.root_url, args.parent_url)
+        self.logger.debug(f"Complete _create_client_cell.  Time to create client job cell: {time.time() - start}")
         return client
 
     def _set_client_status(self, client, deploy_args, simulator_root):
@@ -156,6 +183,7 @@ class ClientTaskWorker(FLComponent):
     def _create_client_cell(self, federated_client, root_url, parent_url):
         fqcn = FQCN.join([federated_client.client_name, SimulatorConstants.JOB_NAME])
         credentials = {}
+        parent_url = None
         cell = Cell(
             fqcn=fqcn,
             root_url=root_url,
@@ -165,10 +193,15 @@ class ClientTaskWorker(FLComponent):
             parent_url=parent_url,
         )
         cell.start()
+        mpm.add_cleanup_cb(cell.stop)
         federated_client.cell = cell
         federated_client.communicator.cell = cell
 
-        mpm.add_cleanup_cb(cell.stop)
+        start = time.time()
+        while not cell.is_cell_connected(FQCN.ROOT_SERVER):
+            time.sleep(0.1)
+            if time.time() - start > CELL_CONNECT_CHECK_TIMEOUT:
+                raise RuntimeError("Could not connect to the server cell.")
 
 
 def _create_connection(listen_port):

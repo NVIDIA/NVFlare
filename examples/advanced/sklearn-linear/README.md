@@ -2,9 +2,10 @@
 
 ## Introduction to Scikit-learn, tabular data, and federated linear model 
 ### Scikit-learn
-This example shows how to use [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) on tubular data.
+This example shows how to use [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) on tabular data.
 It uses [Scikit-learn](https://scikit-learn.org/), a widely used 
 open-source machine learning library that supports supervised and unsupervised learning.
+Follow along in this [notebook](./sklearn_linear_higgs.ipynb) for an interactive experience.
 ### Tabular data
 The data used in this example is tabular in a format that can be handled by [pandas](https://pandas.pydata.org/), such that:
 - rows correspond to data samples.
@@ -58,7 +59,7 @@ bash prepare_job_config.sh
 ```
 In this example, we perform an experiment with five clients under a uniform data split. 
 
-Below is a sample config for site-1, saved to `./job_configs/sklearn_linear_5_uniform/app_site-1/config/config_fed_client.json`:
+Below is a sample config for site-1, saved to `./jobs/sklearn_linear_5_uniform/app_site-1/config/config_fed_client.json`:
 ```json
 {
     "format_version": 2,

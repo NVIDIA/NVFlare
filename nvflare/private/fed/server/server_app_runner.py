@@ -69,7 +69,7 @@ class ServerAppRunner(Runner):
             logger.exception(f"FL server execution exception: {secure_format_exception(e)}")
             raise e
         finally:
-            # self.update_job_run_status(server)
+            self.update_job_run_status()
             self.server.status = ServerStatus.STOPPED
             self.server.engine.engine_info.status = MachineStatus.STOPPED
             self.server.stop_training()

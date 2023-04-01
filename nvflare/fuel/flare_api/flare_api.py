@@ -17,7 +17,7 @@ import time
 from typing import List, Optional
 
 from nvflare.apis.fl_constant import AdminCommandNames
-from nvflare.apis.job_def import JobMetaKey, RunStatus
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.client.api import AdminAPI, APIStatus, ResultKey
@@ -170,7 +170,7 @@ class Session(SessionSpec):
         elif cmd_status == MetaStatusValue.JOB_RUNNING:
             raise JobNotDone(f"job {info} is still running")
         elif cmd_status != MetaStatusValue.OK:
-            raise InternalError(f"server internal error {cmd_status}: {info}")
+            raise InternalError(f"server internal error ({cmd_status}): {info}")
 
         status = result.get(ResultKey.STATUS, None)
         if not status:
@@ -276,13 +276,24 @@ class Session(SessionSpec):
 
         Args:
             detailed: True to get the detailed information for each job, False by default
-            limit: maximum number of jobs to show, with 0 to show all (defaults to 5)
+            limit: maximum number of jobs to show, with 0 or None to show all (defaults to None to show all)
             id_prefix: if included, only return jobs with the beginning of the job ID matching the id_prefix
             name_prefix: if included, only return jobs with the beginning of the job name matching the name_prefix
             reverse: if specified, list jobs in the reverse order of submission times
         Returns: a dict of job metadata
 
         """
+        if not isinstance(detailed, bool):
+            raise ValueError(f"detailed must be bool but got {type(detailed)}")
+        if not isinstance(reverse, bool):
+            raise ValueError(f"reverse must be bool but got {type(reverse)}")
+        if limit is not None and not isinstance(limit, int):
+            raise ValueError(f"limit must be None or int but got {type(limit)}")
+        if id_prefix is not None and not isinstance(id_prefix, str):
+            raise ValueError(f"id_prefix must be None or str but got {type(id_prefix)}")
+        if name_prefix is not None and not isinstance(name_prefix, str):
+            raise ValueError(f"name_prefix must be None or str but got {type(name_prefix)}")
+
         command = AdminCommandNames.LIST_JOBS
         if detailed:
             command = command + " -d"
@@ -420,11 +431,7 @@ class Session(SessionSpec):
             if not job_status:
                 raise InternalError(f"missing status in job {job_id}")
 
-            if job_status in [
-                RunStatus.FINISHED_EXECUTION_EXCEPTION.value,
-                RunStatus.FINISHED_COMPLETED.value,
-                RunStatus.FINISHED_ABORTED,
-            ]:
+            if job_status.startswith("FINISHED"):
                 return MonitorReturnCode.JOB_FINISHED
 
             time.sleep(poll_interval)

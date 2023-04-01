@@ -6,6 +6,7 @@
 This example show how to use [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) on tabular data applications.
 It illustrates the [Random Forest](https://xgboost.readthedocs.io/en/stable/tutorials/rf.html) functionality using [XGBoost] (https://github.com/dmlc/xgboost) library,
 which is an optimized distributed gradient boosting library covering random forest.
+Follow along in this [notebook](./random_forest.ipynb) for an interactive experience.
 
 ### Dataset
 This example illustrate a binary classification task based on [HIGGS dataset](https://archive.ics.uci.edu/ml/datasets/HIGGS).
@@ -65,7 +66,7 @@ This will generate data splits for two client sizes: 5 and 20, and 3 split condi
 If you want to customize for your experiments, please check `utils/prepare_data_split.py`.
 
 > **_NOTE:_** The generated train config files will be stored in the folder `/tmp/nvflare/random_forest/HIGGS/data_splits`,
-> and will be used by job_configs by specifying the path within `config_fed_client.json` 
+> and will be used by jobs by specifying the path within `config_fed_client.json` 
 
 
 ## HIGGS jobs preparation under various training settings
@@ -78,7 +79,7 @@ bash jobs_gen.sh
 ```
 
 This script modifies settings from base job configuration
-(`./job_configs/random_forest_base`),
+(`./jobs/random_forest_base`),
 and copies the correct data split file generated in the data preparation step.
 
 > **_NOTE:_** To customize your own job configs, you can just edit from the generated ones.

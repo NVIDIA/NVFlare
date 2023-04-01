@@ -21,13 +21,10 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_def import ALL_SITES, Job, JobMetaKey, RunStatus
+from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME, Job, JobMetaKey, RunStatus
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.apis.job_scheduler_spec import DispatchInfo, JobSchedulerSpec
 from nvflare.apis.server_engine_spec import ServerEngineSpec
-
-SERVER_SITE_NAME = "server"
-
 
 SCHEDULE_RESULT_OK = 0  # the job is scheduled
 SCHEDULE_RESULT_NO_RESOURCE = 1  # job is not scheduled due to lack of resources
@@ -152,7 +149,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
             else:
                 resource_reqs[site_name] = {}
 
-        job_participants = [fl_ctx.get_identity_name(default="server")]
+        job_participants = [fl_ctx.get_identity_name(default=SERVER_SITE_NAME)]
         job_participants.extend(applicable_sites)
 
         fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id, private=True)

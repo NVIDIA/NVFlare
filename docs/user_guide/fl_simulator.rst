@@ -743,12 +743,15 @@ This command will run the same ``hello-numpy-sag`` app on the server and 8 clien
 Run an NVFlare job
 ===================
 
-This command will run the job following the meta.json in the job. The executing client list is provided in the command line ("client0,client1,client2,client3").
-If there is any client not defined in the deploy_map of the meta.json, the simulator will report an error and not run.
+This command will run the job following the meta.json in the job. The executing client list can be provided in the command line with the ``-c`` option
+("client0,client1,client2,client3"). If there is any client not defined in the deploy_map of the meta.json, the simulator will report an error and not run.
 
 .. code-block:: python
 
     nvflare simulator NVFlare/examples/hello-numpy-sag -w /tmp/nvflare/workspace_folder/ -c client0,client1,client2,client3 -t 1
+
+Note that the ``-n`` option is used to specify the number of clients like in the previous section above, but it is checked only if the ``-c`` option is not used.
+The with the ``-n`` option, clients are automatically created up to the number provided after ``-n``, and they are named site-1, site-2, site-3, etc.
 
 The output should be similar to above but with only four clients.
 
@@ -859,7 +862,7 @@ For example:
 
 .. code-block::shell
 
-  -c  c1,c2,c3,c4,c5 -gpu 0,1
+    -c  c1,c2,c3,c4,c5 -gpu 0,1
 
 The clients c1, c3, and c5 will run on GPU 0 in one process, and clients c2 and c4 will run on GPU 1 in another process.
 

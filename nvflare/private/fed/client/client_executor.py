@@ -227,6 +227,7 @@ class ProcessExecutor(ClientExecutor):
                     channel=CellChannel.CLIENT_COMMAND,
                     topic=AdminCommandNames.CHECK_STATUS,
                     request=request,
+                    optional=True,
                 )
                 return_code = return_data.get_header(MessageHeaderKey.RETURN_CODE)
                 if return_code == ReturnCode.OK:
@@ -256,7 +257,11 @@ class ProcessExecutor(ClientExecutor):
                 fqcn = FQCN.join([self.client.client_name, job_id])
                 request = new_cell_message({}, fobs.dumps(data))
                 return_data = self.client.cell.send_request(
-                    target=fqcn, channel=CellChannel.CLIENT_COMMAND, topic=AdminCommandNames.SHOW_STATS, request=request
+                    target=fqcn,
+                    channel=CellChannel.CLIENT_COMMAND,
+                    topic=AdminCommandNames.SHOW_STATS,
+                    request=request,
+                    optional=True,
                 )
                 return_code = return_data.get_header(MessageHeaderKey.RETURN_CODE)
                 if return_code == ReturnCode.OK:
@@ -288,6 +293,7 @@ class ProcessExecutor(ClientExecutor):
                     channel=CellChannel.CLIENT_COMMAND,
                     topic=AdminCommandNames.SHOW_ERRORS,
                     request=request,
+                    optional=True,
                 )
                 return_code = return_data.get_header(MessageHeaderKey.RETURN_CODE)
                 if return_code == ReturnCode.OK:
@@ -316,6 +322,7 @@ class ProcessExecutor(ClientExecutor):
                     channel=CellChannel.CLIENT_COMMAND,
                     topic=AdminCommandNames.RESET_ERRORS,
                     message=request,
+                    optional=True,
                 )
 
         except Exception as e:
@@ -412,6 +419,7 @@ class ProcessExecutor(ClientExecutor):
                     channel=CellChannel.CLIENT_COMMAND,
                     topic=AdminCommandNames.ABORT_TASK,
                     message=request,
+                    optional=True,
                 )
                 self.logger.debug("abort_task sent")
 

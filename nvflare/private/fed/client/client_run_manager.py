@@ -51,7 +51,7 @@ class ClientRunInfo(object):
         self.start_time = None
 
 
-GET_CLIENTS_RETRY = 3
+GET_CLIENTS_RETRY = 60
 
 
 class ClientRunManager(ClientEngineExecutorSpec):

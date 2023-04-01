@@ -195,21 +195,19 @@ class Communicator:
             size = len(task.payload)
             task.payload = fobs.loads(task.payload)
             task_name = task.payload.get_header(ServerCommandKey.TASK_NAME)
+            fl_ctx.set_prop(FLContextKey.SSID, ssid)
             if task_name not in [SpecialTaskName.END_RUN, SpecialTaskName.TRY_AGAIN]:
                 self.logger.info(
                     f"Received from {project_name} server "
                     f" ({size} Bytes). getTask: {task_name} time: {end_time - start_time} seconds"
                 )
+        elif return_code == ReturnCode.AUTHENTICATION_ERROR:
+            self.logger.warning("get_task request authentication failed.")
+            time.sleep(5.0)
+            return None
         else:
-            simulate_mode = fl_ctx.get_prop(FLContextKey.SIMULATE_MODE, False)
-            if simulate_mode:
-                new_shareable = Shareable()
-                new_shareable.set_header(key=ServerCommandKey.TASK_NAME, value=SpecialTaskName.END_RUN)
-                task.payload = new_shareable
-                self.logger.info("Simulator job could not fetch_task. End job run.")
-            else:
-                task = None
-                self.logger.warning(f"Failed to get_task from {project_name} server. Will try it again.")
+            task = None
+            self.logger.warning(f"Failed to get_task from {project_name} server. Will try it again.")
 
         return task
 
@@ -229,7 +227,7 @@ class Communicator:
             execute_task_name: execution task name
 
         Returns:
-            A FederatedSummary message from the server.
+            ReturnCode
         """
         start_time = time.time()
         shared_fl_ctx = FLContext()
@@ -238,6 +236,10 @@ class Communicator:
 
         # shareable.add_cookie(name=FLContextKey.TASK_ID, data=task_id)
         shareable.set_header(FLContextKey.TASK_NAME, execute_task_name)
+        task_ssid = fl_ctx.get_prop(FLContextKey.SSID)
+        if task_ssid != ssid:
+            self.logger.warning("submit_update request failed because SSID mismatch.")
+            return ReturnCode.INVALID_SESSION
         rc = shareable.get_return_code()
         optional = rc == ShareableRC.TASK_ABORTED
 
@@ -366,6 +368,6 @@ class Communicator:
             if abort_runs:
                 for job in abort_runs:
                     engine.abort_app(job)
-                self.logger.info(f"These runs: {display_runs} are not running on the server. Aborted them.")
+                self.logger.debug(f"These runs: {display_runs} are not running on the server. Aborted them.")
         except:
-            self.logger.info(f"Failed to clean up the runs: {display_runs}")
+            self.logger.debug(f"Failed to clean up the runs: {display_runs}")

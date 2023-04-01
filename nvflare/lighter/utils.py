@@ -146,3 +146,62 @@ def sh_replace(src, mapping_dict):
     for k, v in mapping_dict.items():
         result = result.replace("{~~" + k + "~~}", str(v))
     return result
+
+
+def update_project_config(project_config: dict, old_server_name, server_name) -> dict:
+    if project_config:
+        # update participants
+        participants = project_config["participants"]
+        for p in participants:
+            if p["name"] == old_server_name:
+                p["name"] = server_name
+
+        # update overseer_agent builder
+        builders = project_config["builders"]
+        for b in builders:
+            if "args" in b:
+                if "overseer_agent" in b["args"]:
+                    end_point = b["args"]["overseer_agent"]["args"]["sp_end_point"]
+                    new_end_point = end_point.replace(old_server_name, server_name)
+                    b["args"]["overseer_agent"]["args"]["sp_end_point"] = new_end_point
+    else:
+        RuntimeError("project_config is empty")
+    return project_config
+
+
+def update_project_server_name(project_file: str, old_server_name, server_name):
+    with open(project_file, "r") as file:
+        project_config = yaml.safe_load(file)
+
+    update_project_config(project_config, old_server_name, server_name)
+
+    with open(project_file, "w") as file:
+        yaml.dump(project_config, file)
+
+
+def update_storage_locations(
+    local_dir: str,
+    workspace: str,
+    default_resource_name: str = "resources.json.default",
+    job_storage_name: str = "jobs-storage",
+    snapshot_storage_name: str = "snapshot-storage",
+):
+    default_resource = f"{local_dir}/{default_resource_name}"
+    target_resource = f"{local_dir}/resources.json"
+    job_storage = f"{workspace}/{job_storage_name}"
+    snapshot_storage = f"{workspace}/{snapshot_storage_name}"
+
+    # load resources.json
+    with open(default_resource, "r") as f:
+        resources = json.load(f)
+
+    # update resources
+    resources["snapshot_persistor"]["args"]["storage"]["args"]["root_dir"] = snapshot_storage
+    components = resources["components"]
+    job_mgr_comp = [comp for comp in components if comp["id"] == "job_manager"][0]
+    job_mgr_comp["args"]["uri_root"] = job_storage
+
+    # Serializing json, Writing to resources.json
+    json_object = json.dumps(resources, indent=4)
+    with open(target_resource, "w") as outfile:
+        outfile.write(json_object)

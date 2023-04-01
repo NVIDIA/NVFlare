@@ -20,6 +20,7 @@ import shutil
 from typing import Dict, List
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
+from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import AdminCommandNames, RunProcessKey
 from nvflare.apis.job_def import Job, JobDataKey, JobMetaKey, TopDir
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
@@ -215,7 +216,7 @@ class JobCommandModule(CommandModule, CommandUtil):
             conn.append_error(f"Job: {job_id} is not running.")
             return False
 
-        participants = run_process.get(RunProcessKey.PARTICIPANTS, [])
+        participants: Dict[str, Client] = run_process.get(RunProcessKey.PARTICIPANTS, {})
         wrong_clients = []
         for client in client_names:
             client_valid = False
@@ -320,14 +321,20 @@ class JobCommandModule(CommandModule, CommandUtil):
 
                 filtered_jobs = [job for job in jobs if self._job_match(job.meta, id_prefix, name_prefix, user_name)]
                 if not filtered_jobs:
-                    conn.append_string("No jobs matching the specified criteria.")
+                    conn.append_string(
+                        "No jobs matching the specified criteria.",
+                        meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOBS: []}),
+                    )
                     return
 
                 reverse = True if parsed_args.r else False
                 filtered_jobs.sort(key=lambda job: job.meta.get(JobMetaKey.SUBMIT_TIME.value, 0.0), reverse=reverse)
 
                 if max_jobs_listed:
-                    filtered_jobs = filtered_jobs[:max_jobs_listed]
+                    if reverse:
+                        filtered_jobs = filtered_jobs[:max_jobs_listed]
+                    else:
+                        filtered_jobs = filtered_jobs[-max_jobs_listed:]
 
                 if parsed_args.d:
                     self._send_detail_list(conn, filtered_jobs)
@@ -335,9 +342,12 @@ class JobCommandModule(CommandModule, CommandUtil):
                     self._send_summary_list(conn, filtered_jobs)
 
             else:
-                conn.append_string("No jobs found.")
+                conn.append_string("No jobs found.", meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOBS: []}))
         except Exception as e:
-            conn.append_error(secure_format_exception(e))
+            conn.append_error(
+                secure_format_exception(e),
+                meta=make_meta(MetaStatusValue.INTERNAL_ERROR, info=secure_format_exception(e)),
+            )
             return
 
         conn.append_success("")
@@ -397,9 +407,25 @@ class JobCommandModule(CommandModule, CommandUtil):
         try:
             job_id = conn.get_prop(self.JOB_ID)
             with engine.new_context() as fl_ctx:
-                job_runner.stop_run(job_id, fl_ctx)
-            conn.append_string("Abort signal has been sent to the server app.")
-            conn.append_success("", make_meta(MetaStatusValue.OK))
+                job_manager = engine.job_def_manager
+                job = job_manager.get_job(job_id, fl_ctx)
+                job_status = job.meta.get(JobMetaKey.STATUS)
+                if job_status in [RunStatus.SUBMITTED, RunStatus.DISPATCHED]:
+                    job_manager.set_status(job.job_id, RunStatus.FINISHED_ABORTED, fl_ctx)
+                    conn.append_string(f"Abort the job: {job_id} before run.")
+                    conn.append_success("", make_meta(MetaStatusValue.OK))
+                    return
+                elif job_status.startswith("FINISHED:"):
+                    message = f"Job for {job_id} is already completed."
+                    conn.append_string(message)
+                    conn.append_success("", make_meta(MetaStatusValue.OK, message))
+                else:
+                    message = job_runner.stop_run(job_id, fl_ctx)
+                    if message:
+                        conn.append_error(message, meta=make_meta(MetaStatusValue.INTERNAL_ERROR, message))
+                    else:
+                        conn.append_string("Abort signal has been sent to the server app.")
+                        conn.append_success("", make_meta(MetaStatusValue.OK))
         except BaseException as e:
             conn.append_error(
                 f"Exception occurred trying to abort job: {secure_format_exception(e)}",

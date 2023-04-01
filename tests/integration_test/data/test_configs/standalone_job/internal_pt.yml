@@ -12,8 +12,7 @@ tests:
           "data": "Server started"
         "actions": [ "submit_job pt_use_path" ]
         "result":
-          "type": "run_state"
-          "data": { }
+          "type": "job_submit_success"
       - "trigger":
           "type": "run_state"
           "data": { "run_finished": True }
@@ -34,8 +33,28 @@ tests:
           "data": "Server started"
         "actions": [ "submit_job pt_use_name" ]
         "result":
+          "type": "job_submit_success"
+      - "trigger":
           "type": "run_state"
-          "data": { }
+          "data": { "run_finished": True }
+        "actions": [ "ensure_current_job_done" ]
+        "result":
+          "type": "run_state"
+          "data": { "run_finished": True }
+    validators:
+      - path: tests.integration_test.src.validators.PTModelValidator
+    setup:
+      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/cifar10_data', download=True)"
+    teardown:
+      - rm -rf /tmp/nvflare/cifar10_data
+  - test_name: "run pt_init_client"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job pt_init_client" ]
+        "result":
+          "type": "job_submit_success"
       - "trigger":
           "type": "run_state"
           "data": { "run_finished": True }
@@ -56,8 +75,7 @@ tests:
           "data": "Server started"
         "actions": [ "submit_job tb_streaming" ]
         "result":
-          "type": "run_state"
-          "data": { }
+          "type": "job_submit_success"
       - "trigger":
           "type": "run_state"
           "data": { "run_finished": True }

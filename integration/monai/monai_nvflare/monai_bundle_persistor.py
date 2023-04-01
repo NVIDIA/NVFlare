@@ -36,6 +36,7 @@ class MonaiBundlePersistor(PTFileModelPersistor):
         global_model_file_name=DefaultCheckpointFileName.GLOBAL_MODEL,
         best_global_model_file_name=DefaultCheckpointFileName.BEST_GLOBAL_MODEL,
         source_ckpt_filename=None,
+        filter_id: str = None,
     ):
         """Persist pytorch-based from MONAI bundle configuration.
 
@@ -52,7 +53,8 @@ class MonaiBundlePersistor(PTFileModelPersistor):
                 Defaults to DefaultCheckpointFileName.BEST_GLOBAL_MODEL.
             source_ckpt_filename (str, optional): file name for source model checkpoint file relative to `bundle_root`.
                 Defaults to None.
-
+            filter_id: Optional string that defines a filter component that is applied to prepare the model to be saved,
+                e.g. for serialization of custom Python objects.
         Raises:
             ValueError: when source_ckpt_filename does not exist
         """
@@ -62,6 +64,7 @@ class MonaiBundlePersistor(PTFileModelPersistor):
             global_model_file_name=global_model_file_name,
             best_global_model_file_name=best_global_model_file_name,
             source_ckpt_file_full_name=None,  # will be set in _parse_config
+            filter_id=filter_id,
         )
 
         self.bundle_root = bundle_root

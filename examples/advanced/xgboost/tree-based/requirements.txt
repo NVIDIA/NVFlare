@@ -1,4 +1,4 @@
-nvflare>=2.3.0
+nvflare>=2.3.0rc3
 pandas
 xgboost
 sklearn

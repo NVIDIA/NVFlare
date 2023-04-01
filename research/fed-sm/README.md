@@ -1,17 +1,13 @@
 # Personalized Federated Learning with FedSM Algorithm
 
-## Introduction to MONAI and FedSM
+This directory contains the code for the personalized federated learning algorithm FedSM described in
 
-### MONAI
-This example shows how to use [NVIDIA FLARE](https://nvidia.github.io/NVFlare) on medical image applications.
-It uses [MONAI](https://github.com/Project-MONAI/MONAI),
-which is a PyTorch-based, open-source framework for deep learning in healthcare imaging, part of the PyTorch Ecosystem.
+### Closing the Generalization Gap of Cross-silo Federated Medical Image Segmentation ([arXiv:2203.10144](https://arxiv.org/abs/2203.10144))
+Accepted to [CVPR2022](https://cvpr2022.thecvf.com/).
 
-### FedSM
-This example illustrates the personalized federated learning algorithm [FedSM](https://arxiv.org/abs/2203.10144) accepted to [CVPR2022](https://cvpr2022.thecvf.com/). 
-It bridges the different data distributions across clients via a SoftPull mechanism and utilizes a Super Model. 
+###### Abstract:
 
-Please note that the training of the selector model shown in this example is to predict the specific client from an input image. Hence, it is an extreme case of label imbalance: each local training only have access to one of the labels. In order to train the model successfully, the moments of Adam optimizer need to be averaged and synced together with model updates. This label imbalance across clients also lead to significant fluctuation of the validation curve (as shown below) before converging to high accuracy for all clients.   
+> Cross-silo federated learning (FL) has attracted much attention in medical imaging analysis with deep learning in recent years as it can resolve the critical issues of insufficient data, data privacy, and training efficiency. However, there can be a generalization gap between the model trained from FL and the one from centralized training. This important issue comes from the non-iid data distribution of the local data in the participating clients and is well-known as client drift. In this work, we propose a novel training framework FedSM to avoid the client drift issue and successfully close the generalization gap compared with the centralized training for medical image segmentation tasks for the first time. We also propose a novel personalized FL objective formulation and a new method SoftPull to solve it in our proposed framework FedSM. We conduct rigorous theoretical analysis to guarantee its convergence for optimizing the non-convex smooth objective function. Real-world medical image segmentation experiments using deep FL validate the motivations and effectiveness of our proposed method.
 
 ## License
 - The code in this directory is released under Apache v2 License.
@@ -30,7 +26,9 @@ pip install -r ./requirements.txt
 ```
 
 ## Run automated experiments
-We use the NVFlare simulator to run FL training automatically, the 3 clients are named `client_I2CVB, client_MSD, client_NCI_ISBI_3T`
+We use the NVFlare simulator to run FL training automatically, the 3 clients are named `client_I2CVB, client_MSD, client_NCI_ISBI_3T`.
+Please note that the training of the selector model shown in this example is to predict the specific client from an input image. Hence, it is an extreme case of label imbalance: each local training only have access to one of the labels. In order to train the model successfully, the moments of Adam optimizer need to be averaged and synced together with model updates. This label imbalance across clients also lead to significant fluctuation of the validation curve (as shown below) before converging to high accuracy for all clients.   
+
 ### Prepare local configs
 First, we add the image directory root to `config_train.json` files for generating the absolute path to dataset and datalist. 
 In the current folder structure, it will be `${PWD}/..`. 

@@ -21,13 +21,14 @@ The decomposers are registered at server/client startup.
 from nvflare.fuel.utils import fobs
 from nvflare.private.admin_defs import Message
 from nvflare.private.fed.server.run_info import RunInfo
+from nvflare.private.fed.server.server_state import Cold2HotState, ColdState, Hot2ColdState, HotState, ShutdownState
 
 
 def register():
     if register.registered:
         return
 
-    fobs.register_data_classes(Message, RunInfo)
+    fobs.register_data_classes(Message, RunInfo, HotState, ColdState, Hot2ColdState, Cold2HotState, ShutdownState)
 
     register.registered = True
 

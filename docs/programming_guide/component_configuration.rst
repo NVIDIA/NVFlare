@@ -129,6 +129,62 @@ The above configuration essentially asks the system to instantiate the class usi
 
     a = InTimeAccumulateWeightedAggregator(expected_data_kind = "WEIGHTS")
 
+``config_type`` for Component
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+In some cases, you need to pass the arguments to the component as a dictionary, not as arguments of the constructor. The config_type to helps to specify the type. 
+
+For example:
+
+.. code-block:: json
+
+    {
+        "id": "shareable_generator",
+        "name": "PTFedOptModelShareableGenerator",
+        "args": {
+            "device": "cpu",
+            "source_model": "model",
+            "optimizer_args": {
+                "path": "torch.optim.SGD",
+                "args": {
+                    "lr": 1.0,
+                    "momentum": 0.6
+                },
+                "config_type": "dict"
+            },
+            "lr_scheduler_args": {
+                "path": "torch.optim.lr_scheduler.CosineAnnealingLR",
+                "args": {
+                    "T_max": "{num_rounds}",
+                    "eta_min": 0.9
+                }
+            }
+        }
+    },
+
+Notice the config:
+
+.. code-block:: json
+
+    "optimizer_args": {
+        "path": "torch.optim.SGD",
+        "args": {
+            "lr": 1.0,
+            "momentum": 0.6
+        },
+        "config_type": "dict"
+    },
+
+We need to pass a run-time argument to "torch.optim.SDG" with a dictionary. To help the configuration parser to know that here we intend to pass a single dictionary
+argument, not as two arguments to the constructor, we specify:
+
+.. code-block:: json
+
+    "config_type": "dict"
+
+By default ``config_type`` is "Component" if not specified.
+
+Name and Path
+-------------
 The class path can be quite long, so NVFLARE allows users to only specify the class name, and NVFLARE will search the specified Python path
 to find the corresponding class path. In the configuration, you can use "name" to do this.
 

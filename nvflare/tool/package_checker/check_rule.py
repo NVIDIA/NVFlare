@@ -42,8 +42,15 @@ class CheckResult:
 
 
 class CheckRule(ABC):
-    def __init__(self, name):
+    def __init__(self, name: str, required: bool = True):
+        """Creates a CheckRule.
+
+        Args:
+            name (str): name of the rule
+            required (bool): whether this rule is required to pass.
+        """
         self.name = name
+        self.required = required
 
     @abstractmethod
     def __call__(self, package_path: str, data) -> CheckResult:
@@ -138,23 +145,32 @@ class CheckWriting(CheckRule):
         return CheckResult(CHECK_PASSED, "N/A")
 
 
-class CheckPrimarySPInResponse(CheckRule):
+def _get_primary_sp(sp_list):
+    for sp in sp_list:
+        if sp["primary"]:
+            return sp
+    return None
+
+
+class CheckSPListInResponse(CheckRule):
     def __call__(self, package_path, data):
         data = data.json()
-        psp = data.get("primary_sp")
-        if not psp:
+        sp_list = data.get("sp_list", [])
+        psp = _get_primary_sp(sp_list)
+        if psp is None:
             return CheckResult(
                 "Can't get primary service provider from overseer",
                 "Please contact NVFLARE system admin and make sure at least one of the FL servers"
                 + " is up and can connect to overseer.",
             )
-        return CheckResult(CHECK_PASSED, "N/A", psp)
+        return CheckResult(CHECK_PASSED, "N/A", sp_list)
 
 
-class CheckSPSocketServerAvailable(CheckRule):
+class CheckPrimarySPSocketServerAvailable(CheckRule):
     def __call__(self, package_path, data):
         startup = os.path.join(package_path, "startup")
-        sp_end_point = data["sp_end_point"]
+        psp = _get_primary_sp(data)
+        sp_end_point = psp["sp_end_point"]
         sp_name, grpc_port, admin_port = sp_end_point.split(":")
         if not check_socket_server_running(startup=startup, host=sp_name, port=int(admin_port)):
             return CheckResult(
@@ -167,10 +183,11 @@ class CheckSPSocketServerAvailable(CheckRule):
         return CheckResult(CHECK_PASSED, "N/A", data)
 
 
-class CheckSPGRPCServerAvailable(CheckRule):
+class CheckPrimarySPGRPCServerAvailable(CheckRule):
     def __call__(self, package_path, data):
         startup = os.path.join(package_path, "startup")
-        sp_end_point = data["sp_end_point"]
+        psp = _get_primary_sp(data)
+        sp_end_point = psp["sp_end_point"]
         sp_name, grpc_port, admin_port = sp_end_point.split(":")
 
         if not check_grpc_server_running(startup=startup, host=sp_name, port=int(grpc_port)):
@@ -178,4 +195,38 @@ class CheckSPGRPCServerAvailable(CheckRule):
                 f"Can't connect to primary service provider's grpc server ({sp_name}:{grpc_port})",
                 "Please check if server is up.",
             )
+        return CheckResult(CHECK_PASSED, "N/A", data)
+
+
+class CheckNonPrimarySPSocketServerAvailable(CheckRule):
+    def __call__(self, package_path, data):
+        startup = os.path.join(package_path, "startup")
+        for sp in data:
+            if not sp["primary"]:
+                sp_end_point = sp["sp_end_point"]
+                sp_name, grpc_port, admin_port = sp_end_point.split(":")
+                if not check_socket_server_running(startup=startup, host=sp_name, port=int(admin_port)):
+                    return CheckResult(
+                        f"Can't connect to ({sp_name}:{admin_port}) / DNS can't resolve",
+                        f" 1) If ({sp_name}:{admin_port}) is public, check internet connection, try ping ({sp_name}:{admin_port})."
+                        f" 2) If ({sp_name}:{admin_port}) is private, then you need to add its ip to the etc/hosts."
+                        f" 3) If network is good, Please contact NVFLARE system admin and make sure the non-primary "
+                        "FL server is running.",
+                    )
+        return CheckResult(CHECK_PASSED, "N/A", data)
+
+
+class CheckNonPrimarySPGRPCServerAvailable(CheckRule):
+    def __call__(self, package_path, data):
+        startup = os.path.join(package_path, "startup")
+        for sp in data:
+            if not sp["primary"]:
+                sp_end_point = sp["sp_end_point"]
+                sp_name, grpc_port, admin_port = sp_end_point.split(":")
+
+                if not check_grpc_server_running(startup=startup, host=sp_name, port=int(grpc_port)):
+                    return CheckResult(
+                        f"Can't connect to non-primary service provider's grpc server ({sp_name}:{grpc_port})",
+                        "Please check if server is up.",
+                    )
         return CheckResult(CHECK_PASSED, "N/A", data)
