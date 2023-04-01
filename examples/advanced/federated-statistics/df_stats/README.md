@@ -5,16 +5,16 @@ You can also follow the [notebook](../df_stats.ipynb) or the following:
 
 
 ## Setup NVFLARE
-follow the [Getting Started](https://nvflare.readthedocs.io/en/main/getting_started.html) to setup virtual environment and install NVFLARE
+Follow the [Getting Started](https://nvflare.readthedocs.io/en/main/getting_started.html) to setup virtual environment and install NVFLARE
 
 Let's first install required packages.
 
 ```
 pip install --upgrade pip
 
-cd NVFlare/examples/advanced/federated-statistics/
+cd NVFlare/examples/advanced/federated-statistics/df_stats
 
-pip install -r df_stats/requirements.txt
+pip install -r requirements.txt
 ```
 
 ## 1. Prepare data
@@ -25,9 +25,9 @@ so we assigned the training data and test data into two clients.
  
 Now we use data utility to download UCI datasets to separate client package directory to /tmp/nvflare/data/ directory
 ```shell
-df_stats/prepare_data.sh
+prepare_data.sh
 ```
-it should showing something like
+it should show something like
 ```
 prepare data for data directory /tmp/nvflare/df_stats/data
 
@@ -45,7 +45,7 @@ With FL simulator, we can just run the example with CLI command
 
 
 ```
-cd NVFlare/examples/advanced/federated-statistics/
+cd NVFlare/examples/advanced/federated-statistics
 nvflare simulator df_stats/jobs/df_stats -w /tmp/nvflare/df_stats -n 2 -t 2
 ```
 
@@ -59,7 +59,7 @@ The results are stored in workspace "/tmp/nvflare"
    A visualization utility tools are showed in show_stats.py in visualization directory
    You can run jupyter notebook visualization.ipynb
 
-   assuming NVFLARE_HOME env variable point tp the github project location (NVFlare) which contains current example. 
+   assuming NVFLARE_HOME env variable point to the GitHub project location (NVFlare) which contains current example. 
 
 ```bash
     cp /tmp/nvflare/df_stats/simulate_job/advanced/statistics/adults_stats.json $NVFLARE_HOME/examples/advanced/federated-statistics/df_stats/demo/.
@@ -142,8 +142,8 @@ then go to section [6. Visualization]
 
 Since Flare has already developed the operators (server side controller and client side executor) for the federated
 statistics computing, we will only need to provide the followings
-* config_fed_server.json ( server side controller configuration)
-* config_client_server.json ( client side executor configuration)
+* config_fed_server.json (server side controller configuration)
+* config_client_server.json (client side executor configuration)
 * local statistics calculator
 
 ### 5.1 server side configuration
