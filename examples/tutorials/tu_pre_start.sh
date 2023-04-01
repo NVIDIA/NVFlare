@@ -11,7 +11,7 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 workspace="/tmp/workspace"
 # clean up to get a fresh restart
 if [ -d "${workspace}" ]; then
-   rm -r workspace
+   rm -r "${workspace}"
 fi
 
 # create the workspace directory if not exists
@@ -54,7 +54,6 @@ python <<END1
 from nvflare.lighter.utils import update_storage_locations
 update_storage_locations(local_dir = "${prod_dir}/${server_name}/local", workspace = "${workspace}")
 END1
-
 for s in "site-1" "site-2" $server_name ; do
   startup_dir="${prod_dir}/${s}/startup"
    cmd="${startup_dir}/start.sh"
@@ -63,39 +62,12 @@ done
 
 # Check if the FL system is ready
 python <<END
-
-import os, time
-from nvflare.fuel.flare_api.flare_api import new_secure_session
-from nvflare.fuel.flare_api.flare_api import NoConnection
-
-print("wait for 20 seconds before FL system is up")
-time.sleep(20)
+import os
+from nvflare.lighter.utils import test_prod_connection
 
 username = "admin@nvidia.com"
 prod_dir = "${prod_dir}"
-
-admin_user_dir = os.path.join(prod_dir, username)
-
-# just in case try to connect before server started
-flare_not_ready = True
-while flare_not_ready:
-    print("trying to connect to server")
-
-    sess = new_secure_session(username=username, startup_kit_location=admin_user_dir)
-    sys_info = sess.get_system_info()
-
-    print(f"Server info:\n{sys_info.server_info}")
-    print("\nClient info")
-    for client in sys_info.client_info:
-        print(client)
-    flare_not_ready = len( sys_info.client_info) < 2
-
-    time.sleep(2)
-
-if flare_not_ready:
-   raise RuntimeError("can't not connect to server")
-else:
-   print("ready to go")
+test_prod_connection(prod_dir, username, num_clients = 2)
 
 END
 

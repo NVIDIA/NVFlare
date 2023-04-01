@@ -25,8 +25,8 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 
-from nvflare.fuel.flare_api.api_spec import JobNotFound
-from nvflare.fuel.flare_api.flare_api import Session
+from nvflare.fuel.flare_api.api_spec import JobNotFound, NoConnection
+from nvflare.fuel.flare_api.flare_api import Session, new_secure_session, new_insecure_session
 from nvflare.lighter.impl.cert import load_crt
 
 
@@ -184,11 +184,11 @@ def update_project_server_name(project_file: str, old_server_name, server_name):
 
 
 def update_storage_locations(
-    local_dir: str,
-    workspace: str,
-    default_resource_name: str = "resources.json.default",
-    job_storage_name: str = "jobs-storage",
-    snapshot_storage_name: str = "snapshot-storage",
+        local_dir: str,
+        workspace: str,
+        default_resource_name: str = "resources.json.default",
+        job_storage_name: str = "jobs-storage",
+        snapshot_storage_name: str = "snapshot-storage",
 ):
     default_resource = f"{local_dir}/{default_resource_name}"
     target_resource = f"{local_dir}/resources.json"
@@ -211,7 +211,39 @@ def update_storage_locations(
         outfile.write(json_object)
 
 
-def shutdown_fl_system(sess: Session, timeout_in_sec: int = 30):
+def shutdown_prod_system(prod_dir: str, username: str, timeout_in_sec: int = 30):
+    admin_user_dir = os.path.join(prod_dir, username)
+    print("connect to nvflare server")
+    sess = None
+    try:
+        sess = new_secure_session(username=username, startup_kit_location=admin_user_dir)
+        shutdown_system_by_session(sess=sess, timeout_in_sec=timeout_in_sec)
+    except NoConnection:
+        # system is already shutdown
+        return
+    finally:
+        if sess:
+            sess.close()
+
+
+def shutdown_poc_system(poc_workspace: str, timeout_in_sec: int = 30):
+    admin_dir = os.path.join(poc_workspace, "admin")
+    print("connect to nvflare server")
+    sess = None
+    try:
+        sess = new_insecure_session(admin_dir)
+        shutdown_system_by_session(sess=sess, timeout_in_sec=timeout_in_sec)
+    except NoConnection:
+        # system is already shutdown
+        return
+    except Exception as e:
+        print("failure", e)
+    finally:
+        if sess:
+            sess.close()
+
+
+def shutdown_system_by_session(sess: Session, timeout_in_sec: int = 20):
     print("checking running jobs")
     jobs = sess.list_jobs()
     active_job_ids = get_running_job_ids(jobs)
@@ -241,13 +273,13 @@ def abort_jobs(sess, job_ids):
 
 
 def wait_for_system_shutdown(sess: Session, timeout_in_sec: int = 30):
-    sys_info = sess.get_system_info()
-    status = sys_info.server_info.status
     start = time.time()
     duration = 0
     cnt = 0
-    while status == "started" and duration < timeout_in_sec:
+    status = None
+    while (status is None or status == "started") and duration < timeout_in_sec:
         try:
+            print("trying to connect to NVFLARE server")
             sys_info = sess.get_system_info()
             status = sys_info.server_info.status
             curr = time.time()
@@ -259,3 +291,66 @@ def wait_for_system_shutdown(sess: Session, timeout_in_sec: int = 30):
         except BaseException:
             # Server is already shutdown
             return
+
+
+def get_system_info(sess: Session, num_clients: int, second_to_wait: int = 20) -> bool:
+    print(f"wait for {second_to_wait} seconds before FL system is up")
+    time.sleep(second_to_wait)
+    # just in case try to connect before server started
+    flare_not_ready = True
+    while flare_not_ready:
+        print("trying to connect to server")
+        try:
+            sys_info = sess.get_system_info()
+            print(f"Server info:\n{sys_info.server_info}")
+            print("\nClient info")
+            for client in sys_info.client_info:
+                print(client)
+            flare_not_ready = len(sys_info.client_info) < num_clients
+
+            time.sleep(2)
+        except BaseException:
+            # system is not ready
+            pass
+
+    if flare_not_ready:
+        print("can't not connect to server")
+        return False
+    else:
+        print("ready to go")
+        return True
+
+
+def test_prod_connection(prod_dir: str, username: str, num_clients: int):
+    admin_user_dir = os.path.join(prod_dir, username)
+    sess = None
+    try:
+        sess = new_secure_session(username=username, startup_kit_location=admin_user_dir)
+        if not get_system_info(sess=sess, num_clients=num_clients):
+            raise ValueError("can't connect to FL system")
+    except NoConnection:
+        # system is already shutdown
+        return
+    except Exception as e:
+        print("failure", e)
+    finally:
+        if sess:
+            sess.close()
+
+
+def test_poc_connection(prod_dir: str, num_clients: int):
+    admin_user_dir = os.path.join(prod_dir, "admin")
+    sess = None
+    try:
+        sess = new_insecure_session(admin_user_dir)
+        if not get_system_info(sess=sess, num_clients=num_clients):
+            raise ValueError("can't connect to FL system")
+    except NoConnection:
+        # system is already shutdown
+        return
+    except Exception as e:
+        print("failure", e)
+    finally:
+        if sess:
+            sess.close()
+

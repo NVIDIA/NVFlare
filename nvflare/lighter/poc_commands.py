@@ -21,12 +21,10 @@ import time
 from typing import Dict, List, Optional
 
 from nvflare.cli_exception import CLIException
-from nvflare.fuel.flare_api.api_spec import NoConnection
-from nvflare.fuel.flare_api.flare_api import new_insecure_session
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
 from nvflare.lighter.poc import generate_poc
 from nvflare.lighter.service_constants import FlareServiceConstants as SC
-from nvflare.lighter.utils import update_storage_locations, shutdown_fl_system
+from nvflare.lighter.utils import update_storage_locations, shutdown_poc_system
 
 DEFAULT_WORKSPACE = "/tmp/nvflare/poc"
 
@@ -200,23 +198,7 @@ def stop_poc(poc_workspace: str, excluded=None, white_list=None):
     print("start shutdown NVFLARE")
     validate_poc_workspace(poc_workspace)
     gpu_ids: List[int] = []
-    sess = None
-
-    try:
-        admin_dir = os.path.join(poc_workspace, "admin")
-        print("trying to connect to FL server")
-        sess = new_insecure_session(admin_dir)
-        shutdown_fl_system(sess)
-
-    except NoConnection:
-        print("fail to connect FL server")
-        pass
-    except Exception as e:
-        print("failure", e)
-    finally:
-        if sess:
-            sess.close()
-
+    shutdown_poc_system(poc_workspace)
     _run_poc(SC.CMD_STOP, poc_workspace, gpu_ids, excluded=excluded, white_list=white_list)
 
 
