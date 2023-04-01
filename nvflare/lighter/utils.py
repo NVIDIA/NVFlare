@@ -16,13 +16,17 @@ import json
 import os
 import random
 import shutil
+import time
 from base64 import b64decode, b64encode
+from typing import List
 
 import yaml
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 
+from nvflare.fuel.flare_api.api_spec import JobNotFound
+from nvflare.fuel.flare_api.flare_api import Session
 from nvflare.lighter.impl.cert import load_crt
 
 
@@ -205,3 +209,53 @@ def update_storage_locations(
     json_object = json.dumps(resources, indent=4)
     with open(target_resource, "w") as outfile:
         outfile.write(json_object)
+
+
+def shutdown_fl_system(sess: Session, timeout_in_sec: int = 30):
+    print("checking running jobs")
+    jobs = sess.list_jobs()
+    active_job_ids = get_running_job_ids(jobs)
+    if len(active_job_ids) > 0:
+        print("Warning: current running jobs will be aborted")
+        abort_jobs(sess, active_job_ids)
+    print("shutdown NVFLARE")
+    sess.api.do_command("shutdown all")
+    wait_for_system_shutdown(sess, timeout_in_sec=timeout_in_sec)
+
+
+def get_running_job_ids(jobs: list) -> List[str]:
+    if len(jobs) > 0:
+        running_job_ids = [job for job in jobs if job["status"] == "RUNNING"]
+        return running_job_ids
+    else:
+        return []
+
+
+def abort_jobs(sess, job_ids):
+    for job_id in job_ids:
+        try:
+            sess.abort_job(job_id)
+        except JobNotFound:
+            # ignore invalid job id
+            pass
+
+
+def wait_for_system_shutdown(sess: Session, timeout_in_sec: int = 30):
+    sys_info = sess.get_system_info()
+    status = sys_info.server_info.status
+    start = time.time()
+    duration = 0
+    cnt = 0
+    while status == "started" and duration < timeout_in_sec:
+        try:
+            sys_info = sess.get_system_info()
+            status = sys_info.server_info.status
+            curr = time.time()
+            duration = curr - start
+            if cnt % 25 == 0:
+                print("waiting system to shutdown")
+            cnt += 1
+            time.sleep(0.1)
+        except BaseException:
+            # Server is already shutdown
+            return

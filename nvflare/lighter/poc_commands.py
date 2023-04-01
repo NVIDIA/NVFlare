@@ -21,12 +21,12 @@ import time
 from typing import Dict, List, Optional
 
 from nvflare.cli_exception import CLIException
-from nvflare.fuel.flare_api.api_spec import JobNotFound, NoConnection
+from nvflare.fuel.flare_api.api_spec import NoConnection
 from nvflare.fuel.flare_api.flare_api import new_insecure_session
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
 from nvflare.lighter.poc import generate_poc
 from nvflare.lighter.service_constants import FlareServiceConstants as SC
-from nvflare.lighter.utils import update_storage_locations
+from nvflare.lighter.utils import update_storage_locations, shutdown_fl_system
 
 DEFAULT_WORKSPACE = "/tmp/nvflare/poc"
 
@@ -206,17 +206,7 @@ def stop_poc(poc_workspace: str, excluded=None, white_list=None):
         admin_dir = os.path.join(poc_workspace, "admin")
         print("trying to connect to FL server")
         sess = new_insecure_session(admin_dir)
-        print("checking running jobs")
-        jobs = sess.list_jobs()
-        active_job_ids = _get_running_job_ids(jobs)
-        if len(active_job_ids) > 0:
-            print("Warning: current running jobs will be aborted")
-            _abort_jobs(sess, active_job_ids)
-
-        print("shutdown NVFLARE")
-        sess.api.do_command("shutdown all")
-
-        wait_for_system_shutdown(sess)
+        shutdown_fl_system(sess)
 
     except NoConnection:
         print("fail to connect FL server")
@@ -228,45 +218,6 @@ def stop_poc(poc_workspace: str, excluded=None, white_list=None):
             sess.close()
 
     _run_poc(SC.CMD_STOP, poc_workspace, gpu_ids, excluded=excluded, white_list=white_list)
-
-
-def wait_for_system_shutdown(sess):
-    sys_info = sess.get_system_info()
-    status = sys_info.server_info.status
-    timeout = 30
-    start = time.time()
-    duration = 0
-    cnt = 0
-    while status == "started" and duration < timeout:
-        try:
-            sys_info = sess.get_system_info()
-            status = sys_info.server_info.status
-            curr = time.time()
-            duration = curr - start
-            if cnt % 25 == 0:
-                print("waiting system to shutdown")
-            cnt += 1
-            time.sleep(0.1)
-        except BaseException:
-            # Server is already shutdown
-            return
-
-
-def _abort_jobs(sess, job_ids):
-    for job_id in job_ids:
-        try:
-            sess.abort_job(job_id)
-        except JobNotFound:
-            # ignore invalid job id
-            pass
-
-
-def _get_running_job_ids(jobs: list) -> List[str]:
-    if len(jobs) > 0:
-        running_job_ids = [job for job in jobs if job["status"] == "RUNNING"]
-        return running_job_ids
-    else:
-        return []
 
 
 def _get_clients(package_commands: list) -> List[str]:
@@ -395,7 +346,7 @@ def def_poc_parser(sub_cmd):
         action="store_const",
         const=prepare_poc,
         help="prepare poc workspace. "
-        + "export NVFLARE_HOME=<NVFLARE github cloned directory> to setup examples with prepare command",
+             + "export NVFLARE_HOME=<NVFLARE github cloned directory> to setup examples with prepare command",
     )
     poc_parser.add_argument("--start", dest="start_poc", action="store_const", const=start_poc, help="start poc")
     poc_parser.add_argument("--stop", dest="stop_poc", action="store_const", const=stop_poc, help="stop poc")
@@ -407,10 +358,10 @@ def def_poc_parser(sub_cmd):
 
 def is_poc(cmd_args) -> bool:
     return (
-        hasattr(cmd_args, "start_poc")
-        or hasattr(cmd_args, "prepare_poc")
-        or hasattr(cmd_args, "stop_poc")
-        or hasattr(cmd_args, "clean_poc")
+            hasattr(cmd_args, "start_poc")
+            or hasattr(cmd_args, "prepare_poc")
+            or hasattr(cmd_args, "stop_poc")
+            or hasattr(cmd_args, "clean_poc")
     )
 
 

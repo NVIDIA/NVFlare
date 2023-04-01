@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # NVFLARE INSTALL
-NVFLARE_VERSION="2.3.0rc3"
+NVFLARE_VERSION="2.3.0rc6"
 pip install 'nvflare>=${NVFLARE_VERSION}'
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
@@ -71,23 +71,17 @@ from nvflare.fuel.flare_api.flare_api import NoConnection
 print("wait for 20 seconds before FL system is up")
 time.sleep(20)
 
-project_name = "${project_name}"
 username = "admin@nvidia.com"
-workspace_root = "${workspace}"
 prod_dir = "${prod_dir}"
 
-admin_user_dir = os.path.join(workspace_root, project_name, prod_dir, username)
+admin_user_dir = os.path.join(prod_dir, username)
 
 # just in case try to connect before server started
 flare_not_ready = True
 while flare_not_ready:
     print("trying to connect to server")
 
-    sess = new_secure_session(
-        username=username,
-        startup_kit_location=admin_user_dir
-    )
-
+    sess = new_secure_session(username=username, startup_kit_location=admin_user_dir)
     sys_info = sess.get_system_info()
 
     print(f"Server info:\n{sys_info.server_info}")
