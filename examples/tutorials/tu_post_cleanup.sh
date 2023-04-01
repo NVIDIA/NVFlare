@@ -21,11 +21,11 @@ server_name="localhost"
 # first try gracefully shutdown
 python <<END
 import os, time
-from nvflare.lighter.utils import shutdown_prod_system
+from nvflare.lighter.utils import shutdown_system
 
 username = "admin@nvidia.com"
 prod_dir = "${prod_dir}"
-shutdown_prod_system(prod_dir=prod_dir, username = username)
+shutdown_system(prod_dir=prod_dir, username = username, secure_mode = True)
 
 END
 

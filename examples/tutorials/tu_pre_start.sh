@@ -54,6 +54,8 @@ python <<END1
 from nvflare.lighter.utils import update_storage_locations
 update_storage_locations(local_dir = "${prod_dir}/${server_name}/local", workspace = "${workspace}")
 END1
+
+# start FL system
 for s in "site-1" "site-2" $server_name ; do
   startup_dir="${prod_dir}/${s}/startup"
    cmd="${startup_dir}/start.sh"
@@ -63,12 +65,10 @@ done
 # Check if the FL system is ready
 python <<END
 import os
-from nvflare.lighter.utils import test_prod_connection
-
+from nvflare.lighter.utils import wait_for_system_start
 username = "admin@nvidia.com"
 prod_dir = "${prod_dir}"
-test_prod_connection(prod_dir, username, num_clients = 2)
-
+wait_for_system_start(num_clients = 2, prod_dir = prod_dir, username = username, secure_mode = True)
 END
 
 

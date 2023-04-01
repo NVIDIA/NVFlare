@@ -24,7 +24,7 @@ from nvflare.cli_exception import CLIException
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
 from nvflare.lighter.poc import generate_poc
 from nvflare.lighter.service_constants import FlareServiceConstants as SC
-from nvflare.lighter.utils import update_storage_locations, shutdown_poc_system
+from nvflare.lighter.utils import update_storage_locations, shutdown_system
 
 DEFAULT_WORKSPACE = "/tmp/nvflare/poc"
 
@@ -198,7 +198,7 @@ def stop_poc(poc_workspace: str, excluded=None, white_list=None):
     print("start shutdown NVFLARE")
     validate_poc_workspace(poc_workspace)
     gpu_ids: List[int] = []
-    shutdown_poc_system(poc_workspace)
+    shutdown_system(poc_workspace)
     _run_poc(SC.CMD_STOP, poc_workspace, gpu_ids, excluded=excluded, white_list=white_list)
 
 

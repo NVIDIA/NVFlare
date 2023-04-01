@@ -21,11 +21,10 @@ fi
 
 nvflare poc --start -ex admin
 
-
 # Check if the FL system is ready
 python <<END
-from nvflare.lighter.utils import test_poc_connection
-test_poc_connection("${NVFLARE_POC_WORKSPACE}", num_clients = 2)
+from nvflare.lighter.utils import wait_for_system_start
+wait_for_system_start(num_clients = 2,  prod_dir = "${NVFLARE_POC_WORKSPACE}")
 
 END
 
