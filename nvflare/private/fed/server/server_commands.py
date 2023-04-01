@@ -182,10 +182,11 @@ class GetTaskCommand(CommandProcessor, ServerStateCheck):
         shared_fl_ctx.set_public_props(copy.deepcopy(get_serializable_data(fl_ctx).get_all_public_props()))
         shareable.set_header(key=FLContextKey.PEER_CONTEXT, value=shared_fl_ctx)
 
-        self.logger.info(
-            f"return task to client.  client_name:{client.name}  task_name: {taskname}   task_id:{task_id}  "
-            f"sharable_header_task_id: {shareable.get_header(key=FLContextKey.TASK_ID)}"
-        )
+        if taskname != SpecialTaskName.TRY_AGAIN:
+            self.logger.info(
+                f"return task to client.  client_name: {client.name}  task_name: {taskname}   task_id: {task_id}  "
+                f"sharable_header_task_id: {shareable.get_header(key=FLContextKey.TASK_ID)}"
+            )
         self.logger.debug(f"Get_task processing time: {time.time()-start_time} for client: {client.name}")
         return shareable
 
