@@ -412,20 +412,22 @@ class JobCommandModule(CommandModule, CommandUtil):
                 job_status = job.meta.get(JobMetaKey.STATUS)
                 if job_status in [RunStatus.SUBMITTED, RunStatus.DISPATCHED]:
                     job_manager.set_status(job.job_id, RunStatus.FINISHED_ABORTED, fl_ctx)
-                    conn.append_string(f"Abort the job: {job_id} before run.")
-                    conn.append_success("", make_meta(MetaStatusValue.OK))
+                    message = f"Aborted the job {job_id} before running it."
+                    conn.append_string(message)
+                    conn.append_success("", meta=make_meta(MetaStatusValue.OK, message))
                     return
                 elif job_status.startswith("FINISHED:"):
                     message = f"Job for {job_id} is already completed."
                     conn.append_string(message)
-                    conn.append_success("", make_meta(MetaStatusValue.OK, message))
+                    conn.append_success("", meta=make_meta(MetaStatusValue.OK, message))
                 else:
                     message = job_runner.stop_run(job_id, fl_ctx)
                     if message:
                         conn.append_error(message, meta=make_meta(MetaStatusValue.INTERNAL_ERROR, message))
                     else:
+                        message = "Abort signal has been sent to the server app."
                         conn.append_string("Abort signal has been sent to the server app.")
-                        conn.append_success("", make_meta(MetaStatusValue.OK))
+                        conn.append_success("", meta=make_meta(MetaStatusValue.OK, message))
         except BaseException as e:
             conn.append_error(
                 f"Exception occurred trying to abort job: {secure_format_exception(e)}",
