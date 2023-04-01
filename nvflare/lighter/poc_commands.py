@@ -24,7 +24,7 @@ from nvflare.cli_exception import CLIException
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
 from nvflare.lighter.poc import generate_poc
 from nvflare.lighter.service_constants import FlareServiceConstants as SC
-from nvflare.lighter.utils import update_storage_locations, shutdown_system
+from nvflare.lighter.utils import shutdown_system, update_storage_locations
 
 DEFAULT_WORKSPACE = "/tmp/nvflare/poc"
 
@@ -328,7 +328,7 @@ def def_poc_parser(sub_cmd):
         action="store_const",
         const=prepare_poc,
         help="prepare poc workspace. "
-             + "export NVFLARE_HOME=<NVFLARE github cloned directory> to setup examples with prepare command",
+        + "export NVFLARE_HOME=<NVFLARE github cloned directory> to setup examples with prepare command",
     )
     poc_parser.add_argument("--start", dest="start_poc", action="store_const", const=start_poc, help="start poc")
     poc_parser.add_argument("--stop", dest="stop_poc", action="store_const", const=stop_poc, help="stop poc")
@@ -340,10 +340,10 @@ def def_poc_parser(sub_cmd):
 
 def is_poc(cmd_args) -> bool:
     return (
-            hasattr(cmd_args, "start_poc")
-            or hasattr(cmd_args, "prepare_poc")
-            or hasattr(cmd_args, "stop_poc")
-            or hasattr(cmd_args, "clean_poc")
+        hasattr(cmd_args, "start_poc")
+        or hasattr(cmd_args, "prepare_poc")
+        or hasattr(cmd_args, "stop_poc")
+        or hasattr(cmd_args, "clean_poc")
     )
 
 

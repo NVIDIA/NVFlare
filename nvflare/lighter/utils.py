@@ -184,11 +184,11 @@ def update_project_server_name(project_file: str, old_server_name, server_name):
 
 
 def update_storage_locations(
-        local_dir: str,
-        workspace: str,
-        default_resource_name: str = "resources.json.default",
-        job_storage_name: str = "jobs-storage",
-        snapshot_storage_name: str = "snapshot-storage",
+    local_dir: str,
+    workspace: str,
+    default_resource_name: str = "resources.json.default",
+    job_storage_name: str = "jobs-storage",
+    snapshot_storage_name: str = "snapshot-storage",
 ):
     default_resource = f"{local_dir}/{default_resource_name}"
     target_resource = f"{local_dir}/resources.json"
@@ -279,12 +279,14 @@ def wait_for_system_shutdown(sess: Session, timeout_in_sec: int = 30):
             return
 
 
-def wait_for_system_start(num_clients: int,
-                          prod_dir: str,
-                          username: str = "admin",
-                          secure_mode: bool = False,
-                          second_to_wait: int = 20,
-                          timeout_in_sec: int = 30):
+def wait_for_system_start(
+    num_clients: int,
+    prod_dir: str,
+    username: str = "admin",
+    secure_mode: bool = False,
+    second_to_wait: int = 20,
+    timeout_in_sec: int = 30,
+):
     print(f"wait for {second_to_wait} seconds before FL system is up")
     time.sleep(second_to_wait)
     # just in case try to connect before server started
