@@ -101,6 +101,7 @@ def main():
         PrivacyService.initialize(privacy_manager)
 
         federated_client = deployer.create_fed_client(args)
+        federated_client.start_overseer_agent()
 
         while not federated_client.sp_established:
             print("Waiting for SP....")

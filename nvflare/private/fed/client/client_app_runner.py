@@ -49,6 +49,7 @@ class ClientAppRunner(Runner):
 
         self.sync_up_parents_process(federated_client)
 
+        federated_client.start_overseer_agent()
         federated_client.status = ClientStatus.STARTED
         self.client_runner.run(app_root, args)
 
