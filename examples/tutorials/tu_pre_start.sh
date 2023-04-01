@@ -50,12 +50,15 @@ project_name="example_project"
 prod_dir=$(ls -td ${workspace}/${project_name}/prod_* | head -1)
 
 # update server/local/resources.json
+# we decided to update resources.json to set the job-storage and snapshot storage in workspace
+# when we rm the workspace, we can remove all the related storages as well.
+# in normal production, you don't need to do this.
 python <<END1
 from nvflare.lighter.utils import update_storage_locations
 update_storage_locations(local_dir = "${prod_dir}/${server_name}/local", workspace = "${workspace}")
 END1
 
-# start FL system
+# start FL system (site-1, site-2 and server)
 for s in "site-1" "site-2" $server_name ; do
   startup_dir="${prod_dir}/${s}/startup"
    cmd="${startup_dir}/start.sh"
