@@ -71,5 +71,5 @@ class PSI(InitFinalComponent, ABC):
         if self.psi_writer:
             self.psi_writer.save(intersection=intersection, overwrite_existing=True, fl_ctx=self.fl_ctx)
 
-    def finalize(self):
+    def finalize(self, fl_ctx: FLContext):
         pass

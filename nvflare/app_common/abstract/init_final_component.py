@@ -23,7 +23,7 @@ class InitFinalComponent(FLComponent, ABC):
         pass
 
     @abstractmethod
-    def finalize(self):
+    def finalize(self, fl_ctx: FLContext):
         pass
 
 
@@ -33,5 +33,5 @@ class InitFinalArgsComponent(InitFinalComponent, ABC):
         pass
 
     @abstractmethod
-    def finalize(self):
+    def finalize(self, fl_ctx: FLContext):
         pass
