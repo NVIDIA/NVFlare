@@ -2,7 +2,7 @@
 
 # NVFLARE INSTALL
 NVFLARE_VERSION="2.3.0rc3"
-pip install 'nvflare>=${NVFLARE_VERSION}'
+pip install 'nvflare[app_opt]>=${NVFLARE_VERSION}'
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
@@ -11,7 +11,7 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 workspace="/tmp/workspace"
 # clean up to get a fresh restart
 if [ -d "${workspace}" ]; then
-   rm -r workspace
+   rm -r "${workspace}"
 fi
 
 # create the workspace directory if not exists
@@ -50,11 +50,15 @@ project_name="example_project"
 prod_dir=$(ls -td ${workspace}/${project_name}/prod_* | head -1)
 
 # update server/local/resources.json
+# we decided to update resources.json to set the job-storage and snapshot storage in workspace
+# when we rm the workspace, we can remove all the related storages as well.
+# in normal production, you don't need to do this.
 python <<END1
 from nvflare.lighter.utils import update_storage_locations
 update_storage_locations(local_dir = "${prod_dir}/${server_name}/local", workspace = "${workspace}")
 END1
 
+# start FL system (site-1, site-2 and server)
 for s in "site-1" "site-2" $server_name ; do
   startup_dir="${prod_dir}/${s}/startup"
    cmd="${startup_dir}/start.sh"
@@ -63,46 +67,11 @@ done
 
 # Check if the FL system is ready
 python <<END
-
-import os, time
-from nvflare.fuel.flare_api.flare_api import new_secure_session
-from nvflare.fuel.flare_api.flare_api import NoConnection
-
-print("wait for 20 seconds before FL system is up")
-time.sleep(20)
-
-project_name = "${project_name}"
+import os
+from nvflare.tool.api_utils import wait_for_system_start
 username = "admin@nvidia.com"
-workspace_root = "${workspace}"
 prod_dir = "${prod_dir}"
-
-admin_user_dir = os.path.join(workspace_root, project_name, prod_dir, username)
-
-# just in case try to connect before server started
-flare_not_ready = True
-while flare_not_ready:
-    print("trying to connect to server")
-
-    sess = new_secure_session(
-        username=username,
-        startup_kit_location=admin_user_dir
-    )
-
-    sys_info = sess.get_system_info()
-
-    print(f"Server info:\n{sys_info.server_info}")
-    print("\nClient info")
-    for client in sys_info.client_info:
-        print(client)
-    flare_not_ready = len( sys_info.client_info) < 2
-
-    time.sleep(2)
-
-if flare_not_ready:
-   raise RuntimeError("can't not connect to server")
-else:
-   print("ready to go")
-
+wait_for_system_start(num_clients = 2, prod_dir = prod_dir, username = username, secure_mode = True)
 END
 
 
