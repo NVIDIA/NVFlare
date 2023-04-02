@@ -21,7 +21,7 @@ server_name="localhost"
 # first try gracefully shutdown
 python <<END
 import os, time
-from nvflare.lighter.utils import shutdown_system
+from nvflare.tool.api_utils import shutdown_system
 
 username = "admin@nvidia.com"
 prod_dir = "${prod_dir}"

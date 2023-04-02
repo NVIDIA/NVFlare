@@ -68,7 +68,7 @@ done
 # Check if the FL system is ready
 python <<END
 import os
-from nvflare.lighter.utils import wait_for_system_start
+from nvflare.tool.api_utils import wait_for_system_start
 username = "admin@nvidia.com"
 prod_dir = "${prod_dir}"
 wait_for_system_start(num_clients = 2, prod_dir = prod_dir, username = username, secure_mode = True)

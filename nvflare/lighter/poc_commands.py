@@ -24,7 +24,8 @@ from nvflare.cli_exception import CLIException
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
 from nvflare.lighter.poc import generate_poc
 from nvflare.lighter.service_constants import FlareServiceConstants as SC
-from nvflare.lighter.utils import shutdown_system, update_storage_locations
+from nvflare.lighter.utils import update_storage_locations
+from nvflare.tool.api_utils import shutdown_system
 
 DEFAULT_WORKSPACE = "/tmp/nvflare/poc"
 
