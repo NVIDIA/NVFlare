@@ -318,7 +318,7 @@ class Statistics(InitFinalComponent, ABC):
         """
         return 0
 
-    def finalize(self):
+    def finalize(self, fl_ctx: FLContext):
         """Called to finalize the Statistic calculator (close/release resources gracefully).
 
         After this call, the Learner will be destroyed.

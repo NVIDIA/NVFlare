@@ -103,6 +103,6 @@ class ErrorHandlingExecutor(Executor, ABC):
     def finalize(self, fl_ctx: FLContext):
         try:
             if self.task_handler:
-                self.task_handler.finalize()
+                self.task_handler.finalize(fl_ctx)
         except Exception:
             self.log_exception(fl_ctx, f"{self.__class__.__name__} finalize exception.")
