@@ -517,7 +517,7 @@ class FederatedServer(BaseServer):
                 reply.set_header(CellMessageHeaderKeys.ABORT_JOBS, abort_runs)
 
                 display_runs = ",".join(abort_runs)
-                self.logger.info(
+                self.logger.debug(
                     f"These jobs: {display_runs} are not running on the server. "
                     f"Ask client: {client_name} to abort these runs."
                 )

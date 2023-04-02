@@ -116,7 +116,7 @@ class DhPSIWorkFlow(PSIWorkflow):
     def post_process(self, abort_signal: Signal):
         pass
 
-    def finalize(self):
+    def finalize(self, fl_ctx: FLContext):
         pass
 
     @staticmethod

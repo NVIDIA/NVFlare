@@ -64,7 +64,7 @@ class TaskHandler(InitFinalComponent, ABC):
         """
         pass
 
-    def finalize(self):
+    def finalize(self, fl_ctx: FLContext):
         if self.local_comp:
-            self.local_comp.finalize()
+            self.local_comp.finalize(fl_ctx)
         self.local_comp = None
