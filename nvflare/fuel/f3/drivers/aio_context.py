@@ -68,9 +68,18 @@ class AioContext:
         for task in pending_tasks:
             self.logger.debug(f"{self.name}: cancelled a task")
             try:
-                task.cancel()
+                # task.cancel()
+                self.loop.call_soon_threadsafe(task.cancel)
             except Exception as ex:
                 self.logger.debug(f"{self.name}: error cancelling task {type(ex)}")
+
+        # wait until all pending tasks are done
+        start = time.time()
+        while asyncio.all_tasks(self.loop):
+            if time.time() - start > grace:
+                self.logger.debug(f"pending tasks are not cancelled in {grace} seconds")
+                break
+            time.sleep(0.1)
 
         self.logger.debug("Stopping AIO loop")
         try:

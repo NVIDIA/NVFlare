@@ -348,7 +348,7 @@ class Session(SessionSpec):
         Args:
             job_id: job to be aborted
 
-        Returns: None
+        Returns: dict of (status, info)
 
         If the job is already done, no effect;
         If job is not started yet, it will be cancelled and won't be scheduled
@@ -356,7 +356,8 @@ class Session(SessionSpec):
 
         """
         self._validate_job_id(job_id)
-        self._do_command(AdminCommandNames.ABORT_JOB + " " + job_id)
+        result = self._do_command(AdminCommandNames.ABORT_JOB + " " + job_id)
+        return result.get(ResultKey.META, None)
 
     def delete_job(self, job_id: str):
         """Delete the specified job completely from the system
