@@ -18,7 +18,6 @@ import argparse
 import os
 import sys
 import time
-from pathlib import Path
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import JobConstants, SiteType, WorkspaceConstants
@@ -136,8 +135,6 @@ def main():
 
     except ConfigError as e:
         print(f"ConfigError: {secure_format_exception(e)}")
-    finally:
-        _ensure_daemon_process_shutdown(workspace)
 
 
 def create_admin_agent(
@@ -171,13 +168,6 @@ def create_admin_agent(
     client_engine.fire_event(EventType.SYSTEM_START, client_engine.new_context())
 
     return admin_agent
-
-
-def _ensure_daemon_process_shutdown(workspace: Workspace):
-    # touch SHUTDOWN_FILE to ensure shutdown of daemon process
-    # please refer to nvflare/lighter/impl/master_template.yml
-    name = workspace.get_file_path_in_root(WorkspaceConstants.SHUTDOWN_FILE)
-    Path(name).touch()
 
 
 if __name__ == "__main__":
