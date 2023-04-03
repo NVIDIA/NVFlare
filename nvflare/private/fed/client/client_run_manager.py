@@ -51,7 +51,10 @@ class ClientRunInfo(object):
         self.start_time = None
 
 
-GET_CLIENTS_RETRY = 60
+# TODO: make this configurable
+#   this is the number of retries for client side child/job process to get clients from server
+#   we might need to think of removing the whole get clients from server logic from child process
+GET_CLIENTS_RETRY = 300
 
 
 class ClientRunManager(ClientEngineExecutorSpec):
