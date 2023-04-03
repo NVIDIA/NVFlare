@@ -224,6 +224,8 @@ class ServerCommandKey(object):
     JOB_ID = "job_id"
     CLIENTS = "clients"
     COLLECTOR = "collector"
+    REMOVE_SNAPSHOT = "__remove_snapshot__"
+    ABORT_CLIENT_RUN = "__abort_client_run__"
 
 
 class FedEventHeader(object):

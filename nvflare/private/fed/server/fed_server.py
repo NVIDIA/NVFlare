@@ -455,7 +455,9 @@ class FederatedServer(BaseServer):
 
             state_check = self.server_state.register(fl_ctx)
 
-            self._handle_state_check(state_check, fl_ctx)
+            error = self._handle_state_check(state_check, fl_ctx)
+            if error is not None:
+                return make_cellnet_reply(rc=F3ReturnCode.COMM_ERROR, error=error)
 
             client = self.client_manager.authenticate(request, fl_ctx)
             if client and client.token:
@@ -474,6 +476,8 @@ class FederatedServer(BaseServer):
     def _handle_state_check(self, state_check, fl_ctx: FLContext):
         if state_check.get(ACTION) in [NIS, ABORT_RUN]:
             fl_ctx.set_prop(FLContextKey.COMMUNICATION_ERROR, state_check.get(MESSAGE), sticky=False)
+            return state_check.get(MESSAGE)
+        return None
 
     def quit_client(self, request: Message) -> Message:
         """Existing client quits the federated training process.
@@ -499,7 +503,9 @@ class FederatedServer(BaseServer):
             self._before_service(fl_ctx)
 
             state_check = self.server_state.heartbeat(fl_ctx)
-            self._handle_state_check(state_check, fl_ctx)
+            error = self._handle_state_check(state_check, fl_ctx)
+            if error is not None:
+                return make_cellnet_reply(rc=F3ReturnCode.COMM_ERROR, error=error)
 
             token = request.get_header(CellMessageHeaderKeys.TOKEN)
             client_name = request.get_header(CellMessageHeaderKeys.CLIENT_NAME)

@@ -103,8 +103,11 @@ class AbortCommand(CommandProcessor):
 
         """
         server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
+        # for HA server switch over
+        remove_snapshot = data.get_header(ServerCommandKey.REMOVE_SNAPSHOT, True)
+        abort_client_run = data.get_header(ServerCommandKey.ABORT_CLIENT_RUN, True)
         if server_runner:
-            server_runner.abort(fl_ctx)
+            server_runner.abort(fl_ctx=fl_ctx, remove_snapshot=remove_snapshot, abort_client_run=abort_client_run)
             # wait for the runner process gracefully abort the run.
             engine = fl_ctx.get_engine()
             start_time = time.time()

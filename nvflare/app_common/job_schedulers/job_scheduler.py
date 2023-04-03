@@ -336,3 +336,13 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
 
         self.log_debug(fl_ctx, "No job is scheduled.")
         return None, None
+
+    def restore_scheduled_job(self, job_id: str):
+        with self.lock:
+            if job_id not in self.scheduled_jobs:
+                self.scheduled_jobs.append(job_id)
+
+    def remove_scheduled_job(self, job_id: str):
+        with self.lock:
+            if job_id in self.scheduled_jobs:
+                self.scheduled_jobs.remove(job_id)
