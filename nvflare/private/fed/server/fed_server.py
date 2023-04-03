@@ -515,19 +515,19 @@ class FederatedServer(BaseServer):
             if self.admin_server:
                 self.admin_server.client_heartbeat(token, client_name)
 
+            abort_runs = self._sync_client_jobs(request, token)
             reply = self._generate_reply(
                 headers={CellMessageHeaderKeys.MESSAGE: "Heartbeat response"}, payload=None, fl_ctx=fl_ctx
             )
-            if isinstance(self.server_state, HotState):
-                abort_runs = self._sync_client_jobs(request, token)
-                if abort_runs:
-                    reply.set_header(CellMessageHeaderKeys.ABORT_JOBS, abort_runs)
 
-                    display_runs = ",".join(abort_runs)
-                    self.logger.debug(
-                        f"These jobs: {display_runs} are not running on the server. "
-                        f"Ask client: {client_name} to abort these runs."
-                    )
+            if abort_runs:
+                reply.set_header(CellMessageHeaderKeys.ABORT_JOBS, abort_runs)
+
+                display_runs = ",".join(abort_runs)
+                self.logger.debug(
+                    f"These jobs: {display_runs} are not running on the server. "
+                    f"Ask client: {client_name} to abort these runs."
+                )
             return reply
 
     def _sync_client_jobs(self, request, client_token):
