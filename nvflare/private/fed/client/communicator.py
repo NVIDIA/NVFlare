@@ -368,6 +368,6 @@ class Communicator:
             if abort_runs:
                 for job in abort_runs:
                     engine.abort_app(job)
-                self.logger.info(f"These runs: {display_runs} are not running on the server. Aborted them.")
+                self.logger.debug(f"These runs: {display_runs} are not running on the server. Aborted them.")
         except:
-            self.logger.info(f"Failed to clean up the runs: {display_runs}")
+            self.logger.debug(f"Failed to clean up the runs: {display_runs}")

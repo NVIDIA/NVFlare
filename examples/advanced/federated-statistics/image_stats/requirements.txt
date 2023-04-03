@@ -1,7 +1,6 @@
 nvflare>=2.3.0rc3
 numpy
-itk-io
-monai
+monai[itk]
 pandas
 kaleido
 matplotlib

@@ -1,17 +1,19 @@
 # Calculate Image Histogram with NVIDIA FLARE
 
-Compute the local and global image statistics
-
-## setup NVFLARE
-follow the [Quick Start Guide](https://nvflare.readthedocs.io/en/main/quickstart.html) to setup virtual environment and install NVFLARE
-
+Compute the local and global image statistics.
 You can also follow the [notebook](../image_stats.ipynb) or the following:
 
-install required packages.
-```
-cd NVFlare/examples/advanced/federated-statistics/
+## Setup NVFLARE
+Follow the [Getting Started](https://nvflare.readthedocs.io/en/main/getting_started.html) to setup virtual environment and install NVFLARE
 
-pip install -r image_stats/requirements.txt
+Let's first install required packages.
+
+```
+pip install --upgrade pip
+
+cd NVFlare/examples/advanced/federated-statistics/image_stats
+
+pip install -r requirements.txt
 ```
 
 ## 1. Download the example data
@@ -24,9 +26,8 @@ Next, create the data lists simulating different clients with varying amounts an
 The downloaded archive contains subfolders for four different classes: `COVID`, `Lung_Opacity`, `Normal`, and `Viral Pneumonia`.
 Here we assume each class of image corresponds to a different sites.
 
-```
-cd NVFlare/examples/advanced/federated-statistics/
-image_stats/prepare_data.sh
+```shell
+prepare_data.sh
 ```
 
 With this ratio setting, site-3 will have the largest number of images. You should see the following output
@@ -45,7 +46,7 @@ Saved 1345 entries at /tmp/nvflare/image_stats/data/site-4_Viral Pneumonia.json
 you can run the job in CLI command, since we have 4 clients, we will set `-n 4` with 4 threads `-t 4`
 
 ```
-cd NVFlare/examples/federated-statistics
+cd NVFlare/examples/advanced/federated-statistics
 nvflare simulator image_stats/jobs/image_stats -w /tmp/nvflare/image_stats -n 4 -t 4
 ```
 
