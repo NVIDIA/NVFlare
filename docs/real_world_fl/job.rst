@@ -139,7 +139,8 @@ required resources.
 
 Resource-Based Job Automation
 =============================
-Each job specifies resource requirements (the resource_spec in the meta.json), which is expressed as a Python dictionary: the key/value pairs can specify any arbitrary requirement;
+Each job specifies resource requirements (the resource_spec in the meta.json), which is expressed as a Python dictionary:
+the key/value pairs can specify any arbitrary requirement as configured in the :ref:`resource_manager_and_consumer`.
 
 There is a Job Scheduler on the Server, which decides whether a job is runnable. It asks these clients
 whether they can run the job, given the resource requirements (note: the job could have different requirements for
@@ -228,3 +229,71 @@ Each FL client periodically sends heartbeat messages to the FL server. The messa
 jobs that the client is running. The server keeps the job IDs of the jobs that each site should be running. If
 there is a discrepancy with the client running a job that should not be running, the server will ask the client to
 abort it.
+
+.. _job_scheduler_configuration:
+
+Job Scheduler Configuration
+===========================
+NVFLARE comes with a default job scheduler that periodically retrieves jobs waiting to be run from the job store.
+Since job scheduling is subject to resource availability on all clients, a job may fail to be scheduled if required resources
+are unavailable. The scheduler will have to try it again at a later time.
+
+This job scheduler tries to schedule jobs efficiently. On the one hand, it tries to schedule a waiting job as quickly as possible
+in the order of job submissions; on the other, it also tries to avoid scheduling the same job repeatedly in case that a job cannot be
+scheduled due to resource constraints. Unfortunately, these two goals are sometimes at odds with each other, depending on the nature of
+the jobs and resources available.
+
+To let customers deal with the nature of their jobs efficiently, the behavior of the job scheduler can be configured through a set of
+parameters, as shown in its init method:
+
+.. code-block:: python
+
+    class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
+        def __init__(
+            self,
+            max_jobs: int = 1,
+            max_schedule_count: int = 10,
+            min_schedule_interval: float = 10.0,
+            max_schedule_interval: float = 600.0,
+        ):
+            """
+            Create a DefaultJobScheduler
+            Args:
+                max_jobs: max number of concurrent jobs allowed
+                max_schedule_count: max number of times to try to schedule a job
+                min_schedule_interval: min interval between two schedules
+                max_schedule_interval: max interval between two schedules
+            """
+
+NVFLARE is a multi-job system that allows multiple jobs to be running concurrently, as long as system resources are available.
+
+The ``max_jobs`` parameter controls how many jobs at the maximum are allowed at the same time. If you want your system to run only one
+job at a time, you can set it to 1. 
+
+The ``max_schedule_count`` parameter controls how many times at the maximum a job will be tried, in case it failed to be scheduled repeatedly.
+If you want the job to be tried forever, you can set this parameter to be a very large number, but it may never be scheduled if it requires resources
+that can never be satisfied. However, if you set this number to be too small, then the job may be given up prematurely (in this case the status code
+of the job is set to FINISHED:CANT_SCHEDULE), if the resources could be freed up by running jobs and satisfy the job's requirements.
+
+The ``min_schedule_interval`` and ``max_schedule_interval`` parameters are used to control the frequency of scheduling of the same job, if it has
+to be tried multiple times. The job will be retried no less than the ``min_schedule_interval``, and no less than the max. Note that the scheduler wakes
+up every 1 second, so if you set the minimum to be less than 1 second, it will be treated as 1 second.
+
+To avoid overly stressing the system, the scheduler uses an adaptive scheduling frequency algorithm. It doubles the interval every time it fails, until
+it reaches the ``max_schedule_interval``.
+
+Combining Parameters to Achieve Optimal Scheduling Results
+----------------------------------------------------------
+So how to combine these parameters to achieve optimal scheduling results? It depends.
+
+If your jobs usually take a short time to complete, you may want the jobs to be retried very frequently and many times (set ``max_schedule_interval`` to a small
+number, and ``max_schedule_count`` to a proper number). 
+
+If your jobs usually take a long time, you may want the jobs to be tried less frequently but enough times to make sure that a job is not given up prematurely.
+You also don't want to have a long system idle time when all current jobs are done but waiting jobs are not tried in time (say < 10 seconds). 
+
+An overall strategy is perhaps to make sure the ``min_schedule_interval * max_schedule_count`` to be a little larger than the longest execution time of your jobs.
+For example, if you set ``min_schedule_interval`` to 10 seconds and your job execution could be as long as 1 hour, then ``max_schedule_count`` could be about 360.
+
+Or if you want a more predictable scheduling pattern, you could set both ``min_schedule_interval`` and ``max_schedule_interval`` to the same number (say 10 seconds),
+and ``max_schedule_count`` to a large number. This will make the scheduler try the same job every 10 seconds.
