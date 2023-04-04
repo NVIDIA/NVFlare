@@ -12,25 +12,25 @@ This walks you through installation, creating a POC workspace, and deploying you
 The following examples will detail any additional requirements in their `requirements.txt`.
 
 ## Set up a virtual environment
-We recommend setting up a virtual environment before installing the dependencies of the examples.
+We recommend setting up a virtual environment before installing the dependencies of the examples. Install dependencies for a virtual environment with:
 ```
 python3 -m pip install --user --upgrade pip
 python3 -m pip install --user virtualenv
 ```
-(If needed) make all shell scripts executable using
+(If needed) make all shell scripts executable using:
 ```
 find . -name ".sh" -exec chmod +x {} \;
 ```
-activate your virtual environment.
+Create and activate your virtual environment with the `set_env.sh` script:
 ```
 source ./set_env.sh
 ```
-within each example folder, install required packages for training
+In each example folder, install required packages for training:
 ```
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
-(optional) some examples contains script for plotting the TensorBoard event files, if needed, please also install
+(optional) some examples contains script for plotting the TensorBoard event files, if needed, please also install:
 ```
 pip install -r plot-requirements.txt
 ```
@@ -38,15 +38,15 @@ pip install -r plot-requirements.txt
 ## Notebooks
 To run examples including notebooks, we recommend using [JupyterLab](https://jupyterlab.readthedocs.io).
 
-After activating your virtual environment, install JupyterLab
+After activating your virtual environment, install JupyterLab:
 ```
 pip install jupyterlab
 ```
-Register the virtual environment kernel
+If you need to register the virtual environment you created so it is usable in JupyterLab, you can register the kernel with:
 ```
 python -m ipykernel install --user --name="nvflare_example"
 ```
-Start a Jupyter Lab
+Start a Jupyter Lab:
 ```
 jupyter lab .
 ```
