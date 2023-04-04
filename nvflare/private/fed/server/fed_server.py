@@ -806,9 +806,9 @@ class FederatedServer(BaseServer):
             )
 
     def _turn_to_cold(self):
-        self.engine.pause_server_jobs()
         with self.lock:
             self.server_state = ColdState(host=self.server_state.host, port=self.server_state.service_port)
+        self.engine.pause_server_jobs()
 
     def stop_training(self):
         self.status = ServerStatus.STOPPED
