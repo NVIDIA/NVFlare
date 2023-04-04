@@ -328,14 +328,13 @@ class ServerEngine(ServerEngineInternalSpec):
             return "Server app is starting, please wait for started before abort."
         return ""
 
-    def abort_app_on_server(self, job_id: str, abort_client_run: bool = True, remove_snapshot: bool = True) -> str:
+    def abort_app_on_server(self, job_id: str, turn_to_cold: bool = False) -> str:
         if job_id not in self.run_processes.keys():
             return "Server app has not started."
 
         self.logger.info("Abort the server app run.")
         command_data = Shareable()
-        command_data.set_header(ServerCommandKey.ABORT_CLIENT_RUN, abort_client_run)
-        command_data.set_header(ServerCommandKey.REMOVE_SNAPSHOT, remove_snapshot)
+        command_data.set_header(ServerCommandKey.TURN_TO_COLD, turn_to_cold)
 
         try:
             status_message = self.send_command_to_child_runner_process(
@@ -792,7 +791,7 @@ class ServerEngine(ServerEngineInternalSpec):
         running_jobs = list(self.run_processes.keys())
         for job_id in running_jobs:
             self.job_runner.remove_running_job(job_id)
-            self.abort_app_on_server(job_id, abort_client_run=False, remove_snapshot=False)
+            self.abort_app_on_server(job_id, turn_to_cold=True)
 
     def close(self):
         self.executor.shutdown()

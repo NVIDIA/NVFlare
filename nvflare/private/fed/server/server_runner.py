@@ -90,8 +90,7 @@ class ServerRunner(FLComponent):
         self.current_wf = None
         self.current_wf_index = 0
         self.status = "init"
-        self.remove_snapshot = True
-        self.abort_client_run = True
+        self.turn_to_cold = False
 
     def _execute_run(self):
         while self.current_wf_index < len(self.config.workflows):
@@ -167,7 +166,7 @@ class ServerRunner(FLComponent):
                     self.fire_event(EventType.ABOUT_TO_END_RUN, fl_ctx)
                     self.log_info(fl_ctx, "ABOUT_TO_END_RUN fired")
 
-                    if self.abort_client_run:
+                    if not self.turn_to_cold:
                         # ask all clients to end run!
                         self.engine.send_aux_request(
                             targets=None,
@@ -178,7 +177,6 @@ class ServerRunner(FLComponent):
                             optional=True,
                         )
 
-                    if self.remove_snapshot:
                         self.engine.persist_components(fl_ctx, completed=True)
                     self.fire_event(EventType.END_RUN, fl_ctx)
                     self.log_info(fl_ctx, "END_RUN fired")
@@ -473,11 +471,10 @@ class ServerRunner(FLComponent):
                     "Error processing client result by {}: {}".format(self.current_wf.id, secure_format_exception(e)),
                 )
 
-    def abort(self, fl_ctx: FLContext, abort_client_run: bool = True, remove_snapshot: bool = True):
+    def abort(self, fl_ctx: FLContext, turn_to_cold: bool = False):
         self.status = "done"
         self.abort_signal.trigger(value=True)
-        self.abort_client_run = abort_client_run
-        self.remove_snapshot = remove_snapshot
+        self.turn_to_cold = turn_to_cold
         self.log_info(fl_ctx, "asked to abort - triggered abort_signal to stop the RUN")
 
     def get_persist_state(self, fl_ctx: FLContext) -> dict:
