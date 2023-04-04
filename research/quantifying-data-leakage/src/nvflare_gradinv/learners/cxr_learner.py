@@ -455,7 +455,7 @@ class CXRLearner(Learner):
             n_local += 1
             if var_name not in global_weights:
                 continue
-            model_diff[var_name] = local_weights[var_name].cpu().numpy() - global_weights[var_name]
+            model_diff[var_name] = np.subtract(local_weights[var_name].cpu().numpy(), global_weights[var_name], dtype=np.float32)
             if np.any(np.isnan(model_diff[var_name])):
                 self.system_panic(f"{var_name} weights became NaN...", fl_ctx)
                 return make_reply(ReturnCode.EXECUTION_EXCEPTION)
