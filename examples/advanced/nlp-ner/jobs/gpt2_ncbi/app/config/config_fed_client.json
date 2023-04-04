@@ -29,8 +29,8 @@
       "id": "nlp-learner",
       "path": "custom.learners.nlp_learner.NLPLearner",
       "args": {
-        "data_path": "{DATASET_ROOT}/4_split",
-        "model_name": "bert-base-uncased",
+        "data_path": "{DATASET_ROOT}/2_split",
+        "model_name": "gpt2",
         "learning_rate": 1e-5,
         "batch_size": 16,
         "num_labels": 3,

@@ -1,6 +1,6 @@
 {
   "format_version": 2,
-  "min_clients": 4,
+  "min_clients": 2,
   "num_rounds": 50,
   "server": {
     "heart_beat_timeout": 600
@@ -13,10 +13,10 @@
       "name": "PTFileModelPersistor",
       "args": {
         "model": {
-          "path": "custom.models.nlp_models.BertModel",
+          "path": "custom.models.nlp_models.GPTModel",
           "args": {
             "num_labels": 3,
-            "model_name": "bert-base-uncased"
+            "model_name": "gpt2"
           }
         }
       }
