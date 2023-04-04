@@ -124,7 +124,7 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
         for name in initial_model:
             if name not in end_model:
                 continue
-            model_diff[name] = end_model[name].cpu().numpy() - initial_model[name]
+            model_diff[name] = np.subtract(end_model[name].cpu().numpy(), initial_model[name], dtype=np.float32)
             if np.any(np.isnan(model_diff[name])):
                 self.system_panic(f"{name} weights became NaN...", fl_ctx)
                 return make_reply(ReturnCode.EXECUTION_EXCEPTION)
