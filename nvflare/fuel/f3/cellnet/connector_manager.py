@@ -14,7 +14,6 @@
 import logging
 import os
 import time
-import traceback
 from typing import Union
 
 from nvflare.fuel.common.excepts import ConfigError
@@ -22,6 +21,7 @@ from nvflare.fuel.f3.cellnet.defs import ConnectorRequirementKey
 from nvflare.fuel.f3.cellnet.fqcn import FqcnInfo
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.communicator import CommError, Communicator, Mode
+from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
 _KEY_RESOURCES = "resources"
 _KEY_INT = "internal"
@@ -209,11 +209,11 @@ class ConnectorManager:
 
             return ConnectorData(handle, connect_url, active)
         except CommError as ex:
-            self.logger.error(f"Failed to get connector: {ex}")
+            self.logger.error(f"Failed to get connector: {secure_format_exception(ex)}")
             return None
         except Exception as ex:
-            self.logger.error(f"Unexpected exception: {ex}")
-            self.logger.error(traceback.format_exc())
+            self.logger.error(f"Unexpected exception: {secure_format_exception(ex)}")
+            self.logger.error(secure_format_traceback())
             return None
 
     def get_external_listener(self, url: str, adhoc: bool) -> Union[None, ConnectorData]:

@@ -26,6 +26,7 @@ from nvflare.fuel.f3.drivers.net_utils import parse_url
 from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor
 from nvflare.fuel.f3.message import Message, MessageReceiver
 from nvflare.fuel.f3.sfm.conn_manager import ConnManager, Mode
+from nvflare.security.logging import secure_format_exception
 
 log = logging.getLogger(__name__)
 _running_instances = weakref.WeakSet()
@@ -77,7 +78,9 @@ class Communicator:
         try:
             _running_instances.remove(self)
         except KeyError as ex:
-            log.error(f"Logical error, communicator {self.local_endpoint.name} is not started: {ex}")
+            log.error(
+                f"Logical error, communicator {self.local_endpoint.name} is not started: {secure_format_exception(ex)}"
+            )
 
         log.debug(f"Communicator endpoint: {self.local_endpoint.name} has stopped")
 

@@ -22,6 +22,7 @@ from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.drivers.net_utils import MAX_FRAME_SIZE
 from nvflare.fuel.f3.sfm.prefix import PREFIX_LEN, Prefix
 from nvflare.fuel.hci.security import get_certificate_common_name
+from nvflare.security.logging import secure_format_exception
 
 log = logging.getLogger(__name__)
 
@@ -59,7 +60,7 @@ class AioConnection(Connection):
         try:
             self.aio_ctx.run_coro(self._async_send_frame(frame))
         except Exception as ex:
-            log.error(f"Error calling send coroutine for connection {self}: {ex}")
+            log.error(f"Error calling send coroutine for connection {self}: {secure_format_exception(ex)}")
 
     async def read_loop(self):
         try:
@@ -74,7 +75,7 @@ class AioConnection(Connection):
         except CancelledError as error:
             log.debug(f"Connection {self} is closed by peer: {error}")
         except Exception as ex:
-            log.error(f"Read error for connection {self}: {ex}")
+            log.error(f"Read error for connection {self}: {secure_format_exception(ex)}")
 
     # Internal methods
 
@@ -83,7 +84,7 @@ class AioConnection(Connection):
             self.writer.write(frame)
             await self.writer.drain()
         except Exception as ex:
-            log.error(f"Error sending frame for connection {self}: {ex}")
+            log.error(f"Error sending frame for connection {self}: {secure_format_exception(ex)}")
 
     async def _async_read_frame(self):
 

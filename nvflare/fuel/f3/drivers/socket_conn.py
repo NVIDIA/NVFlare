@@ -23,6 +23,7 @@ from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.drivers.net_utils import MAX_FRAME_SIZE
 from nvflare.fuel.f3.sfm.prefix import PREFIX_LEN, Prefix
 from nvflare.fuel.hci.security import get_certificate_common_name
+from nvflare.security.logging import secure_format_exception
 
 log = logging.getLogger(__name__)
 
@@ -53,7 +54,7 @@ class SocketConnection(Connection):
         try:
             self.sock.sendall(frame)
         except Exception as ex:
-            raise CommError(CommError.ERROR, f"Error sending frame: {ex}")
+            raise CommError(CommError.ERROR, f"Error sending frame: {secure_format_exception(ex)}")
 
     def read_loop(self):
         try:
@@ -67,7 +68,7 @@ class SocketConnection(Connection):
             if self.closing:
                 log.debug(f"Connection {self.name} is closed")
             else:
-                log.debug(f"Connection {self.name} is closed due to error: {ex}")
+                log.debug(f"Connection {self.name} is closed due to error: {secure_format_exception(ex)}")
 
     def read_frame_loop(self):
         # read_frame throws exception on stale/bad connection so this is not a dead loop
@@ -129,7 +130,7 @@ class SocketConnection(Connection):
         except OSError as ex:
             peer = "N/A"
             fileno = 0
-            log.debug(f"getpeername() error: {ex}")
+            log.debug(f"getpeername() error: {secure_format_exception(ex)}")
 
         conn_props[DriverParams.PEER_ADDR.value] = self._format_address(peer, fileno)
 
