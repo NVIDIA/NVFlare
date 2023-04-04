@@ -21,6 +21,7 @@ from requests import Request, RequestException, Response, Session, codes
 from requests.adapters import HTTPAdapter
 
 from nvflare.apis.overseer_spec import SP, OverseerAgent
+from nvflare.security.logging import secure_format_exception
 
 
 class HttpOverseerAgent(OverseerAgent):
@@ -70,7 +71,7 @@ class HttpOverseerAgent(OverseerAgent):
                 resp = self._session.send(prepared)
                 return resp
             except RequestException as e:
-                self._logger.debug(f"Overseer error: {e}")
+                self._logger.debug(f"Overseer error: {secure_format_exception(e)}")
                 try_count += 1
                 time.sleep(self._retry_delay)
 

@@ -15,7 +15,6 @@ import asyncio
 import logging
 import threading
 import time
-import traceback
 from typing import Any, Dict, List
 
 import grpc
@@ -30,6 +29,7 @@ from nvflare.fuel.f3.drivers.grpc.streamer_pb2_grpc import (
     StreamerStub,
     add_StreamerServicer_to_server,
 )
+from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
 from .base_driver import BaseDriver
 from .driver_params import DriverCap, DriverParams
@@ -86,7 +86,7 @@ class AioStreamSession(Connection):
             self.aio_ctx.run_coro(self.oq.put(f))
         except Exception as ex:
             if not self.closing:
-                raise CommError(CommError.ERROR, f"Error sending frame: {ex}")
+                raise CommError(CommError.ERROR, f"Error sending frame: {secure_format_exception(ex)}")
 
     async def read_loop(self, msg_iter):
         ct = threading.current_thread()
@@ -103,13 +103,13 @@ class AioStreamSession(Connection):
                     self.logger.debug(f"Connection {self} is closed by peer")
                 else:
                     self.logger.debug(f"Connection {self} Error: {error.details()}")
-                    self.logger.debug(traceback.format_exc())
+                    self.logger.debug(secure_format_traceback())
             else:
                 self.logger.debug(f"Connection {self} is closed locally")
         except Exception as ex:
             if not self.closing:
-                self.logger.debug(f"{self}: exception {type(ex)} in read_loop: {ex}")
-                self.logger.debug(traceback.format_exc())
+                self.logger.debug(f"{self}: exception {type(ex)} in read_loop: {secure_format_exception(ex)}")
+                self.logger.debug(secure_format_traceback())
 
         self.logger.debug(f"{self}: in {ct.name}: done read_loop")
 
@@ -122,10 +122,10 @@ class AioStreamSession(Connection):
                 yield item
         except Exception as ex:
             if self.closing:
-                self.logger.debug(f"{self}: connection closed by {type(ex)}: {ex}")
+                self.logger.debug(f"{self}: connection closed by {type(ex)}: {secure_format_exception(ex)}")
             else:
-                self.logger.debug(f"{self}: generate_output exception {type(ex)}: {ex}")
-            self.logger.debug(traceback.format_exc())
+                self.logger.debug(f"{self}: generate_output exception {type(ex)}: {secure_format_exception(ex)}")
+            self.logger.debug(secure_format_traceback())
 
         self.logger.debug(f"{self}: done generate_output")
 
@@ -143,7 +143,7 @@ class Servicer(StreamerServicer):
                 f = await connection.oq.get()
                 await grpc_context.write(f)
         except Exception as ex:
-            self.logger.debug(f"_write_loop except: {type(ex)}: {ex}")
+            self.logger.debug(f"_write_loop except: {type(ex)}: {secure_format_exception(ex)}")
         self.logger.debug("finished _write_loop")
 
     async def Stream(self, request_iterator, context):
@@ -173,11 +173,11 @@ class Servicer(StreamerServicer):
             except asyncio.CancelledError:
                 self.logger.debug("SERVER: RPC cancelled")
             except Exception as ex:
-                self.logger.debug(f"await gather except: {type(ex)}: {ex}")
+                self.logger.debug(f"await gather except: {type(ex)}: {secure_format_exception(ex)}")
             self.logger.debug(f"SERVER: done await gather in thread {ct.name}")
 
         except Exception as ex:
-            self.logger.debug(f"Connection closed due to error: {ex}")
+            self.logger.debug(f"Connection closed due to error: {secure_format_exception(ex)}")
         finally:
             if connection:
                 with connection.lock:
@@ -211,7 +211,7 @@ class Server:
             else:
                 self.grpc_server.add_insecure_port(addr)
         except Exception as ex:
-            conn_ctx.error = f"cannot listen on {addr}: {type(ex)}: {ex}"
+            conn_ctx.error = f"cannot listen on {addr}: {type(ex)}: {secure_format_exception(ex)}"
             self.logger.debug(conn_ctx.error)
 
     async def start(self, conn_ctx: _ConnCtx):
@@ -220,7 +220,7 @@ class Server:
             await self.grpc_server.start()
             await self.grpc_server.wait_for_termination()
         except Exception as ex:
-            conn_ctx.error = f"cannot start server: {type(ex)}: {ex}"
+            conn_ctx.error = f"cannot start server: {type(ex)}: {secure_format_exception(ex)}"
             raise ex
 
     async def shutdown(self):
@@ -262,8 +262,8 @@ class AioGrpcDriver(BaseDriver):
                 await self.server.start(conn_ctx)
             except Exception as ex:
                 if not self.closing:
-                    self.logger.debug(traceback.format_exc())
-                conn_ctx.error = f"failed to start server: {type(ex)}: {ex}"
+                    self.logger.debug(secure_format_traceback())
+                conn_ctx.error = f"failed to start server: {type(ex)}: {secure_format_exception(ex)}"
         conn_ctx.waiter.set()
 
     def listen(self, connector: ConnectorInfo):
@@ -319,10 +319,14 @@ class AioGrpcDriver(BaseDriver):
                     self.logger.debug(f"CLIENT: RPC cancelled: {error}")
                 except Exception as ex:
                     if self.closing:
-                        self.logger.debug(f"Connection {connection} closed by {type(ex)}: {ex}")
+                        self.logger.debug(
+                            f"Connection {connection} closed by {type(ex)}: {secure_format_exception(ex)}"
+                        )
                     else:
-                        self.logger.debug(f"Connection {connection} client read exception {type(ex)}: {ex}")
-                    self.logger.debug(traceback.format_exc())
+                        self.logger.debug(
+                            f"Connection {connection} client read exception {type(ex)}: {secure_format_exception(ex)}"
+                        )
+                    self.logger.debug(secure_format_traceback())
 
             with connection.lock:
                 connection.channel = None
@@ -330,12 +334,12 @@ class AioGrpcDriver(BaseDriver):
         except asyncio.CancelledError:
             self.logger.debug("CLIENT: RPC cancelled")
         except Exception as ex:
-            conn_ctx.error = f"connection {connection} error: {type(ex)}: {ex}"
+            conn_ctx.error = f"connection {connection} error: {type(ex)}: {secure_format_exception(ex)}"
             if self.closing:
                 self.logger.debug(conn_ctx.error)
             else:
                 self.logger.debug(conn_ctx.error)
-            self.logger.debug(traceback.format_exc())
+            self.logger.debug(secure_format_traceback())
 
         conn_ctx.waiter.set()
 
