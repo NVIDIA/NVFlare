@@ -17,13 +17,14 @@ from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.utils.stats_utils import VALID_HIST_MODES, parse_hist_mode
+from nvflare.security.logging import secure_format_exception
 
 
 def _to_int(s: str):
     try:
         return int(s)
     except Exception as ex:
-        return f"'{s}' is not a valid number: {ex}"
+        return f"'{s}' is not a valid number: {secure_format_exception(ex)}"
 
 
 class NetManager(CommandModule):

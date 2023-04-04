@@ -24,6 +24,7 @@ from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.private.fed.app.utils import create_admin_server
 from nvflare.private.fed.simulator.simulator_client_engine import SimulatorParentClientEngine
 from nvflare.private.fed.simulator.simulator_server import SimulatorServer
+from nvflare.security.logging import secure_format_exception
 
 from .base_client_deployer import BaseClientDeployer
 from .server_deployer import ServerDeployer
@@ -143,7 +144,7 @@ class SimulatorDeployer(ServerDeployer):
                     data = json.load(file)
                     augment(to_dict=client_config, from_dict=data, from_override_to=False)
                 except BaseException as e:
-                    raise RuntimeError(f"Error processing config file {resources}: {e}")
+                    raise RuntimeError(f"Error processing config file {resources}: {secure_format_exception(e)}")
 
         build_ctx = {
             "client_name": client_name,
