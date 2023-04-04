@@ -17,7 +17,7 @@ import os
 import numpy as np
 import pandas as pd
 import torch
-from custom.models.bert import BertModel
+from custom.models.nlp_models import BertModel, GPTModel
 from custom.utils.data_sequence import DataSequence
 from seqeval.metrics import classification_report
 from torch.optim import AdamW
@@ -35,7 +35,7 @@ from nvflare.app_common.app_constant import AppConstants, ValidateType
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
-class BertLearner(Learner):
+class NLPLearner(Learner):
     def __init__(
         self,
         data_path: str,
@@ -43,12 +43,12 @@ class BertLearner(Learner):
         batch_size: int = 32,
         model_name: str = "bert-base-uncased",
         num_labels: int = 3,
-        pad_token: int = -100,
+        ignore_token: int = -100,
         aggregation_epochs: int = 1,
         train_task_name: str = AppConstants.TASK_TRAIN,
     ):
-        """Supervised Bert Learner.
-            This provides the basic functionality of a local learner for Bert model: perform before-train
+        """Supervised NLP task Learner.
+            This provides the basic functionality of a local learner for NLP models: perform before-train
             validation on global model at the beginning of each round, perform local training,
             and send the updated weights. No model will be saved locally, tensorboard record for
             local loss and global model validation score.
@@ -58,8 +58,8 @@ class BertLearner(Learner):
             learning_rate,
             batch_size,
             model_name: the model name to be used in the pipeline
-            num_labels: num_labels for BERT model,
-            pad_token: the value for representing padding / null token
+            num_labels: num_labels for the model,
+            ignore_token: the value for representing padding / null token
             aggregation_epochs: the number of training epochs for a round. Defaults to 1.
             train_task_name: name of the task to train the model.
 
@@ -71,7 +71,7 @@ class BertLearner(Learner):
         self.train_task_name = train_task_name
         self.model_name = model_name
         self.num_labels = num_labels
-        self.pad_token = pad_token
+        self.ignore_token = ignore_token
         self.lr = learning_rate
         self.bs = batch_size
         self.data_path = data_path
@@ -136,12 +136,23 @@ class BertLearner(Learner):
         # get labels from data
         self.get_labels(df_train)
 
-        # set model
-        self.model = BertModel(model_name=self.model_name, num_labels=self.num_labels)
+        # initialize model
+        self.log_info(
+            fl_ctx,
+            f"Creating model {self.model_name}",
+        )
+        if self.model_name == "bert-base-uncased":
+            self.model = BertModel(model_name=self.model_name, num_labels=self.num_labels)
+        elif self.model_name == "gpt2":
+            self.model = GPTModel(model_name=self.model_name, num_labels=self.num_labels)
+        else:
+            self.system_panic(f"Model {self.model} not supported!", fl_ctx)
+            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
         tokenizer = self.model.tokenizer
+
         # set data
-        train_dataset = DataSequence(df_train, self.labels_to_ids, tokenizer=tokenizer, pad_token=self.pad_token)
-        valid_dataset = DataSequence(df_valid, self.labels_to_ids, tokenizer=tokenizer, pad_token=self.pad_token)
+        train_dataset = DataSequence(df_train, self.labels_to_ids, tokenizer=tokenizer, ignore_token=self.ignore_token)
+        valid_dataset = DataSequence(df_valid, self.labels_to_ids, tokenizer=tokenizer, ignore_token=self.ignore_token)
         self.train_loader = DataLoader(train_dataset, num_workers=2, batch_size=self.bs, shuffle=True)
         self.valid_loader = DataLoader(valid_dataset, num_workers=2, batch_size=self.bs, shuffle=False)
         self.log_info(
@@ -222,8 +233,8 @@ class BertLearner(Learner):
                 # Add items for metric computation
                 for i in range(logits.shape[0]):
                     # remove pad tokens
-                    logits_clean = logits[i][val_label[i] != self.pad_token]
-                    label_clean = val_label[i][val_label[i] != self.pad_token]
+                    logits_clean = logits[i][val_label[i] != self.ignore_token]
+                    label_clean = val_label[i][val_label[i] != self.ignore_token]
                     # calcluate acc and store prediciton and true labels
                     predictions = logits_clean.argmax(dim=1)
                     acc = (predictions == label_clean).float().mean()
@@ -298,7 +309,7 @@ class BertLearner(Learner):
         for name in global_weights:
             if name not in local_weights:
                 continue
-            model_diff[name] = local_weights[name].cpu().numpy() - global_weights[name]
+            model_diff[name] = np.subtract(local_weights[name].cpu().numpy(), global_weights[name], dtype=np.float32)
             if np.any(np.isnan(model_diff[name])):
                 self.system_panic(f"{name} weights became NaN...", fl_ctx)
                 return make_reply(ReturnCode.EXECUTION_EXCEPTION)
