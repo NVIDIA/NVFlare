@@ -84,7 +84,8 @@ class AioConnection(Connection):
             self.writer.write(frame)
             await self.writer.drain()
         except Exception as ex:
-            log.error(f"Error sending frame for connection {self}: {secure_format_exception(ex)}")
+            if not self.closing:
+                log.error(f"Error sending frame for connection {self}: {secure_format_exception(ex)}")
 
     async def _async_read_frame(self):
 

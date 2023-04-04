@@ -86,7 +86,7 @@ class AioStreamSession(Connection):
             self.aio_ctx.run_coro(self.oq.put(f))
         except Exception as ex:
             if not self.closing:
-                raise CommError(CommError.ERROR, f"Error sending frame: {secure_format_exception(ex)}")
+                raise CommError(CommError.ERROR, f"Error sending frame on conn {self}: {secure_format_exception(ex)}")
 
     async def read_loop(self, msg_iter):
         ct = threading.current_thread()
