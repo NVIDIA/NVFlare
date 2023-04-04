@@ -37,6 +37,8 @@ __all__ = [
     "reset",
 ]
 
+from nvflare.security.logging import secure_format_exception
+
 FOBS_TYPE = "__fobs_type__"
 FOBS_DATA = "__fobs_data__"
 MAX_CONTENT_LEN = 128
@@ -219,7 +221,7 @@ def serialize(obj: Any, **kwargs) -> bytes:
         content = str(obj)
         if len(content) > MAX_CONTENT_LEN:
             content = content[:MAX_CONTENT_LEN] + " ..."
-        raise ValueError(f"Object {type(obj)} is not serializable: {ex}: {content}")
+        raise ValueError(f"Object {type(obj)} is not serializable: {secure_format_exception(ex)}: {content}")
 
 
 def serialize_stream(obj: Any, stream: BinaryIO, **kwargs):

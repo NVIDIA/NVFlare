@@ -355,7 +355,9 @@ class ServerRunner(FLComponent):
 
                 self.current_wf.responder.handle_dead_job(client_name=client_name, fl_ctx=fl_ctx)
             except BaseException as e:
-                self.log_exception(fl_ctx, f"Error processing dead job by workflow {self.current_wf.id}: {e}")
+                self.log_exception(
+                    fl_ctx, f"Error processing dead job by workflow {self.current_wf.id}: {secure_format_exception(e)}"
+                )
 
     def process_submission(self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext):
         """Process task result submitted from a client.

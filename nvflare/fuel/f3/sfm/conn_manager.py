@@ -14,7 +14,6 @@
 import logging
 import threading
 import time
-import traceback
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional
 
@@ -33,6 +32,7 @@ from nvflare.fuel.f3.sfm.prefix import PREFIX_LEN, Prefix
 from nvflare.fuel.f3.sfm.sfm_conn import SfmConnection
 from nvflare.fuel.f3.sfm.sfm_endpoint import SfmEndpoint
 from nvflare.fuel.f3.stats_pool import StatsPoolManager
+from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
 FRAME_THREAD_POOL_SIZE = 100
 CONN_THREAD_POOL_SIZE = 16
@@ -260,7 +260,9 @@ class ConnManager(ConnMonitor):
             try:
                 starter(connector)
             except Exception as ex:
-                fail_msg = f"Connector {connector} failed with exception {type(ex).__name__}: {ex}"
+                fail_msg = (
+                    f"Connector {connector} failed with exception {type(ex).__name__}: {secure_format_exception(ex)}"
+                )
                 if wait < SILENT_RECONNECT_TIME:
                     log.debug(fail_msg)
                 else:
@@ -305,8 +307,8 @@ class ConnManager(ConnMonitor):
             else:
                 log.error(f"Unknown state: {state}")
         except Exception as ex:
-            log.error(f"Error handling state change: {ex}")
-            log.debug(traceback.format_exc())
+            log.error(f"Error handling state change: {secure_format_exception(ex)}")
+            log.debug(secure_format_traceback())
 
     def process_frame_task(self, sfm_conn: SfmConnection, frame: BytesAlike):
 
@@ -342,8 +344,8 @@ class ConnManager(ConnMonitor):
             else:
                 log.error(f"Received unsupported frame type {prefix.type} on {sfm_conn.get_name()}")
         except Exception as ex:
-            log.error(f"Error processing frame: {ex}")
-            log.debug(traceback.format_exc())
+            log.error(f"Error processing frame: {secure_format_exception(ex)}")
+            log.debug(secure_format_traceback())
 
     def process_frame(self, sfm_conn: SfmConnection, frame: BytesAlike):
         self.frame_mgr_executor.submit(self.process_frame_task, sfm_conn, frame)
@@ -443,7 +445,7 @@ class ConnManager(ConnMonitor):
         try:
             receiver.process_message(endpoint, self.null_conn, app_id, Message(headers, payload))
         except Exception as ex:
-            log.error(f"Loopback message error: {ex}")
+            log.error(f"Loopback message error: {secure_format_exception(ex)}")
 
 
 class SfmFrameReceiver(FrameReceiver):
@@ -455,8 +457,8 @@ class SfmFrameReceiver(FrameReceiver):
         try:
             self.conn_manager.process_frame(self.conn, frame)
         except Exception as ex:
-            log.error(f"Error processing frame: {ex}")
-            log.debug(traceback.format_exc())
+            log.error(f"Error processing frame: {secure_format_exception(ex)}")
+            log.debug(secure_format_traceback())
 
 
 class NullConnection(Connection):
