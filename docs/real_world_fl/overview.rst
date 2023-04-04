@@ -20,7 +20,7 @@ Project administrator generates the packages for the server / clients / admins
 
 Start
 -----
-Site IT each installs their own packages, starts the services, and maps the data location
+Org admins install their own packages, starts the services, and maps the data location
 
 Operate
 -------
@@ -83,9 +83,9 @@ Start: Instructions for each participant to start running FL with their startup 
 
 .. attention:: Please always safeguard .key files! These are the critical keys for secure communication!
 
-Overseer
+Overseer (HA mode only)
 =============================
-One single Overseer will keep track of all the FL servers and communicate to all the participants through their Overseer
+In HA mode, one single Overseer will keep track of all the FL servers and communicate to all the participants through their Overseer
 Agents the active FL server or SP.
 
 In the package for the Overseer, run the start.sh file from the "startup" folder to start the Overseer.
@@ -162,8 +162,8 @@ If a connection cannot be made, the client will repeatedly try to connect and fo
 If the server is up, you may need to troubleshoot with settings for firewall ports to make sure that the proper
 permissions are in place. This could require coordination between the lead IT and site IT personnel.
 
-Federated learning administration client ($EMAIL.zip)
-=====================================================
+Federated learning administration client
+========================================
 Each admin client will be able to connect and submit commands to the server. Each admin client package is named after
 the email specified when provisioning the project, and the same email will need to be entered for authentication when
 the admin client is launched.
@@ -197,7 +197,7 @@ Operate: Running federated learning as an administrator
 Running federated learning from the administration client
 =========================================================
 With all connections between the FL server, FL clients, and administration clients open and all of the parties
-started successfully as described in the preceding section, `Federated learning administration client ($EMAIL.zip)`_,
+started successfully as described in the preceding section, `Federated learning administration client`_,
 admin commands can be used to operate a federated learning project. The FLAdminAPI provides a way to programmatically
 issue commands to operate the system so it can be run with a script.
 
