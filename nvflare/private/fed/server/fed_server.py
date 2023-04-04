@@ -455,7 +455,9 @@ class FederatedServer(BaseServer):
 
             state_check = self.server_state.register(fl_ctx)
 
-            self._handle_state_check(state_check, fl_ctx)
+            error = self._handle_state_check(state_check, fl_ctx)
+            if error is not None:
+                return make_cellnet_reply(rc=F3ReturnCode.COMM_ERROR, error=error)
 
             client = self.client_manager.authenticate(request, fl_ctx)
             if client and client.token:
@@ -474,6 +476,8 @@ class FederatedServer(BaseServer):
     def _handle_state_check(self, state_check, fl_ctx: FLContext):
         if state_check.get(ACTION) in [NIS, ABORT_RUN]:
             fl_ctx.set_prop(FLContextKey.COMMUNICATION_ERROR, state_check.get(MESSAGE), sticky=False)
+            return state_check.get(MESSAGE)
+        return None
 
     def quit_client(self, request: Message) -> Message:
         """Existing client quits the federated training process.
@@ -499,7 +503,9 @@ class FederatedServer(BaseServer):
             self._before_service(fl_ctx)
 
             state_check = self.server_state.heartbeat(fl_ctx)
-            self._handle_state_check(state_check, fl_ctx)
+            error = self._handle_state_check(state_check, fl_ctx)
+            if error is not None:
+                return make_cellnet_reply(rc=F3ReturnCode.COMM_ERROR, error=error)
 
             token = request.get_header(CellMessageHeaderKeys.TOKEN)
             client_name = request.get_header(CellMessageHeaderKeys.CLIENT_NAME)
@@ -513,6 +519,7 @@ class FederatedServer(BaseServer):
             reply = self._generate_reply(
                 headers={CellMessageHeaderKeys.MESSAGE: "Heartbeat response"}, payload=None, fl_ctx=fl_ctx
             )
+
             if abort_runs:
                 reply.set_header(CellMessageHeaderKeys.ABORT_JOBS, abort_runs)
 
@@ -532,7 +539,7 @@ class FederatedServer(BaseServer):
         # also check jobs that are running on server but not on the client
         jobs_on_server_but_not_on_client = list(set(server_jobs).difference(client_jobs))
         if jobs_on_server_but_not_on_client:
-            # should this job be running on the client?
+            # notify all the participating clients these jobs are not running on server anymore
             for job_id in jobs_on_server_but_not_on_client:
                 job_info = self.engine.run_processes[job_id]
                 participating_clients = job_info.get(RunProcessKey.PARTICIPANTS, None)
@@ -799,7 +806,7 @@ class FederatedServer(BaseServer):
             )
 
     def _turn_to_cold(self):
-        self.engine.stop_all_jobs()
+        self.engine.pause_server_jobs()
         with self.lock:
             self.server_state = ColdState(host=self.server_state.host, port=self.server_state.service_port)
 

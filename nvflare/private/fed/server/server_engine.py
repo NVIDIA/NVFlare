@@ -227,6 +227,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 return_code = process.poll()
                 # if process exit but with Execution exception
                 if return_code and return_code != 0:
+                    self.logger.info(f"Job: {job_id} child process exit with return code {return_code}")
                     run_process_info[RunProcessKey.PROCESS_RETURN_CODE] = return_code
                     self.exception_run_processes[job_id] = run_process_info
                 self.run_processes.pop(job_id, None)
@@ -327,15 +328,21 @@ class ServerEngine(ServerEngineInternalSpec):
             return "Server app is starting, please wait for started before abort."
         return ""
 
-    def abort_app_on_server(self, job_id: str) -> str:
+    def abort_app_on_server(self, job_id: str, turn_to_cold: bool = False) -> str:
         if job_id not in self.run_processes.keys():
             return "Server app has not started."
 
         self.logger.info("Abort the server app run.")
+        command_data = Shareable()
+        command_data.set_header(ServerCommandKey.TURN_TO_COLD, turn_to_cold)
 
         try:
             status_message = self.send_command_to_child_runner_process(
-                job_id=job_id, command_name=AdminCommandNames.ABORT, command_data={}, timeout=1.0, optional=True
+                job_id=job_id,
+                command_name=AdminCommandNames.ABORT,
+                command_data=command_data,
+                timeout=1.0,
+                optional=True,
             )
             self.logger.info(f"Abort server status: {status_message}")
         except BaseException:
@@ -779,6 +786,12 @@ class ServerEngine(ServerEngineInternalSpec):
     def stop_all_jobs(self):
         fl_ctx = self.new_context()
         self.job_runner.stop_all_runs(fl_ctx)
+
+    def pause_server_jobs(self):
+        running_jobs = list(self.run_processes.keys())
+        for job_id in running_jobs:
+            self.job_runner.remove_running_job(job_id)
+            self.abort_app_on_server(job_id, turn_to_cold=True)
 
     def close(self):
         self.executor.shutdown()

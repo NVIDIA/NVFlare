@@ -486,6 +486,7 @@ class JobRunner(FLComponent):
                 raise RuntimeError(f"Could not restore the server App for job: {job_id}.")
             with self.lock:
                 self.running_jobs[job_id] = job
+            self.scheduler.restore_scheduled_job(job_id)
         except Exception as e:
             self.log_error(
                 fl_ctx, f"Failed to restore the job: {job_id} to the running job table: {secure_format_exception(e)}."
@@ -532,4 +533,11 @@ class JobRunner(FLComponent):
             self.stop_run(job_id, fl_ctx)
 
         self.log_info(fl_ctx, "Stop all the running jobs.")
+        # also stop the job runner
         self.ask_to_stop = True
+
+    def remove_running_job(self, job_id: str):
+        with self.lock:
+            if job_id in self.running_jobs:
+                del self.running_jobs[job_id]
+        self.scheduler.remove_scheduled_job(job_id)

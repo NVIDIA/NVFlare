@@ -224,6 +224,7 @@ class ServerCommandKey(object):
     JOB_ID = "job_id"
     CLIENTS = "clients"
     COLLECTOR = "collector"
+    TURN_TO_COLD = "__turn_to_cold__"
 
 
 class FedEventHeader(object):
