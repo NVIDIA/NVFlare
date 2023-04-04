@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -103,8 +103,10 @@ class AbortCommand(CommandProcessor):
 
         """
         server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
+        # for HA server switch over
+        turn_to_cold = data.get_header(ServerCommandKey.TURN_TO_COLD, False)
         if server_runner:
-            server_runner.abort(fl_ctx)
+            server_runner.abort(fl_ctx=fl_ctx, turn_to_cold=turn_to_cold)
             # wait for the runner process gracefully abort the run.
             engine = fl_ctx.get_engine()
             start_time = time.time()

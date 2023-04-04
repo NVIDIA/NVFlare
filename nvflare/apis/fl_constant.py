@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -224,6 +224,7 @@ class ServerCommandKey(object):
     JOB_ID = "job_id"
     CLIENTS = "clients"
     COLLECTOR = "collector"
+    TURN_TO_COLD = "__turn_to_cold__"
 
 
 class FedEventHeader(object):

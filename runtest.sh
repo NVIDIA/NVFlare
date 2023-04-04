@@ -19,7 +19,7 @@ fi
 
 WORK_DIR="$( cd -P "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 NUM_PARALLEL=1
-DIR_TO_CHECK="nvflare tests"
+DIR_TO_CHECK="nvflare examples tests"
 
 target="${@: -1}"
 if [[ "${target}" == -* ]] ;then
@@ -86,10 +86,10 @@ function dry_run() {
 }
 
 function check_license() {
-    folders_to_check_license="nvflare tests integration research"
+    folders_to_check_license="nvflare examples tests integration research"
     echo "checking license header in folder: $folders_to_check_license"
     (grep -r --include "*.py" --exclude-dir "*protos*" -L \
-    "\(# Copyright (c) \(2021-2022\|2022\|2021-2023\|2023\), NVIDIA CORPORATION.  All rights reserved.\)\|\(This file is released into the public domain.\)" \
+    "\(# Copyright (c) \(2021\|2022\|2023\), NVIDIA CORPORATION.  All rights reserved.\)\|\(This file is released into the public domain.\)" \
     ${folders_to_check_license} || true) > no_license.lst
     if [ -s no_license.lst ]; then
         # The file is not-empty.
