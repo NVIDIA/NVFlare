@@ -208,11 +208,11 @@ class ConnectorManager:
                 time.sleep(0.5)
 
             return ConnectorData(handle, connect_url, active)
-        except CommError as e:
-            self.logger.error(f"Failed to get connector: {secure_format_exception(e)}")
+        except CommError as ex:
+            self.logger.error(f"Failed to get connector: {secure_format_exception(ex)}")
             return None
-        except Exception as e:
-            self.logger.error(f"Unexpected exception: {secure_format_exception(e)}")
+        except Exception as ex:
+            self.logger.error(f"Unexpected exception: {secure_format_exception(ex)}")
             self.logger.error(secure_format_traceback())
             return None
 
