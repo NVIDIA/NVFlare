@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,6 +28,7 @@ from nvflare.fuel.f3.drivers.driver_params import DriverCap, DriverParams
 from nvflare.fuel.f3.drivers.net_utils import MAX_FRAME_SIZE, get_tcp_urls
 from nvflare.fuel.f3.sfm.conn_manager import Mode
 from nvflare.fuel.hci.security import get_certificate_common_name
+from nvflare.security.logging import secure_format_exception
 
 log = logging.getLogger(__name__)
 
@@ -84,7 +85,7 @@ class WsConnection(Connection):
             # This is to yield control. See bug: https://github.com/aaugustin/websockets/issues/865
             await asyncio.sleep(0)
         except Exception as ex:
-            log.error(f"Error sending frame for connection {self}: {ex}")
+            log.error(f"Error sending frame for connection {self}: {secure_format_exception(ex)}")
 
 
 class AioHttpDriver(BaseDriver):
@@ -173,7 +174,7 @@ class AioHttpDriver(BaseDriver):
             self.close_connection(conn)
         except ConnectionClosedOK as ex:
             conn_info = str(conn) if conn else "N/A"
-            log.debug(f"Connection {conn_info} is closed by peer: {ex}")
+            log.debug(f"Connection {conn_info} is closed by peer: {secure_format_exception(ex)}")
 
     @staticmethod
     async def _read_loop(conn: WsConnection):

@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@ from abc import abstractmethod
 
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.utils.class_utils import instantiate_class
+from nvflare.security.logging import secure_format_exception
 
 
 class ConfigType:
@@ -73,7 +74,7 @@ class ComponentBuilder:
                     t = self.build_component(v)
                     class_args[k] = t
                 except BaseException as e:
-                    raise ValueError(f"failed to instantiate class: {e} ")
+                    raise ValueError(f"failed to instantiate class: {secure_format_exception(e)} ")
 
         class_path = self.get_class_path(config_dict)
 

@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ from urllib.parse import parse_qsl, urlencode, urlparse
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.utils.argument_utils import str2bool
+from nvflare.security.logging import secure_format_exception
 
 log = logging.getLogger(__name__)
 
@@ -115,7 +116,7 @@ def check_tcp_port(port) -> bool:
         s.bind(("", port))
         result = True
     except Exception as e:
-        log.debug(f"Port {port} binding error: {e}")
+        log.debug(f"Port {port} binding error: {secure_format_exception(e)}")
     finally:
         s.close()
 

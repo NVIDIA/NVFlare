@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -25,6 +25,7 @@ from nvflare.app_common.statistics.numeric_stats import filter_numeric_features
 from nvflare.app_common.statistics.statisitcs_objects_decomposer import fobs_registration
 from nvflare.app_common.statistics.statistics_config_utils import get_feature_bin_range
 from nvflare.fuel.utils import fobs
+from nvflare.security.logging import secure_format_exception
 
 
 class StatisticsTaskHandler(TaskHandler):
@@ -110,7 +111,7 @@ class StatisticsTaskHandler(TaskHandler):
                     self.log_exception(
                         fl_ctx,
                         f"Failed to populate result  statistics of dataset {ds_name}"
-                        f" and feature {feature.feature_name} with exception: {e}",
+                        f" and feature {feature.feature_name} with exception: {secure_format_exception(e)}",
                     )
 
     def get_numeric_features(self) -> Dict[str, List[Feature]]:

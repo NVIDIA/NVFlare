@@ -3,16 +3,19 @@
 #######################################
 Resource Manager and Resource Consumer
 #######################################
-NVFlare introduced the concept of job, resource manager and resource consumer in version 2.1.
+NVFlare introduced the concept of :ref:`job`, resource manager and resource consumer in version 2.1.
 
 Each job has a meta.json that can specify "deploy_map", "min_clients", "mandatory_clients" and "resource_spec".
 
 A user can specify the job resource requirement in meta.json and configure the corresponding resource manager and consumer.
 
 
-During job scheduling, the server side will ask each client if the resource requirement can be satisfied. Each client will call the check_resources method with their configured ResourceManager. The "resource_spec" specified in the job config will be passed in as an argument. Check resources should figure out if the local client site resources are enough to run this job. If it can, then this job will be scheduled; Otherwise, the job will stay in the queue.
+During :ref:`job scheduling <job_scheduler_configuration>`, the server side will ask each client if the resource requirement can be satisfied. Each client will call the check_resources
+method with their configured ResourceManager. The "resource_spec" specified in the job config will be passed in as an argument. Check resources should
+figure out if the local client site resources are enough to run this job. If it can, then this job will be scheduled; Otherwise, the job will stay in the queue.
 
-NOTE that This check is solely done by the ResourceManager, so if the resource manager tells the FL server that the resource is enough, NVFlare will assume that it is OK to start the job on that site.
+Note that this check is solely done by the ResourceManager, so if the resource manager tells the FL server that the resource is enough, NVFlare will
+assume that it is OK to start the job on that site.
 
 If outside of NVFlare another process occupied the resources and the resources became unavailable that might lead to the failure of job execution at runtime.
 
@@ -65,16 +68,16 @@ For example, the default in POC looks like:
             "compression": "Gzip"
         },
         "components": [
-        {
-            "id": "resource_manager",
-            "path": "nvflare.app_common.resource_managers.gpu_resource_manager.GPUResourceManager",
-            "args": { "num_of_gpus": 1, "mem_per_gpu_in_GiB": 4 }
-        }
-        {
-            "id": "resource_consumer",
-            "path": "nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer",
-            "args": {}
-        }
+            {
+                "id": "resource_manager",
+                "path": "nvflare.app_common.resource_managers.gpu_resource_manager.GPUResourceManager",
+                "args": { "num_of_gpus": 1, "mem_per_gpu_in_GiB": 4 }
+            },
+            {
+                "id": "resource_consumer",
+                "path": "nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer",
+                "args": {}
+            }
         ]
     }
 

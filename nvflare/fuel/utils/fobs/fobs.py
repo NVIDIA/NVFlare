@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -36,6 +36,8 @@ __all__ = [
     "deserialize_stream",
     "reset",
 ]
+
+from nvflare.security.logging import secure_format_exception
 
 FOBS_TYPE = "__fobs_type__"
 FOBS_DATA = "__fobs_data__"
@@ -219,7 +221,7 @@ def serialize(obj: Any, **kwargs) -> bytes:
         content = str(obj)
         if len(content) > MAX_CONTENT_LEN:
             content = content[:MAX_CONTENT_LEN] + " ..."
-        raise ValueError(f"Object {type(obj)} is not serializable: {ex}: {content}")
+        raise ValueError(f"Object {type(obj)} is not serializable: {secure_format_exception(ex)}: {content}")
 
 
 def serialize_stream(obj: Any, stream: BinaryIO, **kwargs):

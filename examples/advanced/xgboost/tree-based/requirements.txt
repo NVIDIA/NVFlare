@@ -1,7 +1,7 @@
 nvflare>=2.3.0rc3
 pandas
 xgboost
-sklearn
+scikit-learn
 torch
 tensorboard
 tensorflow # optional for plot the TensorBoard event files

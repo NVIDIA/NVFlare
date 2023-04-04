@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,6 +16,8 @@ import logging
 import os
 import threading
 import time
+
+from nvflare.security.logging import secure_format_exception
 
 
 class AioContext:
@@ -51,7 +53,7 @@ class AioContext:
             self.loop.run_forever()
             self.loop.run_until_complete(self.loop.shutdown_asyncgens())
         except Exception as ex:
-            self.logger.error(f"error running aio loop: {ex}")
+            self.logger.error(f"error running aio loop: {secure_format_exception(ex)}")
             raise ex
         finally:
             self.logger.debug(f"{self.name}: AIO Loop run done!")
@@ -85,7 +87,7 @@ class AioContext:
         try:
             self.loop.call_soon_threadsafe(self.loop.stop)
         except Exception as ex:
-            self.logger.debug(f"Loop stopping error: {ex}")
+            self.logger.debug(f"Loop stopping error: {secure_format_exception(ex)}")
 
         start = time.time()
         while self.loop.is_running():

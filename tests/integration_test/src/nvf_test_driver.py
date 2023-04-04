@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -407,13 +407,12 @@ class NVFTestDriver:
                     result = event_sequence[event_idx]["result"]
                     if result["type"] == "run_state":
                         # check result state only when server is up and running
-                        if self.server_status():
+                        if self.server_status() is not None:
                             # compare run_state to expected result data from the test case
-                            if any(list(run_state.values())):
-                                _check_run_state(state=run_state, expected_state=result["data"])
-                                event_idx += 1
+                            _check_run_state(state=run_state, expected_state=result["data"])
+                            event_idx += 1
                     elif result["type"] == "admin_api_response":
-                        if not self.admin_api_response:
+                        if self.admin_api_response is None:
                             raise RuntimeError("Missing admin_api_response.")
                         assert self.admin_api_response == result["data"]
                         event_idx += 1
