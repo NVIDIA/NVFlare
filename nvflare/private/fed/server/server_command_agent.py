@@ -82,7 +82,7 @@ class ServerCommandAgent(object):
                     state_check = command.get_state_check(new_fl_ctx)
                     error = self.engine.server.authentication_check(request, state_check)
                     if error:
-                        make_reply(ReturnCode.AUTHENTICATION_ERROR, error, fobs.dumps(None))
+                        return make_reply(ReturnCode.AUTHENTICATION_ERROR, error, fobs.dumps(None))
 
                 reply = command.process(data=data, fl_ctx=new_fl_ctx)
                 if reply is not None:
