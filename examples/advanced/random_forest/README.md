@@ -1,5 +1,7 @@
 # Federated Learning for Random Forest based on XGBoost 
 
+Please make sure you set up virtual environment and Jupyterlab follows [example root readme](../../README.md)
+
 ## Introduction to Libraries and HIGGS Data
 
 ### Libraries

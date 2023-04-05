@@ -1,5 +1,7 @@
 # Federated SVM with Scikit-learn
 
+Please make sure you set up virtual environment and Jupyterlab follows [example root readme](../../README.md)
+
 ## Introduction to Scikit-learn, tabular data, and federated SVM
 ### Scikit-learn
 This example shows how to use [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) on tabular data.

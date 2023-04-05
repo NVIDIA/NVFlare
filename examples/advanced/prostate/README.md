@@ -1,5 +1,7 @@
 # Federated Learning for Prostate Segmentation from Multi-source Data
 
+Please make sure you set up virtual environment follows [example root readme](../../README.md)
+
 ## Introduction to MONAI, Prostate and Multi-source Data
 
 ### MONAI
