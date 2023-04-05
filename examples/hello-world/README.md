@@ -6,11 +6,18 @@ Please make sure you set up virtual environment and Jupyterlab follows [example 
 
 Please also install "./requirements.txt" in each example folder.
 
-## Hello World Examples
-### Notebooks
-* [Hello world notebook](./hello_world.ipynb)
-    * Notebook to run all hello-world examples 
+## Hello World Notebook
+### Prerequisites
+  Before you run the notebook, the following preparation work must be done:
 
+  1. Install a virtual environment following the instructions in [example root readme](../README.md)
+  2. Install Jupyter Lab and install a new kernel for the virtualenv called `nvflare_example`
+  3. Run [hw_pre_start.sh](./hw_pre_start.sh) in the terminal before running the notebook
+  4. Run [hw_post_cleanup.sh](./hw_post_cleanup.sh) in the terminal after running the notebook 
+
+* [Hello world notebook](./hello_world.ipynb)
+
+## Hello World Examples
 ### Workflows
 * [Hello Scatter and Gather](./hello-numpy-sag/README.md)
     * Example using "[ScatterAndGather](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.workflows.scatter_and_gather.html)" controller workflow.
