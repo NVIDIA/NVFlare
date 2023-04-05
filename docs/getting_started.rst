@@ -36,6 +36,8 @@ Note on branches:
 
 Quick Start with Simulator
 --------------------------
+Making sure the NVFLARE environment is set up correctly following :ref:`installation`, you can run an example application with :ref:`starting_fl_simulator`
+using the following script:
 
 .. code-block:: shell
 
