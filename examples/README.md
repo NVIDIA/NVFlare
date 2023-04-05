@@ -42,7 +42,7 @@ After activating your virtual environment, install JupyterLab:
 ```
 pip install jupyterlab
 ```
-If you need to register the virtual environment you created so it is usable in JupyterLab, you can register the kernel with:
+You can register the virtual environment you created, so it is usable in JupyterLab:
 ```
 python -m ipykernel install --user --name="nvflare_example"
 ```
@@ -71,7 +71,7 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 * [Intro to the FL Simulator](./tutorials/flare_simulator.ipynb)
   * Shows how to use the FLARE Simulator to run a local simulation.
 * [Hello FLARE API](./tutorials/flare_api.ipynb)
-  * Goes through the different commnads of the FLARE API.
+  * Goes through the different commands of the FLARE API.
 * [NVFLARE in POC Mode](./tutorials/setup_poc.ipynb)
   * Shows how to use POC mode.
 * [Provision and Start NVFLARE](./tutorials/provision.ipynb)
@@ -88,7 +88,8 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
   of TensorBoard metrics to the server during training 
   and [homomorphic encryption](https://developer.nvidia.com/blog/federated-learning-with-homomorphic-encryption/).
 * [Federated XGBoost](./advanced/xgboost/README.md)
-  * Includes examples of [histogram-based](./advanced/xgboost/histogram-based/README.md) algorithm, [tree-based](./advanced/xgboost/tree-based/README.md). Tree-based algorithms also includes [bagging](./advanced/xgboost/tree-based/job_configs/bagging_base) and [cyclic](./advanced/xgboost/tree-based/job_configs/cyclic_base) approaches 
+  * Includes examples of [histogram-based](./advanced/xgboost/histogram-based/README.md) algorithm, [tree-based](./advanced/xgboost/tree-based/README.md).
+    Tree-based algorithms also includes [bagging](./advanced/xgboost/tree-based/jobs/bagging_base) and [cyclic](./advanced/xgboost/tree-based/jobs/cyclic_base) approaches.
 
 ## 4. Traditional ML examples
 * [Federated Linear Model with Scikit-learn](./advanced/sklearn-linear/README.md)
@@ -121,5 +122,5 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
   * Discuss the federated site policies for authorization, resource and data privacy management
 
 ## 8. Experiment tracking
-* [Hello PyTorch with TensorBoard Streaming](./advanced/tensorboard-streaming/README.md)
-  * Example building upon [Hello PyTorch](./basic/hello-pt/README.md) showcasing the [TensorBoard](https://tensorflow.org/tensorboard) streaming capability from the clients to the server.
+* [Hello PyTorch with TensorBoard Streaming](./advanced/experiment-tracking/tensorboard-streaming/README.md)
+  * Example building upon [Hello PyTorch](./hello-world/hello-pt/README.md) showcasing the [TensorBoard](https://tensorflow.org/tensorboard) streaming capability from the clients to the server.

@@ -54,7 +54,8 @@ class SocketConnection(Connection):
         try:
             self.sock.sendall(frame)
         except Exception as ex:
-            raise CommError(CommError.ERROR, f"Error sending frame: {secure_format_exception(ex)}")
+            if not self.closing:
+                raise CommError(CommError.ERROR, f"Error sending frame on conn {self}: {secure_format_exception(ex)}")
 
     def read_loop(self):
         try:
