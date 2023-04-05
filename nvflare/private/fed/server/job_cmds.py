@@ -426,7 +426,7 @@ class JobCommandModule(CommandModule, CommandUtil):
                         conn.append_error(message, meta=make_meta(MetaStatusValue.INTERNAL_ERROR, message))
                     else:
                         message = "Abort signal has been sent to the server app."
-                        conn.append_string("Abort signal has been sent to the server app.")
+                        conn.append_string(message)
                         conn.append_success("", meta=make_meta(MetaStatusValue.OK, message))
         except BaseException as e:
             conn.append_error(

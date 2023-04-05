@@ -432,13 +432,21 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         success, reply_data_full_response, reply = self._get_processed_cmd_reply_data(
             AdminCommandNames.ABORT_JOB + " " + job_id
         )
-        if reply_data_full_response:
-            if "Abort signal has been sent" in reply_data_full_response:
-                return FLAdminAPIResponse(
-                    APIStatus.SUCCESS,
-                    {"message": reply_data_full_response},
-                    reply,
-                )
+        if reply:
+            meta = reply.get("meta", None)
+            if isinstance(meta, dict):
+                status = meta.get("status")
+                info = meta.get("info", "")
+                if status == "ok":
+                    return FLAdminAPIResponse(
+                        APIStatus.SUCCESS,
+                        {"message": info},
+                        reply,
+                    )
+                else:
+                    msg = f"{status}: {info}"
+                    return FLAdminAPIResponse(APIStatus.ERROR_RUNTIME, {"message": msg}, reply)
+
         return FLAdminAPIResponse(
             APIStatus.ERROR_RUNTIME, {"message": "Runtime error: could not handle server reply."}, reply
         )
