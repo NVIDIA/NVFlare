@@ -4,15 +4,16 @@
 
 The provided examples cover different aspects of [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html), such as using the provided [Controllers](https://nvflare.readthedocs.io/en/main/programming_guide/controllers.html) for "scatter and gather" or "cyclic weight transfer" workflows and example [Executors](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.apis.executor.html) to implement your own training and validation pipelines. Some examples use the provided "task data" and "task result" [Filters](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.apis.html?#module-nvflare.apis.filter) for homomorphic encryption and decryption or differential privacy. Furthermore, we show how to use different components for FL algorithms such as [FedAvg](https://arxiv.org/abs/1602.05629), [FedProx](https://arxiv.org/abs/1812.06127), and [FedOpt](https://arxiv.org/abs/2003.00295). We also provide domain-specific examples for deep learning and medical image analysis.
 
-> **_NOTE:_** To run examples, please follow the instructions for [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) and any additional steps specified in the example readmes.
-
 ## Getting started
 To get started with NVIDIA FLARE, please follow the [Getting Started Guide](https://nvflare.readthedocs.io/en/main/getting_started.html) in the documentation.
 This walks you through installation, creating a POC workspace, and deploying your first NVIDIA FLARE Application.
 The following examples will detail any additional requirements in their `requirements.txt`.
 
 ## Set up a virtual environment
-We recommend setting up a virtual environment before installing the dependencies of the examples. Install dependencies for a virtual environment with:
+We recommend setting up a virtual environment before installing the dependencies of the examples.
+**You need to set up the virtual environment and install nvflare and set additional `PYTHONPATH` before launch the jupyter lab.**
+
+Install dependencies for a virtual environment with:
 
 ```shell
 python3 -m pip install --user --upgrade pip
@@ -29,19 +30,25 @@ Create and activate your virtual environment with the `set_env.sh` script:
 source ./set_env.sh
 ```
 
+Install nvflare
+```shell
+(nvflare_example)$ pip install nvflare
+```
+
 In each example folder, install required packages for training:
 ```shell
-pip install --upgrade pip
-pip install -r requirements.txt
+(nvflare_example)$ pip install --upgrade pip
+(nvflare_example)$ pip install -r requirements.txt
 ```
 
 (optional) some examples contains script for plotting the TensorBoard event files, if needed, please also install:
 ```shell
-pip install -r plot-requirements.txt
+(nvflare_example)$ pip install -r plot-requirements.txt
 ```
 
 ## Set up JupyterLab for notebooks
 To run examples including notebooks, we recommend using [JupyterLab](https://jupyterlab.readthedocs.io).
+**You need to set up the virtual environment and install nvflare and set additional `PYTHONPATH` before launch the jupyter lab.**
 
 After activating your virtual environment, install JupyterLab:
 ```shell
