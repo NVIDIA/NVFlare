@@ -356,8 +356,9 @@ class Session(SessionSpec):
 
         """
         self._validate_job_id(job_id)
-        result = self._do_command(AdminCommandNames.ABORT_JOB + " " + job_id)
-        return result.get(ResultKey.META, None)
+        # result = self._do_command(AdminCommandNames.ABORT_JOB + " " + job_id)
+        # return result.get(ResultKey.META, None)
+        self._do_command(AdminCommandNames.ABORT_JOB + " " + job_id)
 
     def delete_job(self, job_id: str):
         """Delete the specified job completely from the system
