@@ -1,5 +1,7 @@
 # Federated Learning for XGBoost 
 
+Please make sure you set up virtual environment and Jupyterlab follows [example root readme](../../README.md)
+
 ## Introduction to XGBoost and HIGGS Data
 
 You can also follow along in this [notebook](./data_job_setup.ipynb) for an interactive experience.

@@ -13,42 +13,47 @@ The following examples will detail any additional requirements in their `require
 
 ## Set up a virtual environment
 We recommend setting up a virtual environment before installing the dependencies of the examples. Install dependencies for a virtual environment with:
-```
+
+```shell
 python3 -m pip install --user --upgrade pip
 python3 -m pip install --user virtualenv
 ```
+
 (If needed) make all shell scripts executable using:
-```
+```shell
 find . -name ".sh" -exec chmod +x {} \;
 ```
+
 Create and activate your virtual environment with the `set_env.sh` script:
-```
+```shell
 source ./set_env.sh
 ```
+
 In each example folder, install required packages for training:
-```
+```shell
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
+
 (optional) some examples contains script for plotting the TensorBoard event files, if needed, please also install:
-```
+```shell
 pip install -r plot-requirements.txt
 ```
 
-## Notebooks
+## Set up JupyterLab for notebooks
 To run examples including notebooks, we recommend using [JupyterLab](https://jupyterlab.readthedocs.io).
 
 After activating your virtual environment, install JupyterLab:
-```
-pip install jupyterlab
+```shell
+(nvflare_example)$ pip install jupyterlab
 ```
 You can register the virtual environment you created, so it is usable in JupyterLab:
-```
-python -m ipykernel install --user --name="nvflare_example"
+```shell
+(nvflare_example)$ python3 -m ipykernel install --user --name="nvflare_example"
 ```
 Start a Jupyter Lab:
-```
-jupyter lab .
+```shell
+(nvflare_example)$ jupyter lab .
 ```
 When you open a notebook, select the kernel `nvflare_example` using the dropdown menu at the top right.
 ![Selecting a JupyterLab kernel](./jupyterlab_kernel.png)
@@ -74,8 +79,6 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
   * Goes through the different commands of the FLARE API.
 * [NVFLARE in POC Mode](./tutorials/setup_poc.ipynb)
   * Shows how to use POC mode.
-* [Provision and Start NVFLARE](./tutorials/provision.ipynb)
-  * Shows how to provision and start a secure FL system.
 
 ## 3. FL algorithms
 * [Federated Learning with CIFAR-10](./advanced/cifar10/README.md)

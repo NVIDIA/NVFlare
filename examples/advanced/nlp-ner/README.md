@@ -8,6 +8,10 @@ In this example, we select [BERT-base-uncased](https://huggingface.co/bert-base-
 This example is adapted from this [repo](https://github.com/PL97/federated-multi-modality-learning/). 
 
 ## Setup
+
+Please make sure you set up virtual environment follows [example root readme](../../README.md)
+
+
 Install required packages for training
 ```
 pip install --upgrade pip

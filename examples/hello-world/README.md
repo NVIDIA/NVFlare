@@ -1,0 +1,28 @@
+# NVFlare hello-world examples
+
+We introduce hello-world examples in this folder.
+
+Please make sure you set up virtual environment and Jupyterlab follows [example root readme](../README.md)
+
+Please also install "./requirements.txt" in each example folder.
+
+## Hello World Examples
+### Notebooks
+* [Hello world notebook](./hello_world.ipynb)
+    * Notebook to run all hello-world examples 
+
+### Workflows
+* [Hello Scatter and Gather](./hello-numpy-sag/README.md)
+    * Example using "[ScatterAndGather](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.workflows.scatter_and_gather.html)" controller workflow.
+* [Hello Cross-Site Validation](./hello-numpy-cross-val/README.md)
+    * Example using [CrossSiteModelEval](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.workflows.cross_site_model_eval.html) controller workflow.
+* [Hello Cyclic Weight Transfer](./hello-cyclic/README.md)
+    * Example using [CyclicController](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.workflows.cyclic_ctl.html) controller workflow to implement [Cyclic Weight Transfer](https://pubmed.ncbi.nlm.nih.gov/29617797/).
+
+### Deep Learning
+* [Hello PyTorch](./hello-pt/README.md)
+  * Example using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) an image classifier using [FedAvg]([FedAvg](https://arxiv.org/abs/1602.05629)) and [PyTorch](https://pytorch.org/) as the deep learning training framework.
+* [Hello TensorFlow](./hello-tf2/README.md)
+  * Example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) an image classifier using [FedAvg]([FedAvg](https://arxiv.org/abs/1602.05629)) and [TensorFlow](https://tensorflow.org/) as the deep learning training framework.
+
+

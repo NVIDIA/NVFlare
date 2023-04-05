@@ -31,6 +31,8 @@ the non-numerical features will be removed.
 
 We provide several examples to demonstrate how should the operators be used. 
 
+Please make sure you set up virtual environment and Jupyterlab follows [example root readme](../../README.md)
+
 ### Tabular Examples
 
 The first example is to calculate the statistics for **tabular** data. The data can be loaded into Pandas DataFrame, 

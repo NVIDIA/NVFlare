@@ -1,7 +1,6 @@
 # Federated Private Set Intersection
 
 In this example, we will demonstrate the built-in operator for Private Set Intersection (PSI).
-What is PSI ? why do we need it and how to use it ?  
 
 ## What is PSI?
 
@@ -56,5 +55,7 @@ addressed in the future release.
 Please refer to [psi protocol](../../../nvflare/app_common/psi/README.md)
 
 ## Examples
+
+Please make sure you set up virtual environment follows [example root readme](../../README.md)
 
 [User email match](./user_email_match/README.md)

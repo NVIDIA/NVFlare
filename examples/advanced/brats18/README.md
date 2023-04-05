@@ -1,5 +1,7 @@
 # Federated Learning with Differential Privacy for BraTS18 Segmentation
 
+Please make sure you set up virtual environment and follows [example root readme](../../README.md)
+
 ## Introduction to MONAI, BraTS and Differential Privacy
 ### MONAI
 This example shows how to use [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) on medical image applications.
