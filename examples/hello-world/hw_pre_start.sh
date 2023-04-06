@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
 # NVFLARE INSTALL
-NVFLARE_VERSION="2.3.0rc3"
-pip install 'nvflare[app_opt]>=${NVFLARE_VERSION}'
+NVFLARE_VERSION="2.3.0"
+pip install 'nvflare>=${NVFLARE_VERSION}'
 
 # set NVFLARE_HOME
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
