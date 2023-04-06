@@ -255,6 +255,7 @@ class NVFTestDriver:
 
             time.sleep(0.5)
             response = self.super_admin_api.check_status(target_type=TargetType.CLIENT)
+            print(f"Check client status response is {response}")
             if not check_client_status_ready(response):
                 # clients not ready
                 continue
