@@ -1,5 +1,7 @@
 # Federated Learning with CIFAR-10
 
+Please make sure you set up virtual environment and follows [example root readme](../../README.md)
+
 ### [Simulated Federated Learning with CIFAR-10](./cifar10-sim/README.md)
 This example includes instructions on running [FedAvg](https://arxiv.org/abs/1602.05629), 
 [FedProx](https://arxiv.org/abs/1812.06127), [FedOpt](https://arxiv.org/abs/2003.00295), 

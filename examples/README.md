@@ -4,51 +4,63 @@
 
 The provided examples cover different aspects of [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html), such as using the provided [Controllers](https://nvflare.readthedocs.io/en/main/programming_guide/controllers.html) for "scatter and gather" or "cyclic weight transfer" workflows and example [Executors](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.apis.executor.html) to implement your own training and validation pipelines. Some examples use the provided "task data" and "task result" [Filters](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.apis.html?#module-nvflare.apis.filter) for homomorphic encryption and decryption or differential privacy. Furthermore, we show how to use different components for FL algorithms such as [FedAvg](https://arxiv.org/abs/1602.05629), [FedProx](https://arxiv.org/abs/1812.06127), and [FedOpt](https://arxiv.org/abs/2003.00295). We also provide domain-specific examples for deep learning and medical image analysis.
 
-> **_NOTE:_** To run examples, please follow the instructions for [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) and any additional steps specified in the example readmes.
-
 ## Getting started
 To get started with NVIDIA FLARE, please follow the [Getting Started Guide](https://nvflare.readthedocs.io/en/main/getting_started.html) in the documentation.
 This walks you through installation, creating a POC workspace, and deploying your first NVIDIA FLARE Application.
 The following examples will detail any additional requirements in their `requirements.txt`.
 
 ## Set up a virtual environment
-We recommend setting up a virtual environment before installing the dependencies of the examples. Install dependencies for a virtual environment with:
-```
+We recommend setting up a virtual environment before installing the dependencies of the examples.
+**You need to set up the virtual environment and install nvflare and set additional `PYTHONPATH` before launch the jupyter lab.**
+
+Install dependencies for a virtual environment with:
+
+```shell
 python3 -m pip install --user --upgrade pip
 python3 -m pip install --user virtualenv
 ```
+
 (If needed) make all shell scripts executable using:
-```
+```shell
 find . -name ".sh" -exec chmod +x {} \;
 ```
+
 Create and activate your virtual environment with the `set_env.sh` script:
-```
+```shell
 source ./set_env.sh
 ```
-In each example folder, install required packages for training:
-```
-pip install --upgrade pip
-pip install -r requirements.txt
-```
-(optional) some examples contains script for plotting the TensorBoard event files, if needed, please also install:
-```
-pip install -r plot-requirements.txt
+
+Install nvflare
+```shell
+(nvflare_example)$ pip install nvflare
 ```
 
-## Notebooks
+In each example folder, install required packages for training:
+```shell
+(nvflare_example)$ pip install --upgrade pip
+(nvflare_example)$ pip install -r requirements.txt
+```
+
+(optional) some examples contains script for plotting the TensorBoard event files, if needed, please also install:
+```shell
+(nvflare_example)$ pip install -r plot-requirements.txt
+```
+
+## Set up JupyterLab for notebooks
 To run examples including notebooks, we recommend using [JupyterLab](https://jupyterlab.readthedocs.io).
+**You need to set up the virtual environment and install nvflare and set additional `PYTHONPATH` before launch the jupyter lab.**
 
 After activating your virtual environment, install JupyterLab:
+```shell
+(nvflare_example)$ pip install jupyterlab
 ```
-pip install jupyterlab
-```
-If you need to register the virtual environment you created so it is usable in JupyterLab, you can register the kernel with:
-```
-python -m ipykernel install --user --name="nvflare_example"
+You can register the virtual environment you created, so it is usable in JupyterLab:
+```shell
+(nvflare_example)$ python3 -m ipykernel install --user --name="nvflare_example"
 ```
 Start a Jupyter Lab:
-```
-jupyter lab .
+```shell
+(nvflare_example)$ jupyter lab .
 ```
 When you open a notebook, select the kernel `nvflare_example` using the dropdown menu at the top right.
 ![Selecting a JupyterLab kernel](./jupyterlab_kernel.png)
@@ -71,11 +83,9 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 * [Intro to the FL Simulator](./tutorials/flare_simulator.ipynb)
   * Shows how to use the FLARE Simulator to run a local simulation.
 * [Hello FLARE API](./tutorials/flare_api.ipynb)
-  * Goes through the different commnads of the FLARE API.
+  * Goes through the different commands of the FLARE API.
 * [NVFLARE in POC Mode](./tutorials/setup_poc.ipynb)
   * Shows how to use POC mode.
-* [Provision and Start NVFLARE](./tutorials/provision.ipynb)
-  * Shows how to provision and start a secure FL system.
 
 ## 3. FL algorithms
 * [Federated Learning with CIFAR-10](./advanced/cifar10/README.md)
@@ -88,7 +98,8 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
   of TensorBoard metrics to the server during training 
   and [homomorphic encryption](https://developer.nvidia.com/blog/federated-learning-with-homomorphic-encryption/).
 * [Federated XGBoost](./advanced/xgboost/README.md)
-  * Includes examples of [histogram-based](./advanced/xgboost/histogram-based/README.md) algorithm, [tree-based](./advanced/xgboost/tree-based/README.md). Tree-based algorithms also includes [bagging](./advanced/xgboost/tree-based/job_configs/bagging_base) and [cyclic](./advanced/xgboost/tree-based/job_configs/cyclic_base) approaches 
+  * Includes examples of [histogram-based](./advanced/xgboost/histogram-based/README.md) algorithm, [tree-based](./advanced/xgboost/tree-based/README.md).
+    Tree-based algorithms also includes [bagging](./advanced/xgboost/tree-based/jobs/bagging_base) and [cyclic](./advanced/xgboost/tree-based/jobs/cyclic_base) approaches.
 
 ## 4. Traditional ML examples
 * [Federated Linear Model with Scikit-learn](./advanced/sklearn-linear/README.md)
@@ -121,5 +132,5 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
   * Discuss the federated site policies for authorization, resource and data privacy management
 
 ## 8. Experiment tracking
-* [Hello PyTorch with TensorBoard Streaming](./advanced/tensorboard-streaming/README.md)
-  * Example building upon [Hello PyTorch](./basic/hello-pt/README.md) showcasing the [TensorBoard](https://tensorflow.org/tensorboard) streaming capability from the clients to the server.
+* [Hello PyTorch with TensorBoard Streaming](./advanced/experiment-tracking/tensorboard-streaming/README.md)
+  * Example building upon [Hello PyTorch](./hello-world/hello-pt/README.md) showcasing the [TensorBoard](https://tensorflow.org/tensorboard) streaming capability from the clients to the server.

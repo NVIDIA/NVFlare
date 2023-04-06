@@ -76,6 +76,73 @@ The following tutorials and quickstart guides walk you through some of these exa
 
 For the complete collection of example applications, see https://github.com/NVIDIA/NVFlare/tree/main/examples.
 
+Setting up a virtual environment for examples and notebooks
+===========================================================
+It is recommended to set up a virtual environment before installing the dependencies for the examples. Install dependencies for a virtual environment with:
+
+.. code-block:: bash
+
+    python3 -m pip install --user --upgrade pip
+    python3 -m pip install --user virtualenv
+
+
+Once venv is installed, you can use it to create a virtual environment with:
+
+.. code-block:: shell
+
+    $ python3 -m venv nvflare_example
+
+This will create the ``nvflare_example`` directory in current working directory if it doesn't exist,
+and also create directories inside it containing a copy of the Python interpreter,
+the standard library, and various supporting files.
+
+
+Activate the virtualenv by running the following command:
+
+.. code-block:: shell
+
+    $ source nvflare_example/bin/activate
+
+Installing required packages
+----------------------------
+In each example folder, install required packages for training:
+
+.. code-block:: bash
+
+    pip install --upgrade pip
+    pip install -r requirements.txt
+
+(optional) some examples contain scripts for plotting the TensorBoard event files, if needed, please also install the additional requirements in the example folder:
+
+.. code-block:: bash
+
+    pip install -r plot-requirements.txt
+
+
+JupyterLab with your virtual environment for Notebooks
+------------------------------------------------------
+To run examples including notebooks, we recommend using `JupyterLab <https://jupyterlab.readthedocs.io>`_.
+
+After activating your virtual environment, install JupyterLab:
+
+.. code-block:: bash
+
+  pip install jupyterlab
+
+If you need to register the virtual environment you created so it is usable in JupyterLab, you can register the kernel with:
+
+.. code-block:: bash
+
+  python -m ipykernel install --user --name="nvflare_example"
+
+Start a Jupyter Lab:
+
+.. code-block:: bash
+
+  jupyter lab .
+
+When you open a notebook, select the kernel you registered, "nvflare_example", using the dropdown menu at the top right.
+
 Custom Code in Example Apps
 ===========================
 There are several ways to make :ref:`custom code <custom_code>` available to clients when using NVIDIA FLARE.
