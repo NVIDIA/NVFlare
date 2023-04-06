@@ -93,9 +93,11 @@ In this example, we assume four local GPUs with at least 12GB of memory are avai
 
 As we use the POC workspace without `meta.json`, we control the client GPU directly when starting the clients by specifying `CUDA_VISIBLE_DEVICES`. 
 
-To enable multitasking (if there are more computation resources - e.g. 4 x 32 GB GPUs), we can adjust the default value in `workspace_server/server/startup/fed_server.json` by setting `max_jobs: 2` (default value 1). Please adjust this properly according to resource available and task demand. 
+To enable multitasking (if there are more computation resources - e.g. 4 x 32 GB GPUs),
+we can adjust the default value in `workspace_server/server/startup/fed_server.json` by setting `max_jobs: 2` (default value: 4).
+Please adjust this properly according to resource available and task demand.
 
-For details, please refer to the [documentation](https://nvflare.readthedocs.io/en/main/user_guide/job.html).
+For details, please refer to the [documentation](https://nvflare.readthedocs.io/en/main/real_world_fl/job.html).
 
 ### Training with POC FL setting
 The next scripts will start the FL server and clients automatically to run FL experiments on localhost.
@@ -202,10 +204,11 @@ python3 ./result_stat/plot_tensorboard_events_poc.py
 The TensorBoard curves (smoothed with weight 0.8) for validation Dice for 600 epochs (600 rounds, 1 local epoch per round) during training are shown below:
 ![All training curve](./figs/nvflare_brats18.png)
 
-As shown, FedAvg achieves similar accuracy as centralized training, while DP will lead to some performance degradation based on the specific [parameter settings](./configs/brats_fedavg_dp/config/config_fed_client.json). Different DP settings will have different impacts over the performance. 
+As shown, FedAvg achieves similar accuracy as centralized training, while DP will lead to some performance degradation based on the specific [parameter settings](./configs/brats_fedavg_dp/app/config/config_fed_client.json).
+Different DP settings will have different impacts over the performance.
 
 ### Validation score
-The accuracy metrics under each settings are:
+The accuracy metrics under each setting are:
 
 | Config	| Val Overall Dice | 	Val TC Dice	 | 	Val WT Dice	 | 	Val ET Dice	 | 
 | ----------- |------------------|---------------|---------------|---------------|  
