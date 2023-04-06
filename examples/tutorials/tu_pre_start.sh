@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # NVFLARE INSTALL
-NVFLARE_VERSION="2.3.0rc3"
+NVFLARE_VERSION="2.3.0"
 pip install 'nvflare>=${NVFLARE_VERSION}'
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
