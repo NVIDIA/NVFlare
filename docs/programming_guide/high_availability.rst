@@ -138,6 +138,11 @@ If I'm currently hot, and the hot SP has changed to not me, then I transition to
 I will prepare to stop serving the client requests. If any requests are received during the Hot-to-Cold state, I will
 tell them I am not in service. This is a transition state to the cold state.
 
+.. note::
+
+    While trying restart unfinished jobs, users should be aware that some jobs may be in a state that contains incomplete results, i.e. some client
+    results may not have been received by the server during this transition. As such, users must handle such cases appropriately in the aggregation logic.
+
 Admin Client
 ------------
 Admin Client: No response from Overseer (connection error, etc.)
