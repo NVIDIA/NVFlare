@@ -91,7 +91,9 @@ def start(args):
                 environment=environment,
             )
         except docker.errors.APIError as e:
-            print(f"Either {dashboard_image} image does not exist or another nvflare-dashboard instance is still running.")
+            print(
+                f"Either {dashboard_image} image does not exist or another nvflare-dashboard instance is still running."
+            )
             print("Please either provide an existing container image or stop the running container instance.")
             print(e)
             exit(1)
@@ -104,13 +106,19 @@ def start(args):
     else:
         print(f"Launching dashboard locally from {folder}")
         print(f"Dashboard will listen to port {args.port}")
-        environment.update({
-            "NVFL_WEB_ROOT": folder,
-            "NVFL_WEB_PORT": args.port,
-        })
+        environment.update(
+            {
+                "NVFL_WEB_ROOT": folder,
+                "NVFL_WEB_PORT": args.port,
+            }
+        )
         dashboard_process = subprocess.run(
-            [sys.executable, f"{nvflare.__path__[0]}/dashboard/wsgi.py"],  # HACK: Any better way to reference this file?
-            env=environment
+            [
+                sys.executable,
+                # HACK: Any better way to reference this file?
+                f"{nvflare.__path__[0]}/dashboard/wsgi.py",
+            ],
+            env=environment,
         )
 
 
@@ -179,9 +187,10 @@ def define_dashboard_parser(parser):
     parser.add_argument("-e", "--env", action="append", help="additonal environment variables: var1=value1")
     parser.add_argument("--cred", help="set credential directly in the form of USER_EMAIL:PASSWORD")
     parser.add_argument(
-        "-i", "--image",
+        "-i",
+        "--image",
         type=str,
-        nargs='?',
+        nargs="?",
         const="nvflare/nvflare:latest",
         help="launch dashboard in a container using this image (default if provided: latest official nvflare image)",
     )
