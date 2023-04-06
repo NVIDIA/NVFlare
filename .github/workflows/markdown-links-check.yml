@@ -31,5 +31,5 @@ jobs:
       with:
         max-depth: -1
         use-verbose-mode: 'yes'
-        check-modified-files-only: 'no'
+        check-modified-files-only: 'yes'
         base-branch: 'dev'
