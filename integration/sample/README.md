@@ -29,4 +29,4 @@ Every project and implementation has some assumptions behind it, either about th
 
 
 ## Required NVFLARE version
-pip3 install nvflare>=2.2.0
+pip3 install nvflare>=2.3.0
