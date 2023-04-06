@@ -38,7 +38,6 @@ The following tutorials and quickstart guides walk you through some of these exa
     * `Intro to the FL Simulator <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/flare_simulator.ipynb>`_ - Shows how to use the :ref:`fl_simulator` to run a local simulation of an NVFLARE deployment to test and debug an application without provisioning a real FL project.
     * `Hello FLARE API <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/flare_api.ipynb>`_ - Goes through the different commands of the :ref:`flare_api` to show the syntax and usage of each.
     * `NVFLARE in POC Mode <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/setup_poc.ipynb>`_ - Shows how to use :ref:`POC mode <poc_command>` to test the features of a full FLARE deployment on a single machine.
-    * `Provision and Start NVFLARE <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/provision.ipynb>`_ - Shows how to provision and start a secure FL system.
 
   3. **FL algorithms**
 
