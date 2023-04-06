@@ -2,7 +2,7 @@
 
 # NVFLARE INSTALL
 NVFLARE_VERSION="2.3.0rc3"
-pip install 'nvflare[app_opt]>=${NVFLARE_VERSION}'
+pip install 'nvflare>=${NVFLARE_VERSION}'
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
