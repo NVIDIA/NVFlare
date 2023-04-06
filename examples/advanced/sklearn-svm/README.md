@@ -117,6 +117,5 @@ We can run the FL simulator with three clients under the uniform data split with
 ```commandline
 bash run_experiment_simulator.sh
 ```
-Running with default [SVC](https://scikit-learn.
-org/stable/modules/generated/sklearn.svm.SVC.html) classifier, the 
+Running with default [SVC](https://scikit-learn.org/stable/modules/generated/sklearn.svm.SVC.html) classifier, the 
 resulting global model's AUC is 0.806 which can be seen in the clients' logs.

@@ -11,7 +11,7 @@ with [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html).
 You can find the original experimental implementation [here](https://github.com/guopengf/Auto-FedRL).
 
 > **Note:** For more examples of FL algorithms with the CIFAR-10 dataset,
-> see [here](../../examples/cifar10).
+> see [here](../../examples/advanced/cifar10).
 
 ## License
 
@@ -55,9 +55,9 @@ Next, let's try to run Auto-FedRL on a heterogeneous split (alpha=0.1):
 ./run_simulator.sh cifar10_autofedrl 0.1 8 8
 ```
 
-## 4. Exeperiments on CIFAR-10
+## 4. Experiments on CIFAR-10
 
-Here, we show the experiment using the continous search on CIFAR-10 (alpha=0.5) with 8 clients. The experiemt was conducted on 1 NVIDIA V100 GPU (16GB) and took about 8 hours.
+Here, we show the experiment using the continuous search on CIFAR-10 (alpha=0.5) with 8 clients. The experiment was conducted on 1 NVIDIA V100 GPU (16GB) and took about 8 hours.
 
 The TensorBoard curves for test accuracy during training are shown below:
 ![curves](./assets/fig.png)
