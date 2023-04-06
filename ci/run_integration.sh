@@ -77,7 +77,7 @@ integration_test() {
     clean_up_snapshot_and_job
     pushd ${testFolder}
     pipenv run ./generate_test_configs_for_examples.sh
-    pipenv run ./run_integration_tests.sh -m "$1" -d
+    pipenv run ./run_integration_tests.sh -m "$1"
     popd
     clean_up_snapshot_and_job
     remove_dns_entries

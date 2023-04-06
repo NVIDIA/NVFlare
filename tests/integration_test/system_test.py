@@ -157,7 +157,7 @@ def setup_and_teardown_system(request):
                 admin_user_names=site_launcher.admin_user_names,
             ):
                 raise NVFTestError("NVFTestDriver initialize_admin_users failed.")
-        test_driver.ensure_clients_started(num_clients=len(site_launcher.client_properties.keys()))
+        test_driver.ensure_clients_started(num_clients=len(site_launcher.client_properties.keys()), timeout=2000)
         yield ha, test_cases, site_launcher, test_driver
     finally:
         if test_driver:

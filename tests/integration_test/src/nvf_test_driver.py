@@ -245,8 +245,7 @@ class NVFTestDriver:
 
         return run_data
 
-    def ensure_clients_started(self, num_clients):
-        timeout = 1000
+    def ensure_clients_started(self, num_clients: int, timeout: int):
         start_time = time.time()
         clients_up = False
         while not clients_up:
