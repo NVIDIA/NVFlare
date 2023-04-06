@@ -1,7 +1,7 @@
 # Hello PyTorch with Tensorboard Streaming
 
 Example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) to train an image classifier
-using federated averaging ([FedAvg]([FedAvg](https://arxiv.org/abs/1602.05629))) and [PyTorch](https://pytorch.org/)
+using federated averaging ([FedAvg](https://arxiv.org/abs/1602.05629)) and [PyTorch](https://pytorch.org/)
 as the deep learning training framework.
 
 This example also highlights the TensorBoard streaming capability from the clients to the server.

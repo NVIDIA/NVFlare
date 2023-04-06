@@ -107,7 +107,7 @@ Note that there is one case (ProstateDx-01-0055.nii.gz) with image/label mismatc
 bash data_conversion_NCI_ISBI.sh
 ```
 
-[**Promise12**](https://promise12.grand-challenge.org): [data link](https://promise12.grand-challenge.org/Download/)
+[**Promise12**](https://promise12.grand-challenge.org)
 
 First, register and log into Grand-Challenge website, then download "Training data (Part 1)", "Training data (Part 2)", and "Training data (Part 3)", store them to `./Raw/Promise12/` 
 We then extract the files using 7z (unzip does not work for the files) as
