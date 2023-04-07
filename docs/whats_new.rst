@@ -245,6 +245,9 @@ an optional boolean to determine whether or not to allow empty global weights an
 
 Some pipelines can have empty global weights at the first round, such that clients start training from scratch without any global info.
 
+7. Updates to the Job Scheduler Configuration
+=============================================
+See :ref:`job_scheduler_configuration` for information on how the Job Scheduler can be configured with different arguments.
 
 **************************
 Previous Releases of FLARE
