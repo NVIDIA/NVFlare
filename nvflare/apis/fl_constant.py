@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -141,6 +141,12 @@ class FLContextKey(object):
     SCOPE_PROPERTIES = "__scope_props__"
     SCOPE_OBJECT = "__scope_object__"
     FATAL_SYSTEM_ERROR = ReservedKey.FATAL_SYSTEM_ERROR
+    COMMUNICATION_ERROR = "Flare_communication_error__"
+    UNAUTHENTICATED = "Flare_unauthenticated__"
+    CLIENT_RESOURCE_SPECS = "__client_resource_specs"
+    JOB_PARTICIPANTS = "__job_participants"
+    JOB_BLOCK_REASON = "__job_block_reason"  # why the job should be blocked from scheduling
+    SSID = "__ssid__"
 
 
 class ReservedTopic(object):
@@ -154,6 +160,7 @@ class AdminCommandNames(object):
 
     SUBMIT_JOB = "submit_job"
     LIST_JOBS = "list_jobs"
+    GET_JOB_META = "get_job_meta"
     DOWNLOAD_JOB = "download_job"
     ABORT_JOB = "abort_job"
     DELETE_JOB = "delete_job"
@@ -162,6 +169,7 @@ class AdminCommandNames(object):
     DEPLOY_APP = "deploy_app"
     START_APP = "start_app"
     CHECK_STATUS = "check_status"
+    ADMIN_CHECK_STATUS = "admin_check_status"
     ABORT = "abort"
     ABORT_TASK = "abort_task"
     REMOVE_CLIENT = "remove_client"
@@ -195,7 +203,10 @@ class ServerCommandNames(object):
     AUX_SEND = "aux_send"
     SHOW_STATS = "show_stats"
     GET_ERRORS = "get_errors"
+    RESET_ERRORS = "reset_errors"
     UPDATE_RUN_STATUS = "update_run_status"
+    HANDLE_DEAD_JOB = "handle_dead_job"
+    SERVER_STATE = "server_state"
 
 
 class ServerCommandKey(object):
@@ -213,6 +224,7 @@ class ServerCommandKey(object):
     JOB_ID = "job_id"
     CLIENTS = "clients"
     COLLECTOR = "collector"
+    TURN_TO_COLD = "__turn_to_cold__"
 
 
 class FedEventHeader(object):
@@ -239,6 +251,8 @@ class NonSerializableKeys(object):
         FLContextKey.SCOPE_PROPERTIES,
         FLContextKey.SCOPE_OBJECT,
         FLContextKey.WORKSPACE_OBJECT,
+        FLContextKey.TASK_DATA,
+        FLContextKey.SHAREABLE,
     ]
 
 
@@ -270,6 +284,8 @@ class RunProcessKey(object):
     STATUS = "_status"
     JOB_ID = "_job_id"
     PARTICIPANTS = "_participants"
+    PROCESS_FINISHED = "_process_finished"
+    PROCESS_RETURN_CODE = "_process_return_code"
 
 
 class SystemComponents(object):
@@ -327,3 +343,16 @@ class JobConstants:
 class SiteType:
     SERVER = "server"
     CLIENT = "client"
+    ALL = "@ALL"
+
+
+class SystemConfigs:
+    STARTUP_CONF = "start_config"
+    RESOURCES_CONF = "resources_config"
+    APPLICATION_CONF = "application_config"
+
+
+class SecureTrainConst:
+    SSL_ROOT_CERT = "ssl_root_cert"
+    SSL_CERT = "ssl_cert"
+    PRIVATE_KEY = "ssl_private_key"

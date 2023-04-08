@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -243,6 +243,6 @@ class InfoCollector(Widget):
         """Gets the error category information."""
         return self.get_category(self.CATEGORY_ERROR)
 
-    def reset_errors(self, job_id):
+    def reset_errors(self):
         """Resets the error category information."""
         self.reset_category(self.CATEGORY_ERROR)

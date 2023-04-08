@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,18 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import sys
+import warnings
 
-from nvflare.app_common.executors.multi_process_executor import MultiProcessExecutor
-from nvflare.fuel.utils.network_utils import get_open_ports
+warnings.warn(
+    f"This module: {__file__} is deprecated. Please use nvflare.app_opt.pt.multi_process_executor",
+    category=FutureWarning,
+    stacklevel=2,
+)
 
-
-class PTMultiProcessExecutor(MultiProcessExecutor):
-    def get_multi_process_command(self) -> str:
-        return (
-            f"{sys.executable} -m torch.distributed.run --nproc_per_node="
-            + str(self.num_of_processes)
-            + " --nnodes=1 --node_rank=0"
-            + ' --master_addr="localhost" --master_port='
-            + str(get_open_ports(1)[0])
-        )
+# flake8: noqa: F401
+from nvflare.app_opt.pt.multi_process_executor import PTMultiProcessExecutor

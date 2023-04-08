@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -57,6 +57,7 @@ class SessionManager(CommandModule):
         self.monitor_interval = monitor_interval
         self.asked_to_stop = False
         self.monitor = threading.Thread(target=self.monitor_sessions)
+        self.monitor.daemon = True
         self.monitor.start()
 
     def monitor_sessions(self):
@@ -85,7 +86,7 @@ class SessionManager(CommandModule):
 
     def shutdown(self):
         self.asked_to_stop = True
-        self.monitor.join(timeout=10)
+        # self.monitor.join(timeout=10)
 
     def create_session(self, user_name, user_org, user_role):
         """Creates new session with a new session token.

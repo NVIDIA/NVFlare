@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -24,6 +24,8 @@ from nvflare.cli_exception import CLIException
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
 from nvflare.lighter.poc import generate_poc
 from nvflare.lighter.service_constants import FlareServiceConstants as SC
+from nvflare.lighter.utils import update_storage_locations
+from nvflare.tool.api_utils import shutdown_system
 
 DEFAULT_WORKSPACE = "/tmp/nvflare/poc"
 
@@ -109,8 +111,13 @@ def prepare_examples(poc_workspace: str):
 
 def prepare_poc(number_of_clients: int, poc_workspace: str):
     print(f"prepare_poc at {poc_workspace} for {number_of_clients} clients")
-    generate_poc(number_of_clients, poc_workspace)
-    prepare_examples(poc_workspace)
+    ret_code = generate_poc(number_of_clients, poc_workspace)
+    if poc_workspace != DEFAULT_WORKSPACE:
+        update_storage_locations(
+            local_dir=f"{poc_workspace}/server/local", default_resource_name="resources.json", workspace=poc_workspace
+        )
+    if ret_code:
+        prepare_examples(poc_workspace)
 
 
 def sort_package_cmds(cmd_type, package_cmds: list) -> list:
@@ -189,9 +196,10 @@ def stop_poc(poc_workspace: str, excluded=None, white_list=None):
     else:
         excluded.append(SC.FLARE_CONSOLE)
 
-    print(f"stop_poc at {poc_workspace}")
+    print("start shutdown NVFLARE")
     validate_poc_workspace(poc_workspace)
     gpu_ids: List[int] = []
+    shutdown_system(poc_workspace)
     _run_poc(SC.CMD_STOP, poc_workspace, gpu_ids, excluded=excluded, white_list=white_list)
 
 
@@ -213,12 +221,16 @@ def _build_commands(cmd_type: str, poc_workspace: str, excluded: list, white_lis
     :return:
     """
 
+    def is_fl_package_dir(p_dir_name: str) -> bool:
+        return p_dir_name == "admin" or p_dir_name == "server" or p_dir_name.startswith("site-")
+
     if white_list is None:
         white_list = []
     package_commands = []
     for root, dirs, files in os.walk(poc_workspace):
         if root == poc_workspace:
-            for package_dir_name in dirs:
+            fl_dirs = [d for d in dirs if is_fl_package_dir(d)]
+            for package_dir_name in fl_dirs:
                 if package_dir_name not in excluded:
                     if len(white_list) == 0 or package_dir_name in white_list:
                         cmd = get_package_command(cmd_type, poc_workspace, package_dir_name)

@@ -1,0 +1,8 @@
+nvflare>=2.3.0
+pandas
+xgboost
+scikit-learn
+torch
+tensorboard
+tensorflow # optional for plot the TensorBoard event files
+seaborn # optional for plot the TensorBoard event files

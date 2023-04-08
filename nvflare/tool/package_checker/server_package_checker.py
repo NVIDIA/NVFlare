@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -97,7 +97,7 @@ class ServerPackageChecker(PackageChecker):
         command = (
             f"{sys.executable} -m {SERVER_SCRIPT}"
             f" -m {self.package_path} -s {NVFlareConfig.SERVER}"
-            " --set secure_train=false config_folder=config"
+            " --set secure_train=true config_folder=config"
         )
         self.snapshot_storage_root = _get_snapshot_storage_root(self.package_path)
         self.job_storage_root = _get_job_storage_root(self.package_path)

@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,17 +17,14 @@ import os
 import re
 import shutil
 import sys
-import time
-from concurrent.futures import ThreadPoolExecutor
+import threading
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import MachineStatus, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext, FLContextManager
-from nvflare.apis.shareable import Shareable
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.network_utils import get_open_ports
-from nvflare.private.admin_defs import Message
 from nvflare.private.defs import ERROR_MSG_PREFIX, ClientStatusKey, EngineConstant
 from nvflare.private.event import fire_event
 from nvflare.private.fed.utils.app_deployer import AppDeployer
@@ -50,13 +47,12 @@ def _remove_custom_path():
 class ClientEngine(ClientEngineInternalSpec):
     """ClientEngine runs in the client parent process."""
 
-    def __init__(self, client, client_name, sender, args, rank, workers=5):
+    def __init__(self, client, client_name, args, rank, workers=5):
         """To init the ClientEngine.
 
         Args:
             client: FL client object
             client_name: client name
-            sender: sender object
             args: command args
             rank: local process rank
             workers: number of workers
@@ -64,11 +60,9 @@ class ClientEngine(ClientEngineInternalSpec):
         super().__init__()
         self.client = client
         self.client_name = client_name
-        self.sender = sender
         self.args = args
         self.rank = rank
-        self.client.process = None
-        self.client_executor = ProcessExecutor(os.path.join(args.workspace, "startup"))
+        self.client_executor = ProcessExecutor(client, os.path.join(args.workspace, "startup"))
         self.admin_agent = None
 
         self.fl_ctx_mgr = FLContextManager(
@@ -79,7 +73,6 @@ class ClientEngine(ClientEngineInternalSpec):
 
         if workers < 1:
             raise ValueError("workers must >= 1")
-        self.executor = ThreadPoolExecutor(max_workers=workers)
         self.logger = logging.getLogger(self.__class__.__name__)
         self.fl_components = [x for x in self.client.components.values() if isinstance(x, FLComponent)]
 
@@ -88,12 +81,6 @@ class ClientEngine(ClientEngineInternalSpec):
 
     def set_agent(self, admin_agent):
         self.admin_agent = admin_agent
-
-    def do_validate(self, req: Message):
-        self.logger.info("starting cross site validation.")
-        _ = self.executor.submit(lambda p: _do_validate(*p), [self.sender, req])
-
-        return "validate process started."
 
     def new_context(self) -> FLContext:
         return self.fl_ctx_mgr.new_context()
@@ -105,6 +92,7 @@ class ClientEngine(ClientEngineInternalSpec):
         running_jobs = []
         for job_id in self.get_all_job_ids():
             run_folder = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(job_id))
+            app_name = ""
             app_file = os.path.join(run_folder, "fl_app.txt")
             if os.path.exists(app_file):
                 with open(app_file, "r") as f:
@@ -219,18 +207,18 @@ class ClientEngine(ClientEngineInternalSpec):
         touch_file = os.path.join(self.args.workspace, "shutdown.fl")
         self.fire_event(EventType.SYSTEM_END, self.new_context())
 
-        _ = self.executor.submit(lambda p: _shutdown_client(*p), [self.client, self.admin_agent, touch_file])
+        thread = threading.Thread(target=shutdown_client, args=(self.client, touch_file))
+        thread.start()
 
-        self.executor.shutdown()
         return "Shutdown the client..."
 
     def restart(self) -> str:
         self.logger.info("Client shutdown...")
         touch_file = os.path.join(self.args.workspace, "restart.fl")
         self.fire_event(EventType.SYSTEM_END, self.new_context())
-        _ = self.executor.submit(lambda p: _shutdown_client(*p), [self.client, self.admin_agent, touch_file])
+        thread = threading.Thread(target=shutdown_client, args=(self.client, touch_file))
+        thread.start()
 
-        self.executor.shutdown()
         return "Restart the client..."
 
     def deploy_app(self, app_name: str, job_id: str, job_meta: dict, client_name: str, app_data) -> str:
@@ -260,36 +248,22 @@ class ClientEngine(ClientEngineInternalSpec):
     def reset_errors(self, job_id):
         self.client_executor.reset_errors(job_id)
 
-    def send_aux_command(self, shareable: Shareable, job_id):
-        return self.client_executor.process_aux_command(shareable, job_id)
-
     def get_all_job_ids(self):
         return self.client_executor.get_run_processes_keys()
 
 
-def _do_validate(sender, message):
-    print("starting the validate process .....")
-    time.sleep(60)
-    print("Generating processing result ......")
-    reply = Message(topic=message.topic, body="")
-    sender.send_result(reply)
-    pass
-
-
-def _shutdown_client(federated_client, admin_agent, touch_file):
+def shutdown_client(federated_client, touch_file):
     with open(touch_file, "a"):
         os.utime(touch_file, None)
 
     try:
         print("About to shutdown the client...")
         federated_client.communicator.heartbeat_done = True
-        time.sleep(3)
+        # time.sleep(3)
         federated_client.close()
 
-        if federated_client.process:
-            federated_client.process.terminate()
-
-        admin_agent.shutdown()
+        federated_client.status = ClientStatus.STOPPED
+        # federated_client.cell.stop()
         security_close()
     except BaseException as e:
         secure_log_traceback()

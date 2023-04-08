@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -31,6 +31,7 @@ class CommandCtxKey(object):
     REPLY_PROCESSOR = "reply_processor"
     RESULT = "result"
     JSON_PROCESSOR = "json_processor"
+    META = "meta"
 
 
 class CommandContext(SimpleContext):
@@ -75,6 +76,16 @@ class CommandContext(SimpleContext):
 
     def get_json_processor(self):
         return self.get_prop(CommandCtxKey.JSON_PROCESSOR)
+
+    def set_meta(self, meta):
+        self.set_prop(CommandCtxKey.META, meta)
+
+    def get_meta(self):
+        return self.get_prop(CommandCtxKey.META)
+
+
+class ApiPocValue(object):
+    ADMIN = "admin"
 
 
 class CommandInfo(enum.Enum):

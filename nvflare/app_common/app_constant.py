@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -109,6 +109,7 @@ class AppConstants(object):
 
     TASK_END_RUN = "_end_run_"
     TASK_TRAIN = "train"
+    TASK_GET_WEIGHTS = "get_weights"
 
     DEFAULT_AGGREGATOR_ID = "aggregator"
     DEFAULT_PERSISTOR_ID = "persistor"
@@ -190,3 +191,29 @@ class StatisticsConstants(AppConstants):
     }
 
     PRE_RUN_RESULT = "fed_stats_pre_run_result"
+
+
+class PSIConst(AppConstants):
+    TASK_KEY = "PSI_TASK_KEY"
+    DIRECTION_KEY = "PSI_DIRECTION_KEY"
+
+    FORWARD = "PSI_FORWARD"
+    BACKWARD = "PSI_BACKWARD"
+    TASK = "PSI"
+
+    TASK_PREPARE = "PSI_PREPARE"
+    TASK_SETUP = "PSI_SETUP"
+    TASK_REQUEST = "PSI_REQUEST"
+    TASK_RESPONSE = "PSI_RESPONSE"
+    TASK_INTERSECT = "PSI_TASK_INTERSECT"
+
+    ITEMS_SIZE = "PSI_ITEMS_SIZE"
+    ITEMS_SIZE_SET = "PSI_ITEMS_SIZE_SET"
+
+    # Bloom Filter False Positive Rate
+    BLOOM_FILTER_FPR = "PSI_BLOOM_FILTER_FPR"
+
+    SETUP_MSG = "PSI_SETUP_MSG"
+    REQUEST_MSG = "PSI_REQUEST_MSG"
+    REQUEST_MSG_SET = "PSI_REQUEST_MSG_SET"
+    RESPONSE_MSG = "PSI_RESPONSE_MSG"

@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -95,9 +95,12 @@ def accumulate_metrics(metrics: dict, global_metrics: dict) -> dict:
 
 
 def get_min_or_max_values(metrics: dict, global_metrics: dict, fn2) -> dict:
-    """
-        use 2 argument function to calculate fn2(global, client), example, min, max
-        note: the global min/max values are min/max of all clients and all datasets
+    """Use 2 argument function to calculate fn2(global, client), for example, min or max.
+
+    .. note::
+
+        The global min/max values are min/max of all clients and all datasets.
+
     Args:
         metrics: client's metric
         global_metrics: global metrics

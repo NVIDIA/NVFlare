@@ -48,8 +48,8 @@ copyright = "2023, NVIDIA"
 author = "NVIDIA"
 
 # The full version, including alpha/beta/rc tags
-release = "2.2.5"
-version = "2.2.5"
+release = "2.3.0"
+version = "2.3.0"
 
 
 # -- General configuration ---------------------------------------------------
@@ -76,6 +76,7 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.viewcode",
     "sphinx.ext.autosectionlabel",
+    "sphinx_copybutton",
     "sphinxcontrib.jquery"
 ]
 
@@ -102,7 +103,7 @@ html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
 html_theme_options = {
     "collapse_navigation": True,
     "display_version": True,
-    "navigation_depth": 5,
+    "navigation_depth": 8,
     "sticky_navigation": True,  # Set to False to disable the sticky nav while scrolling.
     # 'logo_only': True,  # if we have a html_logo below, this shows /only/ the logo with no title text
 }

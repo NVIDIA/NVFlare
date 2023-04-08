@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@ class StorageSpec(ABC):
 
     An object is identified by a URI (unique resource identifier).
     Each object contains:
+
         - content (data)
         - meta info that describes the control info of the object.
 

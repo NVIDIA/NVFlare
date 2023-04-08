@@ -1,0 +1,25 @@
+# ide
+.idea/
+.ipynb_checkpoints/
+
+# nvflare artifacts
+log.txt
+client_token.txt
+*.fl
+audit.log
+transfer
+workspaces
+
+# python
+__pycache__
+.pyc
+
+# virtual environments
+venv_nvflare_gradinv
+
+# data
+archive
+*.zip
+
+# Dependencies
+DeepInversion

@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -61,8 +61,12 @@ class BcastTaskManager(TaskManager):
             else:
                 clients_responded += 1
 
+        if clients_responded >= len(task.targets):
+            # all clients have responded!
+            return True, TaskCompletionStatus.OK
+
         # if min_responses is 0, need to have all client tasks responded
-        if task.props[_KEY_MIN_RESPS] == 0 and clients_not_responded:
+        if task.props[_KEY_MIN_RESPS] == 0 and clients_not_responded > 0:
             return False, TaskCompletionStatus.IGNORED
 
         # check if minimum responses are received

@@ -17,7 +17,7 @@
             "storage": {
                 "path": "nvflare.app_common.storages.filesystem_storage.FilesystemStorage",
                 "args": {
-                    "root_dir": "/tmp/nvflare/snapshot-storage",
+                    "root_dir": "/tmp/nvflare/poc/snapshot-storage",
                     "uri_root": "/"
                 }
             }
@@ -35,7 +35,7 @@
             "id": "job_manager",
             "path": "nvflare.apis.impl.job_def_manager.SimpleJobDefManager",
             "args": {
-                "uri_root": "/tmp/nvflare/jobs-storage",
+                "uri_root": "/tmp/nvflare/poc/jobs-storage",
                 "job_store_id": "job_store"
             }
         },

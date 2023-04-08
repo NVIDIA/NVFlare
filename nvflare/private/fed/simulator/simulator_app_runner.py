@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -24,9 +24,6 @@ class SimulatorClientRunManager(ClientRunManager):
 
 
 class SimulatorClientAppRunner(ClientAppRunner):
-    def start_command_agent(self, args, client_runner, federated_client, fl_ctx):
-        pass
-
     def create_run_manager(self, args, conf, federated_client, workspace):
         run_manager = SimulatorClientRunManager(
             client_name=args.client_name,
@@ -43,8 +40,11 @@ class SimulatorClientAppRunner(ClientAppRunner):
 
 
 class SimulatorServerAppRunner(ServerAppRunner):
-    def sync_up_parents_process(self, args, server):
+    def __init__(self, server) -> None:
+        super().__init__(server)
+
+    def sync_up_parents_process(self, args):
         pass
 
-    def update_job_run_status(self, server):
+    def update_job_run_status(self):
         pass

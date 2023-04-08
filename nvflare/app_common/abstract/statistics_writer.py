@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,11 +21,15 @@ from nvflare.apis.fl_context import FLContext
 class StatisticsWriter(FLComponent, ABC):
     @abstractmethod
     def save(self, data: dict, overwrite_existing: bool, fl_ctx: FLContext):
-        """
-            save data
-        :param data: the data to be saved
-        :param overwrite_existing
-        :param fl_ctx: FLContext
-        :return: None
+        """Save data.
+
+        To perform data privacy min_count check, failure_count is always required.
+
+        Args:
+            data: the data to be saved
+            overwrite_existing: whether or not to overwrite existing
+            fl_ctx: FLContext
+
+        Returns: None
         """
         pass

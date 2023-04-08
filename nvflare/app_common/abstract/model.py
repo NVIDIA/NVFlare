@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,12 +19,20 @@ Model Learnable is a dict that contains two items: weights and meta info
 """
 from nvflare.apis.dxo import DXO, DataKind
 
-from .learnable import Learnable as ModelLearnable
+from .learnable import Learnable
 
 
 class ModelLearnableKey(object):
     WEIGHTS = "weights"
     META = "meta"
+
+
+class ModelLearnable(Learnable):
+    def is_empty(self):
+        if self.get(ModelLearnableKey.WEIGHTS):
+            return False
+        else:
+            return True
 
 
 def validate_model_learnable(model_learnable: ModelLearnable) -> str:

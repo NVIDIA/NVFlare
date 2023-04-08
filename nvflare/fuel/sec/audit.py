@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -41,6 +41,10 @@ class Auditor(object):
     def add_event(self, user: str, action: str, ref: str = "", msg: str = "") -> str:
 
         if action in EXCLUDED_ACTIONS:
+            return ""
+
+        # server might already shut down, the audit_file could be None
+        if self.audit_file is None:
             return ""
 
         event_id = uuid.uuid4()

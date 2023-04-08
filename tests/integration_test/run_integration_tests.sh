@@ -2,26 +2,33 @@
 
 set -e
 
+PYTHONPATH="${PWD}/../.."
+backends=(numpy tensorflow pytorch overseer ha auth preflight cifar auto)
+
 usage()
 {
     echo "Run integration tests of NVFlare."
     echo
-    echo "Syntax: ./run_integration_tests.sh -m [-c]"
+    echo "Syntax: ./run_integration_tests.sh -m [-c] [-d]"
     echo "options:"
-    echo "m     Which backend/test to run (options: numpy, tensorflow, pytorch, overseer, ha, auth)."
+    echo "m     Which backend/test to run (options: ${backends[*]})."
     echo "c     Clean up integration test results."
+    echo "d     Debug mode."
     echo
     exit 1
 }
 
-cmd="pytest --junitxml=./integration_test.xml -v --log-cli-level=INFO --capture=no"
 [ $# -eq 0 ] && usage
-while getopts ":m:c" option; do
+while getopts ":m:c:d" option; do
     case "${option}" in
         m) # framework/backend
+            cmd="pytest --junitxml=./integration_test.xml -v --log-cli-level=INFO --capture=no"
             m=${OPTARG}
-            [[ $m == "numpy" || $m == "tensorflow" || $m == "pytorch" || $m == "overseer" || $m == "ha" || $m == "auth" ]] || usage
-            prefix="NVFLARE_TEST_FRAMEWORK=$m"
+            prefix="NVFLARE_TEST_FRAMEWORK=$m PYTHONPATH=${PYTHONPATH}"
+            ;;
+        d) # debug
+            export FL_LOG_LEVEL=DEBUG
+            cmd="pytest --junitxml=./integration_test.xml -vv --log-cli-level=DEBUG --capture=no"
             ;;
         c) # Clean up
             echo "Clean up integration tests result"
@@ -33,17 +40,25 @@ while getopts ":m:c" option; do
     esac
 done
 
-run_overseer()
+run_preflight_check_test()
 {
-    echo "Running overseer integration tests."
-    cmd="$prefix $cmd overseer_test.py"
+    echo "Running preflight check integration tests."
+    cmd="$cmd preflight_check_test.py"
     echo "$cmd"
     eval "$cmd"
 }
 
-run_numpy()
+run_overseer_test()
 {
-    echo "Running integration tests using numpy related jobs."
+    echo "Running overseer integration tests."
+    cmd="$cmd overseer_test.py"
+    echo "$cmd"
+    eval "$cmd"
+}
+
+run_system_test()
+{
+    echo "Running system integration tests with backend $m."
     cmd="$prefix $cmd system_test.py"
     echo "$cmd"
     eval "$cmd"
@@ -58,42 +73,12 @@ run_tensorflow()
     eval "$cmd"
 }
 
-run_pytorch()
-{
-    echo "Running integration tests using pytorch related jobs."
-    cmd="$prefix $cmd system_test.py"
-    python -m pip install tensorboard torch torchvision
-    python -c "import torch; print('PyTorch version is ' + torch.__version__)"
-    echo "$cmd"
-    eval "$cmd"
-}
-
-run_ha()
-{
-    echo "Running HA integration tests."
-    cmd="$prefix $cmd system_test.py"
-    echo "$cmd"
-    eval "$cmd"
-}
-
-run_auth()
-{
-    echo "Running federated authorization integration tests."
-    cmd="$prefix $cmd system_test.py"
-    echo "$cmd"
-    eval "$cmd"
-}
-
-if [[ $m == "numpy" ]]; then
-    run_numpy
-elif [[ $m == "tensorflow" ]]; then
+if [[ $m == "tensorflow" ]]; then
     run_tensorflow
-elif [[ $m == "pytorch" ]]; then
-    run_pytorch
 elif [[ $m == "overseer" ]]; then
-    run_overseer
-elif [[ $m == "ha" ]]; then
-    run_ha
-elif [[ $m == "auth" ]]; then
-    run_auth
+    run_overseer_test
+elif [[ $m == "preflight" ]]; then
+    run_preflight_check_test
+else
+    run_system_test
 fi

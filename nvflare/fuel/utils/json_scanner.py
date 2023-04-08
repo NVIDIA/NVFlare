@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,10 +13,11 @@
 # limitations under the License.
 
 import copy
+import logging
 from abc import ABC, abstractmethod
 
 from nvflare.fuel.common.excepts import ConfigError
-from nvflare.security.logging import secure_format_exception
+from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 
 class Node(object):
@@ -90,11 +91,14 @@ class JsonScanner(object):
             raise ValueError("json_data must be dict")
         self.location = location
         self.data = json_data
+        self.logger = logging.getLogger("JsonScanner")
 
     def _do_scan(self, node: Node):
         try:
             node.processor.process_element(node)
         except BaseException as e:
+            secure_log_traceback(self.logger)
+
             if self.location:
                 raise ConfigError(
                     "Error processing {} in JSON element {}: path: {}, exception: {}".format(

@@ -1,0 +1,34 @@
+{
+    "format_version": 2,
+    "TRAIN_SPLIT_ROOT": "/tmp/cifar10_splits",
+    "executors": [
+        {
+            "tasks": [
+                "train",
+                "submit_model",
+                "validate",
+                "model_validate_for_hp_search"
+            ],
+            "executor": {
+                "id": "Executor",
+                "path": "autofedrl.AutoFedRLLearnerExecutor",
+                "args": {
+                    "learner_id": "cifar10-learner"
+                }
+            }
+        }
+    ],
+    "task_result_filters": [],
+    "task_data_filters": [],
+    "components": [
+        {
+            "id": "cifar10-learner",
+            "path": "autofedrl.CIFAR10AutoFedRLearner",
+            "args": {
+                "train_idx_root": "{TRAIN_SPLIT_ROOT}",
+                "aggregation_epochs": 4,
+                "lr": 0.01
+            }
+        }
+    ]
+}

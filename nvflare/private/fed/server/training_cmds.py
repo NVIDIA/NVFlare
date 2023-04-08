@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ from typing import List
 from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.fuel.hci.conn import Connection
-from nvflare.fuel.hci.proto import ConfirmMethod
+from nvflare.fuel.hci.proto import ConfirmMethod, MetaKey, MetaStatusValue, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.private.admin_defs import MsgHeader, ReturnCode
 from nvflare.private.defs import ClientStatusKey, ScopeInfoKey, TrainingTopic
@@ -59,6 +59,14 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                     authz_func=self.authorize_client_operation,
                     visible=True,
                     confirm=ConfirmMethod.AUTH,
+                ),
+                CommandSpec(
+                    name=AdminCommandNames.ADMIN_CHECK_STATUS,
+                    description="check status for shutdown system command",
+                    usage="admin_check_status",
+                    handler_func=self.check_status,
+                    authz_func=self.must_be_project_admin,
+                    visible=False,
                 ),
                 CommandSpec(
                     name=AdminCommandNames.SHUTDOWN,
@@ -130,12 +138,6 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             # means some clients can not be shutdown
             result = False
 
-        if clients_to_be_removed:
-            # needs to remove all the clients that can be removed
-            err = engine.remove_clients(clients_to_be_removed)
-            if err:
-                conn.append_error(err)
-                result = False
         return result
 
     def shutdown(self, conn: Connection, args: List[str]):
@@ -144,9 +146,10 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         if not isinstance(engine, ServerEngine):
             raise TypeError("engine must be ServerEngine but got {}".format(type(engine)))
 
-        if engine.job_runner.running_jobs:
-            conn.append_error("There are still jobs running. Please let them finish or abort_job before shutdown.")
-            return
+        for _, job in engine.job_runner.running_jobs.items():
+            if not job.run_aborted:
+                conn.append_error("There are still jobs running. Please let them finish or abort_job before shutdown.")
+                return
 
         if target_type == self.TARGET_TYPE_SERVER:
             if engine.get_clients():
@@ -189,7 +192,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
         message = new_message(conn, topic=TrainingTopic.RESTART, body="", require_authz=True)
         replies = self.send_request_to_clients(conn, message)
-        engine.remove_clients(clients)
+        # engine.remove_clients(clients)
         return self._process_replies_to_string(conn, replies)
 
     def restart(self, conn: Connection, args: List[str]):
@@ -246,28 +249,46 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         if not isinstance(engine, ServerEngineInternalSpec):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
         dst = args[1]
-        if dst == self.TARGET_TYPE_SERVER:
+
+        if dst in [self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
             engine_info = engine.get_engine_info()
-            conn.append_string(f"Engine status: {engine_info.status.value}")
-            table = conn.append_table(["job_id", "app name"])
+            conn.append_string(
+                f"Engine status: {engine_info.status.value}",
+                meta=make_meta(
+                    MetaStatusValue.OK,
+                    extra={
+                        MetaKey.SERVER_STATUS: engine_info.status.value,
+                        MetaKey.SERVER_START_TIME: engine_info.start_time,
+                    },
+                ),
+            )
+            table = conn.append_table(["job_id", "app name"], name=MetaKey.JOBS)
             for job_id, app_name in engine_info.app_names.items():
-                table.add_row([job_id, app_name])
+                table.add_row([job_id, app_name], meta={MetaKey.APP_NAME: app_name, MetaKey.JOB_ID: job_id})
 
             clients = engine.get_clients()
             conn.append_string("Registered clients: {} ".format(len(clients)))
 
             if clients:
-                table = conn.append_table(["client", "token", "last connect time"])
+                table = conn.append_table(["client", "token", "last connect time"], name=MetaKey.CLIENTS)
                 for c in clients:
                     if not isinstance(c, Client):
                         raise TypeError("c must be Client but got {}".format(type(c)))
-                    table.add_row([c.name, str(c.token), time.asctime(time.localtime(c.last_connect_time))])
-        elif dst == self.TARGET_TYPE_CLIENT:
+                    table.add_row(
+                        [c.name, str(c.token), time.asctime(time.localtime(c.last_connect_time))],
+                        meta={MetaKey.CLIENT_NAME: c.name, MetaKey.CLIENT_LAST_CONNECT_TIME: c.last_connect_time},
+                    )
+
+        if dst in [self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_ALL]:
             message = new_message(conn, topic=TrainingTopic.CHECK_STATUS, body="", require_authz=True)
             replies = self.send_request_to_clients(conn, message)
             self._process_client_status_replies(conn, replies)
-        else:
-            conn.append_error("invalid target type {}. Usage: check_status server|client ...".format(dst))
+
+        if dst not in [self.TARGET_TYPE_ALL, self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_SERVER]:
+            conn.append_error(
+                f"invalid target type {dst}. Usage: check_status server|client ...",
+                meta=make_meta(MetaStatusValue.SYNTAX_ERROR, f"invalid target type {dst}"),
+            )
 
     def _process_client_status_replies(self, conn, replies):
         if not replies:
@@ -302,7 +323,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             else:
                 table.add_row([client_name, app_name, job_id, "No Reply"])
 
-    def _add_scope_info(self, table, site_name, scope_names: [str], default_scope: str):
+    def _add_scope_info(self, table, site_name, scope_names: List[str], default_scope: str):
         if not scope_names:
             names = ""
         else:

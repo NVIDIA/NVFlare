@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.app_constant import DefaultCheckpointFileName
-from nvflare.app_common.pt.pt_file_model_persistor import PTFileModelPersistor
+from nvflare.app_opt.pt.file_model_persistor import PTFileModelPersistor
 
 
 class MonaiBundlePersistor(PTFileModelPersistor):
@@ -36,6 +36,7 @@ class MonaiBundlePersistor(PTFileModelPersistor):
         global_model_file_name=DefaultCheckpointFileName.GLOBAL_MODEL,
         best_global_model_file_name=DefaultCheckpointFileName.BEST_GLOBAL_MODEL,
         source_ckpt_filename=None,
+        filter_id: str = None,
     ):
         """Persist pytorch-based from MONAI bundle configuration.
 
@@ -52,7 +53,8 @@ class MonaiBundlePersistor(PTFileModelPersistor):
                 Defaults to DefaultCheckpointFileName.BEST_GLOBAL_MODEL.
             source_ckpt_filename (str, optional): file name for source model checkpoint file relative to `bundle_root`.
                 Defaults to None.
-
+            filter_id: Optional string that defines a filter component that is applied to prepare the model to be saved,
+                e.g. for serialization of custom Python objects.
         Raises:
             ValueError: when source_ckpt_filename does not exist
         """
@@ -62,6 +64,7 @@ class MonaiBundlePersistor(PTFileModelPersistor):
             global_model_file_name=global_model_file_name,
             best_global_model_file_name=best_global_model_file_name,
             source_ckpt_file_full_name=None,  # will be set in _parse_config
+            filter_id=filter_id,
         )
 
         self.bundle_root = bundle_root

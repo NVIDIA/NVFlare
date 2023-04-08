@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -34,9 +34,9 @@ class ResourceManagerSpec(ABC):
             fl_ctx: the FLContext
 
         Returns:
-            A tuple of (check_result, token).
+            A tuple of (is_resource_enough, token).
 
-            check_result is a bool indicates whether there is enough resources;
+            is_resource_enough is a bool indicates whether there is enough resources;
             token is for resource reservation / cancellation for this check request.
         """
         pass

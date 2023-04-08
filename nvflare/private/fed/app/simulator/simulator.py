@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,6 +16,7 @@
 
 import argparse
 import sys
+from sys import platform
 
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
 
@@ -51,10 +52,15 @@ if __name__ == "__main__":
     create the SimulatorRunner object, do a setup(), then calls the run().
     """
 
-    if sys.version_info >= (3, 9):
-        raise RuntimeError("Python versions 3.9 and above are not yet supported. Please use Python 3.8 or 3.7.")
-    if sys.version_info < (3, 7):
-        raise RuntimeError("Python versions 3.6 and below are not supported. Please use Python 3.8 or 3.7.")
+    # For MacOS, it needs to use 'spawn' for creating multi-process.
+    if platform == "darwin":
+        # OS X
+        import multiprocessing
+
+        multiprocessing.set_start_method("spawn")
+
+    if sys.version_info < (3, 8):
+        raise RuntimeError("Please use Python 3.8 or above.")
 
     parser = argparse.ArgumentParser()
     define_simulator_parser(parser)

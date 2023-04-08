@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,8 @@
 import json
 from typing import List
 
-from nvflare.apis.fl_constant import ReturnCode, SystemComponents
+from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_constant import FLContextKey, ReturnCode, SystemComponents
 from nvflare.apis.resource_manager_spec import ResourceConsumerSpec, ResourceManagerSpec
 from nvflare.apis.shareable import Shareable
 from nvflare.fuel.utils import fobs
@@ -59,17 +60,29 @@ class CheckResourceProcessor(RequestProcessor):
         engine = app_ctx
         result = Shareable()
         resource_manager = _get_resource_manager(engine)
-        check_result, token = False, ""
+        is_resource_enough, token = False, ""
 
         with engine.new_context() as fl_ctx:
             try:
+                job_id = req.get_header(RequestHeader.JOB_ID, "")
                 resource_spec = fobs.loads(req.body)
-                check_result, token = resource_manager.check_resources(
-                    resource_requirement=resource_spec, fl_ctx=fl_ctx
-                )
-            except Exception:
+                fl_ctx.set_prop(key=FLContextKey.CLIENT_RESOURCE_SPECS, value=resource_spec, private=True, sticky=False)
+
+                fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job_id, private=True, sticky=False)
+
+                engine.fire_event(EventType.BEFORE_CHECK_RESOURCE_MANAGER, fl_ctx)
+                block_reason = fl_ctx.get_prop(FLContextKey.JOB_BLOCK_REASON)
+                if block_reason:
+                    is_resource_enough = False
+                    token = block_reason
+                else:
+                    is_resource_enough, token = resource_manager.check_resources(
+                        resource_requirement=resource_spec, fl_ctx=fl_ctx
+                    )
+            except BaseException:
                 result.set_return_code(ReturnCode.EXECUTION_EXCEPTION)
-        result.set_header(ShareableHeader.CHECK_RESOURCE_RESULT, check_result)
+
+        result.set_header(ShareableHeader.IS_RESOURCE_ENOUGH, is_resource_enough)
         result.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
 
         return Message(topic="reply_" + req.topic, body=fobs.dumps(result))

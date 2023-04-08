@@ -24,11 +24,12 @@ on:
 
 jobs:
   unit-tests:
-    runs-on: ubuntu-20.04
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: [ "3.8" ]
+        os: [ ubuntu-22.04, ubuntu-20.04 ]
+        python-version: [ "3.8", "3.9", "3.10" ]
     steps:
       - uses: actions/checkout@v3
       - name: Set up Python ${{ matrix.python-version }}
@@ -38,16 +39,17 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
+          pip install -e .[dev]
       - name: Run unit test
         run: ./runtest.sh
 
   wheel-build:
-    runs-on: ubuntu-20.04
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: [ "3.8" ]
+        os: [ ubuntu-22.04, ubuntu-20.04 ]
+        python-version: [ "3.8", "3.9", "3.10" ]
     steps:
       - uses: actions/checkout@v3
       - name: Set up Python ${{ matrix.python-version }}
@@ -57,7 +59,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
+          pip install -e .[dev]
           pip install build twine torch torchvision
       - name: Run wheel build
         run: python3 -m build --wheel

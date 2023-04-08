@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+from typing import List, Union
 
 from nvflare.apis.fl_constant import WorkspaceConstants
 
@@ -89,8 +90,13 @@ class Workspace:
     def get_log_config_file_path(self):
         return self._fallback_path([WorkspaceConstants.LOGGING_CONFIG, WorkspaceConstants.DEFAULT_LOGGING_CONFIG])
 
-    def get_file_path_in_site_config(self, file_basename: str):
-        return os.path.join(self.get_site_config_dir(), file_basename)
+    def get_file_path_in_site_config(self, file_basename: Union[str, List[str]]):
+        if isinstance(file_basename, str):
+            return os.path.join(self.get_site_config_dir(), file_basename)
+        elif isinstance(file_basename, list):
+            return self._fallback_path(file_basename)
+        else:
+            raise ValueError(f"invalid file_basename '{file_basename}': must be str or List[str]")
 
     def get_file_path_in_startup(self, file_basename: str):
         return os.path.join(self.get_startup_kit_dir(), file_basename)

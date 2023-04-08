@@ -10,7 +10,7 @@ tests:
       - "trigger":
           "type": "server_log"
           "data": "Server started"
-        "actions": [ "shell_commands ls site-a" ]
+        "actions": [ "shell_commands ls site-1" ]
         "admin_user_name": "admin@a.org"
         "result":
           "type": "admin_api_response"
@@ -18,7 +18,7 @@ tests:
       - "trigger":
           "type": "server_log"
           "data": "Server started"
-        "actions": [ "shell_commands ls site-a" ]
+        "actions": [ "shell_commands ls site-1" ]
         "admin_user_name": "admin@b.org"
         "result":
           "type": "admin_api_response"
@@ -26,7 +26,7 @@ tests:
       - "trigger":
           "type": "server_log"
           "data": "Server started"
-        "actions": [ "shell_commands ls site-a" ]
+        "actions": [ "shell_commands ls site-1" ]
         "result":
           "type": "admin_api_response"
           "data": "audit.log daemon_pid.fl local log.txt pid.fl readme.txt startup transfer"

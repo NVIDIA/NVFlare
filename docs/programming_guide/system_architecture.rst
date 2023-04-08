@@ -81,7 +81,7 @@ The system reserved component id, job_manager, is used to denote the Job Definit
 
 This component is specified as one item in the components.server section.
 
-This configuration is included in the fed_server.json of the Server’s Startup Kit.
+This configuration is included in the fed_server.json of the Server's Startup Kit.
 
 :class:`Job Definition Manager Spec<nvflare.apis.job_def_manager_spec.JobDefManagerSpec>`
 
@@ -95,7 +95,7 @@ The Job definition is stored in a persistent store (used by Simple Job Def Manag
 
 This component is specified as one item in the components.server section.
 
-This configuration is included in the fed_server.json of the Server’s Startup Kit.
+This configuration is included in the fed_server.json of the Server's Startup Kit.
 
 .. note::
 
@@ -111,7 +111,7 @@ The system reserved component id, job_scheduler, is used to denote the Job Sched
 
 This component is specified as one item in the components.server section.
 
-This configuration is included in the fed_server.json of the Server’s Startup Kit.
+This configuration is included in the fed_server.json of the Server's Startup Kit.
 
 :class:`Job Scheduler Spec<nvflare.apis.job_scheduler_spec.JobSchedulerSpec>`
 
@@ -138,7 +138,7 @@ The system reserved component id, resource_manager, is used to denote the Resour
 
 This component is specified as one item in the components.client section.
 
-This configuration is included in the fed_client.json of the FL Client’s Startup Kit.
+This configuration is included in the fed_client.json of the FL Client's Startup Kit.
 
 :class:`Resource Manager Spec<nvflare.apis.resource_manager_spec.ResourceManagerSpec>`
 
@@ -151,7 +151,7 @@ Resource Consumer
 The Resource Consumer is responsible for consuming and/or initializing job resources on FL Client. The Resource Consumer
 config specifies the Resource Consumer Python object.
 
-This configuration is included in the fed_client.json of the FL Client’s Startup Kit.
+This configuration is included in the fed_client.json of the FL Client's Startup Kit.
 
 The system reserved component id, resource_consumer, is used to denote the Resource Consumer in the project.yml file.
 
@@ -172,4 +172,4 @@ Job Execution State Storage
 The Job Execution State is stored in a persistent store. The Job Execution State Storage config specifies the Python
 object that manages the access to the store.
 
-This configuration is included in the fed_server.json of the Server’s Startup Kit.
+This configuration is included in the fed_server.json of the Server's Startup Kit.

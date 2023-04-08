@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -67,10 +67,11 @@ class CyclicController(Controller):
                 If FIXED means the same order for every round.
                 If RANDOM means random order for every round.
                 If RANDOM_WITHOUT_SAME_IN_A_ROW means every round the order gets shuffled but a client will never be
-                    run twice in a row (in different round).
+                run twice in a row (in different round).
 
         Raises:
             TypeError: when any of input arguments does not have correct type
+
         """
         super().__init__(task_check_period=task_check_period)
 
@@ -163,7 +164,7 @@ class CyclicController(Controller):
                     return
 
                 self.log_debug(fl_ctx, "Starting current round={}.".format(self._current_round))
-                fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=False)
+                fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=True)
 
                 # Task for one cyclic
                 targets = self._get_relay_orders()
