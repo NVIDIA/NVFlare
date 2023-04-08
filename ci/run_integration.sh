@@ -16,7 +16,7 @@
 #
 
 # Argument(s):
-#   BUILD_TYPE:   numpy | tensorflow | pytorch | overseer | ha | auth, tests to execute
+#   BUILD_TYPE:  numpy | tensorflow | pytorch | overseer | ha | auth | preflight | cifar | auto, tests to execute
 
 set -ex
 BUILD_TYPE=pytorch
@@ -30,8 +30,8 @@ elif [[ $# -gt 1 ]]; then
 fi
 
 init_pipenv() {
-    echo "initializing pip environment: $1"
-    pipenv install -r "$1"
+    echo "initializing pip environment"
+    pipenv install -e .[dev]
     export PYTHONPATH=$PWD
 }
 
@@ -41,29 +41,17 @@ remove_pipenv() {
     rm Pipfile Pipfile.lock
 }
 
-integration_test_pt() {
-    echo "Run PT integration test..."
-    init_pipenv requirements-dev.txt
-    testFolder="tests/integration_test"
-    rm -rf /tmp/snapshot-storage
-    pushd ${testFolder}
-    pipenv run ./run_integration_tests.sh -m pytorch
-    popd
-    rm -rf /tmp/snapshot-storage
-    remove_pipenv
-}
-
 integration_test_tf() {
     echo "Run TF integration test..."
     # not using pipenv because we need tensorflow package from the container
-    python -m pip install -r requirements-dev.txt
+    python -m pip install -e .[dev]
     export PYTHONPATH=$PWD
     testFolder="tests/integration_test"
-    rm -rf /tmp/snapshot-storage
+    clean_up_snapshot_and_job
     pushd ${testFolder}
     ./run_integration_tests.sh -m tensorflow
     popd
-    rm -rf /tmp/snapshot-storage
+    clean_up_snapshot_and_job
 }
 
 add_dns_entries() {
@@ -77,21 +65,31 @@ remove_dns_entries() {
     cp /etc/hosts_bak /etc/hosts
 }
 
+clean_up_snapshot_and_job() {
+    rm -rf /tmp/nvflare*
+}
+
 integration_test() {
-    echo "Run integration test..."
-    init_pipenv requirements-dev.txt
+    echo "Run integration test with backend $1..."
+    init_pipenv
     add_dns_entries
     testFolder="tests/integration_test"
-    rm -rf /tmp/snapshot-storage
+    clean_up_snapshot_and_job
     pushd ${testFolder}
-    pipenv run ./run_integration_tests.sh -m "$1"
+    pipenv run ./generate_test_configs_for_examples.sh
+    pipenv run ./run_integration_tests.sh -m "$1" -d
     popd
-    rm -rf /tmp/snapshot-storage
+    clean_up_snapshot_and_job
     remove_dns_entries
     remove_pipenv
 }
 
 case $BUILD_TYPE in
+
+    numpy)
+        echo "Run numpy tests..."
+        integration_test "numpy"
+        ;;
 
     tensorflow)
         echo "Run TF tests..."
@@ -100,7 +98,7 @@ case $BUILD_TYPE in
 
     pytorch)
         echo "Run PT tests..."
-        integration_test_pt
+        integration_test "pytorch"
         ;;
 
     ha)
@@ -108,9 +106,9 @@ case $BUILD_TYPE in
         integration_test "ha"
         ;;
 
-    numpy)
-        echo "Run numpy tests..."
-        integration_test "numpy"
+    auth)
+        echo "Run auth tests..."
+        integration_test "auth"
         ;;
 
     overseer)
@@ -118,9 +116,19 @@ case $BUILD_TYPE in
         integration_test "overseer"
         ;;
 
-    auth)
-        echo "Run auth tests..."
-        integration_test "auth"
+    preflight)
+        echo "Run preflight-check tests..."
+        integration_test "preflight"
+        ;;
+
+    cifar)
+        echo "Run cifar tests..."
+        integration_test "cifar"
+        ;;
+
+    auto)
+        echo "Run auto generated tests..."
+        integration_test "auto"
         ;;
 
     *)

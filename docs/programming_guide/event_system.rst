@@ -156,8 +156,6 @@ Local events are local to the client, and federated events or fed events are bro
 The :class:`ConvertToFedEvent<nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent>` widget will convert
 local events to federated events.
 
-One example of how this is applied in use is in log streaming as seen in the `hello-pt-tb example <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-pt-tb>`_.
-
 The :class:`AnalyticsSender<nvflare.app_common.widgets.streaming.AnalyticsSender>` triggers an event called "analytix_log_stats",
 as a local event on the client. If we want server side to receive this event, we will need to convert the local event
 to a federated event, and this can be done with the :class:`ConvertToFedEvent<nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent>` widget.
@@ -167,4 +165,4 @@ to a federated event and adds a prefix to that event, which in the example becom
 is processed by the :class:`TBAnalyticsReceiver<nvflare.app_common.pt.tb_receiver.TBAnalyticsReceiver>` component
 on the server so the server can receive the streamed analytics.
 
-See the :ref:`Hello PyTorch with TensorBoard <hello_pt_tb>` example for an example that uses these components.
+See the :ref:`TensorBoard Streaming <tensorboard_streaming>` example for an example that uses these components.

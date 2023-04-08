@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -57,3 +57,9 @@ class EventType(object):
     DEBUG_LOG_AVAILABLE = "_debug_log_available"
 
     PRE_RUN_RESULT_AVAILABLE = "_pre_run_result_available"
+
+    # event types for job scheduling - server side
+    BEFORE_CHECK_CLIENT_RESOURCES = "_before_check_client_resources"
+
+    # event types for job scheduling - client side
+    BEFORE_CHECK_RESOURCE_MANAGER = "_before_check_resource_manager"

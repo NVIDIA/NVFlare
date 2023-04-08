@@ -1,7 +1,0 @@
-nvflare>=2.2.1rc7
-torch
-torchvision
-tensorboard
-monai
-tqdm
-nibabel

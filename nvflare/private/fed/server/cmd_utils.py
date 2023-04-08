@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,10 +14,13 @@
 
 from typing import List
 
+from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.fuel.hci.conn import Connection
+from nvflare.fuel.hci.proto import MetaStatusValue, make_meta
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
+from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.private.fed.server.admin import FedAdminServer
 
 
@@ -107,7 +110,7 @@ class CommandUtil(object):
             # get all clients
             clients = engine.get_clients()
         else:
-            clients, invalid_inputs = engine.validate_clients(client_names)
+            clients, invalid_inputs = engine.validate_targets(client_names)
             if invalid_inputs:
                 return "invalid client(s): {}".format(" ".join(invalid_inputs))
 
@@ -129,6 +132,16 @@ class CommandUtil(object):
         conn.set_prop(self.TARGET_CLIENT_NAMES, client_names)
         conn.set_prop(self.TARGET_CLIENTS, all_clients)
         return ""
+
+    def must_be_project_admin(self, conn: Connection, args: List[str]):
+        if args[0] == AdminCommandNames.ADMIN_CHECK_STATUS and len(args) == 1:
+            args.extend(["server"])
+        role = conn.get_prop(ConnProps.USER_ROLE, "")
+        if role != "project_admin":
+            conn.append_error("Not authorized as project_admin.", meta=make_meta(MetaStatusValue.NOT_AUTHORIZED))
+            return PreAuthzReturnCode.ERROR
+        else:
+            return PreAuthzReturnCode.OK
 
     def authorize_server_operation(self, conn: Connection, args: List[str]):
         err = self.validate_command_targets(conn, args[1:])

@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,11 +13,15 @@
 # limitations under the License.
 from nvflare.fuel.utils.fobs.decomposer import Decomposer
 from nvflare.fuel.utils.fobs.fobs import (
+    auto_register_enum_types,
     deserialize,
     deserialize_stream,
     num_decomposers,
     register,
+    register_data_classes,
+    register_enum_types,
     register_folder,
+    reset,
     serialize,
     serialize_stream,
 )

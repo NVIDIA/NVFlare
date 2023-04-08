@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -35,6 +35,11 @@ def serialize_pri_key(pri_key):
 
 def serialize_cert(cert):
     return cert.public_bytes(serialization.Encoding.PEM)
+
+
+def load_crt(path):
+    serialized_cert = open(path, "rb").read()
+    return x509.load_pem_x509_certificate(serialized_cert, default_backend())
 
 
 class CertBuilder(Builder):

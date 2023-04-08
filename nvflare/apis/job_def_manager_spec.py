@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -103,11 +103,8 @@ class JobDefManagerSpec(FLComponent, ABC):
             fl_ctx (FLContext): FLContext information
 
         Returns:
-            a dict to hold the job data and workspace.
-            Format: {
-                        JobDataKey.JOB_DATA.value: stored_data,
-                        JobDataKey.WORKSPACE_DATA: workspace_data
-                    }
+            a dict to hold the job data and workspace. With the format: {JobDataKey.JOB_DATA.value: stored_data, JobDataKey.WORKSPACE_DATA: workspace_data}
+
         """
         pass
 
@@ -119,6 +116,19 @@ class JobDefManagerSpec(FLComponent, ABC):
             jid (str): Job ID
             meta: dictionary of metadata for the job
             fl_ctx (FLContext): FLContext information
+
+        """
+        pass
+
+    @abstractmethod
+    def refresh_meta(self, job: Job, meta_keys: list, fl_ctx: FLContext):
+        """Refresh meta of the job as specified in the meta keys
+        Save the values of the specified keys into job store
+
+        Args:
+            job: job object
+            meta_keys: meta keys need to updated
+            fl_ctx: FLContext
 
         """
         pass

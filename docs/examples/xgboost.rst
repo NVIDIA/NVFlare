@@ -1,6 +1,7 @@
+.. _federated_xgboost:
+
 Federated XGBoost
 =================
-
 
 Overview
 --------
@@ -24,4 +25,9 @@ Examples
 Basic components to run XGBoost are already included with NVFlare distribution.
 Most XGBoost jobs can be created without custom code.
 
-Please refer to :code:`NVFlare/examples/xgboost` for more details.
+Please refer to :code:`NVFlare/examples/advanced/xgboost` for more details.
+
+Previous Versions of Federated XGBoost
+--------------------------------------
+
+   - `Federated XGBoost for 2.2 <https://github.com/NVIDIA/NVFlare/tree/2.2/examples/xgboost>`_

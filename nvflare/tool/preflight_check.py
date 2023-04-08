@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -53,7 +53,7 @@ def check_packages(args):
         if ret_code == 1:
             p.stop_dry_run(force=False)
         elif ret_code == 2:
-            p.stop_dry_run()
+            p.stop_dry_run(force=True)
 
 
 def main():

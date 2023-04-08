@@ -52,7 +52,7 @@ with a set of federation workflows and learning algorithms.
 Alongside this central stack are tools that allow experimentation and proof-of-concept development
 with the FL Simulator (POC mode), along with a set of tools used to deploy and manage production workflows.
 
-.. image:: resources/FL_stack.png
+.. image:: resources/FL_stack.jpg
     :height: 300px
 
 

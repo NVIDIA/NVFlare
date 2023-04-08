@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -26,8 +26,7 @@ from nvflare.fuel.utils import fobs
 
 
 class StatisticConfigDecomposer(fobs.Decomposer):
-    @staticmethod
-    def supported_type() -> Type[Any]:
+    def supported_type(self) -> Type[Any]:
         return StatisticConfig
 
     def decompose(self, statistic_config: StatisticConfig) -> Any:
@@ -37,33 +36,8 @@ class StatisticConfigDecomposer(fobs.Decomposer):
         return StatisticConfig(data[0], data[1])
 
 
-class DataTypeDecomposer(fobs.Decomposer):
-    @staticmethod
-    def supported_type() -> Type[Any]:
-        return DataType
-
-    def decompose(self, dt: DataType) -> Any:
-        return dt.value
-
-    def recompose(self, data: Any) -> DataType:
-        return DataType(data)
-
-
-class HistogramTypeDecomposer(fobs.Decomposer):
-    @staticmethod
-    def supported_type() -> Type[Any]:
-        return HistogramType
-
-    def decompose(self, ht: HistogramType) -> Any:
-        return ht.value
-
-    def recompose(self, data: Any) -> HistogramType:
-        return HistogramType(data)
-
-
 class FeatureDecomposer(fobs.Decomposer):
-    @staticmethod
-    def supported_type() -> Type[Any]:
+    def supported_type(self) -> Type[Any]:
         return Feature
 
     def decompose(self, f: Feature) -> Any:
@@ -74,8 +48,7 @@ class FeatureDecomposer(fobs.Decomposer):
 
 
 class BinDecomposer(fobs.Decomposer):
-    @staticmethod
-    def supported_type() -> Type[Any]:
+    def supported_type(self) -> Type[Any]:
         return Bin
 
     def decompose(self, b: Bin) -> Any:
@@ -86,8 +59,7 @@ class BinDecomposer(fobs.Decomposer):
 
 
 class BinRangeDecomposer(fobs.Decomposer):
-    @staticmethod
-    def supported_type() -> Type[Any]:
+    def supported_type(self) -> Type[Any]:
         return BinRange
 
     def decompose(self, b: BinRange) -> Any:
@@ -98,8 +70,7 @@ class BinRangeDecomposer(fobs.Decomposer):
 
 
 class HistogramDecomposer(fobs.Decomposer):
-    @staticmethod
-    def supported_type() -> Type[Any]:
+    def supported_type(self) -> Type[Any]:
         return Histogram
 
     def decompose(self, b: Histogram) -> Any:
@@ -109,11 +80,33 @@ class HistogramDecomposer(fobs.Decomposer):
         return Histogram(data[0], data[1], data[2])
 
 
+class HistogramTypeDecomposer(fobs.Decomposer):
+    def supported_type(self) -> Type[HistogramType]:
+        return HistogramType
+
+    def decompose(self, target: HistogramType) -> Any:
+        return target.value
+
+    def recompose(self, data: Any) -> HistogramType:
+        return HistogramType(data)
+
+
+class DataTypeDecomposer(fobs.Decomposer):
+    def supported_type(self) -> Type[DataType]:
+        return DataType
+
+    def decompose(self, target: DataType) -> Any:
+        return target.value
+
+    def recompose(self, data: Any) -> DataType:
+        return DataType(data)
+
+
 def fobs_registration():
     fobs.register(StatisticConfigDecomposer)
-    fobs.register(DataTypeDecomposer)
     fobs.register(FeatureDecomposer)
-    fobs.register(HistogramTypeDecomposer)
     fobs.register(HistogramDecomposer)
     fobs.register(BinDecomposer)
     fobs.register(BinRangeDecomposer)
+    fobs.register(HistogramTypeDecomposer)
+    fobs.register(DataTypeDecomposer)

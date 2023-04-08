@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -27,7 +27,7 @@ FED_EVENT_TOPIC = "fed.event"
 
 
 class FedEventRunner(Widget):
-    def __init__(self, topic=FED_EVENT_TOPIC):
+    def __init__(self, topic=FED_EVENT_TOPIC, regular_interval=0.01, grace_period=2.0):
         """Init FedEventRunner.
 
         The FedEventRunner handles posting and receiving of fed events.
@@ -41,15 +41,13 @@ class FedEventRunner(Widget):
         self.topic = topic
         self.abort_signal = None
         self.asked_to_stop = False
-        self.asked_to_flush = False
-        self.regular_interval = 0.001
-        self.grace_period = 2
-        self.flush_wait = 2
+        self.regular_interval = regular_interval
+        self.grace_period = grace_period
         self.engine = None
         self.last_timestamps = {}  # client name => last_timestamp
         self.in_events = []
         self.in_lock = threading.Lock()
-        self.poster = threading.Thread(target=self._post, args=())
+        self.poster = None
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
@@ -57,17 +55,9 @@ class FedEventRunner(Widget):
             self.engine.register_aux_message_handler(topic=self.topic, message_handle_func=self._receive)
             self.abort_signal = fl_ctx.get_run_abort_signal()
             self.asked_to_stop = False
-            self.asked_to_flush = False
-            self.poster.start()
-        elif event_type == EventType.ABOUT_TO_END_RUN:
-            self.asked_to_flush = True
-            # delay self.flush_wait seconds so
-            # _post can empty the queue before
-            # END_RUN is fired
-            time.sleep(self.flush_wait)
         elif event_type == EventType.END_RUN:
             self.asked_to_stop = True
-            if self.poster.is_alive():
+            if self.poster is not None and self.poster.is_alive():
                 self.poster.join()
         else:
             # handle outgoing fed events
@@ -112,6 +102,11 @@ class FedEventRunner(Widget):
             return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
         with self.in_lock:
+            if self.poster is None:
+                # create the poster thread now
+                self.poster = threading.Thread(target=self._post, name="fed_event_poster")
+                self.poster.start()
+
             last_timestamp = self.last_timestamps.get(peer_name, None)
             if last_timestamp is None or timestamp > last_timestamp:
                 # we only keep new items, in case the peer somehow sent old items
@@ -138,30 +133,23 @@ class FedEventRunner(Widget):
         be handled by receiving side.
         """
         sleep_time = self.regular_interval
-        countdown = self.grace_period
         while True:
             time.sleep(sleep_time)
             if self.abort_signal.triggered:
                 break
             n = len(self.in_events)
             if n > 0:
-                if self.asked_to_flush:
-                    sleep_time = 0
-                else:
-                    sleep_time = self.regular_interval
+                sleep_time = 0.0
                 with self.in_lock:
                     event_to_post = self.in_events.pop(0)
             elif self.asked_to_stop:
-                # the queue is empty, and we are asked to stop.
-                # wait self.grace_period seconds , then exit.
-                if countdown < 0:
-                    break
-                else:
-                    countdown = countdown - 1
-                    time.sleep(1)
+                time.sleep(self.grace_period)
+                if len(self.in_events) > 0:
                     continue
+                else:
+                    break
             else:
-                sleep_time = min(sleep_time * 2, 1)
+                sleep_time = self.regular_interval
                 continue
 
             with self.engine.new_context() as fl_ctx:
@@ -181,9 +169,9 @@ class FedEventRunner(Widget):
 
 
 class ServerFedEventRunner(FedEventRunner):
-    def __init__(self, topic=FED_EVENT_TOPIC):
+    def __init__(self, topic=FED_EVENT_TOPIC, regular_interval=0.01, grace_period=2.0):
         """Init ServerFedEventRunner."""
-        FedEventRunner.__init__(self, topic)
+        FedEventRunner.__init__(self, topic, regular_interval, grace_period)
 
     def fire_and_forget_request(self, request: Shareable, fl_ctx: FLContext, targets=None):
         if not isinstance(self.engine, ServerEngineSpec):

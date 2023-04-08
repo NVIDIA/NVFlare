@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,13 +18,13 @@ from typing import Optional
 
 from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import MachineStatus
-from nvflare.apis.fl_context import FLContext
+from nvflare.apis.job_def import Job
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.apis.server_engine_spec import ServerEngineSpec
-from nvflare.apis.shareable import Shareable
 
 from .job_runner import JobRunner
-from .run_manager import RunInfo, RunManager
+from .run_info import RunInfo
+from .run_manager import RunManager
 from .server_json_config import ServerJsonConfigurator
 
 
@@ -38,6 +38,7 @@ class EngineInfo(object):
 
 
 class ServerEngineInternalSpec(ServerEngineSpec, ABC):
+    @abstractmethod
     def get_engine_info(self) -> EngineInfo:
         """Get general info of the engine."""
         pass
@@ -101,7 +102,7 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def start_app_on_server(self, run_number: str, job_id: str = None, job_clients=None, snapshot=None) -> str:
+    def start_app_on_server(self, run_number: str, job: Job = None, job_clients=None, snapshot=None) -> str:
         """Start the FL app on Server.
 
         Returns:
@@ -205,20 +206,8 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def get_client_name_from_token(self, token: str) -> str:
-        """Get the registered client name from communication token.
-
-        Args:
-            token: communication token
-
-        Returns:
-            Client name
-        """
-        pass
-
-    @abstractmethod
     def get_client_from_name(self, client_name: str) -> Client:
-        """Get the registered client token from client_name.
+        """Get the registered client from client_name.
 
         Args:
             client_name: client name
@@ -246,27 +235,6 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
         pass
 
     @abstractmethod
-    def aux_send(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
-        """Send a request to client(s) via the auxiliary channel.
-
-        Args:
-            targets: list of Client or client names
-            topic: topic of the request
-            request: request to be sent
-            timeout: number of secs to wait for replies
-            fl_ctx: FL context
-
-        Returns:
-             A dict of replies: client_name => Shareable
-
-        NOTE: when a reply is received, the peer_ctx props must be set into the PEER_PROPS header
-        of the reply Shareable.
-
-        If a reply is not received from a client, do not put it into the reply dict.
-        """
-        pass
-
-    @abstractmethod
     def show_stats(self, job_id) -> dict:
         """Show_stats of the server.
 
@@ -281,6 +249,19 @@ class ServerEngineInternalSpec(ServerEngineSpec, ABC):
 
     @abstractmethod
     def get_errors(self, job_id) -> dict:
+        """Get the errors of the server components.
+
+        Args:
+            job_id: current job_id
+
+        Returns:
+            Server components errors.
+
+        """
+        pass
+
+    @abstractmethod
+    def reset_errors(self, job_id) -> str:
         """Get the errors of the server components.
 
         Args:

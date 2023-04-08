@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,30 +15,40 @@ import importlib
 import inspect
 import logging
 import os
+from enum import Enum
 from os.path import dirname, join
-from typing import Any, BinaryIO, Dict, Type, Union
+from typing import Any, BinaryIO, Dict, Type, TypeVar, Union
 
 import msgpack
 
-from nvflare.fuel.utils.fobs.decomposer import Decomposer
+from nvflare.fuel.utils.fobs.decomposer import DataClassDecomposer, Decomposer, EnumTypeDecomposer
 
 __all__ = [
     "register",
+    "register_data_classes",
+    "register_enum_types",
+    "auto_register_enum_types",
     "register_folder",
     "num_decomposers",
     "serialize",
     "serialize_stream",
     "deserialize",
     "deserialize_stream",
+    "reset",
 ]
+
+from nvflare.security.logging import secure_format_exception
 
 FOBS_TYPE = "__fobs_type__"
 FOBS_DATA = "__fobs_data__"
+MAX_CONTENT_LEN = 128
 MSGPACK_TYPES = (None, bool, int, float, str, bytes, bytearray, memoryview, list, dict)
+T = TypeVar("T")
 
 log = logging.getLogger(__name__)
 _decomposers: Dict[str, Decomposer] = {}
 _decomposers_registered = False
+_enum_auto_register = True
 
 
 def _get_type_name(cls: Type) -> str:
@@ -55,20 +65,59 @@ def register(decomposer: Union[Decomposer, Type[Decomposer]]) -> None:
         decomposer: The decomposer type or instance
     """
 
-    name = _get_type_name(decomposer.supported_type())
-    if name in _decomposers:
-        return
+    global _decomposers
 
     if inspect.isclass(decomposer):
         instance = decomposer()
     else:
         instance = decomposer
 
+    name = _get_type_name(instance.supported_type())
+    if name in _decomposers:
+        return
+
     if not isinstance(instance, Decomposer):
         log.error(f"Class {instance.__class__} is not a decomposer")
         return
 
     _decomposers[name] = instance
+
+
+def register_data_classes(*data_classes: Type[T]) -> None:
+    """Register generic decomposers for data classes
+
+    Args:
+        data_classes: The classes to be registered
+    """
+
+    for data_class in data_classes:
+        decomposer = DataClassDecomposer(data_class)
+        register(decomposer)
+
+
+def register_enum_types(*enum_types: Type[Enum]) -> None:
+    """Register generic decomposers for enum classes
+
+    Args:
+        enum_types: The enum classes to be registered
+    """
+
+    for enum_type in enum_types:
+        if not issubclass(enum_type, Enum):
+            raise TypeError(f"Can't register class {enum_type}, which is not a subclass of Enum")
+        decomposer = EnumTypeDecomposer(enum_type)
+        register(decomposer)
+
+
+def auto_register_enum_types(enabled=True) -> None:
+    """Enable or disable auto registering of enum classes
+
+    Args:
+        enabled: Auto-registering of enum classes is enabled if True
+    """
+    global _enum_auto_register
+
+    _enum_auto_register = enabled
 
 
 def register_folder(folder: str, package: str):
@@ -83,7 +132,9 @@ def register_folder(folder: str, package: str):
             decomposers = package + "." + module[:-3]
             imported = importlib.import_module(decomposers, __package__)
             for _, cls_obj in inspect.getmembers(imported, inspect.isclass):
-                if issubclass(cls_obj, Decomposer) and not inspect.isabstract(cls_obj):
+                spec = inspect.getfullargspec(cls_obj.__init__)
+                # classes who are abstract or take extra args in __init__ can't be auto-registered
+                if issubclass(cls_obj, Decomposer) and not inspect.isabstract(cls_obj) and len(spec.args) == 1:
                     register(cls_obj)
 
 
@@ -113,10 +164,25 @@ def _fobs_packer(obj: Any) -> dict:
 
     type_name = _get_type_name(obj.__class__)
     if type_name not in _decomposers:
-        return obj
+        if _enum_auto_register and isinstance(obj, Enum):
+            register_enum_types(type(obj))
+        else:
+            return obj
 
     decomposed = _decomposers[type_name].decompose(obj)
     return {FOBS_TYPE: type_name, FOBS_DATA: decomposed}
+
+
+def _load_class(type_name: str):
+    parts = type_name.split(".")
+    if len(parts) == 1:
+        parts = ["builtins", type_name]
+
+    mod = __import__(parts[0])
+    for comp in parts[1:]:
+        mod = getattr(mod, comp)
+
+    return mod
 
 
 def _fobs_unpacker(obj: Any) -> Any:
@@ -126,7 +192,15 @@ def _fobs_unpacker(obj: Any) -> Any:
 
     type_name = obj[FOBS_TYPE]
     if type_name not in _decomposers:
-        raise TypeError(f"Unknown type {type_name}, caused by mismatching decomposers")
+        error = True
+        if _enum_auto_register:
+            cls = _load_class(type_name)
+            if issubclass(cls, Enum):
+                register_enum_types(cls)
+                error = False
+        if error:
+            raise TypeError(f"Unknown type {type_name}, caused by mismatching decomposers")
+
     decomposer = _decomposers[type_name]
     return decomposer.recompose(obj[FOBS_DATA])
 
@@ -141,7 +215,13 @@ def serialize(obj: Any, **kwargs) -> bytes:
         Serialized data
     """
     _register_decomposers()
-    return msgpack.packb(obj, default=_fobs_packer, strict_types=True, **kwargs)
+    try:
+        return msgpack.packb(obj, default=_fobs_packer, strict_types=True, **kwargs)
+    except ValueError as ex:
+        content = str(obj)
+        if len(content) > MAX_CONTENT_LEN:
+            content = content[:MAX_CONTENT_LEN] + " ..."
+        raise ValueError(f"Object {type(obj)} is not serializable: {secure_format_exception(ex)}: {content}")
 
 
 def serialize_stream(obj: Any, stream: BinaryIO, **kwargs):
@@ -180,3 +260,10 @@ def deserialize_stream(stream: BinaryIO, **kwargs) -> Any:
     """
     data = stream.read()
     return deserialize(data, **kwargs)
+
+
+def reset():
+    """Reset FOBS to initial state. Used for unit test"""
+    global _decomposers, _decomposers_registered
+    _decomposers.clear()
+    _decomposers_registered = False

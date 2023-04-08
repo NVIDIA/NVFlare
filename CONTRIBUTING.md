@@ -4,10 +4,8 @@
     1. [Checking the coding style](#checking-the-coding-style)
     1. [Unit testing](#unit-testing)
     1. [Building the documentation](#building-the-documentation)
-    1. [Automatic code formatting](#automatic-code-formatting)
     1. [Signing your work](#signing-your-work)
-    1. [Utility functions](#utility-functions)
-    1. [Backwards compatibility](#backwards-compatibility)
+    1. [Commit signature verification](#commit-signature-verification)
   * [Submitting pull requests](#submitting-pull-requests)
 - [The code reviewing process (for the maintainers)](#the-code-reviewing-process)
   * [Reviewing pull requests](#reviewing-pull-requests)
@@ -35,7 +33,8 @@ It helps us track the contributions under development, whether they are ready to
 
 
 ### Preparing pull requests
-To ensure the code quality, NVIDIA FLARE relies on several linting tools ([flake8 and its plugins](https://gitlab.com/pycqa/flake8), [black](https://github.com/psf/black) and [isort](https://github.com/timothycrosley/isort))
+To ensure the code quality, NVIDIA FLARE relies on several linting tools:
+([flake8 and its plugins](https://github.com/pycqa/flake8), [black](https://github.com/psf/black) and [isort](https://github.com/timothycrosley/isort))
 
 This section highlights all the necessary preparation steps required before sending a pull request.
 To collaborate efficiently, please read through this section and follow them.
@@ -69,28 +68,28 @@ License information: all source code files should start with this paragraph:
 
 #### Unit testing
 NVIDIA FLARE tests are located under test/.
-The unit test file names follow the `test_[module_name].py` pattern.
+The unit test file names follow the `[module_name]_test.py` pattern.
 
 The bash script `runtest.sh` will run unit tests also.
 
-#### Building docs
+#### Building the documentation
 To build the docs, first make sure you have all requirements
 
 ```bash
-python -m pip upgrade
-python -m pip install -r requirements-dev.txt
+python3 -m pip install -U pip
+python3 -m pip install nvflare[dev]
 ```
 
 To build the docs, please run. 
 
 ```bash
-./build_docs --html
+./build_docs.sh --html
 ```
 
 Once built, you can view the docs in `docs/_build folder`. To clean the docs, please run
 
 ```bash
-./build_docs --clean
+./build_docs.sh --clean
 ```
 
 #### Signing your work
@@ -165,11 +164,11 @@ Ideally, the new branch should be based on the latest `main` branch.
 ### Reviewing pull requests
 All code review comments should be specific, constructive, and actionable.
 1. Check [the CI/CD status of the pull request][github ci], make sure all CI/CD tests passed before reviewing (contact the branch owner if needed).
-1. Read carefully the descriptions of the pull request and the files changed, write comments if needed.
-1. Make in-line comments to specific code segments, [request for changes](https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/about-pull-request-reviews) if needed.
-1. Review any further code changes until all comments addressed by the contributors.
-1. Merge the pull request to the main branch.
-1. Close the corresponding task ticket on [the issue list][NVIDIA FLARE issue list].
+2. Read carefully the descriptions of the pull request and the files changed, write comments if needed.
+3. Make in-line comments to specific code segments, [request for changes](https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/about-pull-request-reviews) if needed.
+4. Review any further code changes until all comments addressed by the contributors.
+5. Merge the pull request to the main branch.
+6. Close the corresponding task ticket on [the issue list][NVIDIA FLARE issue list].
 
 [github ci]: https://github.com/NVIDIA/NVFlare/actions
 [NVIDIA FLARE issue list]: https://github.com/NVIDIA/NVFlare/issues

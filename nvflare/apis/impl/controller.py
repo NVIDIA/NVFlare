@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 import threading
 import time
 from abc import ABC
@@ -23,9 +22,9 @@ from nvflare.apis.controller_spec import ClientTask, ControllerSpec, SendOrder, 
 from nvflare.apis.fl_constant import FLContextKey, ReservedTopic
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.responder import Responder
-from nvflare.apis.server_engine_spec import ServerEngineSpec
-from nvflare.apis.shareable import Shareable
+from nvflare.apis.shareable import Shareable, make_copy
 from nvflare.apis.signal import Signal
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import GroupInfoCollector, InfoCollector
 
@@ -38,6 +37,12 @@ from .task_manager import TaskCheckStatus, TaskManager
 _TASK_KEY_ENGINE = "___engine"
 _TASK_KEY_MANAGER = "___mgr"
 _TASK_KEY_DONE = "___done"
+
+# wait this long since client death report before treating the client as dead
+_CONFIG_VAR_DEAD_CLIENT_GRACE_PERIOD = "dead_client_grace_period"
+
+# wait this long since job schedule time before starting to check dead clients
+_CONFIG_VAR_DEAD_CLIENT_CHECK_LEAD_TIME = "dead_client_check_lead_time"
 
 
 def _check_positive_int(name, value):
@@ -65,14 +70,21 @@ def _check_inputs(task: Task, fl_ctx: FLContext, targets: Union[List[Client], Li
                 )
 
 
+def _get_client_task(target, task: Task):
+    for ct in task.client_tasks:
+        if target == ct.client.name:
+            return ct
+    return None
+
+
 class Controller(Responder, ControllerSpec, ABC):
-    def __init__(self, task_check_period=0.5):
+    def __init__(self, task_check_period=0.2):
         """Manage life cycles of tasks and their destinations.
 
         Args:
-            task_check_period (float, optional): interval for checking status of tasks. Defaults to 0.5.
+            task_check_period (float, optional): interval for checking status of tasks. Defaults to 0.2.
         """
-        Responder.__init__(self)
+        super().__init__()
         self._engine = None
         self._tasks = []  # list of standing tasks
         self._client_task_map = {}  # client_task_id => client_task
@@ -80,19 +92,26 @@ class Controller(Responder, ControllerSpec, ABC):
         self._task_lock = Lock()
         self._task_monitor = threading.Thread(target=self._monitor_tasks, args=())
         self._task_check_period = task_check_period
+        self._dead_client_reports = {}  # clients that reported the job is dead on it: name => report time
+        self._dead_clients_lock = Lock()  # need lock since dead_clients can be modified from different threads
+        # make sure _check_tasks, process_task_request, process_submission does not interfere with each other
+        self._controller_lock = Lock()
 
     def initialize_run(self, fl_ctx: FLContext):
         """Called by runners to initialize controller with information in fl_ctx.
 
-        Note: Controller subclasses must not overwrite this method.
+        .. attention::
+
+            Controller subclasses must not overwrite this method.
 
         Args:
             fl_ctx (FLContext): FLContext information
         """
-        self._engine = fl_ctx.get_engine()
-        if not self._engine:
+        engine = fl_ctx.get_engine()
+        if not engine:
             self.system_panic(f"Engine not found. {self.__class__.__name__} exiting.", fl_ctx)
             return
+        self._engine = engine
         self.start_controller(fl_ctx)
         self._task_monitor.start()
 
@@ -132,7 +151,9 @@ class Controller(Responder, ControllerSpec, ABC):
     def process_task_request(self, client: Client, fl_ctx: FLContext) -> Tuple[str, str, Shareable]:
         """Called by runner when a client asks for a task.
 
-        Note: this is called in a separate thread.
+        .. note::
+
+            This is called in a separate thread.
 
         Args:
             client (Client): The record of one client requesting tasks
@@ -144,10 +165,18 @@ class Controller(Responder, ControllerSpec, ABC):
             TypeError: when any standing task containing an invalid client_task
 
         Returns:
-            Tuple[str, str, Shareable]: task_name, an id for the client_task, and the data for this requst
+            Tuple[str, str, Shareable]: task_name, an id for the client_task, and the data for this request
         """
+        with self._controller_lock:
+            return self._do_process_task_request(client, fl_ctx)
+
+    def _do_process_task_request(self, client: Client, fl_ctx: FLContext) -> Tuple[str, str, Shareable]:
         if not isinstance(client, Client):
             raise TypeError("client must be an instance of Client, but got {}".format(type(client)))
+
+        with self._dead_clients_lock:
+            self._dead_client_reports.pop(client.name, None)
+
         if not isinstance(fl_ctx, FLContext):
             raise TypeError("fl_ctx must be an instance of FLContext, but got {}".format(type(fl_ctx)))
 
@@ -168,12 +197,6 @@ class Controller(Responder, ControllerSpec, ABC):
 
                 if client_task_to_check is not None:
                     # this client has been sent the task already
-                    if not isinstance(client_task_to_check, ClientTask):
-                        raise TypeError(
-                            "client_task_to_check must be an instance of ClientTask, but got {}".format(
-                                type(client_task_to_check)
-                            )
-                        )
                     if client_task_to_check.result_received_time is None:
                         # controller has not received result from client
                         # something wrong happens when client working on this task, so resend the task
@@ -200,14 +223,11 @@ class Controller(Responder, ControllerSpec, ABC):
                         # do not send this task, but continue to check next task
                         continue
                     else:
-                        # send the task and remember the client_task
+                        # creates the client_task to be checked for sending
                         client_task_to_send = ClientTask(client, task)
-                        task.last_client_task_map[client.name] = client_task_to_send
-                        task.client_tasks.append(client_task_to_send)
-                        self._client_task_map[client_task_to_send.id] = client_task_to_send
                         break
 
-        # NOTE: move task sending process outside the lock
+        # NOTE: move task sending process outside the task lock
         # This is to minimize the locking time and to avoid potential deadlock:
         # the CB could schedule another task, which requires lock
         self.logger.debug("Determining based on client_task_to_send: {}".format(client_task_to_send))
@@ -269,9 +289,17 @@ class Controller(Responder, ControllerSpec, ABC):
 
             self.logger.debug("after_task_sent_cb done on client_task_to_send: {}".format(client_task_to_send))
 
-            client_task_to_send.task_sent_time = time.time()
+        with self._task_lock:
+            # sent the ClientTask and remember it
+            now = time.time()
+            client_task_to_send.task_sent_time = now
             client_task_to_send.task_send_count += 1
-            return task_name, client_task_to_send.id, task_data
+
+            if not resend_task:
+                task.last_client_task_map[client.name] = client_task_to_send
+                task.client_tasks.append(client_task_to_send)
+                self._client_task_map[client_task_to_send.id] = client_task_to_send
+            return task_name, client_task_to_send.id, make_copy(task_data)
 
     def handle_exception(self, task_id: str, fl_ctx: FLContext) -> None:
         """Called to cancel one task as its client_task is causing exception at upper level.
@@ -293,10 +321,26 @@ class Controller(Responder, ControllerSpec, ABC):
         self.cancel_task(task=task, fl_ctx=fl_ctx)
         self.log_error(fl_ctx, "task {} is cancelled due to exception".format(task.name))
 
+    def handle_dead_job(self, client_name: str, fl_ctx: FLContext):
+        """Called by the Engine to handle the case that the job on the client is dead.
+
+        Args:
+            client_name: name of the client on which the job is dead
+            fl_ctx: the FLContext
+
+        """
+        # record the report and to be used by the task monitor
+        with self._dead_clients_lock:
+            self.log_info(fl_ctx, f"received dead job report from client {client_name}")
+            if not self._dead_client_reports.get(client_name):
+                self._dead_client_reports[client_name] = time.time()
+
     def process_submission(self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext):
         """Called to process a submission from one client.
 
-        Note: this method is called by a separate thread.
+        .. note::
+
+            This method is called by a separate thread.
 
         Args:
             client (Client): the client that submitted this task
@@ -311,8 +355,22 @@ class Controller(Responder, ControllerSpec, ABC):
             TypeError: when result is not an instance of Shareable
             ValueError: task_name is not found in the client_task
         """
+        with self._controller_lock:
+            self._do_process_submission(client, task_name, task_id, result, fl_ctx)
+
+    def _do_process_submission(
+        self, client: Client, task_name: str, task_id: str, result: Shareable, fl_ctx: FLContext
+    ):
         if not isinstance(client, Client):
             raise TypeError("client must be an instance of Client, but got {}".format(type(client)))
+
+        # reset the dead job report!
+        # note that due to potential race conditions, a client may fail to include the job id in its
+        # heartbeat (since the job hasn't started at the time of heartbeat report), but then includes
+        # the job ID later.
+        with self._dead_clients_lock:
+            self._dead_client_reports.pop(client.name, None)
+
         if not isinstance(fl_ctx, FLContext):
             raise TypeError("fl_ctx must be an instance of FLContext, but got {}".format(type(fl_ctx)))
         if not isinstance(result, Shareable):
@@ -321,11 +379,11 @@ class Controller(Responder, ControllerSpec, ABC):
         with self._task_lock:
             # task_id is the uuid associated with the client_task
             client_task = self._client_task_map.get(task_id, None)
-            self.logger.debug("Get submission from client task={} id={}".format(client_task, task_id))
+            self.log_debug(fl_ctx, "Get submission from client task={} id={}".format(client_task, task_id))
 
         if client_task is None:
             # cannot find a standing task for the submission
-            self.log_info(fl_ctx, "no standing task found for {}:{}".format(task_name, task_id))
+            self.log_debug(fl_ctx, "no standing task found for {}:{}".format(task_name, task_id))
             self.process_result_of_unknown_task(client, task_name, task_id, result, fl_ctx)
             return
 
@@ -342,14 +400,13 @@ class Controller(Responder, ControllerSpec, ABC):
             # do client task CB processing outside the lock
             # this is because the CB could schedule another task, which requires the lock
             client_task.result = result
-            client_task.result_received_time = time.time()
 
             manager = task.props[_TASK_KEY_MANAGER]
             manager.check_task_result(result, client_task, fl_ctx)
 
             if task.result_received_cb is not None:
                 try:
-                    self.log_info(fl_ctx, "invoking result_received_cb ...")
+                    self.log_debug(fl_ctx, "invoking result_received_cb ...")
                     task.result_received_cb(client_task=client_task, fl_ctx=fl_ctx)
                 except BaseException as e:
                     # this task cannot proceed anymore
@@ -361,9 +418,10 @@ class Controller(Responder, ControllerSpec, ABC):
                     )
                     task.completion_status = TaskCompletionStatus.ERROR
                     task.exception = e
-                    return
             else:
-                self.log_info(fl_ctx, "no result_received_cb")
+                self.log_debug(fl_ctx, "no result_received_cb")
+
+            client_task.result_received_time = time.time()
 
     def _schedule_task(
         self,
@@ -379,9 +437,12 @@ class Controller(Responder, ControllerSpec, ABC):
             self.logger.debug("task.schedule_time: {}".format(task.schedule_time))
             raise ValueError("Task was already used. Please create a new task object.")
 
-        task.targets = targets
-        if targets is not None:
-            target_names = list()
+        # task.targets = targets
+        target_names = list()
+        if targets is None:
+            for client in self._engine.get_clients():
+                target_names.append(client.name)
+        else:
             if not isinstance(targets, list):
                 raise ValueError("task targets must be a list, but got {}".format(type(targets)))
             for t in targets:
@@ -394,10 +455,10 @@ class Controller(Responder, ControllerSpec, ABC):
 
                 if allow_dup_targets or (name not in target_names):
                     target_names.append(name)
-            task.targets = target_names
+        task.targets = target_names
 
         task.props[_TASK_KEY_MANAGER] = manager
-        task.props[_TASK_KEY_ENGINE] = fl_ctx.get_engine()
+        task.props[_TASK_KEY_ENGINE] = self._engine
         task.is_standing = True
         task.schedule_time = time.time()
 
@@ -470,7 +531,7 @@ class Controller(Responder, ControllerSpec, ABC):
             min_responses=min_responses,
             wait_time_after_min_received=wait_time_after_min_received,
         )
-        self._wait_for_task(task, abort_signal)
+        self.wait_for_task(task, abort_signal)
 
     def broadcast_forever(self, task: Task, fl_ctx: FLContext, targets: Union[List[Client], List[str], None] = None):
         """Schedule a broadcast task.  This is a non-blocking call.
@@ -569,7 +630,7 @@ class Controller(Responder, ControllerSpec, ABC):
             send_order=send_order,
             task_assignment_timeout=task_assignment_timeout,
         )
-        self._wait_for_task(task, abort_signal)
+        self.wait_for_task(task, abort_signal)
 
     def get_num_standing_tasks(self) -> int:
         """Get the number of tasks that are currently standing.
@@ -585,8 +646,10 @@ class Controller(Responder, ControllerSpec, ABC):
         """Cancel the specified task.
 
         Change the task completion_status, which will inform task monitor to clean up this task
-        NOTE: we only mark the task as completed and leave it to the task monitor to clean up
-        This is to avoid potential dead lock of task_lock
+
+        .. note::
+
+            We only mark the task as completed and leave it to the task monitor to clean up. This is to avoid potential deadlock of task_lock.
 
         Args:
             task (Task): the task to be cancelled
@@ -610,25 +673,26 @@ class Controller(Responder, ControllerSpec, ABC):
         """Ask all clients to abort the execution of the specified task.
 
         Args:
-            task (str): the task to be aborted
+            task (Task): the task to be aborted
             fl_ctx (FLContext): FLContext associated with this action
         """
         self.log_info(fl_ctx, "asked all clients to abort task {}".format(task.name))
         self._end_task([task.name], fl_ctx)
 
     def _end_task(self, task_names, fl_ctx: FLContext):
-        engine = fl_ctx.get_engine()
-        if not isinstance(engine, ServerEngineSpec):
-            raise TypeError("engine should be an instance of ServerEngineSpec, but got {}".format(type(engine)))
+        engine = self._engine
         request = Shareable()
         request["task_names"] = task_names
-        engine.send_aux_request(targets=None, topic=ReservedTopic.ABORT_ASK, request=request, timeout=0, fl_ctx=fl_ctx)
+        engine.send_aux_request(
+            targets=None, topic=ReservedTopic.ABORT_ASK, request=request, timeout=0, fl_ctx=fl_ctx, optional=True
+        )
 
     def abort_all_tasks(self, fl_ctx: FLContext):
         """Ask clients to abort the execution of all tasks.
 
-        NOTE: the server should send a notification to all clients, regardless of whether the server
-        has any standing tasks.
+        .. note::
+
+            The server should send a notification to all clients, regardless of whether the server has any standing tasks.
 
         Args:
             fl_ctx (FLContext): FLContext associated with this action
@@ -638,7 +702,9 @@ class Controller(Responder, ControllerSpec, ABC):
     def finalize_run(self, fl_ctx: FLContext):
         """Do cleanup of the coordinator implementation.
 
-        NOTE: subclass controllers should not overwrite finalize_run.
+        .. attention::
+
+            Subclass controllers should not overwrite finalize_run.
 
         Args:
             fl_ctx (FLContext): FLContext associated with this action
@@ -765,14 +831,20 @@ class Controller(Responder, ControllerSpec, ABC):
             task_result_timeout=task_result_timeout,
             dynamic_targets=dynamic_targets,
         )
-        self._wait_for_task(task, abort_signal)
+        self.wait_for_task(task, abort_signal)
 
     def _monitor_tasks(self):
         while not self._all_done:
-            self._check_tasks()
+            clients_all_dead = self._check_dead_clients()
+            if not clients_all_dead:
+                self._check_tasks()
             time.sleep(self._task_check_period)
 
     def _check_tasks(self):
+        with self._controller_lock:
+            self._do_check_tasks()
+
+    def _do_check_tasks(self):
         exit_tasks = []
         with self._task_lock:
             for task in self._tasks:
@@ -797,6 +869,14 @@ class Controller(Responder, ControllerSpec, ABC):
                 # check if task timeout
                 if task.timeout and time.time() - task.schedule_time >= task.timeout:
                     task.completion_status = TaskCompletionStatus.TIMEOUT
+                    exit_tasks.append(task)
+                    continue
+
+                # check whether clients that the task is waiting are all dead
+                dead_clients = self._get_task_dead_clients(task)
+                if dead_clients:
+                    self.logger.info(f"client {dead_clients} is dead - set task {task.name} to TIMEOUT")
+                    task.completion_status = TaskCompletionStatus.CLIENT_DEAD
                     exit_tasks.append(task)
                     continue
 
@@ -835,6 +915,37 @@ class Controller(Responder, ControllerSpec, ABC):
                             exit_task.completion_status = TaskCompletionStatus.ERROR
                             exit_task.exception = e
 
+    def _get_task_dead_clients(self, task: Task):
+        """
+        See whether the task is only waiting for response from a dead client
+        """
+        now = time.time()
+        lead_time = ConfigService.get_float_var(name=_CONFIG_VAR_DEAD_CLIENT_CHECK_LEAD_TIME, default=30.0)
+        if now - task.schedule_time < lead_time:
+            # due to potential race conditions, we'll wait for at least 1 minute after the task
+            # is started before checking dead clients.
+            return None
+
+        dead_clients = []
+        with self._dead_clients_lock:
+            for target in task.targets:
+                ct = _get_client_task(target, task)
+                if ct is not None and ct.result_received_time:
+                    # response has been received from this client
+                    continue
+
+                # either we have not sent the task to this client or we have not received response
+                # is the client already dead?
+                if self._client_still_alive(target):
+                    # this client is still alive
+                    # we let the task continue its course since we still have live clients
+                    return None
+                else:
+                    # this client is dead - remember it
+                    dead_clients.append(target)
+
+        return dead_clients
+
     @staticmethod
     def _process_finished_task(task, func):
         def wrap(*args, **kwargs):
@@ -844,7 +955,7 @@ class Controller(Responder, ControllerSpec, ABC):
 
         return wrap
 
-    def _wait_for_task(self, task: Task, abort_signal: Signal):
+    def wait_for_task(self, task: Task, abort_signal: Signal):
         task.props[_TASK_KEY_DONE] = False
         task.task_done_cb = self._process_finished_task(task=task, func=task.task_done_cb)
         while True:
@@ -859,3 +970,31 @@ class Controller(Responder, ControllerSpec, ABC):
             if task_done:
                 break
             time.sleep(self._task_check_period)
+
+    def _check_dead_clients(self):
+        if self._engine:
+            clients = self._engine.get_clients()
+            with self._dead_clients_lock:
+                for client in clients:
+                    if self._client_still_alive(client.name):
+                        return False
+
+                # All the clients are dead, abort the job run.
+                with self._engine.new_context() as fl_ctx:
+                    self.system_panic("All clients are dead", fl_ctx)
+            return True
+        return False
+
+    def _client_still_alive(self, client_name):
+        now = time.time()
+        report_time = self._dead_client_reports.get(client_name, None)
+        grace_period = ConfigService.get_float_var(name=_CONFIG_VAR_DEAD_CLIENT_GRACE_PERIOD, default=30.0)
+
+        if not report_time:
+            # this client is still alive
+            return True
+        elif now - report_time < grace_period:
+            # this report is still fresh - consider the client to be still alive
+            return True
+
+        return False

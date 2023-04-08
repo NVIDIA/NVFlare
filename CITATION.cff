@@ -20,3 +20,57 @@ repository-code: "https://github.com/NVIDIA/nvflare"
 url: "https://nvflare.readthedocs.io"
 cff-version: "1.2.0"
 message: "If you use this software, please cite it using these metadata."
+preferred-citation:
+  type: article
+  authors:
+  - family-names: Roth
+    given-names: Holger R.
+  - family-names: Cheng
+    given-names:  Yan
+  - family-names: Wen
+    given-names:  Yuhong
+  - family-names: Yang
+    given-names:  Isaac
+  - family-names: Xu
+    given-names:  Ziyue
+  - family-names: Hsieh
+    given-names:  Yuan-Ting
+  - family-names: Kersten
+    given-names:  Kristopher
+  - family-names: Harouni
+    given-names:  Ahmed
+  - family-names: Zhao
+    given-names:  Can
+  - family-names: Lu
+    given-names:  Kevin
+  - family-names: Zhang
+    given-names:  Zhihong
+  - family-names: Li
+    given-names:  Wenqi
+  - family-names: Myronenko
+    given-names:  Andriy
+  - family-names: Yang
+    given-names:  Dong
+  - family-names: Yang
+    given-names:  Sean
+  - family-names: Rieke
+    given-names:  Nicola
+  - family-names: Quraini
+    given-names:  Abood
+  - family-names: Chen
+    given-names:  Chester
+  - family-names: Xu
+    given-names:  Daguang
+  - family-names: Ma
+    given-names:  Nic
+  - family-names: Dogra
+    given-names:  Prerna
+  - family-names: Flores
+    given-names:  Mona
+  - family-names: Feng
+    given-names:  Andrew
+  doi: "https://doi.org/10.48550/arXiv.2210.13291"
+  journal: "International Workshop on Federated Learning, NeurIPS 2022, New Orleans, USA"
+  month: 10
+  title: "NVIDIA FLARE: Federated Learning from Simulation to Real-World"
+  year: 2022

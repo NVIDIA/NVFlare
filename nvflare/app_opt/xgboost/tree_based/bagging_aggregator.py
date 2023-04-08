@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -56,7 +56,7 @@ class XGBBaggingAggregator(Aggregator):
             return False
 
         contributor_name = shareable.get_peer_prop(key=ReservedKey.IDENTITY_NAME, default="?")
-        contribution_round = shareable.get_header(AppConstants.CONTRIBUTION_ROUND)
+        contribution_round = shareable.get_cookie(AppConstants.CONTRIBUTION_ROUND)
 
         rc = shareable.get_return_code()
         if rc and rc != ReturnCode.OK:

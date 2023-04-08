@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ from nvflare.apis.fl_context import FLContext
 
 # this is treated as all online sites in job deploy_map
 ALL_SITES = "@ALL"
+SERVER_SITE_NAME = "server"
 
 
 class RunStatus(str, Enum):
@@ -31,7 +32,10 @@ class RunStatus(str, Enum):
     FINISHED_COMPLETED = "FINISHED:COMPLETED"
     FINISHED_ABORTED = "FINISHED:ABORTED"
     FINISHED_EXECUTION_EXCEPTION = "FINISHED:EXECUTION_EXCEPTION"
-    FAILED_TO_RUN = "FAILED_TO_RUN"
+    FINISHED_ABNORMAL = "FINISHED:ABNORMAL"
+    FINISHED_CANT_SCHEDULE = "FINISHED:CAN_NOT_SCHEDULE"
+    FAILED_TO_RUN = "FINISHED:FAILED_TO_RUN"
+    ABANDONED = "FINISHED:ABANDONED"
 
 
 class JobDataKey(str, Enum):
@@ -61,8 +65,11 @@ class JobMetaKey(str, Enum):
     START_TIME = "start_time"
     DURATION = "duration"
     JOB_DEPLOY_DETAIL = "job_deploy_detail"
+    SCHEDULE_COUNT = "schedule_count"
     SCOPE = "scope"
     CLONED_FROM = "cloned_from"
+    LAST_SCHEDULE_TIME = "last_schedule_time"
+    SCHEDULE_HISTORY = "schedule_history"
 
     def __repr__(self):
         return self.value
@@ -109,6 +116,7 @@ class Job:
         self.submit_time = None
 
         self.run_record = None  # job id, dispatched time/UUID, finished time, completion code (normal, aborted)
+        self.run_aborted = False
 
     def get_deployment(self) -> Dict[str, List[str]]:
         """Returns the deployment configuration.

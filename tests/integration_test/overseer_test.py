@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -32,7 +32,7 @@ class TestOverseer:
             psp = oa_launcher.get_primary_sp(client_agent_list[0])
             assert psp.name == "server00"
             oa_launcher.pause_server(server_agent_list[0])
-            time.sleep(15)
+            time.sleep(20)
             psp = oa_launcher.get_primary_sp(client_agent_list[0])
             assert psp.name == "server01"
             oa_launcher.resume_server(server_agent_list[0])

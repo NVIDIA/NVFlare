@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -46,7 +46,7 @@ class ClientAlgoStatistics(Statistics):
         self.req_bin_ranges = None
         self.feature_names = None
 
-    def initialize(self, parts: dict, fl_ctx: FLContext):
+    def initialize(self, fl_ctx: FLContext):
         self.fl_ctx = fl_ctx
         self.client_name = fl_ctx.get_identity_name()
         engine = fl_ctx.get_engine()

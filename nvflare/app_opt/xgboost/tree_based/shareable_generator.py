@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,22 +22,48 @@ from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 
 
+def _get_xgboost_model_attr(xgb_model):
+    num_parallel_tree = int(
+        xgb_model["learner"]["gradient_booster"]["model"]["gbtree_model_param"]["num_parallel_tree"]
+    )
+    if "best_iteration" in xgb_model["learner"]["attributes"].keys():
+        best_iteration = int(xgb_model["learner"]["attributes"]["best_iteration"])
+    else:
+        best_iteration = 1
+    best_ntree_limit = int(xgb_model["learner"]["attributes"]["best_ntree_limit"])
+    num_trees = int(xgb_model["learner"]["gradient_booster"]["model"]["gbtree_model_param"]["num_trees"])
+    return num_parallel_tree, best_iteration, best_ntree_limit, num_trees
+
+
 def update_model(prev_model, model_update):
     if not prev_model:
-        model_update["learner"]["gradient_booster"]["model"]["gbtree_model_param"]["num_parallel_tree"] = "1"
         return model_update
     else:
-        # Always 1 tree, so [0]
-        best_iteration = int(prev_model["learner"]["attributes"]["best_iteration"])
-        best_ntree_limit = int(prev_model["learner"]["attributes"]["best_ntree_limit"])
-        num_trees = int(prev_model["learner"]["gradient_booster"]["model"]["gbtree_model_param"]["num_trees"])
-        prev_model["learner"]["attributes"]["best_iteration"] = str(best_iteration + 1)
-        prev_model["learner"]["attributes"]["best_ntree_limit"] = str(best_ntree_limit + 1)
-        prev_model["learner"]["gradient_booster"]["model"]["gbtree_model_param"]["num_trees"] = str(num_trees + 1)
-        append_info = model_update["learner"]["gradient_booster"]["model"]["trees"][0]
-        append_info["id"] = num_trees
-        prev_model["learner"]["gradient_booster"]["model"]["trees"].append(append_info)
-        prev_model["learner"]["gradient_booster"]["model"]["tree_info"].append(0)
+        # Append all trees
+        # get the parameters
+        pre_num_parallel_tree, pre_best_iteration, pre_best_ntree_limit, pre_num_trees = _get_xgboost_model_attr(
+            prev_model
+        )
+        cur_num_parallel_tree, add_best_iteration, add_best_ntree_limit, add_num_trees = _get_xgboost_model_attr(
+            model_update
+        )
+
+        # check num_parallel_tree, should be consistent
+        if cur_num_parallel_tree != pre_num_parallel_tree:
+            raise ValueError(
+                f"add_num_parallel_tree should not change, previous {pre_num_parallel_tree}, current {add_num_parallel_tree}"
+            )
+        prev_model["learner"]["attributes"]["best_iteration"] = str(pre_best_iteration + 1)
+        prev_model["learner"]["attributes"]["best_ntree_limit"] = str(pre_best_ntree_limit + cur_num_parallel_tree)
+        prev_model["learner"]["gradient_booster"]["model"]["gbtree_model_param"]["num_trees"] = str(
+            pre_num_trees + cur_num_parallel_tree
+        )
+        # append the new trees
+        append_info = model_update["learner"]["gradient_booster"]["model"]["trees"]
+        for tree_ct in range(cur_num_parallel_tree):
+            append_info[tree_ct]["id"] = pre_num_trees + tree_ct
+            prev_model["learner"]["gradient_booster"]["model"]["trees"].append(append_info[tree_ct])
+            prev_model["learner"]["gradient_booster"]["model"]["tree_info"].append(0)
         return prev_model
 
 

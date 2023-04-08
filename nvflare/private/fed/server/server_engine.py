@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,8 +23,6 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from multiprocessing.connection import Client as CommandClient
-from multiprocessing.connection import Listener
 from threading import Lock
 from typing import Dict, List, Optional, Tuple
 
@@ -34,7 +32,6 @@ from nvflare.apis.fl_constant import (
     AdminCommandNames,
     FLContextKey,
     MachineStatus,
-    ReservedTopic,
     ReturnCode,
     RunProcessKey,
     ServerCommandKey,
@@ -45,26 +42,32 @@ from nvflare.apis.fl_constant import (
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.fl_snapshot import RunSnapshot
 from nvflare.apis.impl.job_def_manager import JobDefManagerSpec
-from nvflare.apis.shareable import Shareable, make_reply
+from nvflare.apis.job_def import Job
+from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
+from nvflare.fuel.f3.cellnet.cell import FQCN, Cell
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
+from nvflare.fuel.f3.cellnet.defs import ReturnCode as CellMsgReturnCode
 from nvflare.fuel.utils import fobs
+from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.fuel.utils.zip_utils import zip_directory_to_bytes
 from nvflare.private.admin_defs import Message, MsgHeader
-from nvflare.private.defs import RequestHeader, TrainingTopic
+from nvflare.private.defs import CellChannel, CellMessageHeaderKeys, RequestHeader, TrainingTopic, new_cell_message
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
+from nvflare.private.fed.server.server_state import ServerState
 from nvflare.private.fed.utils.fed_utils import security_close
 from nvflare.private.scheduler_constants import ShareableHeader
 from nvflare.security.logging import secure_format_exception
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import Widget, WidgetID
 
-from .admin import ClientReply
 from .client_manager import ClientManager
 from .job_runner import JobRunner
-from .run_manager import RunInfo, RunManager
-from .server_commands import NO_OP_REPLY
+from .message_send import ClientReply
+from .run_info import RunInfo
+from .run_manager import RunManager
 from .server_engine_internal_spec import EngineInfo, ServerEngineInternalSpec
 from .server_status import ServerStatus
 
@@ -117,10 +120,10 @@ class ServerEngine(ServerEngineInternalSpec):
 
         self.asked_to_stop = False
         self.snapshot_persistor = snapshot_persistor
-        self.parent_conn = None
-        self.parent_conn_lock = Lock()
         self.job_runner = None
         self.job_def_manager = None
+
+        self.kv_list = parse_vars(args.set)
 
     def _get_server_app_folder(self):
         return WorkspaceConstants.APP_PREFIX + "server"
@@ -138,7 +141,8 @@ class ServerEngine(ServerEngineInternalSpec):
         else:
             self.engine_info.status = MachineStatus.STOPPED
 
-        for job_id, _ in self.run_processes.items():
+        keys = list(self.run_processes.keys())
+        for job_id in keys:
             run_folder = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(job_id))
             app_file = os.path.join(run_folder, "fl_app.txt")
             if os.path.exists(app_file):
@@ -155,31 +159,6 @@ class ServerEngine(ServerEngineInternalSpec):
             return run_info
         return None
 
-    def create_parent_connection(self, port):
-        while not self.parent_conn:
-            try:
-                address = ("localhost", port)
-                self.parent_conn = CommandClient(address, authkey="parent process secret password".encode())
-            except BaseException:
-                time.sleep(1.0)
-                pass
-
-        threading.Thread(target=self.heartbeat_to_parent, args=[]).start()
-
-    def heartbeat_to_parent(self):
-        while True:
-            try:
-                with self.parent_conn_lock:
-                    data = {ServerCommandKey.COMMAND: ServerCommandNames.HEARTBEAT, ServerCommandKey.DATA: {}}
-                    self.parent_conn.send(data)
-                time.sleep(1.0)
-            except BaseException:
-                # The parent process can not be reached. Terminate the child process.
-                break
-        # delay some time for the wrap up process before the child process self terminate.
-        time.sleep(30)
-        os.killpg(os.getpgid(os.getpid()), 9)
-
     def delete_job_id(self, num):
         job_id_folder = os.path.join(self.args.workspace, WorkspaceConstants.WORKSPACE_PREFIX + str(num))
         if os.path.exists(job_id_folder):
@@ -189,10 +168,10 @@ class ServerEngine(ServerEngineInternalSpec):
     def get_clients(self) -> [Client]:
         return list(self.client_manager.get_clients().values())
 
-    def validate_clients(self, client_names: List[str]) -> Tuple[List[Client], List[str]]:
-        return self._get_all_clients_from_inputs(client_names)
+    def validate_targets(self, client_names: List[str]) -> Tuple[List[Client], List[str]]:
+        return self.client_manager.get_all_clients_from_inputs(client_names)
 
-    def start_app_on_server(self, run_number: str, job_id: str = None, job_clients=None, snapshot=None) -> str:
+    def start_app_on_server(self, run_number: str, job: Job = None, job_clients=None, snapshot=None) -> str:
         if run_number in self.run_processes.keys():
             return f"Server run: {run_number} already started."
         else:
@@ -204,78 +183,68 @@ class ServerEngine(ServerEngineInternalSpec):
             self.engine_info.status = MachineStatus.STARTING
             app_custom_folder = workspace.get_app_custom_dir(run_number)
 
+            if not isinstance(job, Job):
+                return "Must provide a job object to start the server app."
+
             open_ports = get_open_ports(2)
             self._start_runner_process(
-                self.args, app_root, run_number, app_custom_folder, open_ports, job_id, job_clients, snapshot
+                self.args,
+                app_root,
+                run_number,
+                app_custom_folder,
+                open_ports,
+                job.job_id,
+                job_clients,
+                snapshot,
+                self.server.cell,
+                self.server.server_state,
             )
-
-            threading.Thread(target=self._listen_command, args=(open_ports[0], run_number)).start()
 
             self.engine_info.status = MachineStatus.STARTED
             return ""
-
-    def _listen_command(self, listen_port, job_id):
-        address = ("localhost", int(listen_port))
-        listener = Listener(address, authkey="parent process secret password".encode())
-        conn = listener.accept()
-
-        while job_id in self.run_processes.keys():
-            clients = self.run_processes.get(job_id).get(RunProcessKey.PARTICIPANTS)
-            job_id = self.run_processes.get(job_id).get(RunProcessKey.JOB_ID)
-            try:
-                if conn.poll(0.1):
-                    received_data = conn.recv()
-                    command = received_data.get(ServerCommandKey.COMMAND)
-                    data = received_data.get(ServerCommandKey.DATA)
-
-                    if command == ServerCommandNames.GET_CLIENTS:
-                        return_data = {ServerCommandKey.CLIENTS: clients, ServerCommandKey.JOB_ID: job_id}
-                        conn.send(return_data)
-                    elif command == ServerCommandNames.AUX_SEND:
-                        targets = data.get("targets")
-                        topic = data.get("topic")
-                        request = data.get("request")
-                        timeout = data.get("timeout")
-                        fl_ctx = data.get("fl_ctx")
-                        replies = self.aux_send(
-                            targets=targets, topic=topic, request=request, timeout=timeout, fl_ctx=fl_ctx
-                        )
-                        conn.send(replies)
-                    elif command == ServerCommandNames.UPDATE_RUN_STATUS:
-                        execution_error = data.get("execution_error")
-                        if execution_error:
-                            with self.lock:
-                                run_process_info = self.run_processes.get(job_id)
-                                self.exception_run_processes[job_id] = run_process_info
-
-            except BaseException as e:
-                self.logger.warning(f"Failed to process the child process command: {secure_format_exception(e)}")
 
     def remove_exception_process(self, job_id):
         with self.lock:
             if job_id in self.exception_run_processes:
                 self.exception_run_processes.pop(job_id)
 
-    def wait_for_complete(self, job_id):
-        while True:
-            try:
-                self.send_command_to_child_runner_process(
-                    job_id=job_id, command_name=ServerCommandNames.HEARTBEAT, command_data={}, return_result=False
-                )
-                time.sleep(1.0)
-            except BaseException:
-                with self.lock:
-                    if job_id in self.run_processes:
-                        run_process_info = self.run_processes.pop(job_id)
-                        return_code = run_process_info[RunProcessKey.CHILD_PROCESS].poll()
-                        # if process exit but with Execution exception
-                        if return_code and return_code != 0:
-                            self.exception_run_processes[job_id] = run_process_info
-                self.engine_info.status = MachineStatus.STOPPED
-                break
+    def wait_for_complete(self, job_id, process):
+        process.wait()
+        run_process_info = self.run_processes.get(job_id)
+        if run_process_info:
+            # Wait for the job process to finish UPDATE_RUN_STATUS process
+            start_time = time.time()
+            max_wait = 2.0
+            while True:
+                process_finished = run_process_info.get(RunProcessKey.PROCESS_FINISHED, False)
+                if process_finished:
+                    break
+                if time.time() - start_time >= max_wait:
+                    self.logger.debug(f"Job:{job_id} UPDATE_RUN_STATUS didn't finish fast enough.")
+                    break
+                time.sleep(0.1)
+            with self.lock:
+                return_code = process.poll()
+                # if process exit but with Execution exception
+                if return_code and return_code != 0:
+                    self.logger.info(f"Job: {job_id} child process exit with return code {return_code}")
+                    run_process_info[RunProcessKey.PROCESS_RETURN_CODE] = return_code
+                    self.exception_run_processes[job_id] = run_process_info
+                self.run_processes.pop(job_id, None)
+        self.engine_info.status = MachineStatus.STOPPED
 
     def _start_runner_process(
-        self, args, app_root, run_number, app_custom_folder, open_ports, job_id, job_clients, snapshot
+        self,
+        args,
+        app_root,
+        run_number,
+        app_custom_folder,
+        open_ports,
+        job_id,
+        job_clients,
+        snapshot,
+        cell: Cell,
+        server_state: ServerState,
     ):
         new_env = os.environ.copy()
         if app_custom_folder != "":
@@ -299,9 +268,17 @@ class ServerEngine(ServerEngineInternalSpec):
             + " -n "
             + str(run_number)
             + " -p "
-            + str(listen_port)
-            + " -c "
-            + str(open_ports[0])
+            + str(cell.get_internal_listener_url())
+            + " -u "
+            + str(cell.get_root_url_for_child())
+            + " --host "
+            + str(server_state.host)
+            + " --port "
+            + str(server_state.service_port)
+            + " --ssid "
+            + str(server_state.ssid)
+            + " --ha_mode "
+            + str(self.server.ha_mode)
             + " --set"
             + command_options
             + " print_conf=True restore_snapshot="
@@ -325,7 +302,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 RunProcessKey.PARTICIPANTS: job_clients,
             }
 
-        threading.Thread(target=self.wait_for_complete, args=[run_number]).start()
+        threading.Thread(target=self.wait_for_complete, args=[run_number, process]).start()
         return process
 
     def get_job_clients(self, client_sites):
@@ -351,17 +328,21 @@ class ServerEngine(ServerEngineInternalSpec):
             return "Server app is starting, please wait for started before abort."
         return ""
 
-    def abort_app_on_server(self, job_id: str) -> str:
+    def abort_app_on_server(self, job_id: str, turn_to_cold: bool = False) -> str:
         if job_id not in self.run_processes.keys():
             return "Server app has not started."
 
         self.logger.info("Abort the server app run.")
+        command_data = Shareable()
+        command_data.set_header(ServerCommandKey.TURN_TO_COLD, turn_to_cold)
 
         try:
             status_message = self.send_command_to_child_runner_process(
                 job_id=job_id,
                 command_name=AdminCommandNames.ABORT,
-                command_data={},
+                command_data=command_data,
+                timeout=1.0,
+                optional=True,
             )
             self.logger.info(f"Abort server status: {status_message}")
         except BaseException:
@@ -370,12 +351,23 @@ class ServerEngine(ServerEngineInternalSpec):
                 if child_process:
                     child_process.terminate()
         finally:
-            with self.lock:
-                if job_id in self.run_processes:
-                    self.run_processes.pop(job_id)
+            threading.Thread(target=self._remove_run_processes, args=[job_id]).start()
 
         self.engine_info.status = MachineStatus.STOPPED
         return ""
+
+    def _remove_run_processes(self, job_id):
+        # wait for the run process to gracefully terminated, and ensure to remove from run_processes.
+        max_wait = 5.0
+        start = time.time()
+        while True:
+            if job_id not in self.run_processes:
+                # job already gone
+                return
+            if time.time() - start >= max_wait:
+                break
+            time.sleep(0.1)
+        self.run_processes.pop(job_id, None)
 
     def check_app_start_readiness(self, job_id: str) -> str:
         if job_id not in self.run_processes.keys():
@@ -391,8 +383,8 @@ class ServerEngine(ServerEngineInternalSpec):
 
         touch_file = os.path.join(self.args.workspace, "shutdown.fl")
         _ = self.executor.submit(lambda p: server_shutdown(*p), [self.server, touch_file])
-        while self.server.status != ServerStatus.SHUTDOWN:
-            time.sleep(1.0)
+        # while self.server.status != ServerStatus.SHUTDOWN:
+        #     time.sleep(1.0)
         return ""
 
     def restart_server(self) -> str:
@@ -404,8 +396,8 @@ class ServerEngine(ServerEngineInternalSpec):
 
         touch_file = os.path.join(self.args.workspace, "restart.fl")
         _ = self.executor.submit(lambda p: server_shutdown(*p), [self.server, touch_file])
-        while self.server.status != ServerStatus.SHUTDOWN:
-            time.sleep(1.0)
+        # while self.server.status != ServerStatus.SHUTDOWN:
+        #     time.sleep(1.0)
         return ""
 
     def get_widget(self, widget_id: str) -> Widget:
@@ -418,30 +410,8 @@ class ServerEngine(ServerEngineInternalSpec):
         else:
             return ""
 
-    def get_all_clients(self):
-        return list(self.server.client_manager.clients.keys())
-
     def get_client_from_name(self, client_name):
-        for c in self.get_clients():
-            if client_name == c.name:
-                return c
-        return None
-
-    def _get_all_clients_from_inputs(self, inputs):
-        clients = []
-        invalid_inputs = []
-        for item in inputs:
-            client = self.client_manager.clients.get(item)
-            # if item in self.get_all_clients():
-            if client:
-                clients.append(client)
-            else:
-                client = self.get_client_from_name(item)
-                if client:
-                    clients.append(client)
-                else:
-                    invalid_inputs.append(item)
-        return clients, invalid_inputs
+        return self.client_manager.get_client_from_name(client_name)
 
     def get_app_data(self, app_name: str) -> Tuple[str, object]:
         fullpath_src = os.path.join(self.server.admin_server.file_upload_dir, app_name)
@@ -538,16 +508,17 @@ class ServerEngine(ServerEngineInternalSpec):
     def register_aux_message_handler(self, topic: str, message_handle_func):
         self.run_manager.aux_runner.register_aux_message_handler(topic, message_handle_func)
 
-    def send_aux_request(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
+    def send_aux_request(
+        self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext, optional=False
+    ) -> dict:
         try:
             if not targets:
-                self.sync_clients_from_main_process()
                 targets = []
                 for t in self.get_clients():
                     targets.append(t.name)
             if targets:
                 return self.run_manager.aux_runner.send_aux_request(
-                    targets=targets, topic=topic, request=request, timeout=timeout, fl_ctx=fl_ctx
+                    targets=targets, topic=topic, request=request, timeout=timeout, fl_ctx=fl_ctx, optional=optional
                 )
             else:
                 return {}
@@ -555,104 +526,98 @@ class ServerEngine(ServerEngineInternalSpec):
             self.logger.error(f"Failed to send the aux_message: {topic} with exception: {secure_format_exception(e)}.")
 
     def sync_clients_from_main_process(self):
-        with self.parent_conn_lock:
-            data = {ServerCommandKey.COMMAND: ServerCommandNames.GET_CLIENTS, ServerCommandKey.DATA: {}}
-            self.parent_conn.send(data)
-            return_data = self.parent_conn.recv()
-            clients = return_data.get(ServerCommandKey.CLIENTS)
-            self.client_manager.clients = clients
+        # repeatedly ask the parent process to get participating clients until we receive the result
+        # or timed out after 30 secs (already tried 30 times).
+        start = time.time()
+        max_wait = 30.0
+        job_id = self.args.job_id
+        while True:
+            clients = self._retrieve_clients_data(job_id)
+            if clients:
+                self.client_manager.clients = clients
+                self.logger.debug(f"received participating clients {clients}")
+                return
 
-    def parent_aux_send(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
-        with self.parent_conn_lock:
-            data = {
-                ServerCommandKey.COMMAND: ServerCommandNames.AUX_SEND,
-                ServerCommandKey.DATA: {
-                    "targets": targets,
-                    "topic": topic,
-                    "request": request,
-                    "timeout": timeout,
-                    "fl_ctx": get_serializable_data(fl_ctx),
-                },
-            }
-            self.parent_conn.send(data)
-            return_data = self.parent_conn.recv()
-            return return_data
+            if time.time() - start >= max_wait:
+                self.logger.critical(f"Cannot get participating clients for job {job_id} after {max_wait} seconds")
+                raise RuntimeError("Exiting job process: Cannot get participating clients for job {job_id}")
+
+            self.logger.debug("didn't receive clients info - retry in 1 second")
+            time.sleep(1.0)
+
+    def _get_participating_clients(self):
+        # called from server's job cell
+        return self.client_manager.clients
+
+    def _retrieve_clients_data(self, job_id):
+        request = new_cell_message({CellMessageHeaderKeys.JOB_ID: job_id}, fobs.dumps({}))
+        return_data = self.server.cell.send_request(
+            target=FQCN.ROOT_SERVER,
+            channel=CellChannel.SERVER_PARENT_LISTENER,
+            topic=ServerCommandNames.GET_CLIENTS,
+            request=request,
+            timeout=5.0,
+            optional=True,
+        )
+        rc = return_data.get_header(MessageHeaderKey.RETURN_CODE, CellMsgReturnCode.OK)
+        if rc != CellMsgReturnCode.OK:
+            self.logger.debug(f"cannot retrieve clients from parent: {rc}")
+            return None
+
+        data = fobs.loads(return_data.payload)
+        clients = data.get(ServerCommandKey.CLIENTS, None)
+        if clients is None:
+            self.logger.error(f"parent failed to return clients info for job {job_id}")
+        return clients
 
     def update_job_run_status(self):
-        with self.parent_conn_lock:
-            with self.new_context() as fl_ctx:
-                execution_error = fl_ctx.get_prop(FLContextKey.FATAL_SYSTEM_ERROR, False)
-                data = {
-                    ServerCommandKey.COMMAND: ServerCommandNames.UPDATE_RUN_STATUS,
-                    ServerCommandKey.DATA: {
-                        "execution_error": execution_error,
-                    },
-                }
-                self.parent_conn.send(data)
+        with self.new_context() as fl_ctx:
+            execution_error = fl_ctx.get_prop(FLContextKey.FATAL_SYSTEM_ERROR, False)
+            data = {"execution_error": execution_error}
+            job_id = fl_ctx.get_job_id()
+            request = new_cell_message({CellMessageHeaderKeys.JOB_ID: job_id}, fobs.dumps(data))
+            return_data = self.server.cell.fire_and_forget(
+                targets=FQCN.ROOT_SERVER,
+                channel=CellChannel.SERVER_PARENT_LISTENER,
+                topic=ServerCommandNames.UPDATE_RUN_STATUS,
+                message=request,
+            )
 
-    def aux_send(self, targets: [], topic: str, request: Shareable, timeout: float, fl_ctx: FLContext) -> dict:
-        # Send the aux messages through admin_server
-        request.set_peer_props(fl_ctx.get_all_public_props())
-
-        message = Message(topic=ReservedTopic.AUX_COMMAND, body=fobs.dumps(request))
-        message.set_header(RequestHeader.JOB_ID, str(fl_ctx.get_prop(FLContextKey.CURRENT_RUN)))
-        requests = {}
-        for n in targets:
-            requests.update({n: message})
-
-        replies = self.server.admin_server.send_requests(requests, timeout_secs=timeout)
-        results = {}
-        for r in replies:
-            client_name = self.get_client_name_from_token(r.client_token)
-            if r.reply:
-                try:
-                    error_code = r.reply.get_header(MsgHeader.RETURN_CODE, ReturnCode.OK)
-                    if error_code != ReturnCode.OK:
-                        self.logger.error(f"Aux message send error: {error_code} from client: {client_name}")
-                        shareable = make_reply(ReturnCode.ERROR)
-                    else:
-                        shareable = fobs.loads(r.reply.body)
-                    results[client_name] = shareable
-                except BaseException as e:
-                    results[client_name] = make_reply(ReturnCode.COMMUNICATION_ERROR)
-                    self.logger.error(
-                        f"Received unexpected reply from client: {client_name}, "
-                        f"message body:{r.reply.body} processing topic:{topic} Error:{e}"
-                    )
-            else:
-                results[client_name] = None
-
-        return results
-
-    def send_command_to_child_runner_process(self, job_id: str, command_name: str, command_data, return_result=True):
-        result = None
+    def send_command_to_child_runner_process(
+        self, job_id: str, command_name: str, command_data, timeout=5.0, optional=False
+    ):
         with self.lock:
-            command_conn = self.get_command_conn(job_id)
-            if command_conn:
-                data = {ServerCommandKey.COMMAND: command_name, ServerCommandKey.DATA: command_data}
-                command_conn.send(data)
-                if return_result:
-                    result = command_conn.recv()
-                    if result == NO_OP_REPLY:
-                        result = None
+            fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
+            request = new_cell_message({}, fobs.dumps(command_data))
+            if timeout <= 0.0:
+                self.server.cell.fire_and_forget(
+                    targets=fqcn,
+                    channel=CellChannel.SERVER_COMMAND,
+                    topic=command_name,
+                    request=request,
+                    optional=optional,
+                )
+                return None
+
+            return_data = self.server.cell.send_request(
+                target=fqcn,
+                channel=CellChannel.SERVER_COMMAND,
+                topic=command_name,
+                request=request,
+                timeout=timeout,
+                optional=optional,
+            )
+            rc = return_data.get_header(MessageHeaderKey.RETURN_CODE, CellMsgReturnCode.OK)
+            if rc == CellMsgReturnCode.OK:
+                result = fobs.loads(return_data.payload)
+            else:
+                result = None
         return result
 
-    def get_command_conn(self, job_id):
-        # this function need to be called with self.lock
-        port = self.run_processes.get(job_id, {}).get(RunProcessKey.LISTEN_PORT)
-        command_conn = self.run_processes.get(job_id, {}).get(RunProcessKey.CONNECTION)
-
-        if not command_conn:
-            try:
-                address = ("localhost", port)
-                command_conn = CommandClient(address, authkey="client process secret password".encode())
-                command_conn = ClientConnection(command_conn)
-                self.run_processes[job_id][RunProcessKey.CONNECTION] = command_conn
-            except Exception:
-                pass
-        return command_conn
-
     def persist_components(self, fl_ctx: FLContext, completed: bool):
+        if not self.server.ha_mode:
+            return
+
         self.logger.info("Start saving snapshot on server.")
 
         # Call the State Persistor to persist all the component states
@@ -679,13 +644,8 @@ class ServerEngine(ServerEngineInternalSpec):
 
             job_info = fl_ctx.get_prop(FLContextKey.JOB_INFO)
             if not job_info:
-                with self.parent_conn_lock:
-                    data = {ServerCommandKey.COMMAND: ServerCommandNames.GET_CLIENTS, ServerCommandKey.DATA: {}}
-                    self.parent_conn.send(data)
-                    return_data = self.parent_conn.recv()
-                    job_id = return_data.get(ServerCommandKey.JOB_ID)
-                    job_clients = return_data.get(ServerCommandKey.CLIENTS)
-                    fl_ctx.set_prop(FLContextKey.JOB_INFO, (job_id, job_clients))
+                job_clients = self._get_participating_clients()
+                fl_ctx.set_prop(FLContextKey.JOB_INFO, (job_id, job_clients))
             else:
                 (job_id, job_clients) = job_info
             snapshot.set_component_snapshot(
@@ -743,16 +703,30 @@ class ServerEngine(ServerEngineInternalSpec):
             errors = {}
         return errors
 
+    def reset_errors(self, job_id) -> str:
+        errors = None
+        try:
+            self.send_command_to_child_runner_process(
+                job_id=job_id,
+                command_name=ServerCommandNames.RESET_ERRORS,
+                command_data={},
+            )
+        except BaseException:
+            self.logger.error(f"Failed to reset_errors for JOB: {job_id}")
+
+        return f"reset the server error stats for job: {job_id}"
+
     def _send_admin_requests(self, requests, timeout_secs=10) -> List[ClientReply]:
         return self.server.admin_server.send_requests(requests, timeout_secs=timeout_secs)
 
-    def check_client_resources(self, resource_reqs) -> Dict[str, Tuple[bool, str]]:
+    def check_client_resources(self, job_id: str, resource_reqs) -> Dict[str, Tuple[bool, str]]:
         requests = {}
         for site_name, resource_requirements in resource_reqs.items():
             # assume server resource is unlimited
             if site_name == "server":
                 continue
             request = Message(topic=TrainingTopic.CHECK_RESOURCE, body=fobs.dumps(resource_requirements))
+            request.set_header(RequestHeader.JOB_ID, job_id)
             client = self.get_client_from_name(site_name)
             if client:
                 requests.update({client.token: request})
@@ -770,7 +744,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 else:
                     resp = fobs.loads(r.reply.body)
                     result[site_name] = (
-                        resp.get_header(ShareableHeader.CHECK_RESOURCE_RESULT, False),
+                        resp.get_header(ShareableHeader.IS_RESOURCE_ENOUGH, False),
                         resp.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, ""),
                     )
             else:
@@ -782,8 +756,8 @@ class ServerEngine(ServerEngineInternalSpec):
     ):
         requests = {}
         for site_name, result in resource_check_results.items():
-            check_result, token = result
-            if check_result and token:
+            is_resource_enough, token = result
+            if is_resource_enough and token:
                 resource_requirements = resource_reqs[site_name]
                 request = Message(topic=TrainingTopic.CANCEL_RESOURCE, body=fobs.dumps(resource_requirements))
                 request.set_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, token)
@@ -813,6 +787,12 @@ class ServerEngine(ServerEngineInternalSpec):
         fl_ctx = self.new_context()
         self.job_runner.stop_all_runs(fl_ctx)
 
+    def pause_server_jobs(self):
+        running_jobs = list(self.run_processes.keys())
+        for job_id in running_jobs:
+            self.job_runner.remove_running_job(job_id)
+            self.abort_app_on_server(job_id, turn_to_cold=True)
+
     def close(self):
         self.executor.shutdown()
 
@@ -822,10 +802,10 @@ def server_shutdown(server, touch_file):
         os.utime(touch_file, None)
 
     try:
+        # server.admin_server.stop()
         server.fl_shutdown()
-        server.admin_server.stop()
-        time.sleep(3.0)
+        # time.sleep(3.0)
     finally:
-        server.status = ServerStatus.SHUTDOWN
         security_close()
-        sys.exit(2)
+        server.status = ServerStatus.SHUTDOWN
+        # sys.exit(2)

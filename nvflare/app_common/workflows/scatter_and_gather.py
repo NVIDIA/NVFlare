@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
+from nvflare.app_common.abstract.model import ModelLearnable
 from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
@@ -50,6 +51,7 @@ class ScatterAndGather(Controller):
         train_task_name=AppConstants.TASK_TRAIN,
         train_timeout: int = 0,
         ignore_result_error: bool = False,
+        allow_empty_global_weights: bool = False,
         task_check_period: float = 0.5,
         persist_every_n_rounds: int = 1,
         snapshot_every_n_rounds: int = 1,
@@ -74,6 +76,9 @@ class ScatterAndGather(Controller):
             train_task_name (str, optional): Name of the train task. Defaults to "train".
             train_timeout (int, optional): Time to wait for clients to do local training.
             ignore_result_error (bool, optional): whether this controller can proceed if client result has errors.
+                Defaults to False.
+            allow_empty_global_weights (bool, optional): whether to allow empty global weights. Some pipelines can have
+                empty global weights at first round, such that clients start training from scratch without any global info.
                 Defaults to False.
             task_check_period (float, optional): interval for checking status of tasks. Defaults to 0.5.
             persist_every_n_rounds (int, optional): persist the global model every n rounds. Defaults to 1.
@@ -131,6 +136,7 @@ class ScatterAndGather(Controller):
         self._persist_every_n_rounds = persist_every_n_rounds
         self._snapshot_every_n_rounds = snapshot_every_n_rounds
         self.ignore_result_error = ignore_result_error
+        self.allow_empty_global_weights = allow_empty_global_weights
 
         # workflow phases: init, train, validate
         self._phase = AppConstants.PHASE_INIT
@@ -171,7 +177,26 @@ class ScatterAndGather(Controller):
         fl_ctx.set_prop(AppConstants.START_ROUND, self._start_round, private=True, sticky=True)
         fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self._num_rounds, private=True, sticky=False)
         self._global_weights = self.persistor.load(fl_ctx)
-        fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._global_weights, private=True, sticky=False)
+
+        if not isinstance(self._global_weights, ModelLearnable):
+            self.system_panic(
+                reason=f"Expected global weights to be of type `ModelLearnable` but received {type(self._global_weights)}",
+                fl_ctx=fl_ctx,
+            )
+            return
+
+        if self._global_weights.is_empty():
+            if not self.allow_empty_global_weights:
+                # if empty not allowed, further check whether it is available from fl_ctx
+                self._global_weights = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
+                if not isinstance(self._global_weights, ModelLearnable):
+                    self.system_panic(
+                        reason=f"Expected global weights to be of type `ModelLearnable` but received {type(self._global_weights)}",
+                        fl_ctx=fl_ctx,
+                    )
+                    return
+
+        fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._global_weights, private=True, sticky=True)
         self.fire_event(AppEventType.INITIAL_MODEL_LOADED, fl_ctx)
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext) -> None:
@@ -192,8 +217,8 @@ class ScatterAndGather(Controller):
                     return
 
                 self.log_info(fl_ctx, f"Round {self._current_round} started.")
-                fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._global_weights, private=True, sticky=False)
-                fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=False)
+                fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._global_weights, private=True, sticky=True)
+                fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=True)
                 self.fire_event(AppEventType.ROUND_STARTED, fl_ctx)
 
                 # Create train_task
@@ -234,7 +259,7 @@ class ScatterAndGather(Controller):
 
                 self.fire_event(AppEventType.BEFORE_SHAREABLE_TO_LEARNABLE, fl_ctx)
                 self._global_weights = self.shareable_gen.shareable_to_learnable(aggr_result, fl_ctx)
-                fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._global_weights, private=True, sticky=False)
+                fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._global_weights, private=True, sticky=True)
                 fl_ctx.sync_sticky()
                 self.fire_event(AppEventType.AFTER_SHAREABLE_TO_LEARNABLE, fl_ctx)
 
@@ -266,9 +291,8 @@ class ScatterAndGather(Controller):
             self.log_exception(fl_ctx, error_msg)
             self.system_panic(error_msg, fl_ctx)
 
-    def stop_controller(self, fl_ctx: FLContext) -> None:
+    def stop_controller(self, fl_ctx: FLContext):
         self._phase = AppConstants.PHASE_FINISHED
-        self.cancel_all_tasks()
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         super().handle_event(event_type, fl_ctx)
@@ -308,39 +332,32 @@ class ScatterAndGather(Controller):
     def _accept_train_result(self, client_name: str, result: Shareable, fl_ctx: FLContext) -> bool:
 
         rc = result.get_return_code()
-        contribution_round = result.get_cookie(AppConstants.CONTRIBUTION_ROUND)
-        result.set_header(AppConstants.CONTRIBUTION_ROUND, contribution_round)
 
         # Raise errors if bad peer context or execution exception.
         if rc and rc != ReturnCode.OK:
             if self.ignore_result_error:
-                self.log_error(fl_ctx, f"Ignore the client train result. Train result error code: {rc}")
+                self.log_warning(
+                    fl_ctx,
+                    f"Ignore the train result from {client_name} at round {self._current_round}. Train result error code: {rc}",
+                )
                 return False
             else:
-                if rc in [ReturnCode.MISSING_PEER_CONTEXT, ReturnCode.BAD_PEER_CONTEXT]:
-                    self.system_panic("Peer context is bad or missing. ScatterAndGather exiting.", fl_ctx=fl_ctx)
-                    return False
-                elif rc in [ReturnCode.EXECUTION_EXCEPTION, ReturnCode.TASK_UNKNOWN]:
-                    self.system_panic(
-                        "Execution Exception in client training. ScatterAndGather exiting.", fl_ctx=fl_ctx
-                    )
-                    return False
-                elif rc in [
-                    ReturnCode.EXECUTION_RESULT_ERROR,
-                    ReturnCode.TASK_DATA_FILTER_ERROR,
-                    ReturnCode.TASK_RESULT_FILTER_ERROR,
-                ]:
-                    self.system_panic("Execution result is not a shareable. ScatterAndGather exiting.", fl_ctx=fl_ctx)
-                    return False
+                self.system_panic(
+                    f"Result from {client_name} is bad, error code: {rc}. "
+                    f"{self.__class__.__name__} exiting at round {self._current_round}.",
+                    fl_ctx=fl_ctx,
+                )
+                return False
 
-        fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=False)
+        fl_ctx.set_prop(AppConstants.CURRENT_ROUND, self._current_round, private=True, sticky=True)
         fl_ctx.set_prop(AppConstants.TRAINING_RESULT, result, private=True, sticky=False)
-        fl_ctx.set_prop(AppConstants.CONTRIBUTION_ROUND, contribution_round, private=True, sticky=False)
         self.fire_event(AppEventType.BEFORE_CONTRIBUTION_ACCEPT, fl_ctx)
 
         accepted = self.aggregator.accept(result, fl_ctx)
         accepted_msg = "ACCEPTED" if accepted else "REJECTED"
-        self.log_info(fl_ctx, f"Contribution from {client_name} {accepted_msg} by the aggregator.")
+        self.log_info(
+            fl_ctx, f"Contribution from {client_name} {accepted_msg} by the aggregator at round {self._current_round}."
+        )
 
         fl_ctx.set_prop(AppConstants.AGGREGATION_ACCEPTED, accepted, private=True, sticky=False)
         self.fire_event(AppEventType.AFTER_CONTRIBUTION_ACCEPT, fl_ctx)

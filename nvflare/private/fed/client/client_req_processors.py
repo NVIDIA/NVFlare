@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
 # limitations under the License.
 
 from .info_coll_cmd import ClientInfoProcessor
-from .process_aux_cmd import AuxRequestProcessor
 from .scheduler_cmds import CancelResourceProcessor, CheckResourceProcessor, ReportResourcesProcessor, StartJobProcessor
 from .shell_cmd import ShellCommandProcessor
 from .sys_cmd import SysInfoProcessor
@@ -28,7 +27,6 @@ from .training_cmds import (  # StartClientMGpuProcessor,; SetRunNumberProcessor
     ShutdownClientProcessor,
     StartAppProcessor,
 )
-from .validation_cmd import ValidateRequestProcessor
 
 
 class ClientRequestProcessors:
@@ -39,7 +37,6 @@ class ClientRequestProcessors:
         AbortAppProcessor(),
         ShutdownClientProcessor(),
         DeployProcessor(),
-        ValidateRequestProcessor(),
         ShellCommandProcessor(),
         DeleteRunNumberProcessor(),
         SysInfoProcessor(),
@@ -48,7 +45,6 @@ class ClientRequestProcessors:
         ClientInfoProcessor(),
         AbortTaskProcessor(),
         # SetRunNumberProcessor(),
-        AuxRequestProcessor(),
         StartJobProcessor(),
         CheckResourceProcessor(),
         CancelResourceProcessor(),

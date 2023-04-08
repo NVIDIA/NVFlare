@@ -19,6 +19,7 @@ fi
 
 WORK_DIR="$( cd -P "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 NUM_PARALLEL=1
+DIR_TO_CHECK="nvflare examples tests"
 
 target="${@: -1}"
 if [[ "${target}" == -* ]] ;then
@@ -27,19 +28,11 @@ fi
 
 
 function install_deps {
-    if [[ ! -f /tmp/.flare_deps_installed ]]; then
-        echo "pip installing development dependencies"
-        python3 -m pip install -r requirements-dev.txt
-        echo "dependencies installed" > /tmp/.flare_deps_installed
-    fi;
+    python3 -m pip install -e .[dev]
+    echo "dependencies installed"
 }
 
 function clean {
-    echo "remove flare_deps_installed flag"
-    if [[ -f /tmp/.flare_deps_installed ]]; then
-        rm -r /tmp/.flare_deps_installed
-    fi;
-
     echo "remove coverage history"
     python3 -m coverage erase
 
@@ -60,11 +53,6 @@ function clean {
     find "${WORK_DIR}" -depth -maxdepth 1 -type d -name ".coverage" -exec rm -r "{}" \;
     find "${WORK_DIR}" -depth -maxdepth 1 -type f -name ".coverage.*" -exec rm -r "{}" \;
     find "${WORK_DIR}" -depth -maxdepth 1 -type d -name "__pycache__" -exec rm -r "{}" \;
-}
-
-function torch_validate {
-    echo "validate torch installation"
-    python3 -c 'import torch; print(torch.__version__); print(torch.rand(5,3))'
 }
 
 function print_error_msg() {
@@ -98,10 +86,11 @@ function dry_run() {
 }
 
 function check_license() {
-    folders_to_check_license="nvflare tests"
-    grep -q -r --include "*.py" --exclude-dir "*protos*" -L \
-    "\(# Copyright (c) \(2021\|2021-2022\|2022\), NVIDIA CORPORATION.  All rights reserved.\)\|\(This file is released into the public domain.\)" \
-    ${folders_to_check_license} > no_license.lst
+    folders_to_check_license="nvflare examples tests integration research"
+    echo "checking license header in folder: $folders_to_check_license"
+    (grep -r --include "*.py" --exclude-dir "*protos*" -L \
+    "\(# Copyright (c) \(2021\|2022\|2023\), NVIDIA CORPORATION.  All rights reserved.\)\|\(This file is released into the public domain.\)" \
+    ${folders_to_check_license} || true) > no_license.lst
     if [ -s no_license.lst ]; then
         # The file is not-empty.
         cat no_license.lst
@@ -110,9 +99,10 @@ function check_license() {
         rm -f no_license.lst
         exit 1
     else
-        echo "All Python files in folder (${folders_to_check_license}) have license header"
+        echo "All Python files in folder ${folders_to_check_license} have license header"
         rm -f no_license.lst
     fi
+    echo "finished checking license header"
 }
 
 function flake8_check() {
@@ -218,6 +208,7 @@ function help() {
     echo "    -f | --fix-format             : auto fix style formats, import"
     echo "    -u | --unit-tests             : unit tests"
     echo "    -r | --test-report            : used with -u command, turn on unit test report flag. It has no effect without -u "
+    echo "    -p | --dependencies           : only install dependencies"
     echo "    -c | --coverage               : used with -u command, turn on coverage flag,  It has no effect without -u "
     echo "    -d | --dry-run                : set dry run flag, print out command"
     echo "         --clean                  : clean py and other artifacts generated, clean flag to allow re-install dependencies"
@@ -249,19 +240,23 @@ do
         -s |--check-format) # check format and styles
             cmd="check_style_type_import"
             if [[ -z $target ]]; then
-                target="nvflare tests"
+                target="${DIR_TO_CHECK}"
             fi
         ;;
 
         -f |--fix-format)
-            if [ -n "${target}" ]; then
-                cmd="fix_style_import ${target}"
-            else
-                cmd="fix_style_import nvflare && fix_style_import tests"
+            cmd="fix_style_import"
+            if [[ -z $target ]]; then
+                target="${DIR_TO_CHECK}"
             fi
         ;;
         -c|--coverage)
             coverage_report=true
+        ;;
+
+        -p|--dependencies)
+            dependencies=true
+	    cmd=" "
         ;;
 
         -r|--test-report)
@@ -270,7 +265,7 @@ do
         ;;
 
         -u |--unit*)
-            cmd_prefix="torch_validate; python3 -m pytest --numprocesses=auto "
+            cmd_prefix="python3 -m pytest --numprocesses=auto -v "
 
             echo "coverage_report=" ${coverage_report}
             if [ "${coverage_report}" == true ]; then
@@ -305,10 +300,9 @@ done
 
 if [[ -z $cmd ]]; then
     cmd="check_license;
-        check_style_type_import nvflare tests;
-        fix_style_import nvflare;
-        fix_style_import tests;
-        python3 -m pytest --numprocesses=auto --cov=nvflare --cov-report html:cov_html --cov-report xml:cov.xml --junitxml=unit_test.xml tests/unit_test;
+        check_style_type_import "${DIR_TO_CHECK}";
+        fix_style_import "${DIR_TO_CHECK}";
+        python3 -m pytest --numprocesses=auto -v --cov=nvflare --cov-report html:cov_html --cov-report xml:cov.xml --junitxml=unit_test.xml tests/unit_test;
         "
 else
     cmd="$cmd $target"

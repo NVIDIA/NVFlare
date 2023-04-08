@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -91,7 +91,7 @@ class GPUResourceManager(AutoCleanResourceManager):
         if self.num_gpu_key not in resource_requirement:
             raise ValueError(f"resource_requirement is missing num_gpu_key {self.num_gpu_key}.")
 
-        check_result = False
+        is_resource_enough = False
         num_gpu = resource_requirement[self.num_gpu_key]
         gpu_mem = resource_requirement.get(self.gpu_mem_key, 0)
 
@@ -101,9 +101,9 @@ class GPUResourceManager(AutoCleanResourceManager):
             if r.memory >= gpu_mem:
                 satisfied += 1
             if satisfied >= num_gpu:
-                check_result = True
+                is_resource_enough = True
                 break
-        return check_result
+        return is_resource_enough
 
     def _reserve_resource(self, resource_requirement: dict) -> dict:
         if not resource_requirement:

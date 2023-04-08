@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -119,7 +119,6 @@ class XGBFedController(Controller):
         self._started = True
 
     def stop_controller(self, fl_ctx: FLContext):
-        self.cancel_all_tasks()
         if self._xgb_fl_server:
             self._xgb_fl_server.terminate()
         self._started = False

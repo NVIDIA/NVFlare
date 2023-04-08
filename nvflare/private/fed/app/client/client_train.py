@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,12 +23,13 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import JobConstants, SiteType, WorkspaceConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
+from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.argument_utils import parse_vars
-from nvflare.private.defs import AppFolderConstants, SSLConstants
+from nvflare.private.defs import AppFolderConstants
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger, create_privacy_manager
 from nvflare.private.fed.client.admin import FedAdminAgent
-from nvflare.private.fed.client.admin_msg_sender import AdminMessageSender
 from nvflare.private.fed.client.client_engine import ClientEngine
+from nvflare.private.fed.client.client_status import ClientStatus
 from nvflare.private.fed.client.fed_client import FederatedClient
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize, security_init
 from nvflare.private.privacy_manager import PrivacyService
@@ -36,10 +37,8 @@ from nvflare.security.logging import secure_format_exception
 
 
 def main():
-    if sys.version_info >= (3, 9):
-        raise RuntimeError("Python versions 3.9 and above are not yet supported. Please use Python 3.8 or 3.7.")
     if sys.version_info < (3, 7):
-        raise RuntimeError("Python versions 3.6 and below are not supported. Please use Python 3.8 or 3.7.")
+        raise RuntimeError("Please use Python 3.7 or above.")
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
     parser.add_argument("--fed_client", "-s", type=str, help="client config json file", required=True)
@@ -58,6 +57,7 @@ def main():
     args.env = os.path.join("config", AppFolderConstants.CONFIG_ENV)
     args.train_config = os.path.join("config", AppFolderConstants.CONFIG_TRAIN)
     args.log_config = None
+    args.job_id = None
 
     workspace = Workspace(root_dir=args.workspace)
 
@@ -78,6 +78,7 @@ def main():
 
         conf = FLClientStarterConfiger(
             workspace=workspace,
+            args=args,
             kv_list=args.set,
         )
         conf.configure()
@@ -99,6 +100,7 @@ def main():
         PrivacyService.initialize(privacy_manager)
 
         federated_client = deployer.create_fed_client(args)
+        federated_client.start_overseer_agent()
 
         while not federated_client.sp_established:
             print("Waiting for SP....")
@@ -107,80 +109,55 @@ def main():
         federated_client.use_gpu = False
         federated_client.config_folder = config_folder
 
-        if rank == 0:
-            federated_client.register()
+        while federated_client.cell is None:
+            print("Waiting client cell to be created ....")
+            time.sleep(1.0)
+
+        federated_client.register()
 
         if not federated_client.token:
             print("The client could not register to server. ")
             raise RuntimeError("Login failed.")
 
-        federated_client.start_heartbeat()
+        federated_client.start_heartbeat(interval=kv_list.get("heart_beat_interval", 10.0))
 
-        servers = [{t["name"]: t["service"]} for t in deployer.server_config]
         admin_agent = create_admin_agent(
-            deployer.client_config,
             deployer.req_processors,
-            deployer.secure_train,
-            sorted(servers)[0],
             federated_client,
             args,
-            deployer.multi_gpu,
             rank,
         )
-        admin_agent.start()
+
+        while federated_client.status != ClientStatus.STOPPED:
+            time.sleep(1.0)
 
         deployer.close()
 
     except ConfigError as e:
         print(f"ConfigError: {secure_format_exception(e)}")
-    finally:
-        pass
-
-    sys.exit(0)
 
 
 def create_admin_agent(
-    client_args,
     req_processors,
-    secure_train,
-    server_args,
     federated_client: FederatedClient,
     args,
-    is_multi_gpu,
     rank,
 ):
     """Creates an admin agent.
 
     Args:
-        client_args: start client command args
         req_processors: request processors
-        secure_train: True/False
-        server_args: FL server args
         federated_client: FL client object
         args: command args
-        is_multi_gpu: True/False
         rank: client rank process number
 
     Returns:
         A FedAdminAgent.
     """
-    root_cert = client_args[SSLConstants.ROOT_CERT] if secure_train else None
-    ssl_cert = client_args[SSLConstants.CERT] if secure_train else None
-    private_key = client_args[SSLConstants.PRIVATE_KEY] if secure_train else None
-    sender = AdminMessageSender(
-        client_name=federated_client.token,
-        root_cert=root_cert,
-        ssl_cert=ssl_cert,
-        private_key=private_key,
-        server_args=server_args,
-        secure=secure_train,
-        is_multi_gpu=is_multi_gpu,
-        rank=rank,
-    )
-    client_engine = ClientEngine(federated_client, federated_client.token, sender, args, rank)
+    client_engine = ClientEngine(federated_client, federated_client.token, args, rank)
     admin_agent = FedAdminAgent(
         client_name="admin_agent",
-        sender=sender,
+        cell=federated_client.cell,
         app_ctx=client_engine,
     )
     client_engine.set_agent(admin_agent)
@@ -205,4 +182,5 @@ if __name__ == "__main__":
     # import multiprocessing
     # multiprocessing.set_start_method('spawn')
 
-    main()
+    # main()
+    mpm.run(main_func=main)

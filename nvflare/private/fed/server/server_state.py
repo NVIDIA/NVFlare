@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -40,13 +40,13 @@ class ServerState(ABC):
     ABORT_CURRENT_RUN = {ACTION: ABORT_RUN, MESSAGE: "Abort current run"}
     IN_SERVICE = {ACTION: SERVICE, MESSAGE: "Server in service"}
 
+    logger = logging.getLogger("ServerState")
+
     def __init__(self, host: str = "", port: str = "", ssid: str = "") -> None:
         self.host = host
         self.service_port = port
         self.ssid = ssid
         self.primary = False
-
-        self.logger = logging.getLogger("FederatedServer")
 
     @abstractmethod
     def register(self, fl_ctx: FLContext) -> dict:

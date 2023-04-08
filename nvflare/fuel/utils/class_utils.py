@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,10 +14,13 @@
 
 import importlib
 import inspect
+import logging
 import pkgutil
-from typing import List
+from typing import Dict, List, Optional
 
 from nvflare.security.logging import secure_format_exception
+
+DEPRECATED_PACKAGES = ["nvflare.app_common.pt", "nvflare.app_common.homomorphic_encryption"]
 
 
 def get_class(class_path):
@@ -57,20 +60,20 @@ def instantiate_class(class_path, init_params):
     return instance
 
 
-def get_object_method(obj, method_name):
-    op = getattr(obj, method_name, None)
-    if op is None or not callable(op):
-        return None
-    return op
+class _ModuleScanResult:
+    """Data class for ModuleScanner."""
 
+    def __init__(self, class_name: str, module_name: str):
+        self.class_name = class_name
+        self.module_name = module_name
 
-def get_instance_method(instance, method_name):
-    return get_object_method(instance, method_name)
+    def __str__(self):
+        return f"{self.class_name}:{self.module_name}"
 
 
 class ModuleScanner:
     def __init__(self, base_pkgs: List[str], module_names: List[str], exclude_libs=True):
-        """Scanner to look for and load specified module names.
+        """Loads specified modules from base packages and then constructs a class to module name mapping.
 
         Args:
             base_pkgs: base packages to look for modules in
@@ -80,25 +83,56 @@ class ModuleScanner:
         self.base_pkgs = base_pkgs
         self.module_names = module_names
         self.exclude_libs = exclude_libs
-        self._class_table = {}
+
+        self._logger = logging.getLogger(self.__class__.__name__)
+        self._class_table: Dict[str, str] = {}
         self._create_classes_table()
 
     def _create_classes_table(self):
+        scan_result_table = {}
         for base in self.base_pkgs:
             package = importlib.import_module(base)
 
-            for importer, modname, ispkg in pkgutil.walk_packages(path=package.__path__, prefix=package.__name__ + "."):
-
-                if modname.startswith(base):
-                    if not self.exclude_libs or (".libs" not in modname):
-                        if any(modname.startswith(base + "." + name) for name in self.module_names):
+            for module_info in pkgutil.walk_packages(path=package.__path__, prefix=package.__name__ + "."):
+                module_name = module_info.name
+                if any(module_name.startswith(deprecated_package) for deprecated_package in DEPRECATED_PACKAGES):
+                    continue
+                if module_name.startswith(base):
+                    if not self.exclude_libs or (".libs" not in module_name):
+                        if any(module_name.startswith(base + "." + name + ".") for name in self.module_names):
                             try:
-                                module = importlib.import_module(modname)
+                                module = importlib.import_module(module_name)
                                 for name, obj in inspect.getmembers(module):
-                                    if inspect.isclass(obj) and obj.__module__ == modname:
-                                        self._class_table[name] = modname
-                            except (ModuleNotFoundError, RuntimeError):
+                                    if (
+                                        not name.startswith("_")
+                                        and inspect.isclass(obj)
+                                        and obj.__module__ == module_name
+                                    ):
+                                        # same class name exists in multiple modules
+                                        if name in scan_result_table:
+                                            scan_result = scan_result_table[name]
+                                            if name in self._class_table:
+                                                self._class_table.pop(name)
+                                                self._class_table[f"{scan_result.module_name}.{name}"] = module_name
+                                            self._class_table[f"{module_name}.{name}"] = module_name
+                                        else:
+                                            scan_result = _ModuleScanResult(class_name=name, module_name=module_name)
+                                            scan_result_table[name] = scan_result
+                                            self._class_table[name] = module_name
+                            except (ModuleNotFoundError, RuntimeError) as e:
+                                self._logger.debug(
+                                    f"Try to import module {module_name}, but failed: {secure_format_exception(e)}. "
+                                    f"Can't use name in config to refer to classes in module: {module_name}."
+                                )
                                 pass
 
-    def get_module_name(self, class_name):
+    def get_module_name(self, class_name) -> Optional[str]:
+        """Gets the name of the module that contains this class.
+
+        Args:
+            class_name: The name of the class
+
+        Returns:
+            The module name if found.
+        """
         return self._class_table.get(class_name, None)

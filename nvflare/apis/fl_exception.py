@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,13 +16,14 @@
 class FLCommunicationError(Exception):
     """Base class for fed_learn communication exceptions."""
 
-    def __init__(self, exception, message):
+    def __init__(self, message, exception=None):
         """Init the FLCommunicationError.
 
         Args:
             exception: grpc.RpcError when trying to register gprc channel
         """
         super().__init__()
-        # Copy all the gRPC exception properties into FLCommunicationError instance.
-        self.__dict__.update(exception.__dict__)
+        # Copy all the exception properties into FLCommunicationError instance.
+        if exception:
+            self.__dict__.update(exception.__dict__)
         self.message = message
