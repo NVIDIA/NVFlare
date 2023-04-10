@@ -145,18 +145,16 @@ def setup_and_teardown_system(request):
         test_driver = NVFTestDriver(
             site_launcher=site_launcher, download_root_dir=download_root_dir, poll_period=poll_period
         )
-        if not test_driver.initialize_super_user(
+        test_driver.initialize_super_user(
             workspace_root_dir=workspace_root, upload_root_dir=jobs_root_dir, poc=poc, super_user_name=super_user_name
-        ):
-            raise NVFTestError("NVFTestDriver initialize_super_user failed.")
+        )
         if ha:
-            if not test_driver.initialize_admin_users(
+            test_driver.initialize_admin_users(
                 workspace_root_dir=workspace_root,
                 upload_root_dir=jobs_root_dir,
                 poc=poc,
                 admin_user_names=site_launcher.admin_user_names,
-            ):
-                raise NVFTestError("NVFTestDriver initialize_admin_users failed.")
+            )
         test_driver.ensure_clients_started(num_clients=len(site_launcher.client_properties.keys()), timeout=2000)
         yield ha, test_cases, site_launcher, test_driver
     finally:
