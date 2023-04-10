@@ -21,9 +21,8 @@ from .api_spec import ServiceFinder
 
 class ServiceFinderByOverseer(ServiceFinder):
     def __init__(self, overseer_agent: OverseerAgent):
-        assert isinstance(overseer_agent, OverseerAgent), "overseer_agent must be OverseerAgent but got {}".format(
-            type(overseer_agent)
-        )
+        if not isinstance(overseer_agent, OverseerAgent):
+            raise TypeError(f"overseer_agent must be OverseerAgent but got {type(overseer_agent)}")
 
         self.overseer_agent = overseer_agent
         self.sp_address_changed_cb = None

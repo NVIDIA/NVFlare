@@ -295,7 +295,7 @@ class _Operate(State):
             cur_ssid = api.ssid
 
         if new_host != cur_host or new_port != cur_port or cur_ssid != new_ssid:
-            # need to relogin
+            # need to re-login
             api.fire_session_event(SessionEventType.SP_ADDR_CHANGED, f"Server address changed to {new_host}:{new_port}")
             return _STATE_NAME_LOGIN
 
@@ -427,8 +427,8 @@ class AdminAPI(AdminAPISpec):
         self.sess_monitor_thread = None
         self.sess_monitor_active = False
 
-        if session_event_cb is not None:
-            assert callable(session_event_cb), "session_event_cb must be callable"
+        if session_event_cb is not None and not callable(session_event_cb):
+            raise RuntimeError("session_event_cb must be callable")
         self.session_event_cb = session_event_cb
 
         # create the FSM for session monitoring

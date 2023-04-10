@@ -101,11 +101,7 @@ class Session(SessionSpec):
             if not os.path.isfile(client_key):
                 raise ConfigError(f"client.key does not exist at {client_key}")
 
-        # Connect with admin client
-        if conf.overseer_agent:
-            service_finder = ServiceFinderByOverseer(conf.overseer_agent)
-        else:
-            service_finder = None
+        service_finder = ServiceFinderByOverseer(conf.overseer_agent)
 
         self.api = AdminAPI(
             ca_cert=ca_cert,

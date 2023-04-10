@@ -177,10 +177,12 @@ def service_address_changed_cb_signature(host: str, port: int, ssid: str):
     pass
 
 
-class ServiceFinder(object):
+class ServiceFinder(ABC):
+    @abstractmethod
     def start(self, service_address_changed_cb):
         pass
 
+    @abstractmethod
     def stop(self):
         pass
 
