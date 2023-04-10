@@ -66,7 +66,7 @@ The following tutorials and quickstart guides walk you through some of these exa
 
   7. **Federated Site Policies**
 
-    * `Federated Policies (Github) <https://github.com/NVIDIA/NVFlare/blob/dev/examples/advanced/federated-policies/README.rst>`_ - Discuss the federated site policies for authorization, resource and data privacy management
+    * `Federated Policies (Github) <https://github.com/NVIDIA/NVFlare/blob/main/examples/advanced/federated-policies/README.rst>`_ - Discuss the federated site policies for authorization, resource and data privacy management
 
   8. **Experiment tracking**
 
