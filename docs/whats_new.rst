@@ -87,6 +87,12 @@ on how to run [split learning](https://arxiv.org/abs/1810.06060) using the CIFAR
 
 Activations and corresponding gradients are being exchanged between the clients using FLARE's new communication API.
 
+New Example for NLP
+===================
+The new `NLP-NER Example <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/nlp-ner/README.md>`_ illustrates both `BERT <https://github.com/google-research/bert>`_ and
+`GPT-2 <https://github.com/openai/gpt-2>`_ models from `Hugging Face <https://huggingface.co/>`_ (`BERT-base-uncased <https://huggingface.co/bert-base-uncased>`_, `GPT-2 <https://huggingface.co/gpt2>`_)
+on a Named Entity Recognition (NER) task using the `NCBI disease dataset <https://pubmed.ncbi.nlm.nih.gov/24393765/>`_.
+
 Research Areas
 ==============
 
@@ -116,12 +122,6 @@ This research `example <https://github.com/NVIDIA/NVFlare/blob/main/research/qua
 It presents new ways to measure and visualize potential data leakage in FL using a new FLARE filter
 that can quantify the data leakage for each client and visualize it as a function of the FL training rounds.
 Quantifying the data leakage in FL can help determine the optimal tradeoffs between privacy-preserving techniques, such as differential privacy, and model accuracy based on quantifiable metrics.
-
-New Example for NLP
-===================
-The new `NLP-NER Example <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/nlp-ner/README.md>`_ illustrates both `BERT <https://github.com/google-research/bert>`_ and
-`GPT-2 <https://github.com/openai/gpt-2>`_ models from `Hugging Face <https://huggingface.co/>`_ (`BERT-base-uncased <https://huggingface.co/bert-base-uncased>`_, `GPT-2 <https://huggingface.co/gpt2>`_)
-on a Named Entity Recognition (NER) task using the `NCBI disease dataset <https://pubmed.ncbi.nlm.nih.gov/24393765/>`_.
 
 Communication Framework Upgrades
 ================================
