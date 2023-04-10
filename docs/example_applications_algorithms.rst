@@ -38,7 +38,6 @@ The following tutorials and quickstart guides walk you through some of these exa
     * `Intro to the FL Simulator <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/flare_simulator.ipynb>`_ - Shows how to use the :ref:`fl_simulator` to run a local simulation of an NVFLARE deployment to test and debug an application without provisioning a real FL project.
     * `Hello FLARE API <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/flare_api.ipynb>`_ - Goes through the different commands of the :ref:`flare_api` to show the syntax and usage of each.
     * `NVFLARE in POC Mode <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/setup_poc.ipynb>`_ - Shows how to use :ref:`POC mode <poc_command>` to test the features of a full FLARE deployment on a single machine.
-    * `Provision and Start NVFLARE <https://github.com/NVIDIA/NVFlare/blob/main/examples/tutorials/provision.ipynb>`_ - Shows how to provision and start a secure FL system.
 
   3. **FL algorithms**
 
@@ -76,6 +75,73 @@ The following tutorials and quickstart guides walk you through some of these exa
 
 For the complete collection of example applications, see https://github.com/NVIDIA/NVFlare/tree/main/examples.
 
+Setting up a virtual environment for examples and notebooks
+===========================================================
+It is recommended to set up a virtual environment before installing the dependencies for the examples. Install dependencies for a virtual environment with:
+
+.. code-block:: bash
+
+    python3 -m pip install --user --upgrade pip
+    python3 -m pip install --user virtualenv
+
+
+Once venv is installed, you can use it to create a virtual environment with:
+
+.. code-block:: shell
+
+    $ python3 -m venv nvflare_example
+
+This will create the ``nvflare_example`` directory in current working directory if it doesn't exist,
+and also create directories inside it containing a copy of the Python interpreter,
+the standard library, and various supporting files.
+
+
+Activate the virtualenv by running the following command:
+
+.. code-block:: shell
+
+    $ source nvflare_example/bin/activate
+
+Installing required packages
+----------------------------
+In each example folder, install required packages for training:
+
+.. code-block:: bash
+
+    pip install --upgrade pip
+    pip install -r requirements.txt
+
+(optional) some examples contain scripts for plotting the TensorBoard event files, if needed, please also install the additional requirements in the example folder:
+
+.. code-block:: bash
+
+    pip install -r plot-requirements.txt
+
+
+JupyterLab with your virtual environment for Notebooks
+------------------------------------------------------
+To run examples including notebooks, we recommend using `JupyterLab <https://jupyterlab.readthedocs.io>`_.
+
+After activating your virtual environment, install JupyterLab:
+
+.. code-block:: bash
+
+  pip install jupyterlab
+
+If you need to register the virtual environment you created so it is usable in JupyterLab, you can register the kernel with:
+
+.. code-block:: bash
+
+  python -m ipykernel install --user --name="nvflare_example"
+
+Start a Jupyter Lab:
+
+.. code-block:: bash
+
+  jupyter lab .
+
+When you open a notebook, select the kernel you registered, "nvflare_example", using the dropdown menu at the top right.
+
 Custom Code in Example Apps
 ===========================
 There are several ways to make :ref:`custom code <custom_code>` available to clients when using NVIDIA FLARE.
@@ -98,44 +164,44 @@ Federated Learning Algorithms
 =============================
 
 Federated Averaging
-^^^^^^^^^^^^^^^^^^^
+-------------------
 In NVIDIA FLARE, FedAvg is implemented through the :ref:`scatter_and_gather_workflow`. In the federated averaging workflow,
 a set of initial weights is distributed to client workers who perform local training.  After local training, clients
 return their local weights as a Shareables that are aggregated (averaged).  This new set of global average weights is
 redistributed to clients and the process repeats for the specified number of rounds.
 
 FedProx
-^^^^^^^
+-------
 `FedProx <https://arxiv.org/abs/1812.06127>`_ implements a :class:`Loss function <nvflare.app_common.pt.pt_fedproxloss.PTFedProxLoss>`
 to penalize a client's local weights based on deviation from the global model. An example configuration can be found in
 cifar10_fedprox of the `CIFAR-10 example <https://github.com/NVIDIA/NVFlare/tree/main/examples/cifar10>`_.
 
 FedOpt
-^^^^^^
+------
 `FedOpt <https://arxiv.org/abs/2003.00295>`_ implements a :class:`ShareableGenerator <nvflare.app_common.pt.pt_fedopt.PTFedOptModelShareableGenerator>`
 that can use a specified Optimizer and Learning Rate Scheduler when updating the global model. An example configuration
 can be found in cifar10_fedopt of `CIFAR-10 example <https://github.com/NVIDIA/NVFlare/tree/main/examples/cifar10>`_.
 
 SCAFFOLD
-^^^^^^^^
+--------
 `SCAFFOLD <https://arxiv.org/abs/1910.06378>`_ uses a slightly modified version of the CIFAR-10 Learner implementation,
 namely the `CIFAR10ScaffoldLearner`, which adds a correction term during local training following the `implementation <https://github.com/Xtra-Computing/NIID-Bench>`_
 as described in `Li et al. <https://arxiv.org/abs/2102.02079>`_
 
 Ditto
-^^^^^
+-----
 `Ditto <https://arxiv.org/abs/2012.04221>`_ uses a slightly modified version of the prostate Learner implementation,
 namely the `ProstateDittoLearner`, which decouples local personalized model from global model via an additional model
 training and a controllable prox term. See the `prostate segmentation example <https://github.com/NVIDIA/NVFlare/tree/main/examples/prostate>`_
 for an example with ditto in addition to FedProx, FedAvg, and centralized training.
 
 Federated XGBoost
-^^^^^^^^^^^^^^^^^
+-----------------
 
 * `Federated XGBoost (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/xgboost>`_ - Includes examples of histogram-based and tree-based algorithms. Tree-based algorithms also includes bagging and cyclic approaches
 
 Federated Analytics
-^^^^^^^^^^^^^^^^^^^
+-------------------
 
 * `Federated Statistics for medical imaging (Github) <https://github.com/NVIDIA/NVFlare/tree/main/examples/federated_statistics/image_stats/README.md>`_ - Example of gathering local image histogram to compute the global dataset histograms.
 * `Federated Statistics for tabular data with DataFrame (Github) <https://github.com/NVIDIA/NVFlare/tree/main/examples/federated_statistics/df_stats/README.md>`_ - Example of gathering local statistics summary from Pandas DataFrame to compute the global dataset statistics.

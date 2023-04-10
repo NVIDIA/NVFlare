@@ -1,6 +1,6 @@
-nvflare>=2.3.0rc4
+nvflare>=2.3.0
 torch
 torchvision
 tensorboard
-openmined.psi
+openmined.psi==1.1.1
 pandas

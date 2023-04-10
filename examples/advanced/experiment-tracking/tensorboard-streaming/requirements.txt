@@ -1,2 +1,2 @@
-nvflare[PT]>=2.3.0rc3
+nvflare[PT]>=2.3.0
 tensorboard
