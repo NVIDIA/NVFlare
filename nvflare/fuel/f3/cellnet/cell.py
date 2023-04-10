@@ -1791,7 +1791,11 @@ class Cell(MessageReceiver, EndpointMonitor):
                 elif msg_type == MessageType.REQ:
                     # see whether we can offer a listener
                     allow_adhoc = self.connector_manager.is_adhoc_allowed(oi, self.my_info)
-                    if allow_adhoc and not oi.is_on_server and self.my_info.fqcn > origin:
+                    if (
+                        allow_adhoc
+                        and (not oi.is_on_server)
+                        and (self.my_info.fqcn > origin or self.my_info.is_on_server)
+                    ):
                         self.logger.debug(f"{self.my_info.fqcn}: trying to offer ad-hoc listener to {origin}")
                         listener = self._create_external_listener("")
                         if listener:
