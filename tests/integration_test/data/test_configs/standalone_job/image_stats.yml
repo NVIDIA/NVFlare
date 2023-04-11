@@ -24,7 +24,9 @@ tests:
         run_finished: true
       type: run_state
   setup:
-  - pip install -r ../../examples/advanced/federated-statistics/image_stats/requirements.txt
+  - cp ../../examples/advanced/federated-statistics/image_stats/requirements.txt ../../examples/advanced/federated-statistics/image_stats/temp_requirements.txt
+  - sed -i '/nvflare/d'  ../../examples/advanced/federated-statistics/image_stats/temp_requirements.txt
+  - pip install -r ../../examples/advanced/federated-statistics/image_stats/temp_requirements.txt
   - bash ../../examples/advanced/federated-statistics/image_stats/prepare_data.sh
-  - bash ../../examples/advanced/federated-statistics/image_stats/download_data.sh https://urm.nvidia.com/artifactory/hw-dlmed-generic/nvflare-datasets/COVID-19_Radiography_Dataset.zip
+  - rm -f ../../examples/advanced/federated-statistics/image_stats/temp_requirements.txt
   test_name: Test example image_stats.

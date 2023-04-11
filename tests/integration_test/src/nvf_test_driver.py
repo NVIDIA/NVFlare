@@ -136,7 +136,7 @@ def _create_admin_api(workspace_root_dir, upload_root_dir, download_root_dir, ad
     return admin_api
 
 
-def _ensure_admin_api_logged_in(admin_api: FLAdminAPI, timeout: int = 30):
+def _ensure_admin_api_logged_in(admin_api: FLAdminAPI, timeout: int = 60):
     login_success = False
     try:
         start_time = time.time()
@@ -144,10 +144,10 @@ def _ensure_admin_api_logged_in(admin_api: FLAdminAPI, timeout: int = 30):
             if admin_api.is_ready():
                 login_success = True
                 break
-            time.sleep(0.1)
+            time.sleep(0.2)
 
         if not login_success:
-            print(f"Admin api failed to log in within {timeout} seconds.")
+            print(f"Admin api failed to log in within {timeout} seconds: {admin_api.fsm.current_state}.")
         else:
             print("Admin successfully logged into server.")
     except Exception as e:

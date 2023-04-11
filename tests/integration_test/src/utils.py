@@ -332,10 +332,15 @@ def generate_test_config_yaml_for_example(
     for job in os.listdir(example.jobs_root_dir):
         output_yaml = os.path.join(OUTPUT_YAML_DIR, f"{example.name}_{job}.yml")
         job_dir = os.path.join(example.jobs_root_dir, job)
+        requirements_file = os.path.join(example.root, example.requirements_file)
+        new_requirements_file = os.path.join(example.root, "temp_requirements.txt")
 
         setup = [
-            f"pip install -r {os.path.join(example.root, example.requirements_file)}",
+            f"cp {requirements_file} {new_requirements_file}",
+            f"sed -i '/nvflare/d' {new_requirements_file}",
+            f"pip install -r {new_requirements_file}",
             f"python convert_to_test_job.py --job {job_dir} --post {postfix}",
+            f"rm -f {new_requirements_file}",
         ]
         if example.prepare_data_script is not None:
             setup.insert(1, f"bash {example.prepare_data_script}")
