@@ -41,7 +41,7 @@ The following tutorials and quickstart guides walk you through some of these exa
 
   3. **FL algorithms**
 
-    * `Federated Learning with CIFAR-10 (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/cifar10>`_ - Includes examples of using FedAvg, FedProx, FedOpt, SCAFFOLD, homomorphic encryption, and streaming of TensorBoard metrics to the server during training
+    * `Federated Learning with CIFAR-10 (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/cifar10>`_ - Includes examples of using FedAvg, FedProx, FedOpt, SCAFFOLD, homomorphic encryption, and streaming of TensorBoard metrics to the server during training
     * :ref:`Federated XGBoost <federated_xgboost>` - Includes examples of histogram-based and tree-based algorithms. Tree-based algorithms also includes bagging and cyclic approaches
 
   4. **Traditional ML examples**
@@ -54,24 +54,27 @@ The following tutorials and quickstart guides walk you through some of these exa
   5. **Medical Image Analysis**
 
     * `MONAI Integration (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/integration/monai>`_ - For an example of using NVIDIA FLARE to train a 3D medical image analysis model using federated averaging (FedAvg) and MONAI Bundle `MONAI <https://monai.io/>`_
-    * `Federated Learning with Differential Privacy for BraTS18 segmentation (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/brats18>`_ - Illustrates the use of differential privacy for training brain tumor segmentation models using federated learning
-    * `Federated Learning for Prostate Segmentation from Multi-source Data (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/prostate>`_ - Example of training a multi-institutional prostate segmentation model using `FedAvg <https://arxiv.org/abs/1602.05629>`_, `FedProx <https://arxiv.org/abs/1812.06127>`_, and `Ditto <https://arxiv.org/abs/2012.04221>`_
+    * `Federated Learning with Differential Privacy for BraTS18 segmentation (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/brats18>`_ - Illustrates the use of differential privacy for training brain tumor segmentation models using federated learning
+    * `Federated Learning for Prostate Segmentation from Multi-source Data (GitHub) <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/prostate>`_ - Example of training a multi-institutional prostate segmentation model using `FedAvg <https://arxiv.org/abs/1602.05629>`_, `FedProx <https://arxiv.org/abs/1812.06127>`_, and `Ditto <https://arxiv.org/abs/2012.04221>`_
 
   6. **Federated Statistics**
 
     * :ref:`Federated Statistic Overview <federated_statistics>` - Discuss the overall federated statistics features
-    * `Federated Statistics for medical imaging (Github) <https://github.com/NVIDIA/NVFlare/tree/main/examples/federated_statistics/image_stats/README.md>`_ - Example of gathering local image histogram to compute the global dataset histograms.
-    * `Federated Statistics for tabular data with DataFrame (Github) <https://github.com/NVIDIA/NVFlare/tree/main/examples/federated_statistics/df_stats/README.md>`_ - Example of gathering local statistics summary from Pandas DataFrame to compute the global dataset statistics.
+    * `Federated Statistics for medical imaging (Github) <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/federated_statistics/image_stats/README.md>`_ - Example of gathering local image histogram to compute the global dataset histograms.
+    * `Federated Statistics for tabular data with DataFrame (Github) <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/federated_statistics/df_stats/README.md>`_ - Example of gathering local statistics summary from Pandas DataFrame to compute the global dataset statistics.
     * `Federated Statistics with Monai Statistics integration for Spleen CT Image (Github) <https://github.com/NVIDIA/NVFlare/tree/main/integration/monai/examples/spleen_ct_segmentation/README.md>`_ - Example demonstrated Monai statistics integration and few other features in federated statistics
 
   7. **Federated Site Policies**
 
-    * `Federated Policies (Github) <https://github.com/NVIDIA/NVFlare/blob/dev/examples/federated-policies/README.rst>`_ - Discuss the federated site policies for authorization, resource and data privacy management
+    * `Federated Policies (Github) <https://github.com/NVIDIA/NVFlare/blob/main/examples/advanced/federated-policies/README.rst>`_ - Discuss the federated site policies for authorization, resource and data privacy management
 
   8. **Experiment tracking**
 
     * :ref:`TensorBoard Streaming <tensorboard_streaming>` - Example building on Hello PyTorch with TensorBoard streaming from clients to server
 
+  9. **NLP**
+
+    * `NLP-NER (Github) <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/nlp-ner/README.md>`_ - Illustrates both `BERT <https://github.com/google-research/bert>`_ and `GPT-2 <https://github.com/openai/gpt-2>`_ models from `Hugging Face <https://huggingface.co/>`_ (`BERT-base-uncased <https://huggingface.co/bert-base-uncased>`_, `GPT-2 <https://huggingface.co/gpt2>`_) on a Named Entity Recognition (NER) task using the `NCBI disease dataset <https://pubmed.ncbi.nlm.nih.gov/24393765/>`_.
 
 For the complete collection of example applications, see https://github.com/NVIDIA/NVFlare/tree/main/examples.
 
