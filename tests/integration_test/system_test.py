@@ -14,8 +14,6 @@
 
 import importlib
 import os
-import shlex
-import subprocess
 import sys
 import tempfile
 import time
@@ -29,6 +27,7 @@ from tests.integration_test.src import (
     ProvisionSiteLauncher,
     cleanup_path,
     read_yaml,
+    run_command_in_subprocess,
 )
 
 
@@ -145,19 +144,17 @@ def setup_and_teardown_system(request):
         test_driver = NVFTestDriver(
             site_launcher=site_launcher, download_root_dir=download_root_dir, poll_period=poll_period
         )
-        if not test_driver.initialize_super_user(
+        test_driver.initialize_super_user(
             workspace_root_dir=workspace_root, upload_root_dir=jobs_root_dir, poc=poc, super_user_name=super_user_name
-        ):
-            raise NVFTestError("NVFTestDriver initialize_super_user failed.")
+        )
         if ha:
-            if not test_driver.initialize_admin_users(
+            test_driver.initialize_admin_users(
                 workspace_root_dir=workspace_root,
                 upload_root_dir=jobs_root_dir,
                 poc=poc,
                 admin_user_names=site_launcher.admin_user_names,
-            ):
-                raise NVFTestError("NVFTestDriver initialize_admin_users failed.")
-        test_driver.ensure_clients_started(num_clients=len(site_launcher.client_properties.keys()))
+            )
+        test_driver.ensure_clients_started(num_clients=len(site_launcher.client_properties.keys()), timeout=2000)
         yield ha, test_cases, site_launcher, test_driver
     finally:
         if test_driver:
@@ -187,7 +184,7 @@ class TestSystem:
             start_time = time.time()
             for command in setup:
                 print(f"Running setup command: {command}")
-                process = subprocess.Popen(shlex.split(command))
+                process = run_command_in_subprocess(command)
                 process.wait()
 
             test_driver.run_event_sequence(event_sequence)
@@ -223,7 +220,7 @@ class TestSystem:
             print(f"Finished running test '{test_name}' in {time.time() - start_time} seconds.")
             for command in teardown:
                 print(f"Running teardown command: {command}")
-                process = subprocess.Popen(shlex.split(command))
+                process = run_command_in_subprocess(command)
                 process.wait()
             test_driver.reset_test_info(reset_job_info=reset_job_info)
             print("\n\n\n\n\n")
