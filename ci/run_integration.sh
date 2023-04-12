@@ -16,14 +16,13 @@
 #
 
 # Argument(s):
-#   BUILD_TYPE:  numpy | tensorflow | pytorch | overseer | ha | auth | preflight | cifar | auto, tests to execute
+#   BUILD_TYPE: tests to execute, default = numpy
 
 set -ex
-BUILD_TYPE=pytorch
+BUILD_TYPE=numpy
 
 if [[ $# -eq 1 ]]; then
     BUILD_TYPE=$1
-
 elif [[ $# -gt 1 ]]; then
     echo "ERROR: too many parameters are provided"
     exit 1
@@ -31,6 +30,9 @@ fi
 
 init_pipenv() {
     echo "initializing pip environment"
+    rm -f Pipfile Pipfile.lock
+    export PIPENV_INSTALL_TIMEOUT=9999
+    export PIPENV_TIMEOUT=9999
     pipenv install -e .[dev]
     export PYTHONPATH=$PWD
 }
@@ -74,10 +76,9 @@ integration_test() {
     init_pipenv
     add_dns_entries
     testFolder="tests/integration_test"
-    clean_up_snapshot_and_job
     pushd ${testFolder}
     pipenv run ./generate_test_configs_for_examples.sh
-    pipenv run ./run_integration_tests.sh -m "$1" -d
+    pipenv run ./run_integration_tests.sh -m "$1"
     popd
     clean_up_snapshot_and_job
     remove_dns_entries
@@ -86,52 +87,11 @@ integration_test() {
 
 case $BUILD_TYPE in
 
-    numpy)
-        echo "Run numpy tests..."
-        integration_test "numpy"
-        ;;
-
     tensorflow)
         echo "Run TF tests..."
         integration_test_tf
         ;;
-
-    pytorch)
-        echo "Run PT tests..."
-        integration_test "pytorch"
-        ;;
-
-    ha)
-        echo "Run HA tests..."
-        integration_test "ha"
-        ;;
-
-    auth)
-        echo "Run auth tests..."
-        integration_test "auth"
-        ;;
-
-    overseer)
-        echo "Run overseer tests..."
-        integration_test "overseer"
-        ;;
-
-    preflight)
-        echo "Run preflight-check tests..."
-        integration_test "preflight"
-        ;;
-
-    cifar)
-        echo "Run cifar tests..."
-        integration_test "cifar"
-        ;;
-
-    auto)
-        echo "Run auto generated tests..."
-        integration_test "auto"
-        ;;
-
     *)
-        echo "ERROR: unknown parameter: $BUILD_TYPE"
+        integration_test "$BUILD_TYPE"
         ;;
 esac

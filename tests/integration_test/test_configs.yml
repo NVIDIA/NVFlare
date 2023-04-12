@@ -27,3 +27,5 @@ test_configs:
     - ./data/test_configs/standalone_job/internal_pt.yml
   cifar:
     - ./data/test_configs/standalone_job/cifar_examples.yml
+  stats:
+    - ./data/test_configs/standalone_job/image_stats.yml
