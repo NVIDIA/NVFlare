@@ -35,6 +35,7 @@ from .example import Example
 OUTPUT_YAML_DIR = os.path.join("data", "test_configs", "generated")
 PROJECT_YAML = os.path.join("data", "projects", "ha_1_servers_2_clients.yml")
 POSTFIX = "_copy"
+REQUIREMENTS_TO_EXCLUDE = ["nvflare", "jupyter", "notebook"]
 
 
 def read_yaml(yaml_file_path):
@@ -334,10 +335,11 @@ def generate_test_config_yaml_for_example(
         job_dir = os.path.join(example.jobs_root_dir, job)
         requirements_file = os.path.join(example.root, example.requirements_file)
         new_requirements_file = os.path.join(example.root, "temp_requirements.txt")
+        exclude_requirements = "\\|".join(REQUIREMENTS_TO_EXCLUDE)
 
         setup = [
             f"cp {requirements_file} {new_requirements_file}",
-            f"sed -i '/nvflare/d' {new_requirements_file}",
+            f"sed -i '/{exclude_requirements}/d' {new_requirements_file}",
             f"pip install -r {new_requirements_file}",
             f"python convert_to_test_job.py --job {job_dir} --post {postfix}",
             f"rm -f {new_requirements_file}",

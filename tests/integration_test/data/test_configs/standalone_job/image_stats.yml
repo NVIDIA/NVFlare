@@ -25,7 +25,7 @@ tests:
       type: run_state
   setup:
   - cp ../../examples/advanced/federated-statistics/image_stats/requirements.txt ../../examples/advanced/federated-statistics/image_stats/temp_requirements.txt
-  - sed -i '/nvflare/d'  ../../examples/advanced/federated-statistics/image_stats/temp_requirements.txt
+  - sed -i '/nvflare\|jupyter\|notebook/d' ../../examples/advanced/federated-statistics/image_stats/temp_requirements.txt
   - pip install -r ../../examples/advanced/federated-statistics/image_stats/temp_requirements.txt
   - bash ../../examples/advanced/federated-statistics/image_stats/prepare_data.sh
   - rm -f ../../examples/advanced/federated-statistics/image_stats/temp_requirements.txt
