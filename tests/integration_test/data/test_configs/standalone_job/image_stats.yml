@@ -1,0 +1,32 @@
+additional_python_paths:
+- ../../examples/advanced/federated-statistics/image_stats
+cleanup: true
+ha: true
+jobs_root_dir: ../../examples/advanced/federated-statistics/image_stats/jobs
+project_yaml: data/projects/ha_1_servers_4_clients.yml
+tests:
+- event_sequence:
+  - actions:
+    - submit_job image_stats
+    result:
+      type: job_submit_success
+    trigger:
+      data: Server started
+      type: server_log
+  - actions:
+    - ensure_current_job_done
+    result:
+      data:
+        run_finished: true
+      type: run_state
+    trigger:
+      data:
+        run_finished: true
+      type: run_state
+  setup:
+  - cp ../../examples/advanced/federated-statistics/image_stats/requirements.txt ../../examples/advanced/federated-statistics/image_stats/temp_requirements.txt
+  - sed -i '/nvflare\|jupyter\|notebook/d' ../../examples/advanced/federated-statistics/image_stats/temp_requirements.txt
+  - pip install -r ../../examples/advanced/federated-statistics/image_stats/temp_requirements.txt
+  - bash ../../examples/advanced/federated-statistics/image_stats/prepare_data.sh
+  - rm -f ../../examples/advanced/federated-statistics/image_stats/temp_requirements.txt
+  test_name: Test example image_stats.

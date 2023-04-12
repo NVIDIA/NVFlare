@@ -103,7 +103,7 @@ class CustomController(Controller):
                 task=task,
                 fl_ctx=fl_ctx,
                 targets=None,
-                min_responses=0,
+                min_responses=self._min_clients,
                 abort_signal=abort_signal,
             )
             self.log_info(fl_ctx, f"@@@ Broadcast and wait - end {task.name}")
