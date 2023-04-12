@@ -4,7 +4,7 @@ Compute the local and global image statistics.
 You can also follow the [notebook](../image_stats.ipynb) or the following:
 
 ## Setup NVFLARE
-Follow the [Getting Started](https://nvflare.readthedocs.io/en/main/getting_started.html) to setup virtual environment and install NVFLARE
+Follow the [Getting Started](https://nvflare.readthedocs.io/en/main/getting_started.html) to set up virtual environment and install NVFLARE
 
 Let's first install required packages.
 
@@ -20,10 +20,10 @@ pip install -r requirements.txt
 
 As an example, we use the dataset from the ["COVID-19 Radiography Database"](https://www.kaggle.com/tawsifurrahman/covid19-radiography-database).
 it contains png image files in four different classes: `COVID`, `Lung_Opacity`, `Normal`, and `Viral Pneumonia`.
-First, download and extract to `/tmp/nvflare/image_stats/data/.`.
+First, download and extract to `/tmp/nvflare/image_stats/data/`.
 
 Next, create the data lists simulating different clients with varying amounts and types of images. 
-The downloaded archive contains subfolders for four different classes: `COVID`, `Lung_Opacity`, `Normal`, and `Viral Pneumonia`.
+The downloaded archive contains sub-folders for four different classes: `COVID`, `Lung_Opacity`, `Normal`, and `Viral Pneumonia`.
 Here we assume each class of image corresponds to a different sites.
 
 ```shell
@@ -37,7 +37,6 @@ Saved 3616 entries at /tmp/nvflare/image_stats/data/site-1_COVID.json
 Saved 6012 entries at /tmp/nvflare/image_stats/data/site-2_Lung_Opacity.json
 Saved 10192 entries at /tmp/nvflare/image_stats/data/site-3_Normal.json
 Saved 1345 entries at /tmp/nvflare/image_stats/data/site-4_Viral Pneumonia.json
-
 ```
 ## 2. Run the Federated Statistics Job in Simulator 
 
@@ -165,9 +164,9 @@ on site-level by the company, there is no need to set privacy filter at job leve
 class ImageStatistics(Statistics):
 
     def __init__(
-            self,
-            data_root: str = "/tmp/nvflare/data",
-            data_list_key: str = "data"
+        self,
+        data_root: str = "/tmp/nvflare/data",
+        data_list_key: str = "data"
     ):
 
 ```
