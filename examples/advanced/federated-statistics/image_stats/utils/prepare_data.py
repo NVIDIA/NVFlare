@@ -52,23 +52,23 @@ def save_data_list(data, data_list_file, data_root, key="data"):
 
     print(f"Saved {len(data_list)} entries at {data_list_file}")
 
-def prepare_data(input_dir: str,
-                 input_ext:str = ".png",
-                 output_dir :str = "/tmp/nvflare/image_stats/data",
-                 sub_dirs: str = "COVID,Lung_Opacity,Normal,Viral Pneumonia"):
+
+def prepare_data(
+    input_dir: str,
+    input_ext: str = ".png",
+    output_dir: str = "/tmp/nvflare/image_stats/data",
+    sub_dirs: str = "COVID,Lung_Opacity,Normal,Viral Pneumonia",
+):
     sub_dir_list = [sd for sd in sub_dirs.split(",")]
 
-    data_lists = create_datasets(
-        root=input_dir, subdirs=sub_dir_list, extension=input_ext, shuffle=True, seed=SEED
-    )
+    data_lists = create_datasets(root=input_dir, subdirs=sub_dir_list, extension=input_ext, shuffle=True, seed=SEED)
     print(f"Created {len(data_lists)} data lists for {sub_dir_list}.")
 
     site_id = 1
     for subdir, data_list in zip(sub_dir_list, data_lists):
-        save_data_list(
-            data_list, os.path.join(output_dir, f"site-{site_id}_{subdir}.json"), data_root=input_dir
-        )
+        save_data_list(data_list, os.path.join(output_dir, f"site-{site_id}_{subdir}.json"), data_root=input_dir)
         site_id += 1
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -81,14 +81,13 @@ def main():
         "--subdirs",
         type=str,
         default="COVID,Lung_Opacity,Normal,Viral Pneumonia",
-        help="A list of subfolders to include.",
+        help="A list of sub-folders to include.",
     )
     args = parser.parse_args()
 
     assert "," in args.subdirs, "Expecting a comma separated list of subdirs names"
 
     prepare_data(args.input_dir, args.input_ext, args.output_dir, args.subdirs)
-
 
 
 if __name__ == "__main__":
