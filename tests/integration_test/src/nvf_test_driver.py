@@ -88,19 +88,19 @@ def _check_event_trigger(
     """check if a run state trigger an event trigger."""
     if isinstance(event_trigger, dict):
         if run_state is None:
-            raise RuntimeError("Event trigger is of dict type but run_state is not provided.")
+            raise NVFTestError("Event trigger is of dict type but run_state is not provided.")
         return _check_dict_b_value_same_as_dict_a_for_keys_in_dict_a(event_trigger, run_state)
     elif isinstance(event_trigger, str):
         if string_to_check is None:
-            raise RuntimeError("Event trigger is of str type but string_to_check is not provided.")
+            raise NVFTestError("Event trigger is of str type but string_to_check is not provided.")
         return event_trigger in string_to_check
     else:
-        raise RuntimeError(f"event_trigger type {type(event_trigger)} is not supported.")
+        raise NVFTestError(f"event_trigger type {type(event_trigger)} is not supported.")
 
 
 def _read_admin_json_file(admin_json_file) -> dict:
     if not os.path.exists(admin_json_file):
-        raise RuntimeError("Missing admin json file.")
+        raise NVFTestError("Missing admin json file.")
     with open(admin_json_file, "r") as f:
         admin_json = json.load(f)
     return admin_json
@@ -136,30 +136,62 @@ def _create_admin_api(workspace_root_dir, upload_root_dir, download_root_dir, ad
     return admin_api
 
 
-def _admin_api_login(admin_api, admin_user_name, poc):
+def _ensure_admin_api_logged_in(admin_api: FLAdminAPI, timeout: int = 60):
     login_success = False
     try:
-        response = None
-        timeout = 30
         start_time = time.time()
         while time.time() - start_time <= timeout:
-            if poc:
-                response = admin_api.login_with_poc(username=admin_user_name, poc_key="admin")
-            else:
-                response = admin_api.login(username=admin_user_name)
-            if response["status"] == APIStatus.SUCCESS:
+            if admin_api.is_ready():
                 login_success = True
                 break
-            time.sleep(0.1)
+            time.sleep(0.2)
 
         if not login_success:
-            details = response.get("details") if response else "No details"
-            print(f"Login to admin api failed: {details}")
+            print(f"Admin api failed to log in within {timeout} seconds: {admin_api.fsm.current_state}.")
         else:
             print("Admin successfully logged into server.")
     except Exception as e:
         print(f"Exception in logging in to admin: {e.__str__()}")
     return login_success
+
+
+def _update_run_state(stats: dict, run_state: dict, job_run_status: str):
+    # extract run_state from stats
+    # {'status': <APIStatus.SUCCESS: 'SUCCESS'>,
+    #        'details': {
+    #           'message': {
+    #               'ScatterAndGather': {
+    #                   'tasks': {'train': []},
+    #                   'phase': 'train',
+    #                   'current_round': 0,
+    #                   'num_rounds': 2},
+    #               'CrossSiteModelEval':
+    #                   {'tasks': {}},
+    #               'ServerRunner': {
+    #                   'job_id': XXX,
+    #                   'status': 'started',
+    #                   'workflow': 'scatter_and_gather'
+    #                }
+    #            }
+    #       },
+    # 'raw': {'time': '2022-04-04 15:13:09.367350', 'data': [xxx], 'status': <APIStatus.SUCCESS: 'SUCCESS'>}}
+    prev_run_state = run_state.copy()
+
+    # parse stats
+    if (
+        stats
+        and "status" in stats
+        and stats["status"] == APIStatus.SUCCESS
+        and "details" in stats
+        and "message" in stats["details"]
+        and isinstance(stats["details"]["message"], dict)
+    ):
+        run_state["workflows"] = _parse_workflow_states(stats_message=stats["details"]["message"])
+
+    # parse job status
+    run_state["run_finished"] = job_run_status == RunStatus.FINISHED_COMPLETED.value
+
+    return run_state != prev_run_state, run_state
 
 
 class NVFTestDriver:
@@ -210,11 +242,10 @@ class NVFTestDriver:
             admin_user_name=super_user_name,
             poc=poc,
         )
-        if _admin_api_login(admin_api, super_user_name, poc):
-            self.super_admin_api = admin_api
-            return True
+        if not _ensure_admin_api_logged_in(admin_api):
+            raise NVFTestError(f"initialize_super_user {super_user_name} failed.")
 
-        return False
+        self.super_admin_api = admin_api
 
     def initialize_admin_users(self, workspace_root_dir: str, upload_root_dir: str, poc: bool, admin_user_names: list):
         for user_name in admin_user_names:
@@ -227,17 +258,17 @@ class NVFTestDriver:
                 admin_user_name=user_name,
                 poc=poc,
             )
-            login_result = _admin_api_login(admin_api, user_name, poc)
+            login_result = _ensure_admin_api_logged_in(admin_api)
             if not login_result:
-                return False
+                self.admin_apis = None
+                raise NVFTestError(f"initialize_admin_users {user_name} failed.")
             self.admin_apis[user_name] = admin_api
-        return True
 
     def get_job_result(self, job_id: str):
         command_name = "download_job"
         response = self.super_admin_api.do_command(f"{command_name} {job_id}")
         if response["status"] != APIStatus.SUCCESS:
-            raise RuntimeError(f"{command_name} failed: {response}")
+            raise NVFTestError(f"{command_name} failed: {response}")
         run_data = {
             "job_id": job_id,
             "workspace_root": os.path.join(self.download_root_dir, job_id, "workspace"),
@@ -245,16 +276,16 @@ class NVFTestDriver:
 
         return run_data
 
-    def ensure_clients_started(self, num_clients):
-        timeout = 1000
+    def ensure_clients_started(self, num_clients: int, timeout: int):
         start_time = time.time()
         clients_up = False
         while not clients_up:
             if time.time() - start_time > timeout:
-                raise RuntimeError(f"Clients could not be started in {timeout} seconds.")
+                raise NVFTestError(f"Clients could not be started in {timeout} seconds.")
 
             time.sleep(0.5)
             response = self.super_admin_api.check_status(target_type=TargetType.CLIENT)
+            print(f"Check client status response is {response}")
             if not check_client_status_ready(response):
                 # clients not ready
                 continue
@@ -262,15 +293,13 @@ class NVFTestDriver:
             # this coming from private/fed/server/training_cmds.py
             for row in response["details"]["client_statuses"][1:]:
                 if row[3] != "No Jobs":
-                    return False
+                    raise NVFTestError("Clients started with left-over jobs.")
 
             # wait for all clients to come up
             if len(response["details"]["client_statuses"]) < num_clients + 1:
                 continue
             clients_up = True
             print("All clients are up.")
-
-        return clients_up
 
     def server_status(self):
         response = self.super_admin_api.check_status(target_type=TargetType.SERVER)
@@ -302,44 +331,6 @@ class NVFTestDriver:
             self.logger.info(f"{k}: {v}")
         self.logger.info("-" * length + "\n")
 
-    def _update_run_state(self, stats: dict, run_state: dict, job_run_status: str):
-        # extract run_state from stats
-        # {'status': <APIStatus.SUCCESS: 'SUCCESS'>,
-        #        'details': {
-        #           'message': {
-        #               'ScatterAndGather': {
-        #                   'tasks': {'train': []},
-        #                   'phase': 'train',
-        #                   'current_round': 0,
-        #                   'num_rounds': 2},
-        #               'CrossSiteModelEval':
-        #                   {'tasks': {}},
-        #               'ServerRunner': {
-        #                   'job_id': XXX,
-        #                   'status': 'started',
-        #                   'workflow': 'scatter_and_gather'
-        #                }
-        #            }
-        #       },
-        # 'raw': {'time': '2022-04-04 15:13:09.367350', 'data': [xxx], 'status': <APIStatus.SUCCESS: 'SUCCESS'>}}
-        prev_run_state = run_state.copy()
-
-        # parse stats
-        if (
-            stats
-            and "status" in stats
-            and stats["status"] == APIStatus.SUCCESS
-            and "details" in stats
-            and "message" in stats["details"]
-            and isinstance(stats["details"]["message"], dict)
-        ):
-            run_state["workflows"] = _parse_workflow_states(stats_message=stats["details"]["message"])
-
-        # parse job status
-        run_state["run_finished"] = job_run_status == RunStatus.FINISHED_COMPLETED.value
-
-        return run_state != prev_run_state, run_state
-
     def reset_test_info(self, reset_job_info=False):
         self.test_done = False
         self.admin_api_response = None
@@ -362,9 +353,7 @@ class NVFTestDriver:
                 job_run_status = job_meta.get("status")
                 stats = self._get_stats(target=TargetType.SERVER, job_id=self.job_id)
                 # update run_state
-                changed, run_state = self._update_run_state(
-                    stats=stats, run_state=run_state, job_run_status=job_run_status
-                )
+                changed, run_state = _update_run_state(stats=stats, run_state=run_state, job_run_status=job_run_status)
 
             if event_idx < len(event_sequence):
                 if not event_triggered[event_idx]:
@@ -381,16 +370,16 @@ class NVFTestDriver:
                         strings_to_check = "\n".join(client_logs)
                     elif event_trigger["type"] == "server_job_log":
                         if not self.job_id:
-                            raise RuntimeError("No submitted jobs.")
+                            raise NVFTestError("No submitted jobs.")
                         server_logs = self._get_job_log(target=TargetType.SERVER, job_id=self.job_id)
                         strings_to_check = "\n".join(server_logs)
                     elif event_trigger["type"] == "client_job_log":
                         if not self.job_id:
-                            raise RuntimeError("No submitted jobs.")
+                            raise NVFTestError("No submitted jobs.")
                         client_logs = self._get_job_log(target=event_trigger["args"]["target"], job_id=self.job_id)
                         strings_to_check = "\n".join(client_logs)
                     elif event_trigger["type"] != "run_state":
-                        raise RuntimeError(f"This trigger type {event_trigger['type']} is not supported.")
+                        raise NVFTestError(f"This trigger type {event_trigger['type']} is not supported.")
 
                     trigger_data = event_trigger["data"]
                     if _check_event_trigger(
@@ -413,12 +402,12 @@ class NVFTestDriver:
                             event_idx += 1
                     elif result["type"] == "admin_api_response":
                         if self.admin_api_response is None:
-                            raise RuntimeError("Missing admin_api_response.")
+                            raise NVFTestError("Missing admin_api_response.")
                         assert self.admin_api_response == result["data"]
                         event_idx += 1
                     elif result["type"] == "job_submit_success":
                         if self.job_id is None or self.last_job_name is None:
-                            raise RuntimeError(f"Job submission failed with: {self.admin_api_response}")
+                            raise NVFTestError(f"Job submission failed with: {self.admin_api_response}")
                         event_idx += 1
 
             time.sleep(self.poll_period)
@@ -434,7 +423,7 @@ class NVFTestDriver:
             print(f"ACTION: {action} ADMIN_USER_NAME: {admin_user_name}")
 
             if command not in self.action_handlers:
-                raise RuntimeError(f"Action {command} is not supported.")
+                raise NVFTestError(f"Action {command} is not supported.")
 
             if admin_user_name is None:
                 admin_api = self.super_admin_api
