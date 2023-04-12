@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import logging
 import socket
 import ssl
 import threading
@@ -447,6 +448,8 @@ class AdminAPI(AdminAPISpec):
         self._start_session_monitor()
 
     def fire_session_event(self, event_type: str, msg: str):
+        logger = logging.getLogger(self.__class__.__name__)
+        logger.info(f"firing event {event_type}: {msg}")
         if self.session_event_cb is not None:
             self.session_event_cb(event_type, msg)
 
@@ -539,7 +542,7 @@ class AdminAPI(AdminAPISpec):
                 return "Your session is ended due to inactivity"
 
             next_state = self.fsm.execute()
-            if not next_state:
+            if next_state is None:
                 if self.fsm.error:
                     return self.fsm.error
                 else:
