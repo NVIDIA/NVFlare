@@ -132,7 +132,7 @@ def _create_admin_api(workspace_root_dir, upload_root_dir, download_root_dir, ad
         ca_cert=ca_cert,
         client_key=client_key,
         client_cert=client_cert,
-        auto_login_timeout_interval=20,
+        auto_login_timeout=20,
         auto_login_interval=1
     )
     return admin_api
