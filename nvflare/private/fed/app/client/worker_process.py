@@ -24,7 +24,6 @@ from nvflare.apis.fl_constant import FLContextKey, JobConstants
 from nvflare.apis.overseer_spec import SP
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
-from nvflare.fuel.f3.stats_pool import StatsPoolManager
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
