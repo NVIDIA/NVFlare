@@ -16,7 +16,6 @@
 class SimulatorConstants:
 
     JOB_NAME = "simulate_job"
-    CLIENT = "client"
     CLIENT_CONFIG = "client_config"
     DEPLOY_ARGS = "deploy_args"
     BUILD_CTX = "build_ctx"

@@ -82,6 +82,7 @@ class SimulatorRunner(FLComponent):
         self.client_config = None
         self.deploy_args = None
         self.build_ctx = None
+        self.args = None
 
         self.clients_created = 0
 
@@ -212,7 +213,6 @@ class SimulatorRunner(FLComponent):
             # Deploy the FL server
             self.logger.info("Create the Simulator Server.")
             simulator_server, self.server = self.deployer.create_fl_server(self.args)
-            # self.services.deploy(self.args, grpc_args=simulator_server)
 
             self.logger.info("Deploy the Apps.")
             self._deploy_apps(job_name, data_bytes, meta)
@@ -314,7 +314,6 @@ class SimulatorRunner(FLComponent):
             app_client_root = os.path.join(self.simulator_root, "app_" + client.client_name)
             client.app_client_root = app_client_root
             client.args = self.args
-            # self.create_client_runner(client)
             client.simulate_running = False
             client.status = ClientStatus.STARTED
 
@@ -322,7 +321,7 @@ class SimulatorRunner(FLComponent):
         try:
             manager = Manager()
             return_dict = manager.dict()
-            process = Process(target=self.run_processs, args=(return_dict,))
+            process = Process(target=self.run_process, args=(return_dict,))
             process.start()
             process.join()
             if process.exitcode == -9:
@@ -335,10 +334,8 @@ class SimulatorRunner(FLComponent):
             kill_child_processes(os.getpid())
             return -9
 
-    def run_processs(self, return_dict):
-        # run_status = self.simulator_run_main()
+    def run_process(self, return_dict):
         run_status = mpm.run(main_func=self.simulator_run_main, shutdown_grace_time=3, cleanup_grace_time=6)
-
         return_dict["run_status"] = run_status
 
     def simulator_run_main(self):
@@ -363,10 +360,6 @@ class SimulatorRunner(FLComponent):
                     if not server_thread.is_alive():
                         raise RuntimeError("Could not start the Server App.")
 
-                # # Start the client heartbeat calls.
-                # for client in self.federated_clients:
-                #     client.start_heartbeat(interval=2)
-
                 if self.args.gpu:
                     gpus = self.args.gpu.split(",")
                     split_clients = self.split_clients(self.federated_clients, gpus)
@@ -388,7 +381,6 @@ class SimulatorRunner(FLComponent):
                 self.logger.error(f"Simulator run error: {secure_format_exception(e)}")
                 run_status = 2
             finally:
-                # self.services.close()
                 self.deployer.close()
         else:
             run_status = 1
@@ -422,13 +414,6 @@ class SimulatorRunner(FLComponent):
         server_app_runner.start_server_app(
             workspace, self.args, app_server_root, self.args.job_id, snapshot, self.logger
         )
-
-        # start = time.time()
-        # while self.services.engine.client_manager.clients:
-        #     # Wait for the clients to shutdown and quite first.
-        #     time.sleep(0.1)
-        #     if time.time() - start > 30.:
-        #         break
 
         self.dump_stats(workspace)
 
@@ -535,7 +520,6 @@ class SimulatorClientRunner(FLComponent):
 
         self.build_ctx["client_name"] = client.client_name
         data = {
-            # SimulatorConstants.CLIENT: client,
             SimulatorConstants.CLIENT_CONFIG: self.client_config,
             SimulatorConstants.DEPLOY_ARGS: self.deploy_args,
             SimulatorConstants.BUILD_CTX: self.build_ctx,

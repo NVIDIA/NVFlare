@@ -236,7 +236,6 @@ def main():
     os.chdir(workspace)
     fobs_initialize()
     AuthorizationService.initialize(EmptyAuthorizer())
-    # AuditService.initialize(audit_file_name=WorkspaceConstants.AUDIT_LOG)
     AuditService.the_auditor = SimulatorAuditor()
 
     if args.gpu:
@@ -259,7 +258,5 @@ if __name__ == "__main__":
     This is the main program of simulator worker process when running the NVFlare Simulator..
     """
 
-    # main()
     mpm.run(main_func=main)
     time.sleep(2)
-    # os._exit(0)
