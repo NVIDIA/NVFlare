@@ -120,10 +120,10 @@ class CIFAR10LearnerSplitNN(Learner):
                 )
                 return
         if self.model and not isinstance(self.model, torch.nn.Module):
-            self.system_panic(fl_ctx, f"expect model to be torch.nn.Module but got {type(self.model)}: {self.model}")
+            self.system_panic(f"expect model to be torch.nn.Module but got {type(self.model)}: {self.model}", fl_ctx)
             return
         if self.model is None:
-            self.system_panic(fl_ctx, f"Model wasn't built correctly! It is {self.model}")
+            self.system_panic(f"Model wasn't built correctly! It is {self.model}", fl_ctx)
             return
         self.log_info(fl_ctx, f"Running model {self.model}")
 
