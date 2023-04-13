@@ -7,7 +7,7 @@ for secure aggregation.
 It uses the provisioning and the admin API to submit jobs, similar to how one would set up experiments in
 real-world deployment.
 
-In this example, we use an already prepared [provisioning](https://nvflare.readthedocs.io/en/main/programming_guide/provisioning_system.html) 
+In this example, we use an already prepared [provisioning](https://nvflare.readthedocs.io/en/2.3/programming_guide/provisioning_system.html) 
 file (*project.yml*) to run experiments on a single machine.
 For real-world deployment, additional considerations must be taken into account.
 See [here](https://nvflare.readthedocs.io/en/latest/real_world_fl.html) for more information.
@@ -152,7 +152,7 @@ To run FedAvg using a real-world setup, submit the job using:
 
 > **_NOTE:_** You can always use the admin console to manually abort a running job.
   using `abort_job [JOB_ID]`.
-> For a complete list of admin commands, see [here](https://nvflare.readthedocs.io/en/main/real_world_fl/operation.html).
+> For a complete list of admin commands, see [here](https://nvflare.readthedocs.io/en/2.3/real_world_fl/operation.html).
 >
 > To log into the POC workspace admin console no username is required
 > (use "admin" for commands requiring conformation with username).
@@ -165,7 +165,7 @@ The results can be downloaded and shown with the admin console using
   download_job [JOB_ID]
 ```
 where `[JOB_ID]` is the ID assigned by the system when submitting the job.
-You can use the `list_jobs` [admin command](https://nvflare.readthedocs.io/en/main/real_world_fl/operation.html#admin-command-prompt) to find the relevant `JOB_ID`.
+You can use the `list_jobs` [admin command](https://nvflare.readthedocs.io/en/2.3/real_world_fl/operation.html#admin-command-prompt) to find the relevant `JOB_ID`.
 
 The result will be downloaded to your admin workspace (the exact download path will be displayed when running the command).
 You should see the cross-site validation results at

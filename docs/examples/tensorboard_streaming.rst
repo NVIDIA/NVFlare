@@ -160,4 +160,4 @@ Congratulations!
 Now you will be able to see the live training metrics of each client from a central place on the server.
 
 The full source code for this exercise can be found in
-`examples/advanced/experiment-tracking/tensorboard-streaming <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/experiment-tracking/tensorboard-streaming>`_.
+`examples/advanced/experiment-tracking/tensorboard-streaming <https://github.com/NVIDIA/NVFlare/tree/2.3/examples/advanced/experiment-tracking/tensorboard-streaming>`_.

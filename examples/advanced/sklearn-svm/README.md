@@ -4,7 +4,7 @@ Please make sure you set up virtual environment and Jupyterlab follows [example 
 
 ## Introduction to Scikit-learn, tabular data, and federated SVM
 ### Scikit-learn
-This example shows how to use [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) on tabular data.
+This example shows how to use [NVIDIA FLARE](https://nvflare.readthedocs.io/en/2.3/index.html) on tabular data.
 It uses [Scikit-learn](https://scikit-learn.org/), a widely used open-source machine learning library that supports supervised and unsupervised learning.
 Follow along in this [notebook](./sklearn_svm_cancer.ipynb) for an interactive experience.
 ### Tabular data

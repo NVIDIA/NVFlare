@@ -1,6 +1,6 @@
 **NV**IDIA **F**ederated **L**earning **A**pplication **R**untime **E**nvironment
 
-[NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) is a domain-agnostic, open-source, extensible SDK that 
+[NVIDIA FLARE](https://nvflare.readthedocs.io/en/2.3/index.html) is a domain-agnostic, open-source, extensible SDK that 
 allows researchers and data scientists to adapt existing ML/DL workflows(PyTorch, TensorFlow, Scikit-learn, XGBoost etc.) 
 to a federated paradigm. It enables platform developers to build a secure, privacy-preserving offering 
 for a distributed multi-party collaboration. 
@@ -28,15 +28,15 @@ $ python3 -m pip install nvflare
 ```
 ## Getting started
 
-You can quickly get started using the [FL simulator](https://nvflare.readthedocs.io/en/main/getting_started.html#the-fl-simulator).
+You can quickly get started using the [FL simulator](https://nvflare.readthedocs.io/en/2.3/getting_started.html#the-fl-simulator).
 
-A detailed [getting started](https://nvflare.readthedocs.io/en/main/getting_started.html) guide is available in the [documentation](https://nvflare.readthedocs.io/en/main/index.html).
+A detailed [getting started](https://nvflare.readthedocs.io/en/2.3/getting_started.html) guide is available in the [documentation](https://nvflare.readthedocs.io/en/2.3/index.html).
  
 Examples and notebook tutorials are located [here](./examples).
 
 ## Related talks and publications
 
-For a list of talks, blogs, and publications related to NVIDIA FLARE, see [here](https://nvflare.readthedocs.io/en/main/publications_and_talks.html).
+For a list of talks, blogs, and publications related to NVIDIA FLARE, see [here](https://nvflare.readthedocs.io/en/2.3/publications_and_talks.html).
 
 ## License
 

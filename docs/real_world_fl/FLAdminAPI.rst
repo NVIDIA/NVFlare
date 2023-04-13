@@ -34,7 +34,7 @@ The ``logout()`` in AdminAPI handles ending the overseer_agent which may take a 
 
 Usage
 -----
-See the example scripts ``run_fl.py`` in `CIFAR-10 <https://github.com/NVIDIA/NVFlare/tree/main/examples/cifar10>`_ for
+See the example scripts ``run_fl.py`` in `CIFAR-10 <https://github.com/NVIDIA/NVFlare/tree/2.3/examples/cifar10>`_ for
 an example of how to use the FLAdminAPI with FLAdminAPIRunner.
 
 You can use the example as inspiration to write your own code using the FLAdminAPI to operate your FL system.

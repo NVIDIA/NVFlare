@@ -5,7 +5,7 @@ You can also follow the [notebook](../df_stats.ipynb) or the following:
 
 
 ## Setup NVFLARE
-Follow the [Getting Started](https://nvflare.readthedocs.io/en/main/getting_started.html) to setup virtual environment and install NVFLARE
+Follow the [Getting Started](https://nvflare.readthedocs.io/en/2.3/getting_started.html) to setup virtual environment and install NVFLARE
 
 Let's first install required packages.
 

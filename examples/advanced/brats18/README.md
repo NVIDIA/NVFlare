@@ -4,7 +4,7 @@ Please make sure you set up virtual environment and follows [example root readme
 
 ## Introduction to MONAI, BraTS and Differential Privacy
 ### MONAI
-This example shows how to use [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) on medical image applications.
+This example shows how to use [NVIDIA FLARE](https://nvflare.readthedocs.io/en/2.3/index.html) on medical image applications.
 It uses [MONAI](https://github.com/Project-MONAI/MONAI),
 which is a PyTorch-based, open-source framework for deep learning in healthcare imaging, part of the PyTorch Ecosystem.
 ### BraTS
@@ -23,7 +23,7 @@ To run this example, please make sure you have downloaded BraTS 2018 data, which
 In this example, we split BraTS18 dataset into [4 subsets](./dataset_brats18/datalist) for 4 clients. Each client requires at least a 12 GB GPU to run. 
 ### Differential Privacy (DP)
 [Differential Privacy (DP)](https://arxiv.org/abs/1910.00962) [7] is method for ensuring that Federated Learning (FL) preserves privacy by obfuscating the model updates sent from clients to the central server.
-This example shows the usage of a MONAI-based trainer for medical image applications with NVFlare, as well as the usage of DP filters in your FL training. DP is added as a filter in `config_fed_client.json`. Here, we use the "Sparse Vector Technique", i.e. the [SVTPrivacy](https://nvflare.readthedocs.io/en/main/apidocs/nvflare.app_common.filters.svt_privacy.html) protocol, as utilized in [Li et al. 2019](https://arxiv.org/abs/1910.00962) [7] (see [Lyu et al. 2016](https://arxiv.org/abs/1603.01699) [8] for more information).
+This example shows the usage of a MONAI-based trainer for medical image applications with NVFlare, as well as the usage of DP filters in your FL training. DP is added as a filter in `config_fed_client.json`. Here, we use the "Sparse Vector Technique", i.e. the [SVTPrivacy](https://nvflare.readthedocs.io/en/2.3/apidocs/nvflare.app_common.filters.svt_privacy.html) protocol, as utilized in [Li et al. 2019](https://arxiv.org/abs/1910.00962) [7] (see [Lyu et al. 2016](https://arxiv.org/abs/1603.01699) [8] for more information).
 
 ## Prepare local configs
 First, we add the image and datalist directory roots to `config_train.json` files for generating the absolute path to the dataset by replacing the `DATASET_ROOT` and  `DATALIST_ROOT` placeholders. In the current folder structure, it will be `${PWD}/dataset_brats18/dataset` for `DATASET_ROOT` and  `${PWD}/dataset_brats18/datalist` for `DATALIST_ROOT` but you can update the below `sed` commands if the data is located somewhere else.
@@ -97,7 +97,7 @@ To enable multitasking (if there are more computation resources - e.g. 4 x 32 GB
 we can adjust the default value in `workspace_server/server/startup/fed_server.json` by setting `max_jobs: 2` (default value: 4).
 Please adjust this properly according to resource available and task demand.
 
-For details, please refer to the [documentation](https://nvflare.readthedocs.io/en/main/real_world_fl/job.html).
+For details, please refer to the [documentation](https://nvflare.readthedocs.io/en/2.3/real_world_fl/job.html).
 
 ### Training with POC FL setting
 The next scripts will start the FL server and clients automatically to run FL experiments on localhost.
@@ -153,7 +153,7 @@ bash ./workspace_brats/admin/startup/fl_admin.sh
 ``` 
 
 Then using `abort_job [JOB_ID]` to abort a job, where `[JOB_ID]` is the ID assigned by the system when submitting the job. 
-For a complete list of admin commands, see [here](https://nvflare.readthedocs.io/en/main/real_world_fl/operation.html).
+For a complete list of admin commands, see [here](https://nvflare.readthedocs.io/en/2.3/real_world_fl/operation.html).
 The `[JOB_ID]` can be found from site folder like `./workspace_brats/site-1`.
 
 To log into the POC workspace admin console no username is required 
