@@ -24,6 +24,7 @@ from nvflare.apis.fl_constant import JobConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
+from nvflare.fuel.f3.stats_pool import StatsPoolManager
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import SecurityContentService
 from nvflare.fuel.utils.argument_utils import parse_vars
@@ -32,7 +33,12 @@ from nvflare.private.fed.app.fl_conf import FLServerStarterConfiger
 from nvflare.private.fed.app.utils import monitor_parent_process
 from nvflare.private.fed.server.server_app_runner import ServerAppRunner
 from nvflare.private.fed.server.server_state import HotState
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize
+from nvflare.private.fed.utils.fed_utils import (
+    add_logfile_handler,
+    create_stats_pool_files_for_job,
+    fobs_initialize,
+    set_stats_pool_config_for_job,
+)
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 
@@ -73,6 +79,8 @@ def main():
     parent_pid = os.getppid()
     stop_event = threading.Event()
     workspace = Workspace(root_dir=args.workspace, site_name="server")
+    set_stats_pool_config_for_job(workspace, args.job_id)
+
     app_custom_folder = workspace.get_client_custom_dir()
     if os.path.isdir(app_custom_folder):
         sys.path.append(app_custom_folder)
@@ -137,6 +145,9 @@ def main():
                 deployer.close()
             stop_event.set()
             AuditService.close()
+            err = create_stats_pool_files_for_job(workspace, args.job_id)
+            if err:
+                logger.warning(err)
 
     except ConfigError as e:
         logger = logging.getLogger("runner_process")

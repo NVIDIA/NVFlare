@@ -14,6 +14,7 @@
 
 import sys
 import threading
+import time
 from typing import List, Tuple, Union
 
 _KEY_MAX = "max"
@@ -112,12 +113,14 @@ class StatsPool:
 
 
 class HistPool(StatsPool):
-    def __init__(self, name: str, description: str, marks: Union[List[float], Tuple], unit: str):
+    def __init__(self, name: str, description: str, marks: Union[List[float], Tuple], unit: str, keep_records=False):
         StatsPool.__init__(self, name, description)
         self.update_lock = threading.Lock()
         self.unit = unit
         self.marks = marks
+        self.keep_records = keep_records
         self.cat_bins = {}  # category name => list of bins
+        self.cat_recs = {}  # category name => list of records
 
         if not marks:
             raise ValueError("marks not specified")
@@ -154,6 +157,13 @@ class HistPool(StatsPool):
                         b = _Bin()
                         bins[i] = b
                     b.record_value(value)
+
+            if self.keep_records:
+                recs = self.cat_recs.get(category)
+                if not recs:
+                    recs = []
+                    self.cat_recs[category] = recs
+                recs.append([time.time(), value])
 
     def get_table(self, mode=StatsMode.COUNT):
         with self.update_lock:
@@ -210,6 +220,12 @@ class HistPool(StatsPool):
                 _KEY_UNIT: self.unit,
                 _KEY_CAT_DATA: cat_bins,
             }
+
+    def get_records(self):
+        if self.keep_records:
+            return self.cat_recs
+        else:
+            return None
 
     @staticmethod
     def from_dict(d: dict):
@@ -301,16 +317,16 @@ class CounterPool(StatsPool):
         return p
 
 
-def new_time_pool(name: str, description="", marks=None) -> HistPool:
+def new_time_pool(name: str, description="", marks=None, keep_records=False) -> HistPool:
     if not marks:
         marks = (0.0001, 0.0005, 0.001, 0.002, 0.004, 0.008, 0.01, 0.02, 0.04, 0.08, 0.1, 0.2, 0.4, 0.8, 1.0, 2.0)
-    return HistPool(name=name, description=description, marks=marks, unit="second")
+    return HistPool(name=name, description=description, marks=marks, unit="second", keep_records=keep_records)
 
 
-def new_message_size_pool(name: str, description="", marks=None) -> HistPool:
+def new_message_size_pool(name: str, description="", marks=None, keep_records=False) -> HistPool:
     if not marks:
         marks = (0.01, 0.1, 1, 10, 50, 100, 200, 500, 800, 1000)
-    return HistPool(name=name, description=description, marks=marks, unit="MB")
+    return HistPool(name=name, description=description, marks=marks, unit="MB", keep_records=keep_records)
 
 
 VALID_HIST_MODES = [StatsMode.COUNT, StatsMode.PERCENT, StatsMode.AVERAGE, StatsMode.MAX, StatsMode.MIN]

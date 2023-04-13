@@ -202,10 +202,7 @@ class CellRunner:
         self.cell.change_server_root(url)
 
     def dump_stats(self):
-        stats_dict = StatsPoolManager.to_dict()
-        json_object = json.dumps(stats_dict, indent=4)
-        with open(f"{self.cell.get_fqcn()}_stats.json", "w") as outfile:
-            outfile.write(json_object)
+        StatsPoolManager.dump_summary(f"{self.cell.get_fqcn()}_stats.json")
 
     def run(self):
         MainProcessMonitor.set_name(self.cell.get_fqcn())
