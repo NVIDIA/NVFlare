@@ -141,7 +141,7 @@ class ServerRunner(FLComponent):
                 self.log_debug(fl_ctx, "firing event EventType.END_WORKFLOW")
                 self.fire_event(EventType.END_WORKFLOW, fl_ctx)
 
-    def _get_target_workflow(self) -> list:
+    def _get_target_workflows(self) -> list:
         wf_ids = self.config.target_wf_ids
         if wf_ids is None:
             return self.config.workflows
@@ -153,12 +153,14 @@ class ServerRunner(FLComponent):
         return target_workflows
 
     def _execute_run(self):
-        target_wf = self._get_target_workflow()
-        for wf in target_wf:
+        target_wfs = self._get_target_workflows()
+        while self.current_wf_index < len(target_wfs):
+            wf = target_wfs[self.current_wf_index]
             self._exec_one_workflow(wf)
             # Stopped the server runner from the current responder, not continue the following responders.
             if self.abort_signal.triggered:
                 break
+            self.current_wf_index += 1
 
     def run(self):
         with self.engine.new_context() as fl_ctx:
