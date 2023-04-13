@@ -219,7 +219,7 @@ def fobs_initialize():
 
 def set_stats_pool_config_for_job(workspace: Workspace, job_id: str):
     job_meta = get_job_meta_from_workspace(workspace, job_id)
-    stats_config = job_meta.get("stats_pool_config")
+    stats_config = job_meta.get(JobMetaKey.STATS_POOL_CONFIG)
     if stats_config:
         StatsPoolManager.set_hist_pool_config(stats_config)
 
