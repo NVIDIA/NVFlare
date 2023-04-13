@@ -84,7 +84,7 @@ class ServerJsonConfigurator(FedJsonConfigurator):
 
         # target workflow to be executed
         # once specified, only specified workflow identified by workflow Id will be executed
-        self.target_wf_id = None
+        self.target_wf_ids = None
 
     def process_config_element(self, config_ctx: ConfigContext, node: Node):
         FedJsonConfigurator.process_config_element(self, config_ctx, node)
@@ -112,8 +112,8 @@ class ServerJsonConfigurator(FedJsonConfigurator):
 
             return
 
-        if path == "target_workflow_id":
-            self.target_wf_id = element
+        if path == "target_workflow_ids":
+            self.target_wf_ids = element
             return
 
         if re.search(r"^workflows\.#[0-9]+$", path):
@@ -167,7 +167,7 @@ class ServerJsonConfigurator(FedJsonConfigurator):
             task_result_filters=self.result_filter_table,
             components=self.components,
             handlers=self.handlers,
-            target_wf_id=self.target_wf_id,
+            target_wf_ids=self.target_wf_ids,
         )
 
         ConfigService.initialize(

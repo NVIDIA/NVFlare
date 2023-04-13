@@ -41,7 +41,7 @@ class ServerRunnerConfig(object):
         task_result_filters: dict,
         handlers: Optional[List] = None,
         components: Optional[Dict] = None,
-        target_wf_id: Optional[str] = None,
+        target_wf_ids: Optional[List[str]] = None,
     ):
         """Configuration for ServerRunner.
 
@@ -53,7 +53,7 @@ class ServerRunnerConfig(object):
             task_result_filters (dict): A dict of {task_name: list of filters apply to result (post-process)}
             handlers (list, optional):  A list of event handlers
             components (dict, optional):  A dict of extra python objects {id: object}
-            target_wf_id ( str, Optional) : workflow Id
+            target_wf_ids (List[str], Optional) : workflow Id
         """
         self.heartbeat_timeout = heartbeat_timeout
         self.task_request_interval = task_request_interval
@@ -62,7 +62,7 @@ class ServerRunnerConfig(object):
         self.task_result_filters = task_result_filters
         self.handlers = handlers
         self.components = components
-        self.target_wf_id = target_wf_id
+        self.target_wf_ids = target_wf_ids
 
     def add_component(self, comp_id: str, component: object):
         if not isinstance(comp_id, str):
@@ -141,32 +141,24 @@ class ServerRunner(FLComponent):
                 self.log_debug(fl_ctx, "firing event EventType.END_WORKFLOW")
                 self.fire_event(EventType.END_WORKFLOW, fl_ctx)
 
-    def _get_target_workflow(self):
-        wf_id = self.config.target_wf_id
-        target_wf = None
-        if wf_id is not None:
-            target_wfs = [wf for wf in self.config.workflows if wf.id == wf_id]
-            if len(target_wfs) > 0:
-                target_wf = target_wfs[0]
-            else:
-                raise ValueError(f"target_workflow_id:{wf_id} is not defined, please check the workflow definitions")
-
-        return target_wf
+    def _get_target_workflow(self) -> list:
+        wf_ids = self.config.target_wf_ids
+        if wf_ids is None:
+            return self.config.workflows
+        else:
+            target_workflows = []
+            for wf_id in wf_ids:
+                target_wfs = [wf for wf in self.config.workflows if wf.id == wf_id]
+                target_workflows.extend(target_wfs)
+        return target_workflows
 
     def _execute_run(self):
         target_wf = self._get_target_workflow()
-        if target_wf is None:
-            while self.current_wf_index < len(self.config.workflows):
-                wf = self.config.workflows[self.current_wf_index]
-                self._exec_one_workflow(wf)
-
-                # Stopped the server runner from the current responder, not continue the following responders.
-                if self.abort_signal.triggered:
-                    break
-                self.current_wf_index += 1
-        else:
-            self._exec_one_workflow(target_wf)
-            self.current_wf_index += 1
+        for wf in target_wf:
+            self._exec_one_workflow(wf)
+            # Stopped the server runner from the current responder, not continue the following responders.
+            if self.abort_signal.triggered:
+                break
 
     def run(self):
         with self.engine.new_context() as fl_ctx:
