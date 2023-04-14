@@ -53,7 +53,7 @@ class LinearLearner(Learner):
         valid_data = load_data_for_range(self.data_path, self.valid_start, self.valid_end)
         return {"train": train_data, "valid": valid_data}
 
-    def initialize(self, fl_ctx: FLContext):
+    def initialize(self, parts: dict, fl_ctx: FLContext):
         self.log_info(fl_ctx, f"Loading data from {self.data_path}")
         data = self.load_data()
         self.train_data = data["train"]

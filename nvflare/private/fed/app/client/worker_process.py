@@ -32,7 +32,12 @@ from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger
 from nvflare.private.fed.app.utils import monitor_parent_process
 from nvflare.private.fed.client.client_app_runner import ClientAppRunner
 from nvflare.private.fed.client.client_status import ClientStatus
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize
+from nvflare.private.fed.utils.fed_utils import (
+    add_logfile_handler,
+    create_stats_pool_files_for_job,
+    fobs_initialize,
+    set_stats_pool_config_for_job,
+)
 from nvflare.security.logging import secure_format_exception
 
 
@@ -73,6 +78,7 @@ def main():
     args.config_folder = config_folder
     args.env = os.path.join("config", "environment.json")
     workspace = Workspace(args.workspace, args.client_name, config_folder)
+    set_stats_pool_config_for_job(workspace, args.job_id)
 
     try:
         remove_restart_file(workspace)
@@ -90,7 +96,6 @@ def main():
     AuditService.initialize(audit_file_name)
 
     # print("starting the client .....")
-
     SecurityContentService.initialize(content_folder=workspace.get_startup_kit_dir())
 
     thread = None
@@ -150,6 +155,9 @@ def main():
         if thread and thread.is_alive():
             thread.join()
         AuditService.close()
+        err = create_stats_pool_files_for_job(workspace, args.job_id)
+        if err:
+            logger.warning(err)
 
 
 def _create_sp(args):

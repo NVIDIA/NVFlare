@@ -13,10 +13,10 @@
 # limitations under the License.
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
+from nvflare.fuel.f3.stats_pool import VALID_HIST_MODES, parse_hist_mode
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.constants import ConnProps
-from nvflare.fuel.utils.stats_utils import VALID_HIST_MODES, parse_hist_mode
 from nvflare.security.logging import secure_format_exception
 
 
