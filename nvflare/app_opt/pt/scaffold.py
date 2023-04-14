@@ -81,14 +81,14 @@ class PTScaffoldHelper(object):
 
     def get_params(self):
         self.cnt = 0
-        # Adapted from https://github.com/Xtra-Computing/NIID-Bench/blob/2.3/experiments.py#L371
+        # Adapted from https://github.com/Xtra-Computing/NIID-Bench/blob/main/experiments.py#L371
         c_global_para = self.c_global.state_dict()
         c_local_para = self.c_local.state_dict()
         return c_global_para, c_local_para
 
     def model_update(self, model, curr_lr, c_global_para, c_local_para):
         # Update model using scaffold controls
-        # See https://github.com/Xtra-Computing/NIID-Bench/blob/2.3/experiments.py#L391
+        # See https://github.com/Xtra-Computing/NIID-Bench/blob/main/experiments.py#L391
         net_para = model.state_dict()
         for key in net_para:
             net_para[key] = net_para[key] - curr_lr * (c_global_para[key] - c_local_para[key])
@@ -98,7 +98,7 @@ class PTScaffoldHelper(object):
 
     def terms_update(self, model, curr_lr, c_global_para, c_local_para, model_global):
         # Update the local scaffold controls
-        # See https://github.com/Xtra-Computing/NIID-Bench/blob/2.3/experiments.py#L403
+        # See https://github.com/Xtra-Computing/NIID-Bench/blob/main/experiments.py#L403
 
         c_new_para = self.c_local.state_dict()
         self.c_delta_para = copy.deepcopy(self.c_local.state_dict())
