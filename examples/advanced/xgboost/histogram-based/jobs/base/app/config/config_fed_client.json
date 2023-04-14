@@ -1,6 +1,5 @@
 {
   "format_version": 2,
-  "components": [],
   "executors": [
     {
       "tasks": [
@@ -8,9 +7,8 @@
       ],
       "executor": {
         "id": "Executor",
-        "path": "higgs_executor.FedXGBHistogramHiggsExecutor",
+        "name": "FedXGBHistogramExecutor",
         "args": {
-          "data_split_filename": "data_split.json",
           "num_rounds": 100,
           "early_stopping_round": 2,
           "xgboost_params": {
@@ -20,12 +18,21 @@
             "eval_metric": "auc",
             "tree_method": "gpu_hist",
             "nthread": 16
-          }
+          },
+          "data_loader_id": "dataloader"
         }
       }
     }
   ],
-
   "task_result_filters": [],
-  "task_data_filters": []
+  "task_data_filters": [],
+  "components": [
+    {
+      "id": "dataloader",
+      "path": "higgs_data_loader.HIGGSDataLoader",
+      "args": {
+        "data_split_filename": "data_split.json"
+      }
+    }
+  ]
 }

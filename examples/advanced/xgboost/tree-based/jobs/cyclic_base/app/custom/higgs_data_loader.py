@@ -17,11 +17,10 @@ import json
 import pandas as pd
 import xgboost as xgb
 
-from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_opt.xgboost.tree_based.executor import FedXGBTreeExecutor
+from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
 
 
-def _read_HIGGS_with_pandas(data_path, start: int, end: int):
+def _read_higgs_with_pandas(data_path, start: int, end: int):
     data_size = end - start
     data = pd.read_csv(data_path, header=None, skiprows=start, nrows=data_size)
     data_num = data.shape[0]
@@ -33,43 +32,17 @@ def _read_HIGGS_with_pandas(data_path, start: int, end: int):
     return x, y, data_num
 
 
-class FedXGBTreeHiggsExecutor(FedXGBTreeExecutor):
-    def __init__(
-        self,
-        data_split_filename,
-        training_mode,
-        lr_scale,
-        num_client_bagging: int = 1,
-        lr_mode: str = "uniform",
-        local_model_path: str = "model.json",
-        global_model_path: str = "model_global.json",
-        learning_rate: float = 0.1,
-        objective: str = "binary:logistic",
-        max_depth: int = 8,
-        eval_metric: str = "auc",
-        nthread: int = 16,
-        tree_method: str = "hist",
-        train_task_name: str = AppConstants.TASK_TRAIN,
-    ):
-        super().__init__(
-            training_mode=training_mode,
-            num_client_bagging=num_client_bagging,
-            lr_scale=lr_scale,
-            lr_mode=lr_mode,
-            local_model_path=local_model_path,
-            global_model_path=global_model_path,
-            learning_rate=learning_rate,
-            objective=objective,
-            max_depth=max_depth,
-            eval_metric=eval_metric,
-            nthread=nthread,
-            tree_method=tree_method,
-            train_task_name=train_task_name,
-        )
+class HIGGSDataLoader(XGBDataLoader):
+    def __init__(self, data_split_filename):
+        """Reads HIGGS dataset and return XGB data matrix.
+
+        Args:
+            data_split_filename: file name to data splits
+        """
         self.data_split_filename = data_split_filename
 
     def load_data(self):
-        with open(self.data_split_filename) as file:
+        with open(self.data_split_filename, "r") as file:
             data_split = json.load(file)
 
         data_path = data_split["data_path"]
@@ -90,15 +63,15 @@ class FedXGBTreeHiggsExecutor(FedXGBTreeExecutor):
         valid_index = data_index["valid"]
 
         # training
-        X_train, y_train, total_train_data_num = _read_HIGGS_with_pandas(
+        x_train, y_train, total_train_data_num = _read_higgs_with_pandas(
             data_path=data_path, start=site_index["start"], end=site_index["end"]
         )
-        dmat_train = xgb.DMatrix(X_train, label=y_train)
+        dmat_train = xgb.DMatrix(x_train, label=y_train)
 
         # validation
-        X_valid, y_valid, total_valid_data_num = _read_HIGGS_with_pandas(
+        x_valid, y_valid, total_valid_data_num = _read_higgs_with_pandas(
             data_path=data_path, start=valid_index["start"], end=valid_index["end"]
         )
-        dmat_valid = xgb.DMatrix(X_valid, label=y_valid)
+        dmat_valid = xgb.DMatrix(x_valid, label=y_valid)
 
         return dmat_train, dmat_valid

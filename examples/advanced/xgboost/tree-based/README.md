@@ -89,6 +89,12 @@ since each site might save the HIGGS dataset in different places.
 
 Then you can use admin client to submit the job via `submit_job` command.
 
+## Customization
+
+To use other dataset, can inherit the base class `XGBDataLoader` and
+implement that `load_data()` method.
+
+
 ## Reference
 [1] Zhao, L. et al., "InPrivate Digging: Enabling Tree-based Distributed Data Mining with Differential Privacy," IEEE INFOCOM 2018 - IEEE Conference on Computer Communications, 2018, pp. 2087-2095
 

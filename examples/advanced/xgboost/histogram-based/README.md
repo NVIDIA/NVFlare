@@ -47,5 +47,8 @@ provided in `xgboost_params` argument.
 If the parameter change alone is not sufficient and code changes are required,
 a custom executor can be implemented to make calls to xgboost library directly.
 
-The custom executor can inherit the base class `FedXGBHistogramExecutorSpec` and
-implement the `xgb_train()` and `load_data()` method.
+The custom executor can inherit the base class `FedXGBHistogramExecutor` and
+overwrite the `xgb_train()` method.
+
+To use other dataset, can inherit the base class `XGBDataLoader` and
+implement that `load_data()` method.
