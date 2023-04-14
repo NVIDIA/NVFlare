@@ -352,10 +352,10 @@ class AdminAPI(AdminAPISpec):
             poc: Whether to enable poc mode for using the proof of concept example without secure communication.
             debug: Whether to print debug messages, which can help with diagnosing problems. False by default.
             session_event_cb: the session event callback
-            session_timeout_interval: if specified, automatically close the session after inactive for this long
-            session_status_check_interval: how often to check session status with server
-            auto_login_timeout: will keep trying to auto-login within this interval
-            auto_login_interval: how often to try to auto-login
+            session_timeout_interval: if specified, automatically close the session after inactive for this long, unit is second
+            session_status_check_interval: how often to check session status with server, unit is second
+            auto_login_timeout: will keep trying to auto-login within this interval, unit is second
+            auto_login_interval: how often to try to auto-login, unit is second
         """
         super().__init__()
         if cmd_modules is None:
