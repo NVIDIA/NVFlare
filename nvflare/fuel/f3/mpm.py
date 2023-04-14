@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ import threading
 import time
 
 from nvflare.fuel.f3.drivers.aio_context import AioContext
-from nvflare.security.logging import secure_format_exception
+from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
 
 class MainProcessMonitor:
@@ -145,6 +145,7 @@ class MainProcessMonitor:
         except Exception as ex:
             rc = -1
             logger.error(f"main_func execute exception: {secure_format_exception(ex)}")
+            logger.error(secure_format_traceback())
 
         # start shutdown process
         cls._stopping = True

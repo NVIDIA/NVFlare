@@ -1,0 +1,41 @@
+{
+  "format_version": 2,
+
+  "DATASET_ROOT": "/data/NCBI-disease",
+
+  "executors": [
+    {
+      "tasks": [
+        "train",
+        "validate"
+      ],
+      "executor": {
+        "id": "Executor",
+        "name": "LearnerExecutor",
+        "args": {
+          "learner_id": "nlp-learner"
+        }
+      }
+    }
+  ],
+
+  "task_result_filters": [
+  ],
+  "task_data_filters": [
+  ],
+
+  "components": [
+    {
+      "id": "nlp-learner",
+      "path": "custom.learners.nlp_learner.NLPLearner",
+      "args": {
+        "data_path": "{DATASET_ROOT}/2_split",
+        "model_name": "gpt2",
+        "learning_rate": 1e-5,
+        "batch_size": 16,
+        "num_labels": 3,
+        "aggregation_epochs": 1
+      }
+    }
+  ]
+}

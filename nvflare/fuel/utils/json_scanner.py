@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,11 +14,10 @@
 
 import copy
 import logging
-import traceback
 from abc import ABC, abstractmethod
 
 from nvflare.fuel.common.excepts import ConfigError
-from nvflare.security.logging import is_secure, secure_format_exception
+from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 
 class Node(object):
@@ -98,8 +97,7 @@ class JsonScanner(object):
         try:
             node.processor.process_element(node)
         except BaseException as e:
-            if not is_secure():
-                self.logger.error(traceback.format_exc())
+            secure_log_traceback(self.logger)
 
             if self.location:
                 raise ConfigError(

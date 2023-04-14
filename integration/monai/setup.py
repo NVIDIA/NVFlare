@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -57,5 +57,5 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     python_requires=">=3.8,<3.11",
-    install_requires=["monai>=1.1.0", "nvflare>=2.3.0rc3"],
+    install_requires=["monai>=1.1.0", "nvflare>=2.3.0"],
 )

@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -121,7 +121,7 @@ class ModuleScanner:
                                             self._class_table[name] = module_name
                             except (ModuleNotFoundError, RuntimeError) as e:
                                 self._logger.debug(
-                                    f"Try to import module {module_name}, but failed: {e}. "
+                                    f"Try to import module {module_name}, but failed: {secure_format_exception(e)}. "
                                     f"Can't use name in config to refer to classes in module: {module_name}."
                                 )
                                 pass

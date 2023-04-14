@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # NVFLARE INSTALL
-NVFLARE_VERSION="2.3.0rc3"
+NVFLARE_VERSION="2.3.0"
 pip install 'nvflare>=${NVFLARE_VERSION}'
 
 # set NVFLARE_HOME
@@ -21,5 +21,10 @@ fi
 
 nvflare poc --start -ex admin
 
+# Check if the FL system is ready
+python <<END
+from nvflare.tool.api_utils import wait_for_system_start
+wait_for_system_start(num_clients = 2,  prod_dir = "${NVFLARE_POC_WORKSPACE}")
 
+END
 

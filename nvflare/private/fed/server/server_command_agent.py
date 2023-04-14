@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -82,7 +82,7 @@ class ServerCommandAgent(object):
                     state_check = command.get_state_check(new_fl_ctx)
                     error = self.engine.server.authentication_check(request, state_check)
                     if error:
-                        make_reply(ReturnCode.AUTHENTICATION_ERROR, error, fobs.dumps(None))
+                        return make_reply(ReturnCode.AUTHENTICATION_ERROR, error, fobs.dumps(None))
 
                 reply = command.process(data=data, fl_ctx=new_fl_ctx)
                 if reply is not None:

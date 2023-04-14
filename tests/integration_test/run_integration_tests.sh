@@ -3,7 +3,7 @@
 set -e
 
 PYTHONPATH="${PWD}/../.."
-backends=(numpy tensorflow pytorch overseer ha auth preflight cifar auto)
+backends=(numpy tensorflow pytorch overseer ha auth preflight cifar auto stats)
 
 usage()
 {
@@ -18,8 +18,8 @@ usage()
     exit 1
 }
 
-[ $# -eq 0 ] && usage
-while getopts ":m:c:d" option; do
+no_args="true"
+while getopts ":m:dc" option; do
     case "${option}" in
         m) # framework/backend
             cmd="pytest --junitxml=./integration_test.xml -v --log-cli-level=INFO --capture=no"
@@ -38,7 +38,9 @@ while getopts ":m:c:d" option; do
             usage
             ;;
     esac
+    no_args="false"
 done
+[[ "$no_args" == "true" ]] && usage
 
 run_preflight_check_test()
 {

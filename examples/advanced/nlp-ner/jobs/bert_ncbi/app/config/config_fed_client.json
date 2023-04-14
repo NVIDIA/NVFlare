@@ -13,7 +13,7 @@
         "id": "Executor",
         "name": "LearnerExecutor",
         "args": {
-          "learner_id": "bert-learner"
+          "learner_id": "nlp-learner"
         }
       }
     }
@@ -26,10 +26,11 @@
 
   "components": [
     {
-      "id": "bert-learner",
-      "path": "custom.learners.bert_learner.BertLearner",
+      "id": "nlp-learner",
+      "path": "custom.learners.nlp_learner.NLPLearner",
       "args": {
         "data_path": "{DATASET_ROOT}/4_split",
+        "model_name": "bert-base-uncased",
         "learning_rate": 1e-5,
         "batch_size": 16,
         "num_labels": 3,

@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -33,6 +33,7 @@ class ClientAppRunner(Runner):
     logger = logging.getLogger("ClientAppRunner")
 
     def __init__(self, time_out=60.0) -> None:
+        super().__init__()
         self.command_agent = None
         self.timeout = time_out
         self.client_runner = None
@@ -48,6 +49,7 @@ class ClientAppRunner(Runner):
 
         self.sync_up_parents_process(federated_client)
 
+        federated_client.start_overseer_agent()
         federated_client.status = ClientStatus.STARTED
         self.client_runner.run(app_root, args)
 

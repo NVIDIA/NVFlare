@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -133,6 +133,7 @@ class FederatedClientBase:
                     prv_key_path=client_args["ssl_private_key"],
                 )
 
+    def start_overseer_agent(self):
         if self.overseer_agent:
             self.overseer_agent.start(self.overseer_callback)
 

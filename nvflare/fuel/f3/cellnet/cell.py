@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -605,7 +605,10 @@ class Cell(MessageReceiver, EndpointMonitor):
                 self.communicator.remove_connector(self.bb_ext_connector.handle)
                 self.communicator.remove_endpoint(FQCN.ROOT_SERVER)
             except Exception as ex:
-                self.log_error(msg=None, log_text=f"{self.my_info.fqcn}: error removing bb_ext_connector {ex}")
+                self.log_error(
+                    msg=None,
+                    log_text=f"{self.my_info.fqcn}: error removing bb_ext_connector {secure_format_exception(ex)}",
+                )
             self.bb_ext_connector = None
 
         # drop ad-hoc connectors to cells on server
@@ -1058,7 +1061,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                     category=self._stats_category(message), value=self._msg_size_mbs(message)
                 )
         except Exception as ex:
-            err_text = f"Failed to send message to {to_endpoint.name}: {ex}"
+            err_text = f"Failed to send message to {to_endpoint.name}: {secure_format_exception(ex)}"
             self.log_error(err_text, message)
             self.logger.debug(secure_format_traceback())
             err = ReturnCode.COMM_ERROR
@@ -1788,7 +1791,11 @@ class Cell(MessageReceiver, EndpointMonitor):
                 elif msg_type == MessageType.REQ:
                     # see whether we can offer a listener
                     allow_adhoc = self.connector_manager.is_adhoc_allowed(oi, self.my_info)
-                    if allow_adhoc and not oi.is_on_server and self.my_info.fqcn > origin:
+                    if (
+                        allow_adhoc
+                        and (not oi.is_on_server)
+                        and (self.my_info.fqcn > origin or self.my_info.is_on_server)
+                    ):
                         self.logger.debug(f"{self.my_info.fqcn}: trying to offer ad-hoc listener to {origin}")
                         listener = self._create_external_listener("")
                         if listener:
@@ -1912,7 +1919,9 @@ class Cell(MessageReceiver, EndpointMonitor):
                     self.logger.debug(f"{self.my_info.fqcn}: calling cell_connected_cb")
                     self.cell_connected_cb(agent, *self.cell_connected_cb_args, **self.cell_connected_cb_kwargs)
                 except Exception as ex:
-                    self.log_error(f"exception in cell_connected_cb: {ex}", None, log_except=True)
+                    self.log_error(
+                        f"exception in cell_connected_cb: {secure_format_exception(ex)}", None, log_except=True
+                    )
 
         elif endpoint.state in [EndpointState.CLOSING, EndpointState.DISCONNECTED, EndpointState.IDLE]:
             # remove this agent
@@ -1926,7 +1935,9 @@ class Cell(MessageReceiver, EndpointMonitor):
                         agent, *self.cell_disconnected_cb_args, **self.cell_disconnected_cb_kwargs
                     )
                 except Exception as ex:
-                    self.log_error(f"exception in cell_disconnected_cb: {ex}", None, log_except=True)
+                    self.log_error(
+                        f"exception in cell_disconnected_cb: {secure_format_exception(ex)}", None, log_except=True
+                    )
 
     def get_sub_cell_names(self) -> Tuple[List[str], List[str]]:
         """

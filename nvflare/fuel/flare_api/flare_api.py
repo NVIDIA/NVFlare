@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -348,7 +348,7 @@ class Session(SessionSpec):
         Args:
             job_id: job to be aborted
 
-        Returns: None
+        Returns: dict of (status, info)
 
         If the job is already done, no effect;
         If job is not started yet, it will be cancelled and won't be scheduled
@@ -356,6 +356,8 @@ class Session(SessionSpec):
 
         """
         self._validate_job_id(job_id)
+        # result = self._do_command(AdminCommandNames.ABORT_JOB + " " + job_id)
+        # return result.get(ResultKey.META, None)
         self._do_command(AdminCommandNames.ABORT_JOB + " " + job_id)
 
     def delete_job(self, job_id: str):

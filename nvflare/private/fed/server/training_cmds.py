@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -146,9 +146,10 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         if not isinstance(engine, ServerEngine):
             raise TypeError("engine must be ServerEngine but got {}".format(type(engine)))
 
-        if engine.job_runner.running_jobs:
-            conn.append_error("There are still jobs running. Please let them finish or abort_job before shutdown.")
-            return
+        for _, job in engine.job_runner.running_jobs.items():
+            if not job.run_aborted:
+                conn.append_error("There are still jobs running. Please let them finish or abort_job before shutdown.")
+                return
 
         if target_type == self.TARGET_TYPE_SERVER:
             if engine.get_clients():

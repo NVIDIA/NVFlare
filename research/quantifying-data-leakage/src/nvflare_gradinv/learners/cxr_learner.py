@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -455,7 +455,7 @@ class CXRLearner(Learner):
             n_local += 1
             if var_name not in global_weights:
                 continue
-            model_diff[var_name] = local_weights[var_name].cpu().numpy() - global_weights[var_name]
+            model_diff[var_name] = np.subtract(local_weights[var_name].cpu().numpy(), global_weights[var_name], dtype=np.float32)
             if np.any(np.isnan(model_diff[var_name])):
                 self.system_panic(f"{var_name} weights became NaN...", fl_ctx)
                 return make_reply(ReturnCode.EXECUTION_EXCEPTION)

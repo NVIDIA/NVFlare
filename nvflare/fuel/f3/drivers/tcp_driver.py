@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ from nvflare.fuel.f3.drivers.driver import ConnectorInfo, Driver
 from nvflare.fuel.f3.drivers.driver_params import DriverCap, DriverParams
 from nvflare.fuel.f3.drivers.net_utils import get_ssl_context, get_tcp_urls
 from nvflare.fuel.f3.drivers.socket_conn import ConnectionHandler, SocketConnection
+from nvflare.security.logging import secure_format_exception
 
 log = logging.getLogger(__name__)
 
@@ -50,7 +51,7 @@ class TcpStreamServer(ThreadingTCPServer):
             self.server_bind()
             self.server_activate()
         except Exception as ex:
-            log.error(f"{os.getpid()}: Error binding to  {host}:{port}: {ex}")
+            log.error(f"{os.getpid()}: Error binding to  {host}:{port}: {secure_format_exception(ex)}")
             self.server_close()
             raise
 

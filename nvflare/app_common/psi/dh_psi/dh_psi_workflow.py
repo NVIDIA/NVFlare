@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -116,7 +116,7 @@ class DhPSIWorkFlow(PSIWorkflow):
     def post_process(self, abort_signal: Signal):
         pass
 
-    def finalize(self):
+    def finalize(self, fl_ctx: FLContext):
         pass
 
     @staticmethod

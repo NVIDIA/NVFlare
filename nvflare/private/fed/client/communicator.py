@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -368,6 +368,6 @@ class Communicator:
             if abort_runs:
                 for job in abort_runs:
                     engine.abort_app(job)
-                self.logger.info(f"These runs: {display_runs} are not running on the server. Aborted them.")
+                self.logger.debug(f"These runs: {display_runs} are not running on the server. Aborted them.")
         except:
-            self.logger.info(f"Failed to clean up the runs: {display_runs}")
+            self.logger.debug(f"Failed to clean up the runs: {display_runs}")

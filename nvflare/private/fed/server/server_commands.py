@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -103,8 +103,10 @@ class AbortCommand(CommandProcessor):
 
         """
         server_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
+        # for HA server switch over
+        turn_to_cold = data.get_header(ServerCommandKey.TURN_TO_COLD, False)
         if server_runner:
-            server_runner.abort(fl_ctx)
+            server_runner.abort(fl_ctx=fl_ctx, turn_to_cold=turn_to_cold)
             # wait for the runner process gracefully abort the run.
             engine = fl_ctx.get_engine()
             start_time = time.time()
@@ -182,10 +184,11 @@ class GetTaskCommand(CommandProcessor, ServerStateCheck):
         shared_fl_ctx.set_public_props(copy.deepcopy(get_serializable_data(fl_ctx).get_all_public_props()))
         shareable.set_header(key=FLContextKey.PEER_CONTEXT, value=shared_fl_ctx)
 
-        self.logger.info(
-            f"return task to client.  client_name:{client.name}  task_name: {taskname}   task_id:{task_id}  "
-            f"sharable_header_task_id: {shareable.get_header(key=FLContextKey.TASK_ID)}"
-        )
+        if taskname != SpecialTaskName.TRY_AGAIN:
+            self.logger.info(
+                f"return task to client.  client_name: {client.name}  task_name: {taskname}   task_id: {task_id}  "
+                f"sharable_header_task_id: {shareable.get_header(key=FLContextKey.TASK_ID)}"
+            )
         self.logger.debug(f"Get_task processing time: {time.time()-start_time} for client: {client.name}")
         return shareable
 

@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -90,10 +90,11 @@ class ClientTaskWorker(FLComponent):
                 run_task_tries = 0
                 while True:
                     interval, task_processed = client_runner.fetch_and_run_one_task(fl_ctx)
-                    self.logger.info(
-                        f"Finished one task run for client: {client.client_name} "
-                        f"interval: {interval} task_processed: {task_processed}"
-                    )
+                    if task_processed:
+                        self.logger.info(
+                            f"Finished one task run for client: {client.client_name} "
+                            f"interval: {interval} task_processed: {task_processed}"
+                        )
 
                     # if any client got the END_RUN event, stop the simulator run.
                     if client_runner.end_run_fired or client_runner.asked_to_stop:
@@ -109,7 +110,7 @@ class ClientTaskWorker(FLComponent):
                                 break
                             time.sleep(0.5)
         except Exception as e:
-            self.logger.error(f"do_one_task execute exception: {e}")
+            self.logger.error(f"do_one_task execute exception: {secure_format_exception(e)}")
             interval = 1.0
             stop_run = True
 

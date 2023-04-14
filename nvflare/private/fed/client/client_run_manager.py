@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -51,7 +51,10 @@ class ClientRunInfo(object):
         self.start_time = None
 
 
-GET_CLIENTS_RETRY = 60
+# TODO: make this configurable
+#   this is the number of retries for client side child/job process to get clients from server
+#   we might need to think of removing the whole get clients from server logic from child process
+GET_CLIENTS_RETRY = 300
 
 
 class ClientRunManager(ClientEngineExecutorSpec):

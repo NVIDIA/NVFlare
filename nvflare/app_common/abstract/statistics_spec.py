@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -318,7 +318,7 @@ class Statistics(InitFinalComponent, ABC):
         """
         return 0
 
-    def finalize(self):
+    def finalize(self, fl_ctx: FLContext):
         """Called to finalize the Statistic calculator (close/release resources gracefully).
 
         After this call, the Learner will be destroyed.

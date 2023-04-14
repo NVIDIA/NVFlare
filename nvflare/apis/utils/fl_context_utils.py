@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.utils import fobs
+from nvflare.security.logging import secure_format_exception
 
 logger = logging.getLogger("fl_context_utils")
 
@@ -31,7 +32,7 @@ def get_serializable_data(fl_ctx: FLContext):
                 fobs.dumps(v)
                 new_fl_ctx.props[k] = v
             except BaseException as e:
-                msg = f"Object in FLContext with key {k} and type {type(v)} is not serializable (discarded): {e}"
+                msg = f"Object in FLContext with key {k} and type {type(v)} is not serializable (discarded): {secure_format_exception(e)}"
                 logger.warning(generate_log_message(fl_ctx, msg))
 
     return new_fl_ctx

@@ -1,5 +1,7 @@
 # Federated SVM with Scikit-learn
 
+Please make sure you set up virtual environment and Jupyterlab follows [example root readme](../../README.md)
+
 ## Introduction to Scikit-learn, tabular data, and federated SVM
 ### Scikit-learn
 This example shows how to use [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) on tabular data.
@@ -115,6 +117,5 @@ We can run the FL simulator with three clients under the uniform data split with
 ```commandline
 bash run_experiment_simulator.sh
 ```
-Running with default [SVC](https://scikit-learn.
-org/stable/modules/generated/sklearn.svm.SVC.html) classifier, the 
+Running with default [SVC](https://scikit-learn.org/stable/modules/generated/sklearn.svm.SVC.html) classifier, the 
 resulting global model's AUC is 0.806 which can be seen in the clients' logs.
