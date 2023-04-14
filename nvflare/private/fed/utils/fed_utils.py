@@ -224,14 +224,14 @@ def set_stats_pool_config_for_job(workspace: Workspace, job_id: str):
         StatsPoolManager.set_pool_config(config)
 
 
-def create_stats_pool_files_for_job(workspace: Workspace, job_id: str):
-    summary_file = workspace.get_stats_pool_summary_path(job_id)
+def create_stats_pool_files_for_job(workspace: Workspace, job_id: str, prefix=None):
+    summary_file = workspace.get_stats_pool_summary_path(job_id, prefix)
     try:
         StatsPoolManager.dump_summary(summary_file)
     except BaseException as e:
         return f"Failed to create stats pool summary file {summary_file}: {secure_format_exception(e)}"
 
-    recs_file = workspace.get_stats_pool_records_path(job_id)
+    recs_file = workspace.get_stats_pool_records_path(job_id, prefix)
     try:
         StatsPoolManager.dump_records(recs_file)
     except BaseException as e:

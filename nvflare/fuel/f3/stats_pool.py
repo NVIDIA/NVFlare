@@ -171,9 +171,6 @@ class StatsPoolManager:
         if not recs_dict:
             return
 
-        json_object = json.dumps(recs_dict, indent=4)
-        if not json_object:
-            return
         with open(csv_file_name, "w") as f:
             writer = csv.writer(f)
 
