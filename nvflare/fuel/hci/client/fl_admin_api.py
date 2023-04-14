@@ -110,8 +110,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         session_event_cb=None,
         session_timeout_interval=None,
         session_status_check_interval=None,
-        auto_login_timeout: float = 5,
-        auto_login_interval: float = 1,
+        auto_login_max_tries: int = 5,
     ):
         """FLAdminAPI serves as foundation for communications to FL server through the AdminAPI.
 
@@ -132,8 +131,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
             session_event_cb: the session event callback
             session_timeout_interval: if specified, automatically close the session after inactive for this long
             session_status_check_interval: how often to check session status with server
-            auto_login_timeout: will keep trying to auto-login within this interval
-            auto_login_interval: how often to try to auto-login
+            auto_login_max_tries: maximum number of tries to auto-login.
         """
         service_finder = ServiceFinderByOverseer(overseer_agent)
 
@@ -152,8 +150,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
             session_event_cb=session_event_cb,
             session_timeout_interval=session_timeout_interval,
             session_status_check_interval=session_status_check_interval,
-            auto_login_timeout=auto_login_timeout,
-            auto_login_interval=auto_login_interval,
+            auto_login_max_tries=auto_login_max_tries,
         )
         self.upload_dir = upload_dir
         self.download_dir = download_dir

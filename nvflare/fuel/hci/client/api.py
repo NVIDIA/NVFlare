@@ -44,6 +44,9 @@ _CMD_TYPE_UNKNOWN = 0
 _CMD_TYPE_CLIENT = 1
 _CMD_TYPE_SERVER = 2
 
+MAX_AUTO_LOGIN_TRIES = 300
+AUTO_LOGIN_INTERVAL = 1.0
+
 
 class ResultKey(object):
 
@@ -335,8 +338,7 @@ class AdminAPI(AdminAPISpec):
         session_event_cb=None,
         session_timeout_interval=None,
         session_status_check_interval=None,
-        auto_login_timeout: float = 5,
-        auto_login_interval: float = 1,
+        auto_login_max_tries: int = 5,
     ):
         """Underlying API to keep certs, keys and connection information and to execute admin commands through do_command.
 
@@ -354,8 +356,7 @@ class AdminAPI(AdminAPISpec):
             session_event_cb: the session event callback
             session_timeout_interval: if specified, automatically close the session after inactive for this long, unit is second
             session_status_check_interval: how often to check session status with server, unit is second
-            auto_login_timeout: will keep trying to auto-login within this interval, unit is second
-            auto_login_interval: how often to try to auto-login, unit is second
+            auto_login_max_tries: maximum number of tries to auto-login.
         """
         super().__init__()
         if cmd_modules is None:
@@ -437,8 +438,9 @@ class AdminAPI(AdminAPISpec):
         self.session_event_cb = session_event_cb
 
         # create the FSM for session monitoring
-        self.auto_login_timeout = auto_login_timeout
-        self.auto_login_interval = auto_login_interval
+        if auto_login_max_tries < 0 or auto_login_max_tries > MAX_AUTO_LOGIN_TRIES:
+            raise ValueError(f"auto_login_max_tries is out of range: [0, {MAX_AUTO_LOGIN_TRIES}]")
+        self.auto_login_max_tries = auto_login_max_tries
         fsm = FSM("session monitor")
         fsm.add_state(_WaitForServerAddress(self))
         fsm.add_state(_TryLogin(self))
@@ -469,15 +471,8 @@ class AdminAPI(AdminAPISpec):
             self.new_ssid = ssid
 
     def _try_auto_login(self):
-        start_time = time.time()
-        while True:
-            if time.time() - start_time >= self.auto_login_timeout:
-                resp = {
-                    ResultKey.STATUS: APIStatus.ERROR_RUNTIME,
-                    ResultKey.DETAILS: f"Auto login timeout after {self.auto_login_timeout}",
-                }
-                break
-
+        resp = None
+        for i in range(self.auto_login_max_tries):
             self.fire_session_event(SessionEventType.TRYING_LOGIN, "Trying to login, please wait ...")
 
             if self.poc:
@@ -486,7 +481,12 @@ class AdminAPI(AdminAPISpec):
                 resp = self.login(username=self.user_name)
             if resp[ResultKey.STATUS] in [APIStatus.SUCCESS, APIStatus.ERROR_AUTHENTICATION, APIStatus.ERROR_CERT]:
                 return resp
-            time.sleep(self.auto_login_interval)
+            time.sleep(AUTO_LOGIN_INTERVAL)
+        if resp is None:
+            resp = {
+                ResultKey.STATUS: APIStatus.ERROR_RUNTIME,
+                ResultKey.DETAILS: f"Auto login failed after {self.auto_login_max_tries} tries",
+            }
         return resp
 
     def auto_login(self):
