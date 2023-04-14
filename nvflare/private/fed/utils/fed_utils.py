@@ -27,7 +27,7 @@ from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.decomposers import common_decomposers
-from nvflare.fuel.f3.stats_pool import StatsPoolManager
+from nvflare.fuel.f3.stats_pool import CsvRecordHandler, StatsPoolManager
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.authz import AuthorizationService
 from nvflare.fuel.sec.security_content_service import LoadResult, SecurityContentService
@@ -217,24 +217,22 @@ def fobs_initialize():
     private_decomposers.register()
 
 
-def set_stats_pool_config_for_job(workspace: Workspace, job_id: str):
+def set_stats_pool_config_for_job(workspace: Workspace, job_id: str, prefix=None):
     job_meta = get_job_meta_from_workspace(workspace, job_id)
     config = job_meta.get(JobMetaKey.STATS_POOL_CONFIG)
     if config:
         StatsPoolManager.set_pool_config(config)
+        record_file = workspace.get_stats_pool_records_path(job_id, prefix)
+        record_writer = CsvRecordHandler(record_file)
+        StatsPoolManager.set_record_writer(record_writer)
 
 
 def create_stats_pool_files_for_job(workspace: Workspace, job_id: str, prefix=None):
+    err = ""
     summary_file = workspace.get_stats_pool_summary_path(job_id, prefix)
     try:
         StatsPoolManager.dump_summary(summary_file)
     except BaseException as e:
-        return f"Failed to create stats pool summary file {summary_file}: {secure_format_exception(e)}"
-
-    recs_file = workspace.get_stats_pool_records_path(job_id, prefix)
-    try:
-        StatsPoolManager.dump_records(recs_file)
-    except BaseException as e:
-        return f"Failed to create stats pool records file {recs_file}: {secure_format_exception(e)}"
-
-    return ""
+        err = f"Failed to create stats pool summary file {summary_file}: {secure_format_exception(e)}"
+    StatsPoolManager.close()
+    return err

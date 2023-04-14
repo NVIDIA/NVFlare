@@ -341,10 +341,10 @@ def main():
     # initialize Privacy Service
     PrivacyService.initialize(privacy_manager)
 
-    set_stats_pool_config_for_job(workspace, args.job_id)
-
-    # local_rank = args.local_rank
     local_rank = int(os.environ["LOCAL_RANK"])
+    prefix = f"rank{local_rank}"
+    set_stats_pool_config_for_job(workspace, args.job_id, prefix=prefix)
+
     num_of_processes = int(args.num_processes)
     sub_executor = SubWorkerExecutor(args, workspace, num_of_processes, local_rank)
 
@@ -362,7 +362,7 @@ def main():
     sub_executor.run()
 
     AuditService.close()
-    err = create_stats_pool_files_for_job(workspace, job_id, prefix=f"rank{local_rank}")
+    err = create_stats_pool_files_for_job(workspace, job_id, prefix=prefix)
     if err:
         logger.warning(err)
 
