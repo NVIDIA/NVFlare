@@ -25,9 +25,11 @@ class StatsPoolManager:
     _ROW_TYPE_CAT = "C"
     _ROW_TYPE_REC = "R"
 
+    _CONFIG_KEY_SAVE_POOLS = "save_pools"
+
     lock = threading.Lock()
     pools = {}  # name => pool
-    hist_pool_config = {}
+    pool_config = {}
 
     @classmethod
     def _check_name(cls, name, scope):
@@ -41,16 +43,16 @@ class StatsPoolManager:
         raise ValueError(f"pool '{name}' is already defined")
 
     @classmethod
-    def set_hist_pool_config(cls, config: dict):
+    def set_pool_config(cls, config: dict):
         if not isinstance(config, dict):
             raise ValueError(f"config data must be dict but got {type(config)}")
         for k, v in config.items():
-            cls.hist_pool_config[k.lower()] = v
+            cls.pool_config[k.lower()] = v
 
     @classmethod
     def _keep_hist_records(cls, name):
         name = name.lower()
-        save_pools_list = cls.hist_pool_config.get("save_pools", None)
+        save_pools_list = cls.pool_config.get(cls._CONFIG_KEY_SAVE_POOLS, None)
         if not save_pools_list:
             return False
 
