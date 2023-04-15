@@ -17,9 +17,11 @@ from nvflare.security.logging import secure_format_exception
 
 class State(object):
     def __init__(self, name: str):
-        assert isinstance(name, str), "name must be str but got {}".format(type(name))
+        if not isinstance(name, str):
+            raise TypeError(f"name must be str but got {type(name)}")
         name = name.strip()
-        assert len(name) > 0, "name must not be empty"
+        if len(name) <= 0:
+            raise ValueError("name must not be empty")
         self.name = name
         self.fsm = None
 
@@ -51,15 +53,17 @@ class FSM(object):
         return self.props.get(name, default=default)
 
     def add_state(self, state: State):
-        assert isinstance(state, State), "state must be State but got {}".format(type(state))
-        s = self.states.get(state.name, None)
-        assert s is None, 'duplicate state "{}"'.format(state.name)
+        if not isinstance(state, State):
+            raise TypeError(f"state must be State but got {type(state)}")
+        if state.name in self.states:
+            raise RuntimeError(f"can't add duplicate state '{state.name}'")
         state.fsm = self
         self.states[state.name] = state
 
     def set_current_state(self, name: str):
         s = self.states.get(name)
-        assert s, 'unknown state "{}"'.format(name)
+        if s is None:
+            raise RuntimeError(f'FSM has no such state "{name}"')
         self.current_state = s
 
     def get_current_state(self):
@@ -74,7 +78,8 @@ class FSM(object):
         return self.current_state
 
     def _try_execute(self, **kwargs) -> State:
-        assert self.current_state, "FSM has no current state"
+        if self.current_state is None:
+            raise RuntimeError("FSM has no current state")
         next_state_name = self.current_state.execute(**kwargs)
         if next_state_name:
             if next_state_name == FSM.STATE_NAME_EXIT:
@@ -83,7 +88,8 @@ class FSM(object):
 
             # enter next state
             next_state = self.states.get(next_state_name, None)
-            assert next_state, 'FSM has no such state "{}"'.format(next_state_name)
+            if next_state is None:
+                raise RuntimeError(f'FSM has no such state "{next_state_name}"')
 
             # leave current state
             self.current_state.leave()
