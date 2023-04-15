@@ -14,8 +14,8 @@
 
 
 class FlareServiceConstants(object):
-    FLARE_CONSOLE = "admin"
-    FLARE_SERVER = "server"
+    FLARE_CONSOLE = "admin@nvidia.com"
+    FLARE_SERVER = "localhost"
     FLARE_CLIENT = "client"
     FLARE_OVERSEER = "overseer"
     STARTUP = "startup"
