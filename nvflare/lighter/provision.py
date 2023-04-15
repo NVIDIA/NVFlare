@@ -105,10 +105,12 @@ def gen_default_project_config(src_project_name, dest_project_file):
     shutil.copyfile(os.path.join(file_path, src_project_name), dest_project_file)
 
 
-def provision(project_full_path: str,
-              workspace_full_path: str,
-              add_user_full_path: Optional[str] = None,
-              add_client_full_path: Optional[str] = None):
+def provision(
+    project_full_path: str,
+    workspace_full_path: str,
+    add_user_full_path: Optional[str] = None,
+    add_client_full_path: Optional[str] = None,
+):
     project_dict = load_yaml(project_full_path)
     project = prepare_project(project_dict, add_user_full_path, add_client_full_path)
     builders = prepare_builders(project_dict)
@@ -141,9 +143,7 @@ def prepare_project(project_dict, add_user_file_path=None, add_client_file_path=
     project = Project(name=project_name, description=project_description, participants=participants)
     n_servers = len(project.get_participants_by_type("server", first_only=False))
     if n_servers > 2:
-        raise (
-            f"Configuration error: Expect 2 or 1 server to be provisioned. project contains {n_servers} servers."
-        )
+        raise (f"Configuration error: Expect 2 or 1 server to be provisioned. project contains {n_servers} servers.")
     return project
 
 

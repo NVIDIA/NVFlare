@@ -24,10 +24,10 @@ import yaml
 
 from nvflare.cli_exception import CLIException
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
-from nvflare.lighter.provision import gen_default_project_config, prepare_project, prepare_builders
+from nvflare.lighter.provision import gen_default_project_config, prepare_builders, prepare_project
 from nvflare.lighter.service_constants import FlareServiceConstants as SC
 from nvflare.lighter.spec import Provisioner
-from nvflare.lighter.utils import update_storage_locations, update_project_server_name_config, load_yaml
+from nvflare.lighter.utils import load_yaml, update_project_server_name_config, update_storage_locations
 from nvflare.tool.api_utils import shutdown_system
 
 DEFAULT_WORKSPACE = "/tmp/workspace"
@@ -95,7 +95,7 @@ def get_upload_dir(startup_dir) -> str:
     try:
         with open(console_config_path, "r") as f:
             console_config = json.load(f)
-            upload_dir = console_config['admin']["upload_dir"]
+            upload_dir = console_config["admin"]["upload_dir"]
     except IOError as e:
         raise CLIException(f"failed to load {console_config_path} {e}")
     except json.decoder.JSONDecodeError as e:
@@ -157,10 +157,7 @@ def update_docker_comp_builder(gen_docker_compose: bool, project_config: dict):
     if gen_docker_compose:
         docker_builder = {
             "path": "nvflare.lighter.impl.docker.DockerBuilder",
-            "args": {
-                "base_image": "python:3.8",
-                "requirements_file": "requirements.txt"
-            }
+            "args": {"base_image": "python:3.8", "requirements_file": "requirements.txt"},
         }
         project_config["builders"].append(docker_builder)
 
@@ -169,15 +166,18 @@ def update_docker_comp_builder(gen_docker_compose: bool, project_config: dict):
 
 def update_number_of_clients(number_of_clients, project_config) -> dict:
     participants: List[dict] = project_config["participants"]
-    clients = [p for p in participants if p['type'] == 'client']
+    clients = [p for p in participants if p["type"] == "client"]
     current_n = len(clients)
     if current_n > number_of_clients:
         for i in range(0, number_of_clients):
-            participants = [p for p in participants if p['type'] != 'client' or
-                            (p['type'] == 'client' and p['name'] == f'site-{i + 1}')]
+            participants = [
+                p
+                for p in participants
+                if p["type"] != "client" or (p["type"] == "client" and p["name"] == f"site-{i + 1}")
+            ]
     elif current_n < number_of_clients:
         for i in range(current_n, number_of_clients):
-            client_dict = {'name': f'site-{i + 1}', 'type': 'client', 'org': 'nvidia'}
+            client_dict = {"name": f"site-{i + 1}", "type": "client", "org": "nvidia"}
             participants.append(client_dict)
     project_config["participants"] = participants
 
@@ -365,6 +365,7 @@ def _run(cmd_type: str, workspace: str, gpu_ids: List[int], excluded: list, whit
 
 def clean_local(workspace: str):
     import shutil
+
     if os.path.exists(workspace):
         shutil.rmtree(workspace, ignore_errors=True)
         print(f"{workspace} is removed")
@@ -417,7 +418,7 @@ def def_local_parser(sub_cmd):
         nargs="?",
         default="",
         help="user can provide their own project.yaml file path, '-n', '-d' options will be ignored. This "
-             "can only be used with 'nvflare --provision' "
+        "can only be used with 'nvflare --provision' ",
     )
     local_parser.add_argument(
         "-d",
@@ -426,24 +427,27 @@ def def_local_parser(sub_cmd):
         nargs="?",
         default="False",
         help="generate docker-compose file, that can start ever sub-system in dockers, this can only be used in "
-             "'nvflare local --provision'"
+        "'nvflare local --provision'",
     )
     local_parser.add_argument(
         "--provision",
         dest="prepare_local",
         action="store_const",
         const=prepare_local,
-        help="prepare provision workspace and provision")
+        help="prepare provision workspace and provision",
+    )
 
     local_parser.add_argument(
         "--prepare-examples",
         dest="prepare_examples",
         action="store_const",
         const=prepare_examples,
-        help="create an symbolic link to the examples directory, requires nvflare_example directory with '-e'")
+        help="create an symbolic link to the examples directory, requires nvflare_example directory with '-e'",
+    )
 
-    local_parser.add_argument("--start", dest="start_local", action="store_const", const=start_local,
-                              help="start local")
+    local_parser.add_argument(
+        "--start", dest="start_local", action="store_const", const=start_local, help="start local"
+    )
     local_parser.add_argument("--stop", dest="stop_local", action="store_const", const=stop_local, help="stop local")
     local_parser.add_argument(
         "--clean", dest="clean_local", action="store_const", const=clean_local, help="cleanup local workspace"
@@ -453,10 +457,10 @@ def def_local_parser(sub_cmd):
 
 def is_local_cmd(cmd_args) -> bool:
     return (
-            hasattr(cmd_args, "start_local")
-            or hasattr(cmd_args, "prepare_local")
-            or hasattr(cmd_args, "stop_local")
-            or hasattr(cmd_args, "clean_local")
+        hasattr(cmd_args, "start_local")
+        or hasattr(cmd_args, "prepare_local")
+        or hasattr(cmd_args, "stop_local")
+        or hasattr(cmd_args, "clean_local")
     )
 
 
