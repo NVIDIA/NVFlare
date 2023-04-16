@@ -27,18 +27,20 @@ from nvflare.security.logging import secure_format_exception
 class LearnerExecutor(Executor):
     def __init__(
         self,
-        learner_id,
+        learner_id: str,
         train_task=AppConstants.TASK_TRAIN,
         submit_model_task=AppConstants.TASK_SUBMIT_MODEL,
         validate_task=AppConstants.TASK_VALIDATION,
+        validate_before_train: bool = True,
     ):
-        """Key component to run learner on clients.
+        """An Executor interface for Learner.
 
         Args:
             learner_id (str): id pointing to the learner object
             train_task (str, optional): label to dispatch train task. Defaults to AppConstants.TASK_TRAIN.
             submit_model_task (str, optional): label to dispatch submit model task. Defaults to AppConstants.TASK_SUBMIT_MODEL.
             validate_task (str, optional): label to dispatch validation task. Defaults to AppConstants.TASK_VALIDATION.
+            validate_before_train (bool, optional): whether to run validation before train. Defaults to True.
         """
         super().__init__()
         self.learner_id = learner_id
@@ -46,6 +48,7 @@ class LearnerExecutor(Executor):
         self.train_task = train_task
         self.submit_model_task = submit_model_task
         self.validate_task = validate_task
+        self.validate_before_train = validate_before_train
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
@@ -71,6 +74,9 @@ class LearnerExecutor(Executor):
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         self.log_info(fl_ctx, f"Client trainer got task: {task_name}")
+        if abort_signal.triggered:
+            self.finalize(fl_ctx)
+            return make_reply(ReturnCode.TASK_ABORTED)
 
         try:
             if task_name == self.train_task:
@@ -90,8 +96,9 @@ class LearnerExecutor(Executor):
     def train(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         self.log_debug(fl_ctx, f"train abort signal: {abort_signal.triggered}")
 
-        shareable.set_header(AppConstants.VALIDATE_TYPE, ValidateType.BEFORE_TRAIN_VALIDATE)
-        validate_result: Shareable = self.learner.validate(shareable, fl_ctx, abort_signal)
+        if self.validate_before_train:
+            shareable.set_header(AppConstants.VALIDATE_TYPE, ValidateType.BEFORE_TRAIN_VALIDATE)
+            validate_result: Shareable = self.learner.validate(shareable, fl_ctx, abort_signal)
 
         train_result = self.learner.train(shareable, fl_ctx, abort_signal)
         if not (train_result and isinstance(train_result, Shareable)):

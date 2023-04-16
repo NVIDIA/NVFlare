@@ -20,12 +20,12 @@ from nvflare.apis.signal import Signal
 
 class Learner(FLComponent):
     def initialize(self, parts: dict, fl_ctx: FLContext):
-        """Initialize the Learner object. This is called before the Learner can train or validate.
+        """Initialize and setup the Learner object.
 
-        This is called only once.
+        This is called only once at the beginning.
 
         Args:
-            parts: components to be used by the Trainer
+            parts: NVFlare components, can use key to get required component
             fl_ctx: FLContext of the running environment
         """
         pass
@@ -38,8 +38,8 @@ class Learner(FLComponent):
             fl_ctx: FLContext of the running environment
             abort_signal: signal to abort the train
 
-        Returns: train result in Shareable
-
+        Returns:
+            train result in Shareable
         """
         return make_reply(ReturnCode.TASK_UNSUPPORTED)
 
@@ -63,8 +63,8 @@ class Learner(FLComponent):
             fl_ctx: FLContext of the running environment
             abort_signal: signal to abort the train
 
-        Returns: validate result in Shareable
-
+        Returns:
+            validate result in Shareable
         """
         return make_reply(ReturnCode.TASK_UNSUPPORTED)
 
@@ -87,6 +87,5 @@ class Learner(FLComponent):
 
         Args:
             fl_ctx: FLContext of the running environment
-
         """
         pass
