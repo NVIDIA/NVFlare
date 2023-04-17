@@ -35,7 +35,7 @@ Once you have all the csv files in the same folder, you can start this tool with
 
     -d: the directory that contains the csv files. Required.
     -o: the output file that will contain the result. Optional.
-    
+
 If the output file name is not specified, it will be default to "comm.txt".
 The result is printed to the screen and written to the output file.
 
