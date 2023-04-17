@@ -18,13 +18,19 @@ import os
 from nvflare.fuel.f3.stats_pool import CsvRecordReader
 
 
-def compute_time(file_name: str, pool_name: str):
+def _print(data: str, out_file):
+    print(data)
+    if out_file is not None:
+        out_file.write(data + "\n")
+
+
+def _compute_time(file_name: str, pool_name: str, out_file):
     result = 0.0
     max_time = 0.0
     min_time = 1000
     count = 0
 
-    print(f"Processing record file: {file_name}")
+    _print(f"Processing record file: {file_name}", out_file)
     reader = CsvRecordReader(file_name)
     for rec in reader:
         if rec.pool_name != pool_name:
@@ -36,32 +42,43 @@ def compute_time(file_name: str, pool_name: str):
         if min_time > rec.value:
             min_time = rec.value
 
-    print(f"    Max={max_time};  Min={min_time};  Avg={result/count}; Count={count}; Total={result}")
+    _print(f"    Max={max_time};  Min={min_time};  Avg={result/count}; Count={count}; Total={result}", out_file)
     return result
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--stats_dir", "-d", type=str, help="directory that contains stats record files", required=True)
+    parser.add_argument(
+        "--out_file",
+        "-o",
+        type=str,
+        help="directory that contains stats record files",
+        required=False,
+        default="comm.txt",
+    )
     args = parser.parse_args()
 
     stats_dir = args.stats_dir
     files = os.listdir(stats_dir)
     if not files:
-        print(f"no stats files in {stats_dir}")
+        print(f"No stats files in {stats_dir}")
         return -1
+
+    out_file = None
+    if args.out_file:
+        out_file = open(os.path.join(stats_dir, args.out_file), "w")
 
     total = 0.0
     for fn in files:
         if not fn.endswith(".csv"):
             continue
-        t = compute_time(
-            file_name=os.path.join(stats_dir, fn),
-            pool_name="msg_travel",
-        )
+        t = _compute_time(file_name=os.path.join(stats_dir, fn), pool_name="msg_travel", out_file=out_file)
         total += t
 
-    print(f"Total comm time: {total}")
+    _print(f"Total comm time: {total}", out_file)
+    if out_file is not None:
+        out_file.close()
 
 
 if __name__ == "__main__":
