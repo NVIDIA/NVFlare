@@ -44,6 +44,8 @@ VALID_HIST_MODES = [StatsMode.COUNT, StatsMode.PERCENT, StatsMode.AVERAGE, Stats
 
 
 def format_value(v: float, n=3):
+    if v is None:
+        return "n/a"
     fmt = "{:." + str(n) + "e}"
     return fmt.format(v)
 
@@ -95,9 +97,15 @@ class _Bin:
         b.count = d.get(_KEY_COUNT, 0)
         b.total = d.get(_KEY_TOTAL, 0)
         m = d.get(_KEY_MIN)
-        b.min = m if m else None
+        if isinstance(m, str):
+            b.min = None
+        else:
+            b.min = m
         x = d.get(_KEY_MAX)
-        b.min = x if x else None
+        if isinstance(x, str):
+            b.max = None
+        else:
+            b.max = x
         return b
 
 
