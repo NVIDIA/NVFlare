@@ -501,10 +501,17 @@ class CsvRecordHandler(RecordWriter):
     def __init__(self, file_name):
         self.file = open(file_name, "w")
         self.writer = csv.writer(self.file)
+        self.lock = threading.Lock()
 
     def write(self, pool_name: str, category: str, value: float, report_time: float):
+        if not pool_name.isascii():
+            raise ValueError(f"pool_name {pool_name} contains non-ascii chars")
+        if not category.isascii():
+            raise ValueError(f"category {category} contains non-ascii chars")
+
         row = [pool_name, category, report_time, value]
-        self.writer.writerow(row)
+        with self.lock:
+            self.writer.writerow(row)
 
     def close(self):
         self.file.close()
@@ -519,8 +526,8 @@ class CsvRecordHandler(RecordWriter):
                     raise ValueError(f"'{csv_file_name}' is not a valid stats pool record file: row too short")
                 pool_name = row[0]
                 cat_name = row[1]
-                report_time = row[2]
-                value = row[3]
+                report_time = float(row[2])
+                value = float(row[3])
 
                 cats = pools.get(pool_name)
                 if not cats:
