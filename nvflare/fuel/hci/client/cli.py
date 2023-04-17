@@ -51,15 +51,13 @@ class AdminClient(cmd.Cmd):
     """Admin command prompt for submitting admin commands to the server through the CLI.
 
     Args:
-        host: cn provisioned for the server, with this fully qualified domain name resolving to the IP of the FL server. This may be set by the OverseerAgent.
-        port: port provisioned as admin_port for FL admin communication, by default provisioned as 8003, must be int if provided. This may be set by the OverseerAgent.
         prompt: prompt to use for the command prompt
         ca_cert: path to CA Cert file, by default provisioned rootCA.pem
         client_cert: path to admin client Cert file, by default provisioned as client.crt
         client_key: path to admin client Key file, by default provisioned as client.key
         credential_type: what type of credential to use
         cmd_modules: command modules to load and register
-        idp_agent: IdpAgent to obtain the primary service provider to set the host and port of the active server
+        service_finder: used to obtain the primary service provider to set the host and port of the active server
         debug: whether to print debug messages. False by default.
     """
 
@@ -77,7 +75,7 @@ class AdminClient(cmd.Cmd):
         session_timeout_interval=900,  # close the client after 15 minutes of inactivity
         debug: bool = False,
     ):
-        cmd.Cmd.__init__(self)
+        super().__init__()
         self.intro = "Type help or ? to list commands.\n"
         self.prompt = prompt
         self.user_name = "admin"

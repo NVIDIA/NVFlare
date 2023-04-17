@@ -16,9 +16,8 @@ import argparse
 import cmd
 import json
 
-from nvflare.fuel.f3.stats_pool import StatsPoolManager
+from nvflare.fuel.f3.stats_pool import VALID_HIST_MODES, StatsPoolManager, parse_hist_mode
 from nvflare.fuel.hci.table import Table
-from nvflare.fuel.utils.stats_utils import VALID_HIST_MODES, parse_hist_mode
 
 
 class StatsViewer(cmd.Cmd):
