@@ -539,3 +539,31 @@ class CsvRecordHandler(RecordWriter):
                     cats[cat_name] = recs
                 recs.append((report_time, value))
         return pools
+
+
+class StatsRecord:
+    def __init__(self, pool_name, category, report_time, value):
+        self.pool_name = pool_name
+        self.category = category
+        self.report_time = report_time
+        self.value = value
+
+
+class CsvRecordReader:
+    def __init__(self, csv_file_name: str):
+        self.csv_file_name = csv_file_name
+        self.file = open(csv_file_name)
+        self.reader = csv.reader(self.file)
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        row = next(self.reader)
+        if len(row) < 4:
+            raise ValueError(f"'{self.csv_file_name}' is not a valid stats pool record file: row too short")
+        pool_name = row[0]
+        cat_name = row[1]
+        report_time = float(row[2])
+        value = float(row[3])
+        return StatsRecord(pool_name, cat_name, report_time, value)
