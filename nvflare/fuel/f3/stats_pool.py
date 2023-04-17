@@ -519,25 +519,22 @@ class CsvRecordHandler(RecordWriter):
     @staticmethod
     def read_records(csv_file_name: str):
         pools = {}
-        with open(csv_file_name) as f:
-            reader = csv.reader(f)
-            for row in reader:
-                if len(row) < 4:
-                    raise ValueError(f"'{csv_file_name}' is not a valid stats pool record file: row too short")
-                pool_name = row[0]
-                cat_name = row[1]
-                report_time = float(row[2])
-                value = float(row[3])
+        reader = CsvRecordReader(csv_file_name)
+        for rec in reader:
+            pool_name = rec.pool_name
+            cat_name = rec.category
+            report_time = rec.report_time
+            value = rec.value
 
-                cats = pools.get(pool_name)
-                if not cats:
-                    cats = {}
-                    pools[pool_name] = cats
-                recs = cats.get(cat_name)
-                if not recs:
-                    recs = []
-                    cats[cat_name] = recs
-                recs.append((report_time, value))
+            cats = pools.get(pool_name)
+            if not cats:
+                cats = {}
+                pools[pool_name] = cats
+            recs = cats.get(cat_name)
+            if not recs:
+                recs = []
+                cats[cat_name] = recs
+            recs.append((report_time, value))
         return pools
 
 
@@ -560,8 +557,8 @@ class CsvRecordReader:
 
     def __next__(self):
         row = next(self.reader)
-        if len(row) < 4:
-            raise ValueError(f"'{self.csv_file_name}' is not a valid stats pool record file: row too short")
+        if len(row) != 4:
+            raise ValueError(f"'{self.csv_file_name}' is not a valid stats pool record file: bad row length {len(row)}")
         pool_name = row[0]
         cat_name = row[1]
         report_time = float(row[2])
