@@ -534,7 +534,6 @@ class SimulatorClientRunner(FLComponent):
             command += " --gpu " + str(gpu)
         new_env = os.environ.copy()
         new_env["PYTHONPATH"] = os.pathsep.join(sys.path)[1:]
-        os.
         _ = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
 
         conn = self._create_connection(open_port, timeout=timeout)
