@@ -17,6 +17,30 @@ import os
 
 from nvflare.fuel.f3.stats_pool import CsvRecordReader
 
+"""
+This tool can be used to compute the total time spent on communication for a job.
+
+NOTE: if all processes (server and clients) are run on the same host, then the numbers are accurate.
+If processes are running on different hosts, then these hosts must be synchronized by NTP (Network Time Protocol).
+
+Before starting this tool, you must collect the stats_pool_records.csv files for all the processes into a folder. 
+These files must all have the suffix of ".csv". For FL clients, these files are located in their workspaces.
+For FL server, you need to download the job first (using admin console or flare api) and then find it in the downloaded 
+workspace of the job.
+
+Once you have all the csv files in the same folder, you can start this tool with the following args:
+
+    -d: the directory that contains the csv files. Required.
+    -o: the output file that will contain the result. Optional.
+    
+If the output file name is not specified, it will be default to "comm.txt".
+The result is printed to the screen and written to the output file.
+
+The output file will be placed into the same folder that contains the csv files. 
+Do not name your output file as CSV file!
+
+"""
+
 
 def _print(data: str, out_file):
     print(data)
