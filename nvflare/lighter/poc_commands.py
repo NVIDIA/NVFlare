@@ -512,4 +512,4 @@ def handle_poc_cmd(cmd_args):
     elif cmd_args.clean_poc:
         clean_poc(poc_workspace)
     else:
-        raise Exception(f"unable to handle local command:{cmd_args}")
+        raise Exception(f"unable to handle poc command:{cmd_args}")
