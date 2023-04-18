@@ -19,7 +19,7 @@ from nvflare.fuel.flare_api.api_spec import JobNotFound, NoConnection
 from nvflare.fuel.flare_api.flare_api import Session
 
 
-def shutdown_system(prod_dir: str, username: str = "admin", secure_mode: bool = False, timeout_in_sec: int = 30):
+def shutdown_system(prod_dir: str, username: str = "admin", secure_mode: bool = True, timeout_in_sec: int = 30):
     admin_user_dir = os.path.join(prod_dir, username)
     print("connect to nvflare server")
     sess = None

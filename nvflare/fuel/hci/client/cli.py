@@ -415,7 +415,11 @@ class AdminClient(cmd.Cmd):
             self.user_name = "admin"
             self.pwd = hash_password("admin")
         else:
-            self.user_name = input("User Name: ")
+            local_model = os.environ.get("LOCAL_MODE", False)
+            if local_model:
+                self.user_name = "admin@nvidia.com"
+            else:
+                self.user_name = input("User Name: ")
 
     def print_resp(self, resp: dict):
         """Prints the server response

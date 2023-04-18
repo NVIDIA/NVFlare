@@ -19,12 +19,12 @@ import sys
 from nvflare.cli_exception import CLIException
 from nvflare.dashboard.cli import define_dashboard_parser, handle_dashboard
 from nvflare.fuel.hci.tools.authz_preview import define_authz_preview_parser, run_command
-from nvflare.lighter.local_commands import def_local_parser, handle_local_cmd
+from nvflare.lighter.poc_commands import def_poc_parser, handle_poc_cmd
 from nvflare.lighter.provision import define_provision_parser, handle_provision
 from nvflare.private.fed.app.simulator.simulator import define_simulator_parser, run_simulator
 from nvflare.tool.preflight_check import check_packages, define_preflight_check_parser
 
-CMD_LOCAL = "local"
+CMD_POC = "poc"
 CMD_PROVISION = "provision"
 CMD_PREFLIGHT_CHECK = "preflight_check"
 CMD_SIMULATOR = "simulator"
@@ -90,7 +90,7 @@ def parse_args(prog_name: str):
     _parser.add_argument("--version", "-V", action="store_true", help="print nvflare version")
     sub_cmd = _parser.add_subparsers(description="sub command parser", dest="sub_command")
     sub_cmd_parsers = {}
-    sub_cmd_parsers.update(def_local_parser(sub_cmd))
+    sub_cmd_parsers.update(def_poc_parser(sub_cmd))
     sub_cmd_parsers.update(def_preflight_check_parser(sub_cmd))
     sub_cmd_parsers.update(def_provision_parser(sub_cmd))
     sub_cmd_parsers.update(def_simulator_parser(sub_cmd))
@@ -101,7 +101,7 @@ def parse_args(prog_name: str):
 
 
 handlers = {
-    CMD_LOCAL: handle_local_cmd,
+    CMD_POC: handle_poc_cmd,
     CMD_PROVISION: handle_provision,
     CMD_PREFLIGHT_CHECK: check_packages,
     CMD_SIMULATOR: handle_simulator_cmd,
