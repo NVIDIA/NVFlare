@@ -2,7 +2,7 @@
 
 Components for running the algorithm proposed in
 ["Auto-FedRL: Federated Hyperparameter Optimization for Multi-institutional Medical Image Segmentation"](https://arxiv.org/abs/2203.06338) (ECCV 2022)
-with [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html).
+with [NVIDIA FLARE](https://nvflare.readthedocs.io/en/2.3/index.html).
 
 ###### Abstract:
 

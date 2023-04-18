@@ -1,6 +1,6 @@
 # Hello PyTorch with Tensorboard Streaming
 
-Example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) to train an image classifier
+Example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/2.3/index.html) to train an image classifier
 using federated averaging ([FedAvg](https://arxiv.org/abs/1602.05629)) and [PyTorch](https://pytorch.org/)
 as the deep learning training framework.
 
@@ -56,4 +56,4 @@ For example:
 ssh -L {local_machine_port}:127.0.0.1:6006 user@server_ip
 ```
 
-> **_NOTE:_** For a more in-depth guide about the TensorBoard streaming feature, see [PyTorch with TensorBoard](https://nvflare.readthedocs.io/en/main/examples/hello_pt_tb.html).
+> **_NOTE:_** For a more in-depth guide about the TensorBoard streaming feature, see [PyTorch with TensorBoard](https://nvflare.readthedocs.io/en/2.3/examples/hello_pt_tb.html).

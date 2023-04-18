@@ -5,7 +5,7 @@ Please make sure you set up virtual environment and Jupyterlab follows [example 
 ## Introduction to Libraries and HIGGS Data
 
 ### Libraries
-This example show how to use [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) on tabular data applications.
+This example show how to use [NVIDIA FLARE](https://nvflare.readthedocs.io/en/2.3/index.html) on tabular data applications.
 It illustrates the [Random Forest](https://xgboost.readthedocs.io/en/stable/tutorials/rf.html) functionality using [XGBoost] (https://github.com/dmlc/xgboost) library,
 which is an optimized distributed gradient boosting library covering random forest.
 Follow along in this [notebook](./random_forest.ipynb) for an interactive experience.
@@ -73,7 +73,7 @@ If you want to customize for your experiments, please check `utils/prepare_data_
 
 ## HIGGS jobs preparation under various training settings
 
-Please follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions to install NVFlare.
+Please follow the [Installation](https://nvflare.readthedocs.io/en/2.3/quickstart.html) instructions to install NVFlare.
 
 We then prepare the NVFlare jobs for different settings by running
 ```

@@ -1,6 +1,6 @@
 ## 3D spleen CT segmentation - Simulation
 In the following, we show an example of running MONAI-bundle configurations with NVFlare using the
-[FL simulator](https://nvflare.readthedocs.io/en/main/user_guide/fl_simulator.html).
+[FL simulator](https://nvflare.readthedocs.io/en/2.3/user_guide/fl_simulator.html).
 
 For an example with real-world deployment settings, see [here](../spleen_ct_segmentation_real-world/README.md).
 

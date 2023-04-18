@@ -18,9 +18,9 @@ To accomplish these goals, a set of key new tools and features were developed, i
  - :ref:`docker_compose`
  - :ref:`preflight_check`
  - Site-policy management
- - Federated XGboost <https://github.com/NVIDIA/NVFlare/tree/main/examples/xgboost>
- - Federated Statistics <https://github.com/NVIDIA/NVFlare/tree/main/examples/federated_statistics>
- - MONAI Integration <https://github.com/NVIDIA/NVFlare/tree/main/integration/monai>
+ - Federated XGboost <https://github.com/NVIDIA/NVFlare/tree/2.3/examples/xgboost>
+ - Federated Statistics <https://github.com/NVIDIA/NVFlare/tree/2.3/examples/federated_statistics>
+ - MONAI Integration <https://github.com/NVIDIA/NVFlare/tree/2.3/integration/monai>
 
 The sections below provide an overview of these features.  For more detailed documentation and usage information, refer to the :ref:`User Guide <user_guide>` and :ref:`Programming Guide <programming_guide>`.
 
@@ -81,7 +81,7 @@ Federated XGBoost
 
 XGBoost is a popular machine learning method used by applied data scientists in a wide variety of applications. In FLARE v2.2,
 we introcuce federated XGBoost integration, with a controller and executor that run distributed XGBoost training among a group
-of clients.  See the `hello-xgboost example <https://github.com/NVIDIA/NVFlare/tree/main/examples/xgboost>`_ to get started.
+of clients.  See the `hello-xgboost example <https://github.com/NVIDIA/NVFlare/tree/2.3/examples/xgboost>`_ to get started.
 
 Federated Statistics
 """"""""""""""""""""

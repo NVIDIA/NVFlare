@@ -1,6 +1,6 @@
 # Hello PyTorch
 
-Example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) to train an image classifier
+Example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/2.3/index.html) to train an image classifier
 using federated averaging ([FedAvg](https://arxiv.org/abs/1602.05629))
 and [PyTorch](https://pytorch.org/) as the deep learning training framework.
 
@@ -11,7 +11,7 @@ You can follow the [hello_world notebook](../hello_world.ipynb) or the following
 
 ### 1. Install NVIDIA FLARE
 
-Follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions.
+Follow the [Installation](https://nvflare.readthedocs.io/en/2.3/quickstart.html) instructions.
 Install additional requirements:
 
 ```
