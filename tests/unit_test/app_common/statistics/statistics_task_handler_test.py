@@ -20,59 +20,60 @@ import pytest
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.statistics_spec import Feature, HistogramType, StatisticConfig
-from nvflare.app_common.executors.statistics.statistics_task_handler import StatisticsTaskHandler
-from tests.unit_test.app_common.executors.statistics.mock_df_stats_executor import MockDFStatistics
+from nvflare.app_common.statistics.statistics_task_handler import StatisticsTaskHandler
+from tests.unit_test.app_common.statistics.mock_df_stats import MockDFStatistics
 
 
-class MockStatsExecutor(StatisticsTaskHandler):
+class MockStatisticsTaskHandler(StatisticsTaskHandler):
     def __init__(self):
         super().__init__(generator_id="")
         self.stats_generator = None
 
     def initialize(self, fl_ctx: FLContext):
         self.stats_generator = MockDFStatistics(data_path="")
-        self.stats_generator.initialize(None)
+        self.stats_generator.initialize(fl_ctx)
 
 
-class TestStatisticsExecutor:
+class TestStatisticsTaskHandler:
     @classmethod
     def setup_class(cls):
         print("starting class: {} execution".format(cls.__name__))
-        cls.stats_executor = MockStatsExecutor()
-        cls.stats_executor.initialize(None)
+        stats_task_handler = MockStatisticsTaskHandler()
+        stats_task_handler.initialize(FLContext())
+        cls.stats_task_handler = stats_task_handler
 
     def test_get_numeric_features(self):
-        features: Dict[str, List[Feature]] = self.stats_executor.get_numeric_features()
+        features: Dict[str, List[Feature]] = self.stats_task_handler.get_numeric_features()
         assert len(features["train"]) == 1
         assert features["train"][0].feature_name == "Age"
         assert len(features["test"]) == 1
 
     def test_method_implementation(self):
         with pytest.raises(NotImplementedError):
-            r = self.stats_executor.get_sum("train", "Age", StatisticConfig("sum", {}), None, None)
+            _ = self.stats_task_handler.get_sum("train", "Age", StatisticConfig("sum", {}), None, FLContext())
 
     def test_histogram_num_of_bins(self):
         hist_config = {"Age": {"bins": 5}}
         print(hist_config["Age"]["bins"])
-        bins = self.stats_executor.get_number_of_bins("Age", hist_config)
+        bins = self.stats_task_handler.get_number_of_bins("Age", hist_config)
         assert bins == 5
         hist_config = {"*": {"bins": 5}}
-        bins = self.stats_executor.get_number_of_bins("Age", hist_config)
+        bins = self.stats_task_handler.get_number_of_bins("Age", hist_config)
         assert bins == 5
         hist_config = {"Age": {"bins": 6}, "*": {"bins": 10}}
-        bins = self.stats_executor.get_number_of_bins("Edu", hist_config)
+        bins = self.stats_task_handler.get_number_of_bins("Edu", hist_config)
         assert bins == 10
-        bins = self.stats_executor.get_number_of_bins("Age", hist_config)
+        bins = self.stats_task_handler.get_number_of_bins("Age", hist_config)
         assert bins == 6
 
         with pytest.raises(Exception) as e:
             hist_config = {}
-            bins = self.stats_executor.get_number_of_bins("Age", hist_config)
+            _ = self.stats_task_handler.get_number_of_bins("Age", hist_config)
         assert str(e.value) == "feature name = 'Age': missing required 'bins' config in histogram config = {}"
 
         with pytest.raises(Exception) as e:
             hist_config = {"Age": {"bin": 5}}
-            bins = self.stats_executor.get_number_of_bins("Age", hist_config)
+            _ = self.stats_task_handler.get_number_of_bins("Age", hist_config)
         assert (
             str(e.value)
             == "feature name = 'Age': missing required 'bins' config in histogram config = {'Age': {'bin': 5}}"
@@ -80,18 +81,18 @@ class TestStatisticsExecutor:
 
     def test_histogram_bin_range(self):
         hist_config = {"Age": {"bins": 5, "range": [0, 120]}}
-        bin_range = self.stats_executor.get_bin_range("Age", 0, 100, hist_config)
+        bin_range = self.stats_task_handler.get_bin_range("Age", 0, 100, hist_config)
         assert bin_range == [0, 120]
 
         hist_config = {"*": {"bins": 5, "range": [0, 120]}}
-        bin_range = self.stats_executor.get_bin_range("Age", 0, 50, hist_config)
+        bin_range = self.stats_task_handler.get_bin_range("Age", 0, 50, hist_config)
         assert bin_range == [0, 120]
 
         hist_config = {"*": {"bins": 5}}
-        bin_range = self.stats_executor.get_bin_range("Age", 0, 50, hist_config)
+        bin_range = self.stats_task_handler.get_bin_range("Age", 0, 50, hist_config)
         assert bin_range == [0, 50]
         hist_config = {"*": {"bins": 5}, "Age": {"bins": 10}}
-        bin_range = self.stats_executor.get_bin_range("Age", 0, 50, hist_config)
+        bin_range = self.stats_task_handler.get_bin_range("Age", 0, 50, hist_config)
         assert bin_range == [0, 50]
 
     def test_histogram(self):
@@ -102,6 +103,6 @@ class TestStatisticsExecutor:
         inputs["statistic_config"] = hist_config
 
         statistic_config = StatisticConfig("histogram", hist_config)
-        histogram = self.stats_executor.get_histogram("train", "Age", statistic_config, inputs, None)
+        histogram = self.stats_task_handler.get_histogram("train", "Age", statistic_config, inputs, FLContext())
         assert histogram.hist_type == HistogramType.STANDARD
         assert len(histogram.bins) == 3
