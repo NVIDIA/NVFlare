@@ -200,14 +200,27 @@ class HistPool(StatsPool):
                 if has_values[i]:
                     headers.append(self.range_names[i])
 
+            headers.append("overall")
+
             rows = []
             for cat_name in sorted(self.cat_bins.keys()):
                 bins = self.cat_bins[cat_name]
                 total_count = 0
-                if mode == StatsMode.PERCENT:
-                    for b in bins:
-                        if b:
-                            total_count += b.count
+                total_value = 0.0
+                overall_min = None
+                overall_max = None
+
+                for b in bins:
+                    if b:
+                        total_count += b.count
+                        total_value += b.total
+                        if b.max is not None:
+                            if overall_max is None or overall_max < b.max:
+                                overall_max = b.max
+
+                        if b.min is not None:
+                            if overall_min is None or overall_min > b.min:
+                                overall_min = b.min
 
                 r = [cat_name]
                 for i in range(len(bins)):
@@ -219,6 +232,30 @@ class HistPool(StatsPool):
                         r.append("")
                     else:
                         r.append(b.get_content(mode, total_count))
+
+                # compute overall values
+                if mode == StatsMode.COUNT:
+                    r.append(str(total_count))
+                elif mode == StatsMode.PERCENT:
+                    r.append("1.0")
+                elif mode == StatsMode.AVERAGE:
+                    if total_count == 0:
+                        r.append("n/a")
+                    else:
+                        r.append(format_value(total_value / total_count))
+                elif mode == StatsMode.MIN:
+                    if overall_min is None:
+                        r.append("n/a")
+                    else:
+                        r.append(format_value(overall_min))
+                elif mode == StatsMode.MAX:
+                    if overall_max is None:
+                        r.append("n/a")
+                    else:
+                        r.append(format_value(overall_max))
+                else:
+                    r.append("n/a")
+
                 rows.append(r)
             return headers, rows
 
