@@ -44,6 +44,8 @@ VALID_HIST_MODES = [StatsMode.COUNT, StatsMode.PERCENT, StatsMode.AVERAGE, Stats
 
 
 def format_value(v: float, n=3):
+    if v is None:
+        return "n/a"
     fmt = "{:." + str(n) + "e}"
     return fmt.format(v)
 
@@ -95,9 +97,15 @@ class _Bin:
         b.count = d.get(_KEY_COUNT, 0)
         b.total = d.get(_KEY_TOTAL, 0)
         m = d.get(_KEY_MIN)
-        b.min = m if m else None
+        if isinstance(m, str):
+            b.min = None
+        else:
+            b.min = m
         x = d.get(_KEY_MAX)
-        b.min = x if x else None
+        if isinstance(x, str):
+            b.max = None
+        else:
+            b.max = x
         return b
 
 
@@ -501,10 +509,17 @@ class CsvRecordHandler(RecordWriter):
     def __init__(self, file_name):
         self.file = open(file_name, "w")
         self.writer = csv.writer(self.file)
+        self.lock = threading.Lock()
 
     def write(self, pool_name: str, category: str, value: float, report_time: float):
+        if not pool_name.isascii():
+            raise ValueError(f"pool_name {pool_name} contains non-ascii chars")
+        if not category.isascii():
+            raise ValueError(f"category {category} contains non-ascii chars")
+
         row = [pool_name, category, report_time, value]
-        self.writer.writerow(row)
+        with self.lock:
+            self.writer.writerow(row)
 
     def close(self):
         self.file.close()
@@ -512,23 +527,48 @@ class CsvRecordHandler(RecordWriter):
     @staticmethod
     def read_records(csv_file_name: str):
         pools = {}
-        with open(csv_file_name) as f:
-            reader = csv.reader(f)
-            for row in reader:
-                if len(row) < 4:
-                    raise ValueError(f"'{csv_file_name}' is not a valid stats pool record file: row too short")
-                pool_name = row[0]
-                cat_name = row[1]
-                report_time = row[2]
-                value = row[3]
+        reader = CsvRecordReader(csv_file_name)
+        for rec in reader:
+            pool_name = rec.pool_name
+            cat_name = rec.category
+            report_time = rec.report_time
+            value = rec.value
 
-                cats = pools.get(pool_name)
-                if not cats:
-                    cats = {}
-                    pools[pool_name] = cats
-                recs = cats.get(cat_name)
-                if not recs:
-                    recs = []
-                    cats[cat_name] = recs
-                recs.append((report_time, value))
+            cats = pools.get(pool_name)
+            if not cats:
+                cats = {}
+                pools[pool_name] = cats
+            recs = cats.get(cat_name)
+            if not recs:
+                recs = []
+                cats[cat_name] = recs
+            recs.append((report_time, value))
         return pools
+
+
+class StatsRecord:
+    def __init__(self, pool_name, category, report_time, value):
+        self.pool_name = pool_name
+        self.category = category
+        self.report_time = report_time
+        self.value = value
+
+
+class CsvRecordReader:
+    def __init__(self, csv_file_name: str):
+        self.csv_file_name = csv_file_name
+        self.file = open(csv_file_name)
+        self.reader = csv.reader(self.file)
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        row = next(self.reader)
+        if len(row) != 4:
+            raise ValueError(f"'{self.csv_file_name}' is not a valid stats pool record file: bad row length {len(row)}")
+        pool_name = row[0]
+        cat_name = row[1]
+        report_time = float(row[2])
+        value = float(row[3])
+        return StatsRecord(pool_name, cat_name, report_time, value)
