@@ -7,7 +7,7 @@ sequenceDiagram
     participant Server
     participant Client
     participant Stats_Generator
-    Server->>Client: task: Fed_Stats: statistics_task_1: count, sum, mean,std_dev, min, max 
+    Server->>Client: task: Fed_Stats: statistics_task_1: count, sum, mean, std_dev, min, max
     Client-->>Server: local statistics
     loop over clients
         Server->>Server: aggregation

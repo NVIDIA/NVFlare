@@ -29,14 +29,7 @@ from nvflare.security.logging import secure_format_exception
 
 
 class StatisticsTaskHandler(TaskHandler):
-    """
-    StatisticsTaskHandler is to be used together with StatisticsExecutor.
-
-    StatisticsExecutor is client-side executor that perform local statistics generation and communication to
-    FL Server global statistics controller. The actual local statistics calculation would delegate to
-    Statistics spec implementor.
-
-    """
+    """The actual local statistics calculation would delegate to `Statistics` spec implementor."""
 
     def __init__(self, generator_id: str, precision: int = 4):
         super().__init__(generator_id, Statistics)

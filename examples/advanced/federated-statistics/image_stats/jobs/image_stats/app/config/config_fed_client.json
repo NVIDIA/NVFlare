@@ -7,9 +7,10 @@
       ],
       "executor": {
         "id": "Executor",
-        "path": "nvflare.app_common.executors.statistics.statistics_executor.StatisticsExecutor",
+        "name": "ErrorHandlingExecutor",
         "args": {
-          "generator_id": "local_hist_generator"
+          "task_handler_id": "stats_task_handler",
+          "dxo_data_kind": "STATISTICS"
         }
       }
     }
@@ -31,6 +32,14 @@
   ],
   "task_data_filters": [],
   "components": [
+    {
+      "id": "stats_task_handler",
+      "name": "StatisticsTaskHandler",
+      "args": {
+        "generator_id": "local_hist_generator",
+        "precision": 4
+      }
+    },
     {
       "id": "local_hist_generator",
       "path": "image_statistics.ImageStatistics",

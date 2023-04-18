@@ -191,15 +191,31 @@ in FLARE job store.
 
 ### 5.2 client side configuration
  
-First, we specify the built-in client side executor: `StatisticsExecutor`, which takes a local stats generator Id
+First, we specify the built-in client side executor: `ErrorHandlingExecutor`, and specify `task_handler_id`.
 
 ```
- "executor": {
-        "id": "Executor",
-        "path": "nvflare.app_common.executors.statistics_executor.StatisticsExecutor",
-        "args": {
-          "generator_id": "df_stats_generator",
-  },
+  "executor": {
+     "id": "Executor",
+     "name": "ErrorHandlingExecutor",
+     "args": {
+       "task_handler_id": "stats_task_handler",
+       "dxo_data_kind": "STATISTICS"
+     }
+   }
+```
+
+The built-in `StatisticsTaskHandler` takes a local stats generator ID and precision
+
+```
+  "components": [
+    {
+      "id": "stats_task_handler",
+      "name": "StatisticsTaskHandler",
+      "args": {
+        "generator_id": "df_stats_generator",
+        "precision": 4
+      }
+    },
 
 ```
 

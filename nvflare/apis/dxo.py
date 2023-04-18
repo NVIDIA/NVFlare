@@ -13,13 +13,14 @@
 # limitations under the License.
 
 import copy
+from enum import Enum
 from typing import List, Union
 
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.fuel.utils import fobs
 
 
-class DataKind(object):
+class DataKind(str, Enum):
     WEIGHTS = "WEIGHTS"
     WEIGHT_DIFF = "WEIGHT_DIFF"
     XGB_MODEL = "XGB_MODEL"
@@ -67,6 +68,7 @@ class DXO(object):
         err = self.validate()
         if err:
             raise ValueError("invalid DXO: {}".format(err))
+        self.data_kind = DataKind(self.data_kind)
 
     def get_meta_prop(self, key: str, default=None):
         if self.meta and isinstance(self.meta, dict):
@@ -124,7 +126,10 @@ class DXO(object):
             return "invalid data: expect dict but got {}".format(type(self.data))
 
         if self.meta is not None and not isinstance(self.meta, dict):
-            return "invalid props: expect dict but got {}".format(type(self.meta))
+            return "invalid meta: expect dict but got {}".format(type(self.meta))
+
+        if not check_data_kind(self.data_kind):
+            return f"invalid data_kind: {self.data_kind}."
 
         return ""
 
@@ -189,3 +194,11 @@ def from_bytes(data: bytes) -> DXO:
         return x
     else:
         raise ValueError("Data bytes are from type {} and do not represent a valid DXO instance.".format(type(x)))
+
+
+def check_data_kind(data_kind) -> bool:
+    try:
+        DataKind(data_kind)
+        return True
+    except ValueError:
+        return False

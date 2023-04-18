@@ -7,16 +7,17 @@
       ],
       "executor": {
         "id": "Executor",
-        "name": "PSIExecutor",
+        "name": "ErrorHandlingExecutor",
         "args": {
-          "psi_algo_id": "dh_psi"
+          "task_handler_id": "dh_psi_task_handler",
+          "dxo_data_kind": "PSI"
         }
       }
     }
   ],
   "components": [
     {
-      "id": "dh_psi",
+      "id": "dh_psi_task_handler",
       "name": "DhPSITaskHandler",
       "args": {
         "local_psi_id": "local_psi"

@@ -273,7 +273,7 @@ class StatisticsController(Controller):
         abort = self.abort_job_in_error[rc]
         if abort:
             self.system_panic(
-                f"Failed in client-site statistics_executor for {client_name} during task {task_name}."
+                f"Failed in client-site executor for {client_name} during task {task_name}."
                 f"statistics controller is exiting.",
                 fl_ctx=fl_ctx,
             )

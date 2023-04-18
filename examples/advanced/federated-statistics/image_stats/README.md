@@ -105,26 +105,46 @@ provided by FLARE is going to output the result as JSON format to the <workspace
 
 ### 3.2 Client configuration
 
-On client side, we first specify the client's side operator (StatisticExecutor) and specify the pre-defined task to be "fed_stats"
-and generator_id = "local_hist_generator". Where local_hist_generator will be local statistics generator defined by custom code.
+On client side, we first specify the client's side executor `StatisticExecutor` and
+specify the pre-defined task to be "fed_stats", "fed_stats_pre_run".
+
+Pass in argument "task_handler_id" to be "stats_task_handler".
+"dxo_data_kind" to be "STATISTICS"
 
 ```
- "executors": [
+  "executors": [
     {
       "tasks": [
-        "fed_stats"
+        "fed_stats_pre_run" ,"fed_stats"
       ],
       "executor": {
         "id": "Executor",
-        "path": "nvflare.app_common.executors.statistics.statistics_executor.StatisticsExecutor",
+        "name": "ErrorHandlingExecutor",
         "args": {
-          "generator_id": "local_hist_generator"
+          "task_handler_id": "stats_task_handler",
+          "dxo_data_kind": "STATISTICS"
         }
       }
     }
   ],
 ```
-the local stats generator is defined as FLComponent (ImageStatistics)
+
+The built-in `StatisticsTaskHandler` takes a local stats generator ID and precision
+
+```
+  "components": [
+    {
+      "id": "stats_task_handler",
+      "name": "StatisticsTaskHandler",
+      "args": {
+        "generator_id": "local_hist_generator",
+        "precision": 4
+      }
+    },
+
+```
+
+The local stats generator is defined as FLComponent (ImageStatistics)
 ```
     {
       "id": "local_hist_generator",

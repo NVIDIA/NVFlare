@@ -21,16 +21,17 @@ These items could be user_ids or feature names depending on your use case.
       ],
       "executor": {
         "id": "Executor",
-        "name": "PSIExecutor",
+        "name": "ErrorHandlingExecutor",
         "args": {
-          "psi_algo_id": "dh_psi"
+          "task_handler_id": "dh_psi_task_handler",
+          "dxo_data_kind": "PSI"
         }
       }
     }
   ],
   "components": [
     {
-      "id": "dh_psi",
+      "id": "dh_psi_task_handler",
       "name": "DhPSITaskHandler",
       "args": {
         "local_psi_id": "local_psi"
@@ -56,7 +57,7 @@ These items could be user_ids or feature names depending on your use case.
 
 Here we specify the following components:
 
-* **_PSIExecutor_** : this is the built-in FLARE PSIExecutor. 
+* **_ErrorHandlingExecutor_** : this is the built-in NVFLARE ErrorHandlingExecutor.
 * **_local_psi_** : local PSI component is the component user needs to write, here we called it "local_psi". 
 the local psi component require PSIWriter, so can one save the resulting intersect to storage. here we implemented
 a file writer
