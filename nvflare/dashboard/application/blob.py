@@ -96,6 +96,7 @@ def gen_server(key, first_server=True):
     server_0 = config["servers"][0]
     server_0["name"] = project.short_name
     server_0["service"]["target"] = f"{entity.name}:{fl_port}"
+    server_0["service"]["scheme"] = project.scheme if hasattr(project, "scheme") else "grpc"
     server_0["admin_host"] = entity.name
     server_0["admin_port"] = admin_port
     if project.ha_mode:
@@ -212,6 +213,7 @@ def gen_client(key, id):
 
     config = json.loads(template["fed_client"])
     config["servers"][0]["name"] = project.short_name
+    config["servers"][0]["service"]["scheme"] = project.scheme if hasattr(project, "scheme") else "grpc"
     replacement_dict = {
         "client_name": entity.name,
         "config_folder": "config",
