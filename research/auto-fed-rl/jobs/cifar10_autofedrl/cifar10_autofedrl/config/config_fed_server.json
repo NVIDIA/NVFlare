@@ -134,7 +134,7 @@
                 "min_clients": "{min_clients}",
                 "num_rounds": "{num_rounds}",
                 "start_round": 0,
-                "wait_time_after_min_received": 10,
+                "wait_time_after_min_received": 0,
                 "aggregator_id": "aggregator",
                 "aggregator_search_val_id": "aggregator_search_val",
                 "persistor_id": "persistor",
