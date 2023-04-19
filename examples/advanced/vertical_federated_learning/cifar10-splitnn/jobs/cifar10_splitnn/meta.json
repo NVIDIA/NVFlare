@@ -5,5 +5,8 @@
         "site-1": ["site-1"],
         "site-2": ["site-2"]
     },
-    "min_clients": 2
+    "min_clients": 2,
+    "stats_pool_config": {
+        "save_pools": ["*"]
+    }
 }
