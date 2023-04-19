@@ -33,7 +33,7 @@ class ScatterAndGatherScaffold(ScatterAndGather):
         min_clients: int = 1000,
         num_rounds: int = 5,
         start_round: int = 0,
-        wait_time_after_min_received: int = 10,
+        wait_time_after_min_received: int = 0,
         aggregator_id=AppConstants.DEFAULT_AGGREGATOR_ID,
         persistor_id=AppConstants.DEFAULT_PERSISTOR_ID,
         shareable_generator_id=AppConstants.DEFAULT_SHAREABLE_GENERATOR_ID,
