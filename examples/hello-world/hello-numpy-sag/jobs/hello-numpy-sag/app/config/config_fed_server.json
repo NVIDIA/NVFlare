@@ -33,7 +33,7 @@
       "id": "scatter_and_gather",
       "path": "nvflare.app_common.workflows.scatter_and_gather.ScatterAndGather",
       "args": {
-        "min_clients": 20,
+        "min_clients": 2,
         "num_rounds": 3,
         "start_round": 0,
         "wait_time_after_min_received": 0,
