@@ -207,12 +207,6 @@ class SimulatorRunner(FLComponent):
                 self.logger.error("Please provide the number of threads or provide gpu options to run the simulator.")
                 return False
 
-            if meta.get(JobMetaKey.MIN_CLIENTS, 0) > len(self.client_names):
-                self.logger.error(
-                    "The number of simulating clients can not be smaller than the minimum number of clients specified in job's meta."
-                )
-                return False
-
             self._validate_client_names(meta, self.client_names)
 
             # Deploy the FL server
