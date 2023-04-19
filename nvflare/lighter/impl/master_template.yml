@@ -103,10 +103,6 @@ fed_client: |
       {
         "name": "spleen_segmentation",
         "service": {
-          "options": [
-            ["grpc.max_send_message_length",    2147483647],
-            ["grpc.max_receive_message_length", 2147483647]
-          ]
         }
       }
     ],
@@ -231,11 +227,7 @@ fed_server: |
         {
             "name": "spleen_segmentation",
             "service": {
-                "target": "localhost:8002",
-                "options": [
-                    ["grpc.max_send_message_length",    2147483647],
-                    ["grpc.max_receive_message_length", 2147483647]
-                ]
+                "target": "localhost:8002"
             },
             "admin_host": "localhost",
             "admin_port": 5005,
