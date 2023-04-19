@@ -1,0 +1,8 @@
+nvflare>=2.3.0
+websockets
+torch
+torchvision
+tensorboard
+monai
+tqdm
+nibabel

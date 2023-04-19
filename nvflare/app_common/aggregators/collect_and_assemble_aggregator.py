@@ -46,13 +46,17 @@ class CollectAndAssembleAggregator(Aggregator):
             self.log_error(fl_ctx, "no data to aggregate")
             return False
         data = dxo.data
-        current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
-        return self._accept_contribution(contributor_name, current_round, data, fl_ctx)
+        meta = dxo.meta
 
-    def _accept_contribution(self, contributor: str, current_round: int, data: dict, fl_ctx: FLContext) -> bool:
+        current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
+        return self._accept_contribution(contributor_name, current_round, data, meta, fl_ctx)
+
+    def _accept_contribution(
+        self, contributor: str, current_round: int, data: dict, meta: dict, fl_ctx: FLContext
+    ) -> bool:
         collection = self.assembler.collection
         if contributor not in collection:
-            collection[contributor] = self.assembler.get_model_params(data)
+            collection[contributor] = self.assembler.get_model_params(data, meta)
             accepted = True
         else:
             self.log_info(
@@ -104,9 +108,11 @@ class CollectAndAssembleAggregator(Aggregator):
         site_num = len(collection)
         self.log_info(fl_ctx, f"aggregating {site_num} update(s) at round {current_round}")
 
-        model = self.assembler.assemble(data=collection, fl_ctx=fl_ctx)
+        model, meta = self.assembler.assemble(data=collection, fl_ctx=fl_ctx)
         # Reset assembler for next round
         self.assembler.reset()
         self.log_debug(fl_ctx, "End aggregation")
         dxo = DXO(data_kind=self.assembler.get_expected_data_kind(), data=model)
+        for entry in meta.keys():
+            dxo.set_meta_prop(entry, meta[entry])
         return dxo.to_shareable()
