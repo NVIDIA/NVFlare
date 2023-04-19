@@ -46,18 +46,23 @@ class LearnerExecutor(Executor):
         self.train_task = train_task
         self.submit_model_task = submit_model_task
         self.validate_task = validate_task
+        self.is_initialized = False
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
-        if event_type == EventType.START_RUN:
-            self.initialize(fl_ctx)
-        elif event_type == EventType.ABORT_TASK:
+        if event_type == EventType.ABORT_TASK:
             try:
                 if self.learner:
-                    self.learner.abort(fl_ctx)
+                    if not self.unsafe:
+                        self.learner.abort(fl_ctx)
+                    else:
+                        self.log_warning(fl_ctx, f"skipped abort of unsafe learner {self.learner.__class__.__name__}")
             except Exception as e:
                 self.log_exception(fl_ctx, f"learner abort exception: {secure_format_exception(e)}")
         elif event_type == EventType.END_RUN:
-            self.finalize(fl_ctx)
+            if not self.unsafe:
+                self.finalize(fl_ctx)
+            elif self.learner:
+                self.log_warning(fl_ctx, f"skipped finalize of unsafe learner {self.learner.__class__.__name__}")
 
     def initialize(self, fl_ctx: FLContext):
         try:
@@ -71,7 +76,9 @@ class LearnerExecutor(Executor):
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         self.log_info(fl_ctx, f"Client trainer got task: {task_name}")
-
+        if not self.is_initialized:
+            self.is_initialized = True
+            self.initialize(fl_ctx)
         try:
             if task_name == self.train_task:
                 return self.train(shareable, fl_ctx, abort_signal)
