@@ -88,7 +88,9 @@ class ScatterAndGatherAutoFedRL(ScatterAndGather):
 
         # Check arguments
         if not isinstance(aggregator_search_val_id, str):
-            raise TypeError("aggregator_search_val_id must be a string but got {}".format(type(aggregator_search_val_id)))
+            raise TypeError(
+                "aggregator_search_val_id must be a string but got {}".format(type(aggregator_search_val_id))
+            )
         if not isinstance(search_space_id, str):
             raise TypeError("search_space_id must be a string but got {}".format(type(search_space_id)))
 
@@ -290,7 +292,6 @@ class ScatterAndGatherAutoFedRL(ScatterAndGather):
 
         # Cleanup task result
         client_task.result = None
-
 
     def _accept_val_result(self, client_name: str, result: Shareable, fl_ctx: FLContext) -> bool:
 
