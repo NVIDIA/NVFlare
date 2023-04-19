@@ -38,7 +38,7 @@ sleep 10
 echo "STARTING ${n_clients} CLIENTS"
 for id in $(eval echo "{1..$n_clients}")
 do
-  #export CUDA_VISIBLE_DEVICES=0  # Client GPU resources will be managed by nvflare
+  export CUDA_VISIBLE_DEVICES=0,1  # Client GPU resources will be managed by nvflare
   "${workspace}/${site_pre}${id}/startup/start.sh" &
 done
 sleep 10
