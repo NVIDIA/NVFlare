@@ -61,10 +61,6 @@ class BcastTaskManager(TaskManager):
             else:
                 clients_responded += 1
 
-        if clients_responded >= len(task.targets):
-            # all clients have responded!
-            return True, TaskCompletionStatus.OK
-
         # if min_responses is 0, need to have all client tasks responded
         if task.props[_KEY_MIN_RESPS] == 0 and clients_not_responded > 0:
             return False, TaskCompletionStatus.IGNORED
@@ -79,6 +75,10 @@ class BcastTaskManager(TaskManager):
         if min_resps_received_time is None:
             min_resps_received_time = time.time()
             task.props[_KEY_MIN_RESPS_RCV_TIME] = min_resps_received_time
+
+        if clients_responded >= len(task.targets):
+            # all clients have responded!
+            return True, TaskCompletionStatus.OK
 
         # see whether we have waited for long enough
         if time.time() - min_resps_received_time >= task.props[_KEY_WAIT_TIME_AFTER_MIN_RESPS]:
