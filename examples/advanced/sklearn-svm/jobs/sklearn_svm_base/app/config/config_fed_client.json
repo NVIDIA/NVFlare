@@ -20,6 +20,7 @@
       "id": "svm_learner",
       "path": "svm_learner.SVMLearner",
       "args": {
+        "backend": "sklearn",
         "data_path": "/tmp/nvflare/dataset/sklearn_breast_cancer.csv",
         "train_start": 114,
         "train_end": 265,

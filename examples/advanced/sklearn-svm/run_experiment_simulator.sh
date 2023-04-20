@@ -6,9 +6,12 @@ for site_num in 3;
 do
     for split_mode in uniform;
     do
-        nvflare simulator jobs/${task_name}_${site_num}_${split_mode} \
-            -w "${PWD}"/workspaces/${task_name}_${site_num}_${split_mode} \
-            -n ${site_num} \
-            -t ${site_num}
+        for backend in sklearn cuml;
+        do
+            nvflare simulator jobs/${task_name}_${site_num}_${split_mode}_${backend} \
+                -w "${PWD}"/workspaces/${task_name}_${site_num}_${split_mode}_${backend} \
+                -n ${site_num} \
+                -t ${site_num}
+        done
     done
 done
