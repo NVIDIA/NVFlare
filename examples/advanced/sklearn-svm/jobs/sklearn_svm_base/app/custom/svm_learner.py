@@ -14,6 +14,7 @@
 
 from typing import Optional, Tuple
 
+from cuml.svm import SVC as SVC_gpu
 from sklearn.metrics import roc_auc_score
 from sklearn.svm import SVC
 
@@ -25,6 +26,7 @@ from nvflare.app_opt.sklearn.data_loader import load_data_for_range
 class SVMLearner(Learner):
     def __init__(
         self,
+        backend: str,
         data_path: str,
         train_start: int,
         train_end: int,
@@ -32,6 +34,8 @@ class SVMLearner(Learner):
         valid_end: int,
     ):
         super().__init__()
+        self.backend = backend
+
         self.data_path = data_path
         self.train_start = train_start
         self.train_end = train_end
@@ -64,7 +68,12 @@ class SVMLearner(Learner):
             # only perform training on the first round
             (x_train, y_train, train_size) = self.train_data
             self.kernel = global_param["kernel"]
-            self.svm = SVC(kernel=self.kernel)
+            if self.backend == "sklearn":
+                self.svm = SVC(kernel=self.kernel)
+            elif self.backend == "cuml":
+                self.svm = SVC_gpu(kernel=self.kernel)
+            else:
+                self.system_panic("backend SVM library unknown!", fl_ctx)
             # train model
             self.svm.fit(x_train, y_train)
             # get support vectors
@@ -79,7 +88,12 @@ class SVMLearner(Learner):
     def validate(self, curr_round: int, global_param: Optional[dict], fl_ctx: FLContext) -> Tuple[dict, dict]:
         # local validation with global support vectors
         # fit a standalone SVM with the global support vectors
-        svm_global = SVC(kernel=self.kernel)
+        if self.backend == "sklearn":
+            svm_global = SVC(kernel=self.kernel)
+        elif self.backend == "cuml":
+            svm_global = SVC_gpu(kernel=self.kernel)
+        else:
+            self.system_panic("backend SVM library unknown!", fl_ctx)
         support_x = global_param["support_x"]
         support_y = global_param["support_y"]
         svm_global.fit(support_x, support_y)

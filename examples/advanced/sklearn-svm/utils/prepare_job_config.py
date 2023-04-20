@@ -62,6 +62,13 @@ def job_config_args_parser():
         choices=["uniform", "linear", "square", "exponential"],
         help="How to split the dataset",
     )
+    parser.add_argument(
+        "--backend",
+        type=str,
+        default="sklearn",
+        choices=["sklearn", "cuml"],
+        help="Backend library used",
+    )
     return parser
 
 
@@ -167,7 +174,7 @@ def _write_json(data, filename):
 
 
 def _get_job_name(args) -> str:
-    return args.task_name + "_" + str(args.site_num) + "_" + args.split_method
+    return args.task_name + "_" + str(args.site_num) + "_" + args.split_method + "_" + args.backend
 
 
 def _gen_deploy_map(num_sites: int, site_name_prefix: str) -> dict:
@@ -187,6 +194,7 @@ def _update_meta(meta: dict, args):
 def _update_client_config(config: dict, args, site_name: str, site_indices):
     # update client config
     # data path and training/validation row indices
+    config["components"][0]["args"]["backend"] = args.backend
     config["components"][0]["args"]["data_path"] = args.data_path
     config["components"][0]["args"]["train_start"] = site_indices[site_name]["start"]
     config["components"][0]["args"]["train_end"] = site_indices[site_name]["end"]
