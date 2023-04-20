@@ -305,7 +305,7 @@ class SupervisedMonaiProstateFedSMLearner(SupervisedMonaiProstateLearner):
                 current_round=current_round, metric=person_metric
             )
             if person_best:
-                self.log_info(fl_ctx, f"best personalized model available")
+                self.log_info(fl_ctx, "best personalized model available")
 
             select_metric = self.fedsm_helper.local_valid_select(
                 self.valid_loader,
