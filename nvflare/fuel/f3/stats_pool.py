@@ -51,11 +51,11 @@ def format_value(v: float, n=3):
 
 
 class _Bin:
-    def __init__(self):
-        self.count = 0
-        self.total = 0.0
-        self.min = None
-        self.max = None
+    def __init__(self, count=0, total_value=0.0, min_value=None, max_value=None):
+        self.count = count
+        self.total = total_value
+        self.min = min_value
+        self.max = max_value
 
     def record_value(self, value: float):
         self.count += 1
@@ -65,13 +65,13 @@ class _Bin:
         if self.max is None or self.max < value:
             self.max = value
 
-    def get_content(self, mode=StatsMode.COUNT, total=0.0):
+    def get_content(self, mode=StatsMode.COUNT, total_count=0):
         if self.count == 0:
             return ""
         if mode == StatsMode.COUNT:
             return str(self.count)
         if mode == StatsMode.PERCENT:
-            return str(round(self.count / total, 2))
+            return str(round(self.count / total_count, 2))
         if mode == StatsMode.AVERAGE:
             avg = self.total / self.count
             return format_value(avg)
@@ -79,7 +79,7 @@ class _Bin:
             return format_value(self.min)
         if mode == StatsMode.MAX:
             return format_value(self.max)
-        return "?"
+        return "n/a"
 
     def to_dict(self) -> dict:
         return {
@@ -200,14 +200,27 @@ class HistPool(StatsPool):
                 if has_values[i]:
                     headers.append(self.range_names[i])
 
+            headers.append("overall")
+
             rows = []
             for cat_name in sorted(self.cat_bins.keys()):
                 bins = self.cat_bins[cat_name]
                 total_count = 0
-                if mode == StatsMode.PERCENT:
-                    for b in bins:
-                        if b:
-                            total_count += b.count
+                total_value = 0.0
+                overall_min = None
+                overall_max = None
+
+                for b in bins:
+                    if b:
+                        total_count += b.count
+                        total_value += b.total
+                        if b.max is not None:
+                            if overall_max is None or overall_max < b.max:
+                                overall_max = b.max
+
+                        if b.min is not None:
+                            if overall_min is None or overall_min > b.min:
+                                overall_min = b.min
 
                 r = [cat_name]
                 for i in range(len(bins)):
@@ -219,6 +232,13 @@ class HistPool(StatsPool):
                         r.append("")
                     else:
                         r.append(b.get_content(mode, total_count))
+
+                # compute overall values
+                overall_bin = _Bin(
+                    count=total_count, total_value=total_value, max_value=overall_max, min_value=overall_min
+                )
+                r.append(overall_bin.get_content(mode, total_count))
+
                 rows.append(r)
             return headers, rows
 
