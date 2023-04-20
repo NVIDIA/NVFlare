@@ -33,7 +33,7 @@ class ScatterAndGatherScaffold(ScatterAndGather):
         min_clients: int = 1000,
         num_rounds: int = 5,
         start_round: int = 0,
-        wait_time_after_min_received: int = 0,
+        wait_time_after_min_received: int = 10,
         aggregator_id=AppConstants.DEFAULT_AGGREGATOR_ID,
         persistor_id=AppConstants.DEFAULT_PERSISTOR_ID,
         shareable_generator_id=AppConstants.DEFAULT_SHAREABLE_GENERATOR_ID,
@@ -58,7 +58,7 @@ class ScatterAndGatherScaffold(ScatterAndGather):
             num_rounds (int, optional): The total number of training rounds. Defaults to 5.
             start_round (int, optional): Start round for training. Defaults to 0.
             wait_time_after_min_received (int, optional): Time to wait before beginning aggregation after
-                minimum number of clients responses has been received. Defaults to 0.
+                minimum number of clients responses has been received. Defaults to 10.
             aggregator_id (str, optional): ID of the aggregator component. Defaults to "aggregator".
             persistor_id (str, optional): ID of the persistor component. Defaults to "persistor".
             shareable_generator_id (str, optional): ID of the shareable generator. Defaults to "shareable_generator".
