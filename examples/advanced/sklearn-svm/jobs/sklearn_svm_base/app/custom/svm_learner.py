@@ -14,9 +14,7 @@
 
 from typing import Optional, Tuple
 
-from cuml.svm import SVC as SVC_gpu
 from sklearn.metrics import roc_auc_score
-from sklearn.svm import SVC
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.abstract.learner_spec import Learner
@@ -69,8 +67,12 @@ class SVMLearner(Learner):
             (x_train, y_train, train_size) = self.train_data
             self.kernel = global_param["kernel"]
             if self.backend == "sklearn":
+                from sklearn.svm import SVC
+
                 self.svm = SVC(kernel=self.kernel)
             elif self.backend == "cuml":
+                from cuml.svm import SVC as SVC_gpu
+
                 self.svm = SVC_gpu(kernel=self.kernel)
             else:
                 self.system_panic("backend SVM library unknown!", fl_ctx)
@@ -89,8 +91,12 @@ class SVMLearner(Learner):
         # local validation with global support vectors
         # fit a standalone SVM with the global support vectors
         if self.backend == "sklearn":
+            from sklearn.svm import SVC
+
             svm_global = SVC(kernel=self.kernel)
         elif self.backend == "cuml":
+            from cuml.svm import SVC as SVC_gpu
+
             svm_global = SVC_gpu(kernel=self.kernel)
         else:
             self.system_panic("backend SVM library unknown!", fl_ctx)
