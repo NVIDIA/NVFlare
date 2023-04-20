@@ -1,6 +1,6 @@
 # FedCE: Fair Federated Learning via Client Contribution Estimation
 
-This directory will contain the code for the fair federated learning algorithm FedCE described in
+This directory will contain the code for the fair federated learning algorithm via client **C**ontribution **E**stimation (Fed**CE**) described in
 
 ### Fair Federated Medical Image Segmentation via Client Contribution Estimation ([arXiv:2303.16520](https://arxiv.org/abs/2303.16520))
 Accepted to [CVPR2023](https://cvpr2023.thecvf.com/).
