@@ -2,9 +2,9 @@ tqdm
 nibabel
 fire
 pytorch-ignite>=0.4.10
-monai>=1.1
+monai>=1.2.0rc5
 nvflare>=2.3.0
-monai_nvflare>=0.2.2
+monai_nvflare>=0.2.3
 tensorboard
 scikit-image
 pandas
