@@ -21,6 +21,7 @@ from nvflare.app_common.abstract.learner_spec import Learner
 from nvflare.app_opt.sklearn.data_loader import load_data_for_range
 from nvflare.fuel.utils.import_utils import optional_import
 
+
 class SVMLearner(Learner):
     def __init__(
         self,
