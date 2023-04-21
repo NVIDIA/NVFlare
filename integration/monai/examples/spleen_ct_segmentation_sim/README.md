@@ -2,7 +2,7 @@
 In the following, we show an example of running MONAI-bundle configurations with NVFlare using the
 [FL simulator](https://nvflare.readthedocs.io/en/main/user_guide/fl_simulator.html).
 
-For an example with real-world deployment settings, see [here](../spleen_ct_segmentation_real-world/README.md).
+For an example with real-world deployment settings, see [here](../spleen_ct_segmentation_local/README.md).
 
 ## Setup environment
 

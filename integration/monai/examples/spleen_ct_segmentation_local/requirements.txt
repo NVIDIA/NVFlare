@@ -6,6 +6,7 @@ monai>=1.2.0rc5
 nvflare>=2.3.0
 monai_nvflare>=0.2.3
 tensorboard
+mlflow
 scikit-image
 pandas
 matplotlib
