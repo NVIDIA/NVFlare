@@ -501,11 +501,12 @@ class JobRunner(FLComponent):
             if job.job_id not in running_job_ids:
                 try:
                     job_manager.set_status(job.job_id, RunStatus.FINISHED_ABNORMAL, fl_ctx)
-                    self.logger.info(f"Update the previous running job: {job.job_id} to FINISHED_ABNORMAL.")
+                    self.logger.info(f"Update the previous running job: {job.job_id} to {RunStatus.FINISHED_ABNORMAL}.")
                 except Exception as e:
                     self.log_error(
                         fl_ctx,
-                        f"Failed to update the job: {job.job_id} to FINISHED_ABNORMAL: {secure_format_exception(e)}.",
+                        f"Failed to update the job: {job.job_id} to {RunStatus.FINISHED_ABNORMAL}: "
+                        f"{secure_format_exception(e)}.",
                     )
 
     def update_unfinished_jobs(self, fl_ctx: FLContext):
@@ -516,10 +517,11 @@ class JobRunner(FLComponent):
         for job in all_jobs:
             try:
                 job_manager.set_status(job.job_id, RunStatus.ABANDONED, fl_ctx)
-                self.logger.info(f"Update the previous running job: {job.job_id} to ABANDONED.")
+                self.logger.info(f"Update the previous running job: {job.job_id} to {RunStatus.ABANDONED}.")
             except Exception as e:
                 self.log_error(
-                    fl_ctx, f"Failed to update the job: {job.job_id} to ABANDONED: {secure_format_exception(e)}."
+                    fl_ctx,
+                    f"Failed to update the job: {job.job_id} to {RunStatus.ABANDONED}: {secure_format_exception(e)}.",
                 )
 
     def _get_all_running_jobs(self, job_manager, fl_ctx):
