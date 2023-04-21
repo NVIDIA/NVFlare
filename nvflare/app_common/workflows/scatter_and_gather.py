@@ -41,7 +41,7 @@ def _check_non_neg_int(data: Any, name: str):
 class ScatterAndGather(Controller):
     def __init__(
         self,
-        min_clients: int = 1,
+        min_clients: int = 1000,
         num_rounds: int = 5,
         start_round: int = 0,
         wait_time_after_min_received: int = 10,
@@ -65,11 +65,13 @@ class ScatterAndGather(Controller):
         The model_persistor also saves the model after training.
 
         Args:
-            min_clients (int, optional): Min number of clients in training. Defaults to 1.
+            min_clients (int, optional): The minimum number of clients responses before
+                SAG starts to wait for `wait_time_after_min_received`. Note that SAG will move forward when all
+                available clients have responded regardless of this value. Defaults to 1000.
             num_rounds (int, optional): The total number of training rounds. Defaults to 5.
             start_round (int, optional): Start round for training. Defaults to 0.
             wait_time_after_min_received (int, optional): Time to wait before beginning aggregation after
-                contributions received. Defaults to 10.
+                minimum number of clients responses has been received. Defaults to 10.
             aggregator_id (str, optional): ID of the aggregator component. Defaults to "aggregator".
             persistor_id (str, optional): ID of the persistor component. Defaults to "persistor".
             shareable_generator_id (str, optional): ID of the shareable generator. Defaults to "shareable_generator".

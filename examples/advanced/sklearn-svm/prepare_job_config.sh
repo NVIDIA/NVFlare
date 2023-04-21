@@ -14,11 +14,15 @@ for site_num in 3;
 do
     for split_mode in uniform;
     do
-        python3 utils/prepare_job_config.py \
-        --task_name "${task_name}" \
-        --data_path "${DATASET_PATH}" \
-        --site_num ${site_num} \
-        --valid_frac ${valid_frac} \
-        --split_method ${split_mode}
+        for backend in sklearn cuml;
+        do
+          python3 utils/prepare_job_config.py \
+          --task_name "${task_name}" \
+          --data_path "${DATASET_PATH}" \
+          --site_num ${site_num} \
+          --valid_frac ${valid_frac} \
+          --split_method ${split_mode} \
+          --backend ${backend}
+        done
     done
 done
