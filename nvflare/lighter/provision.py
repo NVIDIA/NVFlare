@@ -19,6 +19,7 @@ import os
 import pathlib
 import shutil
 import sys
+from typing import Optional
 
 from nvflare.fuel.utils.class_utils import instantiate_class
 from nvflare.lighter.spec import Participant, Project, Provisioner
@@ -94,55 +95,81 @@ def handle_provision(args):
     project_full_path = os.path.join(current_path, project_file)
     print(f"Project yaml file: {project_full_path}.")
 
+    add_user_full_path = os.path.join(current_path, args.add_user) if args.add_user else None
+    add_client_full_path = os.path.join(current_path, args.add_client) if args.add_client else None
+
+    provision(project_full_path, workspace_full_path, add_user_full_path, add_client_full_path)
+
+
+def gen_default_project_config(src_project_name, dest_project_file):
+    file_path = pathlib.Path(__file__).parent.absolute()
+    shutil.copyfile(os.path.join(file_path, src_project_name), dest_project_file)
+
+
+def provision(
+    project_full_path: str,
+    workspace_full_path: str,
+    add_user_full_path: Optional[str] = None,
+    add_client_full_path: Optional[str] = None,
+):
     project_dict = load_yaml(project_full_path)
-    api_version = project_dict.get("api_version")
-    if api_version not in [3]:
-        raise ValueError(f"API version expected 3 but found {api_version}")
+    project = prepare_project(project_dict, add_user_full_path, add_client_full_path)
+    builders = prepare_builders(project_dict)
+    provisioner = Provisioner(workspace_full_path, builders)
+    provisioner.provision(project)
 
-    project_name = project_dict.get("name")
-    project_description = project_dict.get("description", "")
-    participants = list()
-    for p in project_dict.get("participants"):
-        participants.append(Participant(**p))
-    if args.add_user:
-        try:
-            extra = load_yaml(os.path.join(current_path, args.add_user))
-            extra.update({"type": "admin"})
-            participants.append(Participant(**extra))
-        except BaseException:
-            print("** Error during adding user **")
-            print("The yaml file format is")
-            print(adding_user_error_msg)
-            exit(0)
-    if args.add_client:
-        try:
-            extra = load_yaml(os.path.join(current_path, args.add_client))
-            extra.update({"type": "client"})
-            participants.append(Participant(**extra))
-        except BaseException as e:
-            print("** Error during adding client **")
-            print("The yaml file format is")
-            print(adding_client_error_msg)
-            exit(0)
 
-    project = Project(name=project_name, description=project_description, participants=participants)
-
-    n_servers = len(project.get_participants_by_type("server", first_only=False))
-    if n_servers > 2:
-        print(
-            f"Configuration error: Expect 2 or 1 server to be provisioned.  {project_full_path} contains {n_servers} servers."
-        )
-        return
-
+def prepare_builders(project_dict):
     builders = list()
     for b in project_dict.get("builders"):
         path = b.get("path")
         args = b.get("args")
         builders.append(instantiate_class(path, args))
+    return builders
 
-    provisioner = Provisioner(workspace_full_path, builders)
 
-    provisioner.provision(project)
+def prepare_project(project_dict, add_user_file_path=None, add_client_file_path=None):
+    api_version = project_dict.get("api_version")
+    if api_version not in [3]:
+        raise ValueError(f"API version expected 3 but found {api_version}")
+    project_name = project_dict.get("name")
+    project_description = project_dict.get("description", "")
+    participants = list()
+    for p in project_dict.get("participants"):
+        participants.append(Participant(**p))
+    if add_user_file_path:
+        add_extra_users(add_user_file_path, participants)
+    if add_client_file_path:
+        add_extra_clients(add_client_file_path, participants)
+    project = Project(name=project_name, description=project_description, participants=participants)
+    n_servers = len(project.get_participants_by_type("server", first_only=False))
+    if n_servers > 2:
+        raise (f"Configuration error: Expect 2 or 1 server to be provisioned. project contains {n_servers} servers.")
+    return project
+
+
+def add_extra_clients(add_client_file_path, participants):
+    try:
+        extra = load_yaml(add_client_file_path)
+        extra.update({"type": "client"})
+        participants.append(Participant(**extra))
+    except BaseException as e:
+        print("** Error during adding client **")
+        print("The yaml file format is")
+        print(adding_client_error_msg)
+        exit(0)
+
+
+def add_extra_users(add_user_file_path, participants):
+    try:
+        extra = load_yaml(add_user_file_path)
+        extra.update({"type": "admin"})
+        participants.append(Participant(**extra))
+    except BaseException:
+        print("** Error during adding user **")
+        print("The yaml file format is")
+        print(adding_user_error_msg)
+        exit(0)
 
 
 def main():
