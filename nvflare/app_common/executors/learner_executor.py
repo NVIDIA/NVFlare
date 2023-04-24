@@ -35,10 +35,10 @@ class LearnerExecutor(Executor):
         """Key component to run learner on clients.
 
         Args:
-            learner_id (str): id pointing to the learner object
-            train_task (str, optional): label to dispatch train task. Defaults to AppConstants.TASK_TRAIN.
-            submit_model_task (str, optional): label to dispatch submit model task. Defaults to AppConstants.TASK_SUBMIT_MODEL.
-            validate_task (str, optional): label to dispatch validation task. Defaults to AppConstants.TASK_VALIDATION.
+            learner_id (str): id of the learner object
+            train_task (str, optional): task name for train. Defaults to AppConstants.TASK_TRAIN.
+            submit_model_task (str, optional): task name for submit model. Defaults to AppConstants.TASK_SUBMIT_MODEL.
+            validate_task (str, optional): task name for validation. Defaults to AppConstants.TASK_VALIDATION.
         """
         super().__init__()
         self.learner_id = learner_id
@@ -71,28 +71,25 @@ class LearnerExecutor(Executor):
             if not isinstance(self.learner, Learner):
                 raise TypeError(f"learner must be Learner type. Got: {type(self.learner)}")
             self.learner.initialize(engine.get_all_components(), fl_ctx)
-        except Exception as e:
+        except BaseException as e:
             self.log_exception(fl_ctx, f"learner initialize exception: {secure_format_exception(e)}")
+            raise e
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         self.log_info(fl_ctx, f"Client trainer got task: {task_name}")
         if not self.is_initialized:
             self.is_initialized = True
             self.initialize(fl_ctx)
-        try:
-            if task_name == self.train_task:
-                return self.train(shareable, fl_ctx, abort_signal)
-            elif task_name == self.submit_model_task:
-                return self.submit_model(shareable, fl_ctx)
-            elif task_name == self.validate_task:
-                return self.validate(shareable, fl_ctx, abort_signal)
-            else:
-                self.log_error(fl_ctx, f"Could not handle task: {task_name}")
-                return make_reply(ReturnCode.TASK_UNKNOWN)
-        except Exception as e:
-            # Task execution error, return EXECUTION_EXCEPTION Shareable
-            self.log_exception(fl_ctx, f"learner execute exception: {secure_format_exception(e)}")
-            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+
+        if task_name == self.train_task:
+            return self.train(shareable, fl_ctx, abort_signal)
+        elif task_name == self.submit_model_task:
+            return self.submit_model(shareable, fl_ctx)
+        elif task_name == self.validate_task:
+            return self.validate(shareable, fl_ctx, abort_signal)
+        else:
+            self.log_error(fl_ctx, f"Could not handle task: {task_name}")
+            return make_reply(ReturnCode.TASK_UNKNOWN)
 
     def train(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         self.log_debug(fl_ctx, f"train abort signal: {abort_signal.triggered}")
