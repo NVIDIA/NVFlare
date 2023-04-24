@@ -1,14 +1,13 @@
-## 3D spleen CT segmentation - Real-world
+## 3D spleen CT segmentation - Local Provisioning
 In the following, we show an example of running MONAI-bundle configurations with NVFlare.
 
-This example includes instructions on running [FedAvg](https://arxiv.org/abs/1602.05629)
+This example includes instructions on running [FedAvg](https://arxiv.org/abs/1602.05629) with experiment tracking using [MLFlow](https://mlflow.org/)
 and [homomorphic encryption](https://developer.nvidia.com/blog/federated-learning-with-homomorphic-encryption/)
 for secure aggregation.
-It uses the provisioning and the admin API to submit jobs, similar to how one would set up experiments in
+It uses the provisioning and the admin API to submit jobs, similar to how one would set up experiments similar to
 real-world deployment.
 
-In this example, we use an already prepared [provisioning](https://nvflare.readthedocs.io/en/main/programming_guide/provisioning_system.html) 
-file (*project.yml*) to run experiments on a single machine.
+In this example, we use an already prepared [provisioning](https://nvflare.readthedocs.io/en/main/programming_guide/provisioning_system.html) file (*project.yml*) to run experiments on a single machine.
 For real-world deployment, additional considerations must be taken into account.
 See [here](https://nvflare.readthedocs.io/en/latest/real_world_fl.html) for more information.
 
@@ -139,9 +138,21 @@ For details about resource management and consumption, please refer to the [docu
 > **Note:** Full FL training could take several hours for this task.
 > To speed up your experimentation, you can reduce the `num_rounds` value in `config_fed_server.json`, e.g. to 5 rounds.
 
-### 5.1 Federated averaging
+### 5.1 Experiment tracking with MLFlow
+Using MONAI's experiment [tracking feature](https://github.com/Project-MONAI/tutorials/tree/main/experiment_management),
+we can use MLFlow to track the model performance on the local clients.
 
-To run FedAvg using a real-world setup, submit the job using:
+In a new terminal, start the mlflow server:
+```
+mlflow server
+```
+
+You can access the MLFlow dashboard in your browser using the default tracking uri `http://127.0.0.1:5000`.
+Next, submit the job.
+
+### 5.2 Federated averaging
+
+To run FedAvg using with local provisioning, submit the job using:
 ```
 ./submit_job.sh job
 ```
@@ -173,7 +184,11 @@ You should see the cross-site validation results at
 [DOWNLOAD_DIR]/[JOB_ID]/workspace/cross_site_val/cross_val_results.json
 ```
 
-### 5.2 Secure aggregation using homomorphic encryption
+Once the training started, you can the experiment curves for the local clients in the current run on the MLFlow dashboard.
+
+![MLFlow dashboard](./mlflow.png)
+
+### 5.3 Secure aggregation using homomorphic encryption
 
 Next we run FedAvg using homomorphic encryption (HE) for secure aggregation on the server.
 
