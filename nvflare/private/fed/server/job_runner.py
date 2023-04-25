@@ -492,23 +492,45 @@ class JobRunner(FLComponent):
                 fl_ctx, f"Failed to restore the job: {job_id} to the running job table: {secure_format_exception(e)}."
             )
 
+    def update_abnormal_finished_jobs(self, running_job_ids, fl_ctx: FLContext):
+        engine = fl_ctx.get_engine()
+        job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
+        all_jobs = self._get_all_running_jobs(job_manager, fl_ctx)
+
+        for job in all_jobs:
+            if job.job_id not in running_job_ids:
+                try:
+                    job_manager.set_status(job.job_id, RunStatus.FINISHED_ABNORMAL, fl_ctx)
+                    self.logger.info(f"Update the previous running job: {job.job_id} to {RunStatus.FINISHED_ABNORMAL}.")
+                except Exception as e:
+                    self.log_error(
+                        fl_ctx,
+                        f"Failed to update the job: {job.job_id} to {RunStatus.FINISHED_ABNORMAL}: "
+                        f"{secure_format_exception(e)}.",
+                    )
+
     def update_unfinished_jobs(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
         job_manager = engine.get_component(SystemComponents.JOB_MANAGER)
+        all_jobs = self._get_all_running_jobs(job_manager, fl_ctx)
+
+        for job in all_jobs:
+            try:
+                job_manager.set_status(job.job_id, RunStatus.ABANDONED, fl_ctx)
+                self.logger.info(f"Update the previous running job: {job.job_id} to {RunStatus.ABANDONED}.")
+            except Exception as e:
+                self.log_error(
+                    fl_ctx,
+                    f"Failed to update the job: {job.job_id} to {RunStatus.ABANDONED}: {secure_format_exception(e)}.",
+                )
+
+    def _get_all_running_jobs(self, job_manager, fl_ctx):
         all_jobs = []
         dispatched_jobs = job_manager.get_jobs_by_status(RunStatus.DISPATCHED, fl_ctx)
         all_jobs.extend(dispatched_jobs)
         running_jobs = job_manager.get_jobs_by_status(RunStatus.RUNNING, fl_ctx)
         all_jobs.extend(running_jobs)
-
-        for job in all_jobs:
-            try:
-                job_manager.set_status(job.job_id, RunStatus.ABANDONED, fl_ctx)
-                self.logger.info(f"Update the previous running job: {job.job_id} to ABANDONED.")
-            except Exception as e:
-                self.log_error(
-                    fl_ctx, f"Failed to update the job: {job.job_id} to ABANDONED: {secure_format_exception(e)}."
-                )
+        return all_jobs
 
     def stop_run(self, job_id: str, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
