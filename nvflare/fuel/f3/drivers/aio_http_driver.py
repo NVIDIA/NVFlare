@@ -33,6 +33,7 @@ from nvflare.security.logging import secure_format_exception
 log = logging.getLogger(__name__)
 
 THREAD_POOL_SIZE = 8
+PING_TIMEOUT = 60
 
 
 class WsConnection(Connection):
@@ -156,13 +157,16 @@ class AioHttpDriver(BaseDriver):
             scheme = "wss"
         else:
             scheme = "ws"
-        async with websockets.connect(f"{scheme}://{host}:{port}", ssl=self.ssl_context, max_size=MAX_FRAME_SIZE) as ws:
+
+        async with websockets.connect(f"{scheme}://{host}:{port}", ssl=self.ssl_context,
+                                      max_size=MAX_FRAME_SIZE,  ping_timeout=PING_TIMEOUT) as ws:
             await self._handler(ws)
 
     async def _async_listen(self, host, port):
         self.ssl_context = net_utils.get_ssl_context(self.connector.params, True)
 
-        async with websockets.serve(self._handler, host, port, ssl=self.ssl_context, max_size=MAX_FRAME_SIZE):
+        async with websockets.serve(self._handler, host, port, ssl=self.ssl_context,
+                                    max_size=MAX_FRAME_SIZE,  ping_timeout=PING_TIMEOUT):
             await self.stop_event
 
     async def _handler(self, websocket):
