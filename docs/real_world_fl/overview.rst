@@ -24,7 +24,7 @@ Start
 Each site should have an org admin to receive or download the startup packages. The org admin can then install their own packages, start
 the services, map the data location, and instrument the authorization policies and organization level site privacy policies.
 
-Again, check the todo: Provision section for client deployment, and :ref:`site_policy_management` for how to set up federated authorization and privacy policies.
+Again, see :ref:`provisioned_setup` for client deployment, and :ref:`site_policy_management` for how to set up federated authorization and privacy policies.
 
 Operate
 -------
@@ -45,7 +45,7 @@ NVIDIA FLARE provides two ways to provision, using the NVIDIA FLARE ``provision`
 
 Provisioning via the CLI tool
 =============================
-The :ref:`_provisioning` page has details on the contents of the provisioning tool and the underlying NVIDIA FLARE Open Provision API,
+The :ref:`provisioning` page has details on the contents of the provisioning tool and the underlying NVIDIA FLARE Open Provision API,
 which you can use to customize configurations to fit your own requirements.
 
 Edit the :ref:`Project yaml file <project_yml>` in the directory with the provisioning tool to meet your project requirements (make sure the

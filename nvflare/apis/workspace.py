@@ -157,3 +157,15 @@ class Workspace:
 
     def get_client_custom_dir(self) -> str:
         return os.path.join(self.get_site_config_dir(), WorkspaceConstants.CUSTOM_FOLDER_NAME)
+
+    def get_stats_pool_summary_path(self, job_id: str, prefix=None) -> str:
+        file_name = WorkspaceConstants.STATS_POOL_SUMMARY_FILE_NAME
+        if prefix:
+            file_name = f"{prefix}.{file_name}"
+        return os.path.join(self.get_run_dir(job_id), file_name)
+
+    def get_stats_pool_records_path(self, job_id: str, prefix=None) -> str:
+        file_name = WorkspaceConstants.STATS_POOL_RECORDS_FILE_NAME
+        if prefix:
+            file_name = f"{prefix}.{file_name}"
+        return os.path.join(self.get_run_dir(job_id), file_name)

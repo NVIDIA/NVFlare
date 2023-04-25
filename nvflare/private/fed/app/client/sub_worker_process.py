@@ -51,7 +51,13 @@ from nvflare.private.fed.app.utils import monitor_parent_process
 from nvflare.private.fed.client.client_run_manager import ClientRunManager
 from nvflare.private.fed.runner import Runner
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorClientRunManager
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler, configure_logging, fobs_initialize
+from nvflare.private.fed.utils.fed_utils import (
+    add_logfile_handler,
+    configure_logging,
+    create_stats_pool_files_for_job,
+    fobs_initialize,
+    set_stats_pool_config_for_job,
+)
 from nvflare.private.privacy_manager import PrivacyService
 
 
@@ -62,7 +68,8 @@ class EventRelayer(FLComponent):
         """To init the EventRelayer.
 
         Args:
-            conn: worker_process connection.
+            cell: the local cell.
+            parent_fqcn: FQCN of the parent cell
             local_rank: process local rank
         """
         super().__init__()
@@ -334,8 +341,10 @@ def main():
     # initialize Privacy Service
     PrivacyService.initialize(privacy_manager)
 
-    # local_rank = args.local_rank
     local_rank = int(os.environ["LOCAL_RANK"])
+    prefix = f"rank{local_rank}"
+    set_stats_pool_config_for_job(workspace, args.job_id, prefix=prefix)
+
     num_of_processes = int(args.num_processes)
     sub_executor = SubWorkerExecutor(args, workspace, num_of_processes, local_rank)
 
@@ -348,9 +357,14 @@ def main():
     job_id = args.job_id
     log_file = workspace.get_app_log_file_path(job_id)
     add_logfile_handler(log_file)
+    logger = logging.getLogger("sub_worker_process")
 
     sub_executor.run()
+
     AuditService.close()
+    err = create_stats_pool_files_for_job(workspace, job_id, prefix=prefix)
+    if err:
+        logger.warning(err)
 
 
 if __name__ == "__main__":

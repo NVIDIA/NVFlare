@@ -44,6 +44,9 @@ _CMD_TYPE_UNKNOWN = 0
 _CMD_TYPE_CLIENT = 1
 _CMD_TYPE_SERVER = 2
 
+MAX_AUTO_LOGIN_TRIES = 300
+AUTO_LOGIN_INTERVAL = 1.0
+
 
 class ResultKey(object):
 
@@ -70,6 +73,8 @@ def session_event_cb_signature(event_type: str, info: str):
 
 class _ServerReplyJsonProcessor(object):
     def __init__(self, ctx: CommandContext):
+        if not isinstance(ctx, CommandContext):
+            raise TypeError(f"ctx is not an instance of CommandContext. but get {type(ctx)}")
         api = ctx.get_api()
         self.debug = api.debug
         self.ctx = ctx
@@ -86,7 +91,6 @@ class _ServerReplyJsonProcessor(object):
             print("DEBUG: Server Reply: {}".format(resp))
 
         ctx = self.ctx
-        assert isinstance(ctx, CommandContext)
 
         # this resp is what is usually directly used to return, straight from server
         ctx.set_command_result(resp)
@@ -201,7 +205,7 @@ class SessionEventType(object):
     SESSION_CLOSED = "session_closed"  # close the current session
     LOGIN_SUCCESS = "login_success"  # logged in to server
     LOGIN_FAILURE = "login_failure"  # cannot login to server
-    TRYING_LOGIN = "trying_login"  # still try to login
+    TRYING_LOGIN = "trying_login"  # still try to log in
     SP_ADDR_CHANGED = "sp_addr_changed"  # service provider address changed
     SESSION_TIMEOUT = "session_timeout"  # server timed out current session
 
@@ -295,7 +299,7 @@ class _Operate(State):
             cur_ssid = api.ssid
 
         if new_host != cur_host or new_port != cur_port or cur_ssid != new_ssid:
-            # need to relogin
+            # need to re-login
             api.fire_session_event(SessionEventType.SP_ADDR_CHANGED, f"Server address changed to {new_host}:{new_port}")
             return _STATE_NAME_LOGIN
 
@@ -334,6 +338,7 @@ class AdminAPI(AdminAPISpec):
         session_event_cb=None,
         session_timeout_interval=None,
         session_status_check_interval=None,
+        auto_login_max_tries: int = 5,
     ):
         """Underlying API to keep certs, keys and connection information and to execute admin commands through do_command.
 
@@ -349,8 +354,9 @@ class AdminAPI(AdminAPISpec):
             poc: Whether to enable poc mode for using the proof of concept example without secure communication.
             debug: Whether to print debug messages, which can help with diagnosing problems. False by default.
             session_event_cb: the session event callback
-            session_timeout_interval: if specified, automatically close the session after inactive for this long
-            session_status_check_interval: how often to check session status with server
+            session_timeout_interval: if specified, automatically close the session after inactive for this long, unit is second
+            session_status_check_interval: how often to check session status with server, unit is second
+            auto_login_max_tries: maximum number of tries to auto-login.
         """
         super().__init__()
         if cmd_modules is None:
@@ -427,11 +433,14 @@ class AdminAPI(AdminAPISpec):
         self.sess_monitor_thread = None
         self.sess_monitor_active = False
 
-        if session_event_cb is not None:
-            assert callable(session_event_cb), "session_event_cb must be callable"
+        if session_event_cb is not None and not callable(session_event_cb):
+            raise RuntimeError("session_event_cb must be callable")
         self.session_event_cb = session_event_cb
 
         # create the FSM for session monitoring
+        if auto_login_max_tries < 0 or auto_login_max_tries > MAX_AUTO_LOGIN_TRIES:
+            raise ValueError(f"auto_login_max_tries is out of range: [0, {MAX_AUTO_LOGIN_TRIES}]")
+        self.auto_login_max_tries = auto_login_max_tries
         fsm = FSM("session monitor")
         fsm.add_state(_WaitForServerAddress(self))
         fsm.add_state(_TryLogin(self))
@@ -462,8 +471,8 @@ class AdminAPI(AdminAPISpec):
             self.new_ssid = ssid
 
     def _try_auto_login(self):
-        resp = {}
-        for i in range(5):
+        resp = None
+        for i in range(self.auto_login_max_tries):
             self.fire_session_event(SessionEventType.TRYING_LOGIN, "Trying to login, please wait ...")
 
             if self.poc:
@@ -472,7 +481,12 @@ class AdminAPI(AdminAPISpec):
                 resp = self.login(username=self.user_name)
             if resp[ResultKey.STATUS] in [APIStatus.SUCCESS, APIStatus.ERROR_AUTHENTICATION, APIStatus.ERROR_CERT]:
                 return resp
-            time.sleep(1.0)
+            time.sleep(AUTO_LOGIN_INTERVAL)
+        if resp is None:
+            resp = {
+                ResultKey.STATUS: APIStatus.ERROR_RUNTIME,
+                ResultKey.DETAILS: f"Auto login failed after {self.auto_login_max_tries} tries",
+            }
         return resp
 
     def auto_login(self):
@@ -480,10 +494,10 @@ class AdminAPI(AdminAPISpec):
             result = self._try_auto_login()
             if self.debug:
                 print(f"DEBUG: login result is {result}")
-        except:
+        except Exception as e:
             result = {
                 ResultKey.STATUS: APIStatus.ERROR_RUNTIME,
-                ResultKey.DETAILS: "Exception occurred when trying to login - please try later",
+                ResultKey.DETAILS: f"Exception occurred ({secure_format_exception(e)}) when trying to login - please try later",
             }
         return result
 
@@ -539,7 +553,7 @@ class AdminAPI(AdminAPISpec):
                 return "Your session is ended due to inactivity"
 
             next_state = self.fsm.execute()
-            if not next_state:
+            if next_state is None:
                 if self.fsm.error:
                     return self.fsm.error
                 else:
@@ -548,13 +562,13 @@ class AdminAPI(AdminAPISpec):
     def _monitor_session(self, interval):
         try:
             msg = self._do_monitor_session(interval)
-        except:
-            msg = "exception occurred"
+        except Exception as e:
+            msg = f"exception occurred: {secure_format_exception(e)}"
 
         self.server_sess_active = False
         self.fire_session_event(SessionEventType.SESSION_CLOSED, msg)
 
-        # this is in the session_monitor thread - do not close the monitor or we'll run into
+        # this is in the session_monitor thread - do not close the monitor, or we'll run into
         # "cannot join current thread" error!
         self.close(close_session_monitor=False)
 

@@ -23,3 +23,6 @@ class StaticServiceFinder(ServiceFinder):
 
     def start(self, service_address_changed_cb):
         service_address_changed_cb(self.host, self.port, self.ssid)
+
+    def stop(self):
+        pass

@@ -15,7 +15,7 @@
 import argparse
 
 from nvflare.fuel.common.excepts import ConfigError
-from nvflare.fuel.f3.qat2.net_config import NetConfig
+from nvflare.fuel.f3.qat.net_config import NetConfig
 from nvflare.fuel.hci.client.cli import AdminClient, CredentialType
 from nvflare.fuel.hci.client.static_service_finder import StaticServiceFinder
 from nvflare.fuel.utils.config_service import ConfigService

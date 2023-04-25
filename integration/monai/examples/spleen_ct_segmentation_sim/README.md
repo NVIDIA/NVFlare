@@ -2,7 +2,7 @@
 In the following, we show an example of running MONAI-bundle configurations with NVFlare using the
 [FL simulator](https://nvflare.readthedocs.io/en/main/user_guide/fl_simulator.html).
 
-For an example with real-world deployment settings, see [here](../spleen_ct_segmentation_real-world/README.md).
+For an example with real-world deployment settings, see [here](../spleen_ct_segmentation_local/README.md).
 
 ## Setup environment
 
@@ -18,7 +18,7 @@ Download the MONAI bundle as `./${JOB_NAME}/app/config/spleen_ct_segmentation`.
 
 ```
 JOB_NAME=job
-python3 -m monai.bundle download --name "spleen_ct_segmentation" --version "0.3.7" --bundle_dir ./${JOB_NAME}/app/config
+python3 -m monai.bundle download --name "spleen_ct_segmentation" --version "0.4.6" --bundle_dir ./${JOB_NAME}/app/config
 ``` 
 
 In this example, `JOB_NAME` can be either `job`, `job_multi_gpu` or `job_stats`, depending on the configuration you would like to run (see below).
@@ -78,7 +78,7 @@ We can also specify the client names via the `--clients` argument
 and assign them to the appropriate GPU device using the `--gpu` argument.
 
 ```
-nvflare simulator job --workspace /tmp/nvflare/sim_spleen_ct_seg --threads 2 --clients site-1,site-2 --gpu 0,1
+nvflare simulator job --workspace /tmp/nvflare/sim_spleen_ct_seg --clients site-1,site-2 --gpu 0,1
 ```
 
 #### 3.3 Multi-gpu training
@@ -121,7 +121,7 @@ Again, please step 2 & 3 above but replace `JOB_NAME=job` with `JOB_NAME=job_sta
 To avoid caching the data for training (which will not be executed during the statistics workflow), set `cache_rate=0` in train.json.
 
 ```
-nvflare simulator job_stats --workspace /tmp/nvflare/sim_spleen_ct_seg --threads 2 --n_clients 2 --gpu 0,1
+nvflare simulator job_stats --workspace /tmp/nvflare/sim_spleen_ct_seg --n_clients 2 --gpu 0,1
 ```
 
 The histogram results will be placed in the workspace directory under `simulate_job/statistics/image_statistics.json`.

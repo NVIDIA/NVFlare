@@ -132,6 +132,7 @@ def _create_admin_api(workspace_root_dir, upload_root_dir, download_root_dir, ad
         ca_cert=ca_cert,
         client_key=client_key,
         client_cert=client_cert,
+        auto_login_max_tries=20,
     )
     return admin_api
 

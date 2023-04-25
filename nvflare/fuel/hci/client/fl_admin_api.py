@@ -97,16 +97,20 @@ def default_stats_handling_cb(reply: FLAdminAPIResponse) -> bool:
 class FLAdminAPI(AdminAPI, FLAdminAPISpec):
     def __init__(
         self,
+        overseer_agent: OverseerAgent,
         ca_cert: str = "",
         client_cert: str = "",
         client_key: str = "",
         upload_dir: str = "",
         download_dir: str = "",
         cmd_modules: Optional[List] = None,
-        overseer_agent: OverseerAgent = None,
         user_name: str = None,
         poc=False,
         debug=False,
+        session_event_cb=None,
+        session_timeout_interval=None,
+        session_status_check_interval=None,
+        auto_login_max_tries: int = 5,
     ):
         """FLAdminAPI serves as foundation for communications to FL server through the AdminAPI.
 
@@ -124,11 +128,12 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
             user_name: Username to authenticate with FL server
             poc: Whether to enable poc mode for using the proof of concept example without secure communication.
             debug: Whether to print debug messages. False by default.
+            session_event_cb: the session event callback
+            session_timeout_interval: if specified, automatically close the session after inactive for this long
+            session_status_check_interval: how often to check session status with server
+            auto_login_max_tries: maximum number of tries to auto-login.
         """
-        if overseer_agent:
-            service_finder = ServiceFinderByOverseer(overseer_agent)
-        else:
-            service_finder = None
+        service_finder = ServiceFinderByOverseer(overseer_agent)
 
         AdminAPI.__init__(
             self,
@@ -142,6 +147,10 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
             user_name=user_name,
             poc=poc,
             debug=debug,
+            session_event_cb=session_event_cb,
+            session_timeout_interval=session_timeout_interval,
+            session_status_check_interval=session_status_check_interval,
+            auto_login_max_tries=auto_login_max_tries,
         )
         self.upload_dir = upload_dir
         self.download_dir = download_dir
@@ -962,11 +971,3 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
                     None,
                 )
             time.sleep(interval)
-
-    def login(self, username: str):
-        result = AdminAPI.login(self, username=username)
-        return FLAdminAPIResponse(status=result["status"], details=result["details"])
-
-    def login_with_poc(self, username: str, poc_key: str):
-        result = AdminAPI.login_with_poc(self, username=username, poc_key=poc_key)
-        return FLAdminAPIResponse(status=result["status"], details=result["details"])

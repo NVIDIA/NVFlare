@@ -341,11 +341,11 @@ def generate_test_config_yaml_for_example(
             f"cp {requirements_file} {new_requirements_file}",
             f"sed -i '/{exclude_requirements}/d' {new_requirements_file}",
             f"pip install -r {new_requirements_file}",
-            f"python convert_to_test_job.py --job {job_dir} --post {postfix}",
-            f"rm -f {new_requirements_file}",
         ]
         if example.prepare_data_script is not None:
-            setup.insert(1, f"bash {example.prepare_data_script}")
+            setup.append(f"bash {example.prepare_data_script}")
+        setup.append(f"python convert_to_test_job.py --job {job_dir} --post {postfix}")
+        setup.append(f"rm -f {new_requirements_file}")
 
         config = {
             "ha": True,
