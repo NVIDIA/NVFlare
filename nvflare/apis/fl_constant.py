@@ -38,6 +38,7 @@ class ReturnCode(object):
     MODEL_UNRECOGNIZED = "MODEL_UNRECOGNIZED"
     VALIDATE_TYPE_UNKNOWN = "VALIDATE_TYPE_UNKNOWN"
     EMPTY_RESULT = "EMPTY_RESULT"
+    UNSAFE_JOB = "UNSAFE_JOB"
 
     SERVER_NOT_READY = "SERVER_NOT_READY"
 
@@ -99,6 +100,7 @@ class ReservedKey(object):
     JOB_RUN_NUMBER = "__job_run_number__"
     JOB_DEPLOY_DETAIL = "__job_deploy_detail__"
     FATAL_SYSTEM_ERROR = "__fatal_system_error__"
+    JOB_IS_UNSAFE = "__job_is_unsafe__"
 
 
 class FLContextKey(object):
