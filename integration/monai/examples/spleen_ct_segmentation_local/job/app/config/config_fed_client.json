@@ -22,13 +22,27 @@
   "task_data_filters": [
   ],
 
+  "tracking": "mlflow",
+  "experiment_name": "monai_nvflare",
+  "tracking_uri": "http://127.0.0.1:5000",
+
   "components": [
     {
       "id": "client_algo",
       "path": "monai.fl.client.MonaiAlgo",
       "args": {
         "bundle_root": "config/spleen_ct_segmentation",
-        "local_epochs": 10
+        "local_epochs": 10,
+        "train_args": {
+            "tracking": "{tracking}",
+            "tracking_uri": "{tracking_uri}",
+            "experiment_name": "{experiment_name}"
+        },
+        "eval_args": {
+            "tracking": "{tracking}",
+            "tracking_uri": "{tracking_uri}",
+            "experiment_name": "{experiment_name}"
+        }
       }
     }
   ]

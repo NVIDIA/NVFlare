@@ -729,9 +729,7 @@ class FederatedServer(BaseServer):
             self._turn_to_hot()
 
         elif isinstance(self.server_state, Hot2ColdState):
-            self._turn_to_cold()
-
-        self._notify_state_change(old_state_name)
+            self._turn_to_cold(old_state_name)
 
     def _notify_state_change(self, old_state_name):
         new_state_name = self.server_state.__class__.__name__
@@ -768,6 +766,7 @@ class FederatedServer(BaseServer):
     def _turn_to_hot(self):
         # Restore Snapshot
         if self.ha_mode:
+            restored_job_ids = []
             with self.snapshot_lock:
                 fl_snapshot = self.snapshot_persistor.retrieve()
                 if fl_snapshot:
@@ -795,6 +794,9 @@ class FederatedServer(BaseServer):
                                     snapshot=snapshot,
                                     fl_ctx=fl_ctx,
                                 )
+                            restored_job_ids.append(job_id)
+            with self.engine.new_context() as fl_ctx:
+                self.engine.job_runner.update_abnormal_finished_jobs(restored_job_ids, fl_ctx=fl_ctx)
         else:
             with self.engine.new_context() as fl_ctx:
                 self.snapshot_persistor.delete()
@@ -805,9 +807,10 @@ class FederatedServer(BaseServer):
                 host=self.server_state.host, port=self.server_state.service_port, ssid=self.server_state.ssid
             )
 
-    def _turn_to_cold(self):
+    def _turn_to_cold(self, old_state_name):
         with self.lock:
             self.server_state = ColdState(host=self.server_state.host, port=self.server_state.service_port)
+        self._notify_state_change(old_state_name)
         self.engine.pause_server_jobs()
 
     def stop_training(self):
