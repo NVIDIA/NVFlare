@@ -59,6 +59,8 @@ validation set. We also record the contribution scores for each client.
 The TensorBoard curves of validation Dice and contribution scores for the 100 epochs (100 rounds, 1 local epoch per round) during training are shown below:
 ![All training curve](./figs/all_training.png)
 
+As shown, one of the clients (Promise12) has significant domain shift from others, and hence intuitively it provides more novel information as compared with others. During training, its FedCE weight increases while others gradually decrease. Such that the overall federated learning captures the potential domain variations better. With this mechanism, FedCE provides an indication of reward/profit distribution by measuring the contribution of clients. Please refer to the [FedCE paper](https://arxiv.org/abs/2303.16520) for more details.
+
 ## Citation
 
 > Jiang, Meirui, et al. "Fair Federated Medical Image Segmentation via Client Contribution Estimation." Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. 2023.

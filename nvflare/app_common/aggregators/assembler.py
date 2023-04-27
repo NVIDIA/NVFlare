@@ -15,6 +15,7 @@
 from abc import ABC, abstractmethod
 from typing import Dict
 
+from nvflare.apis.dxo import DXO
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 
@@ -42,7 +43,7 @@ class Assembler(FLComponent, ABC):
         return self.expected_data_kind
 
     @abstractmethod
-    def get_model_params(self, data: dict) -> dict:
+    def get_model_params(self, dxo: DXO) -> dict:
         """Connects the assembler's _collection with CollectAndAssembleAggregator
         Get the collected parameters from the main aggregator
         Return:

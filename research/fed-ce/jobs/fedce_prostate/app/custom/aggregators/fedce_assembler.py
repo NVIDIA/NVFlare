@@ -17,7 +17,7 @@ from typing import Dict
 import numpy as np
 import torch
 
-from nvflare.apis.dxo import DataKind
+from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.aggregators.assembler import Assembler
@@ -67,7 +67,9 @@ class FedCEAssembler(Assembler):
                 self.fedce_cos_param_list.append(name)
         self.log_info(fl_ctx, "FedCE model assembler initialized")
 
-    def get_model_params(self, data: dict, meta: dict):
+    def get_model_params(self, dxo: DXO):
+        data = dxo.data
+        meta = dxo.meta
         return {"model": data, "fedce_minus_val": meta["fedce_minus_val"]}
 
     def handle_event(self, event: str, fl_ctx: FLContext):
@@ -158,4 +160,9 @@ class FedCEAssembler(Assembler):
             global_updates[name] = temp.detach().cpu().numpy()
 
         meta = {"fedce_coef": fedce_coef}
-        return global_updates, meta
+
+        dxo = DXO(data_kind=self.expected_data_kind, data=global_updates)
+        for entry in meta.keys():
+            dxo.set_meta_prop(entry, meta[entry])
+
+        return dxo
