@@ -160,9 +160,6 @@ class FedCEAssembler(Assembler):
             global_updates[name] = temp.detach().cpu().numpy()
 
         meta = {"fedce_coef": fedce_coef}
-
-        dxo = DXO(data_kind=self.expected_data_kind, data=global_updates)
-        for entry in meta.keys():
-            dxo.set_meta_prop(entry, meta[entry])
+        dxo = DXO(data_kind=self.expected_data_kind, data=global_updates, meta=meta)
 
         return dxo
