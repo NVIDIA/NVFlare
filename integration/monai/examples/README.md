@@ -13,10 +13,10 @@ The example can be extended to use additional FL [algorithms](https://nvflare.re
 available in NVIDIA FLARE.
 
 
-### [Real-world Federated Learning for 3D spleen CT segmentation](./spleen_ct_segmentation_real-world/README.md)
-Real-world FL deployment requires secure provisioning and an admin API to submit jobs. 
+### [Federated Learning with Local Provisioning](./spleen_ct_segmentation_local/README.md)
+FL deployment requires secure provisioning and an admin API to submit jobs. 
 This example runs you through the process and includes instructions on running [FedAvg](https://arxiv.org/abs/1602.05629)
-with streaming of TensorBoard metrics to the server during training and 
+with experiment tracking using [MLFlow](https://mlflow.org/) and 
 [homomorphic encryption](https://developer.nvidia.com/blog/federated-learning-with-homomorphic-encryption/) for secure server-side aggregation.
 
 In this example, we use an already prepared [provisioning](https://nvflare.readthedocs.io/en/main/programming_guide/provisioning_system.html)

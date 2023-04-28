@@ -236,7 +236,7 @@ class SimulatorRunner(FLComponent):
 
     def _extract_client_names_from_meta(self, meta):
         client_names = []
-        for _, participants in meta.get(JobMetaKey.DEPLOY_MAP).items():
+        for _, participants in meta.get(JobMetaKey.DEPLOY_MAP, {}).items():
             for p in participants:
                 if p.upper() != ALL_SITES and p != "server":
                     client_names.append(p)
@@ -246,7 +246,7 @@ class SimulatorRunner(FLComponent):
         no_app_clients = []
         for name in client_names:
             name_matched = False
-            for app_name, participants in meta.get(JobMetaKey.DEPLOY_MAP).items():
+            for _, participants in meta.get(JobMetaKey.DEPLOY_MAP, {}).items():
                 if len(participants) == 1 and participants[0].upper() == ALL_SITES:
                     name_matched = True
                     break
@@ -532,7 +532,12 @@ class SimulatorClientRunner(FLComponent):
         )
         if gpu:
             command += " --gpu " + str(gpu)
-        _ = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=os.environ.copy())
+        new_env = os.environ.copy()
+        if not sys.path[0]:
+            new_env["PYTHONPATH"] = os.pathsep.join(sys.path[1:])
+        else:
+            new_env["PYTHONPATH"] = os.pathsep.join(sys.path)
+        _ = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
 
         conn = self._create_connection(open_port, timeout=timeout)
 

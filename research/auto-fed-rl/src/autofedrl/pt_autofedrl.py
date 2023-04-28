@@ -319,6 +319,7 @@ class LearnableGaussianContinuousSearch(torch.nn.Module):
 
         return sample, logprob
 
+
 class LearnableGaussianContinuousSearchDRL(torch.nn.Module):
     def __init__(self, hyperparams_points, initial_precision=None, device="cpu", rl_nettype="mlp"):
         super(LearnableGaussianContinuousSearchDRL, self).__init__()
@@ -347,12 +348,15 @@ class LearnableGaussianContinuousSearchDRL(torch.nn.Module):
         self.precision_component = self.precision_component + precision_component_update
         self.mean.data.copy_(torch.clamp(self.mean.data, -1.0, 1.0))
 
-        dist = MultivariateNormal(loc=self.mean, precision_matrix=torch.mm(self.precision_component , self.precision_component .t()))
+        dist = MultivariateNormal(
+            loc=self.mean, precision_matrix=torch.mm(self.precision_component, self.precision_component.t())
+        )
         sample = dist.sample()
         logprob = dist.log_prob(sample)
         sample = sample * self.hps_scale + self.hps_center
 
         return sample, logprob
+
 
 class PolicyNet(torch.nn.Module):
     def __init__(self, input_dim):

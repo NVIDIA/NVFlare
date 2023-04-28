@@ -27,3 +27,9 @@ class FLCommunicationError(Exception):
         if exception:
             self.__dict__.update(exception.__dict__)
         self.message = message
+
+
+class UnsafeJobError(Exception):
+    """Raised when a job is detected to be unsafe"""
+
+    pass

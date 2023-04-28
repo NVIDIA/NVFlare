@@ -95,7 +95,7 @@ class CIFAR10AutoFedRLearner(CIFAR10Learner):  # TODO: also support CIFAR10Scaff
         # Initialize super class
         CIFAR10Learner.initialize(self, parts=parts, fl_ctx=fl_ctx)
         # Enabling the Nesterov momentum can stabilize the training.
-        self.optimizer = optim.SGD(self.model.parameters(), lr=self.lr, momentum=0.9, weight_decay = 0.0, nesterov=True)
+        self.optimizer = optim.SGD(self.model.parameters(), lr=self.lr, momentum=0.9, weight_decay=0.0, nesterov=True)
 
     def _create_datasets(self, fl_ctx: FLContext):
         """To be called only after Cifar10DataSplitter downloaded the data and computed splits"""

@@ -195,7 +195,7 @@ class Communicator:
             size = len(task.payload)
             task.payload = fobs.loads(task.payload)
             task_name = task.payload.get_header(ServerCommandKey.TASK_NAME)
-            fl_ctx.set_prop(FLContextKey.SSID, ssid)
+            fl_ctx.set_prop(FLContextKey.SSID, ssid, sticky=False)
             if task_name not in [SpecialTaskName.END_RUN, SpecialTaskName.TRY_AGAIN]:
                 self.logger.info(
                     f"Received from {project_name} server "

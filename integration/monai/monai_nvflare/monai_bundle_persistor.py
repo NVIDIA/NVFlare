@@ -16,8 +16,6 @@ import os
 
 from monai.bundle import ConfigParser
 from monai.bundle.config_item import ConfigItem
-from monai.fl.client.monai_algo import check_bundle_config
-from monai.fl.utils.constants import RequiredBundleKeys
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
@@ -90,10 +88,6 @@ class MonaiBundlePersistor(PTFileModelPersistor):
         self.bundle_root = os.path.join(app_root, self.bundle_root)
 
         self.train_parser.read_config(os.path.join(self.bundle_root, self.config_train_filename))
-        check_bundle_config(self.train_parser)
-
-        # Override some config items
-        self.train_parser[RequiredBundleKeys.BUNDLE_ROOT] = self.bundle_root
 
         if self.source_ckpt_filename:
             self.source_ckpt_file_full_name = os.path.join(self.bundle_root, self.source_ckpt_filename)

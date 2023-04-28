@@ -38,6 +38,7 @@ class ReturnCode(object):
     MODEL_UNRECOGNIZED = "MODEL_UNRECOGNIZED"
     VALIDATE_TYPE_UNKNOWN = "VALIDATE_TYPE_UNKNOWN"
     EMPTY_RESULT = "EMPTY_RESULT"
+    UNSAFE_JOB = "UNSAFE_JOB"
 
     SERVER_NOT_READY = "SERVER_NOT_READY"
 
@@ -99,6 +100,7 @@ class ReservedKey(object):
     JOB_RUN_NUMBER = "__job_run_number__"
     JOB_DEPLOY_DETAIL = "__job_deploy_detail__"
     FATAL_SYSTEM_ERROR = "__fatal_system_error__"
+    JOB_IS_UNSAFE = "__job_is_unsafe__"
 
 
 class FLContextKey(object):
@@ -312,6 +314,8 @@ class WorkspaceConstants:
     DEFAULT_LOGGING_CONFIG = LOGGING_CONFIG + ".default"
     AUDIT_LOG = "audit.log"
     LOG_FILE_NAME = "log.txt"
+    STATS_POOL_SUMMARY_FILE_NAME = "stats_pool_summary.json"
+    STATS_POOL_RECORDS_FILE_NAME = "stats_pool_records.csv"
 
     # these two files is used by shell scripts to determine restart / shutdown
     RESTART_FILE = "restart.fl"
