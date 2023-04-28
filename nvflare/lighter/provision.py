@@ -144,7 +144,9 @@ def prepare_project(project_dict, add_user_file_path=None, add_client_file_path=
     project = Project(name=project_name, description=project_description, participants=participants)
     n_servers = len(project.get_participants_by_type("server", first_only=False))
     if n_servers > 2:
-        raise (f"Configuration error: Expect 2 or 1 server to be provisioned. project contains {n_servers} servers.")
+        raise ValueError(
+            f"Configuration error: Expect 2 or 1 server to be provisioned. project contains {n_servers} servers."
+        )
     return project
 
 
