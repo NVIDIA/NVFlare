@@ -55,6 +55,7 @@ class Project(db.Model):
     short_name = db.Column(db.String(128), default="")
     title = db.Column(db.String(512), default="")
     description = db.Column(db.String(2048), default="")
+    # scheme = db.Column(db.String(16), default="grpc")
     app_location = db.Column(db.String(2048), default="")
     ha_mode = db.Column(db.Boolean, default=False)
     starting_date = db.Column(db.String(128), default="")

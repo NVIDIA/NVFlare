@@ -50,6 +50,9 @@ builders:
       # config_folder can be set to inform NVIDIA FLARE where to get configuration
       config_folder: config
 
+      # scheme for communication driver (currently supporting the default, grpc, only).
+      # scheme: grpc
+      
       # app_validator is used to verify if uploaded app has proper structures
       # if not set, no app_validator is included in fed_server.json
       # app_validator: PATH_TO_YOUR_OWN_APP_VALIDATOR
