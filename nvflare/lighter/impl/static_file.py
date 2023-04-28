@@ -27,6 +27,7 @@ class StaticFileBuilder(Builder):
         self,
         enable_byoc=False,
         config_folder="",
+        scheme="grpc",
         app_validator="",
         download_job_url="",
         docker_image="",
@@ -52,6 +53,7 @@ class StaticFileBuilder(Builder):
         """
         self.enable_byoc = enable_byoc
         self.config_folder = config_folder
+        self.scheme = scheme
         self.docker_image = docker_image
         self.download_job_url = download_job_url
         self.app_validator = app_validator
@@ -129,6 +131,7 @@ class StaticFileBuilder(Builder):
         ctx["fed_learn_port"] = fed_learn_port
         ctx["server_name"] = server.name
         server_0["service"]["target"] = f"{server.name}:{fed_learn_port}"
+        server_0["service"]["scheme"] = self.scheme
         server_0["admin_host"] = server.name
         server_0["admin_port"] = admin_port
         # if self.download_job_url:
@@ -230,6 +233,7 @@ class StaticFileBuilder(Builder):
         fed_learn_port = ctx.get("fed_learn_port")
         server_name = ctx.get("server_name")
         # config["servers"][0]["service"]["target"] = f"{server_name}:{fed_learn_port}"
+        config["servers"][0]["service"]["scheme"] = self.scheme
         config["servers"][0]["name"] = self.project_name
         # config["enable_byoc"] = client.enable_byoc
         replacement_dict = {
