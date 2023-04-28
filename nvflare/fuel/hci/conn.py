@@ -178,6 +178,9 @@ class Connection(BaseContext):
         else:
             self.append_error("unsupported data type {}".format(type(data)))
 
+    def add_meta(self, meta: dict):
+        self.buffer.add_meta(meta)
+
     def flush(self):
         line = self.buffer.encode()
         if line is None or len(line) <= 0:

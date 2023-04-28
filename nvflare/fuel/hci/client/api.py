@@ -23,7 +23,7 @@ from typing import List, Optional
 
 from nvflare.fuel.hci.cmd_arg_utils import split_to_args
 from nvflare.fuel.hci.conn import Connection, receive_and_process
-from nvflare.fuel.hci.proto import ConfirmMethod, InternalCommands, ProtoKey, make_error
+from nvflare.fuel.hci.proto import ConfirmMethod, InternalCommands, ProtoKey, make_error, MetaKey
 from nvflare.fuel.hci.reg import CommandEntry, CommandModule, CommandRegister
 from nvflare.fuel.hci.table import Table
 from nvflare.fuel.utils.fsm import FSM, State
@@ -50,9 +50,9 @@ AUTO_LOGIN_INTERVAL = 1.0
 
 class ResultKey(object):
 
-    STATUS = "status"
-    DETAILS = "details"
-    META = "meta"
+    STATUS = ProtoKey.STATUS
+    DETAILS = ProtoKey.DETAILS
+    META = ProtoKey.META
 
 
 def session_event_cb_signature(event_type: str, info: str):
@@ -408,6 +408,7 @@ class AdminAPI(AdminAPISpec):
                 ca_cert_path=self.ca_cert, cert_path=self.client_cert, private_key_path=self.client_key
             )
         self.debug = debug
+        self.cmd_timeout = None
 
         # for login
         self.token = None
@@ -454,6 +455,19 @@ class AdminAPI(AdminAPISpec):
         self.in_logout = False
         self.service_finder.start(self._handle_sp_address_change)
         self._start_session_monitor()
+
+    def set_command_timeout(self, timeout: float):
+        if not isinstance(timeout, float):
+            raise TypeError(f"timeout must be float but got {type(timeout)}")
+
+        if timeout < 0:
+            raise ValueError(f"invalid timeout value {timeout} - must be >= 0.0")
+
+        if timeout == 0:
+            # reset
+            self.cmd_timeout = None
+        else:
+            self.cmd_timeout = timeout
 
     def fire_session_event(self, event_type: str, msg: str):
         if self.session_event_cb is not None:
@@ -682,6 +696,9 @@ class AdminAPI(AdminAPISpec):
         conn.append_command(command)
         if self.token:
             conn.append_token(self.token)
+
+        if self.cmd_timeout:
+            conn.add_meta({MetaKey.CMD_TIMEOUT: self.cmd_timeout})
 
         conn.close()
         ok = receive_and_process(sock, process_json_func)

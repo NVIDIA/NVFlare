@@ -45,6 +45,10 @@ class JobNotFound(BaseException):
     pass
 
 
+class JobNotRunning(BaseException):
+    pass
+
+
 class JobNotDone(BaseException):
     pass
 
@@ -59,6 +63,20 @@ class AuthenticationError(BaseException):
 
 class AuthorizationError(BaseException):
     pass
+
+
+class NoClientsAvailable(BaseException):
+    pass
+
+
+class ClientsStillRunning(BaseException):
+    pass
+
+
+class TargetType:
+    ALL = "all"
+    SERVER = "server"
+    CLIENT = "client"
 
 
 class ServerInfo:
@@ -205,6 +223,21 @@ class SessionSpec(ABC):
 
     @abstractmethod
     def get_system_info(self) -> SystemInfo:
+        """Get general info of the FLARE system
+
+        """
+        pass
+
+    def get_client_status(self, client_names: List[str]) -> List[dict]:
+        """
+        Get status(es) of specified client(s).
+
+        Args:
+            client_names: names of the clients. If not specified, return statuses of all connected clients
+
+        Returns: a list of client status info
+
+        """
         pass
 
     @abstractmethod
