@@ -12,13 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# We will move to this app_common when it gets matured
 from typing import Dict
 
 import numpy as np
 from sklearn.cluster import KMeans
 
-from nvflare.apis.dxo import DataKind
+from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.aggregators.assembler import Assembler
 from nvflare.app_common.app_constant import AppConstants
@@ -33,7 +32,8 @@ class KMeansAssembler(Assembler):
         self.count = None
         self.n_cluster = 0
 
-    def get_model_params(self, data: dict):
+    def get_model_params(self, dxo: DXO):
+        data = dxo.data
         return {"center": data["center"], "count": data["count"]}
 
     def assemble(self, data: Dict[str, dict], fl_ctx: FLContext) -> dict:
@@ -70,4 +70,6 @@ class KMeansAssembler(Assembler):
                 # Update the global center
                 self.center[center_idx] = centers_global_rescale
         params = {"center": self.center}
-        return params
+        dxo = DXO(data_kind=self.expected_data_kind, data=params)
+
+        return dxo
