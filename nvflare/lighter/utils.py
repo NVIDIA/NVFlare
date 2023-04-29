@@ -148,32 +148,39 @@ def sh_replace(src, mapping_dict):
     return result
 
 
-def update_project_config(project_config: dict, old_server_name, server_name) -> dict:
-    if project_config:
-        # update participants
-        participants = project_config["participants"]
-        for p in participants:
-            if p["name"] == old_server_name:
-                p["name"] = server_name
-
-        # update overseer_agent builder
-        builders = project_config["builders"]
-        for b in builders:
-            if "args" in b:
-                if "overseer_agent" in b["args"]:
-                    end_point = b["args"]["overseer_agent"]["args"]["sp_end_point"]
-                    new_end_point = end_point.replace(old_server_name, server_name)
-                    b["args"]["overseer_agent"]["args"]["sp_end_point"] = new_end_point
-    else:
-        RuntimeError("project_config is empty")
+def update_project_server_name_config(project_config: dict, old_server_name, server_name) -> dict:
+    update_participant_server_name(project_config, old_server_name, server_name)
+    update_overseer_server_name(project_config, old_server_name, server_name)
     return project_config
+
+
+def update_overseer_server_name(project_config, old_server_name, server_name):
+    # update overseer_agent builder
+    builders = project_config.get("builders", [])
+    for b in builders:
+        if "args" in b:
+            if "overseer_agent" in b["args"]:
+                end_point = b["args"]["overseer_agent"]["args"]["sp_end_point"]
+                new_end_point = end_point.replace(old_server_name, server_name)
+                b["args"]["overseer_agent"]["args"]["sp_end_point"] = new_end_point
+
+
+def update_participant_server_name(project_config, old_server_name, new_server_name):
+    participants = project_config["participants"]
+    for p in participants:
+        if p["type"] == "server" and p["name"] == old_server_name:
+            p["name"] = new_server_name
+            return
 
 
 def update_project_server_name(project_file: str, old_server_name, server_name):
     with open(project_file, "r") as file:
         project_config = yaml.safe_load(file)
 
-    update_project_config(project_config, old_server_name, server_name)
+    if not project_config:
+        raise RuntimeError("project_config is empty")
+
+    update_project_server_name_config(project_config, old_server_name, server_name)
 
     with open(project_file, "w") as file:
         yaml.dump(project_config, file)

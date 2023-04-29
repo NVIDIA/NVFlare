@@ -15,19 +15,27 @@
 import json
 import os
 import random
+import shutil
+import socket
 import subprocess
 import sys
 import time
 from typing import Dict, List, Optional
 
+import yaml
+
 from nvflare.cli_exception import CLIException
+from nvflare.fuel.utils.class_utils import instantiate_class
 from nvflare.fuel.utils.gpu_utils import get_host_gpu_ids
-from nvflare.lighter.poc import generate_poc
+from nvflare.lighter.provision import gen_default_project_config, prepare_project
 from nvflare.lighter.service_constants import FlareServiceConstants as SC
-from nvflare.lighter.utils import update_storage_locations
+from nvflare.lighter.spec import Provisioner
+from nvflare.lighter.utils import load_yaml, update_project_server_name_config, update_storage_locations
 from nvflare.tool.api_utils import shutdown_system
 
 DEFAULT_WORKSPACE = "/tmp/nvflare/poc"
+DEFAULT_PROJECT_NAME = "example_project"
+global_packages = {}
 
 
 def client_gpu_assignments(clients: List[str], gpu_ids: List[int]) -> Dict[str, List[int]]:
@@ -56,17 +64,17 @@ def client_gpu_assignments(clients: List[str], gpu_ids: List[int]) -> Dict[str, 
     return gpu_assignments
 
 
-def get_package_command(cmd_type: str, poc_workspace: str, package_dir) -> str:
+def get_package_command(cmd_type: str, prod_dir: str, package_dir) -> str:
     if cmd_type == SC.CMD_START:
-        if package_dir == SC.FLARE_CONSOLE:
-            cmd = get_cmd_path(poc_workspace, package_dir, "fl_admin.sh")
-        elif package_dir == SC.FLARE_SERVER:
-            cmd = get_cmd_path(poc_workspace, package_dir, "start.sh")
+        if package_dir == global_packages.get(SC.FLARE_PROJ_ADMIN, SC.FLARE_PROJ_ADMIN):
+            cmd = get_cmd_path(prod_dir, package_dir, "fl_admin.sh")
+        elif package_dir == global_packages.get(SC.FLARE_SERVER, SC.FLARE_SERVER):
+            cmd = get_cmd_path(prod_dir, package_dir, "start.sh")
         else:
-            cmd = get_cmd_path(poc_workspace, package_dir, "start.sh")
+            cmd = get_cmd_path(prod_dir, package_dir, "start.sh")
 
     elif cmd_type == SC.CMD_STOP:
-        cmd = get_stop_cmd(poc_workspace, package_dir)
+        cmd = get_stop_cmd(prod_dir, package_dir)
     else:
         raise ValueError("unknown cmd_type :", cmd_type)
     return cmd
@@ -86,12 +94,12 @@ def get_nvflare_home() -> str:
     return nvflare_home
 
 
-def get_upload_dir(poc_workspace: str) -> str:
-    console_config_path = os.path.join(poc_workspace, f"{SC.FLARE_CONSOLE}/{SC.STARTUP}/fed_admin.json")
+def get_upload_dir(startup_dir) -> str:
+    console_config_path = os.path.join(startup_dir, "fed_admin.json")
     try:
         with open(console_config_path, "r") as f:
             console_config = json.load(f)
-            upload_dir = console_config[SC.FLARE_CONSOLE]["upload_dir"]
+            upload_dir = console_config["admin"]["upload_dir"]
     except IOError as e:
         raise CLIException(f"failed to load {console_config_path} {e}")
     except json.decoder.JSONDecodeError as e:
@@ -100,24 +108,253 @@ def get_upload_dir(poc_workspace: str) -> str:
     return upload_dir
 
 
-def prepare_examples(poc_workspace: str):
-    nvflare_home = get_nvflare_home()
-    if nvflare_home:
-        src = os.path.join(nvflare_home, SC.EXAMPLES)
-        dst = os.path.join(poc_workspace, f"{SC.FLARE_CONSOLE}/{get_upload_dir(poc_workspace)}")
-        print(f"link examples from {src} to {dst}")
+def prepare_examples(example_dir: str, workspace: str):
+    if example_dir is None or example_dir == "":
+        raise ValueError("example_dir is required")
+    src = os.path.abspath(example_dir)
+    if not os.path.isdir(src):
+        raise ValueError(f"example_dir '{example_dir}' is not valid directory")
+
+    prod_dir = get_prod_dir(workspace)
+    if not os.path.exists(prod_dir):
+        print("please use nvflare local --prepare to create workspace first")
+        exit(0)
+
+    startup_dir = os.path.join(prod_dir, f"{global_packages[SC.FLARE_PROJ_ADMIN]}/{SC.STARTUP}")
+    transfer = get_upload_dir(startup_dir)
+    dst = os.path.join(startup_dir, transfer)
+    print(f"link examples from {src} to {dst}")
+    if not os.path.islink(dst):
         os.symlink(src, dst)
 
 
-def prepare_poc(number_of_clients: int, poc_workspace: str):
-    print(f"prepare_poc at {poc_workspace} for {number_of_clients} clients")
-    ret_code = generate_poc(number_of_clients, poc_workspace)
-    if poc_workspace != DEFAULT_WORKSPACE:
-        update_storage_locations(
-            local_dir=f"{poc_workspace}/server/local", default_resource_name="resources.json", workspace=poc_workspace
+def get_prod_dir(workspace, project_name: str = DEFAULT_PROJECT_NAME):
+    prod_dir = os.path.join(workspace, project_name, "prod_00")
+    return prod_dir
+
+
+def gen_project_config_file(workspace: str) -> str:
+    project_file = os.path.join(workspace, "project.yml")
+    if not os.path.isfile(project_file):
+        gen_default_project_config("dummy_project.yml", project_file)
+    return project_file
+
+
+def verify_host(host_name: str) -> bool:
+    try:
+        host_name = socket.gethostbyname(host_name)
+        return True
+    except:
+        return False
+
+
+def verify_hosts(project_config: dict):
+    hosts: List[str] = get_project_hosts(project_config)
+    for h in hosts:
+        if not verify_host(h):
+            print(f"host name: '{h}' is not defined, considering modify /etc/hosts to add localhost alias")
+            exit(0)
+
+
+def get_project_hosts(project_config) -> List[str]:
+    participants: List[dict] = project_config["participants"]
+    return [p["name"] for p in participants if p["type"] == "client" or p["type"] == "server"]
+
+
+def get_fl_server_name(project_config: dict) -> str:
+    participants: List[dict] = project_config["participants"]
+    servers = [p["name"] for p in participants if p["type"] == "server"]
+    if len(servers) == 1:
+        return servers[0]
+    else:
+        raise ValueError(f"project should only have one server, but {len(servers)} are provided: {servers}")
+
+
+def get_proj_admin(project_config: dict):
+    participants: List[dict] = project_config["participants"]
+    admins = [p["name"] for p in participants if p["type"] == "admin"]
+
+    if len(admins) == 1:
+        return admins[0]
+    else:
+        raise ValueError(f"project should only have only one project admin, but {len(admins)} are provided: {admins}")
+
+
+def get_fl_client_names(project_config: dict) -> List[str]:
+    participants: List[dict] = project_config["participants"]
+    client_names = [p["name"] for p in participants if p["type"] == "client"]
+    return client_names
+
+
+def prepare_builders(project_dict) -> List:
+    builders = list()
+    for b in project_dict.get("builders"):
+        path = b.get("path")
+        args = b.get("args")
+
+        if b.get("path") == "nvflare.lighter.impl.static_file.StaticFileBuilder":
+            path = "nvflare.lighter.impl.local_static_file.LocalStaticFileBuilder"
+            args['overseer_agent']['args']["sp_end_point"] = "localhost:8002:8003"
+
+        elif b.get("path") == "nvflare.lighter.impl.cert.CertBuilder":
+            path = "nvflare.lighter.impl.local_cert.LocalCertBuilder"
+
+        builders.append(instantiate_class(path, args))
+    return builders
+
+
+def local_provision(clients: List[str],
+                    number_of_clients: int,
+                    workspace: str,
+                    use_docker: bool = False,
+                    use_he: bool = False,
+                    project_conf_path: str = "") -> dict:
+    user_provided_project_config = False
+    if project_conf_path:
+        src_project_file = project_conf_path
+        dst_project_file = os.path.join(workspace, "project.yml")
+        user_provided_project_config = True
+    else:
+        src_project_file = gen_project_config_file(workspace)
+        dst_project_file = src_project_file
+
+    print(f"provision at {workspace} for {number_of_clients} clients with {src_project_file}")
+    project_config = load_yaml(src_project_file)
+    if not project_config:
+        raise ValueError(f"empty or invalid project config from project yaml file: {src_project_file}")
+
+    if not user_provided_project_config:
+        project_config = update_server_name(project_config)
+        project_config = update_clients(clients, number_of_clients, project_config)
+        project_config = add_docker_builder(use_docker, project_config)
+        project_config = add_he_builder(use_he, project_config)
+
+    save_project_config(project_config, dst_project_file)
+
+    packages = get_packages(project_config)
+
+    project = prepare_project(project_config)
+    builders = prepare_builders(project_config)
+    provisioner = Provisioner(workspace, builders)
+    provisioner.provision(project)
+
+    return packages
+
+
+def get_packages(project_config):
+    packages = {
+        SC.FLARE_SERVER: get_fl_server_name(project_config),
+        SC.FLARE_PROJ_ADMIN: get_proj_admin(project_config),
+        SC.FLARE_CLIENTS: get_fl_client_names(project_config),
+    }
+    return packages
+
+
+def save_project_config(project_config, project_file):
+    with open(project_file, "w") as file:
+        yaml.dump(project_config, file)
+
+
+def update_server_name(project_config):
+    old_server_name = get_fl_server_name(project_config)
+    server_name = "server"
+    if old_server_name != server_name:
+        update_project_server_name_config(project_config, old_server_name, server_name)
+    return project_config
+
+
+def add_docker_builder(use_docker: bool, project_config: dict):
+    if use_docker:
+        docker_builder = {
+            "path": "nvflare.lighter.impl.docker.DockerBuilder",
+            "args": {"base_image": "python:3.8", "requirements_file": "requirements.txt"},
+        }
+        project_config["builders"].append(docker_builder)
+
+    return project_config
+
+
+def add_he_builder(use_he: bool, project_config: dict):
+    if use_he:
+        he_builder = {
+            "path": "nvflare.lighter.impl.he.HEBuilder",
+            "args": {},
+        }
+        project_config["builders"].append(he_builder)
+
+    return project_config
+
+
+def update_clients(clients: List[str],
+                   n_clients: int,
+                   project_config: dict) -> dict:
+
+    requested_clients = prepare_clients(clients, n_clients)
+
+    participants: List[dict] = project_config["participants"]
+    new_participants = [p for p in participants if p["type"] != "client"]
+
+    for client in requested_clients:
+        client_dict = {"name": client, "type": "client", "org": "nvidia"}
+        new_participants.append(client_dict)
+
+    project_config["participants"] = new_participants
+
+    return project_config
+
+
+def prepare_clients(clients, number_of_clients):
+    if not clients:
+        clients = []
+        for i in range(number_of_clients):
+            clients.append(f"site-{(i + 1)}")
+
+    return clients
+
+
+def prepare_poc(clients: List[str],
+                number_of_clients: int,
+                workspace: str,
+                use_docker: bool,
+                use_he: bool,
+                project_conf_path: str = "") -> bool:
+    if clients:
+        number_of_clients = len(clients)
+    if not project_conf_path:
+        print(f"prepare poc at {workspace} for {number_of_clients} clients")
+    else:
+        print(f"prepare poc at {workspace} with {project_conf_path}")
+
+    if os.path.exists(workspace):
+        answer = input(
+            f"This will delete poc folder in {workspace} directory and create a new one. Is it OK to proceed? (y/N) "
         )
-    if ret_code:
-        prepare_examples(poc_workspace)
+        if answer.strip().upper() == "Y":
+            shutil.rmtree(workspace, ignore_errors=True)
+            prepare_poc_provision(clients, number_of_clients, workspace, use_docker, use_he, project_conf_path)
+            return True
+        else:
+            return False
+    else:
+        prepare_poc_provision(clients, number_of_clients, workspace, use_docker, use_he, project_conf_path)
+        return True
+
+
+def prepare_poc_provision(clients: List[str],
+                          number_of_clients: int,
+                          workspace: str,
+                          use_docker: bool = False,
+                          use_he: bool = False,
+                          project_conf_path: str = ""):
+    os.makedirs(workspace, exist_ok=True)
+    global global_packages
+    global_packages = local_provision(clients, number_of_clients, workspace, use_docker, use_he, project_conf_path)
+    server_name = global_packages[SC.FLARE_SERVER]
+    # update storage
+    if workspace != DEFAULT_WORKSPACE:
+        update_storage_locations(
+            local_dir=f"{workspace}/{server_name}/local", default_resource_name="resources.json", workspace=workspace
+        )
 
 
 def sort_package_cmds(cmd_type, package_cmds: list) -> list:
@@ -126,9 +363,9 @@ def sort_package_cmds(cmd_type, package_cmds: list) -> list:
 
     order_packages = []
     for package_name, cmd_path in package_cmds:
-        if package_name == SC.FLARE_SERVER:
+        if package_name == global_packages[SC.FLARE_SERVER]:
             order_packages.append((0, package_name, cmd_path))
-        elif package_name == SC.FLARE_CONSOLE:
+        elif package_name == global_packages[SC.FLARE_PROJ_ADMIN]:
             order_packages.append((sys.maxsize, package_name, cmd_path))
         else:
             if len(package_cmds) == 1:
@@ -151,8 +388,9 @@ def get_cmd_path(poc_workspace, service_name, cmd):
 
 def is_poc_ready(poc_workspace: str):
     # check server and admin directories exist
-    console_dir = os.path.join(poc_workspace, SC.FLARE_CONSOLE)
-    server_dir = os.path.join(poc_workspace, SC.FLARE_SERVER)
+    prod_dir = get_prod_dir(poc_workspace)
+    console_dir = os.path.join(prod_dir, global_packages[SC.FLARE_PROJ_ADMIN])
+    server_dir = os.path.join(prod_dir, global_packages[SC.FLARE_SERVER])
     return os.path.isdir(server_dir) and os.path.isdir(console_dir)
 
 
@@ -179,6 +417,7 @@ def get_gpu_ids(user_input_gpu_ids, host_gpu_ids) -> List[int]:
 
 
 def start_poc(poc_workspace: str, gpu_ids: List[int], excluded=None, white_list=None):
+    project_config = setup_global_packages(poc_workspace)
     if white_list is None:
         white_list = []
     if excluded is None:
@@ -188,18 +427,32 @@ def start_poc(poc_workspace: str, gpu_ids: List[int], excluded=None, white_list=
     _run_poc(SC.CMD_START, poc_workspace, gpu_ids, excluded=excluded, white_list=white_list)
 
 
+def setup_global_packages(poc_workspace) -> Optional[Dict]:
+    project_file = os.path.join(poc_workspace, "project.yml")
+    if os.path.isfile(project_file):
+        project_config = load_yaml(project_file)
+        global global_packages
+        global_packages = get_packages(project_config)
+        return project_config
+    else:
+        return None
+
+
 def stop_poc(poc_workspace: str, excluded=None, white_list=None):
+    project_config = setup_global_packages(poc_workspace)
+
     if white_list is None:
         white_list = []
     if excluded is None:
-        excluded = [SC.FLARE_CONSOLE]
+        excluded = [global_packages[SC.FLARE_PROJ_ADMIN]]
     else:
-        excluded.append(SC.FLARE_CONSOLE)
+        excluded.append(global_packages[SC.FLARE_PROJ_ADMIN])
 
     print("start shutdown NVFLARE")
     validate_poc_workspace(poc_workspace)
     gpu_ids: List[int] = []
-    shutdown_system(poc_workspace)
+    prod_dir = get_prod_dir(poc_workspace)
+    shutdown_system(prod_dir, username=global_packages[SC.FLARE_PROJ_ADMIN])
     _run_poc(SC.CMD_STOP, poc_workspace, gpu_ids, excluded=excluded, white_list=white_list)
 
 
@@ -207,7 +460,8 @@ def _get_clients(package_commands: list) -> List[str]:
     clients = [
         package_dir_name
         for package_dir_name, _ in package_commands
-        if package_dir_name != SC.FLARE_CONSOLE and package_dir_name != SC.FLARE_SERVER
+        if package_dir_name != global_packages[SC.FLARE_PROJ_ADMIN]
+           and package_dir_name != global_packages[SC.FLARE_SERVER]
     ]
     return clients
 
@@ -222,18 +476,24 @@ def _build_commands(cmd_type: str, poc_workspace: str, excluded: list, white_lis
     """
 
     def is_fl_package_dir(p_dir_name: str) -> bool:
-        return p_dir_name == "admin" or p_dir_name == "server" or p_dir_name.startswith("site-")
+        return (
+                p_dir_name == global_packages[SC.FLARE_PROJ_ADMIN]
+                or p_dir_name == global_packages[SC.FLARE_SERVER]
+                or p_dir_name in global_packages[SC.FLARE_CLIENTS]
+        )
+
+    prod_dir = get_prod_dir(poc_workspace)
 
     if white_list is None:
         white_list = []
     package_commands = []
-    for root, dirs, files in os.walk(poc_workspace):
-        if root == poc_workspace:
+    for root, dirs, files in os.walk(prod_dir):
+        if root == prod_dir:
             fl_dirs = [d for d in dirs if is_fl_package_dir(d)]
             for package_dir_name in fl_dirs:
                 if package_dir_name not in excluded:
                     if len(white_list) == 0 or package_dir_name in white_list:
-                        cmd = get_package_command(cmd_type, poc_workspace, package_dir_name)
+                        cmd = get_package_command(cmd_type, prod_dir, package_dir_name)
                         if cmd:
                             package_commands.append((package_dir_name, cmd))
     return sort_package_cmds(cmd_type, package_commands)
@@ -262,22 +522,22 @@ def async_process(cmd_path, gpu_ids: Optional[List[int]] = None):
 
 
 def sync_process(cmd_path):
-    subprocess.run(cmd_path.split(" "))
+    my_env = os.environ.copy()
+    my_env["LOCAL_MODE"] = "True"
+    subprocess.run(cmd_path.split(" "), env=my_env)
 
 
 def _run_poc(cmd_type: str, poc_workspace: str, gpu_ids: List[int], excluded: list, white_list=None):
     if white_list is None:
         white_list = []
     package_commands = _build_commands(cmd_type, poc_workspace, excluded, white_list)
-
     clients = _get_clients(package_commands)
     gpu_assignments: Dict[str, List[int]] = client_gpu_assignments(clients, gpu_ids)
-
     for package_name, cmd_path in package_commands:
-        print(f"{cmd_type}: package: {package_name}, executing {cmd_path}")
-        if package_name == SC.FLARE_CONSOLE:
+        print(f"'{cmd_type}', package: '{package_name}', executing '{cmd_path}'")
+        if package_name == global_packages[SC.FLARE_PROJ_ADMIN]:
             sync_process(cmd_path)
-        elif package_name == SC.FLARE_SERVER:
+        elif package_name == global_packages[SC.FLARE_SERVER]:
             async_process(cmd_path, None)
         else:
             async_process(cmd_path, gpu_assignments[package_name])
@@ -285,10 +545,14 @@ def _run_poc(cmd_type: str, poc_workspace: str, gpu_ids: List[int], excluded: li
 
 def clean_poc(poc_workspace: str):
     import shutil
-
-    if is_poc_ready(poc_workspace):
-        shutil.rmtree(poc_workspace, ignore_errors=True)
-        print(f"{poc_workspace} is removed")
+    if os.path.isdir(poc_workspace):
+        project_config = setup_global_packages(poc_workspace)
+        if project_config is not None:
+            if is_poc_ready(poc_workspace):
+                shutil.rmtree(poc_workspace, ignore_errors=True)
+                print(f"{poc_workspace} is removed")
+            else:
+                raise CLIException(f"{poc_workspace} is not valid poc directory")
     else:
         raise CLIException(f"{poc_workspace} is not valid poc directory")
 
@@ -297,7 +561,20 @@ def def_poc_parser(sub_cmd):
     cmd = "poc"
     poc_parser = sub_cmd.add_parser(cmd)
     poc_parser.add_argument(
-        "-n", "--number_of_clients", type=int, nargs="?", default=2, help="number of sites or clients, default to 2"
+        "-n",
+        "--number_of_clients",
+        type=int,
+        nargs="?",
+        default=2,
+        help="number of sites or clients, default to 2"
+    )
+    poc_parser.add_argument(
+        "-c",
+        "--clients",
+        nargs="*",  # 0 or more values expected => creates a list
+        type=str,
+        default=[],  # default if nothing is provided
+        help="Space separated client names. If specified, number_of_clients argument will be ignored."
     )
     poc_parser.add_argument(
         "-p",
@@ -305,7 +582,15 @@ def def_poc_parser(sub_cmd):
         type=str,
         nargs="?",
         default="all",
-        help="package directory, default to all = all packages, only used for start/stop-poc commands when specified",
+        help="participant, Default to all participants, only used for start/stop poc commands when specified",
+    )
+    poc_parser.add_argument(
+        "-e",
+        "--examples",
+        type=str,
+        nargs="?",
+        default="all",
+        help="examples directory, only used in '--prepare-examples' command",
     )
     poc_parser.add_argument(
         "-ex",
@@ -324,27 +609,63 @@ def def_poc_parser(sub_cmd):
         help="gpu device ids will be used as CUDA_VISIBLE_DEVICES. used for poc start command",
     )
     poc_parser.add_argument(
+        "-he",
+        "--he",
+        type=str,
+        nargs="?",
+        default="False",
+        help="enable homomorphic encryption. Use with '--prepare' command ",
+    )
+
+    poc_parser.add_argument(
+        "-i",
+        "--project_input",
+        type=str,
+        nargs="?",
+        default="",
+        help="project.yaml file path, it should be used with '--prepare' command. If specified, " +
+             "'number_of_clients','clients' and 'docker' specific options will be ignored."
+    )
+    poc_parser.add_argument(
+        "-d",
+        "--docker",
+        type=str,
+        nargs="?",
+        default="False",
+        help="generate docker file, used in '--prepare' command. If the docker file is available, " +
+             " '--start/stop' commands will start clients and server as docker containers ",
+    )
+    poc_parser.add_argument(
         "--prepare",
         dest="prepare_poc",
         action="store_const",
         const=prepare_poc,
-        help="prepare poc workspace. "
-        + "export NVFLARE_HOME=<NVFLARE github cloned directory> to setup examples with prepare command",
+        help="prepare poc workspace and provision",
     )
-    poc_parser.add_argument("--start", dest="start_poc", action="store_const", const=start_poc, help="start poc")
-    poc_parser.add_argument("--stop", dest="stop_poc", action="store_const", const=stop_poc, help="stop poc")
+
     poc_parser.add_argument(
-        "--clean", dest="clean_poc", action="store_const", const=clean_poc, help="cleanup poc workspace"
+        "--prepare-examples",
+        dest="prepare_examples",
+        action="store_const",
+        const=prepare_examples,
+        help="create an symbolic link to the examples directory, requires nvflare_example directory with '-e'",
+    )
+
+    poc_parser.add_argument("--start", dest="start_poc", action="store_const", const=start_poc, help="start local")
+    poc_parser.add_argument("--stop", dest="stop_poc", action="store_const", const=stop_poc, help="stop local")
+    poc_parser.add_argument(
+        "--clean", dest="clean_poc", action="store_const", const=clean_poc, help="cleanup local workspace"
     )
     return {cmd: poc_parser}
 
 
 def is_poc(cmd_args) -> bool:
     return (
-        hasattr(cmd_args, "start_poc")
-        or hasattr(cmd_args, "prepare_poc")
-        or hasattr(cmd_args, "stop_poc")
-        or hasattr(cmd_args, "clean_poc")
+            hasattr(cmd_args, "start_poc")
+            or hasattr(cmd_args, "prepare_poc")
+            or hasattr(cmd_args, "stop_poc")
+            or hasattr(cmd_args, "clean_poc")
+            or hasattr(cmd_args, "prepare_examples")
     )
 
 
@@ -368,12 +689,21 @@ def handle_poc_cmd(cmd_args):
     poc_workspace = os.getenv("NVFLARE_POC_WORKSPACE")
     if poc_workspace is None or len(poc_workspace.strip()) == 0:
         poc_workspace = DEFAULT_WORKSPACE
-
     if cmd_args.start_poc:
-        gpu_ids = get_gpu_ids(cmd_args.gpu, get_local_host_gpu_ids())
+        if cmd_args.gpu >= 0:
+            gpu_ids = get_gpu_ids(cmd_args.gpu, get_local_host_gpu_ids())
+        else:
+            gpu_ids = []
         start_poc(poc_workspace, gpu_ids, excluded, white_list)
     elif cmd_args.prepare_poc:
-        prepare_poc(cmd_args.number_of_clients, poc_workspace)
+        use_docker = cmd_args.docker == "True"
+        use_he = cmd_args.he == "True"
+        project_conf_path = ""
+        if cmd_args.project_input:
+            project_conf_path = cmd_args.project_input
+        prepare_poc(cmd_args.clients, cmd_args.number_of_clients, poc_workspace, use_docker, use_he, project_conf_path)
+    elif cmd_args.prepare_examples:
+        prepare_examples(cmd_args.examples, poc_workspace)
     elif cmd_args.stop_poc:
         stop_poc(poc_workspace, excluded, white_list)
     elif cmd_args.clean_poc:

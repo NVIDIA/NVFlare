@@ -436,6 +436,8 @@ class AdminClient(cmd.Cmd):
         if self.credential_type == CredentialType.PASSWORD:
             self.user_name = "admin"
             self.pwd = hash_password("admin")
+        elif self.credential_type == CredentialType.LOCAL_CERT:
+            self.user_name = "admin@nvidia.com"
         else:
             self.user_name = input("User Name: ")
 
