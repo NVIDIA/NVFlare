@@ -23,3 +23,4 @@ class FlareServiceConstants(object):
     CMD_STOP = "stop"
     EXAMPLES = "examples"
     TRANSFER = "transfer"
+    IS_DOCKER_RUN = "is_docker_run"

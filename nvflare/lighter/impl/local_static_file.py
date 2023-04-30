@@ -12,20 +12,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import copy
-import json
-import os
-
-import yaml
-
 from nvflare.lighter.impl.static_file import StaticFileBuilder
-from nvflare.lighter.spec import Builder
-from nvflare.lighter.utils import sh_replace
 
 
 class LocalStaticFileBuilder(StaticFileBuilder):
-    def __init__(self, enable_byoc=False, config_folder="", app_validator="", download_job_url="", docker_image="",
-                 snapshot_persistor="", overseer_agent="", components=""):
+    def __init__(
+        self,
+        enable_byoc=False,
+        config_folder="",
+        scheme="grpc",
+        app_validator="",
+        download_job_url="",
+        docker_image="",
+        snapshot_persistor="",
+        overseer_agent="",
+        components="",
+        username="",
+    ):
         """Build all static files from template.
 
         Uses the information from project.yml through project to go through the participants and write the contents of
@@ -42,11 +45,27 @@ class LocalStaticFileBuilder(StaticFileBuilder):
             app_validator: optional path to an app validator to verify that uploaded app has the expected structure
             docker_image: when docker_image is set to a docker image name, docker.sh will be generated on server/client/admin
         """
-        super().__init__(enable_byoc, config_folder, app_validator, download_job_url, docker_image, snapshot_persistor,
-                         overseer_agent, components)
+        super().__init__(
+            enable_byoc,
+            config_folder,
+            scheme,
+            app_validator,
+            download_job_url,
+            docker_image,
+            snapshot_persistor,
+            overseer_agent,
+            components,
+        )
+        self.username = username
 
     def get_server_name(self, server):
         return "localhost"
 
     def get_overseer_name(self, overseer):
         return "localhost"
+
+    def prepare_admin_config(self, admin, ctx):
+        config = super().prepare_admin_config(admin, ctx)
+        config["admin"]["username"] = self.username
+        config["admin"]["cred_type"] = "local_cert"
+        return config

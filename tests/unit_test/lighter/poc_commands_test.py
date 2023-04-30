@@ -18,6 +18,7 @@ from nvflare.cli_exception import CLIException
 from nvflare.lighter.poc_commands import client_gpu_assignments, get_gpu_ids, get_package_command, update_clients, \
     prepare_builders
 from nvflare.lighter.service_constants import FlareServiceConstants as SC
+from nvflare.lighter.spec import Participant
 from nvflare.lighter.utils import update_project_server_name_config
 
 
@@ -153,6 +154,24 @@ class TestPOCCommands:
 
     def test_prepare_builders(self):
         project_config = {
+            "participants": [
+                {
+                    "name": "server1",
+                    "org": "nvidia",
+                    "type": "server"
+                },
+                {
+                    "name": "admin@nvidia.com",
+                    "org": "nvidia",
+                    "role": "project_admin",
+                    "type": "admin"
+                },
+                {
+                    "name": "client-1",
+                    "org": "nvidia",
+                    "type": "client"
+                }
+            ],
             "builders": [
                 {
                     "path": "nvflare.lighter.impl.static_file.StaticFileBuilder",
@@ -177,4 +196,13 @@ class TestPOCCommands:
         for c in builders:
             assert (c.__class__.__name__ == "LocalStaticFileBuilder" or c.__class__.__name__ == "LocalCertBuilder")
             if c.__class__.__name__ == "LocalStaticFileBuilder":
-                assert(c.get_server_name() == "localhost")
+                assert(c.get_server_name(None) == "localhost")
+                assert(c.get_overseer_name(None) == "localhost")
+
+            if c.__class__.__name__ == "LocalCertBuilder":
+                participants = project_config["participants"]
+                for p in participants:
+                    if p["type"] == "server":
+                        assert(c.get_subject(Participant(**p)) == "localhost")
+                    else:
+                        assert(c.get_subject(Participant(**p)) == p["name"])
