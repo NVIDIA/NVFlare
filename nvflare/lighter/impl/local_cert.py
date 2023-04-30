@@ -15,7 +15,6 @@ from nvflare.lighter.impl.cert import CertBuilder
 
 
 class LocalCertBuilder(CertBuilder):
-
     def get_subject(self, participant):
         if participant.type == "server":
             return "localhost"
