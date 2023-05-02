@@ -17,15 +17,15 @@ from typing import List
 
 from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.fuel.hci.conn import Connection
+from nvflare.fuel.hci.proto import MetaStatusValue, make_meta
 from nvflare.fuel.hci.reg import CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
+from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.private.defs import InfoCollectorTopic, RequestHeader
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
 from nvflare.widgets.info_collector import InfoCollector
 from nvflare.widgets.widget import WidgetID
-from nvflare.fuel.hci.proto import MetaStatusValue, make_meta
-from nvflare.fuel.hci.server.constants import ConnProps
 
 from .cmd_utils import CommandUtil
 from .job_cmds import JobCommandModule
@@ -100,15 +100,16 @@ class InfoCollectorCommandModule(JobCommandModule, CommandUtil):
 
         job_id = conn.get_prop(self.JOB_ID)
         if job_id not in engine.run_processes:
-            conn.append_error(f"Job_id: {job_id} is not running.",
-                              meta=make_meta(MetaStatusValue.JOB_NOT_RUNNING, job_id))
+            conn.append_error(
+                f"Job_id: {job_id} is not running.", meta=make_meta(MetaStatusValue.JOB_NOT_RUNNING, job_id)
+            )
             return PreAuthzReturnCode.ERROR
 
         run_info = engine.get_app_run_info(job_id)
         if not run_info:
             conn.append_string(
                 f"Cannot find job: {job_id}. Please make sure the first arg following the command is a valid job_id.",
-                meta=make_meta(MetaStatusValue.INVALID_JOB_ID, job_id)
+                meta=make_meta(MetaStatusValue.INVALID_JOB_ID, job_id),
             )
             return PreAuthzReturnCode.ERROR
         return rt
@@ -123,7 +124,7 @@ class InfoCollectorCommandModule(JobCommandModule, CommandUtil):
         result = {}
         if target_type in [self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
             server_stats = stats_func(job_id)
-            result['server'] = server_stats
+            result["server"] = server_stats
 
         if target_type in [self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_ALL]:
             message = new_message(conn, topic=msg_topic, body="", require_authz=True)
@@ -145,9 +146,8 @@ class InfoCollectorCommandModule(JobCommandModule, CommandUtil):
         if not replies:
             return
 
-        engine = conn.app_ctx
         for r in replies:
-            client_name = engine.get_client_name_from_token(r.client_token)
+            client_name = r.client_name
             try:
                 body = json.loads(r.reply.body)
                 result[client_name] = body

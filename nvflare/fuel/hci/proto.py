@@ -68,6 +68,7 @@ class MetaStatusValue(object):
     NOT_AUTHENTICATED = "not_authenticated"
     ERROR = "error"
     INTERNAL_ERROR = "internal_error"
+    INVALID_TARGET = "invalid_target"
     INVALID_JOB_DEFINITION = "invalid_job_def"
     INVALID_JOB_ID = "invalid_job_id"
     JOB_RUNNING = "job_running"

@@ -22,7 +22,7 @@ from typing import Dict, List
 import nvflare.fuel.hci.file_transfer_defs as ftd
 from nvflare.apis.client import Client
 from nvflare.apis.fl_constant import AdminCommandNames, RunProcessKey
-from nvflare.apis.job_def import Job, JobDataKey, JobMetaKey, TopDir
+from nvflare.apis.job_def import Job, JobDataKey, JobMetaKey, TopDir, is_valid_job_id
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.apis.utils.job_utils import convert_legacy_zipped_app_to_job
 from nvflare.fuel.hci.base64_utils import b64str_to_bytes, bytes_to_b64str
@@ -170,6 +170,10 @@ class JobCommandModule(CommandModule, CommandUtil):
             return PreAuthzReturnCode.ERROR
 
         job_id = args[1].lower()
+        if not is_valid_job_id(job_id):
+            conn.append_error(f"invalid job_id {job_id}", meta=make_meta(MetaStatusValue.INVALID_JOB_ID, job_id))
+            return PreAuthzReturnCode.ERROR
+
         conn.set_prop(self.JOB_ID, job_id)
         engine = conn.app_ctx
         job_def_manager = engine.job_def_manager
@@ -192,7 +196,7 @@ class JobCommandModule(CommandModule, CommandUtil):
         if len(args) > 2:
             err = self.validate_command_targets(conn, args[2:])
             if err:
-                conn.append_error(err, meta=make_meta(MetaStatusValue.SYNTAX_ERROR, err))
+                conn.append_error(err, meta=make_meta(MetaStatusValue.INVALID_TARGET, err))
                 return PreAuthzReturnCode.ERROR
 
         return PreAuthzReturnCode.REQUIRE_AUTHZ
@@ -213,7 +217,7 @@ class JobCommandModule(CommandModule, CommandUtil):
         client_names = conn.get_prop(self.TARGET_CLIENT_NAMES, None)
         run_process = engine.run_processes.get(job_id, {})
         if not run_process:
-            conn.append_error(f"Job: {job_id} is not running.")
+            conn.append_error(f"Job {job_id} is not running.")
             return False
 
         participants: Dict[str, Client] = run_process.get(RunProcessKey.PARTICIPANTS, {})

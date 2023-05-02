@@ -20,15 +20,17 @@ from nvflare.private.defs import CellChannel, new_cell_message
 
 
 class ClientReply(object):
-    def __init__(self, client_token: str, req: Message, reply: Message):
+    def __init__(self, client_token: str, client_name: str, req: Message, reply: Message):
         """Client reply.
 
         Args:
             client_token (str): client token
+            client_name (str): name of the client
             req (Message): request
             reply (Message): reply
         """
         self.client_token = client_token
+        self.client_name = client_name
         self.request = req
         self.reply = reply
 
@@ -97,5 +99,9 @@ def send_requests(
         replies = cell.broadcast_multi_requests(target_msgs, timeout_secs, optional=optional)
         for name, reply in replies.items():
             assert isinstance(reply, CellMessage)
-            result.append(ClientReply(client_token=name_to_token[name], req=name_to_req[name], reply=reply.payload))
+            result.append(
+                ClientReply(
+                    client_token=name_to_token[name], client_name=name, req=name_to_req[name], reply=reply.payload
+                )
+            )
         return result

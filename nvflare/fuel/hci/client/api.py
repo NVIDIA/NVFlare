@@ -23,7 +23,7 @@ from typing import List, Optional
 
 from nvflare.fuel.hci.cmd_arg_utils import split_to_args
 from nvflare.fuel.hci.conn import Connection, receive_and_process
-from nvflare.fuel.hci.proto import ConfirmMethod, InternalCommands, ProtoKey, make_error, MetaKey
+from nvflare.fuel.hci.proto import ConfirmMethod, InternalCommands, MetaKey, ProtoKey, make_error
 from nvflare.fuel.hci.reg import CommandEntry, CommandModule, CommandRegister
 from nvflare.fuel.hci.table import Table
 from nvflare.fuel.utils.fsm import FSM, State

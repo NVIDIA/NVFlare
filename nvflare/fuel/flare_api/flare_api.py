@@ -23,36 +23,37 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.client.api import AdminAPI, APIStatus, ResultKey
 from nvflare.fuel.hci.client.overseer_service_finder import ServiceFinderByOverseer
-from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, ProtoKey
 from nvflare.fuel.hci.cmd_arg_utils import (
     process_targets_into_str,
-    validate_sp_string,
-    validate_required_target_string,
+    validate_file_string,
     validate_options_string,
     validate_path_string,
-    validate_file_string
+    validate_required_target_string,
+    validate_sp_string,
 )
-
+from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, ProtoKey
 
 from .api_spec import (
-    TargetType,
     AuthenticationError,
     AuthorizationError,
     ClientInfo,
+    ClientsStillRunning,
     InternalError,
     InvalidArgumentError,
     InvalidJobDefinition,
+    InvalidTarget,
     JobInfo,
     JobNotDone,
     JobNotFound,
+    JobNotRunning,
     MonitorReturnCode,
+    NoClientsAvailable,
     NoConnection,
     ServerInfo,
     SessionClosed,
     SessionSpec,
     SystemInfo,
-    NoClientsAvailable,
-    ClientsStillRunning,
+    TargetType,
 )
 from .config import FLAdminClientStarterConfigurator
 
@@ -157,8 +158,6 @@ class Session(SessionSpec):
             raise SessionClosed("session closed")
 
         result = self.api.do_command(command)
-        print(f"COMMAND RESULT: {result}")
-
         if not isinstance(result, dict):
             raise InternalError(f"result from server must be dict but got {type(result)}")
 
@@ -186,13 +185,15 @@ class Session(SessionSpec):
             elif cmd_status == MetaStatusValue.JOB_RUNNING:
                 raise JobNotDone(f"job {info} is still running")
             elif cmd_status == MetaStatusValue.JOB_NOT_RUNNING:
-                raise JobNotDone(f"job {info} is not running")
+                raise JobNotRunning(f"job {info} is not running")
             elif cmd_status == MetaStatusValue.CLIENTS_RUNNING:
                 raise ClientsStillRunning("one or more clients are still running")
             elif cmd_status == MetaStatusValue.NO_CLIENTS:
                 raise NoClientsAvailable("no clients available")
             elif cmd_status == MetaStatusValue.INTERNAL_ERROR:
                 raise InternalError(f"server internal error: {info}")
+            elif cmd_status == MetaStatusValue.INVALID_TARGET:
+                raise InvalidTarget(info)
             elif cmd_status != MetaStatusValue.OK:
                 raise InternalError(f"{cmd_status}: {info}")
 
@@ -305,7 +306,7 @@ class Session(SessionSpec):
             id_prefix: if included, only return jobs with the beginning of the job ID matching the id_prefix
             name_prefix: if included, only return jobs with the beginning of the job name matching the name_prefix
             reverse: if specified, list jobs in the reverse order of submission times
-        Returns: a dict of job metadata
+        Returns: a list of job metadata
 
         """
         if not isinstance(detailed, bool):
@@ -405,7 +406,7 @@ class Session(SessionSpec):
         Returns: a SystemInfo object
 
         """
-        return self._do_get_system_info(AdminCommandNames.CHECK_STATUS )
+        return self._do_get_system_info(AdminCommandNames.CHECK_STATUS)
 
     def _do_get_system_info(self, cmd: str):
         result = self._do_command(f"{cmd} {TargetType.SERVER}")
@@ -430,13 +431,13 @@ class Session(SessionSpec):
 
         return SystemInfo(server_info=server_info, client_info=clients, job_info=jobs)
 
-    def get_client_job_status(self, client_names: List[str] = None):
+    def get_client_job_status(self, client_names: List[str] = None) -> List[dict]:
         """Get job status info of specified FL clients
 
         Args:
             client_names: names of the clients to get status info
 
-        Returns: A list of jobs that are running on the clients. Each job is described by a dict of: id, app name and status.
+        Returns: A list of jobs running on the clients. Each job is described by a dict of: id, app name and status.
         If there are multiple jobs running on one client, the list contains one entry for each job for that client.
         If no FL clients are connected or the server failed to communicate to them, this method returns None.
 
@@ -479,7 +480,7 @@ class Session(SessionSpec):
         return result[ResultKey.META]
 
     def shutdown(self, target_type: TargetType, client_names: Optional[List[str]] = None):
-        """ Shut down specified system target(s)
+        """Shut down specified system target(s)
 
         Args:
             target_type: what system target (server, client, or all) to shut down
@@ -500,8 +501,8 @@ class Session(SessionSpec):
 
     def set_timeout(self, value: float):
         """
-        Set a session-specific command timeout. This is the amount of time the server will wait after sending commands
-        to FL clients.
+        Set a session-specific command timeout. This is the amount of time the server will wait for responses
+        after sending commands to FL clients.
 
         Note that this value is only effective for the current API session.
 
@@ -544,7 +545,7 @@ class Session(SessionSpec):
         self._do_command("promote_sp " + sp_end_point)
 
     def get_available_apps_to_upload(self):
-        """Get defined FLARE app folders from the upload folder
+        """Get defined FLARE app folders from the upload folder on the machine the FLARE API is running
 
         Returns: a list of app folders
 
@@ -573,33 +574,119 @@ class Session(SessionSpec):
             raise RuntimeError(err)
 
     def ls_target(self, target: str, options: str = None, path: str = None) -> str:
+        """Run the "ls" command on the specified target and return result
+
+        Args:
+            target: the target (server or a client name) the command will run
+            options: options of the "ls" command
+            path: the optional file path
+
+        Returns: result of "ls" command
+
+        """
         return self._shell_command_on_target("ls", target, options, path)
 
     def cat_target(self, target: str, options: str = None, file: str = None) -> str:
-        return self._shell_command_on_target("cat", target, options, file, fp_required=True, fp_type='file')
+        """Run the "cat" command on the specified target and return result
+
+        Args:
+            target: the target (server or a client name) the command will run
+            options: options of the "cat" command
+            file: the file that the "cat" command will run against
+
+        Returns: result of "cat" command
+
+        """
+        return self._shell_command_on_target("cat", target, options, file, fp_required=True, fp_type="file")
 
     def tail_target(self, target: str, options: str = None, file: str = None) -> str:
-        return self._shell_command_on_target("tail", target, options, file, fp_required=True, fp_type='file')
+        """Run the "tail" command on the specified target and return result
+
+        Args:
+            target: the target (server or a client name) the command will run
+            options: options of the "tail" command
+            file: the file that the "tail" command will run against
+
+        Returns: result of "tail" command
+
+        """
+        return self._shell_command_on_target("tail", target, options, file, fp_required=True, fp_type="file")
 
     def tail_target_log(self, target: str, options: str = None) -> str:
+        """Run the "tail log.txt" command on the specified target and return result
+
+        Args:
+            target: the target (server or a client name) the command will run
+            options: options of the "tail" command
+
+        Returns: result of "tail" command
+
+        """
         return self.tail_target(target, options, file="log.txt")
 
     def head_target(self, target: str, options: str = None, file: str = None) -> str:
-        return self._shell_command_on_target("head", target, options, file, fp_required=True, fp_type='file')
+        """Run the "head" command on the specified target and return result
+
+        Args:
+            target: the target (server or a client name) the command will run
+            options: options of the "head" command
+            file: the file that the "head" command will run against
+
+        Returns: result of "head" command
+
+        """
+        return self._shell_command_on_target("head", target, options, file, fp_required=True, fp_type="file")
 
     def head_target_log(self, target: str, options: str = None) -> str:
+        """Run the "head log.txt" command on the specified target and return result
+
+        Args:
+            target: the target (server or a client name) the command will run
+            options: options of the "head" command
+
+        Returns: result of "head" command
+
+        """
         return self.head_target(target, options, file="log.txt")
 
     def grep_target(self, target: str, options: str = None, pattern: str = None, file: str = None) -> str:
-        return self._shell_command_on_target("grep", target, options, file,
-                                             pattern=pattern, pattern_required=True,
-                                             fp_required=True, fp_type='file')
+        """Run the "grep" command on the specified target and return result
+
+        Args:
+            target: the target (server or a client name) the command will run
+            options: options of the "grep" command
+            pattern: the grep pattern
+            file: the file that the "grep" command will run against
+
+        Returns: result of "grep" command
+
+        """
+        return self._shell_command_on_target(
+            "grep", target, options, file, pattern=pattern, pattern_required=True, fp_required=True, fp_type="file"
+        )
 
     def get_working_directory(self, target: str) -> str:
+        """Get the working directory of the specified target
+
+        Args:
+            target: the target (server of a client name)
+
+        Returns: current working directory of the specified target
+
+        """
         return self._shell_command_on_target("pwd", target, options=None, fp=None)
 
-    def _shell_command_on_target(self, cmd: str, target: str, options, fp, pattern=None,
-                                 pattern_required=False, fp_required=False, fp_type='path') -> str:
+    def _shell_command_on_target(
+        self,
+        cmd: str,
+        target: str,
+        options,
+        fp,
+        pattern=None,
+        pattern_required=False,
+        fp_required=False,
+        fp_type="path",
+    ) -> str:
         target = validate_required_target_string(target)
         parts = [cmd, target]
         if options:
@@ -617,7 +704,7 @@ class Session(SessionSpec):
             raise SyntaxError(f"{fp_type} is required but not specified.")
 
         if fp:
-            if fp_type == 'path':
+            if fp_type == "path":
                 validate_path_string(fp)
             else:
                 validate_file_string(fp)
@@ -647,12 +734,42 @@ class Session(SessionSpec):
         return result
 
     def show_stats(self, job_id: str, target_type: str, targets: Optional[List[str]] = None) -> dict:
+        """Show processing stats of specified job on specified targets
+
+        Args:
+            job_id: ID of the job
+            target_type: type of target (server or client)
+            targets: list of client names if target type is "client". All clients if not specified.
+
+        Returns: a dict that contains job stats on specified targets. The key of the dict is target name. The value is
+        a dict of stats reported by different system components (ServerRunner or ClientRunner).
+
+        """
         return self._collect_info(AdminCommandNames.SHOW_STATS, job_id, target_type, targets)
 
     def show_errors(self, job_id: str, target_type: str, targets: Optional[List[str]] = None) -> dict:
+        """Show processing errors of specified job on specified targets
+
+        Args:
+            job_id: ID of the job
+            target_type: type of target (server or client)
+            targets: list of client names if target type is "client". All clients if not specified.
+
+        Returns: a dict that contains job errors (if any) on specified targets. The key of the dict is target name.
+        The value is a dict of errors reported by different system components (ServerRunner or ClientRunner).
+
+        """
         return self._collect_info(AdminCommandNames.SHOW_ERRORS, job_id, target_type, targets)
 
     def reset_errors(self, job_id: str):
+        """Clear errors for all system targets for the specified job
+
+        Args:
+            job_id: ID of the job
+
+        Returns: None
+
+        """
         self._collect_info(AdminCommandNames.RESET_ERRORS, job_id, TargetType.ALL)
 
     def _collect_info(self, cmd: str, job_id: str, target_type: str, targets=None) -> dict:
@@ -675,6 +792,11 @@ class Session(SessionSpec):
         return self._get_dict_data(reply)
 
     def get_connected_client_list(self) -> List[ClientInfo]:
+        """Get the list of connected clients
+
+        Returns: a list of ClientInfo objects
+
+        """
         sys_info = self.get_system_info()
         return sys_info.client_info
 

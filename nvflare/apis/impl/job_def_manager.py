@@ -18,12 +18,11 @@ import pathlib
 import shutil
 import tempfile
 import time
-import uuid
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.job_def import Job, JobDataKey, JobMetaKey, job_from_meta
+from nvflare.apis.job_def import Job, JobDataKey, JobMetaKey, job_from_meta, new_job_id
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec, RunStatus
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.storage import StorageException, StorageSpec
@@ -95,7 +94,7 @@ class SimpleJobDefManager(JobDefManagerSpec):
     def create(self, meta: dict, uploaded_content: bytes, fl_ctx: FLContext) -> Dict[str, Any]:
         # validate meta to make sure it has:
 
-        jid = str(uuid.uuid4())
+        jid = new_job_id()
         now = time.time()
         meta[JobMetaKey.JOB_ID.value] = jid
         meta[JobMetaKey.SUBMIT_TIME.value] = now

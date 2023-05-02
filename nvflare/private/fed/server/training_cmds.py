@@ -141,7 +141,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             if not job.run_aborted:
                 conn.append_error(
                     "There are still jobs running. Please let them finish or abort_job before shutdown.",
-                    meta=make_meta(MetaStatusValue.JOB_RUNNING, info=job.job_id)
+                    meta=make_meta(MetaStatusValue.JOB_RUNNING, info=job.job_id),
                 )
                 return
 
@@ -149,7 +149,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             if engine.get_clients():
                 conn.append_error(
                     "There are still active clients. Shutdown all clients first.",
-                    meta=make_meta(MetaStatusValue.CLIENTS_RUNNING)
+                    meta=make_meta(MetaStatusValue.CLIENTS_RUNNING),
                 )
                 return
 
@@ -216,17 +216,13 @@ class TrainingCommandModule(CommandModule, CommandUtil):
 
             err = engine.restart_server()
             if err:
-                conn.append_error(err, meta={
-                    MetaKey.SERVER_STATUS: MetaStatusValue.ERROR,
-                    MetaKey.INFO: err
-                })
+                conn.append_error(err, meta={MetaKey.SERVER_STATUS: MetaStatusValue.ERROR, MetaKey.INFO: err})
             else:
                 conn.append_string("Server scheduled for restart", meta={MetaKey.SERVER_STATUS: MetaStatusValue.OK})
         elif target_type == self.TARGET_TYPE_CLIENT:
             clients = conn.get_prop(self.TARGET_CLIENT_TOKENS)
             if not clients:
-                conn.append_error("no clients available",
-                                  meta=make_meta(MetaStatusValue.NO_CLIENTS, "no clients"))
+                conn.append_error("no clients available", meta=make_meta(MetaStatusValue.NO_CLIENTS, "no clients"))
                 return
             else:
                 response = self._restart_clients(conn)
@@ -286,18 +282,18 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             conn.append_error("no responses from clients")
             return
 
-        engine = conn.app_ctx
         table = conn.append_table(["client", "app_name", "job_id", "status"], name=MetaKey.CLIENT_STATUS)
         for r in replies:
             job_id = "?"
             app_name = "?"
-            client_name = engine.get_client_name_from_token(r.client_token)
+            client_name = r.client_name
 
             if r.reply:
                 if r.reply.get_header(MsgHeader.RETURN_CODE) == ReturnCode.ERROR:
-                    table.add_row([client_name, app_name, job_id, r.reply.body],
-                                  meta={MetaKey.CLIENT_NAME: client_name,
-                                        MetaKey.STATUS: MetaStatusValue.ERROR})
+                    table.add_row(
+                        [client_name, app_name, job_id, r.reply.body],
+                        meta={MetaKey.CLIENT_NAME: client_name, MetaKey.STATUS: MetaStatusValue.ERROR},
+                    )
                 else:
                     try:
                         body = json.loads(r.reply.body)
@@ -308,21 +304,27 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                                     app_name = job.get(ClientStatusKey.APP_NAME, "?")
                                     job_id = job.get(ClientStatusKey.JOB_ID, "?")
                                     status = job.get(ClientStatusKey.STATUS, "?")
-                                    table.add_row([client_name, app_name, job_id, status],
-                                                  meta={MetaKey.CLIENT_NAME: client_name,
-                                                        MetaKey.APP_NAME: app_name,
-                                                        MetaKey.JOB_ID: job_id,
-                                                        MetaKey.STATUS: status})
+                                    table.add_row(
+                                        [client_name, app_name, job_id, status],
+                                        meta={
+                                            MetaKey.CLIENT_NAME: client_name,
+                                            MetaKey.APP_NAME: app_name,
+                                            MetaKey.JOB_ID: job_id,
+                                            MetaKey.STATUS: status,
+                                        },
+                                    )
                             else:
-                                table.add_row([client_name, app_name, job_id, "No Jobs"],
-                                              meta={MetaKey.CLIENT_NAME: client_name,
-                                                    MetaKey.STATUS: MetaStatusValue.NO_JOBS})
+                                table.add_row(
+                                    [client_name, app_name, job_id, "No Jobs"],
+                                    meta={MetaKey.CLIENT_NAME: client_name, MetaKey.STATUS: MetaStatusValue.NO_JOBS},
+                                )
                     except BaseException as e:
                         self.logger.error(f"Bad reply from client: {secure_format_exception(e)}")
             else:
-                table.add_row([client_name, app_name, job_id, "No Reply"],
-                              meta={MetaKey.CLIENT_NAME: client_name,
-                                    MetaKey.STATUS: MetaStatusValue.NO_REPLY})
+                table.add_row(
+                    [client_name, app_name, job_id, "No Reply"],
+                    meta={MetaKey.CLIENT_NAME: client_name, MetaKey.STATUS: MetaStatusValue.NO_REPLY},
+                )
 
     def _add_scope_info(self, table, site_name, scope_names: List[str], default_scope: str):
         if not scope_names:
@@ -336,9 +338,8 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             conn.append_error("no responses from clients")
             return
 
-        engine = conn.app_ctx
         for r in replies:
-            client_name = engine.get_client_name_from_token(r.client_token)
+            client_name = r.client_name
 
             if r.reply:
                 if r.reply.get_header(MsgHeader.RETURN_CODE) == ReturnCode.ERROR:
