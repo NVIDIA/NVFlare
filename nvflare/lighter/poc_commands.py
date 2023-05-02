@@ -235,6 +235,7 @@ def local_provision(
         project_config = add_he_builder(use_he, project_config)
         if docker_image:
             project_config = update_static_file_builder(docker_image, project_config)
+            project_config = add_docker_builder(use_docker=True, project_config=project_config)
 
     save_project_config(project_config, dst_project_file)
 
