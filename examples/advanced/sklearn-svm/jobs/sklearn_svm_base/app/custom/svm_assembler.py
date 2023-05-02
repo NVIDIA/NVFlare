@@ -12,13 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# We will move to this app_common when it gets matured
 from typing import Dict
 
 import numpy as np
 from sklearn.svm import SVC
 
-from nvflare.apis.dxo import DataKind
+from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.aggregators.assembler import Assembler
 from nvflare.app_common.app_constant import AppConstants
@@ -33,10 +32,11 @@ class SVMAssembler(Assembler):
         self.support_y = None
         self.kernel = kernel
 
-    def get_model_params(self, data: dict):
+    def get_model_params(self, dxo: DXO):
+        data = dxo.data
         return {"support_x": data["support_x"], "support_y": data["support_y"]}
 
-    def assemble(self, data: Dict[str, dict], fl_ctx: FLContext) -> dict:
+    def assemble(self, data: Dict[str, dict], fl_ctx: FLContext) -> DXO:
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
         if current_round == 0:
             # First round, collect all support vectors from clients
@@ -56,4 +56,5 @@ class SVMAssembler(Assembler):
             self.support_x = global_x[index]
             self.support_y = global_y[index]
         params = {"support_x": self.support_x, "support_y": self.support_y}
-        return params
+        dxo = DXO(data_kind=self.expected_data_kind, data=params)
+        return dxo

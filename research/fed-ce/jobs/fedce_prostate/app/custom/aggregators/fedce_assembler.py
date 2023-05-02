@@ -76,7 +76,7 @@ class FedCEAssembler(Assembler):
         if event == EventType.START_RUN:
             self._initialize(fl_ctx)
 
-    def assemble(self, data: Dict[str, dict], fl_ctx: FLContext) -> dict:
+    def assemble(self, data: Dict[str, dict], fl_ctx: FLContext) -> DXO:
         current_round = fl_ctx.get_prop(AppConstants.CURRENT_ROUND)
         site_list = data.keys()
 
