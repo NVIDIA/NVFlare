@@ -19,6 +19,7 @@ import subprocess
 import sys
 
 import docker
+import nvflare
 from nvflare.apis.utils.format_check import name_check
 from nvflare.dashboard.application.blob import _write
 from nvflare.lighter import utils
@@ -63,7 +64,14 @@ def start(args):
     except docker.errors.DockerException:
         print("Unable to communicate to docker daemon/socket.  Please make sure your docker is up and running.")
         exit(0)
-    dashboard_image = "nvflare/nvflare"
+    version = nvflare.__version__
+    dashboard_image = f"nvflare/nvflare:{version}"
+    if args.image:
+        if dashboard_image != args.image:
+            print(
+                f"Current dashboard container image is nvflare/nvflare:{version}, but requesting to use {args.image}.  Use it at your own risk."
+            )
+            dashboard_image = args.image
     try:
         print(f"Pulling {dashboard_image}, may take some time to finish.")
         _ = client.images.pull(dashboard_image)
@@ -122,14 +130,17 @@ def cloud(args):
     cwd = os.getcwd()
     csp = args.cloud
     dest = os.path.join(cwd, f"{csp}_start_dsb.sh")
+    dsb_start = template[f"{csp}_start_dsb_sh"]
+    version = nvflare.__version__
+    replacement_dict = {"NVFLARE": f"nvflare=={version}", "START_OPT": f"-i {args.image}" if args.image else ""}
     _write(
         dest,
-        template[f"{csp}_start_dsb_sh"],
+        utils.sh_replace(dsb_start, replacement_dict),
         "t",
         exe=True,
     )
     print(f"Dashboard launch script for cloud is written at {dest}.  Now running the script.")
-    process = subprocess.run(dest)
+    _ = subprocess.run(dest)
     os.remove(dest)
 
 
@@ -165,6 +176,7 @@ def define_dashboard_parser(parser):
     )
     parser.add_argument("-e", "--env", action="append", help="additonal environment variables: var1=value1")
     parser.add_argument("--cred", help="set credential directly in the form of USER_EMAIL:PASSWORD")
+    parser.add_argument("-i", "--image", help="set the container image name")
 
 
 def handle_dashboard(args):

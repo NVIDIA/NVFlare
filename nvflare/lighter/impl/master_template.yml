@@ -1437,7 +1437,7 @@ azure_start_dsb_sh: |
     "echo ${DEST_FOLDER} && \
     wget -q https://bootstrap.pypa.io/get-pip.py && \
     python3 get-pip.py && \
-    python3 -m pip install --ignore-installed nvflare && \
+    python3 -m pip install --ignore-installed {~~NVFLARE~~} && \
     mkdir -p ${DEST_FOLDER}/cert && \
     chown -R ${ADMIN_USERNAME} ${DEST_FOLDER}" > /tmp/nvflare.json && \
   report_status "$?" "installing nvflare"
@@ -1462,7 +1462,7 @@ azure_start_dsb_sh: |
     --name $VM_NAME \
     --scripts \
     "cd ${DEST_FOLDER} && \
-     python3 -m nvflare.dashboard.cli --start -f ${DEST_FOLDER} --cred ${credential}" > /tmp/dashboard.json
+     python3 -m nvflare.dashboard.cli --start -f ${DEST_FOLDER} --cred ${credential} {~~START_OPT~~}" > /tmp/dashboard.json
 
   # credential=$(jq -r .value[0].message /tmp/dashboard.json | grep "Project admin")
   # echo "The VM was created with user: ${ADMIN_USERNAME} and password: ${PASSWORD}"
@@ -2009,7 +2009,7 @@ aws_start_dsb_sh: |
   ssh -i $KEY_FILE -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEST_SITE} \
     "export PATH=/home/ubuntu/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin && \
     wget -q https://bootstrap.pypa.io/get-pip.py && python3 get-pip.py && \
-    python3 -m pip install nvflare && \
+    python3 -m pip install {~~NVFLARE~~} && \
     mkdir -p ./cert && \
     exit" > /tmp/nvflare.json
   report_status "$?" "installing nvflare"
@@ -2029,7 +2029,7 @@ aws_start_dsb_sh: |
   echo "Starting dashboard"
   ssh -i $KEY_FILE -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEST_SITE} \
     "export PATH=/home/ubuntu/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin && \
-    python3 -m nvflare.dashboard.cli --start -f ${DEST_FOLDER} --cred ${credential}" > /tmp/dashboard.json
+    python3 -m nvflare.dashboard.cli --start -f ${DEST_FOLDER} --cred ${credential} {~~START_OPT~~}" > /tmp/dashboard.json
 
   echo "Dashboard url is running at IP address ${IP_ADDRESS}, listening to port 443."
   if [ "$secure" = true ]
