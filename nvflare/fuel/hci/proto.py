@@ -118,29 +118,29 @@ class Buffer(object):
         self.data.append({ProtoKey.TYPE: ProtoKey.TABLE, ProtoKey.ROWS: t.rows})
         return t
 
-    def add_meta(self, meta: dict):
+    def update_meta(self, meta: dict):
         if meta:
             self.meta.update(meta)
 
     def append_string(self, data: str, meta: dict = None):
         self.data.append({ProtoKey.TYPE: ProtoKey.STRING, ProtoKey.DATA: data})
-        self.add_meta(meta)
+        self.update_meta(meta)
 
     def append_dict(self, data: dict, meta: dict = None):
         self.data.append({ProtoKey.TYPE: ProtoKey.DICT, ProtoKey.DATA: data})
-        self.add_meta(meta)
+        self.update_meta(meta)
 
     def append_success(self, data: str, meta: dict = None):
         self.data.append({ProtoKey.TYPE: ProtoKey.SUCCESS, ProtoKey.DATA: data})
         if not meta:
             meta = make_meta(MetaStatusValue.OK, data)
-        self.add_meta(meta)
+        self.update_meta(meta)
 
     def append_error(self, data: str, meta: dict = None):
         self.data.append({ProtoKey.TYPE: ProtoKey.ERROR, ProtoKey.DATA: data})
         if not meta:
             meta = make_meta(MetaStatusValue.ERROR, data)
-        self.add_meta(meta)
+        self.update_meta(meta)
 
     def append_command(self, cmd: str):
         self.data.append({ProtoKey.TYPE: ProtoKey.COMMAND, ProtoKey.DATA: cmd})

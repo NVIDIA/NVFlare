@@ -230,6 +230,7 @@ class SessionSpec(ABC):
         """Get general info of the FLARE system"""
         pass
 
+    @abstractmethod
     def get_client_job_status(self, client_names: List[str] = None) -> List[dict]:
         """Get job status info of specified FL clients
 
@@ -243,6 +244,7 @@ class SessionSpec(ABC):
         """
         pass
 
+    @abstractmethod
     def restart(self, target_type: str, client_names: Optional[List[str]] = None) -> dict:
         """
         Restart specified system target(s)
@@ -260,6 +262,7 @@ class SessionSpec(ABC):
         """
         pass
 
+    @abstractmethod
     def shutdown(self, target_type: TargetType, client_names: Optional[List[str]] = None):
         """Shut down specified system target(s)
 
@@ -271,6 +274,7 @@ class SessionSpec(ABC):
         """
         pass
 
+    @abstractmethod
     def set_timeout(self, value: float):
         """
         Set a session-specific command timeout. This is the amount of time the server will wait for responses
@@ -286,6 +290,17 @@ class SessionSpec(ABC):
         """
         pass
 
+    @abstractmethod
+    def unset_timeout(self):
+        """
+        Unset the session-specific command timeout. Once unset, the FL Admin Server's default will be used.
+
+        Returns: None
+
+        """
+        pass
+
+    @abstractmethod
     def list_sp(self) -> dict:
         """List available service providers
 
@@ -294,6 +309,7 @@ class SessionSpec(ABC):
         """
         pass
 
+    @abstractmethod
     def get_active_sp(self) -> dict:
         """Get the current active service provider (SP).
 
@@ -302,6 +318,7 @@ class SessionSpec(ABC):
         """
         pass
 
+    @abstractmethod
     def promote_sp(self, sp_end_point: str):
         """Promote the specified endpoint to become the active SP.
 
@@ -313,6 +330,7 @@ class SessionSpec(ABC):
         """
         pass
 
+    @abstractmethod
     def get_available_apps_to_upload(self):
         """Get defined FLARE app folders from the upload folder on the machine the FLARE API is running
 
@@ -321,6 +339,7 @@ class SessionSpec(ABC):
         """
         pass
 
+    @abstractmethod
     def shutdown_system(self):
         """Shut down the whole NVFLARE system including the overseer, FL server(s), and all FL clients.
 
@@ -331,6 +350,7 @@ class SessionSpec(ABC):
         """
         pass
 
+    @abstractmethod
     def ls_target(self, target: str, options: str = None, path: str = None) -> str:
         """Run the "ls" command on the specified target and return result
 
@@ -344,6 +364,7 @@ class SessionSpec(ABC):
         """
         pass
 
+    @abstractmethod
     def cat_target(self, target: str, options: str = None, file: str = None) -> str:
         """Run the "cat" command on the specified target and return result
 
@@ -357,6 +378,7 @@ class SessionSpec(ABC):
         """
         pass
 
+    @abstractmethod
     def tail_target(self, target: str, options: str = None, file: str = None) -> str:
         """Run the "tail" command on the specified target and return result
 
@@ -370,6 +392,7 @@ class SessionSpec(ABC):
         """
         pass
 
+    @abstractmethod
     def tail_target_log(self, target: str, options: str = None) -> str:
         """Run the "tail log.txt" command on the specified target and return result
 
@@ -382,6 +405,7 @@ class SessionSpec(ABC):
         """
         pass
 
+    @abstractmethod
     def head_target(self, target: str, options: str = None, file: str = None) -> str:
         """Run the "head" command on the specified target and return result
 
@@ -395,6 +419,7 @@ class SessionSpec(ABC):
         """
         pass
 
+    @abstractmethod
     def head_target_log(self, target: str, options: str = None) -> str:
         """Run the "head log.txt" command on the specified target and return result
 
@@ -407,6 +432,7 @@ class SessionSpec(ABC):
         """
         pass
 
+    @abstractmethod
     def grep_target(self, target: str, options: str = None, pattern: str = None, file: str = None) -> str:
         """Run the "grep" command on the specified target and return result
 
@@ -421,6 +447,7 @@ class SessionSpec(ABC):
         """
         pass
 
+    @abstractmethod
     def get_working_directory(self, target: str) -> str:
         """Get the working directory of the specified target
 
@@ -432,6 +459,7 @@ class SessionSpec(ABC):
         """
         pass
 
+    @abstractmethod
     def show_stats(self, job_id: str, target_type: str, targets: Optional[List[str]] = None) -> dict:
         """Show processing stats of specified job on specified targets
 
@@ -446,6 +474,7 @@ class SessionSpec(ABC):
         """
         pass
 
+    @abstractmethod
     def show_errors(self, job_id: str, target_type: str, targets: Optional[List[str]] = None) -> dict:
         """Show processing errors of specified job on specified targets
 
@@ -460,6 +489,7 @@ class SessionSpec(ABC):
         """
         pass
 
+    @abstractmethod
     def reset_errors(self, job_id: str):
         """Clear errors for all system targets for the specified job
 
@@ -471,6 +501,7 @@ class SessionSpec(ABC):
         """
         pass
 
+    @abstractmethod
     def get_connected_client_list(self) -> List[ClientInfo]:
         """Get the list of connected clients
 

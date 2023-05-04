@@ -514,6 +514,15 @@ class Session(SessionSpec):
         """
         self.api.set_command_timeout(value)
 
+    def unset_timeout(self):
+        """
+        Unset the session-specific command timeout. Once unset, the FL Admin Server's default will be used.
+
+        Returns: None
+
+        """
+        self.api.unset_command_timeout()
+
     def list_sp(self) -> dict:
         """List available service providers
 

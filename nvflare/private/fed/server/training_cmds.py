@@ -157,14 +157,14 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             # must shut down clients first
             success = self._shutdown_app_on_clients(conn)
             if not success:
-                conn.add_meta(make_meta(MetaStatusValue.ERROR, "failed to shut down all clients"))
+                conn.update_meta(make_meta(MetaStatusValue.ERROR, "failed to shut down all clients"))
                 return
 
         if target_type in [self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
             # shut down the server
             err = self._shutdown_app_on_server(conn)
             if err:
-                conn.add_meta(make_meta(MetaStatusValue.ERROR, info=err))
+                conn.update_meta(make_meta(MetaStatusValue.ERROR, info=err))
                 return
         conn.append_success("")
 

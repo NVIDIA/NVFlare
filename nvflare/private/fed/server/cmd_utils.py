@@ -141,7 +141,7 @@ class CommandUtil(object):
 
     def must_be_project_admin(self, conn: Connection, args: List[str]):
         role = conn.get_prop(ConnProps.USER_ROLE, "")
-        if role not in ["project_admin", "super"]:
+        if role not in ["project_admin"]:
             conn.append_error(f"Not authorized for {role}", meta=make_meta(MetaStatusValue.NOT_AUTHORIZED))
             return PreAuthzReturnCode.ERROR
         else:
@@ -234,5 +234,5 @@ class CommandUtil(object):
                     response += " : No replies\n"
                     client_replies[client_name] = MetaStatusValue.NO_REPLY
 
-        conn.add_meta({MetaKey.CLIENT_STATUS: client_replies})
+        conn.update_meta({MetaKey.CLIENT_STATUS: client_replies})
         return response

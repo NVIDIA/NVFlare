@@ -19,7 +19,7 @@ from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.apis.overseer_spec import OverseerAgent
 from nvflare.fuel.hci.client.api_spec import CommandContext
 from nvflare.fuel.hci.client.api_status import APIStatus
-from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, ProtoKey
+from nvflare.fuel.hci.proto import MetaStatusValue, ProtoKey, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.security.logging import secure_format_exception
 
@@ -86,7 +86,7 @@ class HACommandModule(CommandModule):
             return {
                 ProtoKey.STATUS: APIStatus.ERROR_SYNTAX,
                 ProtoKey.DETAILS: "usage: promote_sp example1.com:8002:8003",
-                ProtoKey.META: {MetaKey.STATUS: MetaStatusValue.SYNTAX_ERROR},
+                ProtoKey.META: make_meta(MetaStatusValue.SYNTAX_ERROR),
             }
 
         sp_end_point = args[1]
@@ -96,17 +96,14 @@ class HACommandModule(CommandModule):
             return {
                 ProtoKey.STATUS: APIStatus.ERROR_RUNTIME,
                 ProtoKey.DETAILS: f"Error: {err}",
-                ProtoKey.META: {MetaKey.STATUS: MetaStatusValue.INTERNAL_ERROR, MetaKey.INFO: err},
+                ProtoKey.META: make_meta(MetaStatusValue.INTERNAL_ERROR, err),
             }
         else:
             info = f"Promoted endpoint: {sp_end_point}. Synchronizing with overseer..."
             return {
                 ProtoKey.STATUS: APIStatus.SUCCESS,
                 ProtoKey.DETAILS: info,
-                ProtoKey.META: {
-                    MetaKey.STATUS: MetaStatusValue.OK,
-                    MetaKey.INFO: info,
-                },
+                ProtoKey.META: make_meta(MetaStatusValue.OK, info),
             }
 
     def shutdown_system(self, args, ctx: CommandContext):
@@ -114,7 +111,6 @@ class HACommandModule(CommandModule):
         overseer_agent = self.overseer_agent
         try:
             admin_status_result = api.do_command(AdminCommandNames.ADMIN_CHECK_STATUS + " server")
-            print(f"admin_status_result: {admin_status_result}")
             if admin_status_result.get(ProtoKey.META).get(ProtoKey.STATUS) == MetaStatusValue.NOT_AUTHORIZED:
                 return {
                     ProtoKey.STATUS: APIStatus.ERROR_AUTHORIZATION,
@@ -131,7 +127,7 @@ class HACommandModule(CommandModule):
                 ProtoKey.STATUS: APIStatus.ERROR_RUNTIME,
                 ProtoKey.DETAILS: f"Error getting server status to make sure all jobs are stopped before shutting down system: {secure_format_exception(e)}",
             }
-        print("Shutting down the system...")
+        # print("Shutting down the system...")
         resp = overseer_agent.set_state("shutdown")
         if json.loads(resp.text).get("Error"):
             return {

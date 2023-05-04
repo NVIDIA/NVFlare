@@ -82,7 +82,7 @@ def process_targets_into_str(targets: List[str]) -> str:
         try:
             validate_required_target_string(t)
         except SyntaxError:
-            raise SyntaxError("each target in targets must be a string of only valid characters and no spaces.")
+            raise SyntaxError(f"invalid target {t}")
     return " ".join(targets)
 
 
@@ -112,9 +112,9 @@ def validate_path_string(path: str) -> str:
         raise SyntaxError("path is not str.")
     if not re.match("^[A-Za-z0-9-._/]*$", path):
         raise SyntaxError("unsupported characters in path {}".format(path))
-    if path.startswith("/"):
+    if os.path.isabs(path):
         raise SyntaxError("absolute path is not allowed")
-    paths = path.split("/")
+    paths = path.split(os.path.sep)
     for p in paths:
         if p == "..":
             raise SyntaxError(".. in path name is not allowed")
@@ -123,16 +123,7 @@ def validate_path_string(path: str) -> str:
 
 def validate_file_string(file: str) -> str:
     """Returns the file string if it is valid."""
-    if not isinstance(file, str):
-        raise SyntaxError("file is not str.")
-    if not re.match("^[A-Za-z0-9-._/]*$", file):
-        raise SyntaxError("unsupported characters in file {}".format(file))
-    if file.startswith("/"):
-        raise SyntaxError("absolute path for file is not allowed")
-    paths = file.split("/")
-    for p in paths:
-        if p == "..":
-            raise SyntaxError(".. in file path is not allowed")
+    validate_path_string(file)
     basename, file_extension = os.path.splitext(file)
     if file_extension not in [".txt", ".log", ".json", ".csv", ".sh", ".config", ".py"]:
         raise SyntaxError(
