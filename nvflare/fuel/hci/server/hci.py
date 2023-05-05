@@ -18,7 +18,7 @@ import ssl
 import threading
 
 from nvflare.fuel.hci.conn import Connection, receive_til_end
-from nvflare.fuel.hci.proto import validate_proto
+from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, ProtoKey, make_meta, validate_proto
 from nvflare.fuel.hci.security import IdentityKey, get_identity_info
 from nvflare.security.logging import secure_log_traceback
 
@@ -54,27 +54,39 @@ class _MsgHandler(socketserver.BaseRequestHandler):
                 valid = True
 
             if not valid:
-                conn.append_error("authentication error")
+                conn.append_error(
+                    "authentication error", meta=make_meta(MetaStatusValue.NOT_AUTHENTICATED, info="invalid credential")
+                )
             else:
                 req = receive_til_end(self.request).strip()
                 command = None
                 req_json = validate_proto(req)
                 conn.request = req_json
                 if req_json is not None:
-                    data = req_json["data"]
+                    meta = req_json.get(ProtoKey.META, None)
+                    if meta and isinstance(meta, dict):
+                        cmd_timeout = meta.get(MetaKey.CMD_TIMEOUT)
+                        if cmd_timeout:
+                            conn.set_prop(ConnProps.CMD_TIMEOUT, cmd_timeout)
+
+                    data = req_json[ProtoKey.DATA]
                     for item in data:
-                        it = item["type"]
-                        if it == "command":
-                            command = item["data"]
+                        it = item[ProtoKey.TYPE]
+                        if it == ProtoKey.COMMAND:
+                            command = item[ProtoKey.DATA]
                             break
 
                     if command is None:
-                        conn.append_error("protocol violation")
+                        conn.append_error(
+                            "protocol violation", meta=make_meta(MetaStatusValue.INTERNAL_ERROR, "protocol violation")
+                        )
                     else:
                         self.server.cmd_reg.process_command(conn, command)
                 else:
                     # not json encoded
-                    conn.append_error("protocol violation")
+                    conn.append_error(
+                        "protocol violation", meta=make_meta(MetaStatusValue.INTERNAL_ERROR, "protocol violation")
+                    )
 
             if not conn.ended:
                 conn.close()

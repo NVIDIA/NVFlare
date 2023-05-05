@@ -35,6 +35,8 @@ class ProtoKey(object):
     SHUTDOWN = "shutdown"
     COMMAND = "command"
     TOKEN = "token"
+    DETAILS = "details"
+    STATUS = "status"
 
 
 class MetaKey(object):
@@ -50,10 +52,12 @@ class MetaKey(object):
     CLIENT_NAME = "client_name"
     CLIENT_LAST_CONNECT_TIME = "client_last_conn_time"
     CLIENTS = "clients"
+    CLIENT_STATUS = "client_status"
     JOBS = "jobs"
     JOB_NAME = "job_name"
     SUBMIT_TIME = "submit_time"
     DURATION = "duration"
+    CMD_TIMEOUT = "cmd_timeout"
 
 
 class MetaStatusValue(object):
@@ -61,11 +65,18 @@ class MetaStatusValue(object):
     OK = "ok"
     SYNTAX_ERROR = "syntax_error"
     NOT_AUTHORIZED = "not_authorized"
+    NOT_AUTHENTICATED = "not_authenticated"
     ERROR = "error"
     INTERNAL_ERROR = "internal_error"
+    INVALID_TARGET = "invalid_target"
     INVALID_JOB_DEFINITION = "invalid_job_def"
     INVALID_JOB_ID = "invalid_job_id"
     JOB_RUNNING = "job_running"
+    JOB_NOT_RUNNING = "job_not_running"
+    CLIENTS_RUNNING = "clients_running"
+    NO_JOBS = "no_jobs"
+    NO_REPLY = "no_reply"
+    NO_CLIENTS = "no_clients"
 
 
 class CredentialType(str, Enum):
@@ -107,27 +118,29 @@ class Buffer(object):
         self.data.append({ProtoKey.TYPE: ProtoKey.TABLE, ProtoKey.ROWS: t.rows})
         return t
 
-    def append_string(self, data: str, meta: dict = None):
-        self.data.append({ProtoKey.TYPE: ProtoKey.STRING, ProtoKey.DATA: data})
+    def update_meta(self, meta: dict):
         if meta:
             self.meta.update(meta)
 
+    def append_string(self, data: str, meta: dict = None):
+        self.data.append({ProtoKey.TYPE: ProtoKey.STRING, ProtoKey.DATA: data})
+        self.update_meta(meta)
+
     def append_dict(self, data: dict, meta: dict = None):
         self.data.append({ProtoKey.TYPE: ProtoKey.DICT, ProtoKey.DATA: data})
-        if meta:
-            self.meta.update(meta)
+        self.update_meta(meta)
 
     def append_success(self, data: str, meta: dict = None):
         self.data.append({ProtoKey.TYPE: ProtoKey.SUCCESS, ProtoKey.DATA: data})
         if not meta:
             meta = make_meta(MetaStatusValue.OK, data)
-        self.meta.update(meta)
+        self.update_meta(meta)
 
     def append_error(self, data: str, meta: dict = None):
         self.data.append({ProtoKey.TYPE: ProtoKey.ERROR, ProtoKey.DATA: data})
         if not meta:
             meta = make_meta(MetaStatusValue.ERROR, data)
-        self.meta.update(meta)
+        self.update_meta(meta)
 
     def append_command(self, cmd: str):
         self.data.append({ProtoKey.TYPE: ProtoKey.COMMAND, ProtoKey.DATA: cmd})

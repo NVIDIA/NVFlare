@@ -14,11 +14,10 @@
 
 from typing import List
 
-from nvflare.apis.fl_constant import AdminCommandNames
-from nvflare.apis.job_def import JobMetaKey
+from nvflare.apis.job_def import JobMetaKey, is_valid_job_id
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.fuel.hci.conn import Connection
-from nvflare.fuel.hci.proto import MetaStatusValue, make_meta
+from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, make_meta
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.private.fed.server.admin import FedAdminServer
@@ -54,13 +53,20 @@ class CommandUtil(object):
 
     def authorize_abort_client_task(self, conn: Connection, args: List[str]) -> PreAuthzReturnCode:
         if len(args) < 2:
-            conn.append_error("missing job_id (syntax is: abort_task job_id <client-name>)")
+            conn.append_error(
+                "missing job_id (syntax is: abort_task job_id <client-name>)",
+                meta=make_meta(MetaStatusValue.SYNTAX_ERROR, "missing job_id"),
+            )
             return PreAuthzReturnCode.ERROR
 
         auth_args = [args[0], self.TARGET_TYPE_CLIENT]
         auth_args.extend(args[2:])
 
         job_id = args[1].lower()
+        if not is_valid_job_id(job_id):
+            conn.append_error(f"invalid job_id {job_id}", meta=make_meta(MetaStatusValue.INVALID_JOB_ID, job_id))
+            return PreAuthzReturnCode.ERROR
+
         conn.set_prop(self.JOB_ID, job_id)
 
         err = self.validate_command_targets(conn, auth_args[1:])
@@ -134,11 +140,9 @@ class CommandUtil(object):
         return ""
 
     def must_be_project_admin(self, conn: Connection, args: List[str]):
-        if args[0] == AdminCommandNames.ADMIN_CHECK_STATUS and len(args) == 1:
-            args.extend(["server"])
         role = conn.get_prop(ConnProps.USER_ROLE, "")
-        if role != "project_admin":
-            conn.append_error("Not authorized as project_admin.", meta=make_meta(MetaStatusValue.NOT_AUTHORIZED))
+        if role not in ["project_admin"]:
+            conn.append_error(f"Not authorized for {role}", meta=make_meta(MetaStatusValue.NOT_AUTHORIZED))
             return PreAuthzReturnCode.ERROR
         else:
             return PreAuthzReturnCode.OK
@@ -166,7 +170,10 @@ class CommandUtil(object):
             requests.update({token: message})
 
         admin_server: FedAdminServer = conn.server
-        replies = admin_server.send_requests(requests, timeout_secs=admin_server.timeout)
+        cmd_timeout = conn.get_prop(ConnProps.CMD_TIMEOUT)
+        if not cmd_timeout:
+            cmd_timeout = admin_server.timeout
+        replies = admin_server.send_requests(requests, timeout_secs=cmd_timeout)
 
         return replies
 
@@ -190,14 +197,13 @@ class CommandUtil(object):
         if not replies:
             conn.append_string("no responses from clients")
 
-        engine = conn.app_ctx
         table = conn.append_table(["Client", "Response"])
         for r in replies:
             if r.reply:
                 resp = r.reply.body
             else:
                 resp = ""
-            client_name = engine.get_client_name_from_token(r.client_token)
+            client_name = r.client_name
             if not client_name:
                 clients = conn.get_prop(self.TARGET_CLIENTS)
                 client_name = clients.get(r.client_token, "")
@@ -214,15 +220,19 @@ class CommandUtil(object):
         Returns:
             A string response.
         """
-        engine = conn.app_ctx
         response = "no responses from clients"
+        client_replies = {}
         if replies:
             response = ""
             for r in replies:
-                client_name = engine.get_client_name_from_token(r.client_token)
+                client_name = r.client_name
                 response += "client:" + client_name
                 if r.reply:
                     response += " : " + r.reply.body + "\n"
+                    client_replies[client_name] = r.reply.body
                 else:
                     response += " : No replies\n"
+                    client_replies[client_name] = MetaStatusValue.NO_REPLY
+
+        conn.update_meta({MetaKey.CLIENT_STATUS: client_replies})
         return response

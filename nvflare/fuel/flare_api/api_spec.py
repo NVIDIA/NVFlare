@@ -15,7 +15,7 @@
 import enum
 import time
 from abc import ABC, abstractmethod
-from typing import List
+from typing import List, Optional
 
 
 class MonitorReturnCode(int, enum.Enum):
@@ -45,6 +45,10 @@ class JobNotFound(BaseException):
     pass
 
 
+class JobNotRunning(BaseException):
+    pass
+
+
 class JobNotDone(BaseException):
     pass
 
@@ -59,6 +63,24 @@ class AuthenticationError(BaseException):
 
 class AuthorizationError(BaseException):
     pass
+
+
+class NoClientsAvailable(BaseException):
+    pass
+
+
+class ClientsStillRunning(BaseException):
+    pass
+
+
+class InvalidTarget(BaseException):
+    pass
+
+
+class TargetType:
+    ALL = "all"
+    SERVER = "server"
+    CLIENT = "client"
 
 
 class ServerInfo:
@@ -136,7 +158,7 @@ class SessionSpec(ABC):
         Args:
             job_id: ID of the job
 
-        Returns: a dict of job meta data
+        Returns: a dict of job metadata
 
         """
         pass
@@ -149,7 +171,7 @@ class SessionSpec(ABC):
             detailed: True to get the detailed information for each job, False by default
             all: True to get jobs submitted by all users (default is to only list jobs submitted by the same user)
 
-        Returns: a list of of job meta data
+        Returns: a list of job metadata
 
         """
         pass
@@ -205,6 +227,287 @@ class SessionSpec(ABC):
 
     @abstractmethod
     def get_system_info(self) -> SystemInfo:
+        """Get general info of the FLARE system"""
+        pass
+
+    @abstractmethod
+    def get_client_job_status(self, client_names: List[str] = None) -> List[dict]:
+        """Get job status info of specified FL clients
+
+        Args:
+            client_names: names of the clients to get status info
+
+        Returns: A list of jobs running on the clients. Each job is described by a dict of: id, app name and status.
+        If there are multiple jobs running on one client, the list contains one entry for each job for that client.
+        If no FL clients are connected or the server failed to communicate to them, this method returns None.
+
+        """
+        pass
+
+    @abstractmethod
+    def restart(self, target_type: str, client_names: Optional[List[str]] = None) -> dict:
+        """
+        Restart specified system target(s)
+
+        Args:
+            target_type: what system target (server, client, or all) to restart
+            client_names: clients to be restarted if target_type is client. If not specified, all clients.
+
+        Returns: a dict that contains detailed info about the restart request:
+        status - the overall status of the result.
+        server_status - whether the server is restarted successfully - only if target_type is "all" or "server".
+        client_status - a dict (keyed on client name) that specifies status of each client - only if target_type
+        is "all" or "client".
+
+        """
+        pass
+
+    @abstractmethod
+    def shutdown(self, target_type: TargetType, client_names: Optional[List[str]] = None):
+        """Shut down specified system target(s)
+
+        Args:
+            target_type: what system target (server, client, or all) to shut down
+            client_names: clients to be shut down if target_type is client. If not specified, all clients.
+
+        Returns: None
+        """
+        pass
+
+    @abstractmethod
+    def set_timeout(self, value: float):
+        """
+        Set a session-specific command timeout. This is the amount of time the server will wait for responses
+        after sending commands to FL clients.
+
+        Note that this value is only effective for the current API session.
+
+        Args:
+            value: a positive float number
+
+        Returns: None
+
+        """
+        pass
+
+    @abstractmethod
+    def unset_timeout(self):
+        """
+        Unset the session-specific command timeout. Once unset, the FL Admin Server's default will be used.
+
+        Returns: None
+
+        """
+        pass
+
+    @abstractmethod
+    def list_sp(self) -> dict:
+        """List available service providers
+
+        Returns: a dict that contains information about the primary SP and others
+
+        """
+        pass
+
+    @abstractmethod
+    def get_active_sp(self) -> dict:
+        """Get the current active service provider (SP).
+
+        Returns: a dict that describes the current active SP. If no SP is available currently, the 'name' attribute of
+        the result is empty.
+        """
+        pass
+
+    @abstractmethod
+    def promote_sp(self, sp_end_point: str):
+        """Promote the specified endpoint to become the active SP.
+
+        Args:
+            sp_end_point: the endpoint of the SP. It's string in this format: <url>:<server_port>:<admin_port>
+
+        Returns: None
+
+        """
+        pass
+
+    @abstractmethod
+    def get_available_apps_to_upload(self):
+        """Get defined FLARE app folders from the upload folder on the machine the FLARE API is running
+
+        Returns: a list of app folders
+
+        """
+        pass
+
+    @abstractmethod
+    def shutdown_system(self):
+        """Shut down the whole NVFLARE system including the overseer, FL server(s), and all FL clients.
+
+        Returns: None
+
+        Note: the user must be a Project Admin to use this method; otherwise the NOT_AUTHORIZED exception will raise.
+
+        """
+        pass
+
+    @abstractmethod
+    def ls_target(self, target: str, options: str = None, path: str = None) -> str:
+        """Run the "ls" command on the specified target and return result
+
+        Args:
+            target: the target (server or a client name) the command will run
+            options: options of the "ls" command
+            path: the optional file path
+
+        Returns: result of "ls" command
+
+        """
+        pass
+
+    @abstractmethod
+    def cat_target(self, target: str, options: str = None, file: str = None) -> str:
+        """Run the "cat" command on the specified target and return result
+
+        Args:
+            target: the target (server or a client name) the command will run
+            options: options of the "cat" command
+            file: the file that the "cat" command will run against
+
+        Returns: result of "cat" command
+
+        """
+        pass
+
+    @abstractmethod
+    def tail_target(self, target: str, options: str = None, file: str = None) -> str:
+        """Run the "tail" command on the specified target and return result
+
+        Args:
+            target: the target (server or a client name) the command will run
+            options: options of the "tail" command
+            file: the file that the "tail" command will run against
+
+        Returns: result of "tail" command
+
+        """
+        pass
+
+    @abstractmethod
+    def tail_target_log(self, target: str, options: str = None) -> str:
+        """Run the "tail log.txt" command on the specified target and return result
+
+        Args:
+            target: the target (server or a client name) the command will run
+            options: options of the "tail" command
+
+        Returns: result of "tail" command
+
+        """
+        pass
+
+    @abstractmethod
+    def head_target(self, target: str, options: str = None, file: str = None) -> str:
+        """Run the "head" command on the specified target and return result
+
+        Args:
+            target: the target (server or a client name) the command will run
+            options: options of the "head" command
+            file: the file that the "head" command will run against
+
+        Returns: result of "head" command
+
+        """
+        pass
+
+    @abstractmethod
+    def head_target_log(self, target: str, options: str = None) -> str:
+        """Run the "head log.txt" command on the specified target and return result
+
+        Args:
+            target: the target (server or a client name) the command will run
+            options: options of the "head" command
+
+        Returns: result of "head" command
+
+        """
+        pass
+
+    @abstractmethod
+    def grep_target(self, target: str, options: str = None, pattern: str = None, file: str = None) -> str:
+        """Run the "grep" command on the specified target and return result
+
+        Args:
+            target: the target (server or a client name) the command will run
+            options: options of the "grep" command
+            pattern: the grep pattern
+            file: the file that the "grep" command will run against
+
+        Returns: result of "grep" command
+
+        """
+        pass
+
+    @abstractmethod
+    def get_working_directory(self, target: str) -> str:
+        """Get the working directory of the specified target
+
+        Args:
+            target: the target (server of a client name)
+
+        Returns: current working directory of the specified target
+
+        """
+        pass
+
+    @abstractmethod
+    def show_stats(self, job_id: str, target_type: str, targets: Optional[List[str]] = None) -> dict:
+        """Show processing stats of specified job on specified targets
+
+        Args:
+            job_id: ID of the job
+            target_type: type of target (server or client)
+            targets: list of client names if target type is "client". All clients if not specified.
+
+        Returns: a dict that contains job stats on specified targets. The key of the dict is target name. The value is
+        a dict of stats reported by different system components (ServerRunner or ClientRunner).
+
+        """
+        pass
+
+    @abstractmethod
+    def show_errors(self, job_id: str, target_type: str, targets: Optional[List[str]] = None) -> dict:
+        """Show processing errors of specified job on specified targets
+
+        Args:
+            job_id: ID of the job
+            target_type: type of target (server or client)
+            targets: list of client names if target type is "client". All clients if not specified.
+
+        Returns: a dict that contains job errors (if any) on specified targets. The key of the dict is target name.
+        The value is a dict of errors reported by different system components (ServerRunner or ClientRunner).
+
+        """
+        pass
+
+    @abstractmethod
+    def reset_errors(self, job_id: str):
+        """Clear errors for all system targets for the specified job
+
+        Args:
+            job_id: ID of the job
+
+        Returns: None
+
+        """
+        pass
+
+    @abstractmethod
+    def get_connected_client_list(self) -> List[ClientInfo]:
+        """Get the list of connected clients
+
+        Returns: a list of ClientInfo objects
+
+        """
         pass
 
     @abstractmethod

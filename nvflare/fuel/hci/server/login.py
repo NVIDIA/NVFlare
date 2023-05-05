@@ -137,7 +137,7 @@ class LoginModule(CommandModule, CommandFilter):
             conn.append_string("REJECT")
             return
 
-        session = self.session_mgr.create_session(user_name=user_name, user_org="global", user_role="super")
+        session = self.session_mgr.create_session(user_name=user_name, user_org="global", user_role="project_admin")
         conn.append_string("OK")
         conn.append_token(session.token)
 

@@ -29,9 +29,8 @@ from nvflare.security.logging import secure_format_exception
 def _parse_replies(conn, replies):
     """parses resources from replies."""
     site_resources = {}
-    engine = conn.app_ctx
     for r in replies:
-        client_name = engine.get_client_name_from_token(r.client_token)
+        client_name = r.client_name
 
         if r.reply:
             if r.reply.get_header(MsgHeader.RETURN_CODE) == ReturnCode.ERROR:
@@ -105,9 +104,8 @@ class SystemCommandModule(CommandModule, CommandUtil):
             conn.append_error("no responses from clients")
             return
 
-        engine = conn.app_ctx
         for r in replies:
-            client_name = engine.get_client_name_from_token(r.client_token)
+            client_name = r.client_name
             conn.append_string("Client: " + client_name)
 
             table = conn.append_table(["Metrics", "Value"])

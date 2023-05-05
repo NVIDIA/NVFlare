@@ -22,7 +22,7 @@ from datetime import datetime
 from typing import List, Optional
 
 from nvflare.fuel.hci.cmd_arg_utils import join_args, split_to_args
-from nvflare.fuel.hci.proto import CredentialType
+from nvflare.fuel.hci.proto import CredentialType, ProtoKey
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandRegister, CommandSpec
 from nvflare.fuel.hci.security import hash_password, verify_password
 from nvflare.fuel.hci.table import Table
@@ -42,6 +42,9 @@ class _BuiltInCmdModule(CommandModule):
                 CommandSpec(name="help", description="get command help information", usage="help", handler_func=None),
                 CommandSpec(
                     name="lpwd", description="print local work dir of the admin client", usage="lpwd", handler_func=None
+                ),
+                CommandSpec(
+                    name="timeout", description="set/show command timeout", usage="timeout [value]", handler_func=None
                 ),
             ],
         )
@@ -173,6 +176,25 @@ class AdminClient(cmd.Cmd):
     def do_lpwd(self, arg):
         """print local current work dir"""
         self.write_string(os.getcwd())
+
+    def do_timeout(self, arg):
+        if not arg:
+            # display current setting
+            t = self.api.cmd_timeout
+            if t:
+                self.write_string(str(t))
+            else:
+                self.write_string("not set")
+            return
+        try:
+            t = float(arg)
+            self.api.set_command_timeout(t)
+            if t == 0:
+                self.write_string("command timeout is unset")
+            else:
+                self.write_string(f"command timeout is set to {t}")
+        except:
+            self.write_string("invalid timeout value - must be float number >= 0.0")
 
     def emptyline(self):
         return
@@ -423,29 +445,31 @@ class AdminClient(cmd.Cmd):
         Args:
             resp (dict): The server response.
         """
-        if "details" in resp:
-            if isinstance(resp["details"], str):
-                self.write_string(resp["details"])
-            if isinstance(resp["details"], Table):
-                self.write_table(resp["details"])
+        if ProtoKey.DETAILS in resp:
+            details = resp[ProtoKey.DETAILS]
+            if isinstance(details, str):
+                self.write_string(details)
+            elif isinstance(details, Table):
+                self.write_table(details)
 
-        if "data" in resp:
-            for item in resp["data"]:
+        if ProtoKey.DATA in resp:
+            for item in resp[ProtoKey.DATA]:
                 if not isinstance(item, dict):
                     continue
-                item_type = item.get("type")
-                if item_type == "string":
-                    self.write_string(item["data"])
-                elif item_type == "table":
+                item_type = item.get(ProtoKey.TYPE)
+                item_data = item.get(ProtoKey.DATA)
+                if item_type == ProtoKey.STRING:
+                    self.write_string(item_data)
+                elif item_type == ProtoKey.TABLE:
                     table = Table(None)
-                    table.set_rows(item["rows"])
+                    table.set_rows(item[ProtoKey.ROWS])
                     self.write_table(table)
-                elif item_type == "error":
-                    self.write_error(item["data"])
-                elif item_type == "dict":
-                    self.write_dict(item["data"])
+                elif item_type == ProtoKey.ERROR:
+                    self.write_error(item_data)
+                elif item_type == ProtoKey.DICT:
+                    self.write_dict(item_data)
 
-        if "details" not in resp and "data" not in resp:
+        if ProtoKey.DETAILS not in resp and ProtoKey.DATA not in resp:
             self.write_string("Response is not correct.")
 
     def write_stdout(self, data: str):

@@ -19,7 +19,7 @@ from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.apis.overseer_spec import OverseerAgent
 from nvflare.fuel.hci.client.api_spec import CommandContext
 from nvflare.fuel.hci.client.api_status import APIStatus
-from nvflare.fuel.hci.proto import MetaStatusValue
+from nvflare.fuel.hci.proto import MetaStatusValue, ProtoKey, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.security.logging import secure_format_exception
 
@@ -70,60 +70,69 @@ class HACommandModule(CommandModule):
         """
         overseer_agent = self.overseer_agent
         return {
-            "status": APIStatus.SUCCESS,
-            "details": str(overseer_agent.overseer_info),
-            "data": overseer_agent.overseer_info,
+            ProtoKey.STATUS: APIStatus.SUCCESS,
+            ProtoKey.DETAILS: str(overseer_agent.overseer_info),
+            ProtoKey.DATA: overseer_agent.overseer_info,
         }
 
     def get_active_sp(self, args, ctx: CommandContext):
         overseer_agent = self.overseer_agent
-        return {"status": APIStatus.SUCCESS, "details": str(overseer_agent.get_primary_sp())}
+        sp = overseer_agent.get_primary_sp()
+        return {ProtoKey.STATUS: APIStatus.SUCCESS, ProtoKey.DETAILS: str(sp), ProtoKey.META: sp.__dict__}
 
     def promote_sp(self, args, ctx: CommandContext):
         overseer_agent = self.overseer_agent
         if len(args) != 2:
-            return {"status": APIStatus.ERROR_SYNTAX, "details": "usage: promote_sp example1.com:8002:8003"}
+            return {
+                ProtoKey.STATUS: APIStatus.ERROR_SYNTAX,
+                ProtoKey.DETAILS: "usage: promote_sp example1.com:8002:8003",
+                ProtoKey.META: make_meta(MetaStatusValue.SYNTAX_ERROR),
+            }
 
         sp_end_point = args[1]
         resp = overseer_agent.promote_sp(sp_end_point)
-        if json.loads(resp.text).get("Error"):
+        err = json.loads(resp.text).get("Error")
+        if err:
             return {
-                "status": APIStatus.ERROR_RUNTIME,
-                "details": "Error: {}".format(json.loads(resp.text).get("Error")),
+                ProtoKey.STATUS: APIStatus.ERROR_RUNTIME,
+                ProtoKey.DETAILS: f"Error: {err}",
+                ProtoKey.META: make_meta(MetaStatusValue.INTERNAL_ERROR, err),
             }
         else:
+            info = f"Promoted endpoint: {sp_end_point}. Synchronizing with overseer..."
             return {
-                "status": APIStatus.SUCCESS,
-                "details": "Promoted endpoint: {}. Synchronizing with overseer...".format(sp_end_point),
+                ProtoKey.STATUS: APIStatus.SUCCESS,
+                ProtoKey.DETAILS: info,
+                ProtoKey.META: make_meta(MetaStatusValue.OK, info),
             }
 
     def shutdown_system(self, args, ctx: CommandContext):
         api = ctx.get_api()
         overseer_agent = self.overseer_agent
         try:
-            admin_status_result = api.do_command(AdminCommandNames.ADMIN_CHECK_STATUS)
-            if admin_status_result.get("meta").get("status") == MetaStatusValue.NOT_AUTHORIZED:
+            admin_status_result = api.do_command(AdminCommandNames.ADMIN_CHECK_STATUS + " server")
+            if admin_status_result.get(ProtoKey.META).get(ProtoKey.STATUS) == MetaStatusValue.NOT_AUTHORIZED:
                 return {
-                    "status": APIStatus.ERROR_AUTHORIZATION,
-                    "details": "Error: Not authorized for this command.",
+                    ProtoKey.STATUS: APIStatus.ERROR_AUTHORIZATION,
+                    ProtoKey.DETAILS: "Error: Not authorized for this command.",
                 }
-            status = admin_status_result.get("data")
-            if status[0].get("data") != "Engine status: stopped":
+            status = admin_status_result.get(ProtoKey.DATA)
+            if status[0].get(ProtoKey.DATA) != "Engine status: stopped":
                 return {
-                    "status": APIStatus.ERROR_RUNTIME,
-                    "details": "Error: There are still jobs running. Please let them finish or abort_job before attempting shutdown.",
+                    ProtoKey.STATUS: APIStatus.ERROR_RUNTIME,
+                    ProtoKey.DETAILS: "Error: There are still jobs running. Please let them finish or abort_job before attempting shutdown.",
                 }
         except Exception as e:
             return {
-                "status": APIStatus.ERROR_RUNTIME,
-                "details": f"Error getting server status to make sure all jobs are stopped before shutting down system: {secure_format_exception(e)}",
+                ProtoKey.STATUS: APIStatus.ERROR_RUNTIME,
+                ProtoKey.DETAILS: f"Error getting server status to make sure all jobs are stopped before shutting down system: {secure_format_exception(e)}",
             }
-        print("Shutting down the system...")
+        # print("Shutting down the system...")
         resp = overseer_agent.set_state("shutdown")
         if json.loads(resp.text).get("Error"):
             return {
-                "status": APIStatus.ERROR_RUNTIME,
-                "details": "Error: {}".format(json.loads(resp.text).get("Error")),
+                ProtoKey.STATUS: APIStatus.ERROR_RUNTIME,
+                ProtoKey.DETAILS: "Error: {}".format(json.loads(resp.text).get("Error")),
             }
         else:
-            return {"status": APIStatus.SUCCESS, "details": "Set state to shutdown in overseer."}
+            return {ProtoKey.STATUS: APIStatus.SUCCESS, ProtoKey.DETAILS: "Set state to shutdown in overseer."}

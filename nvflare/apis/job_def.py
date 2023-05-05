@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import uuid
 from enum import Enum
 from typing import Dict, List, Optional
 
@@ -189,3 +189,21 @@ def job_from_meta(meta: dict) -> Job:
         required_sites=meta.get(JobMetaKey.MANDATORY_CLIENTS, []),
     )
     return job
+
+
+def new_job_id() -> str:
+    return str(uuid.uuid4())
+
+
+def is_valid_job_id(jid: str) -> bool:
+    if not isinstance(jid, str):
+        return False
+
+    try:
+        val = uuid.UUID(jid, version=4)
+    except ValueError:
+        return False
+
+    # If the jid string is a valid hex code, but an invalid uuid4,the UUID.__init__ will convert it to a
+    # valid uuid4. This is bad for validation purposes.
+    return val.hex == jid.replace("-", "")
