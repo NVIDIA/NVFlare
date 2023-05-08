@@ -17,8 +17,10 @@ from typing import List
 
 from nvflare.apis.fl_constant import AdminCommandNames
 from nvflare.fuel.hci.conn import Connection
+from nvflare.fuel.hci.proto import MetaStatusValue, make_meta
 from nvflare.fuel.hci.reg import CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
+from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.private.defs import InfoCollectorTopic, RequestHeader
 from nvflare.private.fed.server.admin import new_message
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
@@ -45,7 +47,7 @@ class InfoCollectorCommandModule(JobCommandModule, CommandUtil):
                 CommandSpec(
                     name=AdminCommandNames.SHOW_STATS,
                     description="show current system stats for an actively running job",
-                    usage="show_stats job_id server|client",
+                    usage="show_stats job_id server|client [clients]",
                     handler_func=self.show_stats,
                     authz_func=self.authorize_info_collection,
                     visible=True,
@@ -53,7 +55,7 @@ class InfoCollectorCommandModule(JobCommandModule, CommandUtil):
                 CommandSpec(
                     name=AdminCommandNames.SHOW_ERRORS,
                     description="show latest errors in an actively running job",
-                    usage="show_errors job_id server|client",
+                    usage="show_errors job_id server|client [clients]",
                     handler_func=self.show_errors,
                     authz_func=self.authorize_info_collection,
                     visible=True,
@@ -61,7 +63,7 @@ class InfoCollectorCommandModule(JobCommandModule, CommandUtil):
                 CommandSpec(
                     name=AdminCommandNames.RESET_ERRORS,
                     description="reset error stats for an actively running job",
-                    usage="reset_errors",
+                    usage="reset_errors job_id server|client [clients]",
                     handler_func=self.reset_errors,
                     authz_func=self.authorize_info_collection,
                     visible=True,
@@ -70,8 +72,9 @@ class InfoCollectorCommandModule(JobCommandModule, CommandUtil):
         )
 
     def authorize_info_collection(self, conn: Connection, args: List[str]):
-        if len(args) != 3:
-            conn.append_error("syntax error: missing job_id and target")
+        if len(args) < 3:
+            cmd_entry = conn.get_prop(ConnProps.CMD_ENTRY)
+            conn.append_error(f"Usage: {cmd_entry.usage}", meta=make_meta(MetaStatusValue.SYNTAX_ERROR))
             return PreAuthzReturnCode.ERROR
 
         rt = self.authorize_job(conn, args)
@@ -84,90 +87,70 @@ class InfoCollectorCommandModule(JobCommandModule, CommandUtil):
 
         collector = engine.get_widget(WidgetID.INFO_COLLECTOR)
         if not collector:
-            conn.append_error("info collector not available")
+            msg = "info collector not available"
+            conn.append_error(msg, meta=make_meta(MetaStatusValue.INTERNAL_ERROR, msg))
             return PreAuthzReturnCode.ERROR
 
         if not isinstance(collector, InfoCollector):
-            conn.append_error("system error: info collector not right object")
+            msg = "info collector not right object"
+            conn.append_error(msg, meta=make_meta(MetaStatusValue.INTERNAL_ERROR, msg))
             return PreAuthzReturnCode.ERROR
 
         conn.set_prop(self.CONN_KEY_COLLECTOR, collector)
 
         job_id = conn.get_prop(self.JOB_ID)
         if job_id not in engine.run_processes:
-            conn.append_error(f"Job_id: {job_id} is not running.")
+            conn.append_error(
+                f"Job_id: {job_id} is not running.", meta=make_meta(MetaStatusValue.JOB_NOT_RUNNING, job_id)
+            )
             return PreAuthzReturnCode.ERROR
 
         run_info = engine.get_app_run_info(job_id)
         if not run_info:
             conn.append_string(
-                "Cannot find job: {}. Please make sure the first arg following the command is a valid job_id.".format(
-                    job_id
-                )
+                f"Cannot find job: {job_id}. Please make sure the first arg following the command is a valid job_id.",
+                meta=make_meta(MetaStatusValue.INVALID_JOB_ID, job_id),
             )
             return PreAuthzReturnCode.ERROR
         return rt
 
     def show_stats(self, conn: Connection, args: List[str]):
         engine = conn.app_ctx
-        if not isinstance(engine, ServerEngineInternalSpec):
-            raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
+        self._collect_stats(conn, args, stats_func=engine.show_stats, msg_topic=InfoCollectorTopic.SHOW_STATS)
 
+    def _collect_stats(self, conn: Connection, args: List[str], stats_func, msg_topic):
         job_id = conn.get_prop(self.JOB_ID)
         target_type = args[2]
-        if target_type == self.TARGET_TYPE_SERVER:
-            result = engine.show_stats(job_id)
-            conn.append_any(result)
-        elif target_type == self.TARGET_TYPE_CLIENT:
-            message = new_message(conn, topic=InfoCollectorTopic.SHOW_STATS, body="", require_authz=True)
+        result = {}
+        if target_type in [self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
+            server_stats = stats_func(job_id)
+            result["server"] = server_stats
+
+        if target_type in [self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_ALL]:
+            message = new_message(conn, topic=msg_topic, body="", require_authz=True)
             message.set_header(RequestHeader.JOB_ID, job_id)
             replies = self.send_request_to_clients(conn, message)
-            self._process_stats_replies(conn, replies)
+            self._process_stats_replies(conn, replies, result)
+        conn.append_any(result)
 
     def show_errors(self, conn: Connection, args: List[str]):
         engine = conn.app_ctx
-        if not isinstance(engine, ServerEngineInternalSpec):
-            raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
-
-        job_id = conn.get_prop(self.JOB_ID)
-        target_type = args[2]
-        if target_type == self.TARGET_TYPE_SERVER:
-            result = engine.get_errors(job_id)
-            conn.append_any(result)
-        elif target_type == self.TARGET_TYPE_CLIENT:
-            message = new_message(conn, topic=InfoCollectorTopic.SHOW_ERRORS, body="", require_authz=True)
-            message.set_header(RequestHeader.JOB_ID, job_id)
-            replies = self.send_request_to_clients(conn, message)
-            self._process_stats_replies(conn, replies)
+        self._collect_stats(conn, args, stats_func=engine.get_errors, msg_topic=InfoCollectorTopic.SHOW_ERRORS)
 
     def reset_errors(self, conn: Connection, args: List[str]):
         engine = conn.app_ctx
-        if not isinstance(engine, ServerEngineInternalSpec):
-            raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
+        self._collect_stats(conn, args, stats_func=engine.reset_errors, msg_topic=InfoCollectorTopic.RESET_ERRORS)
 
-        job_id = conn.get_prop(self.JOB_ID)
-        target_type = args[2]
-        if target_type == self.TARGET_TYPE_SERVER:
-            result = engine.reset_errors(job_id)
-            conn.append_any(result)
-        elif target_type == self.TARGET_TYPE_CLIENT:
-            message = new_message(conn, topic=InfoCollectorTopic.RESET_ERRORS, body="", require_authz=True)
-            message.set_header(RequestHeader.JOB_ID, job_id)
-            replies = self.send_request_to_clients(conn, message)
-            self._process_stats_replies(conn, replies)
-
-    def _process_stats_replies(self, conn, replies):
+    @staticmethod
+    def _process_stats_replies(conn, replies, result: dict):
         if not replies:
-            conn.append_error("no responses from clients")
             return
 
-        engine = conn.app_ctx
         for r in replies:
-            client_name = engine.get_client_name_from_token(r.client_token)
-
-            conn.append_string(f"--- Client ---: {client_name}")
+            client_name = r.client_name
             try:
                 body = json.loads(r.reply.body)
-                conn.append_any(body)
+                result[client_name] = body
             except BaseException:
-                conn.append_string("Bad responses from clients")
+                result[client_name] = "invalid_reply"
+                return

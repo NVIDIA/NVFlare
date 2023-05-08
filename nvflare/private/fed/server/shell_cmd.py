@@ -19,6 +19,7 @@ from typing import List
 
 from nvflare.fuel.hci.cmd_arg_utils import join_args
 from nvflare.fuel.hci.conn import Connection
+from nvflare.fuel.hci.proto import MetaStatusValue, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.shell_cmd_val import (
@@ -92,11 +93,13 @@ class _CommandExecutor(object):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
         clients, invalid_inputs = engine.validate_targets([target])
         if len(invalid_inputs) > 0:
-            conn.append_error("invalid client: {}".format(target))
+            msg = f"invalid target: {target}"
+            conn.append_error(msg, meta=make_meta(MetaStatusValue.INVALID_TARGET, info=msg))
             return
 
         if len(clients) > 1:
-            conn.append_error("this command can only be applied to one client at a time")
+            msg = "this command can only be applied to one client at a time"
+            conn.append_error(msg, meta=make_meta(MetaStatusValue.INVALID_TARGET, info=msg))
             return
 
         valid_tokens = []
@@ -107,13 +110,17 @@ class _CommandExecutor(object):
         server = conn.server
         reply = server.send_request_to_client(req, valid_tokens[0], timeout_secs=server.timeout)
         if reply is None:
-            conn.append_error("no reply from client - timed out")
+            conn.append_error(
+                "no reply from client - timed out", meta=make_meta(MetaStatusValue.INTERNAL_ERROR, "client timeout")
+            )
             return
 
         if not isinstance(reply, ClientReply):
             raise TypeError("reply must be ClientReply but got {}".format(type(reply)))
         if reply.reply is None:
-            conn.append_error("no reply from client - timed out")
+            conn.append_error(
+                "no reply from client - timed out", meta=make_meta(MetaStatusValue.INTERNAL_ERROR, "client timeout")
+            )
             return
         if not isinstance(reply.reply, Message):
             raise TypeError("reply in ClientReply must be Message but got {}".format(type(reply.reply)))

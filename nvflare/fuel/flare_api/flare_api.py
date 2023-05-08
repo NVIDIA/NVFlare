@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import os
 import time
 from typing import List, Optional
@@ -22,26 +23,41 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.client.api import AdminAPI, APIStatus, ResultKey
 from nvflare.fuel.hci.client.overseer_service_finder import ServiceFinderByOverseer
-from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue
+from nvflare.fuel.hci.cmd_arg_utils import (
+    process_targets_into_str,
+    validate_file_string,
+    validate_options_string,
+    validate_path_string,
+    validate_required_target_string,
+    validate_sp_string,
+)
+from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, ProtoKey
 
 from .api_spec import (
     AuthenticationError,
     AuthorizationError,
     ClientInfo,
+    ClientsStillRunning,
     InternalError,
     InvalidArgumentError,
     InvalidJobDefinition,
+    InvalidTarget,
     JobInfo,
     JobNotDone,
     JobNotFound,
+    JobNotRunning,
     MonitorReturnCode,
+    NoClientsAvailable,
     NoConnection,
     ServerInfo,
     SessionClosed,
     SessionSpec,
     SystemInfo,
+    TargetType,
 )
 from .config import FLAdminClientStarterConfigurator
+
+_VALID_TARGET_TYPES = [TargetType.ALL, TargetType.SERVER, TargetType.CLIENT]
 
 
 class Session(SessionSpec):
@@ -116,6 +132,7 @@ class Session(SessionSpec):
         )
         self.upload_dir = upload_dir
         self.download_dir = download_dir
+        self.overseer_agent = conf.overseer_agent
 
     def close(self):
         """Close the session
@@ -136,37 +153,49 @@ class Session(SessionSpec):
                 raise NoConnection(f"cannot connect to FLARE in {timeout} seconds")
             time.sleep(0.5)
 
-    def _do_command(self, command: str):
+    def _do_command(self, command: str, enforce_meta=True):
         if self.api.closed:
             raise SessionClosed("session closed")
 
         result = self.api.do_command(command)
-
         if not isinstance(result, dict):
             raise InternalError(f"result from server must be dict but got {type(result)}")
 
         # check meta status first
         meta = result.get(ResultKey.META, None)
-        if not meta:
+        if enforce_meta and not meta:
             raise InternalError("missing meta from result")
 
-        if not isinstance(meta, dict):
-            raise InternalError(f"meta must be dict but got {type(meta)}")
+        if meta:
+            if not isinstance(meta, dict):
+                raise InternalError(f"meta must be dict but got {type(meta)}")
 
-        cmd_status = meta.get(MetaKey.STATUS)
-        info = meta.get(MetaKey.INFO, "")
-        if cmd_status == MetaStatusValue.INVALID_JOB_DEFINITION:
-            raise InvalidJobDefinition(f"invalid job definition: {info}")
-        elif cmd_status == MetaStatusValue.NOT_AUTHORIZED:
-            raise AuthorizationError(f"user not authorized for the action '{command}: {info}'")
-        elif cmd_status == MetaStatusValue.SYNTAX_ERROR:
-            raise InternalError(f"protocol error: {info}")
-        elif cmd_status == MetaStatusValue.INVALID_JOB_ID:
-            raise JobNotFound(f"no such job: {info}")
-        elif cmd_status == MetaStatusValue.JOB_RUNNING:
-            raise JobNotDone(f"job {info} is still running")
-        elif cmd_status != MetaStatusValue.OK:
-            raise InternalError(f"server internal error ({cmd_status}): {info}")
+            cmd_status = meta.get(MetaKey.STATUS, MetaStatusValue.OK)
+            info = meta.get(MetaKey.INFO, "")
+            if cmd_status == MetaStatusValue.INVALID_JOB_DEFINITION:
+                raise InvalidJobDefinition(f"invalid job definition: {info}")
+            elif cmd_status == MetaStatusValue.NOT_AUTHORIZED:
+                raise AuthorizationError(f"user not authorized for the action '{command}: {info}'")
+            elif cmd_status == MetaStatusValue.NOT_AUTHENTICATED:
+                raise AuthenticationError(f"user not authenticated: {info}")
+            elif cmd_status == MetaStatusValue.SYNTAX_ERROR:
+                raise InternalError(f"syntax error: {info}")
+            elif cmd_status == MetaStatusValue.INVALID_JOB_ID:
+                raise JobNotFound(f"no such job: {info}")
+            elif cmd_status == MetaStatusValue.JOB_RUNNING:
+                raise JobNotDone(f"job {info} is still running")
+            elif cmd_status == MetaStatusValue.JOB_NOT_RUNNING:
+                raise JobNotRunning(f"job {info} is not running")
+            elif cmd_status == MetaStatusValue.CLIENTS_RUNNING:
+                raise ClientsStillRunning("one or more clients are still running")
+            elif cmd_status == MetaStatusValue.NO_CLIENTS:
+                raise NoClientsAvailable("no clients available")
+            elif cmd_status == MetaStatusValue.INTERNAL_ERROR:
+                raise InternalError(f"server internal error: {info}")
+            elif cmd_status == MetaStatusValue.INVALID_TARGET:
+                raise InvalidTarget(info)
+            elif cmd_status != MetaStatusValue.OK:
+                raise InternalError(f"{cmd_status}: {info}")
 
         status = result.get(ResultKey.STATUS, None)
         if not status:
@@ -188,7 +217,8 @@ class Session(SessionSpec):
 
         return result
 
-    def _validate_job_id(self, job_id: str):
+    @staticmethod
+    def _validate_job_id(job_id: str):
         if not job_id:
             raise JobNotFound("job_id is required but not specified.")
 
@@ -276,7 +306,7 @@ class Session(SessionSpec):
             id_prefix: if included, only return jobs with the beginning of the job ID matching the id_prefix
             name_prefix: if included, only return jobs with the beginning of the job name matching the name_prefix
             reverse: if specified, list jobs in the reverse order of submission times
-        Returns: a dict of job metadata
+        Returns: a list of job metadata
 
         """
         if not isinstance(detailed, bool):
@@ -371,7 +401,15 @@ class Session(SessionSpec):
         self._do_command(AdminCommandNames.DELETE_JOB + " " + job_id)
 
     def get_system_info(self):
-        result = self._do_command(AdminCommandNames.CHECK_STATUS + " server")
+        """Get general system information.
+
+        Returns: a SystemInfo object
+
+        """
+        return self._do_get_system_info(AdminCommandNames.CHECK_STATUS)
+
+    def _do_get_system_info(self, cmd: str):
+        result = self._do_command(f"{cmd} {TargetType.SERVER}")
         meta = result[ResultKey.META]
         server_info = ServerInfo(status=meta.get(MetaKey.SERVER_STATUS), start_time=meta.get(MetaKey.SERVER_START_TIME))
 
@@ -392,6 +430,384 @@ class Session(SessionSpec):
                 jobs.append(job_info)
 
         return SystemInfo(server_info=server_info, client_info=clients, job_info=jobs)
+
+    def get_client_job_status(self, client_names: List[str] = None) -> List[dict]:
+        """Get job status info of specified FL clients
+
+        Args:
+            client_names: names of the clients to get status info
+
+        Returns: A list of jobs running on the clients. Each job is described by a dict of: id, app name and status.
+        If there are multiple jobs running on one client, the list contains one entry for each job for that client.
+        If no FL clients are connected or the server failed to communicate to them, this method returns None.
+
+        """
+        parts = [AdminCommandNames.CHECK_STATUS, TargetType.CLIENT]
+        if client_names:
+            processed_targets_str = process_targets_into_str(client_names)
+            parts.append(processed_targets_str)
+
+        command = " ".join(parts)
+        result = self._do_command(command)
+        meta = result[ResultKey.META]
+        return meta.get(MetaKey.CLIENT_STATUS, None)
+
+    def restart(self, target_type: str, client_names: Optional[List[str]] = None) -> dict:
+        """
+        Restart specified system target(s)
+
+        Args:
+            target_type: what system target (server, client, or all) to restart
+            client_names: clients to be restarted if target_type is client. If not specified, all clients.
+
+        Returns: a dict that contains detailed info about the restart request:
+        status - the overall status of the result.
+        server_status - whether the server is restarted successfully - only if target_type is "all" or "server".
+        client_status - a dict (keyed on client name) that specifies status of each client - only if target_type
+        is "all" or "client".
+
+        """
+        if target_type not in _VALID_TARGET_TYPES:
+            raise ValueError(f"invalid target_type {target_type} - must be in {_VALID_TARGET_TYPES}")
+
+        parts = [AdminCommandNames.CHECK_STATUS, target_type]
+        if target_type == TargetType.CLIENT and client_names:
+            processed_targets_str = process_targets_into_str(client_names)
+            parts.append(processed_targets_str)
+
+        command = " ".join(parts)
+        result = self._do_command(command)
+        return result[ResultKey.META]
+
+    def shutdown(self, target_type: TargetType, client_names: Optional[List[str]] = None):
+        """Shut down specified system target(s)
+
+        Args:
+            target_type: what system target (server, client, or all) to shut down
+            client_names: clients to be shut down if target_type is client. If not specified, all clients.
+
+        Returns: None
+        """
+        if target_type not in _VALID_TARGET_TYPES:
+            raise ValueError(f"invalid target_type {target_type} - must be in {_VALID_TARGET_TYPES}")
+
+        parts = [AdminCommandNames.SHUTDOWN, target_type]
+        if target_type == TargetType.CLIENT and client_names:
+            processed_targets_str = process_targets_into_str(client_names)
+            parts.append(processed_targets_str)
+
+        command = " ".join(parts)
+        self._do_command(command)
+
+    def set_timeout(self, value: float):
+        """
+        Set a session-specific command timeout. This is the amount of time the server will wait for responses
+        after sending commands to FL clients.
+
+        Note that this value is only effective for the current API session.
+
+        Args:
+            value: a positive float number
+
+        Returns: None
+
+        """
+        self.api.set_command_timeout(value)
+
+    def unset_timeout(self):
+        """
+        Unset the session-specific command timeout. Once unset, the FL Admin Server's default will be used.
+
+        Returns: None
+
+        """
+        self.api.unset_command_timeout()
+
+    def list_sp(self) -> dict:
+        """List available service providers
+
+        Returns: a dict that contains information about the primary SP and others
+
+        """
+        reply = self._do_command("list_sp", enforce_meta=False)
+        return reply.get(ResultKey.DETAILS)
+
+    def get_active_sp(self) -> dict:
+        """Get the current active service provider (SP).
+
+        Returns: a dict that describes the current active SP. If no SP is available currently, the 'name' attribute of
+        the result is empty.
+        """
+        reply = self._do_command("get_active_sp", enforce_meta=False)
+        return reply.get(ResultKey.META)
+
+    def promote_sp(self, sp_end_point: str):
+        """Promote the specified endpoint to become the active SP.
+
+        Args:
+            sp_end_point: the endpoint of the SP. It's string in this format: <url>:<server_port>:<admin_port>
+
+        Returns: None
+
+        """
+        sp_end_point = validate_sp_string(sp_end_point)
+        self._do_command("promote_sp " + sp_end_point)
+
+    def get_available_apps_to_upload(self):
+        """Get defined FLARE app folders from the upload folder on the machine the FLARE API is running
+
+        Returns: a list of app folders
+
+        """
+        dir_list = []
+        for item in os.listdir(self.upload_dir):
+            if os.path.isdir(os.path.join(self.upload_dir, item)):
+                dir_list.append(item)
+        return dir_list
+
+    def shutdown_system(self):
+        """Shutdown the whole NVFLARE system including the overseer, FL server(s), and all FL clients.
+
+        Returns: None
+
+        Note: the user must be a Project Admin to use this method; otherwise the NOT_AUTHORIZED exception will raise.
+
+        """
+        sys_info = self._do_get_system_info(AdminCommandNames.ADMIN_CHECK_STATUS)
+        if sys_info.server_info.status != "stopped":
+            raise JobNotDone("there are still running jobs")
+
+        resp = self.overseer_agent.set_state("shutdown")
+        err = json.loads(resp.text).get("Error")
+        if err:
+            raise RuntimeError(err)
+
+    def ls_target(self, target: str, options: str = None, path: str = None) -> str:
+        """Run the "ls" command on the specified target and return result
+
+        Args:
+            target: the target (server or a client name) the command will run
+            options: options of the "ls" command
+            path: the optional file path
+
+        Returns: result of "ls" command
+
+        """
+        return self._shell_command_on_target("ls", target, options, path)
+
+    def cat_target(self, target: str, options: str = None, file: str = None) -> str:
+        """Run the "cat" command on the specified target and return result
+
+        Args:
+            target: the target (server or a client name) the command will run
+            options: options of the "cat" command
+            file: the file that the "cat" command will run against
+
+        Returns: result of "cat" command
+
+        """
+        return self._shell_command_on_target("cat", target, options, file, fp_required=True, fp_type="file")
+
+    def tail_target(self, target: str, options: str = None, file: str = None) -> str:
+        """Run the "tail" command on the specified target and return result
+
+        Args:
+            target: the target (server or a client name) the command will run
+            options: options of the "tail" command
+            file: the file that the "tail" command will run against
+
+        Returns: result of "tail" command
+
+        """
+        return self._shell_command_on_target("tail", target, options, file, fp_required=True, fp_type="file")
+
+    def tail_target_log(self, target: str, options: str = None) -> str:
+        """Run the "tail log.txt" command on the specified target and return result
+
+        Args:
+            target: the target (server or a client name) the command will run
+            options: options of the "tail" command
+
+        Returns: result of "tail" command
+
+        """
+        return self.tail_target(target, options, file="log.txt")
+
+    def head_target(self, target: str, options: str = None, file: str = None) -> str:
+        """Run the "head" command on the specified target and return result
+
+        Args:
+            target: the target (server or a client name) the command will run
+            options: options of the "head" command
+            file: the file that the "head" command will run against
+
+        Returns: result of "head" command
+
+        """
+        return self._shell_command_on_target("head", target, options, file, fp_required=True, fp_type="file")
+
+    def head_target_log(self, target: str, options: str = None) -> str:
+        """Run the "head log.txt" command on the specified target and return result
+
+        Args:
+            target: the target (server or a client name) the command will run
+            options: options of the "head" command
+
+        Returns: result of "head" command
+
+        """
+        return self.head_target(target, options, file="log.txt")
+
+    def grep_target(self, target: str, options: str = None, pattern: str = None, file: str = None) -> str:
+        """Run the "grep" command on the specified target and return result
+
+        Args:
+            target: the target (server or a client name) the command will run
+            options: options of the "grep" command
+            pattern: the grep pattern
+            file: the file that the "grep" command will run against
+
+        Returns: result of "grep" command
+
+        """
+        return self._shell_command_on_target(
+            "grep", target, options, file, pattern=pattern, pattern_required=True, fp_required=True, fp_type="file"
+        )
+
+    def get_working_directory(self, target: str) -> str:
+        """Get the working directory of the specified target
+
+        Args:
+            target: the target (server of a client name)
+
+        Returns: current working directory of the specified target
+
+        """
+        return self._shell_command_on_target("pwd", target, options=None, fp=None)
+
+    def _shell_command_on_target(
+        self,
+        cmd: str,
+        target: str,
+        options,
+        fp,
+        pattern=None,
+        pattern_required=False,
+        fp_required=False,
+        fp_type="path",
+    ) -> str:
+        target = validate_required_target_string(target)
+        parts = [cmd, target]
+        if options:
+            options = validate_options_string(options)
+            parts.append(options)
+
+        if pattern_required:
+            if not pattern:
+                raise SyntaxError("pattern is required but not specified.")
+            if not isinstance(pattern, str):
+                raise ValueError("pattern is not str.")
+            parts.append('"' + pattern + '"')
+
+        if fp_required and not fp:
+            raise SyntaxError(f"{fp_type} is required but not specified.")
+
+        if fp:
+            if fp_type == "path":
+                validate_path_string(fp)
+            else:
+                validate_file_string(fp)
+            parts.append(fp)
+        command = " ".join(parts)
+        reply = self._do_command(command, enforce_meta=False)
+        return self._get_string_data(reply)
+
+    @staticmethod
+    def _get_string_data(reply: dict) -> str:
+        result = ""
+        data_items = reply.get(ProtoKey.DATA, [])
+        for it in data_items:
+            if isinstance(it, dict):
+                if it.get(ProtoKey.TYPE) == ProtoKey.STRING:
+                    result += it.get(ProtoKey.DATA, "")
+        return result
+
+    @staticmethod
+    def _get_dict_data(reply: dict) -> dict:
+        result = {}
+        data_items = reply.get(ProtoKey.DATA, [])
+        for it in data_items:
+            if isinstance(it, dict):
+                if it.get(ProtoKey.TYPE) == ProtoKey.DICT:
+                    return it.get(ProtoKey.DATA, {})
+        return result
+
+    def show_stats(self, job_id: str, target_type: str, targets: Optional[List[str]] = None) -> dict:
+        """Show processing stats of specified job on specified targets
+
+        Args:
+            job_id: ID of the job
+            target_type: type of target (server or client)
+            targets: list of client names if target type is "client". All clients if not specified.
+
+        Returns: a dict that contains job stats on specified targets. The key of the dict is target name. The value is
+        a dict of stats reported by different system components (ServerRunner or ClientRunner).
+
+        """
+        return self._collect_info(AdminCommandNames.SHOW_STATS, job_id, target_type, targets)
+
+    def show_errors(self, job_id: str, target_type: str, targets: Optional[List[str]] = None) -> dict:
+        """Show processing errors of specified job on specified targets
+
+        Args:
+            job_id: ID of the job
+            target_type: type of target (server or client)
+            targets: list of client names if target type is "client". All clients if not specified.
+
+        Returns: a dict that contains job errors (if any) on specified targets. The key of the dict is target name.
+        The value is a dict of errors reported by different system components (ServerRunner or ClientRunner).
+
+        """
+        return self._collect_info(AdminCommandNames.SHOW_ERRORS, job_id, target_type, targets)
+
+    def reset_errors(self, job_id: str):
+        """Clear errors for all system targets for the specified job
+
+        Args:
+            job_id: ID of the job
+
+        Returns: None
+
+        """
+        self._collect_info(AdminCommandNames.RESET_ERRORS, job_id, TargetType.ALL)
+
+    def _collect_info(self, cmd: str, job_id: str, target_type: str, targets=None) -> dict:
+        if not job_id:
+            raise ValueError("job_id is required but not specified.")
+
+        if not isinstance(job_id, str):
+            raise TypeError("job_id must be str but got {}.".format(type(job_id)))
+
+        if target_type not in _VALID_TARGET_TYPES:
+            raise ValueError(f"invalid target_type {target_type}: must be one of {_VALID_TARGET_TYPES}")
+
+        parts = [cmd, job_id, target_type]
+        if target_type == TargetType.CLIENT and targets:
+            processed_targets_str = process_targets_into_str(targets)
+            parts.append(processed_targets_str)
+
+        command = " ".join(parts)
+        reply = self._do_command(command, enforce_meta=False)
+        return self._get_dict_data(reply)
+
+    def get_connected_client_list(self) -> List[ClientInfo]:
+        """Get the list of connected clients
+
+        Returns: a list of ClientInfo objects
+
+        """
+        sys_info = self.get_system_info()
+        return sys_info.client_info
 
     def monitor_job(
         self, job_id: str, timeout: float = 0.0, poll_interval: float = 2.0, cb=None, *cb_args, **cb_kwargs

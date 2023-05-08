@@ -79,7 +79,7 @@ class CertBuilder(Builder):
             self.persistent_state["root_pri_key"] = serialize_pri_key(self.pri_key).decode("ascii")
 
     def _build_write_cert_pair(self, participant, base_name, ctx):
-        subject = participant.subject
+        subject = self.get_subject(participant)
         if self.persistent_state and subject in self.persistent_state:
             cert = x509.load_pem_x509_certificate(
                 self.persistent_state[subject]["cert"].encode("ascii"), default_backend()
@@ -125,7 +125,7 @@ class CertBuilder(Builder):
 
     def get_pri_key_cert(self, participant):
         pri_key, pub_key = self._generate_keys()
-        subject = participant.subject
+        subject = self.get_subject(participant)
         subject_org = participant.org
         if participant.type == "admin":
             role = participant.props.get("role")
@@ -133,6 +133,9 @@ class CertBuilder(Builder):
             role = None
         cert = self._generate_cert(subject, subject_org, self.issuer, self.pri_key, pub_key, role=role)
         return pri_key, cert
+
+    def get_subject(self, participant):
+        return participant.subject
 
     def _generate_keys(self):
         pri_key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())

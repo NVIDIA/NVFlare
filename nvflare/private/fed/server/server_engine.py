@@ -735,7 +735,7 @@ class ServerEngine(ServerEngineInternalSpec):
             replies = self._send_admin_requests(requests, 15)
         result = {}
         for r in replies:
-            site_name = self.get_client_name_from_token(r.client_token)
+            site_name = r.client_name
             if r.reply:
                 error_code = r.reply.get_header(MsgHeader.RETURN_CODE, ReturnCode.OK)
                 if error_code != ReturnCode.OK:

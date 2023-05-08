@@ -14,9 +14,12 @@
 
 import argparse
 import io
+import os
 import re
 import shlex
 from typing import List
+
+from nvflare.apis.utils.format_check import type_pattern_mapping
 
 
 def split_to_args(line: str) -> List[str]:
@@ -68,3 +71,73 @@ class ArgValidator(argparse.ArgumentParser):
         usage_output = buffer.getvalue().split("\n", 1)[1]
         buffer.close()
         return usage_output
+
+
+def process_targets_into_str(targets: List[str]) -> str:
+    if not isinstance(targets, list):
+        raise SyntaxError("targets is not a list.")
+    if not all(isinstance(t, str) for t in targets):
+        raise SyntaxError("all targets in the list of targets must be strings.")
+    for t in targets:
+        try:
+            validate_required_target_string(t)
+        except SyntaxError:
+            raise SyntaxError(f"invalid target {t}")
+    return " ".join(targets)
+
+
+def validate_required_target_string(target: str) -> str:
+    """Returns the target string if it exists and is valid."""
+    if not target:
+        raise SyntaxError("target is required but not specified.")
+    if not isinstance(target, str):
+        raise SyntaxError("target is not str.")
+    if not re.match("^[A-Za-z0-9._-]*$", target):
+        raise SyntaxError("target must be a string of only valid characters and no spaces.")
+    return target
+
+
+def validate_options_string(options: str) -> str:
+    """Returns the options string if it is valid."""
+    if not isinstance(options, str):
+        raise SyntaxError("options is not str.")
+    if not re.match("^[A-Za-z0-9- ]*$", options):
+        raise SyntaxError("options must be a string of only valid characters.")
+    return options
+
+
+def validate_path_string(path: str) -> str:
+    """Returns the path string if it is valid."""
+    if not isinstance(path, str):
+        raise SyntaxError("path is not str.")
+    if not re.match("^[A-Za-z0-9-._/]*$", path):
+        raise SyntaxError("unsupported characters in path {}".format(path))
+    if os.path.isabs(path):
+        raise SyntaxError("absolute path is not allowed")
+    paths = path.split(os.path.sep)
+    for p in paths:
+        if p == "..":
+            raise SyntaxError(".. in path name is not allowed")
+    return path
+
+
+def validate_file_string(file: str) -> str:
+    """Returns the file string if it is valid."""
+    validate_path_string(file)
+    basename, file_extension = os.path.splitext(file)
+    if file_extension not in [".txt", ".log", ".json", ".csv", ".sh", ".config", ".py"]:
+        raise SyntaxError(
+            "this command cannot be applied to file {}. Only files with the following extensions are "
+            "permitted: .txt, .log, .json, .csv, .sh, .config, .py".format(file)
+        )
+    return file
+
+
+def validate_sp_string(sp_string) -> str:
+    if re.match(
+        type_pattern_mapping.get("sp_end_point"),
+        sp_string,
+    ):
+        return sp_string
+    else:
+        raise SyntaxError("sp_string must be of the format example.com:8002:8003")

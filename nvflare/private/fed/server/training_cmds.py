@@ -62,8 +62,8 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                 ),
                 CommandSpec(
                     name=AdminCommandNames.ADMIN_CHECK_STATUS,
-                    description="check status for shutdown system command",
-                    usage="admin_check_status",
+                    description="check status for project admin",
+                    usage="admin_check_status server|client",
                     handler_func=self.check_status,
                     authz_func=self.must_be_project_admin,
                     visible=False,
@@ -79,20 +79,12 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                 ),
                 CommandSpec(
                     name=AdminCommandNames.RESTART,
-                    description="restart the FL server/client",
-                    usage="restart server|client|all",
+                    description="restart FL server and/or clients",
+                    usage="restart server|client|all [clients]",
                     handler_func=self.restart,
                     authz_func=self.authorize_server_operation,
                     visible=True,
                     confirm=ConfirmMethod.AUTH,
-                ),
-                CommandSpec(
-                    name=AdminCommandNames.SET_TIMEOUT,
-                    description="set the admin commands timeout",
-                    usage="set_timeout seconds ",
-                    handler_func=self.set_timeout,
-                    authz_func=self.command_authz_required,
-                    visible=True,
                 ),
                 CommandSpec(
                     name=AdminCommandNames.SHOW_SCOPES,
@@ -106,19 +98,18 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         )
 
     # Shutdown
-    def _shutdown_app_on_server(self, conn: Connection) -> bool:
+    def _shutdown_app_on_server(self, conn: Connection) -> str:
         engine = conn.app_ctx
         err = engine.shutdown_server()
         if err:
             conn.append_error(err)
-            return False
+            return err
         else:
             conn.append_string("FL app has been shutdown.")
             conn.append_shutdown("Bye bye")
-            return True
+            return ""
 
     def _shutdown_app_on_clients(self, conn: Connection) -> bool:
-        engine = conn.app_ctx
         message = new_message(conn, topic=TrainingTopic.SHUTDOWN, body="", require_authz=True)
         clients = conn.get_prop(self.TARGET_CLIENT_TOKENS, None)
         if not clients:
@@ -148,29 +139,33 @@ class TrainingCommandModule(CommandModule, CommandUtil):
 
         for _, job in engine.job_runner.running_jobs.items():
             if not job.run_aborted:
-                conn.append_error("There are still jobs running. Please let them finish or abort_job before shutdown.")
+                conn.append_error(
+                    "There are still jobs running. Please let them finish or abort_job before shutdown.",
+                    meta=make_meta(MetaStatusValue.JOB_RUNNING, info=job.job_id),
+                )
                 return
 
         if target_type == self.TARGET_TYPE_SERVER:
             if engine.get_clients():
-                conn.append_error("There are still active clients. Shutdown all clients first.")
+                conn.append_error(
+                    "There are still active clients. Shutdown all clients first.",
+                    meta=make_meta(MetaStatusValue.CLIENTS_RUNNING),
+                )
                 return
-            if not self._shutdown_app_on_server(conn):
+
+        if target_type in [self.TARGET_TYPE_CLIENT, self.TARGET_TYPE_ALL]:
+            # must shut down clients first
+            success = self._shutdown_app_on_clients(conn)
+            if not success:
+                conn.update_meta(make_meta(MetaStatusValue.ERROR, "failed to shut down all clients"))
                 return
-        elif target_type == self.TARGET_TYPE_CLIENT:
-            if not self._shutdown_app_on_clients(conn):
+
+        if target_type in [self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
+            # shut down the server
+            err = self._shutdown_app_on_server(conn)
+            if err:
+                conn.update_meta(make_meta(MetaStatusValue.ERROR, info=err))
                 return
-        else:
-            # all
-            if engine.get_clients():
-                conn.append_string("Trying to shutdown clients before server...")
-                success = self._shutdown_app_on_clients(conn)
-                if success:
-                    if not self._shutdown_app_on_server(conn):
-                        return
-            else:
-                if not self._shutdown_app_on_server(conn):
-                    return
         conn.append_success("")
 
     # Remove Clients
@@ -186,7 +181,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
         conn.append_success("")
 
     # Restart
-    def _restart_clients(self, conn, clients) -> str:
+    def _restart_clients(self, conn) -> str:
         engine = conn.app_ctx
         if not isinstance(engine, ServerEngineInternalSpec):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
@@ -201,12 +196,12 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             raise TypeError("engine must be ServerEngine but got {}".format(type(engine)))
 
         if engine.job_runner.running_jobs:
-            conn.append_error("There are still jobs running. Please let them finish or abort_job before restart.")
+            msg = "There are still jobs running. Please let them finish or abort_job before restart."
+            conn.append_error(msg, meta=make_meta(MetaStatusValue.JOB_RUNNING, msg))
             return
 
         target_type = args[1]
-        if target_type == self.TARGET_TYPE_SERVER or target_type == self.TARGET_TYPE_ALL:
-
+        if target_type in [self.TARGET_TYPE_SERVER, self.TARGET_TYPE_ALL]:
             clients = engine.get_clients()
             if clients:
                 conn.append_string("Trying to restart all clients before restarting server...")
@@ -214,32 +209,24 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                 conn.set_prop(
                     self.TARGET_CLIENT_TOKENS, tokens
                 )  # need this because not set in validate_command_targets when target_type == self.TARGET_TYPE_SERVER
-                response = self._restart_clients(conn, tokens)
+                response = self._restart_clients(conn)
                 conn.append_string(response)
                 # check with Isaac - no need to wait!
                 # time.sleep(5)
 
             err = engine.restart_server()
             if err:
-                conn.append_error(err)
+                conn.append_error(err, meta={MetaKey.SERVER_STATUS: MetaStatusValue.ERROR, MetaKey.INFO: err})
             else:
-                conn.append_string("Server scheduled for restart")
+                conn.append_string("Server scheduled for restart", meta={MetaKey.SERVER_STATUS: MetaStatusValue.OK})
         elif target_type == self.TARGET_TYPE_CLIENT:
             clients = conn.get_prop(self.TARGET_CLIENT_TOKENS)
             if not clients:
-                conn.append_error("no clients available")
+                conn.append_error("no clients available", meta=make_meta(MetaStatusValue.NO_CLIENTS, "no clients"))
                 return
             else:
-                response = self._restart_clients(conn, clients)
+                response = self._restart_clients(conn)
                 conn.append_string(response)
-        conn.append_success("")
-
-    # Set Timeout
-    def set_timeout(self, conn: Connection, args: List[str]):
-        timeout = float(args[1])
-        server = conn.server
-        server.timeout = timeout
-        conn.append_string("admin command timeout has been set to: {}".format(timeout))
         conn.append_success("")
 
     # Check status
@@ -295,16 +282,18 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             conn.append_error("no responses from clients")
             return
 
-        engine = conn.app_ctx
-        table = conn.append_table(["client", "app_name", "job_id", "status"])
+        table = conn.append_table(["client", "app_name", "job_id", "status"], name=MetaKey.CLIENT_STATUS)
         for r in replies:
             job_id = "?"
             app_name = "?"
-            client_name = engine.get_client_name_from_token(r.client_token)
+            client_name = r.client_name
 
             if r.reply:
                 if r.reply.get_header(MsgHeader.RETURN_CODE) == ReturnCode.ERROR:
-                    table.add_row([client_name, app_name, job_id, r.reply.body])
+                    table.add_row(
+                        [client_name, app_name, job_id, r.reply.body],
+                        meta={MetaKey.CLIENT_NAME: client_name, MetaKey.STATUS: MetaStatusValue.ERROR},
+                    )
                 else:
                     try:
                         body = json.loads(r.reply.body)
@@ -315,13 +304,27 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                                     app_name = job.get(ClientStatusKey.APP_NAME, "?")
                                     job_id = job.get(ClientStatusKey.JOB_ID, "?")
                                     status = job.get(ClientStatusKey.STATUS, "?")
-                                    table.add_row([client_name, app_name, job_id, status])
+                                    table.add_row(
+                                        [client_name, app_name, job_id, status],
+                                        meta={
+                                            MetaKey.CLIENT_NAME: client_name,
+                                            MetaKey.APP_NAME: app_name,
+                                            MetaKey.JOB_ID: job_id,
+                                            MetaKey.STATUS: status,
+                                        },
+                                    )
                             else:
-                                table.add_row([client_name, app_name, job_id, "No Jobs"])
+                                table.add_row(
+                                    [client_name, app_name, job_id, "No Jobs"],
+                                    meta={MetaKey.CLIENT_NAME: client_name, MetaKey.STATUS: MetaStatusValue.NO_JOBS},
+                                )
                     except BaseException as e:
                         self.logger.error(f"Bad reply from client: {secure_format_exception(e)}")
             else:
-                table.add_row([client_name, app_name, job_id, "No Reply"])
+                table.add_row(
+                    [client_name, app_name, job_id, "No Reply"],
+                    meta={MetaKey.CLIENT_NAME: client_name, MetaKey.STATUS: MetaStatusValue.NO_REPLY},
+                )
 
     def _add_scope_info(self, table, site_name, scope_names: List[str], default_scope: str):
         if not scope_names:
@@ -335,9 +338,8 @@ class TrainingCommandModule(CommandModule, CommandUtil):
             conn.append_error("no responses from clients")
             return
 
-        engine = conn.app_ctx
         for r in replies:
-            client_name = engine.get_client_name_from_token(r.client_token)
+            client_name = r.client_name
 
             if r.reply:
                 if r.reply.get_header(MsgHeader.RETURN_CODE) == ReturnCode.ERROR:

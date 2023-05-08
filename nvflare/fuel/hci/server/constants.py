@@ -34,3 +34,4 @@ class ConnProps(object):
     CMD_ENTRY = "_cmdEntry"
     JOB_DATA = "_jobData"
     JOB_META = "_jobMeta"
+    CMD_TIMEOUT = "_cmdTimeout"
