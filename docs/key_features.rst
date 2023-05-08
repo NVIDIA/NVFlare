@@ -17,9 +17,9 @@ To accomplish these goals, a set of key new tools and features were developed, i
  - FL Simulator
  - FLARE Dashboard
  - Site-policy management
- - Federated XGboost <https://github.com/NVIDIA/NVFlare/tree/main/examples/xgboost>
- - Federated Statistics <https://github.com/NVIDIA/NVFlare/tree/main/examples/federated_statistics>
- - MONAI Integration <https://github.com/NVIDIA/NVFlare/tree/main/integration/monai>
+ - Federated XGboost <https://github.com/NVIDIA/NVFlare/tree/2.2/examples/xgboost>
+ - Federated Statistics <https://github.com/NVIDIA/NVFlare/tree/2.2/examples/federated_statistics>
+ - MONAI Integration <https://github.com/NVIDIA/NVFlare/tree/2.2/integration/monai>
 
 The sections below provide an overview of these features.  For more detailed documentation and usage information, refer to the :ref:`User Guide <user_guide>` and :ref:`Programming Guide <programming_guide>`.
 
@@ -80,7 +80,7 @@ Federated XGBoost
 
 XGBoost is a popular machine learning method used by applied data scientists in a wide variety of applications. In FLARE v2.2,
 we introcuce federated XGBoost integration, with a controller and executor that run distributed XGBoost training among a group
-of clients.  See the `hello-xgboost example <https://github.com/NVIDIA/NVFlare/tree/main/examples/xgboost>`_ to get started.
+of clients.  See the `hello-xgboost example <https://github.com/NVIDIA/NVFlare/tree/2.2/examples/xgboost>`_ to get started.
 
 Federated Statistics
 """"""""""""""""""""
@@ -176,10 +176,10 @@ Learning Algorithms
       a set of initial weights is distributed to client Workers who perform local training.  After local training,
       clients return their local weights as a Shareables that are aggregated (averaged).  This new set of global average
       weights is redistributed to clients and the process repeats for the specified number of rounds.
-    - `FedProx <https://arxiv.org/abs/1812.06127>`_ (example configuration can be found in cifar10_fedprox of `CIFAR-10 example <https://github.com/NVIDIA/NVFlare/tree/main/examples/cifar10>`_) -
+    - `FedProx <https://arxiv.org/abs/1812.06127>`_ (example configuration can be found in cifar10_fedprox of `CIFAR-10 example <https://github.com/NVIDIA/NVFlare/tree/2.2/examples/cifar10>`_) -
       implements a :class:`Loss function <nvflare.app_common.pt.pt_fedproxloss.PTFedProxLoss>` to penalize a client's
       local weights based on deviation from the global model.
-    - `FedOpt <https://arxiv.org/abs/2003.00295>`_ (example configuration can be found in cifar10_fedopt of `CIFAR-10 example <https://github.com/NVIDIA/NVFlare/tree/main/examples/cifar10>`_) -
+    - `FedOpt <https://arxiv.org/abs/2003.00295>`_ (example configuration can be found in cifar10_fedopt of `CIFAR-10 example <https://github.com/NVIDIA/NVFlare/tree/2.2/examples/cifar10>`_) -
       implements a :class:`ShareableGenerator <nvflare.app_common.pt.pt_fedopt.PTFedOptModelShareableGenerator>` that
       can use a specified Optimizer and Learning Rate Scheduler when updating the global model.
 

@@ -232,7 +232,7 @@ general-purpose data filtering mechanism for processing task data and results:
 This mechanism has been used for the purpose of data privacy protection on the client side. For example, differential
 privacy filters can be applied to model weights before sending to the server for aggregation.
 
-NVFLARE has implemented some commonly used privacy protection filters: https://github.com/NVIDIA/NVFlare/tree/main/nvflare/app_common/filters
+NVFLARE has implemented some commonly used privacy protection filters: https://github.com/NVIDIA/NVFlare/tree/2.2/nvflare/app_common/filters
 
 Admin Capabilities
 -------------------

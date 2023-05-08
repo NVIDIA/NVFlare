@@ -7,15 +7,15 @@
 
 Prior to NVFLARE 2.1.4, NVFLARE is using python pickle to transfer data between client and server, since 2.1.4, 
 we switched to Flare Object Serializer (FOBS), you might experience failures if your code is still using Pickle. 
-To migrate the code or you experience error due to this, please refer to [Flare Object Serializer (FOBS)](https://github.com/NVIDIA/NVFlare/tree/main/nvflare/fuel/utils/fobs/README.rst)
+To migrate the code or you experience error due to this, please refer to [Flare Object Serializer (FOBS)](https://github.com/NVIDIA/NVFlare/tree/2.2/nvflare/fuel/utils/fobs/README.rst)
 
 Another type of failure is due to data types that are not supported by FOBS. By default FOBS supports some data types, if the data type (Custom Class or Class from 3rd parties)
-is not part of supported FOBS data type, then you need to follow [Flare Object Serializer (FOBS)](https://github.com/NVIDIA/NVFlare/tree/main/nvflare/fuel/utils/fobs/README.rst) instructions.
+is not part of supported FOBS data type, then you need to follow [Flare Object Serializer (FOBS)](https://github.com/NVIDIA/NVFlare/tree/2.2/nvflare/fuel/utils/fobs/README.rst) instructions.
 Essentially, to address this type of issue, you need to do the following steps: 
 * create a FobDecomposer class for the targeted data type
 
 * Registered the newly created FobDecomposer before the data type is transmitted between client and server.  
-The following examples are directly copied from [Flare Object Serializer (FOBS)](https://github.com/NVIDIA/NVFlare/tree/main/nvflare/fuel/utils/fobs/README.rst).
+The following examples are directly copied from [Flare Object Serializer (FOBS)](https://github.com/NVIDIA/NVFlare/tree/2.2/nvflare/fuel/utils/fobs/README.rst).
 ```
 from nvflare.fuel.utils import fobs
 
@@ -73,7 +73,7 @@ re-provision your project
 
 ### Use new Project.yml template
 
-Since 2.2.1, we enabled federated site policies which require the new project.yml template. Please refer [default project.yml](https://nvflare.readthedocs.io/en/main/programming_guide/provisioning_system.html#default-project-yml-file)  
+Since 2.2.1, we enabled federated site policies which require the new project.yml template. Please refer [default project.yml](https://nvflare.readthedocs.io/en/2.2/programming_guide/provisioning_system.html#default-project-yml-file)  
 
 ### New local directory
 With 2.2.1, the provision will produce not only the ```startup``` directory, but a ```local``` directory. 

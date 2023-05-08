@@ -238,4 +238,4 @@ Congratulations!
 You've successfully built and run your first federated learning system.
 
 The full source code for this exercise can be found in
-`examples/hello-pt <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-pt/>`_.
+`examples/hello-pt <https://github.com/NVIDIA/NVFlare/tree/2.2/examples/hello-pt/>`_.

@@ -33,7 +33,7 @@ After using FLAdminAPI, the overseer_agent must be cleaned up with a call to:
 
 Usage
 -----
-See the example scripts ``run_fl.py`` in `CIFAR-10 <https://github.com/NVIDIA/NVFlare/tree/main/examples/cifar10>`_ for
+See the example scripts ``run_fl.py`` in `CIFAR-10 <https://github.com/NVIDIA/NVFlare/tree/2.2/examples/cifar10>`_ for
 an example of how to use the FLAdminAPI with FLAdminAPIRunner.
 
 You can use the example as inspiration to write your own code using the FLAdminAPI to operate your FL system.

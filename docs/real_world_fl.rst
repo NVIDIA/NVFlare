@@ -13,7 +13,7 @@ help gather information to provision a project and distribute startup kits, see 
 For more details on what you can do with apps with custom components and
 the flexibility that the Controller and Worker APIs bring, see the :ref:`programming_guide`.
 
-You can also see some `example applications <https://github.com/NVIDIA/NVFlare/tree/main/examples>`_ integrating with
+You can also see some `example applications <https://github.com/NVIDIA/NVFlare/tree/2.2/examples>`_ integrating with
 `Clara Train <https://docs.nvidia.com/clara/clara-train-sdk/>`_ and
 `MONAI <https://github.com/Project-MONAI/tutorials/tree/master/federated_learning/nvflare>`_
 to see the capabilities of the system and how it can be operated.

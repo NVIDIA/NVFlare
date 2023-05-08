@@ -1,12 +1,12 @@
 # Hello PyTorch
 
-Example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) to train an image classifier using federated averaging ([FedAvg]([FedAvg](https://arxiv.org/abs/1602.05629))) and [PyTorch](https://pytorch.org/) as the deep learning training framework.
+Example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/2.2/index.html) to train an image classifier using federated averaging ([FedAvg]([FedAvg](https://arxiv.org/abs/1602.05629))) and [PyTorch](https://pytorch.org/) as the deep learning training framework.
 
 > **_NOTE:_** This example uses the [CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html) dataset and will load its data within the trainer code.
 
 ### 1. Install NVIDIA FLARE
 
-Follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions.
+Follow the [Installation](https://nvflare.readthedocs.io/en/2.2/quickstart.html) instructions.
 Install additional requirements:
 
 ```

@@ -23,7 +23,7 @@ NVFlare executes the `ClientAlgo` class using the `ClientAlgoExecutor` class pro
 
 ### Examples
 
-For an example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) to train a medical image analysis model using federated averaging ([FedAvg]([FedAvg](https://arxiv.org/abs/1602.05629))) and [MONAI Bundle](https://docs.monai.io/en/latest/mb_specification.html), see the [examples/spleen_ct_segmentation](./examples/spleen_ct_segmentation).
+For an example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/2.2/index.html) to train a medical image analysis model using federated averaging ([FedAvg]([FedAvg](https://arxiv.org/abs/1602.05629))) and [MONAI Bundle](https://docs.monai.io/en/latest/mb_specification.html), see the [examples/spleen_ct_segmentation](./examples/spleen_ct_segmentation).
 
 ## Requirements
 
