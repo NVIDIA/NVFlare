@@ -24,7 +24,7 @@ bash run_experiment_centralized.sh
 
 ### Run federated experiments in real world
 
-To run in a federated setting, follow [Real-World FL](https://nvflare.readthedocs.io/en/main/real_world_fl.html) to
+To run in a federated setting, follow [Real-World FL](https://nvflare.readthedocs.io/en/2.2/real_world_fl.html) to
 start the overseer, FL servers and FL clients.
 
 You need to download the HIGGS data on each client site.

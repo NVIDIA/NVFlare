@@ -3,7 +3,7 @@
 ## Introduction to XGBoost and HIGGS Data
 
 ### XGBoost
-These examples show how to use [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) on tabular data applications.
+These examples show how to use [NVIDIA FLARE](https://nvflare.readthedocs.io/en/2.2/index.html) on tabular data applications.
 They use [XGBoost](https://github.com/dmlc/xgboost),
 which is an optimized distributed gradient boosting library.
 
@@ -86,7 +86,7 @@ If you want to customize for your experiments, please check `utils/prepare_data_
 
 ## HIGGS job configs preparation under various training schemes
 
-Please follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions to install NVFlare.
+Please follow the [Installation](https://nvflare.readthedocs.io/en/2.2/quickstart.html) instructions to install NVFlare.
 
 We then prepare the NVFlare job configs for different settings by running
 ```

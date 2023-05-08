@@ -13,5 +13,5 @@ flow implemented through the :meth:`control_flow()<control_flow>` method based o
 
 Example with Cyclic Workflow
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-See the `Hello Cyclic Example <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-cyclic>`_ for an example application with
+See the `Hello Cyclic Example <https://github.com/NVIDIA/NVFlare/tree/2.2/examples/hello-cyclic>`_ for an example application with
 the cyclic workflow.

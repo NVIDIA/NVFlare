@@ -1,12 +1,12 @@
 # Hello PyTorch with Tensorboard Streaming
 
-Example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) to train an image classifier using federated averaging ([FedAvg]([FedAvg](https://arxiv.org/abs/1602.05629))) and [PyTorch](https://pytorch.org/) as the deep learning training framework. This example also highlights the TensorBoard streaming capability from the clients to the server.
+Example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/2.2/index.html) to train an image classifier using federated averaging ([FedAvg]([FedAvg](https://arxiv.org/abs/1602.05629))) and [PyTorch](https://pytorch.org/) as the deep learning training framework. This example also highlights the TensorBoard streaming capability from the clients to the server.
 
 > **_NOTE:_** This example uses the [CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html) dataset and will load its data within the trainer code.
 
 ### 1. Install NVIDIA FLARE
 
-Follow the [Installation](https://nvflare.readthedocs.io/en/main/quickstart.html) instructions.
+Follow the [Installation](https://nvflare.readthedocs.io/en/2.2/quickstart.html) instructions.
 Install additional requirements:
 
 ```
@@ -53,4 +53,4 @@ For example:
 ssh -L {local_machine_port}:127.0.0.1:6006 user@server_ip)
 ```
 
-> **_NOTE:_** For a more in-depth guide about the TensorBoard streaming feature, see [Quickstart (PyTorch with TensorBoard)](https://nvflare.readthedocs.io/en/main/examples/hello_pt_tb.html).
+> **_NOTE:_** For a more in-depth guide about the TensorBoard streaming feature, see [Quickstart (PyTorch with TensorBoard)](https://nvflare.readthedocs.io/en/2.2/examples/hello_pt_tb.html).

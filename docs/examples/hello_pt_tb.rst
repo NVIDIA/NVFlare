@@ -160,5 +160,5 @@ Congratulations!
 Now you will be able to see the live training metrics of each client from a central place on the server.
 
 The full source code for this exercise can be found in
-`examples/hello-pt-tb <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-pt-tb>`_.
+`examples/hello-pt-tb <https://github.com/NVIDIA/NVFlare/tree/2.2/examples/hello-pt-tb>`_.
 

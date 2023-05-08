@@ -3,7 +3,7 @@
 In this example, we will show how to generate federated statistics for data that be represented as Pandas Data Frame
 
 ## setup NVFLARE
-follow the [Quick Start Guide](https://nvflare.readthedocs.io/en/main/quickstart.html) to setup virtual environment and install NVFLARE
+follow the [Quick Start Guide](https://nvflare.readthedocs.io/en/2.2/quickstart.html) to setup virtual environment and install NVFLARE
 ```
 install required packages.
 ```

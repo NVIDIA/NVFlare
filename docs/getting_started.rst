@@ -102,7 +102,7 @@ and instructions for this can be found in the `NVIDIA Container Toolkit Install 
 
 A simple Dockerfile is used to capture the base requirements and dependencies.  In
 this case, we're building an environment that will support PyTorch-based workflows,
-in particular the `Hello PyTorch with Tensorboard Streaming <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-pt-tb>`_
+in particular the `Hello PyTorch with Tensorboard Streaming <https://github.com/NVIDIA/NVFlare/tree/2.2/examples/hello-pt-tb>`_
 example. The base for this build is the NGC PyTorch container.  On this base image,
 we will install the necessary dependencies and clone the NVIDIA FLARE GitHub
 source code into the root workspace directory. To create a Dockerfile, create a file named ``Dockerfile``
@@ -241,32 +241,32 @@ Tensorboard event files.
   simulator-example/workspace/
   ├── audit.log
   ├── local
-      │  └── log.config
+      │  └── log.config
       ├── simulate_job
-      │  ├── app_server
-      │  │   ├── config
-      │  │   ├── custom
-      │  │   └── FL_global_model.pt
-      │  ├── app_site-1
-      │  │   ├── audit.log
-      │  │   ├── config
-      │  │   ├── custom
-      │  │   └── log.txt
-      │  ├── app_site-2
-      │  │   ├── audit.log
-      │  │   ├── config
-      │  │   ├── custom
-      │  │   └── log.txt
-      │  ├── cross_site_val
-      │  │   ├── cross_val_results.json
-      │  │   ├── model_shareables
-      │  │   └── result_shareables
-      │  ├── log.txt
-      │  ├── models
-      │  │   └── local_model.pt
-      │  └── tb_events
-      │      ├── site-1
-      │      └── site-2
+      │  ├── app_server
+      │  │   ├── config
+      │  │   ├── custom
+      │  │   └── FL_global_model.pt
+      │  ├── app_site-1
+      │  │   ├── audit.log
+      │  │   ├── config
+      │  │   ├── custom
+      │  │   └── log.txt
+      │  ├── app_site-2
+      │  │   ├── audit.log
+      │  │   ├── config
+      │  │   ├── custom
+      │  │   └── log.txt
+      │  ├── cross_site_val
+      │  │   ├── cross_val_results.json
+      │  │   ├── model_shareables
+      │  │   └── result_shareables
+      │  ├── log.txt
+      │  ├── models
+      │  │   └── local_model.pt
+      │  └── tb_events
+      │      ├── site-1
+      │      └── site-2
       └── startup
 
 
