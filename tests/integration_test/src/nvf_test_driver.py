@@ -12,16 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import logging
 import os
 import time
 
 from nvflare.apis.job_def import RunStatus
 from nvflare.fuel.hci.client.api_status import APIStatus
-from nvflare.fuel.hci.client.fl_admin_api import FLAdminAPI
 from nvflare.fuel.hci.client.fl_admin_api_spec import TargetType
-from nvflare.fuel.utils.class_utils import instantiate_class
 from tests.integration_test.src.action_handlers import (
     _AbortJobHandler,
     _AdminCommandsHandler,
@@ -37,7 +34,12 @@ from tests.integration_test.src.action_handlers import (
     _TestDoneHandler,
 )
 from tests.integration_test.src.site_launcher import SiteLauncher
-from tests.integration_test.src.utils import check_client_status_ready, get_job_meta
+from tests.integration_test.src.utils import (
+    check_client_status_ready,
+    create_admin_api,
+    ensure_admin_api_logged_in,
+    get_job_meta,
+)
 
 
 class NVFTestError(Exception):
@@ -45,6 +47,12 @@ class NVFTestError(Exception):
 
 
 def _parse_workflow_states(stats_message: dict):
+    # {
+    #     'ScatterAndGather':
+    #         {'tasks': {'train': []}, 'phase': 'train', 'current_round': 1, 'num_rounds': 2},
+    #     'ServerRunner':
+    #         {'job_id': 'xxx', 'status': 'started', 'workflow': 'scatter_and_gather'}
+    # }
     workflow_states = {}
     if not stats_message:
         return workflow_states
@@ -98,80 +106,25 @@ def _check_event_trigger(
         raise NVFTestError(f"event_trigger type {type(event_trigger)} is not supported.")
 
 
-def _read_admin_json_file(admin_json_file) -> dict:
-    if not os.path.exists(admin_json_file):
-        raise NVFTestError("Missing admin json file.")
-    with open(admin_json_file, "r") as f:
-        admin_json = json.load(f)
-    return admin_json
-
-
-def _create_admin_api(workspace_root_dir, upload_root_dir, download_root_dir, admin_user_name, poc):
-    admin_startup_folder = os.path.join(workspace_root_dir, admin_user_name, "startup")
-    admin_json_file = os.path.join(admin_startup_folder, "fed_admin.json")
-    admin_json = _read_admin_json_file(admin_json_file)
-    overseer_agent = instantiate_class(
-        class_path=admin_json["admin"]["overseer_agent"]["path"],
-        init_params=admin_json["admin"]["overseer_agent"]["args"],
-    )
-
-    ca_cert = ""
-    client_key = ""
-    client_cert = ""
-    if not poc:
-        ca_cert = os.path.join(admin_startup_folder, admin_json["admin"]["ca_cert"])
-        client_key = os.path.join(admin_startup_folder, admin_json["admin"]["client_key"])
-        client_cert = os.path.join(admin_startup_folder, admin_json["admin"]["client_cert"])
-
-    admin_api = FLAdminAPI(
-        upload_dir=upload_root_dir,
-        download_dir=download_root_dir,
-        overseer_agent=overseer_agent,
-        poc=poc,
-        user_name=admin_user_name,
-        ca_cert=ca_cert,
-        client_key=client_key,
-        client_cert=client_cert,
-        auto_login_max_tries=20,
-    )
-    return admin_api
-
-
-def _ensure_admin_api_logged_in(admin_api: FLAdminAPI, timeout: int = 60):
-    login_success = False
-    try:
-        start_time = time.time()
-        while time.time() - start_time <= timeout:
-            if admin_api.is_ready():
-                login_success = True
-                break
-            time.sleep(0.2)
-
-        if not login_success:
-            print(f"Admin api failed to log in within {timeout} seconds: {admin_api.fsm.current_state}.")
-        else:
-            print("Admin successfully logged into server.")
-    except Exception as e:
-        print(f"Exception in logging in to admin: {e.__str__()}")
-    return login_success
-
-
 def _update_run_state(stats: dict, run_state: dict, job_run_status: str):
     # extract run_state from stats
+    # for stats structure please refer to "nvflare/private/fed/server/info_coll_cmd.py"
     # {'status': <APIStatus.SUCCESS: 'SUCCESS'>,
     #        'details': {
     #           'message': {
-    #               'ScatterAndGather': {
-    #                   'tasks': {'train': []},
-    #                   'phase': 'train',
-    #                   'current_round': 0,
-    #                   'num_rounds': 2},
-    #               'CrossSiteModelEval':
-    #                   {'tasks': {}},
-    #               'ServerRunner': {
-    #                   'job_id': XXX,
-    #                   'status': 'started',
-    #                   'workflow': 'scatter_and_gather'
+    #               'server': {
+    #                   'ScatterAndGather': {
+    #                       'tasks': {'train': []},
+    #                       'phase': 'train',
+    #                       'current_round': 0,
+    #                       'num_rounds': 2},
+    #                   'CrossSiteModelEval':
+    #                       {'tasks': {}},
+    #                   'ServerRunner': {
+    #                       'job_id': XXX,
+    #                       'status': 'started',
+    #                       'workflow': 'scatter_and_gather'
+    #                    }
     #                }
     #            }
     #       },
@@ -186,8 +139,9 @@ def _update_run_state(stats: dict, run_state: dict, job_run_status: str):
         and "details" in stats
         and "message" in stats["details"]
         and isinstance(stats["details"]["message"], dict)
+        and "server" in stats["details"]["message"]
     ):
-        run_state["workflows"] = _parse_workflow_states(stats_message=stats["details"]["message"])
+        run_state["workflows"] = _parse_workflow_states(stats_message=stats["details"]["message"]["server"])
 
     # parse job status
     run_state["run_finished"] = job_run_status == RunStatus.FINISHED_COMPLETED.value
@@ -236,14 +190,18 @@ class NVFTestDriver:
 
     def initialize_super_user(self, workspace_root_dir: str, upload_root_dir: str, poc: bool, super_user_name: str):
         self.super_admin_user_name = super_user_name
-        admin_api = _create_admin_api(
-            workspace_root_dir=workspace_root_dir,
-            upload_root_dir=upload_root_dir,
-            download_root_dir=self.download_root_dir,
-            admin_user_name=super_user_name,
-            poc=poc,
-        )
-        if not _ensure_admin_api_logged_in(admin_api):
+        try:
+            admin_api = create_admin_api(
+                workspace_root_dir=workspace_root_dir,
+                upload_root_dir=upload_root_dir,
+                download_root_dir=self.download_root_dir,
+                admin_user_name=super_user_name,
+                poc=poc,
+            )
+            login_result = ensure_admin_api_logged_in(admin_api)
+        except Exception as e:
+            raise NVFTestError(f"create and login to admin failed: {e}")
+        if not login_result:
             raise NVFTestError(f"initialize_super_user {super_user_name} failed.")
 
         self.super_admin_api = admin_api
@@ -252,14 +210,18 @@ class NVFTestDriver:
         for user_name in admin_user_names:
             if user_name == self.super_admin_user_name:
                 continue
-            admin_api = _create_admin_api(
-                workspace_root_dir=workspace_root_dir,
-                upload_root_dir=upload_root_dir,
-                download_root_dir=self.download_root_dir,
-                admin_user_name=user_name,
-                poc=poc,
-            )
-            login_result = _ensure_admin_api_logged_in(admin_api)
+            try:
+                admin_api = create_admin_api(
+                    workspace_root_dir=workspace_root_dir,
+                    upload_root_dir=upload_root_dir,
+                    download_root_dir=self.download_root_dir,
+                    admin_user_name=user_name,
+                    poc=poc,
+                )
+                login_result = ensure_admin_api_logged_in(admin_api)
+            except Exception as e:
+                self.admin_apis = None
+                raise NVFTestError(f"create and login to admin failed: {e}")
             if not login_result:
                 self.admin_apis = None
                 raise NVFTestError(f"initialize_admin_users {user_name} failed.")
