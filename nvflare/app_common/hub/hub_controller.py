@@ -186,7 +186,7 @@ class RelayOperator(OperatorSpec, FLComponent):
             targets=targets,
             task_assignment_timeout=task_assignment_timeout,
             fl_ctx=fl_ctx,
-            dynamic_targets=False,
+            dynamic_targets=True,
             abort_signal=abort_signal,
         )
         if abort_signal.triggered:
@@ -339,7 +339,7 @@ class HubController(Controller):
                     op_desc[TaskOperatorKey.OP_ID] = task_name
 
                 self._resolve_op_desc(op_desc)
-                op = op_desc.get(TaskOperatorKey.OP, "bcast")
+                op = op_desc.get(TaskOperatorKey.METHOD, "bcast")
                 if not op:
                     self._abort(
                         reason=f"bad operator in task '{topic}' from T1 - missing op",
@@ -371,7 +371,11 @@ class HubController(Controller):
                     )
                     return
 
+                operator_name = operator.__class__.__name__
+                self.log_info(fl_ctx, f"Invoking Operator {operator_name} for task {task_name}")
                 try:
+                    current_round = data.get_header(AppConstants.CURRENT_ROUND, 0)
+                    fl_ctx.set_prop(AppConstants.CURRENT_ROUND, current_round, private=True, sticky=True)
                     self.fire_event(AppEventType.ROUND_STARTED, fl_ctx)
                     fl_ctx.set_prop(key=FLContextKey.TASK_DATA, value=data, private=True, sticky=False)
                     self.current_task_name = task_name
@@ -387,7 +391,7 @@ class HubController(Controller):
                         fl_ctx=fl_ctx,
                     )
                 except BaseException as ex:
-                    self.log_exception(fl_ctx, f"error processing {task_name}: {ex}")
+                    self.log_exception(fl_ctx, f"error processing {task_name} from Operator {operator_name}: {ex}")
                     result = None
                 finally:
                     self.task_abort_signal = None

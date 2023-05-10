@@ -173,6 +173,7 @@ class CyclicController(Controller):
 
                 shareable = self.shareable_generator.learnable_to_shareable(self._last_learnable, fl_ctx)
                 shareable.set_header(AppConstants.CURRENT_ROUND, self._current_round)
+                shareable.add_cookie(AppConstants.CONTRIBUTION_ROUND, self._current_round)
 
                 task = Task(
                     name=self.task_name,

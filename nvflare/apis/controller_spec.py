@@ -40,7 +40,6 @@ class TaskCompletionStatus(Enum):
 class TaskOperatorKey(object):
 
     OP_ID = "op_id"
-    OP = "op"
     METHOD = "method"  # bcast, relay, etc.
     NUM_ROUNDS = "num_rounds"
     TARGETS = "targets"  # list of leaf nodes
@@ -50,7 +49,7 @@ class TaskOperatorKey(object):
     SHAREABLE_GENERATOR = "shareable_gen"  # only for relay
     PERSISTOR = "persistor"  # only for relay
     TIMEOUT = "timeout"
-    TASK_ASSIGNMENT_TIMEOUT = "task_assign_timeout"
+    TASK_ASSIGNMENT_TIMEOUT = "task_assign_timeout"  # for relay
     MIN_TARGETS = "min_targets"
     WAIT_TIME_AFTER_MIN_RESPS = "wait_time_after_min_received"
 
