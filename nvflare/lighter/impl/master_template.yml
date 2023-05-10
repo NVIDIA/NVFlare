@@ -642,9 +642,18 @@ docker_cln_sh: |
   DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
   # docker run script for FL client
   # local data directory
-  MY_DATA_DIR=/home/flclient/data
+  : ${MY_DATA_DIR:="/home/flclient/data"}
+  # The syntax above is to set MY_DATA_DIR to /home/flcient/data if this
+  # environment variable is not set previously.
+  # Therefore, users can set their own MY_DATA_DIR with
+  # export MY_DATA_DIR=$SOME_DIRECTORY
+  # before running docker.sh
+
   # for all gpus use line below 
-  GPU2USE=all 
+  : ${GPU2USE:="all"}
+  # The above is for the same purpose in MY_DATA_DIR.
+  # It will set GPU2USE to all if this env var is not set.
+
   # for 2 gpus use line below
   #GPU2USE=2 
   # for specific gpus as gpu#0 and gpu#2 use line below
@@ -655,7 +664,18 @@ docker_cln_sh: |
   #NETARG="-p 443:443 -p 8003:8003"
   DOCKER_IMAGE={~~docker_image~~}
   echo "Starting docker with $DOCKER_IMAGE"
-  docker run --rm -it --name={~~client_name~~} --gpus=$GPU2USE -u $(id -u):$(id -g) -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group -v $DIR/..:/workspace/ -v $MY_DATA_DIR:/data/:ro -w /workspace/ --ipc=host $NETARG $DOCKER_IMAGE /bin/bash
+  mode="${1:--r}"
+  if [ $mode = "-d" ]
+  then
+    docker run -d --rm --name={~~client_name~~} --gpus=$GPU2USE -u $(id -u):$(id -g) \
+    -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group -v $DIR/..:/workspace/ \
+    -v $MY_DATA_DIR:/data/:ro -w /workspace/ --ipc=host $NETARG $DOCKER_IMAGE \
+    /bin/bash -c "python -u -m nvflare.private.fed.app.client.client_train -m /workspace -s fed_client.json --set uid={~~client_name~~} secure_train=true config_folder=config org={~~org_name~~}"
+  else
+    docker run --rm -it --name={~~client_name~~} --gpus=$GPU2USE -u $(id -u):$(id -g) \
+    -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group -v $DIR/..:/workspace/ \
+    -v $MY_DATA_DIR:/data/:ro -w /workspace/ --ipc=host $NETARG $DOCKER_IMAGE /bin/bash
+  fi
 
 docker_svr_sh: |
   #!/usr/bin/env bash
@@ -667,7 +687,15 @@ docker_svr_sh: |
   #NETARG="-p {~~admin_port~~}:{~~admin_port~~} -p {~~fed_learn_port~~}:{~~fed_learn_port~~}"
   DOCKER_IMAGE={~~docker_image~~}
   echo "Starting docker with $DOCKER_IMAGE"
-  docker run --rm -it --name=flserver -v $DIR/..:/workspace/ -w /workspace/ --ipc=host $NETARG $DOCKER_IMAGE /bin/bash
+  mode="${1:-r}"
+  if [ $mode = "-d" ]
+  then
+    docker run -d --rm --name=flserver -v $DIR/..:/workspace/ -w /workspace \
+    --ipc=host $NETARG $DOCKER_IMAGE /bin/bash -c \
+    "python -u -m nvflare.private.fed.app.server.server_train -m /workspace -s fed_server.json --set secure_train=true config_folder=config org={~~org_name~~}"
+  else
+    docker run --rm -it --name=flserver -v $DIR/..:/workspace/ -w /workspace/ --ipc=host $NETARG $DOCKER_IMAGE /bin/bash
+  fi
 
 docker_adm_sh: |
   #!/usr/bin/env bash
