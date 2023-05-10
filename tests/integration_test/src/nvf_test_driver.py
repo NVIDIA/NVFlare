@@ -233,35 +233,34 @@ class NVFTestDriver:
             "ensure_current_job_done": _CheckJobHandler(),
         }
 
-    def initialize_super_user(self, workspace_root_dir: str, upload_root_dir: str, poc: bool, super_user_name: str):
-        self.super_admin_user_name = super_user_name
+    def _create_and_login_admin_api(self, workspace_root_dir: str, upload_root_dir: str, poc: bool, user_name: str):
         admin_api = _create_admin_api(
             workspace_root_dir=workspace_root_dir,
             upload_root_dir=upload_root_dir,
             download_root_dir=self.download_root_dir,
-            admin_user_name=super_user_name,
+            admin_user_name=user_name,
             poc=poc,
         )
         if not _ensure_admin_api_logged_in(admin_api):
-            raise NVFTestError(f"initialize_super_user {super_user_name} failed.")
+            raise NVFTestError(f"_create_and_login_admin_api with {user_name} failed.")
+        return admin_api
 
+    def initialize_super_user(self, workspace_root_dir: str, upload_root_dir: str, poc: bool, super_user_name: str):
+        self.super_admin_user_name = super_user_name
+        time.sleep(5.0)  # a hack to ensure the login is good
+        admin_api = self._create_and_login_admin_api(workspace_root_dir, upload_root_dir, poc, super_user_name)
         self.super_admin_api = admin_api
 
     def initialize_admin_users(self, workspace_root_dir: str, upload_root_dir: str, poc: bool, admin_user_names: list):
+        time.sleep(5.0)  # a hack to ensure the login is good
         for user_name in admin_user_names:
             if user_name == self.super_admin_user_name:
                 continue
-            admin_api = _create_admin_api(
-                workspace_root_dir=workspace_root_dir,
-                upload_root_dir=upload_root_dir,
-                download_root_dir=self.download_root_dir,
-                admin_user_name=user_name,
-                poc=poc,
-            )
-            login_result = _ensure_admin_api_logged_in(admin_api)
-            if not login_result:
+            try:
+                admin_api = self._create_and_login_admin_api(workspace_root_dir, upload_root_dir, poc, user_name)
+            except Exception as e:
                 self.admin_apis = None
-                raise NVFTestError(f"initialize_admin_users {user_name} failed.")
+                raise NVFTestError(f"initialize_admin_users {user_name} failed: {e}.")
             self.admin_apis[user_name] = admin_api
 
     def get_job_result(self, job_id: str):
