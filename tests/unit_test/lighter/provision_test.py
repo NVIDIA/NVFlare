@@ -18,11 +18,8 @@ from nvflare.lighter.provision import prepare_project
 
 
 class TestProvision:
-
     def test_prepare_project(self):
-        project_config = {
-            "api_version": 2
-        }
+        project_config = {"api_version": 2}
         with pytest.raises(ValueError, match="API version expected 3 but found 2"):
             prepare_project(project_dict=project_config)
 
@@ -33,10 +30,11 @@ class TestProvision:
             "participants": [
                 {"type": "server", "name": "server1", "org": "org"},
                 {"type": "server", "name": "server2", "org": "org"},
-                {"type": "server", "name": "server3", "org": "org"}
-            ]
+                {"type": "server", "name": "server3", "org": "org"},
+            ],
         }
 
-        with pytest.raises(ValueError,
-                           match="Configuration error: Expect 2 or 1 server to be provisioned. project contains 3 servers."):
+        with pytest.raises(
+            ValueError, match="Configuration error: Expect 2 or 1 server to be provisioned. project contains 3 servers."
+        ):
             prepare_project(project_dict=project_config)

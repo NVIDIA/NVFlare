@@ -41,7 +41,7 @@ using the following script:
 
 .. code-block:: shell
 
-   nvflare simulator -w /tmp/nvflare/hello-numpy-sag -n 2 -t 2 examples/hello-world/hello-numpy-sag
+   nvflare simulator -w /tmp/nvflare/hello-numpy-sag -n 2 -t 2 examples/hello-world/hello-numpy-sag/jobs/hello-numpy-sag
 
 Now you can watch the simulator run two clients (n=2) with two threads (t=2)
 and logs are saved in the `/tmp/nvflare/hello-numpy-sag` workspace.

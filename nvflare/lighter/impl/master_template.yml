@@ -920,6 +920,10 @@ azure_start_svr_sh: |
         config_file=$2
         shift
       ;;
+      --image)
+        image_name=$2
+        shift
+      ;;
     esac
     shift
   done
@@ -937,6 +941,12 @@ azure_start_svr_sh: |
   FL_PORT=8002
   ADMIN_PORT=8003
 
+  echo "This script requires az (Azure CLI), sshpass and jq.  Now checking if they are installed."
+
+  check_binary az "Please see https://learn.microsoft.com/en-us/cli/azure/install-azure-cli on how to install it on your system."
+  check_binary sshpass "Please install it first."
+  check_binary jq "Please install it first."
+
   self_dns=true
   if [[ "$SERVER_NAME" = *".cloudapp.azure.com"* ]]
   then
@@ -949,6 +959,22 @@ azure_start_svr_sh: |
     echo "The cloud launch process will not create the domain name for you."
     echo "Please use your own DNS to set the information."
     LOCATION=westus2
+  fi
+
+  if [ -z ${image_name+x} ]
+  then
+      container=false
+  else
+      container=true
+  fi
+
+  if [ $container = true ]
+  then
+    VM_IMAGE=Canonical:0001-com-ubuntu-server-focal:20_04-lts-gen2:latest
+    VM_SIZE=Standard_D8s_v3
+  else
+    VM_IMAGE=Canonical:0001-com-ubuntu-server-focal:20_04-lts-gen2:latest
+    VM_SIZE=Standard_B2ms
   fi
 
   if [ -z ${config_file+x} ]
@@ -964,12 +990,6 @@ azure_start_svr_sh: |
       exit 1
     fi
   fi
-
-  echo "This script requires az (Azure CLI), sshpass and jq.  Now checking if they are installed."
-
-  check_binary az "Please see https://learn.microsoft.com/en-us/cli/azure/install-azure-cli on how to install it on your system."
-  check_binary sshpass "Please install it first."
-  check_binary jq "Please install it first."
 
   if [ $useDefault = true ]
   then
@@ -988,8 +1008,11 @@ azure_start_svr_sh: |
     done
   fi
 
-  echo "If the client requires additional dependencies, please copy the requirements.txt to ${DIR}."
-  prompt ans "Press ENTER when it's done or no additional dependencies. "
+  if [ $container = false ]
+  then
+    echo "If the client requires additional dependencies, please copy the requirements.txt to ${DIR}."
+    prompt ans "Press ENTER when it's done or no additional dependencies. "
+  fi
 
   az login --use-device-code -o none
   report_status "$?" "login"
@@ -1094,24 +1117,55 @@ azure_start_svr_sh: |
   cd $DIR/.. && sshpass -p $PASSWORD scp -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $PWD $DEST
   report_status "$?" "copying startup kits to VM"
 
-  echo "Installing packages in $VM_NAME, may take a few minutes."
-  az vm run-command invoke \
-    --output json \
-    --resource-group $RESOURCE_GROUP \
-    --command-id RunShellScript \
-    --name $VM_NAME \
-    --scripts \
-    "echo ${DEST_FOLDER} && \
-    wget -q https://bootstrap.pypa.io/get-pip.py && \
-    python3 get-pip.py && \
-    python3 -m pip install --ignore-installed nvflare && \
-    touch ${DEST_FOLDER}/startup/requirements.txt && \
-    python3 -m pip install -r ${DEST_FOLDER}/startup/requirements.txt && \
-    ${DEST_FOLDER}/startup/start.sh && \
-    sleep 20 && \
-    cat ${DEST_FOLDER}/log.txt" > /tmp/vm_create.json
-  report_status "$?" "installing packages"
-
+  if [ $container = true ]
+  then
+    echo "Installing and lauching container in $VM_NAME, may take a few minutes."
+    az vm run-command invoke \
+      --output json \
+      --resource-group $RESOURCE_GROUP \
+      --command-id RunShellScript \
+      --name $VM_NAME \
+      --scripts \
+      "sudo apt-get update && \
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl gnupg lsb-release && \
+      sudo mkdir -p /etc/apt/keyrings && \
+      curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
+      echo \
+      \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+      $(lsb_release -cs) stable\" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null && \
+      sudo apt-get update && \
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io && \
+      sudo usermod -aG docker $ADMIN_USERNAME" > /tmp/docker_engine.json
+    report_status "$?" "installing docker engine"
+    az vm run-command invoke \
+      --output json \
+      --resource-group $RESOURCE_GROUP \
+      --command-id RunShellScript \
+      --name $VM_NAME \
+      --scripts \
+      "docker run -d -v ${DEST_FOLDER}:${DEST_FOLDER} --network host ${DOCKER_OPTION} ${image_name} \
+      /bin/bash -c \"python -u -m nvflare.private.fed.app.server.server_train -m ${DEST_FOLDER} \
+      -s fed_server.json --set secure_train=true config_folder=config org={~~ORG~~} \" " > /tmp/vm_create.json 2>&1 
+      report_status "$?" "launching container"
+  else
+    echo "Installing packages in $VM_NAME, may take a few minutes."
+    az vm run-command invoke \
+      --output json \
+      --resource-group $RESOURCE_GROUP \
+      --command-id RunShellScript \
+      --name $VM_NAME \
+      --scripts \
+      "echo ${DEST_FOLDER} && \
+      wget -q https://bootstrap.pypa.io/get-pip.py && \
+      python3 get-pip.py && \
+      python3 -m pip install --ignore-installed nvflare && \
+      touch ${DEST_FOLDER}/startup/requirements.txt && \
+      python3 -m pip install -r ${DEST_FOLDER}/startup/requirements.txt && \
+      ${DEST_FOLDER}/startup/start.sh && \
+      sleep 20 && \
+      cat ${DEST_FOLDER}/log.txt" > /tmp/vm_create.json
+    report_status "$?" "installing packages"
+  fi
   echo "System was provisioned"
   echo "To delete the resource group (also delete the VM), run the following command"
   echo "az group delete -n ${RESOURCE_GROUP}"
@@ -1158,6 +1212,10 @@ azure_start_cln_sh: |
               config_file=$2
               shift
           ;;
+      --image)
+        image_name=$2
+        shift
+      ;;
       esac
       shift
   done
@@ -1172,7 +1230,28 @@ azure_start_cln_sh: |
   DEST_FOLDER=/var/tmp/cloud
   LOCATION=westus2
   NIC_NAME=${VM_NAME}VMNic
+  echo "This script requires az (Azure CLI), sshpass and jq.  Now checking if they are installed."
 
+  check_binary az "Please see https://learn.microsoft.com/en-us/cli/azure/install-azure-cli on how to install it on your system."
+  check_binary sshpass "Please install it first."
+  check_binary jq "Please install it first."
+
+
+  if [ -z ${image_name+x} ]
+  then
+      container=false
+  else
+      container=true
+  fi
+
+  if [ $container = true ]
+  then
+    VM_IMAGE=Canonical:0001-com-ubuntu-server-focal:20_04-lts-gen2:latest
+    VM_SIZE=Standard_D8s_v3
+  else
+    VM_IMAGE=Canonical:0001-com-ubuntu-server-focal:20_04-lts-gen2:latest
+    VM_SIZE=Standard_B2ms
+  fi
   if [ -z ${config_file+x} ]
   then
       useDefault=true
@@ -1181,12 +1260,6 @@ azure_start_cln_sh: |
       . $config_file
       report_status "$?" "Loading config file"
   fi
-
-  echo "This script requires az (Azure CLI), sshpass and jq.  Now checking if they are installed."
-
-  check_binary az "Please see https://learn.microsoft.com/en-us/cli/azure/install-azure-cli on how to install it on your system."
-  check_binary sshpass "Please install it first."
-  check_binary jq "Please install it first."
 
   if [ $useDefault = true ]
   then
@@ -1200,8 +1273,11 @@ azure_start_cln_sh: |
     done
   fi
 
-  echo "If the client requires additional dependencies, please copy the requirements.txt to ${DIR}."
-  prompt ans "Press ENTER when it's done or no additional dependencies. "
+  if [ $container = false ]
+  then
+    echo "If the client requires additional dependencies, please copy the requirements.txt to ${DIR}."
+    prompt ans "Press ENTER when it's done or no additional dependencies. "
+  fi
 
   az login --use-device-code -o none
   report_status "$?" "login"
@@ -1265,24 +1341,55 @@ azure_start_cln_sh: |
   cd $DIR/.. && sshpass -p $PASSWORD scp -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $PWD $DEST
   report_status "$?" "copying startup kits to VM"
 
-  echo "Installing packages in $VM_NAME, may take a few minutes."
-  az vm run-command invoke \
-    --output json \
-    --resource-group $RESOURCE_GROUP \
-    --command-id RunShellScript \
-    --name $VM_NAME \
-    --scripts \
-    "echo ${DEST_FOLDER} && \
-    wget -q https://bootstrap.pypa.io/get-pip.py && \
-    python3 get-pip.py && \
-    python3 -m pip install --ignore-installed nvflare && \
-    touch ${DEST_FOLDER}/startup/requirements.txt && \
-    python3 -m pip install -r ${DEST_FOLDER}/startup/requirements.txt && \
-    ${DEST_FOLDER}/startup/start.sh && \
-    sleep 20 && \
-    cat ${DEST_FOLDER}/log.txt" > /tmp/vm_create.json
-  report_status "$?" "installing packages"
-
+  if [ $container = true ]
+  then
+    echo "Installing and lauching container in $VM_NAME, may take a few minutes."
+    az vm run-command invoke \
+      --output json \
+      --resource-group $RESOURCE_GROUP \
+      --command-id RunShellScript \
+      --name $VM_NAME \
+      --scripts \
+      "sudo apt-get update && \
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl gnupg lsb-release && \
+      sudo mkdir -p /etc/apt/keyrings && \
+      curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
+      echo \
+      \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+      $(lsb_release -cs) stable\" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null && \
+      sudo apt-get update && \
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io && \
+      sudo usermod -aG docker $ADMIN_USERNAME" > /tmp/docker_engine.json
+    report_status "$?" "installing docker engine"
+    az vm run-command invoke \
+      --output json \
+      --resource-group $RESOURCE_GROUP \
+      --command-id RunShellScript \
+      --name $VM_NAME \
+      --scripts \
+      "docker run -d -v ${DEST_FOLDER}:${DEST_FOLDER} ${image_name} \
+      /bin/bash -c \"python -u -m nvflare.private.fed.app.client.client_train -m ${DEST_FOLDER} \
+      -s fed_client.json --set uid={~~SITE~~} secure_train=true config_folder=config org={~~ORG~~} \" " > /tmp/vm_create.json 2>&1 
+      report_status "$?" "launching container"
+  else
+    echo "Installing packages in $VM_NAME, may take a few minutes."
+    az vm run-command invoke \
+      --output json \
+      --resource-group $RESOURCE_GROUP \
+      --command-id RunShellScript \
+      --name $VM_NAME \
+      --scripts \
+      "echo ${DEST_FOLDER} && \
+      wget -q https://bootstrap.pypa.io/get-pip.py && \
+      python3 get-pip.py && \
+      python3 -m pip install --ignore-installed nvflare && \
+      touch ${DEST_FOLDER}/startup/requirements.txt && \
+      python3 -m pip install -r ${DEST_FOLDER}/startup/requirements.txt && \
+      ${DEST_FOLDER}/startup/start.sh && \
+      sleep 20 && \
+      cat ${DEST_FOLDER}/log.txt" > /tmp/vm_create.json
+    report_status "$?" "installing packages"
+  fi
   echo "System was provisioned"
   echo "To delete the resource group (also delete the VM), run the following command"
   echo "az group delete -n ${RESOURCE_GROUP}"
@@ -1639,16 +1746,17 @@ aws_start_svr_sh: |
         config_file=$2
         shift
       ;;
+      --image)
+        image_name=$2
+        shift
+      ;;
     esac
     shift
   done
 
   VM_NAME=nvflare_server
-  AMI_IMAGE=ami-04bad3c587fe60d89
-  EC2_TYPE=t2.small
   SECURITY_GROUP=nvflare_server_sg
   DEST_FOLDER=/var/tmp/cloud
-  REGION=us-west-2
   KEY_PAIR=NVFlareServerKeyPair
   KEY_FILE=${KEY_PAIR}.pem
 
@@ -1658,6 +1766,24 @@ aws_start_svr_sh: |
   check_binary sshpass "Please install it first."
   check_binary dig "Please install it first."
   check_binary jq "Please install it first."
+
+  if [ -z ${image_name+x} ]
+  then
+      container=false
+  else
+      container=true
+  fi
+
+  if [ $container = true ]
+  then
+    AMI_IMAGE=ami-06b8d5099f3a8d79d
+    EC2_TYPE=t2.xlarge
+    REGION=us-west-2
+  else
+    AMI_IMAGE=ami-04bad3c587fe60d89
+    EC2_TYPE=t2.small
+    REGION=us-west-2
+  fi
 
   if [ -z ${config_file+x} ]
   then
@@ -1684,8 +1810,11 @@ aws_start_svr_sh: |
     done
   fi
 
-  echo "If the server requires additional dependencies, please copy the requirements.txt to ${DIR}."
-  prompt ans "Press ENTER when it's done or no additional dependencies. "
+  if [ $container = false ]
+  then
+    echo "If the server requires additional dependencies, please copy the requirements.txt to ${DIR}."
+    prompt ans "Press ENTER when it's done or no additional dependencies. "
+  fi
 
   cd $DIR/..
   # Generate key pair
@@ -1731,16 +1860,24 @@ aws_start_svr_sh: |
   scp -q -i $KEY_FILE -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $PWD $DEST
   report_status "$?" "copying startup kits to VM"
 
-  echo "Installing packages in $VM_NAME, may take a few minutes."
-
-  ssh -f -i $KEY_FILE -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEST_SITE} \
-  "pwd && wget -q https://bootstrap.pypa.io/get-pip.py && \
-  python3 get-pip.py && python3 -m pip install nvflare && \
-  touch ${DEST_FOLDER}/startup/requirements.txt && \
-  python3 -m pip install -r ${DEST_FOLDER}/startup/requirements.txt && \
-  nohup ${DEST_FOLDER}/startup/start.sh && sleep 20 && \
-  exit" > /tmp/nvflare.log 2>&1 
-  report_status "$?" "installing packages"
+  if [ $container = true ]
+  then
+    echo "Launching container with docker option ${DOCKER_OPTION}."
+    ssh -f -i $KEY_FILE -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEST_SITE} \
+    "docker run -d -v ${DEST_FOLDER}:${DEST_FOLDER} --network host ${DOCKER_OPTION} ${image_name} \
+    /bin/bash -c \"python -u -m nvflare.private.fed.app.server.server_train -m ${DEST_FOLDER} \
+    -s fed_server.json --set secure_train=true config_folder=config org={~~ORG~~} \" " > /tmp/nvflare.log 2>&1 
+    report_status "$?" "launching container"
+  else
+    ssh -f -i $KEY_FILE -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEST_SITE} \
+    "pwd && wget -q https://bootstrap.pypa.io/get-pip.py && \
+    python3 get-pip.py && python3 -m pip install nvflare && \
+    touch ${DEST_FOLDER}/startup/requirements.txt && \
+    python3 -m pip install -r ${DEST_FOLDER}/startup/requirements.txt && \
+    nohup ${DEST_FOLDER}/startup/start.sh && sleep 20 && \
+    exit" > /tmp/nvflare.log 2>&1 
+    report_status "$?" "installing packages"
+  fi
 
   echo "System was provisioned"
   echo "To terminate the EC2 instance, run the following command."
@@ -1793,16 +1930,17 @@ aws_start_cln_sh: |
         config_file=$2
         shift
       ;;
+      --image)
+        image_name=$2
+        shift
+      ;;
     esac
     shift
   done
 
   VM_NAME=nvflare_client
-  AMI_IMAGE=ami-04bad3c587fe60d89
-  EC2_TYPE=t2.small
   SECURITY_GROUP=nvflare_client_sg_$RANDOM
   DEST_FOLDER=/var/tmp/cloud
-  REGION=us-west-2
   KEY_PAIR=NVFlareClientKeyPair
   KEY_FILE=${KEY_PAIR}.pem
 
@@ -1812,6 +1950,24 @@ aws_start_cln_sh: |
   check_binary sshpass "Please install it first."
   check_binary dig "Please install it first."
   check_binary jq "Please install it first."
+
+  if [ -z ${image_name+x} ]
+  then
+      container=false
+  else
+      container=true
+  fi
+
+  if [ $container = true ]
+  then
+    AMI_IMAGE=ami-06b8d5099f3a8d79d
+    EC2_TYPE=t2.xlarge
+    REGION=us-west-2
+  else
+    AMI_IMAGE=ami-04bad3c587fe60d89
+    EC2_TYPE=t2.small
+    REGION=us-west-2
+  fi
 
   if [ -z ${config_file+x} ]
   then
@@ -1837,8 +1993,11 @@ aws_start_cln_sh: |
     done
   fi
 
-  echo "If the client requires additional dependencies, please copy the requirements.txt to ${DIR}."
-  prompt ans "Press ENTER when it's done or no additional dependencies. "
+  if [ $container = false ]
+  then
+    echo "If the client requires additional dependencies, please copy the requirements.txt to ${DIR}."
+    prompt ans "Press ENTER when it's done or no additional dependencies. "
+  fi
 
   cd $DIR/..
   # Generate key pair
@@ -1882,17 +2041,26 @@ aws_start_cln_sh: |
   scp -q -i $KEY_FILE -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $PWD $DEST
   report_status "$?" "copying startup kits to VM"
 
-  echo "Installing packages in $VM_NAME, may take a few minutes."
+  if [ $container = true ]
+  then
+    echo "Launching container with docker option ${DOCKER_OPTION}."
+    ssh -f -i $KEY_FILE -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEST_SITE} \
+    "docker run -d -v ${DEST_FOLDER}:${DEST_FOLDER} --network host ${DOCKER_OPTION} ${image_name} \
+    /bin/bash -c \"python -u -m nvflare.private.fed.app.client.client_train -m ${DEST_FOLDER} \
+    -s fed_client.json --set uid={~~SITE~~} secure_train=true config_folder=config org={~~ORG~~} \" " > /tmp/nvflare.log 2>&1 
+    report_status "$?" "launching container"
+  else
+    echo "Installing packages in $VM_NAME, may take a few minutes."
+    ssh -f -i $KEY_FILE -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEST_SITE} \
+    "pwd && wget -q https://bootstrap.pypa.io/get-pip.py && \
+    python3 get-pip.py && python3 -m pip install nvflare && \
+    touch ${DEST_FOLDER}/startup/requirements.txt && \
+    python3 -m pip install -r ${DEST_FOLDER}/startup/requirements.txt && \
+    nohup ${DEST_FOLDER}/startup/start.sh && sleep 20 && \
+    exit" > /tmp/nvflare.log 2>&1 
 
-  ssh -f -i $KEY_FILE -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEST_SITE} \
-  "pwd && wget -q https://bootstrap.pypa.io/get-pip.py && \
-  python3 get-pip.py && python3 -m pip install nvflare && \
-  touch ${DEST_FOLDER}/startup/requirements.txt && \
-  python3 -m pip install -r ${DEST_FOLDER}/startup/requirements.txt && \
-  nohup ${DEST_FOLDER}/startup/start.sh && sleep 20 && \
-  exit" > /tmp/nvflare.log 2>&1 
-
-  report_status "$?" "installing packages"
+    report_status "$?" "installing packages"
+  fi
 
   echo "System was provisioned"
   echo "To terminate the EC2 instance, run the following command."
