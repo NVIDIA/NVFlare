@@ -22,7 +22,7 @@ from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.fuel.utils.pipe.pipe import Pipe
-from nvflare.fuel.utils.pipe.pipe_monitor import Topic, receive_from_pipe, send_to_pipe
+from nvflare.fuel.utils.pipe.pipe_monitor import PipeMonitor, Topic
 
 
 class HubExecutor(Executor):
@@ -32,7 +32,7 @@ class HubExecutor(Executor):
     """
 
     def __init__(
-        self, pipe_id: str, task_wait_time: float, result_poll_interval: float = 0.5, task_read_wait_time: float = 10
+        self, pipe_id: str, task_wait_time=None, result_poll_interval: float = 0.1, task_read_wait_time: float = 10
     ):
         """
         Args:
@@ -46,7 +46,6 @@ class HubExecutor(Executor):
         self.task_wait_time = task_wait_time
         self.result_poll_interval = result_poll_interval
         self.task_read_wait_time = task_read_wait_time
-        self.pipe = None
         self.task_seq_num = 0
         self.t2_ended = False
         self.pipe_monitor = None
@@ -55,23 +54,35 @@ class HubExecutor(Executor):
         engine = fl_ctx.get_engine()
         if event_type == EventType.START_RUN:
             job_id = fl_ctx.get_job_id()
-            self.pipe = engine.get_component(self.pipe_id)
-            if not isinstance(self.pipe, Pipe):
-                raise TypeError(f"pipe must be Pipe type. Got: {type(self.pipe)}")
-            self.pipe.open(name=job_id, me="x")
+            pipe = engine.get_component(self.pipe_id)
+            if not isinstance(pipe, Pipe):
+                raise TypeError(f"pipe must be Pipe type. Got: {type(pipe)}")
+            pipe.open(name=job_id, me="x")
+            self.pipe_monitor = PipeMonitor(pipe)
+            self.pipe_monitor.start()
         elif event_type == EventType.END_RUN:
             # tell T2 system to end run
             self.log_info(fl_ctx, "END_RUN received - telling T2 to stop")
-            send_to_pipe(self.pipe, Topic.END_RUN, "")
+            self.pipe_monitor.send_to_peer(Topic.END_RUN, "")
+            self.pipe_monitor.stop()
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
+        contrib_round = shareable.get_cookie(AppConstants.CONTRIBUTION_ROUND)
+        if contrib_round is None:
+            self.log_error(fl_ctx, "CONTRIBUTION_ROUND Not Set in task data!")
+
         # send the task to T2
         task_id = shareable.get_header(ReservedHeaderKey.TASK_ID)
         self.task_seq_num += 1
         req_topic = f"{task_name}.{self.task_seq_num}"
-        self.log_info(fl_ctx, f"sent task data to T2 for task {task_name}")
-        task_received_by_t2 = send_to_pipe(self.pipe, topic=req_topic, data=shareable, timeout=self.task_read_wait_time)
+        self.log_info(fl_ctx, f"sending task data to T2 for task {task_name}")
+        task_received_by_t2 = self.pipe_monitor.send_to_peer(
+            topic=req_topic, data=shareable, timeout=self.task_read_wait_time
+        )
         if not task_received_by_t2:
+            self.log_error(
+                fl_ctx, f"T2 failed to read task '{task_name}' in {self.task_read_wait_time} secs - aborting task!"
+            )
             return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
 
         # wait for result from T2
@@ -79,22 +90,22 @@ class HubExecutor(Executor):
         while True:
             if abort_signal.triggered:
                 # notify T2 that the task is aborted
-                send_to_pipe(self.pipe, Topic.ABORT_TASK, task_id)
+                self.pipe_monitor.send_to_peer(Topic.ABORT, task_id)
                 return make_reply(ReturnCode.TASK_ABORTED)
 
-            topic, data = receive_from_pipe(self.pipe)
+            topic, data = self.pipe_monitor.get_next()
             if not topic:
                 if self.task_wait_time and time.time() - start > self.task_wait_time:
                     # timed out
                     self.log_error(fl_ctx, f"task '{req_topic}' timeout after {self.task_wait_time} secs")
                     # also tell T2 to abort the task
-                    send_to_pipe(self.pipe, Topic.ABORT_TASK, task_id)
+                    self.pipe_monitor.send_to_peer(Topic.ABORT, task_id)
                     return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-            elif topic == Topic.ABORT_TASK:
+            elif topic == Topic.ABORT:
                 # T2 told us to abort the task!
                 if data == task_id:
                     return make_reply(ReturnCode.TASK_ABORTED)
-            elif topic == Topic.END_RUN:
+            elif topic in [Topic.END_RUN, Topic.PEER_GONE]:
                 # T2 told us it has ended the run
                 self.log_error(fl_ctx, f"received {topic} from T2 while waiting for result for {req_topic}")
                 return make_reply(ReturnCode.SERVICE_UNAVAILABLE)

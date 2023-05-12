@@ -21,15 +21,17 @@ from nvflare.fuel.utils.pipe.pipe import Pipe
 
 class Topic(object):
 
-    ABORT_TASK = "AbortTask"
-    END_RUN = "EndRun"
+    ABORT = "_Abort_"
+    END_RUN = "_EndRun_"
+    HEARTBEAT = "_Heartbeat_"
+    PEER_GONE = "_PeerGone_"
 
 
-def send_to_pipe(pipe: Pipe, topic: str, data, timeout=None):
+def _send_to_pipe(pipe: Pipe, topic: str, data, timeout=None):
     return pipe.send(topic, fobs.dumps(data), timeout)
 
 
-def receive_from_pipe(pipe: Pipe):
+def _receive_from_pipe(pipe: Pipe):
     topic, data = pipe.receive()
     if data:
         data = fobs.loads(data)
@@ -37,13 +39,14 @@ def receive_from_pipe(pipe: Pipe):
 
 
 class PipeMonitor(object):
-    def __init__(self, pipe: Pipe, task_status_cb, *args, **kwargs):
+    def __init__(self, pipe: Pipe, read_interval=0.1, heartbeat_interval=5.0, heartbeat_timeout=30.0):
         self.pipe = pipe
-        self.task_status_cb = task_status_cb
-        self.cb_args = args
-        self.cb_kwargs = kwargs
+        self.read_interval = read_interval
+        self.heartbeat_interval = heartbeat_interval
+        self.heartbeat_timeout = heartbeat_timeout
         self.messages = []
         self.reader = threading.Thread(target=self._read)
+        self.reader.daemon = True
         self.asked_to_stop = False
         self.lock = threading.Lock()
 
@@ -53,20 +56,50 @@ class PipeMonitor(object):
 
     def stop(self):
         self.asked_to_stop = True
-        reader = self.reader
-        if reader and reader.is_alive():
-            reader.join()
+        pipe = self.pipe
+        self.pipe = None
+        if pipe:
+            pipe.close()
+
+    def send_to_peer(self, topic, data, timeout=None):
+        return _send_to_pipe(self.pipe, topic, data, timeout)
+
+    def _add_message(self, topic, data):
+        with self.lock:
+            self.messages.append((topic, data))
 
     def _read(self):
-        while not self.asked_to_stop:
-            topic, data = receive_from_pipe(self.pipe)
-            if topic in [Topic.END_RUN, Topic.ABORT_TASK]:
-                self.task_status_cb(topic, data, *self.cb_args, **self.cb_kwargs)
-            elif topic is not None:
-                with self.lock:
-                    self.messages.append((topic, data))
-            time.sleep(0.5)
+        try:
+            self._try_read()
+        except BrokenPipeError:
+            self._add_message(Topic.PEER_GONE, "pipe closed")
+        except:
+            self._add_message(Topic.PEER_GONE, "error")
 
+    def _try_read(self):
+        last_heartbeat_received_time = time.time()
+        last_heartbeat_sent_time = 0.0
+        while not self.asked_to_stop:
+            now = time.time()
+            topic, data = _receive_from_pipe(self.pipe)
+            if topic is not None:
+                last_heartbeat_received_time = now
+                if topic != Topic.HEARTBEAT:
+                    self._add_message(topic, data)
+                if topic in [Topic.END_RUN, Topic.ABORT]:
+                    break
+            else:
+                # is peer gone?
+                if now - last_heartbeat_received_time > self.heartbeat_timeout:
+                    self._add_message(Topic.PEER_GONE, "")
+                    break
+
+            # send heartbeat to the peer
+            if now - last_heartbeat_sent_time > self.heartbeat_interval:
+                _send_to_pipe(self.pipe, Topic.HEARTBEAT, "")
+                last_heartbeat_sent_time = now
+
+            time.sleep(self.read_interval)
         self.reader = None
 
     def get_next(self):

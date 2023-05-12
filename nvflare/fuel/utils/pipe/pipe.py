@@ -15,9 +15,19 @@
 
 class Pipe(object):
     def open(self, name: str, me: str):
+        """Open the pipe
+
+        Args:
+            name: name of the pipe
+            me: my peer name
+
+        Returns: None
+
+        """
         pass
 
     def clear(self):
+        """Clear the pipe"""
         pass
 
     def send(self, topic: str, data: bytes, timeout=None) -> bool:
@@ -35,7 +45,20 @@ class Pipe(object):
         pass
 
     def receive(self, timeout=None) -> (str, bytes):
+        """Try to receive data from peer.
+
+        Args:
+            timeout: how long (number of seconds) to try
+
+        Returns: topic and data, if data is received; (None, None) if not
+
+        """
         pass
 
     def close(self):
+        """Close the pipe
+
+        Returns: None
+
+        """
         pass

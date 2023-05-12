@@ -21,7 +21,7 @@ from .pipe import Pipe
 
 
 class FilePipe(Pipe):
-    def __init__(self, root_path: str):
+    def __init__(self, root_path: str, file_check_interval=0.1):
         """Implementation of communication through the file system.
         Args:
             root_path: root path
@@ -31,6 +31,7 @@ class FilePipe(Pipe):
             os.makedirs(root_path)
 
         self.root_path = root_path
+        self.file_check_interval = file_check_interval
         self.pipe_path = None
         self.x_path = None
         self.y_path = None
@@ -95,6 +96,8 @@ class FilePipe(Pipe):
         file_path = os.path.join(to_dir, file_name)
 
         tmp_path = os.path.join(self.t_path, file_name)
+        if not self.pipe_path:
+            raise BrokenPipeError("pipe broken")
         with open(tmp_path, "wb") as f:
             f.write(data_bytes)
         os.rename(tmp_path, file_path)
@@ -105,8 +108,7 @@ class FilePipe(Pipe):
         self._clear_dir(self.y_path)
         self._clear_dir(self.t_path)
 
-    @staticmethod
-    def _monitor_file(file_path: str, timeout) -> bool:
+    def _monitor_file(self, file_path: str, timeout) -> bool:
         """
         Monitor the file until it's read-and-removed by peer, or timed out.
         If timeout, remove the file.
@@ -115,13 +117,16 @@ class FilePipe(Pipe):
             file_path: the path to be monitored
             timeout: how long to wait for timeout
 
-        Returns:
+        Returns: whether the file has been read and removed
 
         """
         if not timeout:
             return False
         start = time.time()
         while True:
+            if not self.pipe_path:
+                raise BrokenPipeError("pipe broken")
+
             if not os.path.exists(file_path):
                 return True
             if time.time() - start > timeout:
@@ -132,7 +137,7 @@ class FilePipe(Pipe):
                     # the file is read by the peer!
                     return True
                 return False
-            time.sleep(0.5)
+            time.sleep(self.file_check_interval)
 
     def x_put(self, topic: str, data_bytes, timeout) -> bool:
         """
@@ -166,7 +171,10 @@ class FilePipe(Pipe):
 
     def _get_next(self, from_dir: str):
         # print('get from dir: {}'.format(from_dir))
-        files = os.listdir(from_dir)
+        try:
+            files = os.listdir(from_dir)
+        except:
+            raise BrokenPipeError(f"error reading from {from_dir}")
         if files:
             files = [os.path.join(from_dir, f) for f in files]
             files.sort(key=os.path.getmtime, reverse=False)
@@ -187,7 +195,7 @@ class FilePipe(Pipe):
 
             if time.time() - start >= timeout:
                 break
-            time.sleep(2)
+            time.sleep(self.file_check_interval)
 
         return None, None
 
@@ -216,16 +224,19 @@ class FilePipe(Pipe):
 
         """
         if not self.pipe_path:
-            raise RuntimeError("pipe is not open")
+            raise BrokenPipeError("pipe is not open")
         return self.put_f(topic, data, timeout)
 
     def receive(self, timeout=None):
         if not self.pipe_path:
-            raise RuntimeError("pipe is not open")
+            raise BrokenPipeError("pipe is not open")
         return self.get_f(timeout)
 
     def close(self):
         pipe_path = self.pipe_path
         self.pipe_path = None
         if pipe_path and os.path.exists(pipe_path):
-            shutil.rmtree(pipe_path)
+            try:
+                shutil.rmtree(pipe_path)
+            except:
+                pass

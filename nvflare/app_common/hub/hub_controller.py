@@ -33,7 +33,7 @@ from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.fuel.utils.pipe.pipe import Pipe
-from nvflare.fuel.utils.pipe.pipe_monitor import PipeMonitor, Topic, send_to_pipe
+from nvflare.fuel.utils.pipe.pipe_monitor import PipeMonitor, Topic
 
 
 class BcastOperator(OperatorSpec, FLComponent):
@@ -222,7 +222,7 @@ class HubController(Controller):
         self,
         pipe_id: str,
         task_wait_time=None,
-        task_data_poll_interval: float = 0.5,
+        task_data_poll_interval: float = 0.1,
     ):
         Controller.__init__(self)
         self.pipe_id = pipe_id
@@ -236,7 +236,6 @@ class HubController(Controller):
         self.current_task_name = None
         self.current_task_id = None
         self.current_operator = None
-        self.t1_run_ended = False
         self.builtin_operators = {"bcast": BcastOperator(), "relay": RelayOperator()}
 
     def start_controller(self, fl_ctx: FLContext) -> None:
@@ -255,15 +254,16 @@ class HubController(Controller):
         engine = fl_ctx.get_engine()
         if event_type == EventType.START_RUN:
             job_id = fl_ctx.get_job_id()
-            self.pipe = engine.get_component(self.pipe_id)
-            if not isinstance(self.pipe, Pipe):
-                raise TypeError(f"pipe must be Pipe type. Got: {type(self.pipe)}")
-            self.pipe.open(name=job_id, me="y")
+            pipe = engine.get_component(self.pipe_id)
+            if not isinstance(pipe, Pipe):
+                raise TypeError(f"pipe must be Pipe type. Got: {type(pipe)}")
+            pipe.open(name=job_id, me="y")
+            self.pipe_monitor = PipeMonitor(pipe)
         elif event_type == EventType.END_RUN:
             self.run_ended = True
 
     def _abort(self, reason: str, abort_signal: Signal, fl_ctx):
-        send_to_pipe(self.pipe, topic=Topic.END_RUN, data=reason)
+        self.pipe_monitor.send_to_peer(topic=Topic.ABORT, data=reason)
         if reason:
             self.log_error(fl_ctx, reason)
         if abort_signal:
@@ -271,7 +271,6 @@ class HubController(Controller):
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         try:
-            self.pipe_monitor = PipeMonitor(self.pipe, self._run_status_changed)
             self.pipe_monitor.start()
             self._control_flow(abort_signal, fl_ctx)
             self.pipe_monitor.stop()
@@ -285,9 +284,6 @@ class HubController(Controller):
             if self.run_ended:
                 # tell T1 to end the run
                 self._abort(reason="", abort_signal=abort_signal, fl_ctx=fl_ctx)
-                return
-
-            if self.t1_run_ended:
                 return
 
             if abort_signal.triggered:
@@ -306,6 +302,11 @@ class HubController(Controller):
                     )
                     return
             else:
+                if topic in [Topic.ABORT, Topic.END_RUN, Topic.PEER_GONE]:
+                    # the T1 peer is gone
+                    self.log_info(fl_ctx, f"T1 stopped: '{topic}'")
+                    return
+
                 self.log_info(fl_ctx, f"got data for task '{topic}' from T1")
                 if not isinstance(data, Shareable):
                     self._abort(
@@ -376,6 +377,13 @@ class HubController(Controller):
                 try:
                     current_round = data.get_header(AppConstants.CURRENT_ROUND, 0)
                     fl_ctx.set_prop(AppConstants.CURRENT_ROUND, current_round, private=True, sticky=True)
+
+                    contrib_round = data.get_cookie(AppConstants.CONTRIBUTION_ROUND)
+                    if contrib_round is None:
+                        self.log_error(fl_ctx, "CONTRIBUTION_ROUND Not Set!")
+                    else:
+                        self.log_info(fl_ctx, f"CONTRIBUTION_ROUND cookie set to {contrib_round}")
+
                     self.fire_event(AppEventType.ROUND_STARTED, fl_ctx)
                     fl_ctx.set_prop(key=FLContextKey.TASK_DATA, value=data, private=True, sticky=False)
                     self.current_task_name = task_name
@@ -406,28 +414,10 @@ class HubController(Controller):
                     self.log_error(fl_ctx, f"bad result from '{op}' handler: expect Shareable but got {type(result)}")
                     result = make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-                send_to_pipe(self.pipe, topic, result)
+                self.pipe_monitor.send_to_peer(topic, result)
                 start = time.time()
 
             time.sleep(self.task_data_poll_interval)
-
-    def _run_status_changed(self, topic: str, data):
-        if topic == Topic.ABORT_TASK:
-            self.logger.info("ABORT_TASK received from T1")
-            # get the signal first since self.task_abort_signal could be set to None at any moment
-            # by another thread!
-            s = self.task_abort_signal
-            if s and data == self.current_task_id:
-                s.trigger(True)
-            return
-
-        if topic == Topic.END_RUN:
-            self.logger.info("END_RUN received from T1")
-            # get the signal first since self.task_abort_signal could be set to None at any moment!
-            s = self.task_abort_signal
-            if s:
-                s.trigger(True)
-            self.t1_run_ended = True
 
     def _resolve_op_desc(self, op_desc: dict):
         op_id = op_desc.get(TaskOperatorKey.OP_ID, None)
