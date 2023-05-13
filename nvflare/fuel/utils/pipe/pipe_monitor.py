@@ -40,7 +40,40 @@ def _receive_from_pipe(pipe: Pipe):
 
 
 class PipeMonitor(object):
+    """
+    PipeMonitor monitors a pipe for messages from the peer. It reads the pipe periodically and puts received data
+    in a message queue in the order the data is received.
+
+    If the received data indicates a peer status change (END, ABORT, GONE), the data is added the message queue if the
+    status_cb is not registered. If the status_cb is registered, the data is NOT added the message queue. Instead,
+    the status_cb is called with the status data.
+
+    The PipeMonitor should be used as follows:
+    - The app creates a pipe and then creates the PipeMonitor object for the pipe;
+    - The app starts the PipeMonitor. This step must be performed, or data in the pipe won't be read.
+    - The app should call monitor.get_next() periodically to process the message in the queue. This method may return
+    None if there is no message in the queue. The app also must handle the status change event from the peer if it
+    does not set the status_cb. The status change event has the special topic value of Topic.END or Topic.ABORT.
+    - Optionally, the app can set a status_cb and handle the peer's status change immediately.
+    - Stop the monitor when the app is finished.
+
+    NOTE: the monitor uses a heartbeat mechanism to detect that the peer may be disconnected (gone). It sends
+    a heartbeat message to the peer based on configured interval. It also expects heartbeats from the peer. If peer's
+    heartbeat is not received for configured time, it will be treated as disconnected, and a GONE status is generated
+    for the app to handle.
+
+    """
+
     def __init__(self, pipe: Pipe, read_interval=0.1, heartbeat_interval=5.0, heartbeat_timeout=30.0):
+        """
+        Constructor of the PipeMonitor.
+
+        Args:
+            pipe: the pipe to be monitored
+            read_interval: how often to read from the pipe
+            heartbeat_interval: how often to send a heartbeat to the peer
+            heartbeat_timeout: how long to wait for a heartbeat from the peer before treating the peer as gone
+        """
         check_positive_number("read_interval", read_interval)
         check_positive_number("heartbeat_interval", heartbeat_interval)
         check_positive_number("heartbeat_timeout", heartbeat_timeout)
@@ -66,6 +99,14 @@ class PipeMonitor(object):
         """Set CB for status handling. When the peer status is changed (ABORT, END, GONE), this CB is called.
         If status CB is not set, the monitor simply adds the status change event (topic) to the message queue.
 
+        The status_cb must conform to this signature:
+
+            cb(topic, data, *args, **kwargs)
+
+        where the *args and *kwargs are ones passed to this call.
+        The status_cb is called from the thread that reads from the pipe, hence it should be short-lived.
+        Do not put heavy processing logic in the status_cb.
+
         Args:
             cb:
             *args:
@@ -80,29 +121,72 @@ class PipeMonitor(object):
         self.cb_kwargs = kwargs
 
     def start(self):
+        """
+        Start the PipeMonitor.
+
+        Returns:
+
+        """
         if not self.reader.is_alive():
             self.reader.start()
 
-    def stop(self):
+    def stop(self, close_pipe=True):
+        """
+        Stop the monitor and optionally close the monitored pipe.
+
+        Args:
+            close_pipe: whether to close the monitored pipe.
+
+        Returns:
+
+        """
         self.asked_to_stop = True
         pipe = self.pipe
         self.pipe = None
-        if pipe:
+        if pipe and close_pipe:
             pipe.close()
 
     def send_to_peer(self, topic, data, timeout=None):
+        """Send a message to peer.
+
+        Args:
+            topic: topic of the message
+            data: data of the message
+            timeout: how long to wait for the peer to read the data. If not specified, return False immediately.
+
+        Returns: whether the peer has read the data.
+
+        """
+        if timeout is not None:
+            check_positive_number("timeout", timeout)
         return _send_to_pipe(self.pipe, topic, data, timeout)
 
     def notify_end(self, data=""):
+        """Notify the peer that the communication is ended normally.
+
+        Args:
+            data: optional data to be sent
+
+        Returns: None
+
+        """
         self.send_to_peer(Topic.END, data)
 
     def notify_abort(self, data=""):
+        """Notify the peer that the communication is aborted.
+
+        Args:
+            data: optional data to be sent
+
+        Returns: None
+
+        """
         self.send_to_peer(Topic.ABORT, data)
 
     def _add_message(self, topic, data):
         if topic in [Topic.END, Topic.ABORT, Topic.PEER_GONE]:
             if self.status_cb is not None:
-                self.status_cb(topic, *self.cb_args, **self.cb_kwargs)
+                self.status_cb(topic, data, *self.cb_args, **self.cb_kwargs)
                 return
         with self.lock:
             self.messages.append((topic, data))
@@ -142,6 +226,11 @@ class PipeMonitor(object):
         self.reader = None
 
     def get_next(self):
+        """Get next message from the message queue.
+
+        Returns: a tuple of (topic, data) at the top of the message queue. If the queue is empty, returns (None, None)
+
+        """
         with self.lock:
             if len(self.messages) > 0:
                 return self.messages.pop(0)
