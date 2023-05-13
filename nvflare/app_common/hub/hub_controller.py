@@ -434,14 +434,31 @@ class HubController(Controller):
             time.sleep(self.task_data_poll_interval)
 
     def _resolve_op_desc(self, op_desc: dict):
+        """
+        Determine the correct operation description.
+
+        There may be "operators" in job's config_fed_server.json.
+        If present, it describes the operations for tasks, and its descriptions override op_desc that comes from task!
+        It may specify a different method than the one in op_desc!
+        For example, the op_desc may specify the method 'bcast', but the config could specify 'relay'.
+        In this case, the 'relay' method will be used.
+
+        Args:
+            op_desc: the op description that comes from the task data
+
+        Returns: None
+
+        """
         op_id = op_desc.get(TaskOperatorKey.OP_ID, None)
         if op_id:
             # see whether config is set up for this op
+            # if so, the info in the config overrides op_desc!
             op_config = self.operator_descs.get(op_id, None)
             if op_config:
-                for k, v in op_config.items():
-                    if k not in op_desc:
-                        op_desc[k] = v
+                self.logger.debug("USE OPERATORS CONFIGURED")
+                op_desc.update(op_config)
+            else:
+                self.logger.debug("OPERATORS NOT CONFIGURED")
 
     def process_result_of_unknown_task(
         self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext

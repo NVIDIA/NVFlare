@@ -15,6 +15,7 @@
 from typing import Any
 
 from nvflare.apis.client import Client
+from nvflare.apis.controller_spec import OperatorMethod, TaskOperatorKey
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import ClientTask, Controller, Task
@@ -229,9 +230,17 @@ class ScatterAndGather(Controller):
                 data_shareable.set_header(AppConstants.NUM_ROUNDS, self._num_rounds)
                 data_shareable.add_cookie(AppConstants.CONTRIBUTION_ROUND, self._current_round)
 
+                operator = {
+                    TaskOperatorKey.OP_ID: self.train_task_name,
+                    TaskOperatorKey.METHOD: OperatorMethod.BROADCAST,
+                    TaskOperatorKey.TIMEOUT: self._train_timeout,
+                    TaskOperatorKey.AGGREGATOR: self.aggregator_id,
+                }
+
                 train_task = Task(
                     name=self.train_task_name,
                     data=data_shareable,
+                    operator=operator,
                     props={},
                     timeout=self._train_timeout,
                     before_task_sent_cb=self._prepare_train_task_data,

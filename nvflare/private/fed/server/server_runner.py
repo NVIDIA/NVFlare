@@ -309,7 +309,7 @@ class ServerRunner(FLComponent):
         while True:
             with self.wf_lock:
                 if self.current_wf is None:
-                    self.log_info(fl_ctx, "no current workflow - asked client to try again later")
+                    self.log_debug(fl_ctx, "no current workflow - asked client to try again later")
                     return "", "", None
 
                 task_name, task_id, task_data = self.current_wf.responder.process_task_request(client, fl_ctx)
