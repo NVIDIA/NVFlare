@@ -34,6 +34,7 @@ from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.fuel.utils.pipe.pipe import Pipe
 from nvflare.fuel.utils.pipe.pipe_monitor import PipeMonitor, Topic
+from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_number, check_str
 
 
 class BcastOperator(OperatorSpec, FLComponent):
@@ -225,6 +226,12 @@ class HubController(Controller):
         task_data_poll_interval: float = 0.1,
     ):
         Controller.__init__(self)
+
+        check_positive_number("task_data_poll_interval", task_data_poll_interval)
+        check_str("pipe_id", pipe_id)
+        if task_wait_time is not None:
+            check_positive_number("task_wait_time", task_wait_time)
+
         self.pipe_id = pipe_id
         self.operator_descs = None
         self.task_wait_time = task_wait_time
@@ -255,15 +262,15 @@ class HubController(Controller):
         if event_type == EventType.START_RUN:
             job_id = fl_ctx.get_job_id()
             pipe = engine.get_component(self.pipe_id)
-            if not isinstance(pipe, Pipe):
-                raise TypeError(f"pipe must be Pipe type. Got: {type(pipe)}")
+            check_object_type("pipe", pipe, Pipe)
             pipe.open(name=job_id, me="y")
             self.pipe_monitor = PipeMonitor(pipe)
         elif event_type == EventType.END_RUN:
             self.run_ended = True
 
     def _abort(self, reason: str, abort_signal: Signal, fl_ctx):
-        self.pipe_monitor.send_to_peer(topic=Topic.ABORT, data=reason)
+        assert isinstance(self.pipe_monitor, PipeMonitor)
+        self.pipe_monitor.notify_abort(reason)
         if reason:
             self.log_error(fl_ctx, reason)
         if abort_signal:
@@ -302,7 +309,7 @@ class HubController(Controller):
                     )
                     return
             else:
-                if topic in [Topic.ABORT, Topic.END_RUN, Topic.PEER_GONE]:
+                if topic in [Topic.ABORT, Topic.END, Topic.PEER_GONE]:
                     # the T1 peer is gone
                     self.log_info(fl_ctx, f"T1 stopped: '{topic}'")
                     return

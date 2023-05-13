@@ -17,6 +17,8 @@ import shutil
 import time
 import uuid
 
+from nvflare.fuel.utils.validation_utils import check_positive_number, check_str
+
 from .pipe import Pipe
 
 
@@ -26,6 +28,9 @@ class FilePipe(Pipe):
         Args:
             root_path: root path
         """
+        check_str("root_path", root_path)
+        check_positive_number("file_check_interval", file_check_interval)
+
         if not os.path.exists(root_path):
             # create the root path
             os.makedirs(root_path)

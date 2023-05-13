@@ -23,6 +23,7 @@ from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.fuel.utils.pipe.pipe import Pipe
 from nvflare.fuel.utils.pipe.pipe_monitor import PipeMonitor, Topic
+from nvflare.fuel.utils.validation_utils import check_positive_number, check_str
 
 
 class HubExecutor(Executor):
@@ -32,7 +33,7 @@ class HubExecutor(Executor):
     """
 
     def __init__(
-        self, pipe_id: str, task_wait_time=None, result_poll_interval: float = 0.1, task_read_wait_time: float = 10
+        self, pipe_id: str, task_wait_time=None, result_poll_interval: float = 0.1, task_read_wait_time: float = 10.0
     ):
         """
         Args:
@@ -42,6 +43,12 @@ class HubExecutor(Executor):
             task_read_wait_time: how long to wait for T2 to read a task assignment
         """
         Executor.__init__(self)
+        check_str("pipe_id", pipe_id)
+        if task_wait_time is not None:
+            check_positive_number("task_wait_time", task_wait_time)
+        check_positive_number("result_poll_interval", result_poll_interval)
+        check_positive_number("task_read_wait_time", task_read_wait_time)
+
         self.pipe_id = pipe_id
         self.task_wait_time = task_wait_time
         self.result_poll_interval = result_poll_interval
@@ -63,7 +70,7 @@ class HubExecutor(Executor):
         elif event_type == EventType.END_RUN:
             # tell T2 system to end run
             self.log_info(fl_ctx, "END_RUN received - telling T2 to stop")
-            self.pipe_monitor.send_to_peer(Topic.END_RUN, "")
+            self.pipe_monitor.notify_end()
             self.pipe_monitor.stop()
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
@@ -90,7 +97,7 @@ class HubExecutor(Executor):
         while True:
             if abort_signal.triggered:
                 # notify T2 that the task is aborted
-                self.pipe_monitor.send_to_peer(Topic.ABORT, task_id)
+                self.pipe_monitor.notify_abort(task_id)
                 return make_reply(ReturnCode.TASK_ABORTED)
 
             topic, data = self.pipe_monitor.get_next()
@@ -99,13 +106,13 @@ class HubExecutor(Executor):
                     # timed out
                     self.log_error(fl_ctx, f"task '{req_topic}' timeout after {self.task_wait_time} secs")
                     # also tell T2 to abort the task
-                    self.pipe_monitor.send_to_peer(Topic.ABORT, task_id)
+                    self.pipe_monitor.notify_abort(task_id)
                     return make_reply(ReturnCode.EXECUTION_EXCEPTION)
             elif topic == Topic.ABORT:
                 # T2 told us to abort the task!
                 if data == task_id:
                     return make_reply(ReturnCode.TASK_ABORTED)
-            elif topic in [Topic.END_RUN, Topic.PEER_GONE]:
+            elif topic in [Topic.END, Topic.PEER_GONE]:
                 # T2 told us it has ended the run
                 self.log_error(fl_ctx, f"received {topic} from T2 while waiting for result for {req_topic}")
                 return make_reply(ReturnCode.SERVICE_UNAVAILABLE)

@@ -17,12 +17,13 @@ import time
 
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.pipe.pipe import Pipe
+from nvflare.fuel.utils.validation_utils import check_callable, check_object_type, check_positive_number
 
 
 class Topic(object):
 
     ABORT = "_Abort_"
-    END_RUN = "_EndRun_"
+    END = "_End_"
     HEARTBEAT = "_Heartbeat_"
     PEER_GONE = "_PeerGone_"
 
@@ -40,6 +41,14 @@ def _receive_from_pipe(pipe: Pipe):
 
 class PipeMonitor(object):
     def __init__(self, pipe: Pipe, read_interval=0.1, heartbeat_interval=5.0, heartbeat_timeout=30.0):
+        check_positive_number("read_interval", read_interval)
+        check_positive_number("heartbeat_interval", heartbeat_interval)
+        check_positive_number("heartbeat_timeout", heartbeat_timeout)
+        check_object_type("pipe", pipe, Pipe)
+
+        if heartbeat_interval >= heartbeat_timeout:
+            raise ValueError(f"heartbeat_interval {heartbeat_interval} must < heartbeat_timeout {heartbeat_timeout}")
+
         self.pipe = pipe
         self.read_interval = read_interval
         self.heartbeat_interval = heartbeat_interval
@@ -49,6 +58,26 @@ class PipeMonitor(object):
         self.reader.daemon = True
         self.asked_to_stop = False
         self.lock = threading.Lock()
+        self.status_cb = None
+        self.cb_args = None
+        self.cb_kwargs = None
+
+    def set_status_cb(self, cb, *args, **kwargs):
+        """Set CB for status handling. When the peer status is changed (ABORT, END, GONE), this CB is called.
+        If status CB is not set, the monitor simply adds the status change event (topic) to the message queue.
+
+        Args:
+            cb:
+            *args:
+            **kwargs:
+
+        Returns: None
+
+        """
+        check_callable("cb", cb)
+        self.status_cb = cb
+        self.cb_args = args
+        self.cb_kwargs = kwargs
 
     def start(self):
         if not self.reader.is_alive():
@@ -64,7 +93,17 @@ class PipeMonitor(object):
     def send_to_peer(self, topic, data, timeout=None):
         return _send_to_pipe(self.pipe, topic, data, timeout)
 
+    def notify_end(self, data=""):
+        self.send_to_peer(Topic.END, data)
+
+    def notify_abort(self, data=""):
+        self.send_to_peer(Topic.ABORT, data)
+
     def _add_message(self, topic, data):
+        if topic in [Topic.END, Topic.ABORT, Topic.PEER_GONE]:
+            if self.status_cb is not None:
+                self.status_cb(topic, *self.cb_args, **self.cb_kwargs)
+                return
         with self.lock:
             self.messages.append((topic, data))
 
@@ -86,7 +125,7 @@ class PipeMonitor(object):
                 last_heartbeat_received_time = now
                 if topic != Topic.HEARTBEAT:
                     self._add_message(topic, data)
-                if topic in [Topic.END_RUN, Topic.ABORT]:
+                if topic in [Topic.END, Topic.ABORT]:
                     break
             else:
                 # is peer gone?
