@@ -255,8 +255,11 @@ class HubController(Controller):
         self.current_task_id = None
         self.current_operator = None
         self.builtin_operators = {OperatorMethod.BROADCAST: BcastOperator(), OperatorMethod.RELAY: RelayOperator()}
+        self.project_name = ""
 
     def start_controller(self, fl_ctx: FLContext) -> None:
+        self.project_name = fl_ctx.get_identity_name()
+
         # get operators
         engine = fl_ctx.get_engine()
         job_id = fl_ctx.get_job_id()
@@ -453,12 +456,20 @@ class HubController(Controller):
         if op_id:
             # see whether config is set up for this op
             # if so, the info in the config overrides op_desc!
-            op_config = self.operator_descs.get(op_id, None)
+            # first try to find project-specific definition
+            op_config = self.operator_descs.get(f"{self.project_name}.{op_id}", None)
             if op_config:
-                self.logger.debug("USE OPERATORS CONFIGURED")
+                self.logger.info(f"Use CONFIGURED OPERATORS for {self.project_name}.{op_id}")
+            else:
+                # try to find general definition
+                op_config = self.operator_descs.get(op_id, None)
+                if op_config:
+                    self.logger.info(f"Use CONFIGURED OPERATORS for {op_id}")
+
+            if op_config:
                 op_desc.update(op_config)
             else:
-                self.logger.debug("OPERATORS NOT CONFIGURED")
+                self.logger.info("OPERATORS NOT CONFIGURED")
 
     def process_result_of_unknown_task(
         self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
@@ -466,11 +477,14 @@ class HubController(Controller):
         # A late reply is received from client.
         # We'll include the late reply into the aggregation only if it's for the same type of tasks (i.e.
         # same task name). Note that the same task name could be used many times (rounds).
+        self.log_info(fl_ctx, f"Late response received from client {client.name} for task '{task_name}'")
         operator = self.current_operator
         if task_name == self.current_task_name and operator:
             operator.process_result_of_unknown_task(
                 client=client, task_name=task_name, client_task_id=client_task_id, result=result, fl_ctx=fl_ctx
             )
+        else:
+            self.log_warning(fl_ctx, f"Dropped late response received from client {client.name} for task '{task_name}'")
 
     def stop_controller(self, fl_ctx: FLContext):
         pass

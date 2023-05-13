@@ -159,7 +159,10 @@ class PipeMonitor(object):
         """
         if timeout is not None:
             check_positive_number("timeout", timeout)
-        return _send_to_pipe(self.pipe, topic, data, timeout)
+        try:
+            return _send_to_pipe(self.pipe, topic, data, timeout)
+        except BrokenPipeError:
+            self._add_message(Topic.PEER_GONE, "")
 
     def notify_end(self, data=""):
         """Notify the peer that the communication is ended normally.

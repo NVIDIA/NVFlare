@@ -103,9 +103,12 @@ class FilePipe(Pipe):
         tmp_path = os.path.join(self.t_path, file_name)
         if not self.pipe_path:
             raise BrokenPipeError("pipe broken")
-        with open(tmp_path, "wb") as f:
-            f.write(data_bytes)
-        os.rename(tmp_path, file_path)
+        try:
+            with open(tmp_path, "wb") as f:
+                f.write(data_bytes)
+            os.rename(tmp_path, file_path)
+        except FileNotFoundError:
+            raise BrokenPipeError("pipe closed")
         return file_path
 
     def clear(self):
@@ -171,8 +174,8 @@ class FilePipe(Pipe):
                 data = file.read()
             os.remove(tmp_path)  # remove this file
             return topic, data
-        except:
-            return None, None
+        except FileNotFoundError:
+            raise BrokenPipeError("pipe closed")
 
     def _get_next(self, from_dir: str):
         # print('get from dir: {}'.format(from_dir))
@@ -180,6 +183,7 @@ class FilePipe(Pipe):
             files = os.listdir(from_dir)
         except:
             raise BrokenPipeError(f"error reading from {from_dir}")
+
         if files:
             files = [os.path.join(from_dir, f) for f in files]
             files.sort(key=os.path.getmtime, reverse=False)
