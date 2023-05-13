@@ -17,7 +17,14 @@ import time
 from typing import Union
 
 from nvflare.apis.client import Client
-from nvflare.apis.controller_spec import ClientTask, ControllerSpec, Task, TaskOperatorKey
+from nvflare.apis.controller_spec import (
+    ClientTask,
+    ControllerSpec,
+    OperatorConfigKey,
+    OperatorMethod,
+    Task,
+    TaskOperatorKey,
+)
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
@@ -38,6 +45,9 @@ from nvflare.fuel.utils.validation_utils import check_object_type, check_positiv
 
 
 class BcastOperator(OperatorSpec, FLComponent):
+
+    _PROP_AGGR = "aggr"
+
     def __init__(self):
         OperatorSpec.__init__(self)
         FLComponent.__init__(self)
@@ -58,7 +68,6 @@ class BcastOperator(OperatorSpec, FLComponent):
             return None
 
         engine = fl_ctx.get_engine()
-        assert isinstance(engine, ServerEngineSpec)
         aggr = engine.get_component(aggr_id)
         if not aggr:
             self.log_error(fl_ctx, f"no aggregator defined for component id {aggr_id}")
@@ -85,7 +94,7 @@ class BcastOperator(OperatorSpec, FLComponent):
         train_task = Task(
             name=task_name,
             data=task_data,
-            props={"aggr": aggr},
+            props={self._PROP_AGGR: aggr},
             timeout=timeout,
             result_received_cb=self._process_bcast_result,
         )
@@ -105,8 +114,7 @@ class BcastOperator(OperatorSpec, FLComponent):
 
     def _process_bcast_result(self, client_task: ClientTask, fl_ctx: FLContext) -> None:
         result = client_task.result
-        aggr = client_task.task.get_prop("aggr")
-        assert isinstance(aggr, Aggregator)
+        aggr = client_task.task.get_prop(self._PROP_AGGR)
         aggr.accept(result, fl_ctx)
 
         # Cleanup task result
@@ -121,6 +129,10 @@ class BcastOperator(OperatorSpec, FLComponent):
 
 
 class RelayOperator(OperatorSpec, FLComponent):
+
+    _PROP_LAST_RESULT = "last_result"
+    _PROP_SHAREABLE_GEN = "shareable_generator"
+
     def __init__(self):
         OperatorSpec.__init__(self)
         FLComponent.__init__(self)
@@ -173,8 +185,8 @@ class RelayOperator(OperatorSpec, FLComponent):
             data=task_data,
             props={
                 AppConstants.CURRENT_ROUND: current_round,
-                "last_result": None,
-                "shareable_generator": shareable_generator,
+                self._PROP_LAST_RESULT: None,
+                self._PROP_SHAREABLE_GEN: shareable_generator,
             },
             result_received_cb=self._process_relay_result,
         )
@@ -193,7 +205,7 @@ class RelayOperator(OperatorSpec, FLComponent):
         if abort_signal.triggered:
             return None
 
-        return task.get_prop("last_result")
+        return task.get_prop(self._PROP_LAST_RESULT)
 
     def _process_relay_result(self, client_task: ClientTask, fl_ctx: FLContext):
         # submitted shareable is stored in client_task.result
@@ -201,10 +213,10 @@ class RelayOperator(OperatorSpec, FLComponent):
         # will get the updated shareable
         task = client_task.task
         current_round = task.get_prop(AppConstants.CURRENT_ROUND)
-        task.set_prop("last_result", client_task.result)
+        task.set_prop(self._PROP_LAST_RESULT, client_task.result)
 
         task_data = client_task.result
-        shareable_generator = task.get_prop("shareable_generator")
+        shareable_generator = task.get_prop(self._PROP_SHAREABLE_GEN)
         if shareable_generator:
             # turn received result (a Shareable) to learnable (i.e. weight diff => weight)
             learnable = shareable_generator.shareable_to_learnable(client_task.result, fl_ctx)
@@ -243,19 +255,18 @@ class HubController(Controller):
         self.current_task_name = None
         self.current_task_id = None
         self.current_operator = None
-        self.builtin_operators = {"bcast": BcastOperator(), "relay": RelayOperator()}
+        self.builtin_operators = {OperatorMethod.BROADCAST: BcastOperator(), OperatorMethod.RELAY: RelayOperator()}
 
     def start_controller(self, fl_ctx: FLContext) -> None:
         # get operators
         engine = fl_ctx.get_engine()
-        assert isinstance(engine, ServerEngineSpec)
         job_id = fl_ctx.get_job_id()
         workspace = engine.get_workspace()
         app_config_file = workspace.get_server_app_config_file_path(job_id)
         with open(app_config_file) as file:
             app_config = json.load(file)
-            self.operator_descs = app_config.get("operators", {})
-            self.log_info(fl_ctx, f"Got operator descriptions: {self.operator_descs}")
+            self.operator_descs = app_config.get(OperatorConfigKey.OPERATORS, {})
+            self.log_debug(fl_ctx, f"Got operator descriptions: {self.operator_descs}")
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
@@ -269,7 +280,6 @@ class HubController(Controller):
             self.run_ended = True
 
     def _abort(self, reason: str, abort_signal: Signal, fl_ctx):
-        assert isinstance(self.pipe_monitor, PipeMonitor)
         self.pipe_monitor.notify_abort(reason)
         if reason:
             self.log_error(fl_ctx, reason)
@@ -347,7 +357,7 @@ class HubController(Controller):
                     op_desc[TaskOperatorKey.OP_ID] = task_name
 
                 self._resolve_op_desc(op_desc)
-                op = op_desc.get(TaskOperatorKey.METHOD, "bcast")
+                op = op_desc.get(TaskOperatorKey.METHOD, OperatorMethod.BROADCAST)
                 if not op:
                     self._abort(
                         reason=f"bad operator in task '{topic}' from T1 - missing op",
@@ -388,8 +398,6 @@ class HubController(Controller):
                     contrib_round = data.get_cookie(AppConstants.CONTRIBUTION_ROUND)
                     if contrib_round is None:
                         self.log_error(fl_ctx, "CONTRIBUTION_ROUND Not Set!")
-                    else:
-                        self.log_info(fl_ctx, f"CONTRIBUTION_ROUND cookie set to {contrib_round}")
 
                     self.fire_event(AppEventType.ROUND_STARTED, fl_ctx)
                     fl_ctx.set_prop(key=FLContextKey.TASK_DATA, value=data, private=True, sticky=False)
@@ -444,7 +452,6 @@ class HubController(Controller):
         # same task name). Note that the same task name could be used many times (rounds).
         operator = self.current_operator
         if task_name == self.current_task_name and operator:
-            assert isinstance(operator, OperatorSpec)
             operator.process_result_of_unknown_task(
                 client=client, task_name=task_name, client_task_id=client_task_id, result=result, fl_ctx=fl_ctx
             )

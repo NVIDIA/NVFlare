@@ -37,7 +37,7 @@ class TaskCompletionStatus(Enum):
     CLIENT_DEAD = "client_dead"
 
 
-class TaskOperatorKey(object):
+class TaskOperatorKey:
 
     OP_ID = "op_id"
     METHOD = "method"  # bcast, relay, etc.
@@ -52,6 +52,17 @@ class TaskOperatorKey(object):
     TASK_ASSIGNMENT_TIMEOUT = "task_assign_timeout"  # for relay
     MIN_TARGETS = "min_targets"
     WAIT_TIME_AFTER_MIN_RESPS = "wait_time_after_min_received"
+
+
+class OperatorMethod:
+
+    BROADCAST = "bcast"
+    RELAY = "relay"
+
+
+class OperatorConfigKey:
+
+    OPERATORS = "operators"
 
 
 class Task(object):
