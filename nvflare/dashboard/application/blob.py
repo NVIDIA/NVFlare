@@ -119,6 +119,7 @@ def gen_server(key, first_server=True):
         "fed_learn_port": fl_port,
         "config_folder": "config",
         "ha_mode": "true" if project.ha_mode else "false",
+        "docker_image": project.app_location.split(" ")[-1] if project.app_location else "nvflare/nvflare",
         "org_name": "",
     }
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -127,6 +128,12 @@ def gen_server(key, first_server=True):
         os.mkdir(server_dir)
         os.mkdir(dest_dir)
         _write(os.path.join(dest_dir, "fed_server.json"), json.dumps(config, indent=2), "t")
+        _write(
+            os.path.join(dest_dir, "docker.sh"),
+            utils.sh_replace(template["docker_svr_sh"], replacement_dict),
+            "t",
+            exe=True,
+        )
         _write(
             os.path.join(dest_dir, "start.sh"),
             utils.sh_replace(template["start_svr_sh"], replacement_dict),
@@ -217,7 +224,7 @@ def gen_client(key, id):
     replacement_dict = {
         "client_name": entity.name,
         "config_folder": "config",
-        "docker_image": "",
+        "docker_image": project.app_location.split(" ")[-1] if project.app_location else "nvflare/nvflare",
         "org_name": entity.org,
     }
     if project.ha_mode:
@@ -240,6 +247,12 @@ def gen_client(key, id):
         os.mkdir(dest_dir)
 
         _write(os.path.join(dest_dir, "fed_client.json"), json.dumps(config, indent=2), "t")
+        _write(
+            os.path.join(dest_dir, "docker.sh"),
+            utils.sh_replace(template["docker_cln_sh"], replacement_dict),
+            "t",
+            exe=True,
+        )
         _write(
             os.path.join(dest_dir, "start.sh"),
             template["start_cln_sh"],
