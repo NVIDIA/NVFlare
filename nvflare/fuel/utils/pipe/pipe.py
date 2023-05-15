@@ -12,26 +12,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from abc import ABC, abstractmethod
 
-class Pipe(object):
+
+class Pipe(ABC):
+    @abstractmethod
     def open(self, name: str, me: str):
         """Open the pipe
 
         Args:
             name: name of the pipe
-            me: my peer name
+            me: my endpoint name. A pipe has two endpoints. Each endpoint must have a unique name.
 
         Returns: None
 
         """
         pass
 
+    @abstractmethod
     def clear(self):
         """Clear the pipe"""
         pass
 
+    @abstractmethod
     def send(self, topic: str, data: bytes, timeout=None) -> bool:
-        """Send message with the specified topic and data to peer.
+        """Send message with the specified topic and data to the peer.
 
         Args:
             topic: topic of the message
@@ -44,6 +49,7 @@ class Pipe(object):
         """
         pass
 
+    @abstractmethod
     def receive(self, timeout=None) -> (str, bytes):
         """Try to receive data from peer.
 
@@ -55,6 +61,7 @@ class Pipe(object):
         """
         pass
 
+    @abstractmethod
     def close(self):
         """Close the pipe
 

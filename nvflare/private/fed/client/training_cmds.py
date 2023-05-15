@@ -15,6 +15,7 @@
 import json
 from typing import List
 
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.hci.proto import MetaStatusValue, make_meta
 from nvflare.fuel.utils.argument_utils import parse_vars
@@ -125,7 +126,8 @@ class DeployProcessor(RequestProcessor):
 
         kv_list = parse_vars(engine.args.set)
         secure_train = kv_list.get("secure_train", True)
-        if secure_train:
+        from_hub_site = job_meta.get(JobMetaKey.FROM_HUB_SITE.value)
+        if secure_train and not from_hub_site:
             workspace = Workspace(root_dir=engine.args.workspace, site_name=client_name)
             app_path = workspace.get_app_dir(job_id)
             if not verify_folder_signature(app_path):

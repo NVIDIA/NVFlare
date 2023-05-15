@@ -20,7 +20,7 @@ def check_positive_int(name, value):
         raise ValueError(f"{name} must > 0, but got {value}")
 
 
-def check_whole_int(name, value):
+def check_non_negative_int(name, value):
     if not isinstance(value, int):
         raise TypeError(f"{name} must be an int, but got {type(value)}.")
     if value < 0:
@@ -30,13 +30,12 @@ def check_whole_int(name, value):
 def check_positive_number(name, value):
     if not isinstance(value, (int, float)):
         raise TypeError(f"{name} must be a number, but got {type(value)}.")
-    if value < 0:
+    if value <= 0:
         raise ValueError(f"{name} must > 0, but got {value}")
 
 
 def check_str(name, value):
-    if not isinstance(value, str):
-        raise TypeError(f"{name} must be str, but got {type(value)}.")
+    check_object_type(name, value, str)
 
 
 def check_object_type(name, value, obj_type):

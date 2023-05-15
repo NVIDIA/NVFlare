@@ -83,7 +83,16 @@ def convert_legacy_zipped_app_to_job(zip_data: bytes) -> bytes:
         return writer.getvalue()
 
 
-def load_job_def(from_path: str, def_name: str) -> bytes:
+def load_job_def_bytes(from_path: str, def_name: str) -> bytes:
+    """Load a job definition from specified path and return zipped bytes
+
+    Args:
+        from_path: path where the job definition is located
+        def_name: name of the job
+
+    Returns:
+
+    """
     # zip the job folder
     data = zip_directory_to_bytes(from_path, def_name)
     return convert_legacy_zipped_app_to_job(data)

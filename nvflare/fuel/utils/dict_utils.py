@@ -14,6 +14,8 @@
 
 import collections
 
+from .validation_utils import check_object_type
+
 
 def update(d, u):
     for k, v in u.items():
@@ -71,11 +73,8 @@ def augment(to_dict: dict, from_dict: dict, from_override_to=False) -> str:
        The content of the to_dict is updated
 
     """
-    if not isinstance(to_dict, dict):
-        return f"to_dict must be dict but got {type(to_dict)}"
-
-    if not isinstance(from_dict, dict):
-        return f"from_dict must be dict but got {type(from_dict)}"
+    check_object_type("to_dict", to_dict, dict)
+    check_object_type("from_dict", from_dict, dict)
 
     for k, fv in from_dict.items():
         if k not in to_dict:
@@ -124,9 +123,7 @@ def augment(to_dict: dict, from_dict: dict, from_override_to=False) -> str:
 
 def _update_component_dict(comp_list: list, target: dict) -> str:
     for c in comp_list:
-        if not isinstance(c, dict):
-            return f"component must be a dict but got {type(c)}"
-
+        check_object_type("element in comp_list", c, dict)
         cid = c.get("id", None)
         if not cid:
             return "missing 'id' from a component"
@@ -151,16 +148,14 @@ def update_components(target_dict: dict, from_dict: dict) -> str:
         # no components to update
         return ""
 
-    if not isinstance(from_comp_list, list):
-        return f"components in from_dict must be a list but got {type(from_comp_list)}"
+    check_object_type("from_comp_list", from_comp_list, list)
 
     target_comp_list = target_dict.get(key_components, None)
     if not target_comp_list:
         target_dict[key_components] = from_comp_list
         return ""
 
-    if not isinstance(target_comp_list, list):
-        return f"components in target_dict must be a list but got {type(target_comp_list)}"
+    check_object_type("target_comp_list", target_comp_list, list)
 
     from_comp_dict = {}
     err = _update_component_dict(from_comp_list, from_comp_dict)

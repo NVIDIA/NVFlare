@@ -16,7 +16,8 @@ import json
 import os
 import shutil
 
-from nvflare.apis.app_deployer_spec import AppDeployerSpec, FLContext
+from nvflare.apis.app_deployer_spec import AppDeployerSpec
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.zip_utils import unzip_all_from_bytes
@@ -27,9 +28,6 @@ from .app_authz import AppAuthzService
 
 
 class AppDeployer(AppDeployerSpec):
-    def __init__(self):
-        AppDeployerSpec.__init__(self)
-
     def deploy(
         self, workspace: Workspace, job_id: str, job_meta: dict, app_name: str, app_data: bytes, fl_ctx: FLContext
     ) -> str:

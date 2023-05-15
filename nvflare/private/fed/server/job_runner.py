@@ -159,7 +159,8 @@ class JobRunner(FLComponent):
 
                     kv_list = parse_vars(engine.args.set)
                     secure_train = kv_list.get("secure_train", True)
-                    if secure_train:
+                    from_hub_site = job.meta.get(JobMetaKey.FROM_HUB_SITE.value)
+                    if secure_train and not from_hub_site:
                         app_path = workspace.get_app_dir(job.job_id)
                         if not verify_folder_signature(app_path):
                             err = "job signature verification failed"

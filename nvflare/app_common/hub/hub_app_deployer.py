@@ -18,10 +18,10 @@ import shutil
 
 from nvflare.apis.app_deployer_spec import AppDeployerSpec, FLContext
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import SystemComponents, WorkspaceConstants
+from nvflare.apis.fl_constant import SystemComponents
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
-from nvflare.apis.utils.job_utils import load_job_def
+from nvflare.apis.utils.job_utils import load_job_def_bytes
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.dict_utils import update_components
 from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
@@ -31,16 +31,24 @@ from nvflare.private.fed.utils.app_deployer import AppDeployer
 
 
 class HubAppDeployer(AppDeployerSpec, FLComponent):
+
+    HUB_CLIENT_CONFIG_TEMPLATE_NAME = "hub_client.json"
+    OLD_HUB_CLIENT_CONFIG_TEMPLATE_NAME = "t1_config_fed_client.json"
+    HUB_SERVER_CONFIG_TEMPLATE_NAME = "hub_server_components.json"
+    OLD_HUB_SERVER_CONFIG_TEMPLATE_NAME = "t2_server_components.json"
+
+    HUB_CLIENT_CONFIG_TEMPLATES = [HUB_CLIENT_CONFIG_TEMPLATE_NAME, OLD_HUB_CLIENT_CONFIG_TEMPLATE_NAME]
+    HUB_SERVER_CONFIG_TEMPLATES = [HUB_SERVER_CONFIG_TEMPLATE_NAME, OLD_HUB_SERVER_CONFIG_TEMPLATE_NAME]
+
     def __init__(self):
-        AppDeployerSpec.__init__(self)
         FLComponent.__init__(self)
 
-    @staticmethod
-    def prepare(workspace: Workspace, job_id: str, remove_tmp_t2_dir: bool = True) -> (str, dict, bytes):
+    def prepare(self, workspace: Workspace, job_id: str, remove_tmp_t2_dir: bool = True) -> (str, dict, bytes):
         """
         Prepare T2 job
 
         Args:
+            fl_ctx:
             workspace:
             job_id:
             remove_tmp_t2_dir:
@@ -54,16 +62,21 @@ class HubAppDeployer(AppDeployerSpec, FLComponent):
 
         # step 2: make a copy of the app for T2
         t1_run_dir = workspace.get_run_dir(job_id)
-        t2_job_id = job_id + "_t2"
+        t2_job_id = job_id + "_t2"  # temporary ID for creating T2 job
         t2_run_dir = workspace.get_run_dir(t2_job_id)
         shutil.copytree(t1_run_dir, t2_run_dir)
 
         # step 3: modify the T1 client's config_fed_client.json to use HubExecutor
         # simply use t1_config_fed_client.json in the site folder
-        t1_client_app_config_path = workspace.get_file_path_in_site_config("t1_" + WorkspaceConstants.CLIENT_APP_CONFIG)
+        site_config_dir = workspace.get_site_config_dir()
+        t1_client_app_config_path = workspace.get_file_path_in_site_config(self.HUB_CLIENT_CONFIG_TEMPLATES)
 
-        if not os.path.exists(t1_client_app_config_path):
-            return f"missing {t1_client_app_config_path}", None, None
+        if not t1_client_app_config_path:
+            return (
+                f"no HUB client config template '{self.HUB_CLIENT_CONFIG_TEMPLATES}' in {site_config_dir}",
+                None,
+                None,
+            )
 
         shutil.copyfile(t1_client_app_config_path, workspace.get_client_app_config_file_path(job_id))
 
@@ -72,10 +85,14 @@ class HubAppDeployer(AppDeployerSpec, FLComponent):
         if not os.path.exists(t2_server_app_config_path):
             return f"missing {t2_server_app_config_path}", None, None
 
-        t2_server_component_file = workspace.get_file_path_in_site_config("t2_server_components.json")
+        t2_server_component_file = workspace.get_file_path_in_site_config(self.HUB_SERVER_CONFIG_TEMPLATES)
 
-        if not os.path.exists(t2_server_component_file):
-            return f"missing {t2_server_component_file}", None, None
+        if not t2_server_component_file:
+            return (
+                f"no HUB server config template '{self.HUB_SERVER_CONFIG_TEMPLATES}' in {site_config_dir}",
+                None,
+                None,
+            )
 
         with open(t2_server_app_config_path) as file:
             t2_server_app_config_dict = json.load(file)
@@ -85,7 +102,9 @@ class HubAppDeployer(AppDeployerSpec, FLComponent):
 
         # update components in the server's config with changed components
         # This will replace shareable_generator with the one defined in t2_server_components.json
-        update_components(target_dict=t2_server_app_config_dict, from_dict=t2_server_component_dict)
+        err = update_components(target_dict=t2_server_app_config_dict, from_dict=t2_server_component_dict)
+        if err:
+            return err
 
         # change to use HubController as the workflow for T2
         t2_wf = t2_server_component_dict.get("workflows", None)
@@ -109,6 +128,10 @@ class HubAppDeployer(AppDeployerSpec, FLComponent):
         submitter_role = t1_meta.get(JobMetaKey.SUBMITTER_ROLE.value, "")
         scope = t1_meta.get(JobMetaKey.SCOPE.value, "")
 
+        # Note: the app_name is already created like "app_"+site_name, which is also the directory that contains
+        # app config files (config_fed_server.json and config_fed_client.json).
+        # We need to make sure that the deploy-map uses this app name!
+        # We also add the FROM_HUB_SITE into the T2's job meta to indicate that this job comes from a HUB site.
         t2_app_name = "app_" + workspace.site_name
         t2_meta = {
             "name": t2_app_name,
@@ -119,6 +142,7 @@ class HubAppDeployer(AppDeployerSpec, FLComponent):
             JobMetaKey.SUBMITTER_ORG.value: submitter_org,
             JobMetaKey.SUBMITTER_ROLE.value: submitter_role,
             JobMetaKey.SCOPE.value: scope,
+            JobMetaKey.FROM_HUB_SITE.value: workspace.site_name,
         }
 
         t2_meta_path = workspace.get_job_meta_path(t2_job_id)
@@ -126,12 +150,12 @@ class HubAppDeployer(AppDeployerSpec, FLComponent):
             json.dump(t2_meta, f, indent=4)
 
         # step 5: submit T2 app (as a job) to T1's job store
-        t2_job_def = load_job_def(from_path=workspace.root_dir, def_name=t2_job_id)
+        t2_job_def = load_job_def_bytes(from_path=workspace.root_dir, def_name=t2_job_id)
 
         job_validator = JobMetaValidator()
         valid, error, meta = job_validator.validate(t2_job_id, t2_job_def)
         if not valid:
-            return f"invalid T2 job def: {error}", None, None
+            return f"invalid T2 job definition: {error}", None, None
 
         # make sure meta contains the right job ID
         t2_jid = meta.get(JobMetaKey.JOB_ID.value, None)

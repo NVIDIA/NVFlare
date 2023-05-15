@@ -12,11 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from abc import ABC, abstractmethod
+
 from .fl_context import FLContext
 from .workspace import Workspace
 
 
-class AppDeployerSpec(object):
+class AppDeployerSpec(ABC):
+    @abstractmethod
     def deploy(
         self, workspace: Workspace, job_id: str, job_meta: dict, app_name: str, app_data: bytes, fl_ctx: FLContext
     ) -> str:
