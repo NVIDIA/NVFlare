@@ -120,6 +120,8 @@ class ServerDeployer:
 
         threading.Thread(target=self._start_job_runner, args=[job_runner, fl_ctx]).start()
 
+        services.engine.fire_event(EventType.SYSTEM_BOOTSTRAP, services.engine.new_context())
+
         services.engine.fire_event(EventType.SYSTEM_START, services.engine.new_context())
         print("deployed FL server trainer.")
         return services

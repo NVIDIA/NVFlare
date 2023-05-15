@@ -34,6 +34,7 @@ from nvflare.private.fed.client.fed_client import FederatedClient
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize, security_init
 from nvflare.private.privacy_manager import PrivacyService
 from nvflare.security.logging import secure_format_exception
+from nvflare.private.event import fire_event
 
 
 def main():
@@ -112,6 +113,15 @@ def main():
         while federated_client.cell is None:
             print("Waiting client cell to be created ....")
             time.sleep(1.0)
+
+            handlers = [x for x in federated_client.components.values() if isinstance(x, FLComponent)]
+            fl_ctx = FLContext()
+            client_name = kv_list.get("uid")
+            fl_ctx.set_prop(key=ReservedKey.IDENTITY_NAME, value=client_name, private=True, sticky=False)
+            fire_event(EventType.SYSTEM_BOOTSTRAP, handlers, fl_ctx)
+
+            fire_event(EventType.BEFORE_CLIENT_REGISTER, handlers, fl_ctx)
+            token = fl_ctx.get_prop(key=FLContextKey.CLIENT_TOKEN, default="")
 
         federated_client.register()
 

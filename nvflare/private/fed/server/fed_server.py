@@ -459,6 +459,8 @@ class FederatedServer(BaseServer):
             if error is not None:
                 return make_cellnet_reply(rc=F3ReturnCode.COMM_ERROR, error=error)
 
+            self.engine.fire_event(EventType.CLIENT_REGISTERED, fl_ctx=fl_ctx)
+
             client = self.client_manager.authenticate(request, fl_ctx)
             if client and client.token:
                 self.tokens[client.token] = self.task_meta_info(client.name)
