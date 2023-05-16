@@ -109,7 +109,7 @@ def handle_provision(args):
             extra = load_yaml(os.path.join(current_path, args.add_user))
             extra.update({"type": "admin"})
             participants.append(Participant(**extra))
-        except BaseException:
+        except Exception:
             print("** Error during adding user **")
             print("The yaml file format is")
             print(adding_user_error_msg)
@@ -119,7 +119,7 @@ def handle_provision(args):
             extra = load_yaml(os.path.join(current_path, args.add_client))
             extra.update({"type": "client"})
             participants.append(Participant(**extra))
-        except BaseException as e:
+        except Exception as e:
             print("** Error during adding client **")
             print("The yaml file format is")
             print(adding_client_error_msg)

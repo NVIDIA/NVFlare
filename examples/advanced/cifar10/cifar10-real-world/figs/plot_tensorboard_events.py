@@ -127,7 +127,7 @@ def main():
             for k in xsite_keys:
                 try:
                     xsite_data[k].append(xsite_results["site-1"][k]["val_accuracy"])
-                except BaseException as e:
+                except Exception as e:
                     raise ValueError(f"No val_accuracy for {k} in {xsite_file}!")
 
     print("Training TB data:")

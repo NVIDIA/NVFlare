@@ -176,7 +176,7 @@ class Store(object):
         try:
             db.session.add(client)
             db.session.commit()
-        except BaseException as e:
+        except Exception as e:
             log.error(f"Error while creating client: {e}")
             return None
         return add_ok({"client": _dict_or_empty(client)})
@@ -221,7 +221,7 @@ class Store(object):
         try:
             db.session.add(client)
             db.session.commit()
-        except BaseException as e:
+        except Exception as e:
             log.error(f"Error while patching client: {e}")
             return None
         return add_ok({"client": _dict_or_empty(client)})
@@ -244,7 +244,7 @@ class Store(object):
         try:
             db.session.add(client)
             db.session.commit()
-        except BaseException as e:
+        except Exception as e:
             log.error(f"Error while patching client: {e}")
             return None
         return add_ok({"client": _dict_or_empty(client)})
@@ -286,7 +286,7 @@ class Store(object):
             user.role_id = role.id
             db.session.add(user)
             db.session.commit()
-        except BaseException as e:
+        except Exception as e:
             log.error(f"Error while creating user: {e}")
             return None
         return add_ok({"user": _dict_or_empty(user)})

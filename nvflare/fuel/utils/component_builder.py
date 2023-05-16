@@ -73,7 +73,7 @@ class ComponentBuilder:
                 try:
                     t = self.build_component(v)
                     class_args[k] = t
-                except BaseException as e:
+                except Exception as e:
                     raise ValueError(f"failed to instantiate class: {secure_format_exception(e)} ")
 
         class_path = self.get_class_path(config_dict)
