@@ -118,12 +118,6 @@ class DeployProcessor(RequestProcessor):
         if not job_meta:
             return error_reply("missing job meta")
 
-        err = engine.deploy_app(
-            app_name=app_name, job_id=job_id, job_meta=job_meta, client_name=client_name, app_data=req.body
-        )
-        if err:
-            return error_reply(err)
-
         kv_list = parse_vars(engine.args.set)
         secure_train = kv_list.get("secure_train", True)
         from_hub_site = job_meta.get(JobMetaKey.FROM_HUB_SITE.value)
@@ -132,6 +126,13 @@ class DeployProcessor(RequestProcessor):
             app_path = workspace.get_app_dir(job_id)
             if not verify_folder_signature(app_path):
                 return error_reply(f"app {app_name} does not pass signature verification")
+
+        err = engine.deploy_app(
+            app_name=app_name, job_id=job_id, job_meta=job_meta, client_name=client_name, app_data=req.body
+        )
+        if err:
+            return error_reply(err)
+
         return ok_reply(body=f"deployed {app_name} to {client_name}")
 
 
