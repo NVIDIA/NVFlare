@@ -34,7 +34,7 @@ class HubAppDeployer(AppDeployerSpec, FLComponent):
 
     HUB_CLIENT_CONFIG_TEMPLATE_NAME = "hub_client.json"
     OLD_HUB_CLIENT_CONFIG_TEMPLATE_NAME = "t1_config_fed_client.json"
-    HUB_SERVER_CONFIG_TEMPLATE_NAME = "hub_server_components.json"
+    HUB_SERVER_CONFIG_TEMPLATE_NAME = "hub_server.json"
     OLD_HUB_SERVER_CONFIG_TEMPLATE_NAME = "t2_server_components.json"
 
     HUB_CLIENT_CONFIG_TEMPLATES = [HUB_CLIENT_CONFIG_TEMPLATE_NAME, OLD_HUB_CLIENT_CONFIG_TEMPLATE_NAME]
