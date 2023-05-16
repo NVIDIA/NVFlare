@@ -399,7 +399,7 @@ class HubController(Controller):
 
                     contrib_round = data.get_cookie(AppConstants.CONTRIBUTION_ROUND)
                     if contrib_round is None:
-                        self.log_error(fl_ctx, "CONTRIBUTION_ROUND Not Set!")
+                        self.log_warning(fl_ctx, "CONTRIBUTION_ROUND Not Set!")
 
                     self.fire_event(AppEventType.ROUND_STARTED, fl_ctx)
                     fl_ctx.set_prop(key=FLContextKey.TASK_DATA, value=data, private=True, sticky=False)
