@@ -64,19 +64,27 @@ def client_gpu_assignments(clients: List[str], gpu_ids: List[int]) -> Dict[str, 
 
 
 def get_package_command(cmd_type: str, prod_dir: str, package_dir) -> str:
+    cmd = ""
     if cmd_type == SC.CMD_START:
-        if global_packages.get(SC.IS_DOCKER_RUN):
-            cmd = get_cmd_path(prod_dir, package_dir, "docker.sh")
+        if package_dir == global_packages.get(SC.FLARE_PROJ_ADMIN, SC.FLARE_PROJ_ADMIN):
+            cmd = get_cmd_path(prod_dir, package_dir, "fl_admin.sh")
         else:
-            if package_dir == global_packages.get(SC.FLARE_PROJ_ADMIN, SC.FLARE_PROJ_ADMIN):
-                cmd = get_cmd_path(prod_dir, package_dir, "fl_admin.sh")
-            elif package_dir == global_packages.get(SC.FLARE_SERVER, SC.FLARE_SERVER):
-                cmd = get_cmd_path(prod_dir, package_dir, "start.sh")
+            if global_packages.get(SC.IS_DOCKER_RUN):
+                cmd = get_cmd_path(prod_dir, package_dir, "docker.sh -d")
             else:
                 cmd = get_cmd_path(prod_dir, package_dir, "start.sh")
 
     elif cmd_type == SC.CMD_STOP:
-        cmd = get_stop_cmd(prod_dir, package_dir)
+        if package_dir == global_packages.get(SC.FLARE_PROJ_ADMIN, SC.FLARE_PROJ_ADMIN):
+            cmd = get_stop_cmd(prod_dir, package_dir)
+        else:
+            if global_packages.get(SC.IS_DOCKER_RUN):
+                if package_dir == global_packages.get(SC.FLARE_SERVER, SC.FLARE_SERVER):
+                    cmd = get_cmd_path(prod_dir, package_dir, "docker stop flserver")
+                elif package_dir == global_packages.get(SC.FLARE_CLIENTS, SC.FLARE_SERVER):
+                    cmd = get_cmd_path(prod_dir, package_dir, f"docker stop {package_dir}")
+            else:
+                cmd = get_stop_cmd(prod_dir, package_dir)
     else:
         raise ValueError("unknown cmd_type :", cmd_type)
     return cmd
@@ -235,7 +243,6 @@ def local_provision(
         project_config = add_he_builder(use_he, project_config)
         if docker_image:
             project_config = update_static_file_builder(docker_image, project_config)
-            project_config = add_docker_builder(use_docker=True, project_config=project_config)
 
     save_project_config(project_config, dst_project_file)
 
@@ -384,6 +391,7 @@ def prepare_poc_provision(
     project_conf_path: str = "",
 ):
     os.makedirs(workspace, exist_ok=True)
+    os.makedirs(os.path.join(workspace, "data"), exist_ok=True)
     global global_packages
     global_packages = local_provision(clients, number_of_clients, workspace, docker_image, use_he, project_conf_path)
     server_name = global_packages[SC.FLARE_SERVER]
@@ -461,11 +469,14 @@ def start_poc(poc_workspace: str, gpu_ids: List[int], excluded=None, white_list=
         excluded = []
     print(f"start_poc at {poc_workspace}, gpu_ids={gpu_ids}, excluded = {excluded}, white_list={white_list}")
     validate_packages(project_config, white_list)
+    print("validate poc workspace")
     validate_poc_workspace(poc_workspace)
+    print("_run_poc")
     _run_poc(SC.CMD_START, poc_workspace, gpu_ids, excluded=excluded, white_list=white_list)
 
 
 def validate_packages(project_config, white_list):
+    print("validate_packages=", project_config )
     participant_names = [p["name"] for p in project_config["participants"]]
     for p in white_list:
         if p not in participant_names:
@@ -481,8 +492,7 @@ def setup_global_packages(poc_workspace) -> Optional[Dict]:
         global_packages = get_packages(project_config)
         return project_config
     else:
-        return None
-
+        raise ValueError(f"{project_file} is missing, make sure you have first run 'nvflare poc --prepare'")
 
 def stop_poc(poc_workspace: str, excluded=None, white_list=None):
     project_config = setup_global_packages(poc_workspace)
@@ -522,7 +532,6 @@ def _build_commands(cmd_type: str, poc_workspace: str, excluded: list, white_lis
     :param white_list: whitelist, package name. If empty, include every package
     :return:
     """
-
     def is_fl_package_dir(p_dir_name: str) -> bool:
         return (
             p_dir_name == global_packages[SC.FLARE_PROJ_ADMIN]
@@ -549,14 +558,21 @@ def _build_commands(cmd_type: str, poc_workspace: str, excluded: list, white_lis
 
 def prepare_env(gpu_ids: Optional[List[int]] = None):
     import os
-
+    my_env = None
     if gpu_ids:
         my_env = os.environ.copy()
-        if gpu_ids and len(gpu_ids) > 0:
+        if len(gpu_ids) > 0:
             my_env["CUDA_VISIBLE_DEVICES"] = ",".join([str(gid) for gid in gpu_ids])
-            return my_env
 
-    return None
+    if global_packages.get(SC.IS_DOCKER_RUN):
+        my_env = os.environ.copy() if my_env is None else my_env
+        if gpu_ids and len(gpu_ids) > 0:
+            my_env["GPU2USE"] = my_env["CUDA_VISIBLE_DEVICES"]
+
+        my_env["MY_DATA_DIR"] = os.path.join(get_poc_workspace(), "data")
+
+    return my_env
+
 
 
 def async_process(cmd_path, gpu_ids: Optional[List[int]] = None):
@@ -725,9 +741,7 @@ def handle_poc_cmd(cmd_args):
     if cmd_args.exclude != "":
         excluded = [cmd_args.exclude]
 
-    poc_workspace = os.getenv("NVFLARE_POC_WORKSPACE")
-    if poc_workspace is None or len(poc_workspace.strip()) == 0:
-        poc_workspace = DEFAULT_WORKSPACE
+    poc_workspace = get_poc_workspace()
     if cmd_args.start_poc:
         if cmd_args.gpu >= 0:
             gpu_ids = get_gpu_ids(cmd_args.gpu, get_local_host_gpu_ids())
@@ -754,3 +768,10 @@ def handle_poc_cmd(cmd_args):
         clean_poc(poc_workspace)
     else:
         raise Exception(f"unable to handle poc command:{cmd_args}")
+
+
+def get_poc_workspace():
+    poc_workspace = os.getenv("NVFLARE_POC_WORKSPACE")
+    if poc_workspace is None or len(poc_workspace.strip()) == 0:
+        poc_workspace = DEFAULT_WORKSPACE
+    return poc_workspace
