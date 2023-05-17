@@ -359,7 +359,7 @@ class HubController(Controller):
                     op_desc[TaskOperatorKey.OP_ID] = task_name
 
                 self._resolve_op_desc(op_desc)
-                op = op_desc.get(TaskOperatorKey.METHOD, OperatorMethod.BROADCAST)
+                op = op_desc.get(TaskOperatorKey.METHOD)
                 if not op:
                     self._abort(
                         reason=f"bad operator in task '{topic}' from T1 - missing op",
