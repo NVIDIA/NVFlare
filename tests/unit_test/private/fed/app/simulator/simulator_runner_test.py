@@ -86,3 +86,31 @@ class TestSimulatorRunner:
         runner = SimulatorRunner(job_folder="", workspace="")
         split_names = runner.split_clients(client_names, gpus)
         assert sorted(split_names) == sorted(expected_split_names)
+
+    @pytest.mark.parametrize(
+        "gpus, expected_gpus",
+        [
+            ("[0,1],[1, 2]", ["0,1", "1,2"]),
+            ("[0,1],[3]", ["0,1", "3"]),
+            ("[0,1],[ 3 ]", ["0,1", "3"]),
+        ],
+    )
+    def test_split_gpus_success(self, gpus, expected_gpus):
+        runner = SimulatorRunner(job_folder="", workspace="")
+        split_gpus, _ = runner.split_gpus(gpus)
+        assert split_gpus == expected_gpus
+
+    @pytest.mark.parametrize(
+        "gpus",
+        [
+            "[0,1],3",
+            "0,1,2",
+        ],
+    )
+    def test_split_gpus_fail(self, gpus):
+        runner = SimulatorRunner(job_folder="", workspace="")
+        split_gpus, success = runner.split_gpus(gpus)
+        assert split_gpus is None
+        assert success is False
+
+
