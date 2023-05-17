@@ -52,6 +52,22 @@ class BcastOperator(OperatorSpec, FLComponent):
         FLComponent.__init__(self)
         self.current_aggregator = None
 
+    @staticmethod
+    def _get_aggregator(op_description: dict, fl_ctx: FLContext):
+        aggr_id = op_description.get(TaskOperatorKey.AGGREGATOR, "")
+        if not aggr_id:
+            raise RuntimeError("missing aggregator component id")
+
+        engine = fl_ctx.get_engine()
+        aggr = engine.get_component(aggr_id)
+        if not aggr:
+            raise RuntimeError(f"no aggregator defined for component id {aggr_id}")
+
+        if not isinstance(aggr, Aggregator):
+            raise RuntimeError(f"component {aggr_id} must be Aggregator but got {type(aggr)}")
+
+        return aggr
+
     def operate(
         self,
         op_description: dict,
@@ -61,25 +77,13 @@ class BcastOperator(OperatorSpec, FLComponent):
         abort_signal: Signal,
         fl_ctx: FLContext,
     ) -> Union[Shareable, None]:
-        aggr_id = op_description.get(TaskOperatorKey.AGGREGATOR, "")
-        if not aggr_id:
-            self.log_error(fl_ctx, "missing aggregator component id")
-            return None
-
-        engine = fl_ctx.get_engine()
-        aggr = engine.get_component(aggr_id)
-        if not aggr:
-            self.log_error(fl_ctx, f"no aggregator defined for component id {aggr_id}")
-            return None
-
-        if not isinstance(aggr, Aggregator):
-            self.log_error(fl_ctx, f"component {aggr_id} must be Aggregator but got {type(aggr)}")
-            return None
+        aggr = self._get_aggregator(op_description, fl_ctx)
 
         # reset the internal state of the aggregator for next round of aggregation
         self.current_aggregator = aggr
         aggr.reset(fl_ctx)
 
+        engine = fl_ctx.get_engine()
         total_num_clients = len(engine.get_clients())
         timeout = op_description.get(TaskOperatorKey.TIMEOUT, 0)
         wait_time_after_min_resps = op_description.get(TaskOperatorKey.WAIT_TIME_AFTER_MIN_RESPS, 5)
@@ -136,6 +140,36 @@ class RelayOperator(OperatorSpec, FLComponent):
         OperatorSpec.__init__(self)
         FLComponent.__init__(self)
 
+    @staticmethod
+    def _get_shareable_generator(op_description: dict, fl_ctx: FLContext):
+        engine = fl_ctx.get_engine()
+        comp_id = op_description.get(TaskOperatorKey.SHAREABLE_GENERATOR, "")
+        if not comp_id:
+            return None
+
+        shareable_generator = engine.get_component(comp_id)
+        if not shareable_generator:
+            raise RuntimeError(f"no shareable generator defined for component id {comp_id}")
+
+        if not isinstance(shareable_generator, ShareableGenerator):
+            raise RuntimeError(f"component {comp_id} must be ShareableGenerator but got {type(shareable_generator)}")
+        return shareable_generator
+
+    @staticmethod
+    def _get_persistor(op_description: dict, fl_ctx: FLContext):
+        persistor_id = op_description.get(TaskOperatorKey.PERSISTOR, "")
+        if not persistor_id:
+            return None
+
+        engine = fl_ctx.get_engine()
+        persistor = engine.get_component(persistor_id)
+        if not persistor:
+            raise RuntimeError(f"no persistor defined for component id {persistor_id}")
+
+        if not isinstance(persistor, LearnablePersistor):
+            raise RuntimeError(f"component {persistor_id} must be LearnablePersistor but got {type(persistor)}")
+        return persistor
+
     def operate(
         self,
         op_description: dict,
@@ -146,34 +180,9 @@ class RelayOperator(OperatorSpec, FLComponent):
         fl_ctx: FLContext,
     ) -> Union[None, Shareable]:
         current_round = task_data.get_header(AppConstants.CURRENT_ROUND, None)
-        engine = fl_ctx.get_engine()
-
-        shareable_generator = None
-        shareable_generator_id = op_description.get(TaskOperatorKey.SHAREABLE_GENERATOR, "")
-        if shareable_generator_id:
-            shareable_generator = engine.get_component(shareable_generator_id)
-            if not shareable_generator:
-                self.log_error(fl_ctx, f"no shareable generator defined for component id {shareable_generator_id}")
-                return None
-
-            if not isinstance(shareable_generator, ShareableGenerator):
-                self.log_error(
-                    fl_ctx,
-                    f"component {shareable_generator_id} must be ShareableGenerator but got {type(shareable_generator)}",
-                )
-                return None
-
-        persistor_id = op_description.get(TaskOperatorKey.PERSISTOR, "")
-        if persistor_id:
-            persistor = engine.get_component(persistor_id)
-            if not persistor:
-                self.log_error(fl_ctx, f"no persistor defined for component id {persistor_id}")
-                return None
-
-            if not isinstance(persistor, LearnablePersistor):
-                self.log_error(fl_ctx, f"component {persistor_id} must be LearnablePersistor but got {type(persistor)}")
-                return None
-
+        shareable_generator = self._get_shareable_generator(op_description, fl_ctx)
+        persistor = self._get_persistor(op_description, fl_ctx)
+        if persistor:
             # The persistor should convert the TASK_DATA in the fl_ctx into a learnable
             # This learnable is the base for the relay
             learnable_base = persistor.load(fl_ctx)
@@ -288,12 +297,30 @@ class HubController(Controller):
         if abort_signal:
             abort_signal.trigger(True)
 
+    def _get_operator(self, task_name: str, op_desc: dict, fl_ctx: FLContext):
+        method_name = op_desc.get(TaskOperatorKey.METHOD)
+        if not method_name:
+            return None, f"bad operator in task '{task_name}' from T1 - missing method name"
+
+        # see whether an Operator is defined for the method
+        engine = fl_ctx.get_engine()
+        operator = engine.get_component(method_name)
+        if not operator:
+            operator = self.builtin_operators.get(method_name, None)
+
+        if not operator:
+            return None, f"bad task '{task_name}' from T1 - no operator for '{method_name}'"
+
+        if not isinstance(operator, OperatorSpec):
+            return None, f"operator for '{method_name}' must be OperatorSpec but got {type(operator)}"
+        return operator, ""
+
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         try:
             self.pipe_monitor.start()
             self._control_flow(abort_signal, fl_ctx)
             self.pipe_monitor.stop()
-        except BaseException as ex:
+        except Exception as ex:
             self.log_exception(fl_ctx, "control flow exception")
             self._abort(f"control_flow exception {ex}", abort_signal, fl_ctx)
 
@@ -356,39 +383,13 @@ class HubController(Controller):
                 op_desc = data.get_header(ReservedHeaderKey.TASK_OPERATOR, {})
                 op_id = op_desc.get(TaskOperatorKey.OP_ID)
                 if not op_id:
+                    # use task_name as the operation id
                     op_desc[TaskOperatorKey.OP_ID] = task_name
 
-                self._resolve_op_desc(op_desc)
-                op = op_desc.get(TaskOperatorKey.METHOD)
-                if not op:
-                    self._abort(
-                        reason=f"bad operator in task '{topic}' from T1 - missing op",
-                        abort_signal=abort_signal,
-                        fl_ctx=fl_ctx,
-                    )
-                    return
-
-                # see whether an Operator is defined
-                engine = fl_ctx.get_engine()
-                operator = engine.get_component(op)
+                self._resolve_op_desc(op_desc, fl_ctx)
+                operator, err = self._get_operator(task_name, op_desc, fl_ctx)
                 if not operator:
-                    operator = self.builtin_operators.get(op, None)
-
-                if not operator:
-                    self._abort(
-                        reason=f"bad task '{topic}' from T1 - no operator for '{op}'",
-                        abort_signal=abort_signal,
-                        fl_ctx=fl_ctx,
-                    )
-                    return
-
-                if not isinstance(operator, OperatorSpec):
-                    self._abort(
-                        reason=f"bad operator for task '{topic}' from T1 - "
-                        f"operator for '{op}' must be OperatorSpec but got {type(operator)}",
-                        abort_signal=abort_signal,
-                        fl_ctx=fl_ctx,
-                    )
+                    self._abort(reason=err, abort_signal=abort_signal, fl_ctx=fl_ctx)
                     return
 
                 operator_name = operator.__class__.__name__
@@ -415,8 +416,8 @@ class HubController(Controller):
                         abort_signal=abort_signal,
                         fl_ctx=fl_ctx,
                     )
-                except BaseException as ex:
-                    self.log_exception(fl_ctx, f"error processing {task_name} from Operator {operator_name}: {ex}")
+                except:
+                    self.log_exception(fl_ctx, f"exception processing '{task_name}' from operator '{operator_name}'")
                     result = None
                 finally:
                     self.task_abort_signal = None
@@ -425,10 +426,12 @@ class HubController(Controller):
                     self.fire_event(AppEventType.ROUND_DONE, fl_ctx)
 
                 if not result:
-                    self.log_error(fl_ctx, f"no result from '{op}' handler")
+                    self.log_error(fl_ctx, f"no result from operator '{operator_name}'")
                     result = make_reply(ReturnCode.EXECUTION_EXCEPTION)
                 elif not isinstance(result, Shareable):
-                    self.log_error(fl_ctx, f"bad result from '{op}' handler: expect Shareable but got {type(result)}")
+                    self.log_error(
+                        fl_ctx, f"bad result from operator '{operator_name}': expect Shareable but got {type(result)}"
+                    )
                     result = make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
                 self.pipe_monitor.send_to_peer(topic, result)
@@ -436,7 +439,7 @@ class HubController(Controller):
 
             time.sleep(self.task_data_poll_interval)
 
-    def _resolve_op_desc(self, op_desc: dict):
+    def _resolve_op_desc(self, op_desc: dict, fl_ctx: FLContext):
         """
         Determine the correct operation description.
 
@@ -459,17 +462,17 @@ class HubController(Controller):
             # first try to find project-specific definition
             op_config = self.operator_descs.get(f"{self.project_name}.{op_id}", None)
             if op_config:
-                self.logger.info(f"Use CONFIGURED OPERATORS for {self.project_name}.{op_id}")
+                self.log_debug(fl_ctx, f"Use CONFIGURED OPERATORS for {self.project_name}.{op_id}")
             else:
                 # try to find general definition
                 op_config = self.operator_descs.get(op_id, None)
                 if op_config:
-                    self.logger.info(f"Use CONFIGURED OPERATORS for {op_id}")
+                    self.log_debug(fl_ctx, f"Use CONFIGURED OPERATORS for {op_id}")
 
             if op_config:
                 op_desc.update(op_config)
             else:
-                self.logger.info("OPERATORS NOT CONFIGURED")
+                self.log_debug(fl_ctx, "OPERATORS NOT CONFIGURED")
 
     def process_result_of_unknown_task(
         self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
