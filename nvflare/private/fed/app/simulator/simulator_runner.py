@@ -177,7 +177,7 @@ class SimulatorRunner(FLComponent):
             if self.args.gpu:
                 gpus, success = self.split_gpus(self.args.gpu)
                 if not success:
-                    self.logger.error(f"GPUs group list in wrong format. Please use format like: [0,1],[1,2] ...")
+                    self.logger.error("GPUs group list in wrong format. Please use format like: [0,1],[1,2] ...")
                     return False
 
                 host_gpus = [str(x) for x in (get_host_gpu_ids())]
