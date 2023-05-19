@@ -93,6 +93,8 @@ class TestSimulatorRunner:
             ("[0,1],[1, 2]", ["0,1", "1,2"]),
             ("[0,1],[3]", ["0,1", "3"]),
             ("[0,1],[ 3 ]", ["0,1", "3"]),
+            ("[02,1],[ a ]", ["02,1", "a"]),
+            ("[]", [""])
         ],
     )
     def test_split_gpus_success(self, gpus, expected_gpus):
@@ -105,6 +107,7 @@ class TestSimulatorRunner:
         [
             "[0,1],3",
             "0,1,2",
+            "[0,1]extra"
         ],
     )
     def test_split_gpus_fail(self, gpus):
