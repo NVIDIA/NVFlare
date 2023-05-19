@@ -650,14 +650,11 @@ docker_cln_sh: |
   # before running docker.sh
 
   # for all gpus use line below 
-  : ${GPU2USE:="all"}
-  # The above is for the same purpose in MY_DATA_DIR.
-  # It will set GPU2USE to all if this env var is not set.
-
+  #GPU2USE='--gpus=all'
   # for 2 gpus use line below
-  #GPU2USE=2 
+  #GPU2USE='--gpus=2' 
   # for specific gpus as gpu#0 and gpu#2 use line below
-  #GPU2USE='"device=0,2"'
+  #GPU2USE='--gpus="device=0,2"'
   # to use host network, use line below
   NETARG="--net=host"
   # FL clients do not need to open ports, so the following line is not needed.
@@ -667,12 +664,12 @@ docker_cln_sh: |
   mode="${1:--r}"
   if [ $mode = "-d" ]
   then
-    docker run -d --rm --name={~~client_name~~} --gpus=$GPU2USE -u $(id -u):$(id -g) \
+    docker run -d --rm --name={~~client_name~~} $GPU2USE -u $(id -u):$(id -g) \
     -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group -v $DIR/..:/workspace/ \
     -v $MY_DATA_DIR:/data/:ro -w /workspace/ --ipc=host $NETARG $DOCKER_IMAGE \
     /bin/bash -c "python -u -m nvflare.private.fed.app.client.client_train -m /workspace -s fed_client.json --set uid={~~client_name~~} secure_train=true config_folder=config org={~~org_name~~}"
   else
-    docker run --rm -it --name={~~client_name~~} --gpus=$GPU2USE -u $(id -u):$(id -g) \
+    docker run --rm -it --name={~~client_name~~} $GPU2USE -u $(id -u):$(id -g) \
     -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group -v $DIR/..:/workspace/ \
     -v $MY_DATA_DIR:/data/:ro -w /workspace/ --ipc=host $NETARG $DOCKER_IMAGE /bin/bash
   fi
