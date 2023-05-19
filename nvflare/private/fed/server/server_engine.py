@@ -345,7 +345,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 optional=True,
             )
             self.logger.info(f"Abort server status: {status_message}")
-        except BaseException:
+        except Exception:
             with self.lock:
                 child_process = self.run_processes.get(job_id, {}).get(RunProcessKey.CHILD_PROCESS, None)
                 if child_process:
@@ -429,7 +429,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 command_name=ServerCommandNames.GET_RUN_INFO,
                 command_data={},
             )
-        except BaseException:
+        except Exception:
             self.logger.error(f"Failed to get_app_run_info for run: {job_id}")
         return run_info
 
@@ -660,7 +660,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 self.logger.info(f"persist the snapshot to: {self.server.snapshot_location}")
             else:
                 self.logger.info(f"The snapshot: {self.server.snapshot_location} has been removed.")
-        except BaseException as e:
+        except Exception as e:
             self.logger.error(f"Failed to persist the components. {secure_format_exception(e)}")
 
     def restore_components(self, snapshot: RunSnapshot, fl_ctx: FLContext):
@@ -681,7 +681,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 command_name=ServerCommandNames.SHOW_STATS,
                 command_data={},
             )
-        except BaseException:
+        except Exception:
             self.logger.error(f"Failed to show_stats for JOB: {job_id}")
 
         if stats is None:
@@ -696,7 +696,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 command_name=ServerCommandNames.GET_ERRORS,
                 command_data={},
             )
-        except BaseException:
+        except Exception:
             self.logger.error(f"Failed to get_errors for JOB: {job_id}")
 
         if errors is None:
@@ -711,7 +711,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 command_name=ServerCommandNames.RESET_ERRORS,
                 command_data={},
             )
-        except BaseException:
+        except Exception:
             self.logger.error(f"Failed to reset_errors for JOB: {job_id}")
 
         return f"reset the server error stats for job: {job_id}"

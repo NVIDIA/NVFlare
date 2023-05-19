@@ -113,7 +113,7 @@ class ServerRunner(FLComponent):
 
                 with self.engine.new_context() as fl_ctx:
                     wf.responder.control_flow(self.abort_signal, fl_ctx)
-            except BaseException as e:
+            except Exception as e:
                 with self.engine.new_context() as fl_ctx:
                     self.log_exception(fl_ctx, "Exception in workflow {}: {}".format(wf.id, secure_format_exception(e)))
                 self.system_panic("Exception in workflow {}: {}".format(wf.id, secure_format_exception(e)), fl_ctx)
@@ -131,7 +131,7 @@ class ServerRunner(FLComponent):
                     self.log_info(fl_ctx, f"Workflow: {wf.id} finalizing ...")
                     try:
                         wf.responder.finalize_run(fl_ctx)
-                    except BaseException as e:
+                    except Exception as e:
                         self.log_exception(
                             fl_ctx, "Error finalizing workflow {}: {}".format(wf.id, secure_format_exception(e))
                         )
@@ -155,7 +155,7 @@ class ServerRunner(FLComponent):
         self.status = "started"
         try:
             self._execute_run()
-        except BaseException as e:
+        except Exception as e:
             with self.engine.new_context() as fl_ctx:
                 self.log_exception(fl_ctx, f"Error executing RUN: {secure_format_exception(e)}")
         finally:
@@ -277,7 +277,7 @@ class ServerRunner(FLComponent):
                 for f in filter_list:
                     try:
                         task_data = f.process(task_data, fl_ctx)
-                    except BaseException as e:
+                    except Exception as e:
                         self.log_exception(
                             fl_ctx,
                             "processing error in task data filter {}: {}; "
@@ -297,7 +297,7 @@ class ServerRunner(FLComponent):
             task_data.set_header(ReservedHeaderKey.AUDIT_EVENT_ID, audit_event_id)
             task_data.set_header(TaskConstant.WAIT_TIME, self.config.task_request_interval)
             return task_name, task_id, task_data
-        except BaseException as e:
+        except Exception as e:
             self.log_exception(
                 fl_ctx,
                 f"Error processing client task request: {secure_format_exception(e)}; asked client to try again later",
@@ -354,7 +354,7 @@ class ServerRunner(FLComponent):
                     return
 
                 self.current_wf.responder.handle_dead_job(client_name=client_name, fl_ctx=fl_ctx)
-            except BaseException as e:
+            except Exception as e:
                 self.log_exception(
                     fl_ctx, f"Error processing dead job by workflow {self.current_wf.id}: {secure_format_exception(e)}"
                 )
@@ -443,7 +443,7 @@ class ServerRunner(FLComponent):
                     for f in filter_list:
                         try:
                             result = f.process(result, fl_ctx)
-                        except BaseException as e:
+                        except Exception as e:
                             self.log_exception(
                                 fl_ctx,
                                 "Error processing in task result filter {}: {}".format(
@@ -467,7 +467,7 @@ class ServerRunner(FLComponent):
 
                 self.log_debug(fl_ctx, "firing event EventType.AFTER_PROCESS_SUBMISSION")
                 self.fire_event(EventType.AFTER_PROCESS_SUBMISSION, fl_ctx)
-            except BaseException as e:
+            except Exception as e:
                 self.log_exception(
                     fl_ctx,
                     "Error processing client result by {}: {}".format(self.current_wf.id, secure_format_exception(e)),

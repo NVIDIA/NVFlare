@@ -52,7 +52,7 @@ def add_to_global_weights(new_val, base_weights, v_name):
         # update the global model
         updated_vars = new_val + global_var
 
-    except BaseException as e:
+    except Exception as e:
         raise ValueError(f"add_to_global_weights Exception: {secure_format_exception(e)}") from e
 
     return updated_vars, n_vars_total
@@ -138,7 +138,7 @@ class HEModelShareableGenerator(ShareableGenerator):
         self.log_info(fl_ctx, "shareable_to_learnable...")
         try:
             return self._shareable_to_learnable(shareable, fl_ctx)
-        except BaseException as e:
+        except Exception as e:
             self.log_exception(fl_ctx, "error converting shareable to model")
             raise ValueError(f"{self._name} Exception {secure_format_exception(e)}") from e
 

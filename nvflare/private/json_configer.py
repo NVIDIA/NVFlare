@@ -81,7 +81,7 @@ class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
                 try:
                     data = json.load(file)
                     augment(to_dict=config_data, from_dict=data, from_override_to=False)
-                except BaseException as e:
+                except Exception as e:
                     print("Error processing config file {}: {}".format(file, secure_format_exception(e)))
                     raise e
 

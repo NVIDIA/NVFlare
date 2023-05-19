@@ -152,7 +152,7 @@ class ClientTaskWorker(FLComponent):
                     break
                 time.sleep(interval)
 
-        except BaseException as e:
+        except Exception as e:
             self.logger.error(f"ClientTaskWorker run error: {secure_format_exception(e)}")
         finally:
             if client:

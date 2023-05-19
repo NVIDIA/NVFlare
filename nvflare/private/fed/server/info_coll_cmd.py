@@ -169,5 +169,5 @@ class InfoCollectorCommandModule(JobCommandModule, CommandUtil):
             try:
                 body = json.loads(r.reply.body)
                 conn.append_any(body)
-            except BaseException:
+            except Exception:
                 conn.append_string("Bad responses from clients")

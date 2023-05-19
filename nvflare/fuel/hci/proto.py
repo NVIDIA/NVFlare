@@ -207,7 +207,7 @@ def validate_proto(line: str):
                     assert isinstance(row, list)
 
         return json_data
-    except BaseException:
+    except Exception:
         return None
 
 
