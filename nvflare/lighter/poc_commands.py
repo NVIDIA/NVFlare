@@ -18,6 +18,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import time
 import traceback
 from typing import Dict, List, Optional, OrderedDict
 
@@ -121,6 +122,11 @@ def get_upload_dir(startup_dir) -> str:
     return upload_dir
 
 
+def is_dir_empty(path: str):
+    targe_dir = os.listdir(path)
+    return len(targe_dir) == 0
+
+
 def prepare_examples(example_dir: str, workspace: str):
     project_config = setup_global_packages(workspace)
     if example_dir is None or example_dir == "":
@@ -133,12 +139,14 @@ def prepare_examples(example_dir: str, workspace: str):
     if not os.path.exists(prod_dir):
         print("please use nvflare poc --prepare to create workspace first")
         exit(0)
-    startup_dir = os.path.join(prod_dir, f"{global_packages[SC.FLARE_PROJ_ADMIN]}/{SC.STARTUP}")
+
+    console_dir = os.path.join(prod_dir, f"{global_packages[SC.FLARE_PROJ_ADMIN]}")
+    startup_dir = os.path.join(console_dir, SC.STARTUP)
     transfer = get_upload_dir(startup_dir)
-    dst = os.path.join(startup_dir, transfer)
-    if os.path.islink(dst) or os.path.isdir(dst):
+    dst = os.path.join(console_dir, transfer)
+    if not is_dir_empty(dst):
         print(f" ")
-        answer = input(f"Examples link or directory at {dst} is already exists, replace with new one ? (y/N) ")
+        answer = input(f"Examples at {dst} is already exists, replace with new one ? (y/N) ")
         if answer.strip().upper() == "Y":
             if os.path.islink(dst):
                 print("unlink dir")
@@ -149,6 +157,8 @@ def prepare_examples(example_dir: str, workspace: str):
             print(f"link examples from {src} to {dst}")
             os.symlink(src, dst)
     else:
+        if os.path.isdir(dst):
+            shutil.rmtree(dst, ignore_errors=True)
         print(f"link examples from {src} to {dst}")
         os.symlink(src, dst)
 
@@ -550,11 +560,13 @@ def _build_commands(cmd_type: str, poc_workspace: str, excluded: list, white_lis
     """
 
     def is_fl_package_dir(p_dir_name: str) -> bool:
-        return (
+        fl_package = (
                 p_dir_name == global_packages[SC.FLARE_PROJ_ADMIN]
                 or p_dir_name == global_packages[SC.FLARE_SERVER]
                 or p_dir_name in global_packages[SC.FLARE_CLIENTS]
         )
+        print(p_dir_name, "fl_package = ", fl_package)
+        return fl_package
 
     prod_dir = get_prod_dir(poc_workspace)
 
@@ -609,10 +621,14 @@ def _run_poc(cmd_type: str, poc_workspace: str, gpu_ids: List[int], excluded: li
     if white_list is None:
         white_list = []
     package_commands = _build_commands(cmd_type, poc_workspace, excluded, white_list)
+    print("package_commands =", package_commands)
     clients = _get_clients(package_commands)
     gpu_assignments: Dict[str, List[int]] = client_gpu_assignments(clients, gpu_ids)
     for package_name, cmd_path in package_commands:
         if package_name == global_packages[SC.FLARE_PROJ_ADMIN]:
+            # give other commands a chance to start first
+            if len(package_commands) > 1:
+                time.sleep(2)
             sync_process(package_name, cmd_path)
         elif package_name == global_packages[SC.FLARE_SERVER]:
             async_process(package_name, cmd_path, None)
