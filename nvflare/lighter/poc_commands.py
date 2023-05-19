@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import cmd
 import json
 import os
 import random
@@ -66,25 +65,25 @@ def client_gpu_assignments(clients: List[str], gpu_ids: List[int]) -> Dict[str, 
 def get_package_command(cmd_type: str, prod_dir: str, package_dir) -> str:
     cmd = ""
     if cmd_type == SC.CMD_START:
-        if package_dir == global_packages.get(SC.FLARE_PROJ_ADMIN, SC.FLARE_PROJ_ADMIN):
-            cmd = get_cmd_path(prod_dir, package_dir, "fl_admin.sh")
-        else:
-            if global_packages.get(SC.IS_DOCKER_RUN):
-                cmd = get_cmd_path(prod_dir, package_dir, "docker.sh -d")
+        admin_package = global_packages.get(SC.FLARE_PROJ_ADMIN, SC.FLARE_PROJ_ADMIN)
+        if not global_packages.get(SC.IS_DOCKER_RUN):
+            if package_dir == admin_package:
+                cmd = get_cmd_path(prod_dir, package_dir, "fl_admin.sh")
             else:
                 cmd = get_cmd_path(prod_dir, package_dir, "start.sh")
+        else:
+            if package_dir == admin_package:
+                cmd = get_cmd_path(prod_dir, package_dir, "docker.sh")
+            else:
+                cmd = get_cmd_path(prod_dir, package_dir, "docker.sh -d")
 
     elif cmd_type == SC.CMD_STOP:
-        if package_dir == global_packages.get(SC.FLARE_PROJ_ADMIN, SC.FLARE_PROJ_ADMIN):
+
+        if not global_packages.get(SC.IS_DOCKER_RUN):
             cmd = get_stop_cmd(prod_dir, package_dir)
         else:
-            if global_packages.get(SC.IS_DOCKER_RUN):
-                if package_dir == global_packages.get(SC.FLARE_SERVER, SC.FLARE_SERVER):
-                    cmd = get_cmd_path(prod_dir, package_dir, "docker stop flserver")
-                elif package_dir == global_packages.get(SC.FLARE_CLIENTS, SC.FLARE_SERVER):
-                    cmd = get_cmd_path(prod_dir, package_dir, f"docker stop {package_dir}")
-            else:
-                cmd = get_stop_cmd(prod_dir, package_dir)
+            cmd = f"docker stop {package_dir}"
+
     else:
         raise ValueError("unknown cmd_type :", cmd_type)
     return cmd
@@ -456,16 +455,19 @@ def start_poc(poc_workspace: str, gpu_ids: List[int], excluded=None, white_list=
     if excluded is None:
         excluded = []
     print(f"start_poc at {poc_workspace}, gpu_ids={gpu_ids}, excluded = {excluded}, white_list={white_list}")
-    validate_packages(project_config, white_list)
-    print("validate poc workspace")
+    validate_packages(project_config, white_list, excluded)
     validate_poc_workspace(poc_workspace)
-    print("_run_poc")
     _run_poc(SC.CMD_START, poc_workspace, gpu_ids, excluded=excluded, white_list=white_list)
 
 
-def validate_packages(project_config, white_list):
+def validate_packages(project_config, white_list: List, excluded: List):
     participant_names = [p["name"] for p in project_config["participants"]]
-    for p in white_list:
+    validate_participants(participant_names, white_list)
+    validate_participants(participant_names, excluded)
+
+
+def validate_participants(participant_names, list_participants):
+    for p in list_participants:
         if p not in participant_names:
             print(f"package for participant '{p}' is not defined, expecting one of followings: {participant_names}")
             exit(1)
@@ -494,11 +496,17 @@ def stop_poc(poc_workspace: str, excluded=None, white_list=None):
 
     validate_packages(project_config, white_list)
 
-    print("start shutdown NVFLARE")
     validate_poc_workspace(poc_workspace)
     gpu_ids: List[int] = []
     prod_dir = get_prod_dir(poc_workspace)
-    shutdown_system(prod_dir, username=global_packages[SC.FLARE_PROJ_ADMIN])
+
+    p_size = len(white_list)
+    if p_size == 0 or global_packages[SC.FLARE_SERVER] in white_list:
+        print("start shutdown NVFLARE")
+        shutdown_system(prod_dir, username=global_packages[SC.FLARE_PROJ_ADMIN])
+    else:
+        print(f"start shutdown {white_list}")
+
     _run_poc(SC.CMD_STOP, poc_workspace, gpu_ids, excluded=excluded, white_list=white_list)
 
 
@@ -545,7 +553,7 @@ def _build_commands(cmd_type: str, poc_workspace: str, excluded: list, white_lis
     return sort_package_cmds(cmd_type, package_commands)
 
 
-def prepare_env(gpu_ids: Optional[List[int]] = None):
+def prepare_env(package_name, gpu_ids: Optional[List[int]] = None):
     import os
     my_env = None
     if gpu_ids:
@@ -556,22 +564,23 @@ def prepare_env(gpu_ids: Optional[List[int]] = None):
     if global_packages.get(SC.IS_DOCKER_RUN):
         my_env = os.environ.copy() if my_env is None else my_env
         if gpu_ids and len(gpu_ids) > 0:
-            my_env["GPU2USE"] = my_env["CUDA_VISIBLE_DEVICES"]
+            my_env["GPU2USE"] = f"--gpus={my_env['CUDA_VISIBLE_DEVICES']}"
 
         my_env["MY_DATA_DIR"] = os.path.join(get_poc_workspace(), "data")
+        my_env["SVR_NAME"] = package_name
 
     return my_env
 
 
-def async_process(cmd_path, gpu_ids: Optional[List[int]] = None):
-    my_env = prepare_env(gpu_ids)
+def async_process(package_name, cmd_path, gpu_ids: Optional[List[int]] = None):
+    my_env = prepare_env(package_name, gpu_ids)
     if my_env:
         subprocess.Popen(cmd_path.split(" "), env=my_env)
     else:
         subprocess.Popen(cmd_path.split(" "))
 
 
-def sync_process(cmd_path):
+def sync_process(package_name, cmd_path):
     my_env = os.environ.copy()
     subprocess.run(cmd_path.split(" "), env=my_env)
 
@@ -583,13 +592,12 @@ def _run_poc(cmd_type: str, poc_workspace: str, gpu_ids: List[int], excluded: li
     clients = _get_clients(package_commands)
     gpu_assignments: Dict[str, List[int]] = client_gpu_assignments(clients, gpu_ids)
     for package_name, cmd_path in package_commands:
-        print(f"'{cmd_type}', package: '{package_name}', executing '{cmd_path}'")
         if package_name == global_packages[SC.FLARE_PROJ_ADMIN]:
-            sync_process(cmd_path)
+            sync_process(package_name, cmd_path)
         elif package_name == global_packages[SC.FLARE_SERVER]:
-            async_process(cmd_path, None)
+            async_process(package_name, cmd_path, None)
         else:
-            async_process(cmd_path, gpu_assignments[package_name])
+            async_process(package_name, cmd_path, gpu_assignments[package_name])
 
 
 def clean_poc(poc_workspace: str):
@@ -729,7 +737,6 @@ def handle_poc_cmd(cmd_args):
     if cmd_args.exclude != "":
         excluded = [cmd_args.exclude]
 
-    print(cmd_args.gpu)
     if cmd_args.gpu is not None and cmd_args.prepare_poc:
         raise ValueError("-gpu should not be used for 'nvflare poc --prepare' command ")
 
