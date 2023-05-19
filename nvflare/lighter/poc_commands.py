@@ -19,7 +19,6 @@ import socket
 import subprocess
 import sys
 import time
-import traceback
 from typing import Dict, List, Optional, OrderedDict
 
 import yaml
@@ -145,7 +144,7 @@ def prepare_examples(example_dir: str, workspace: str):
     transfer = get_upload_dir(startup_dir)
     dst = os.path.join(console_dir, transfer)
     if not is_dir_empty(dst):
-        print(f" ")
+        print(" ")
         answer = input(f"Examples at {dst} is already exists, replace with new one ? (y/N) ")
         if answer.strip().upper() == "Y":
             if os.path.islink(dst):
@@ -241,12 +240,12 @@ def prepare_builders(project_dict: OrderedDict) -> List:
 
 
 def local_provision(
-        clients: List[str],
-        number_of_clients: int,
-        workspace: str,
-        docker_image: str,
-        use_he: bool = False,
-        project_conf_path: str = "",
+    clients: List[str],
+    number_of_clients: int,
+    workspace: str,
+    docker_image: str,
+    use_he: bool = False,
+    project_conf_path: str = "",
 ) -> dict:
     user_provided_project_config = False
     if project_conf_path:
@@ -366,12 +365,12 @@ def prepare_clients(clients, number_of_clients):
 
 
 def prepare_poc(
-        clients: List[str],
-        number_of_clients: int,
-        workspace: str,
-        docker_image: str,
-        use_he: bool,
-        project_conf_path: str = "",
+    clients: List[str],
+    number_of_clients: int,
+    workspace: str,
+    docker_image: str,
+    use_he: bool,
+    project_conf_path: str = "",
 ) -> bool:
     if clients:
         number_of_clients = len(clients)
@@ -396,12 +395,12 @@ def prepare_poc(
 
 
 def prepare_poc_provision(
-        clients: List[str],
-        number_of_clients: int,
-        workspace: str,
-        docker_image: str,
-        use_he: bool = False,
-        project_conf_path: str = "",
+    clients: List[str],
+    number_of_clients: int,
+    workspace: str,
+    docker_image: str,
+    use_he: bool = False,
+    project_conf_path: str = "",
 ):
     os.makedirs(workspace, exist_ok=True)
     os.makedirs(os.path.join(workspace, "data"), exist_ok=True)
@@ -545,7 +544,7 @@ def _get_clients(package_commands: list) -> List[str]:
         package_dir_name
         for package_dir_name, _ in package_commands
         if package_dir_name != global_packages[SC.FLARE_PROJ_ADMIN]
-           and package_dir_name != global_packages[SC.FLARE_SERVER]
+        and package_dir_name != global_packages[SC.FLARE_SERVER]
     ]
     return clients
 
@@ -561,9 +560,9 @@ def _build_commands(cmd_type: str, poc_workspace: str, excluded: list, white_lis
 
     def is_fl_package_dir(p_dir_name: str) -> bool:
         fl_package = (
-                p_dir_name == global_packages[SC.FLARE_PROJ_ADMIN]
-                or p_dir_name == global_packages[SC.FLARE_SERVER]
-                or p_dir_name in global_packages[SC.FLARE_CLIENTS]
+            p_dir_name == global_packages[SC.FLARE_PROJ_ADMIN]
+            or p_dir_name == global_packages[SC.FLARE_SERVER]
+            or p_dir_name in global_packages[SC.FLARE_CLIENTS]
         )
         print(p_dir_name, "fl_package = ", fl_package)
         return fl_package
@@ -587,6 +586,7 @@ def _build_commands(cmd_type: str, poc_workspace: str, excluded: list, white_lis
 
 def prepare_env(package_name, gpu_ids: Optional[List[int]] = None):
     import os
+
     my_env = None
     if gpu_ids:
         my_env = os.environ.copy()
@@ -711,7 +711,7 @@ def def_poc_parser(sub_cmd):
         nargs="?",
         default="",
         help="project.yaml file path, it should be used with '--prepare' command. If specified, "
-             + "'number_of_clients','clients' and 'docker' specific options will be ignored.",
+        + "'number_of_clients','clients' and 'docker' specific options will be ignored.",
     )
     poc_parser.add_argument(
         "-d",
@@ -720,7 +720,7 @@ def def_poc_parser(sub_cmd):
         default=None,
         const="nvflare/nvflare",
         help="generate docker.sh based on the docker_image, used in '--prepare' command. and generate docker.sh "
-             + " '--start/stop' commands will start with docker.sh ",
+        + " '--start/stop' commands will start with docker.sh ",
     )
     poc_parser.add_argument(
         "--prepare",
@@ -748,11 +748,11 @@ def def_poc_parser(sub_cmd):
 
 def is_poc(cmd_args) -> bool:
     return (
-            hasattr(cmd_args, "start_poc")
-            or hasattr(cmd_args, "prepare_poc")
-            or hasattr(cmd_args, "stop_poc")
-            or hasattr(cmd_args, "clean_poc")
-            or hasattr(cmd_args, "prepare_examples")
+        hasattr(cmd_args, "start_poc")
+        or hasattr(cmd_args, "prepare_poc")
+        or hasattr(cmd_args, "stop_poc")
+        or hasattr(cmd_args, "clean_poc")
+        or hasattr(cmd_args, "prepare_examples")
     )
 
 
