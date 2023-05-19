@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import cmd
 import json
 import os
 import random
@@ -19,7 +19,7 @@ import shutil
 import socket
 import subprocess
 import sys
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, OrderedDict
 
 import yaml
 
@@ -158,7 +158,7 @@ def verify_host(host_name: str) -> bool:
         return False
 
 
-def verify_hosts(project_config: dict):
+def verify_hosts(project_config: OrderedDict):
     hosts: List[str] = get_project_hosts(project_config)
     for h in hosts:
         if not verify_host(h):
@@ -171,7 +171,7 @@ def get_project_hosts(project_config) -> List[str]:
     return [p["name"] for p in participants if p["type"] == "client" or p["type"] == "server"]
 
 
-def get_fl_server_name(project_config: dict) -> str:
+def get_fl_server_name(project_config: OrderedDict) -> str:
     participants: List[dict] = project_config["participants"]
     servers = [p["name"] for p in participants if p["type"] == "server"]
     if len(servers) == 1:
@@ -180,7 +180,7 @@ def get_fl_server_name(project_config: dict) -> str:
         raise ValueError(f"project should only have one server, but {len(servers)} are provided: {servers}")
 
 
-def get_proj_admin(project_config: dict):
+def get_proj_admin(project_config: OrderedDict):
     participants: List[dict] = project_config["participants"]
     admins = [p["name"] for p in participants if p["type"] == "admin"]
 
@@ -190,13 +190,13 @@ def get_proj_admin(project_config: dict):
         raise ValueError(f"project should only have only one project admin, but {len(admins)} are provided: {admins}")
 
 
-def get_fl_client_names(project_config: dict) -> List[str]:
+def get_fl_client_names(project_config: OrderedDict) -> List[str]:
     participants: List[dict] = project_config["participants"]
     client_names = [p["name"] for p in participants if p["type"] == "client"]
     return client_names
 
 
-def prepare_builders(project_dict: dict) -> List:
+def prepare_builders(project_dict: OrderedDict) -> List:
     builders = list()
     admin_name = [p["name"] for p in project_dict["participants"] if p["type"] == "admin"][0]
     for b in project_dict.get("builders"):
@@ -216,12 +216,12 @@ def prepare_builders(project_dict: dict) -> List:
 
 
 def local_provision(
-    clients: List[str],
-    number_of_clients: int,
-    workspace: str,
-    docker_image: str,
-    use_he: bool = False,
-    project_conf_path: str = "",
+        clients: List[str],
+        number_of_clients: int,
+        workspace: str,
+        docker_image: str,
+        use_he: bool = False,
+        project_conf_path: str = "",
 ) -> dict:
     user_provided_project_config = False
     if project_conf_path:
@@ -233,7 +233,7 @@ def local_provision(
         dst_project_file = src_project_file
 
     print(f"provision at {workspace} for {number_of_clients} clients with {src_project_file}")
-    project_config = load_yaml(src_project_file)
+    project_config: OrderedDict = load_yaml(src_project_file)
     if not project_config:
         raise ValueError(f"empty or invalid project config from project yaml file: {src_project_file}")
 
@@ -243,11 +243,8 @@ def local_provision(
         project_config = add_he_builder(use_he, project_config)
         if docker_image:
             project_config = update_static_file_builder(docker_image, project_config)
-
     save_project_config(project_config, dst_project_file)
-
     packages = get_packages(project_config)
-
     project = prepare_project(project_config)
     builders = prepare_builders(project_config)
     provisioner = Provisioner(workspace, builders)
@@ -279,7 +276,7 @@ def update_server_name(project_config):
     return project_config
 
 
-def is_docker_run(project_config: dict):
+def is_docker_run(project_config: OrderedDict):
     static_builder = [
         b
         for b in project_config.get("builders")
@@ -288,25 +285,16 @@ def is_docker_run(project_config: dict):
     return "docker_image" in static_builder["args"]
 
 
-def update_static_file_builder(docker_image: str, project_config: dict):
-    static_builder = [
-        b
-        for b in project_config.get("builders")
-        if b.get("path") == "nvflare.lighter.impl.static_file.StaticFileBuilder"
-    ][0]
-    static_builder["args"]["docker_image"] = docker_image
+def update_static_file_builder(docker_image: str, project_config: OrderedDict):
+    # need to keep the order of the builders
+    for b in project_config.get("builders"):
+        if b.get("path") == "nvflare.lighter.impl.static_file.StaticFileBuilder":
+            b["args"]["docker_image"] = docker_image
 
-    updated_builders = [
-        b
-        for b in project_config.get("builders")
-        if b.get("path") != "nvflare.lighter.impl.static_file.StaticFileBuilder"
-    ]
-    updated_builders.append(static_builder)
-    project_config["builders"] = updated_builders
     return project_config
 
 
-def add_docker_builder(use_docker: bool, project_config: dict):
+def add_docker_builder(use_docker: bool, project_config: OrderedDict):
     if use_docker:
         docker_builder = {
             "path": "nvflare.lighter.impl.docker.DockerBuilder",
@@ -317,7 +305,7 @@ def add_docker_builder(use_docker: bool, project_config: dict):
     return project_config
 
 
-def add_he_builder(use_he: bool, project_config: dict):
+def add_he_builder(use_he: bool, project_config: OrderedDict):
     if use_he:
         he_builder = {
             "path": "nvflare.lighter.impl.he.HEBuilder",
@@ -328,7 +316,7 @@ def add_he_builder(use_he: bool, project_config: dict):
     return project_config
 
 
-def update_clients(clients: List[str], n_clients: int, project_config: dict) -> dict:
+def update_clients(clients: List[str], n_clients: int, project_config: OrderedDict) -> OrderedDict:
     requested_clients = prepare_clients(clients, n_clients)
 
     participants: List[dict] = project_config["participants"]
@@ -353,12 +341,12 @@ def prepare_clients(clients, number_of_clients):
 
 
 def prepare_poc(
-    clients: List[str],
-    number_of_clients: int,
-    workspace: str,
-    docker_image: str,
-    use_he: bool,
-    project_conf_path: str = "",
+        clients: List[str],
+        number_of_clients: int,
+        workspace: str,
+        docker_image: str,
+        use_he: bool,
+        project_conf_path: str = "",
 ) -> bool:
     if clients:
         number_of_clients = len(clients)
@@ -383,12 +371,12 @@ def prepare_poc(
 
 
 def prepare_poc_provision(
-    clients: List[str],
-    number_of_clients: int,
-    workspace: str,
-    docker_image: str,
-    use_he: bool = False,
-    project_conf_path: str = "",
+        clients: List[str],
+        number_of_clients: int,
+        workspace: str,
+        docker_image: str,
+        use_he: bool = False,
+        project_conf_path: str = "",
 ):
     os.makedirs(workspace, exist_ok=True)
     os.makedirs(os.path.join(workspace, "data"), exist_ok=True)
@@ -476,7 +464,6 @@ def start_poc(poc_workspace: str, gpu_ids: List[int], excluded=None, white_list=
 
 
 def validate_packages(project_config, white_list):
-    print("validate_packages=", project_config )
     participant_names = [p["name"] for p in project_config["participants"]]
     for p in white_list:
         if p not in participant_names:
@@ -493,6 +480,7 @@ def setup_global_packages(poc_workspace) -> Optional[Dict]:
         return project_config
     else:
         raise ValueError(f"{project_file} is missing, make sure you have first run 'nvflare poc --prepare'")
+
 
 def stop_poc(poc_workspace: str, excluded=None, white_list=None):
     project_config = setup_global_packages(poc_workspace)
@@ -519,7 +507,7 @@ def _get_clients(package_commands: list) -> List[str]:
         package_dir_name
         for package_dir_name, _ in package_commands
         if package_dir_name != global_packages[SC.FLARE_PROJ_ADMIN]
-        and package_dir_name != global_packages[SC.FLARE_SERVER]
+           and package_dir_name != global_packages[SC.FLARE_SERVER]
     ]
     return clients
 
@@ -532,11 +520,12 @@ def _build_commands(cmd_type: str, poc_workspace: str, excluded: list, white_lis
     :param white_list: whitelist, package name. If empty, include every package
     :return:
     """
+
     def is_fl_package_dir(p_dir_name: str) -> bool:
         return (
-            p_dir_name == global_packages[SC.FLARE_PROJ_ADMIN]
-            or p_dir_name == global_packages[SC.FLARE_SERVER]
-            or p_dir_name in global_packages[SC.FLARE_CLIENTS]
+                p_dir_name == global_packages[SC.FLARE_PROJ_ADMIN]
+                or p_dir_name == global_packages[SC.FLARE_SERVER]
+                or p_dir_name in global_packages[SC.FLARE_CLIENTS]
         )
 
     prod_dir = get_prod_dir(poc_workspace)
@@ -572,7 +561,6 @@ def prepare_env(gpu_ids: Optional[List[int]] = None):
         my_env["MY_DATA_DIR"] = os.path.join(get_poc_workspace(), "data")
 
     return my_env
-
 
 
 def async_process(cmd_path, gpu_ids: Optional[List[int]] = None):
@@ -662,7 +650,7 @@ def def_poc_parser(sub_cmd):
         "--gpu",
         type=int,
         nargs="*",
-        default="-1",
+        default=None,
         help="gpu device ids will be used as CUDA_VISIBLE_DEVICES. used for poc start command",
     )
     poc_parser.add_argument(
@@ -679,16 +667,16 @@ def def_poc_parser(sub_cmd):
         nargs="?",
         default="",
         help="project.yaml file path, it should be used with '--prepare' command. If specified, "
-        + "'number_of_clients','clients' and 'docker' specific options will be ignored.",
+             + "'number_of_clients','clients' and 'docker' specific options will be ignored.",
     )
     poc_parser.add_argument(
         "-d",
         "--docker_image",
         nargs="?",
         default=None,
-        const="python:3.8",
+        const="nvflare/nvflare",
         help="generate docker.sh based on the docker_image, used in '--prepare' command. and generate docker.sh "
-        + " '--start/stop' commands will start with docker.sh ",
+             + " '--start/stop' commands will start with docker.sh ",
     )
     poc_parser.add_argument(
         "--prepare",
@@ -716,11 +704,11 @@ def def_poc_parser(sub_cmd):
 
 def is_poc(cmd_args) -> bool:
     return (
-        hasattr(cmd_args, "start_poc")
-        or hasattr(cmd_args, "prepare_poc")
-        or hasattr(cmd_args, "stop_poc")
-        or hasattr(cmd_args, "clean_poc")
-        or hasattr(cmd_args, "prepare_examples")
+            hasattr(cmd_args, "start_poc")
+            or hasattr(cmd_args, "prepare_poc")
+            or hasattr(cmd_args, "stop_poc")
+            or hasattr(cmd_args, "clean_poc")
+            or hasattr(cmd_args, "prepare_examples")
     )
 
 
@@ -741,9 +729,13 @@ def handle_poc_cmd(cmd_args):
     if cmd_args.exclude != "":
         excluded = [cmd_args.exclude]
 
+    print(cmd_args.gpu)
+    if cmd_args.gpu is not None and cmd_args.prepare_poc:
+        raise ValueError("-gpu should not be used for 'nvflare poc --prepare' command ")
+
     poc_workspace = get_poc_workspace()
     if cmd_args.start_poc:
-        if cmd_args.gpu >= 0:
+        if cmd_args.gpu is not None and isinstance(cmd_args.gpu, list) and len(cmd_args.gpu) > 0:
             gpu_ids = get_gpu_ids(cmd_args.gpu, get_local_host_gpu_ids())
         else:
             gpu_ids = []
