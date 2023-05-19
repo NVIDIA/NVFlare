@@ -24,10 +24,6 @@ from nvflare.apis.job_def_manager_spec import JobDefManagerSpec
 from nvflare.apis.utils.job_utils import load_job_def_bytes
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.dict_utils import update_components
-from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
-
-# TBD: this is a violation: private stuff should not be exposed to examples
-from nvflare.private.fed.utils.app_deployer import AppDeployer
 
 
 class HubAppDeployer(AppDeployerSpec, FLComponent):
@@ -43,7 +39,9 @@ class HubAppDeployer(AppDeployerSpec, FLComponent):
     def __init__(self):
         FLComponent.__init__(self)
 
-    def prepare(self, workspace: Workspace, job_id: str, remove_tmp_t2_dir: bool = True) -> (str, dict, bytes):
+    def prepare(
+        self, fl_ctx: FLContext, workspace: Workspace, job_id: str, remove_tmp_t2_dir: bool = True
+    ) -> (str, dict, bytes):
         """
         Prepare T2 job
 
@@ -152,7 +150,7 @@ class HubAppDeployer(AppDeployerSpec, FLComponent):
         # step 5: submit T2 app (as a job) to T1's job store
         t2_job_def = load_job_def_bytes(from_path=workspace.root_dir, def_name=t2_job_id)
 
-        job_validator = JobMetaValidator()
+        job_validator = fl_ctx.get_prop(SystemComponents.JOB_META_VALIDATOR)
         valid, error, meta = job_validator.validate(t2_job_id, t2_job_def)
         if not valid:
             return f"invalid T2 job definition: {error}", None, None
@@ -174,13 +172,13 @@ class HubAppDeployer(AppDeployerSpec, FLComponent):
         self, workspace: Workspace, job_id: str, job_meta: dict, app_name: str, app_data: bytes, fl_ctx: FLContext
     ) -> str:
         # step 1: deploy the T1 app into the workspace
-        deployer = AppDeployer()
+        deployer = fl_ctx.get_prop(SystemComponents.DEFAULT_APP_DEPLOYER)
         err = deployer.deploy(workspace, job_id, job_meta, app_name, app_data, fl_ctx)
         if err:
             self.log_error(fl_ctx, f"Failed to deploy job {job_id}: {err}")
             return err
 
-        err, meta, t2_job_def = self.prepare(workspace, job_id)
+        err, meta, t2_job_def = self.prepare(fl_ctx, workspace, job_id)
         if err:
             self.log_error(fl_ctx, f"Failed to deploy job {job_id}: {err}")
             return err

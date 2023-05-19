@@ -302,6 +302,8 @@ class SystemComponents(object):
     RESOURCE_MANAGER = "resource_manager"
     RESOURCE_CONSUMER = "resource_consumer"
     APP_DEPLOYER = "app_deployer"
+    DEFAULT_APP_DEPLOYER = "default_app_deployer"
+    JOB_META_VALIDATOR = "job_meta_validator"
 
 
 class JobConstants:

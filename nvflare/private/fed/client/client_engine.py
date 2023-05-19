@@ -27,6 +27,7 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.private.defs import ERROR_MSG_PREFIX, ClientStatusKey, EngineConstant
 from nvflare.private.event import fire_event
+from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 from nvflare.private.fed.utils.app_deployer import AppDeployer
 from nvflare.private.fed.utils.fed_utils import security_close
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
@@ -66,7 +67,14 @@ class ClientEngine(ClientEngineInternalSpec):
         self.admin_agent = None
 
         self.fl_ctx_mgr = FLContextManager(
-            engine=self, identity_name=client_name, job_id="", public_stickers={}, private_stickers={}
+            engine=self,
+            identity_name=client_name,
+            job_id="",
+            public_stickers={},
+            private_stickers={
+                SystemComponents.DEFAULT_APP_DEPLOYER: AppDeployer(),
+                SystemComponents.JOB_META_VALIDATOR: JobMetaValidator(),
+            },
         )
 
         self.status = MachineStatus.STOPPED
