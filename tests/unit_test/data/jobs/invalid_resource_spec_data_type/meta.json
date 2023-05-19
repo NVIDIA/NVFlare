@@ -1,0 +1,16 @@
+{
+  "name": "sag",
+  "resource_spec": {
+    "site-1": ["gpu", 1],
+    "site-2": {
+      "gpu": 1
+    }
+  },
+  "deploy_map": {
+    "sag": [
+      "server",
+      "site-1",
+      "site-2"
+    ]
+  }
+}

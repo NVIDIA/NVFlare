@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,27 +13,33 @@
 # limitations under the License.
 
 import logging
-import pickle
 
 from nvflare.apis.fl_constant import FLContextKey, NonSerializableKeys
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
+from nvflare.fuel.sec.audit import AuditService
+from nvflare.fuel.utils import fobs
+from nvflare.security.logging import secure_format_exception
+
+logger = logging.getLogger("fl_context_utils")
 
 
 def get_serializable_data(fl_ctx: FLContext):
-    logger = logging.getLogger("fl_context_utils")
     new_fl_ctx = FLContext()
     for k, v in fl_ctx.props.items():
         if k not in NonSerializableKeys.KEYS:
             try:
-                pickle.dumps(v)
+                fobs.dumps(v)
                 new_fl_ctx.props[k] = v
-            except:
-                logger.warning(generate_log_message(fl_ctx, f"Object is not serializable (discarded): {k} - {v}"))
+            except BaseException as e:
+                msg = f"Object in FLContext with key {k} and type {type(v)} is not serializable (discarded): {secure_format_exception(e)}"
+                logger.warning(generate_log_message(fl_ctx, msg))
+
     return new_fl_ctx
 
 
 def generate_log_message(fl_ctx: FLContext, msg: str):
+    _identity_ = "identity"
     _my_run = "run"
     _peer_run = "peer_run"
     _peer_name = "peer"
@@ -42,8 +48,8 @@ def generate_log_message(fl_ctx: FLContext, msg: str):
     _rc = "peer_rc"
     _wf = "wf"
 
-    all_kvs = {}
-    my_run = fl_ctx.get_run_number()
+    all_kvs = {_identity_: fl_ctx.get_identity_name()}
+    my_run = fl_ctx.get_job_id()
     if not my_run:
         my_run = "?"
     all_kvs[_my_run] = my_run
@@ -65,7 +71,7 @@ def generate_log_message(fl_ctx: FLContext, msg: str):
     if peer_ctx:
         if not isinstance(peer_ctx, FLContext):
             raise TypeError("peer_ctx must be an instance of FLContext, but got {}".format(type(peer_ctx)))
-        peer_run = peer_ctx.get_run_number()
+        peer_run = peer_ctx.get_job_id()
         if not peer_run:
             peer_run = "?"
         all_kvs[_peer_run] = peer_run
@@ -80,10 +86,21 @@ def generate_log_message(fl_ctx: FLContext, msg: str):
         rc = reply.get_return_code("OK")
         all_kvs[_rc] = rc
 
-    item_order = [_my_run, _wf, _peer_name, _peer_run, _rc, _task_name, _task_id]
+    item_order = [_identity_, _my_run, _wf, _peer_name, _peer_run, _rc, _task_name, _task_id]
     ctx_items = []
     for item in item_order:
         if item in all_kvs:
             ctx_items.append(item + "=" + str(all_kvs[item]))
 
     return "[" + ", ".join(ctx_items) + "]: " + msg
+
+
+def add_job_audit_event(fl_ctx: FLContext, ref: str = "", msg: str = "") -> str:
+    return AuditService.add_job_event(
+        job_id=fl_ctx.get_job_id(),
+        scope_name=fl_ctx.get_prop(FLContextKey.EFFECTIVE_JOB_SCOPE_NAME, "?"),
+        task_name=fl_ctx.get_prop(FLContextKey.TASK_NAME, "?"),
+        task_id=fl_ctx.get_prop(FLContextKey.TASK_ID, "?"),
+        ref=ref,
+        msg=msg,
+    )

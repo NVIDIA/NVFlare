@@ -1,0 +1,703 @@
+openapi: "3.0.0"
+info:
+  description: "This is the api definition for nvflare user/client registration, state update and other management functions."
+  version: 0.0.1
+  title: FLARE Participant Registration and Management
+  contact:
+    email: "nvflare@nvidia.com"
+  license:
+    name: Apache 2.0
+servers:
+  - url: http://localhost:8443/api/v1
+paths:
+  /login:
+    post:
+      summary: "Login and retrieve JWT"
+      description: ""
+      operationId: "login"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: "object"
+              properties:
+                email:
+                  type: "string"
+                  example: "hello@world.com"
+                password:
+                  type: "string"
+                  example: "1234"
+      responses:
+        "200":
+          description: Login OK
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  status:
+                    type: "string"
+                  user:
+                    type: "object"
+                    properties:
+                      id:
+                        type: "string"
+                      email:
+                        type: "string"
+                      role:
+                        type: "string"
+                  access_token:
+                    type: "string"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  status:
+                    type: "string"
+
+  /project:
+    patch:
+      security:
+      - bearerAuth: []
+      summary: "Set the project"
+      description: ""
+      operationId: "patch_project"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Project'
+      responses:
+        "200":
+          description: Project patched
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  status:
+                    type: "string"
+                  project:
+                    $ref: '#/components/schemas/Project'
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  status:
+                    type: "string"
+    get:
+      summary: Get project
+      operationId: get_project
+      responses:
+        "200":
+          description: API accepted
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  status:
+                    type: "string"
+                  project:
+                    $ref: '#/components/schemas/Project'
+  /overseer/blob:
+    post:
+      security:
+      - bearerAuth: []
+      summary: "Get overseer startup kit"
+      operationId: "get_overseer_blob"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: "object"
+              properties:
+                pin:
+                  type: string
+      responses:
+        "200":
+          description: API accepted
+          content:
+            application/zip:
+              schema:
+                type: "string"
+                format: "binary"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  status:
+                    type: "string"
+  /servers/{id}/blob:
+    post:
+      security:
+      - bearerAuth: []
+      summary: "Get server startup kit"
+      operationId: "get_server_blob_by_id"
+      parameters:
+        - name: "id"
+          in: "path"
+          description: "The id that needs to be fetched."
+          required: true
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: "object"
+              properties:
+                pin:
+                  type: string
+      responses:
+        "200":
+          description: API accepted
+          content:
+            application/zip:
+              schema:
+                type: "string"
+                format: "binary"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  status:
+                    type: "string"
+
+  /organizations:
+    get:
+      summary: Get a list of all organization names
+      operationId: get_orgs
+      responses:
+        "200":
+          description: API accepted
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  status:
+                    type: "string"
+                  org_list:
+                    type: array
+                    items:
+                      type: "string"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  status:
+                    type: "string"
+
+  /clients:
+    post:
+      security:
+      - bearerAuth: []
+      summary: "Add a new client entity to the study"
+      description: ""
+      operationId: "add_client"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BaseClient'
+      responses:
+        "201":
+          description: Resource created
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  status:
+                    type: "string"
+                  client:
+                    $ref: '#/components/schemas/RspClient'
+    get:
+      security:
+      - bearerAuth: []
+      summary: Get a list of all clients
+      operationId: get_clients
+      responses:
+        "200":
+          description: API accepted
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  status:
+                    type: "string"
+                  client_list:
+                    $ref: '#/components/schemas/ListOfClients'
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  status:
+                    type: "string"
+
+  /clients/{id}:
+    patch:
+      security:
+      - bearerAuth: []
+      summary: "Update items of one client by ID"
+      description: "Return updated client"
+      operationId: "update_client_by_id"
+      parameters:
+        - name: "id"
+          in: "path"
+          description: "id that need to be updated"
+          required: true
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BaseClient"
+      responses:
+        "200":
+          description: API accepted
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  status:
+                    type: "string"
+                  client:
+                    $ref: '#/components/schemas/RspClient'
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  status:
+                    type: "string"
+    get:
+      security:
+      - bearerAuth: []
+      summary: "Find client by ID"
+      description: "Returns a single pet"
+      operationId: "find_client_by_id"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: API accepted
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  status:
+                    type: "string"
+                  client:
+                    $ref: '#/components/schemas/RspClient'
+    delete:
+      security:
+      - bearerAuth: []
+      summary: "Deletes a client"
+      description: ""
+      operationId: "delete_client"
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: API accepted
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  status:
+                    type: "string"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  status:
+                    type: "string"
+  /clients/{id}/blob:
+    post:
+      security:
+      - bearerAuth: []
+      summary: "Get client startup kit"
+      operationId: "get_client_blob_by_id"
+      parameters:
+        - name: "id"
+          in: "path"
+          description: "The id that needs to be fetched."
+          required: true
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: "object"
+              properties:
+                pin:
+                  type: string
+      responses:
+        "200":
+          description: API accepted
+          content:
+            application/zip:
+              schema:
+                type: "string"
+                format: "binary"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  status:
+                    type: "string"
+
+  /users:
+    post:
+      summary: "Create user"
+      description: "This can only be done by the logged in user."
+      operationId: "create_user"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RqsUser'
+      responses:
+        "201":
+          description: Resource created
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  status:
+                    type: "string"
+                  client:
+                    $ref: '#/components/schemas/RspUser'
+    get:
+      security:
+      - bearerAuth: []
+      summary: "Get all users"
+      description: ""
+      operationId: "get_users"
+      responses:
+        "200":
+          description: API accepted
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  status:
+                    type: "string"
+                  client_list:
+                    $ref: '#/components/schemas/ListOfUsers'
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  status:
+                    type: "string"
+  /users/{id}:
+    get:
+      security:
+      - bearerAuth: []
+      summary: "Get user by user id"
+      operationId: "get_user_by_id"
+      parameters:
+        - name: "id"
+          in: "path"
+          description: "The id that needs to be fetched."
+          required: true
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: API accepted
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  status:
+                    type: "string"
+                  client:
+                    $ref: '#/components/schemas/RspUser'
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  status:
+                    type: "string"
+    patch:
+      security:
+      - bearerAuth: []
+      summary: "Updated user"
+      description: "This can only be done by the logged in user."
+      operationId: "update_user"
+      parameters:
+        - name: "id"
+          in: "path"
+          description: "id that need to be updated"
+          required: true
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RqsUser"
+      responses:
+        "200":
+          description: API accepted
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  status:
+                    type: "string"
+                  client:
+                    $ref: '#/components/schemas/RspUser'
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  status:
+                    type: "string"
+    delete:
+      security:
+      - bearerAuth: []
+      summary: "Delete user by user id"
+      operationId: "delete_user_by_id"
+      parameters:
+        - name: "id"
+          in: "path"
+          description: "The id that needs to be deleted."
+          required: true
+          schema:
+            type: "string"
+      responses:
+        "200":
+          description: API accepted
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  status:
+                    type: "string"
+
+  /users/{id}/blob:
+    post:
+      security:
+      - bearerAuth: []
+      summary: "Get user startup kit"
+      operationId: "get_user_blob_by_id"
+      parameters:
+        - name: "id"
+          in: "path"
+          description: "The id that needs to be fetched."
+          required: true
+          schema:
+            type: "string"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: "object"
+              properties:
+                pin:
+                  type: string
+      responses:
+        "200":
+          description: API accepted
+          content:
+            application/zip:
+              schema:
+                type: "string"
+                format: "binary"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  status:
+                    type: "string"
+
+components:
+  securitySchemes:
+    bearerAuth:            # arbitrary name for the security scheme
+      type: http
+      scheme: bearer
+      bearerFormat: JWT    # optional, arbitrary value for documentation purposes
+  schemas:
+    Project:
+      type: "object"
+      properties:
+        frozen:
+          type: boolean
+        public:
+          type: boolean
+        short_name:
+          type: "string"
+          example: "EXAM"
+        title:
+          type: "string"
+          example: "International project to detect COVID on medical images with Federated Learning"
+        description:
+          type: string
+        app_location:
+          type: string
+        overseer:
+          type: "string"
+        server1:
+          type: "string"
+        server2:
+          type: "string"
+        ha_mode:
+          type: "boolean"
+        starting_date:
+          type: "string"
+        end_date:
+          type: "string"
+    BaseUser:
+      type: "object"
+      required:
+      - organization
+      - email
+      properties:
+        name:
+          type: "string"
+        organization:
+          type: "string"
+        email:
+          type: "string"
+        role:
+          type: "string"
+          enum: ["user", "org_admin", "proj_admin"]
+        approval_state:
+          type: "integer"
+          format: "int32"
+          description: "User approval state"
+
+    RqsUser:
+      allOf:
+      - $ref: '#/components/schemas/BaseUser'
+      - type: "object"
+        properties:
+          password:
+            type: "string"
+
+    RspUser:
+      allOf:
+        - $ref: '#/components/schemas/BaseUser'
+        - type: object
+          properties:
+            id:
+              type: "integer"
+              format: "int64"
+
+    BaseClient:
+      type: "object"
+      required:
+      - name
+      - organization
+      properties:
+        name:
+          type: "string"
+          example: "site-1"
+        organization:
+          type: "string"
+          example: "nvidia"
+        capacity:
+          type: "object"
+          properties:
+            num_gpus:
+              type: "integer"
+              format: "uint8"
+            mem_per_gpu_in_GiB:
+              type: "integer"
+              format: "uint8"
+        approval_state:
+          type: "integer"
+          format: "int64"
+
+    RspClient:
+      allOf:
+        - $ref: '#/components/schemas/BaseClient'
+        - type: object
+          properties:
+            id:
+              type: "integer"
+              format: "int64"
+    ListOfClients:
+      type: array
+      items:
+        $ref: '#/components/schemas/RspClient'
+    ListOfUsers:
+      type: array
+      items:
+        $ref: '#/components/schemas/RspUser'
+
+externalDocs:
+  description: "Find out more about Swagger"
+  url: "http://swagger.io"

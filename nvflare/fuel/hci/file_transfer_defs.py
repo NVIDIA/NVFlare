@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -20,5 +20,11 @@ SERVER_CMD_DOWNLOAD_TEXT = "_download_text_file"
 SERVER_CMD_UPLOAD_BINARY = "_upload_binary_file"
 SERVER_CMD_DOWNLOAD_BINARY = "_download_binary_file"
 SERVER_CMD_UPLOAD_FOLDER = "_upload_folder"
-SERVER_CMD_DOWNLOAD_FOLDER = "_download_folder"
+SERVER_CMD_SUBMIT_JOB = "_submit_job"
+SERVER_CMD_DOWNLOAD_JOB = "_download_job"
+SERVER_CMD_DOWNLOAD_JOB_SINGLE_FILE = "_download_job_single_file"
 SERVER_CMD_INFO = "_info"
+
+DOWNLOAD_URL_MARKER = "Download_URL:"
+UPLOAD_FOLDER_FQN = "file_transfer.upload_folder"
+DOWNLOAD_FOLDER_FQN = "file_transfer.download_folder"

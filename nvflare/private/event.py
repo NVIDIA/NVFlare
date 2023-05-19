@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@ import uuid
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import EventScope, FLContextKey
 from nvflare.apis.fl_context import FLContext
+from nvflare.security.logging import secure_format_exception
 
 # do not use underscore as key name; otherwise it cannot be removed from ctx
 _KEY_EVENT_DEPTH = "###event_depth"
@@ -58,9 +59,9 @@ def fire_event(event: str, handlers: list, ctx: FLContext):
                 ctx.set_prop(key=FLContextKey.EVENT_ORIGIN, value=event_origin, private=True, sticky=False)
                 ctx.set_prop(key=FLContextKey.EVENT_SCOPE, value=event_scope, private=True, sticky=False)
                 h.handle_event(event, ctx)
-            except:
+            except Exception as e:
                 h.log_exception(
-                    ctx, 'exception when handling event "{}"'.format(event), fire_event=False, local_logging=True
+                    ctx, f'Exception when handling event "{event}": {secure_format_exception(e)}', fire_event=False
                 )
 
     ctx.set_prop(key=_KEY_EVENT_DEPTH, value=depth, private=True, sticky=False)

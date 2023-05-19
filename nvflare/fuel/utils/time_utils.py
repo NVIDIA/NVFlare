@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,14 +15,14 @@
 import time
 
 
-def time_to_string(t):
+def time_to_string(t) -> str:
     """Convert time into a formatted string.
 
     Args:
         t: input time string in seconds since the Epoch
 
-    Returns: formatted time string
-
+    Returns:
+        formatted time string
     """
     if t is None:
         return "N/A"

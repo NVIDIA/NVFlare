@@ -1,0 +1,31 @@
+{
+  "format_version": 2,
+  "components": [],
+  "executors": [
+    {
+      "tasks": [
+        "train"
+      ],
+      "executor": {
+        "id": "Executor",
+        "path": "higgs_executor.FedXGBHistogramHiggsExecutor",
+        "args": {
+          "data_split_filename": "data_split.json",
+          "num_rounds": 100,
+          "early_stopping_round": 2,
+          "xgboost_params": {
+            "max_depth": 8,
+            "eta": 0.1,
+            "objective": "binary:logistic",
+            "eval_metric": "auc",
+            "tree_method": "gpu_hist",
+            "nthread": 16
+          }
+        }
+      }
+    }
+  ],
+
+  "task_result_filters": [],
+  "task_data_filters": []
+}

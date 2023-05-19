@@ -1,0 +1,43 @@
+{
+    "name": "cifar10_fedavg_he",
+    "resource_spec": {
+        "site-1": {
+            "num_of_gpus": 1,
+            "mem_per_gpu_in_GiB": 1
+        },
+        "site-2": {
+            "num_of_gpus": 1,
+            "mem_per_gpu_in_GiB": 1
+        },
+        "site-3": {
+            "num_of_gpus": 1,
+            "mem_per_gpu_in_GiB": 1
+        },
+        "site-4": {
+            "num_of_gpus": 1,
+            "mem_per_gpu_in_GiB": 1
+        },
+        "site-5": {
+            "num_of_gpus": 1,
+            "mem_per_gpu_in_GiB": 1
+        },
+        "site-6": {
+            "num_of_gpus": 1,
+            "mem_per_gpu_in_GiB": 1
+        },
+        "site-7": {
+            "num_of_gpus": 1,
+            "mem_per_gpu_in_GiB": 1
+        },
+        "site-8": {
+            "num_of_gpus": 1,
+            "mem_per_gpu_in_GiB": 1
+        }
+    },
+    "deploy_map": {
+        "cifar10_fedavg_he": [
+            "@ALL"
+        ]
+    },
+    "min_clients": 8
+}

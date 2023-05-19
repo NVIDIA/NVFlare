@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -61,14 +61,15 @@ class HEBuilder(Builder):
         # dynamically call different generate keys method
         # getattr(self._context, f'generate_{self.key_type}_keys')()
         self._context.generate_relin_keys()
-        self._context.global_scale = 2 ** self.scale_bits
+        self._context.global_scale = 2**self.scale_bits
 
-    def build(self, study, ctx):
-        server = study.get_participants_by_type("server")
-        dest_dir = self.get_kit_dir(server, ctx)
-        with open(os.path.join(dest_dir, "server_context.tenseal"), "wb") as f:
-            f.write(self.get_serialized_context())
-        for client in study.get_participants_by_type("client", first_only=False):
+    def build(self, project, ctx):
+        servers = project.get_participants_by_type("server", first_only=False)
+        for server in servers:
+            dest_dir = self.get_kit_dir(server, ctx)
+            with open(os.path.join(dest_dir, "server_context.tenseal"), "wb") as f:
+                f.write(self.get_serialized_context())
+        for client in project.get_participants_by_type("client", first_only=False):
             dest_dir = self.get_kit_dir(client, ctx)
             with open(os.path.join(dest_dir, "client_context.tenseal"), "wb") as f:
                 f.write(self.get_serialized_context(is_client=True))

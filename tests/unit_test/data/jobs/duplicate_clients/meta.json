@@ -1,0 +1,14 @@
+{
+  "name": "sag",
+  "resource_spec": {},
+  "deploy_map": {
+    "sag1": [
+      "server",
+      "site-1",
+      "site-2"
+    ],
+    "sag2": [
+      "site-1"
+    ]
+  }
+}

@@ -28,14 +28,14 @@ import sphinx_rtd_theme
 import os
 import sys
 from sphinx.domains.python import PythonDomain
+import subprocess
 
 
 class PatchedPythonDomain(PythonDomain):
     def resolve_xref(self, env, fromdocname, builder, typ, target, node, contnode):
         if "refspecific" in node:
             del node["refspecific"]
-        return super(PatchedPythonDomain, self).resolve_xref(
-            env, fromdocname, builder, typ, target, node, contnode)
+        return super(PatchedPythonDomain, self).resolve_xref(env, fromdocname, builder, typ, target, node, contnode)
 
 
 sys.path.insert(0, os.path.abspath(".."))
@@ -44,12 +44,12 @@ print(sys.path)
 # -- Project information -----------------------------------------------------
 
 project = "NVIDIA FLARE"
-copyright = "2021, NVIDIA"
+copyright = "2023, NVIDIA"
 author = "NVIDIA"
 
 # The full version, including alpha/beta/rc tags
-release = "2.0"
-version = "2.0"
+release = "2.3.0"
+version = "2.3.0"
 
 
 # -- General configuration ---------------------------------------------------
@@ -76,7 +76,8 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.viewcode",
     "sphinx.ext.autosectionlabel",
-    "sphinxcontrib.exceltable",
+    "sphinx_copybutton",
+    "sphinxcontrib.jquery"
 ]
 
 autoclass_content = "both"
@@ -102,7 +103,7 @@ html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
 html_theme_options = {
     "collapse_navigation": True,
     "display_version": True,
-    "navigation_depth": 5,
+    "navigation_depth": 8,
     "sticky_navigation": True,  # Set to False to disable the sticky nav while scrolling.
     # 'logo_only': True,  # if we have a html_logo below, this shows /only/ the logo with no title text
 }
@@ -116,6 +117,21 @@ html_favicon = "favicon.ico"
 html_static_path = ["_static"]
 
 
+def generate_apidocs(*args):
+    """Generate API docs automatically by trawling the available modules"""
+    module_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "nvflare"))
+    output_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "apidocs"))
+    print(f"output_path {output_path}")
+    print(f"module_path {module_path}")
+    subprocess.check_call(
+        [sys.executable, "-m", "sphinx.ext.apidoc", "-f", "-e"]
+        + ["-o", output_path]
+        + [module_path]
+        + [os.path.join(module_path, p) for p in exclude_patterns]
+    )
+
+
 def setup(app):
+    app.connect("builder-inited", generate_apidocs)
     app.add_domain(PatchedPythonDomain, override=True)
     app.add_css_file("css/additions.css")

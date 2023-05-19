@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,35 +12,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import time
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
+from nvflare.apis.client import Client
+from nvflare.apis.engine_spec import EngineSpec
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import MachineStatus
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.apis.workspace import Workspace
+from nvflare.private.aux_runner import AuxRunner
 from nvflare.private.event import fire_event
+from nvflare.private.fed.utils.fed_utils import create_job_processing_context_properties
 
 from .client_manager import ClientManager
-from .server_aux_runner import ServerAuxRunner
+from .run_info import RunInfo
 
 
-class RunInfo(object):
-    def __init__(self, run_num, app_path):
-        """Information for a run."""
-        self.run_number = run_num
-        self.start_time = time.time()
-        self.app_path = app_path
-        self.status = MachineStatus.STOPPED
-
-
-class RunManager:
+class RunManager(EngineSpec):
     def __init__(
         self,
         server_name,
         engine: ServerEngineSpec,
-        run_num,
+        job_id,
         workspace: Workspace,
         components: {str: FLComponent},
         client_manager: Optional[ClientManager] = None,
@@ -51,7 +44,7 @@ class RunManager:
         Args:
             server_name: server name
             engine (ServerEngineSpec): server engine
-            run_num: run number
+            job_id: job id
             workspace (Workspace): workspace
             components (dict): A dict of extra python objects {id: object}
             client_manager (ClientManager, optional): client manager
@@ -62,22 +55,28 @@ class RunManager:
 
         self.client_manager = client_manager
         self.handlers = handlers
-        self.aux_runner = ServerAuxRunner()
+        self.aux_runner = AuxRunner(self)
         self.add_handler(self.aux_runner)
 
+        if job_id:
+            job_ctx_props = self.create_job_processing_context_properties(workspace, job_id)
+        else:
+            job_ctx_props = {}
+
         self.fl_ctx_mgr = FLContextManager(
-            engine=engine, identity_name=server_name, run_num=run_num, public_stickers={}, private_stickers={}
+            engine=engine, identity_name=server_name, job_id=job_id, public_stickers={}, private_stickers=job_ctx_props
         )
 
         self.workspace = workspace
-        self.run_info = RunInfo(run_num=run_num, app_path=self.workspace.get_app_dir(run_num))
+        self.run_info = RunInfo(job_id=job_id, app_path=self.workspace.get_app_dir(job_id))
 
         self.components = components
+        self.cell = None
 
     def get_server_name(self):
         return self.server_name
 
-    def get_run_info(self):
+    def get_run_info(self) -> RunInfo:
         return self.run_info
 
     def get_handlers(self):
@@ -92,8 +91,20 @@ class RunManager:
     def get_component(self, component_id: str) -> object:
         return self.components.get(component_id)
 
+    def add_component(self, component_id: str, component):
+        self.components[component_id] = component
+
     def fire_event(self, event_type: str, fl_ctx: FLContext):
         fire_event(event=event_type, handlers=self.handlers, ctx=fl_ctx)
 
     def add_handler(self, handler: FLComponent):
         self.handlers.append(handler)
+
+    def get_cell(self):
+        return self.cell
+
+    def validate_targets(self, client_names: List[str]) -> Tuple[List[Client], List[str]]:
+        return self.client_manager.get_all_clients_from_inputs(client_names)
+
+    def create_job_processing_context_properties(self, workspace, job_id):
+        return create_job_processing_context_properties(workspace, job_id)

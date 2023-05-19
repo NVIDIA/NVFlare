@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -73,7 +73,7 @@ class ValidationJsonGenerator(Widget):
             else:
                 self.log_error(fl_ctx, "Validation result not found.", fire_event=False)
         elif event_type == EventType.END_RUN:
-            run_dir = fl_ctx.get_engine().get_workspace().get_run_dir(fl_ctx.get_run_number())
+            run_dir = fl_ctx.get_engine().get_workspace().get_run_dir(fl_ctx.get_job_id())
             cross_val_res_dir = os.path.join(run_dir, self._results_dir)
             if not os.path.exists(cross_val_res_dir):
                 os.makedirs(cross_val_res_dir)

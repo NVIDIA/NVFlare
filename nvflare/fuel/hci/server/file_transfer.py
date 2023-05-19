@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,6 @@
 import os
 import shutil
 import tempfile
-import traceback
 from typing import List
 
 import nvflare.fuel.hci.file_transfer_defs as ftd
@@ -24,22 +23,23 @@ from nvflare.fuel.hci.base64_utils import (
     b64str_to_bytes,
     b64str_to_text_file,
     binary_file_to_b64str,
-    bytes_to_b64str,
     text_file_to_b64str,
 )
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
-from nvflare.fuel.hci.zip_utils import unzip_all_from_bytes, zip_directory_to_bytes
+from nvflare.fuel.hci.server.constants import ConnProps
+from nvflare.fuel.utils.zip_utils import unzip_all_from_bytes
+from nvflare.private.fed.server.cmd_utils import CommandUtil
+from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 
-class FileTransferModule(CommandModule):
-    def __init__(self, upload_dir: str, download_dir: str, upload_folder_authz_func=None):
+class FileTransferModule(CommandModule, CommandUtil):
+    def __init__(self, upload_dir: str, download_dir: str):
         """Command module for file transfers.
 
         Args:
             upload_dir:
             download_dir:
-            upload_folder_authz_func:
         """
         if not os.path.isdir(upload_dir):
             raise ValueError("upload_dir {} is not a valid dir".format(upload_dir))
@@ -49,7 +49,6 @@ class FileTransferModule(CommandModule):
 
         self.upload_dir = upload_dir
         self.download_dir = download_dir
-        self.upload_folder_authz_func = upload_folder_authz_func
 
     def get_spec(self):
         return CommandModuleSpec(
@@ -88,14 +87,13 @@ class FileTransferModule(CommandModule):
                     description="upload a folder from client",
                     usage="upload_folder folder_name",
                     handler_func=self.upload_folder,
-                    authz_func=self._authorize_upload_folder,
                     visible=False,
                 ),
                 CommandSpec(
-                    name=ftd.SERVER_CMD_DOWNLOAD_FOLDER,
-                    description="download a folder to client",
-                    usage="download folder_name",
-                    handler_func=self.download_folder,
+                    name=ftd.SERVER_CMD_DOWNLOAD_JOB_SINGLE_FILE,
+                    description="download a single file from a completed job in the job store",
+                    usage="download_job_single_file job_id file_path",
+                    handler_func=self.download_job_single_file,
                     visible=False,
                 ),
                 CommandSpec(
@@ -106,6 +104,7 @@ class FileTransferModule(CommandModule):
                     visible=False,
                 ),
             ],
+            conn_props={ConnProps.DOWNLOAD_DIR: self.download_dir, ConnProps.UPLOAD_DIR: self.upload_dir},
         )
 
     def upload_file(self, conn: Connection, args: List[str], str_to_file_func):
@@ -177,26 +176,10 @@ class FileTransferModule(CommandModule):
             if not os.path.isdir(tmp_folder_path):
                 conn.append_error("logic error: unzip failed to create folder {}".format(tmp_folder_path))
                 return False, None
-
-            if self.upload_folder_authz_func:
-                err, authz_ctx = self.upload_folder_authz_func(tmp_folder_path)
-                if err is None:
-                    err = ""
-                elif not isinstance(err, str):
-                    # the validator failed to follow signature
-                    # assuming things are bad
-                    err = "folder validation failed"
-
-                if len(err) > 0:
-                    conn.append_error(err)
-                    return False, None
-                else:
-                    return True, authz_ctx
-            else:
-                return True, None
-        except BaseException:
-            traceback.print_exc()
-            conn.append_error("exception occurred")
+            return True, None
+        except BaseException as e:
+            secure_log_traceback()
+            conn.append_error(f"exception occurred: {secure_format_exception(e)}")
             return False, None
         finally:
             shutil.rmtree(tmp_dir)
@@ -211,29 +194,6 @@ class FileTransferModule(CommandModule):
         unzip_all_from_bytes(data_bytes, self.upload_dir)
         conn.set_prop("upload_folder_path", folder_path)
         conn.append_string("Created folder {}".format(folder_path))
-
-    def download_folder(self, conn: Connection, args: List[str]):
-        if len(args) != 2:
-            conn.append_error("syntax error: require folder name")
-            return
-
-        folder_name = args[1]
-        full_path = os.path.join(self.download_dir, folder_name)
-        if not os.path.exists(full_path):
-            conn.append_error("no such folder: {}".format(full_path))
-            return
-
-        if not os.path.isdir(full_path):
-            conn.append_error("'{}' is not a valid folder".format(full_path))
-            return
-
-        try:
-            data = zip_directory_to_bytes(self.download_dir, folder_name)
-            b64str = bytes_to_b64str(data)
-            conn.append_string(b64str)
-        except BaseException:
-            traceback.print_exc()
-            conn.append_error("exception occurred")
 
     def info(self, conn: Connection, args: List[str]):
         conn.append_string("Server Upload Destination: {}".format(self.upload_dir))

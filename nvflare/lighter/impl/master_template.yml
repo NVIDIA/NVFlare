@@ -54,7 +54,7 @@ readme_fs: |
   start.sh
   sub_start.sh
   stop_fl.sh
-  signature.pkl
+  signature.json
 
   Run start.sh to start the server.
 
@@ -63,57 +63,227 @@ readme_fs: |
 
   Please always safeguard the server.key.
 
+gunicorn_conf_py: |
+  bind="0.0.0.0:{~~port~~}"
+  cert_reqs=2
+  do_handshake_on_connect=True
+  timeout=30
+  worker_class="nvflare.ha.overseer.worker.ClientAuthWorker"
+  workers=1
+  wsgi_app="nvflare.ha.overseer.overseer:app"
+
+local_client_resources: |
+  {
+    "format_version": 2,
+    "client": {
+      "retry_timeout": 30,
+      "compression": "Gzip"
+    },
+    "components": [
+      {
+        "id": "resource_manager",
+        "path": "nvflare.app_common.resource_managers.gpu_resource_manager.GPUResourceManager",
+        "args": {
+          "num_of_gpus": 0,
+          "mem_per_gpu_in_GiB": 0
+        }
+      },
+      {
+        "id": "resource_consumer",
+        "path": "nvflare.app_common.resource_consumers.gpu_resource_consumer.GPUResourceConsumer",
+        "args": {}
+      }
+    ]
+  }
+
 fed_client: |
   {
-    "format_version": 1,
-    "enable_byoc": false,
+    "format_version": 2,
     "servers": [
-        {
-            "name": "spleen_segmentation",
-            "service": {
-                "target": "localhost:8002",
-                "options": [
-                    ["grpc.max_send_message_length",    2147483647],
-                    ["grpc.max_receive_message_length", 2147483647]
-                ]
-            }
+      {
+        "name": "spleen_segmentation",
+        "service": {
         }
+      }
     ],
     "client": {
-        "retry_timeout": 30,
-        "ssl_private_key": "client.key",
-        "ssl_cert": "client.crt",
-        "ssl_root_cert": "rootCA.pem",
-        "compression": "Gzip"
+      "ssl_private_key": "client.key",
+      "ssl_cert": "client.crt",
+      "ssl_root_cert": "rootCA.pem"
     }
+  }
+
+sample_privacy: |
+  {
+    "scopes": [
+      {
+        "name": "public",
+        "properties": {
+          "train_dataset": "/data/public/train",
+          "val_dataset": "/data/public/val"
+        },
+        "task_result_filters": [
+          {
+            "name": "AddNoiseToMinMax",
+            "args": {
+              "min_noise_level": 0.2,
+              "max_noise_level": 0.2
+            }
+          },
+          {
+            "name": "PercentilePrivacy",
+            "args": {
+              "percentile": 10,
+              "gamma": 0.02
+            }
+          }
+        ],
+        "task_data_filters": [
+          {
+            "name": "BadModelDetector"
+          }
+        ]
+      },
+      {
+        "name": "private",
+        "properties": {
+          "train_dataset": "/data/private/train",
+          "val_dataset": "/data/private/val"
+        },
+        "task_result_filters": [
+          {
+            "name": "AddNoiseToMinMax",
+            "args": {
+              "min_noise_level": 0.1,
+              "max_noise_level": 0.1
+            }
+          },
+          {
+            "name": "SVTPrivacy",
+            "args": {
+              "fraction": 0.1,
+              "epsilon": 0.2
+            }
+          }
+        ]
+      }
+    ],
+    "default_scope": "public"
+  }
+
+local_server_resources: |
+  {
+      "format_version": 2,
+      "servers": [
+          {
+              "admin_storage": "transfer",
+              "max_num_clients": 100,
+              "heart_beat_timeout": 600,
+              "num_server_workers": 4,
+              "download_job_url": "http://download.server.com/",
+              "compression": "Gzip"
+          }
+      ],
+      "snapshot_persistor": {
+          "path": "nvflare.app_common.state_persistors.storage_state_persistor.StorageStatePersistor",
+          "args": {
+              "uri_root": "/",
+              "storage": {
+                  "path": "nvflare.app_common.storages.filesystem_storage.FilesystemStorage",
+                  "args": {
+                      "root_dir": "/tmp/nvflare/snapshot-storage",
+                      "uri_root": "/"
+                  }
+              }
+          }
+      },
+      "components": [
+          {
+              "id": "job_scheduler",
+              "path": "nvflare.app_common.job_schedulers.job_scheduler.DefaultJobScheduler",
+              "args": {
+                  "max_jobs": 4
+              }
+          },
+          {
+              "id": "job_manager",
+              "path": "nvflare.apis.impl.job_def_manager.SimpleJobDefManager",
+              "args": {
+                  "uri_root": "/tmp/nvflare/jobs-storage",
+                  "job_store_id": "job_store"
+              }
+          },
+          {
+              "id": "job_store",
+              "path": "nvflare.app_common.storages.filesystem_storage.FilesystemStorage"
+          }
+      ]
   }
 
 fed_server: |
   {
-    "format_version": 1,
-    "enable_byoc": false,
+    "format_version": 2,
     "servers": [
         {
             "name": "spleen_segmentation",
             "service": {
-                "target": "localhost:8002",
-                "options": [
-                    ["grpc.max_send_message_length",    2147483647],
-                    ["grpc.max_receive_message_length", 2147483647]
-                ]
+                "target": "localhost:8002"
             },
             "admin_host": "localhost",
             "admin_port": 5005,
-            "admin_storage": "transfer",
             "ssl_private_key": "server.key",
             "ssl_cert": "server.crt",
-            "ssl_root_cert": "rootCA.pem",
-            "max_num_clients": 100,
-            "heart_beat_timeout": 600,
-            "num_server_workers": 4,
-            "compression": "Gzip"
+            "ssl_root_cert": "rootCA.pem"
         }
     ] 
+  }
+
+fed_admin: |
+  {
+    "format_version": 1,
+    "admin": {
+      "with_file_transfer": true,
+      "upload_dir": "transfer",
+      "download_dir": "transfer",
+      "with_login": true,
+      "with_ssl": true,
+      "cred_type": "cert",
+      "client_key": "client.key",
+      "client_cert": "client.crt",
+      "ca_cert": "rootCA.pem",
+      "prompt": "> "
+    }
+  }
+
+default_authz: |
+  {
+    "format_version": "1.0",
+    "permissions": {
+      "project_admin": "any",
+      "org_admin": {
+        "submit_job": "none",
+        "clone_job": "none",
+        "manage_job": "o:submitter",
+        "download_job": "o:submitter",
+        "view": "any",
+        "operate": "o:site",
+        "shell_commands": "o:site",
+        "byoc": "none"
+      },
+      "lead": {
+        "submit_job": "any",
+        "clone_job": "n:submitter",
+        "manage_job": "n:submitter",
+        "download_job": "n:submitter",
+        "view": "any",
+        "operate": "o:site",
+        "shell_commands": "o:site",
+        "byoc": "any"
+      },
+      "member": {
+        "view": "any"
+      }
+    }
   }
 
 authz_def: |
@@ -130,19 +300,6 @@ authz_def: |
       }
     },
     "rights": {
-      "upload_app": {
-        "desc": "upload app",
-        "default": true
-      },
-      "deploy_self": {
-        "desc": "deploy app to own site",
-        "default": false,
-        "precond": "selfOrg"
-      },
-      "deploy_all": {
-        "desc": "deploy app to all sites",
-        "default": false
-      },
       "train_self": {
         "desc": "do training operations on own site",
         "default": false,
@@ -177,11 +334,11 @@ fl_admin_sh: |
   #!/usr/bin/env bash
   DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
   mkdir -p $DIR/../transfer
-  python3 -m nvflare.fuel.hci.tools.admin --host {~~cn~~} --port {~~admin_port~~} --prompt "> " --with_file_transfer --upload_dir=$DIR/../transfer --download_dir=$DIR/../transfer --with_shell --with_login --with_ssl --cred_type cert --ca_cert=$DIR/rootCA.pem --client_cert=$DIR/client.crt --client_key=$DIR/client.key
+  python3 -m nvflare.fuel.hci.tools.admin -m $DIR/.. -s fed_admin.json
 
 log_config: |
   [loggers]
-  keys=root,modelLogger
+  keys=root
 
   [handlers]
   keys=consoleHandler
@@ -193,12 +350,6 @@ log_config: |
   level=INFO
   handlers=consoleHandler
 
-  [logger_modelLogger]
-  level=DEBUG
-  handlers=consoleHandler
-  qualname=modelLogger
-  propagate=0
-
   [handler_consoleHandler]
   class=StreamHandler
   level=DEBUG
@@ -208,37 +359,107 @@ log_config: |
   [formatter_fullFormatter]
   format=%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
+start_ovsr_sh: |
+  #!/usr/bin/env bash
+  DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+  NVFL_OVERSEER_HEARTBEAT_TIMEOUT=10 AUTHZ_FILE=$DIR/privilege.yml gunicorn -c $DIR/gunicorn.conf.py --keyfile $DIR/overseer.key --certfile $DIR/overseer.crt --ca-certs $DIR/rootCA.pem
+
 start_cln_sh: |
   #!/usr/bin/env bash
   DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-  $DIR/sub_start.sh &
+  all_arguments="${@}"
+  doCloud=false
+  # parse arguments
+  while [[ $# -gt 0 ]]
+  do
+      key="$1"
+      case $key in
+        --cloud)
+          doCloud=true
+          csp=$2
+          shift
+        ;;
+      esac
+      shift
+  done
+
+  if [ $doCloud = true ]
+  then
+    case $csp in
+      azure)
+        $DIR/azure_start.sh ${all_arguments}
+        ;;
+      aws)
+        $DIR/aws_start.sh ${all_arguments}
+        ;;
+      *)
+        echo "Only on-prem or azure or aws is currently supported."
+    esac
+  else
+    $DIR/sub_start.sh &
+  fi
 
 start_svr_sh: |
   #!/usr/bin/env bash
   DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-  $DIR/sub_start.sh &
+  all_arguments="${@}"
+  doCloud=false
+  ha_mode={~~ha_mode~~}
+  # parse arguments
+  while [[ $# -gt 0 ]]
+  do
+    key="$1"
+    case $key in
+      --cloud)
+        if [ $ha_mode = false ]
+        then
+          doCloud=true
+          csp=$2
+          shift
+        else
+          echo "Cloud launch does not support NVFlare HA mode."
+          exit 1
+        fi
+      ;;
+    esac
+    shift
+  done
 
+  if [ $doCloud = true ]
+  then
+    case $csp in
+      azure)
+        $DIR/azure_start.sh ${all_arguments}
+        ;;
+      aws)
+        $DIR/aws_start.sh ${all_arguments}
+        ;;
+      *)
+        echo "Only on-prem or azure or aws is currently supported."
+    esac
+  else
+    $DIR/sub_start.sh &
+  fi
+    
 stop_fl_sh: |
   #!/usr/bin/env bash
   DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-  echo "Shutdown request created.  Wait for local FL process to shutdown."
-  touch $DIR/../shutdown.fl
-  sleep 5
-  if [[ ! -f "$DIR/../pid.fl" ]]; then
-    echo "No pid.fl.  No need to kill process."
-    exit
-  fi
-  pid=`cat $DIR/../pid.fl`
-  kill -0 ${pid} 2> /dev/null 1>&2
-  if [[ $? -ne 0 ]]; then
-    echo "Process already terminated"
-    exit
-  fi
-  kill -9 $pid
-  pid=`cat $DIR/../tee.fl`
-  kill -9 $pid
-  rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl $DIR/../tee.fl
-  echo "Shutdown process finished."
+  echo "Please use FL admin console to issue shutdown client command to properly stop this client."
+  echo "This stop_fl.sh script can only be used as the last resort to stop this client."
+  echo "It will not properly deregister the client to the server."
+  echo "The client status on the server after this shell script will be incorrect."
+  read -n1 -p "Would you like to continue (y/N)? " answer
+  case $answer in
+    y|Y)
+      echo
+      echo "Shutdown request created.  Wait for local FL process to shutdown."
+      touch $DIR/../shutdown.fl
+      ;;
+    n|N|*)
+      echo
+      echo "Not continue"
+      ;;
+  esac
 
 sub_start_cln_sh: |
   #!/usr/bin/env bash
@@ -263,7 +484,7 @@ sub_start_cln_sh: |
       exit
     fi
     lst=$SECONDS
-  ((python3 -u -m nvflare.private.fed.app.client.client_train -m $DIR/.. -s fed_client.json --set secure_train=true uid={~~client_name~~} config_folder={~~config_folder~~} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl | (tee -a $DIR/../log.txt & echo $! >&4 ) 4>$DIR/../tee.fl )
+  ((python3 -u -m nvflare.private.fed.app.client.client_train -m $DIR/.. -s fed_client.json --set secure_train=true uid={~~client_name~~} org={~~org_name~~} config_folder={~~config_folder~~} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl )
     pid=`cat $DIR/../pid.fl`
     echo "new pid ${pid}"
   }
@@ -281,9 +502,7 @@ sub_start_cln_sh: |
       return
     fi
     kill -9 $pid
-    pid=`cat $DIR/../tee.fl`
-    kill -9 $pid
-    rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl $DIR/../tee.fl
+    rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl 2> /dev/null 1>&2
   }
     
   if [[ -f "$DIR/../daemon_pid.fl" ]]; then
@@ -329,7 +548,7 @@ sub_start_cln_sh: |
     fi
   done
 
-  rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl $DIR/../daemon_pid.fl $DIR/../tee.fl
+  rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl $DIR/../daemon_pid.fl
 
 sub_start_svr_sh: |
   #!/usr/bin/env bash
@@ -352,7 +571,7 @@ sub_start_svr_sh: |
       exit
     fi
     lst=$SECONDS
-  ((python3 -u -m nvflare.private.fed.app.server.server_train -m $DIR/.. -s fed_server.json --set secure_train=true config_folder={~~config_folder~~} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl | (tee -a $DIR/../log.txt & echo $! >&4 ) 4>$DIR/../tee.fl )
+  ((python3 -u -m nvflare.private.fed.app.server.server_train -m $DIR/.. -s fed_server.json --set secure_train=true org={~~org_name~~} config_folder={~~config_folder~~} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl )
     pid=`cat $DIR/../pid.fl`
     echo "new pid ${pid}"
   }
@@ -370,9 +589,7 @@ sub_start_svr_sh: |
       return
     fi
     kill -9 $pid
-    pid=`cat $DIR/../tee.fl`
-    kill -9 $pid
-    rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl $DIR/../tee.fl
+    rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl
   }
     
   if [[ -f "$DIR/../daemon_pid.fl" ]]; then
@@ -418,16 +635,25 @@ sub_start_svr_sh: |
     fi
   done
 
-  rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl $DIR/../daemon_pid.fl $DIR/../tee.fl
+  rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl $DIR/../daemon_pid.fl
 
 docker_cln_sh: |
   #!/usr/bin/env bash
   DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
   # docker run script for FL client
   # local data directory
-  MY_DATA_DIR=/home/flclient/data
+  : ${MY_DATA_DIR:="/home/flclient/data"}
+  # The syntax above is to set MY_DATA_DIR to /home/flcient/data if this
+  # environment variable is not set previously.
+  # Therefore, users can set their own MY_DATA_DIR with
+  # export MY_DATA_DIR=$SOME_DIRECTORY
+  # before running docker.sh
+
   # for all gpus use line below 
-  GPU2USE=all 
+  : ${GPU2USE:="all"}
+  # The above is for the same purpose in MY_DATA_DIR.
+  # It will set GPU2USE to all if this env var is not set.
+
   # for 2 gpus use line below
   #GPU2USE=2 
   # for specific gpus as gpu#0 and gpu#2 use line below
@@ -438,7 +664,18 @@ docker_cln_sh: |
   #NETARG="-p 443:443 -p 8003:8003"
   DOCKER_IMAGE={~~docker_image~~}
   echo "Starting docker with $DOCKER_IMAGE"
-  docker run --rm -it --name={~~client_name~~} --gpus=$GPU2USE -u $(id -u):$(id -g) -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group -v $DIR/..:/workspace/ -v $MY_DATA_DIR:/data/:ro -w /workspace/ --ipc=host $NETARG $DOCKER_IMAGE /bin/bash
+  mode="${1:--r}"
+  if [ $mode = "-d" ]
+  then
+    docker run -d --rm --name={~~client_name~~} --gpus=$GPU2USE -u $(id -u):$(id -g) \
+    -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group -v $DIR/..:/workspace/ \
+    -v $MY_DATA_DIR:/data/:ro -w /workspace/ --ipc=host $NETARG $DOCKER_IMAGE \
+    /bin/bash -c "python -u -m nvflare.private.fed.app.client.client_train -m /workspace -s fed_client.json --set uid={~~client_name~~} secure_train=true config_folder=config org={~~org_name~~}"
+  else
+    docker run --rm -it --name={~~client_name~~} --gpus=$GPU2USE -u $(id -u):$(id -g) \
+    -v /etc/passwd:/etc/passwd -v /etc/group:/etc/group -v $DIR/..:/workspace/ \
+    -v $MY_DATA_DIR:/data/:ro -w /workspace/ --ipc=host $NETARG $DOCKER_IMAGE /bin/bash
+  fi
 
 docker_svr_sh: |
   #!/usr/bin/env bash
@@ -450,7 +687,15 @@ docker_svr_sh: |
   #NETARG="-p {~~admin_port~~}:{~~admin_port~~} -p {~~fed_learn_port~~}:{~~fed_learn_port~~}"
   DOCKER_IMAGE={~~docker_image~~}
   echo "Starting docker with $DOCKER_IMAGE"
-  docker run --rm -it --name=flserver -v $DIR/..:/workspace/ -w /workspace/ --ipc=host $NETARG $DOCKER_IMAGE /bin/bash
+  mode="${1:-r}"
+  if [ $mode = "-d" ]
+  then
+    docker run -d --rm --name=flserver -v $DIR/..:/workspace/ -w /workspace \
+    --ipc=host $NETARG $DOCKER_IMAGE /bin/bash -c \
+    "python -u -m nvflare.private.fed.app.server.server_train -m /workspace -s fed_server.json --set secure_train=true config_folder=config org={~~org_name~~}"
+  else
+    docker run --rm -it --name=flserver -v $DIR/..:/workspace/ -w /workspace/ --ipc=host $NETARG $DOCKER_IMAGE /bin/bash
+  fi
 
 docker_adm_sh: |
   #!/usr/bin/env bash
@@ -463,3 +708,1536 @@ docker_adm_sh: |
   DOCKER_IMAGE={~~docker_image~~}
   echo "Starting docker with $DOCKER_IMAGE"
   docker run --rm -it --name=fladmin -v $DIR/..:/workspace/ -w /workspace/ $DOCKER_IMAGE /bin/bash
+
+compose_yaml: |
+  services:
+    __overseer__:
+      build: ./nvflare
+      image: ${IMAGE_NAME}
+      volumes:
+        - .:/workspace
+      command: ["${WORKSPACE}/startup/start.sh"]
+      ports:
+        - "8443:8443"
+
+    __flserver__:
+      image: ${IMAGE_NAME}
+      ports:
+        - "8002:8002"
+        - "8003:8003"
+      volumes:
+        - .:/workspace
+        - nvflare_svc_persist:/tmp/nvflare/
+      command: ["${PYTHON_EXECUTABLE}",
+            "-u",
+            "-m",
+            "nvflare.private.fed.app.server.server_train",
+            "-m",
+            "${WORKSPACE}",
+            "-s",
+            "fed_server.json",
+            "--set",
+            "secure_train=true",
+            "config_folder=config",
+            "org=__org_name__",
+          ]
+
+    __flclient__:
+      image: ${IMAGE_NAME}
+      volumes:
+        - .:/workspace
+      command: ["${PYTHON_EXECUTABLE}",
+            "-u",
+            "-m",
+            "nvflare.private.fed.app.client.client_train",
+            "-m",
+            "${WORKSPACE}",
+            "-s",
+            "fed_client.json",
+            "--set",
+            "secure_train=true",
+            "uid=__flclient__",
+            "org=__org_name__",
+            "config_folder=config",
+          ]
+
+  volumes:
+    nvflare_svc_persist:
+
+dockerfile: |
+  RUN pip install -U pip
+  RUN pip install nvflare
+  COPY requirements.txt requirements.txt
+  RUN pip install -r requirements.txt
+
+helm_chart_chart: |
+  apiVersion: v2
+  name: nvflare
+  description: A Helm chart for NVFlare overseer and servers
+  type: application
+  version: 0.1.0
+  appVersion: "2.2.0"
+
+helm_chart_service_overseer: |
+  apiVersion: v1
+  kind: Service
+  metadata:
+    name: overseer
+  spec:
+    selector:
+      system: overseer
+    ports:
+      - protocol: TCP
+        port: 8443
+        targetPort: overseer-port
+
+helm_chart_service_server: |
+  apiVersion: v1
+  kind: Service
+  metadata:
+    name: server
+    labels:
+      system: server
+  spec:
+    selector:
+      system: server
+    ports:
+      - name: fl-port
+        protocol: TCP
+        port: 8002
+        targetPort: fl-port
+      - name: admin-port
+        protocol: TCP
+        port: 8003
+        targetPort: admin-port
+
+helm_chart_deployment_overseer: |
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: overseer
+    labels:
+      system: overseer
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        system: overseer
+    template:
+      metadata:
+        labels:
+          system: overseer
+      spec:
+        volumes:
+          - name: workspace
+            hostPath:
+              path:
+              type: Directory
+        containers:
+          - name: overseer
+            image: nvflare-min:2.2.0
+            imagePullPolicy: IfNotPresent
+            volumeMounts:
+              - name: workspace
+                mountPath: /workspace
+            command: ["/workspace/overseer/startup/start.sh"]
+            ports:
+              - name: overseer-port
+                containerPort: 8443
+                protocol: TCP
+helm_chart_deployment_server: |
+  apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: server
+    labels:
+      system: server
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        system: server
+    template:
+      metadata:
+        labels:
+          system: server
+      spec:
+        volumes:
+          - name: workspace
+            hostPath:
+              path:
+              type: Directory
+          - name: persist
+            hostPath:
+              path: /tmp/nvflare
+              type: Directory
+        containers:
+          - name: server1
+            image: nvflare-min:2.2.0
+            imagePullPolicy: IfNotPresent
+            volumeMounts:
+              - name: workspace
+                mountPath: /workspace
+              - name: persist
+                mountPath: /tmp/nvflare
+            command: ["/usr/local/bin/python3"]
+            args:
+              [
+                "-u",
+                "-m",
+                "nvflare.private.fed.app.server.server_train",
+                "-m",
+                "/workspace/server",
+                "-s",
+                "fed_server.json",
+                "--set",
+                "secure_train=true",
+                "config_folder=config",
+                "org=__org_name__",
+
+              ]
+            ports:
+              - containerPort: 8002
+                protocol: TCP
+              - containerPort: 8003
+                protocol: TCP
+helm_chart_values: |
+  workspace: /home/nvflare
+  persist: /home/nvflare
+
+
+azure_start_svr_sh: |
+  #!/usr/bin/env bash
+  
+  DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+  function report_status() {
+    status="$1"
+    if [ "${status}" -ne 0 ]
+    then
+      echo "$2 failed"
+      exit "${status}"
+    fi
+  }
+
+  function check_binary() {
+    echo -n "Checking if $1 exists. => "
+    if ! command -v $1 &> /dev/null
+    then
+      echo "not found. $2"
+      exit 1
+    else
+      echo "found"
+    fi
+  }
+
+  function prompt() {
+    local __default="$1"
+    read -p "$2" ans
+    if [[ ! -z "$ans" ]]
+    then
+      eval $__default="'$ans'"
+    fi
+  }
+
+  # parse arguments
+  while [[ $# -gt 0 ]]
+  do
+    key="$1"
+    case $key in
+      --config)
+        config_file=$2
+        shift
+      ;;
+      --image)
+        image_name=$2
+        shift
+      ;;
+    esac
+    shift
+  done
+  
+  RESOURCE_GROUP=nvflare_rg
+  VM_NAME=nvflare_server
+  VM_IMAGE=Canonical:0001-com-ubuntu-server-focal:20_04-lts-gen2:latest
+  VM_SIZE=Standard_B2ms
+  NSG_NAME=nvflare_nsgs
+  ADMIN_USERNAME=nvflare
+  PASSWORD="NVFl@r3_P@88"$RANDOM"w0rd"
+  DEST_FOLDER=/var/tmp/cloud
+  NIC_NAME=${VM_NAME}VMNic
+  SERVER_NAME={~~server_name~~}
+  FL_PORT=8002
+  ADMIN_PORT=8003
+
+  echo "This script requires az (Azure CLI), sshpass and jq.  Now checking if they are installed."
+
+  check_binary az "Please see https://learn.microsoft.com/en-us/cli/azure/install-azure-cli on how to install it on your system."
+  check_binary sshpass "Please install it first."
+  check_binary jq "Please install it first."
+
+  self_dns=true
+  if [[ "$SERVER_NAME" = *".cloudapp.azure.com"* ]]
+  then
+    DNS_TAG=$(echo $SERVER_NAME | cut -d "." -f 1)
+    DERIVED_LOCATION=$(echo $SERVER_NAME | cut -d "." -f 2)
+    LOCATION=$DERIVED_LOCATION
+    self_dns=false
+  else
+    echo "Warning: ${SERVER_NAME} does not end with .cloudapp.azure.com."
+    echo "The cloud launch process will not create the domain name for you."
+    echo "Please use your own DNS to set the information."
+    LOCATION=westus2
+  fi
+
+  if [ -z ${image_name+x} ]
+  then
+      container=false
+  else
+      container=true
+  fi
+
+  if [ $container = true ]
+  then
+    VM_IMAGE=Canonical:0001-com-ubuntu-server-focal:20_04-lts-gen2:latest
+    VM_SIZE=Standard_D8s_v3
+  else
+    VM_IMAGE=Canonical:0001-com-ubuntu-server-focal:20_04-lts-gen2:latest
+    VM_SIZE=Standard_B2ms
+  fi
+
+  if [ -z ${config_file+x} ]
+  then
+    useDefault=true
+  else
+    useDefault=false
+    . $config_file
+    report_status "$?" "Loading config file"
+    if [ $self_dns = false ] && [ $DERIVED_LOCATION != $LOCATION ]
+    then
+      echo "Server name implies LOCATION=${DERIVED_LOCATION} but the config file specifies LOCATION=${LOCATION}.  Unable to continue provisioning."
+      exit 1
+    fi
+  fi
+
+  if [ $useDefault = true ]
+  then
+    while true
+    do
+      prompt VM_IMAGE "Cloud VM image, press ENTER to accept default ${VM_IMAGE}: "
+      prompt VM_SIZE "Cloud VM size, press ENTER to accept default ${VM_SIZE}: "
+      if [ $self_dns = true ]
+      then
+        prompt LOCATION "Cloud location, press ENTER to accept default ${LOCATION}: "        
+        prompt ans "VM image = ${VM_IMAGE}, VM size = ${VM_SIZE}, location = ${LOCATION}, OK? (Y/n) "
+      else
+        prompt ans "VM image = ${VM_IMAGE}, VM size = ${VM_SIZE}, OK? (Y/n) "
+      fi
+      if [[ $ans = "" ]] || [[ $ans =~ ^(y|Y)$ ]]; then break; fi
+    done
+  fi
+
+  if [ $container = false ]
+  then
+    echo "If the client requires additional dependencies, please copy the requirements.txt to ${DIR}."
+    prompt ans "Press ENTER when it's done or no additional dependencies. "
+  fi
+
+  az login --use-device-code -o none
+  report_status "$?" "login"
+
+  # Start provisioning
+
+  if [ $(az group exists -n $RESOURCE_GROUP) == 'false' ]
+  then
+    echo "Creating Resource Group $RESOURCE_GROUP at Location $LOCATION"
+    az group create --output none --name $RESOURCE_GROUP --location $LOCATION
+    report_status "$?" "creating resource group"
+  elif [ $useDefault = true ]
+  then
+    report_status "1" "Only one NVFL server VM and its resource group is allowed.  $RESOURCE_GROUP exists and thus creating duplicate resource group"
+  else
+    echo "Users require to reuse Resource Group $RESOURCE_GROUP.  This script will modify the group and may not work always."
+  fi
+
+  echo "Creating Virtual Machine, will take a few minutes"
+  if [ $self_dns = true ]
+  then
+    az vm create \
+      --output json \
+      --resource-group $RESOURCE_GROUP \
+      --location $LOCATION \
+      --name $VM_NAME \
+      --image $VM_IMAGE \
+      --size $VM_SIZE \
+      --admin-username $ADMIN_USERNAME \
+      --admin-password $PASSWORD \
+      --authentication-type password \
+      --public-ip-address nvflare_server_ip \
+      --public-ip-address-allocation static \
+      --public-ip-sku Standard > /tmp/vm.json
+  else
+    az vm create \
+      --output json \
+      --resource-group $RESOURCE_GROUP \
+      --location $LOCATION \
+      --name $VM_NAME \
+      --image $VM_IMAGE \
+      --size $VM_SIZE \
+      --admin-username $ADMIN_USERNAME \
+      --admin-password $PASSWORD \
+      --authentication-type password \
+      --public-ip-address nvflare_server_ip \
+      --public-ip-address-allocation static \
+      --public-ip-sku Standard \
+      --public-ip-address-dns-name $DNS_TAG > /tmp/vm.json
+  fi
+  report_status "$?" "creating virtual machine"
+
+  IP_ADDRESS=$(jq -r .publicIpAddress /tmp/vm.json)
+  echo "Setting up network related configuration"
+  az network nsg create \
+    --output none \
+    --resource-group $RESOURCE_GROUP \
+    --location $LOCATION \
+    --name $NSG_NAME
+  report_status "$?" "creating network security group"
+
+  az network nsg rule create \
+    --output none \
+    --resource-group $RESOURCE_GROUP \
+    --name SSH \
+    --nsg-name $NSG_NAME \
+    --priority 1000 \
+    --protocol Tcp \
+    --destination-port-ranges 22
+  report_status "$?" "creating network security group rule for SSH"
+
+  az network nsg rule create \
+    --output none \
+    --resource-group $RESOURCE_GROUP \
+    --name FL_PORT \
+    --nsg-name $NSG_NAME \
+    --priority 1001 \
+    --protocol Tcp \
+    --destination-port-ranges $FL_PORT
+  report_status "$?" "creating network security group rule for FL port"
+
+  az network nsg rule create \
+    --output none \
+    --resource-group $RESOURCE_GROUP \
+    --name ADMIN_PORT \
+    --nsg-name $NSG_NAME \
+    --priority 1002 \
+    --protocol Tcp \
+    --destination-port-ranges $ADMIN_PORT
+  report_status "$?" "creating network security group rule for Admin port"
+
+  az network nic update \
+    --output none \
+    --resource-group $RESOURCE_GROUP \
+    --name $NIC_NAME \
+    --network-security-group $NSG_NAME
+  report_status "$?" "updating network interface card"
+
+  echo "Copying files to $VM_NAME"
+  DEST=$ADMIN_USERNAME@${IP_ADDRESS}:$DEST_FOLDER
+  echo "Destination folder is ${DEST}"
+  cd $DIR/.. && sshpass -p $PASSWORD scp -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $PWD $DEST
+  report_status "$?" "copying startup kits to VM"
+
+  if [ $container = true ]
+  then
+    echo "Installing and lauching container in $VM_NAME, may take a few minutes."
+    az vm run-command invoke \
+      --output json \
+      --resource-group $RESOURCE_GROUP \
+      --command-id RunShellScript \
+      --name $VM_NAME \
+      --scripts \
+      "sudo apt-get update && \
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl gnupg lsb-release && \
+      sudo mkdir -p /etc/apt/keyrings && \
+      curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
+      echo \
+      \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+      $(lsb_release -cs) stable\" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null && \
+      sudo apt-get update && \
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io && \
+      sudo usermod -aG docker $ADMIN_USERNAME" > /tmp/docker_engine.json
+    report_status "$?" "installing docker engine"
+    az vm run-command invoke \
+      --output json \
+      --resource-group $RESOURCE_GROUP \
+      --command-id RunShellScript \
+      --name $VM_NAME \
+      --scripts \
+      "docker run -d -v ${DEST_FOLDER}:${DEST_FOLDER} --network host ${DOCKER_OPTION} ${image_name} \
+      /bin/bash -c \"python -u -m nvflare.private.fed.app.server.server_train -m ${DEST_FOLDER} \
+      -s fed_server.json --set secure_train=true config_folder=config org={~~ORG~~} \" " > /tmp/vm_create.json 2>&1 
+      report_status "$?" "launching container"
+  else
+    echo "Installing packages in $VM_NAME, may take a few minutes."
+    az vm run-command invoke \
+      --output json \
+      --resource-group $RESOURCE_GROUP \
+      --command-id RunShellScript \
+      --name $VM_NAME \
+      --scripts \
+      "echo ${DEST_FOLDER} && \
+      wget -q https://bootstrap.pypa.io/get-pip.py && \
+      python3 get-pip.py && \
+      python3 -m pip install --ignore-installed nvflare && \
+      touch ${DEST_FOLDER}/startup/requirements.txt && \
+      python3 -m pip install -r ${DEST_FOLDER}/startup/requirements.txt && \
+      ${DEST_FOLDER}/startup/start.sh && \
+      sleep 20 && \
+      cat ${DEST_FOLDER}/log.txt" > /tmp/vm_create.json
+    report_status "$?" "installing packages"
+  fi
+  echo "System was provisioned"
+  echo "To delete the resource group (also delete the VM), run the following command"
+  echo "az group delete -n ${RESOURCE_GROUP}"
+  echo "To login to the VM with SSH, use ${ADMIN_USERNAME} : ${PASSWORD}" > vm_credential.txt
+
+azure_start_cln_sh: |
+  #!/usr/bin/env bash
+  DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+  function report_status() {
+    status="$1"
+    if [ "${status}" -ne 0 ]
+    then
+      echo "$2 failed"
+      exit "${status}"
+    fi
+  }
+
+  function check_binary() {
+    echo -n "Checking if $1 exists. => "
+    if ! command -v $1 &> /dev/null
+    then
+      echo "not found. $2"
+      exit 1
+    else
+      echo "found"
+    fi
+  }
+
+  function prompt() {
+    local __default="$1"
+    read -p "$2" ans
+    if [[ ! -z "$ans" ]]
+    then
+      eval $__default="'$ans'"
+    fi
+  }
+
+  # parse arguments
+  while [[ $# -gt 0 ]]
+  do
+      key="$1"
+      case $key in
+          --config)
+              config_file=$2
+              shift
+          ;;
+      --image)
+        image_name=$2
+        shift
+      ;;
+      esac
+      shift
+  done
+
+  RESOURCE_GROUP=nvflare_client_rg_${RANDOM}_${RANDOM}
+  VM_NAME=nvflare_client
+  VM_IMAGE=Canonical:0001-com-ubuntu-server-focal:20_04-lts-gen2:latest
+  VM_SIZE=Standard_B2ms
+  NSG_NAME=nvflare_nsgc
+  ADMIN_USERNAME=nvflare
+  PASSWORD="NVFl@r3_P@88"$RANDOM"w0rd"
+  DEST_FOLDER=/var/tmp/cloud
+  LOCATION=westus2
+  NIC_NAME=${VM_NAME}VMNic
+  echo "This script requires az (Azure CLI), sshpass and jq.  Now checking if they are installed."
+
+  check_binary az "Please see https://learn.microsoft.com/en-us/cli/azure/install-azure-cli on how to install it on your system."
+  check_binary sshpass "Please install it first."
+  check_binary jq "Please install it first."
+
+
+  if [ -z ${image_name+x} ]
+  then
+      container=false
+  else
+      container=true
+  fi
+
+  if [ $container = true ]
+  then
+    VM_IMAGE=Canonical:0001-com-ubuntu-server-focal:20_04-lts-gen2:latest
+    VM_SIZE=Standard_D8s_v3
+  else
+    VM_IMAGE=Canonical:0001-com-ubuntu-server-focal:20_04-lts-gen2:latest
+    VM_SIZE=Standard_B2ms
+  fi
+  if [ -z ${config_file+x} ]
+  then
+      useDefault=true
+  else
+      useDefault=false
+      . $config_file
+      report_status "$?" "Loading config file"
+  fi
+
+  if [ $useDefault = true ]
+  then
+    while true
+    do
+      prompt LOCATION "Cloud location, press ENTER to accept default ${LOCATION}: "
+      prompt VM_IMAGE "Cloud VM image, press ENTER to accept default ${VM_IMAGE}: "
+      prompt VM_SIZE "Cloud VM size, press ENTER to accept default ${VM_SIZE}: "
+      prompt ans "location = ${LOCATION}, VM image = ${VM_IMAGE}, VM size = ${VM_SIZE}, OK? (Y/n) "
+      if [[ $ans = "" ]] || [[ $ans =~ ^(y|Y)$ ]]; then break; fi
+    done
+  fi
+
+  if [ $container = false ]
+  then
+    echo "If the client requires additional dependencies, please copy the requirements.txt to ${DIR}."
+    prompt ans "Press ENTER when it's done or no additional dependencies. "
+  fi
+
+  az login --use-device-code -o none
+  report_status "$?" "login"
+
+  # Start provisioning
+
+  if [ $(az group exists -n $RESOURCE_GROUP) == 'false' ]
+  then
+    echo "Creating Resource Group $RESOURCE_GROUP at Location $LOCATION"
+    az group create --output none --name $RESOURCE_GROUP --location $LOCATION
+    report_status "$?" "creating resource group"
+  else
+    echo "Resource Group $RESOURCE_GROUP exists, will reuse it."
+  fi
+
+  echo "Creating Virtual Machine, will take a few minutes"
+  az vm create \
+    --output json \
+    --resource-group $RESOURCE_GROUP \
+    --location $LOCATION \
+    --name $VM_NAME \
+    --image $VM_IMAGE \
+    --size $VM_SIZE \
+    --admin-username $ADMIN_USERNAME \
+    --admin-password $PASSWORD \
+    --authentication-type password \
+    --public-ip-sku Standard > /tmp/vm.json
+  report_status "$?" "creating virtual machine"
+
+  IP_ADDRESS=$(jq -r .publicIpAddress /tmp/vm.json)
+
+  echo "Setting up network related configuration"
+
+  az network nsg create \
+    --output none \
+    --resource-group $RESOURCE_GROUP \
+    --location $LOCATION \
+    --name $NSG_NAME
+  report_status "$?" "creating network security group"
+
+  az network nsg rule create \
+    --output none \
+    --resource-group $RESOURCE_GROUP \
+    --name SSH \
+    --nsg-name $NSG_NAME \
+    --priority 1000 \
+    --protocol Tcp \
+    --destination-port-ranges 22
+  report_status "$?" "creating network security group rule for SSH"
+
+  az network nic update \
+    --output none \
+    --resource-group $RESOURCE_GROUP \
+    --name $NIC_NAME \
+    --network-security-group $NSG_NAME
+  report_status "$?" "updating network interface card"
+
+  echo "Copying files to $VM_NAME"
+  DEST=$ADMIN_USERNAME@$IP_ADDRESS:$DEST_FOLDER
+  echo "Destination folder is ${DEST}"
+  cd $DIR/.. && sshpass -p $PASSWORD scp -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $PWD $DEST
+  report_status "$?" "copying startup kits to VM"
+
+  if [ $container = true ]
+  then
+    echo "Installing and lauching container in $VM_NAME, may take a few minutes."
+    az vm run-command invoke \
+      --output json \
+      --resource-group $RESOURCE_GROUP \
+      --command-id RunShellScript \
+      --name $VM_NAME \
+      --scripts \
+      "sudo apt-get update && \
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl gnupg lsb-release && \
+      sudo mkdir -p /etc/apt/keyrings && \
+      curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
+      echo \
+      \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+      $(lsb_release -cs) stable\" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null && \
+      sudo apt-get update && \
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io && \
+      sudo usermod -aG docker $ADMIN_USERNAME" > /tmp/docker_engine.json
+    report_status "$?" "installing docker engine"
+    az vm run-command invoke \
+      --output json \
+      --resource-group $RESOURCE_GROUP \
+      --command-id RunShellScript \
+      --name $VM_NAME \
+      --scripts \
+      "docker run -d -v ${DEST_FOLDER}:${DEST_FOLDER} ${image_name} \
+      /bin/bash -c \"python -u -m nvflare.private.fed.app.client.client_train -m ${DEST_FOLDER} \
+      -s fed_client.json --set uid={~~SITE~~} secure_train=true config_folder=config org={~~ORG~~} \" " > /tmp/vm_create.json 2>&1 
+      report_status "$?" "launching container"
+  else
+    echo "Installing packages in $VM_NAME, may take a few minutes."
+    az vm run-command invoke \
+      --output json \
+      --resource-group $RESOURCE_GROUP \
+      --command-id RunShellScript \
+      --name $VM_NAME \
+      --scripts \
+      "echo ${DEST_FOLDER} && \
+      wget -q https://bootstrap.pypa.io/get-pip.py && \
+      python3 get-pip.py && \
+      python3 -m pip install --ignore-installed nvflare && \
+      touch ${DEST_FOLDER}/startup/requirements.txt && \
+      python3 -m pip install -r ${DEST_FOLDER}/startup/requirements.txt && \
+      ${DEST_FOLDER}/startup/start.sh && \
+      sleep 20 && \
+      cat ${DEST_FOLDER}/log.txt" > /tmp/vm_create.json
+    report_status "$?" "installing packages"
+  fi
+  echo "System was provisioned"
+  echo "To delete the resource group (also delete the VM), run the following command"
+  echo "az group delete -n ${RESOURCE_GROUP}"
+  echo "To login to the VM with SSH, use ${ADMIN_USERNAME} : ${PASSWORD}" > vm_credential.txt
+
+azure_start_dsb_sh: |
+  #!/usr/bin/env bash
+
+  function report_status() {
+    status="$1"
+    if [ "${status}" -ne 0 ]
+    then
+      echo "$2 failed"
+      exit "${status}"
+    fi
+  }
+
+  function check_binary() {
+    echo -n "Checking if $1 exists. => "
+    if ! command -v $1 &> /dev/null
+    then
+      echo "not found $2"
+      exit 1
+    else
+      echo "found"
+    fi
+  }
+  
+  function prompt() {
+  local __default="$1"
+  read -p "$2" ans
+  if [[ ! -z "$ans" ]]
+  then
+    eval $__default="'$ans'"
+  fi
+  }
+
+  RESOURCE_GROUP=nvflare_dashboard_rg_${RANDOM}_${RANDOM}
+  VM_NAME=nvflare_dashboard
+  VM_IMAGE=Canonical:0001-com-ubuntu-server-focal:20_04-lts-gen2:latest
+  VM_SIZE=Standard_B2ms
+  NSG_NAME=nvflare_nsgc
+  ADMIN_USERNAME=nvflare
+  PASSWORD="NVFl@r3_P@88"$RANDOM"w0rd"
+  DEST_FOLDER=/var/tmp/cloud
+  LOCATION=westus2
+  NIC_NAME=${VM_NAME}VMNic
+
+  echo "This script requires az (Azure CLI), sshpass and jq.  Now checking if they are installed."
+
+  check_binary az "Please see https://learn.microsoft.com/en-us/cli/azure/install-azure-cli on how to install it on your system."
+  check_binary sshpass "Please install it first."
+  check_binary jq "Please install it first."
+
+  echo "One initial user will be created when starting dashboard."
+  echo "Please enter the email address for this user."
+  read email
+  credential="${email}:$RANDOM"
+
+  az login --use-device-code -o none
+  report_status "$?" "login"
+
+  # Start provisioning
+  if [ $(az group exists -n $RESOURCE_GROUP) == 'false' ]
+  then
+    echo "Creating Resource Group $RESOURCE_GROUP at Location $LOCATION"
+    az group create --output none --name $RESOURCE_GROUP --location $LOCATION
+    report_status "$?" "creating resource group"
+  else
+    echo "Resource Group $RESOURCE_GROUP exists, will reuse it."
+  fi
+
+  echo "Creating Virtual Machine, will take a few minutes"
+  az vm create \
+    --output json \
+    --resource-group $RESOURCE_GROUP \
+    --location $LOCATION \
+    --name $VM_NAME \
+    --image $VM_IMAGE \
+    --size $VM_SIZE \
+    --admin-username $ADMIN_USERNAME \
+    --admin-password $PASSWORD \
+    --authentication-type password \
+    --public-ip-sku Standard > /tmp/vm.json
+  report_status "$?" "creating virtual machine"
+
+  IP_ADDRESS=$(jq -r .publicIpAddress /tmp/vm.json)
+  report_status "$?" "extracting ip address"
+
+  echo "Setting up network related configuration"
+  az network nsg create \
+    --output none \
+    --resource-group $RESOURCE_GROUP \
+    --location $LOCATION \
+    --name $NSG_NAME
+  report_status "$?" "creating network security group"
+
+  az network nsg rule create \
+    --output none \
+    --resource-group $RESOURCE_GROUP \
+    --name SSH \
+    --nsg-name $NSG_NAME \
+    --priority 1000 \
+    --protocol Tcp \
+    --destination-port-ranges 22
+  report_status "$?" "creating network security group rule for SSH"
+
+  az network nsg rule create \
+    --output none \
+    --resource-group $RESOURCE_GROUP \
+    --name HTTPS \
+    --nsg-name $NSG_NAME \
+    --priority 1001 \
+    --protocol Tcp \
+    --destination-port-ranges 443
+  report_status "$?" "creating network security group rule for HTTPS"
+
+  az network nic update \
+    --output none \
+    --resource-group $RESOURCE_GROUP \
+    --name $NIC_NAME \
+    --network-security-group $NSG_NAME
+  report_status "$?" "updating network interface card"
+
+  echo "Installing docker engine in $VM_NAME, may take a few minutes."
+  az vm run-command invoke \
+    --output json \
+    --resource-group $RESOURCE_GROUP \
+    --command-id RunShellScript \
+    --name $VM_NAME \
+    --scripts \
+    "sudo apt-get update && \
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl gnupg lsb-release && \
+    sudo mkdir -p /etc/apt/keyrings && \
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
+    echo \
+    \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+    $(lsb_release -cs) stable\" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null && \
+    sudo apt-get update && \
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io && \
+    sudo usermod -aG docker $ADMIN_USERNAME" > /tmp/docker_engine.json
+  report_status "$?" "installing docker engine"
+    
+  DEST_FOLDER=/home/${ADMIN_USERNAME}
+  echo "Installing nvflare in $VM_NAME, may take a few minutes."
+  az vm run-command invoke \
+    --output json \
+    --resource-group $RESOURCE_GROUP \
+    --command-id RunShellScript \
+    --name $VM_NAME \
+    --scripts \
+    "echo ${DEST_FOLDER} && \
+    wget -q https://bootstrap.pypa.io/get-pip.py && \
+    python3 get-pip.py && \
+    python3 -m pip install --ignore-installed {~~NVFLARE~~} && \
+    mkdir -p ${DEST_FOLDER}/cert && \
+    chown -R ${ADMIN_USERNAME} ${DEST_FOLDER}" > /tmp/nvflare.json && \
+  report_status "$?" "installing nvflare"
+
+  echo "Checking if certificate (web.crt) and private key (web.key) are available"
+  if [[ -f "web.crt" && -f "web.key" ]]; then
+    DEST=$ADMIN_USERNAME@$IP_ADDRESS:${DEST_FOLDER}/cert
+    echo "Destination folder is ${DEST}"
+    sshpass -p $PASSWORD scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null web.{crt,key} $DEST
+    report_status "$?" "copying cert/key to VM ${DEST} folder"
+    secure=true
+  else
+    echo "No web.crt and web.key found"
+    secure=false
+  fi
+
+  echo "Starting dashboard"
+  az vm run-command invoke \
+    --output json \
+    --resource-group $RESOURCE_GROUP \
+    --command-id RunShellScript \
+    --name $VM_NAME \
+    --scripts \
+    "cd ${DEST_FOLDER} && \
+     python3 -m nvflare.dashboard.cli --start -f ${DEST_FOLDER} --cred ${credential} {~~START_OPT~~}" > /tmp/dashboard.json
+
+  # credential=$(jq -r .value[0].message /tmp/dashboard.json | grep "Project admin")
+  # echo "The VM was created with user: ${ADMIN_USERNAME} and password: ${PASSWORD}"
+  if [ "$secure" = true ]
+  then
+    echo "URL is https://${IP_ADDRESS}"
+  else
+    echo "URL is http://${IP_ADDRESS}:443"
+  fi
+  echo "Note: you may need to configure DNS server with your DNS hostname and the above IP address."
+  echo "Project admin credential (username:password) is ${credential} ."
+  echo "To stop the dashboard, run az group delete -n ${RESOURCE_GROUP}"
+  echo "To login to the VM with SSH, use ${ADMIN_USERNAME} : ${PASSWORD}" > vm_credential.txt
+
+adm_notebook: |
+  {
+  "cells": [
+    {
+    "cell_type": "markdown",
+    "id": "b758695b",
+    "metadata": {},
+    "source": [
+      "# System Info"
+    ]
+    },
+    {
+    "cell_type": "markdown",
+    "id": "9f7cd9e6",
+    "metadata": {},
+    "source": [
+      "In this notebook, System Info is checked with the FLARE API."
+    ]
+    },
+    {
+    "cell_type": "markdown",
+    "id": "ea50ba28",
+    "metadata": {},
+    "source": [
+      "#### 1. Connect to the FL System with the FLARE API\n",
+      "\n",
+      "Use `new_secure_session()` to initiate a session connecting to the FL Server with the FLARE API. The necessary arguments are the username of the admin user you are using and the corresponding startup kit location (if you are using POC mode, you will need to use `new_insecure_session()` with the startup kit location as the only argument).\n",
+      "\n",
+      "In the code example below, we get the `admin_user_dir` by concatenating the workspace root with the default directories that are created if you provision a project with a given project name. You can change the values to what applies to your system if needed.\n",
+      "\n",
+      "Note that if debug mode is not enabled, there is no output after initiating a session successfully, so instead we print the output of `get_system_info()`. If you are unable to connect and initiate a session, make sure that your FL Server is running and that the configurations are correct with the right path to the admin startup kit directory."
+    ]
+    },
+    {
+    "cell_type": "code",
+    "execution_count": null,
+    "id": "0166942d",
+    "metadata": {
+      "collapsed": true
+    },
+    "outputs": [],
+    "source": [
+      "# Run this pip install if NVFlare is not installed in your Jupyter Notebook\n",
+      "\n",
+      "# !python3 -m pip install -U nvflare"
+    ]
+    },
+    {
+    "cell_type": "code",
+    "execution_count": null,
+    "id": "c3dbde69",
+    "metadata": {},
+    "outputs": [],
+    "source": [
+      "import os\n",
+      "from nvflare.fuel.flare_api.flare_api import new_secure_session\n",
+      "\n",
+      "username = \"{~~admin_name~~}\"  # change this to your own username\n",
+      "\n",
+      "sess = new_secure_session(\n",
+      "    username=username,\n",
+      "    startup_kit_location=os.getcwd()\n",
+      ")\n",
+      "print(sess.get_system_info())"
+    ]
+    },
+    {
+    "cell_type": "markdown",
+    "id": "31ccb6a6",
+    "metadata": {},
+    "source": [
+      "### 2. Shutting Down the FL System\n",
+      "\n",
+      "As of now, there is no specific FLARE API command for shutting down the FL system, but the FLARE API can use the `do_command()` function of the underlying AdminAPI to submit any commands that the FLARE Console supports including shutdown commands to the clients and server:"
+    ]
+    },
+    {
+    "cell_type": "code",
+    "execution_count": null,
+    "id": "b0d8aa9c",
+    "metadata": {},
+    "outputs": [],
+    "source": [
+      "print(sess.api.do_command(\"shutdown client\"))\n",
+      "print(sess.api.do_command(\"shutdown server\"))\n",
+      "\n",
+      "sess.close()"
+    ]
+    }
+  ],
+  "metadata": {
+    "kernelspec": {
+    "display_name": "Python 3 (ipykernel)",
+    "language": "python",
+    "name": "python3"
+    },
+    "language_info": {
+    "codemirror_mode": {
+      "name": "ipython",
+      "version": 3
+    },
+    "file_extension": ".py",
+    "mimetype": "text/x-python",
+    "name": "python",
+    "nbconvert_exporter": "python",
+    "pygments_lexer": "ipython3",
+    "version": "3.8.13"
+    },
+    "vscode": {
+    "interpreter": {
+      "hash": "31f2aee4e71d21fbe5cf8b01ff0e069b9275f58929596ceb00d14d90e3e16cd6"
+    }
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 5
+  }
+
+aws_start_svr_sh: |
+  #!/usr/bin/env bash
+
+  set +e
+  DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+
+  function report_status() {
+    status="$1"
+    if [ "${status}" -ne 0 ]
+    then
+      echo "$2 failed"
+      exit "${status}"
+    fi
+  }
+
+  function check_binary() {
+    echo -n "Checking if $1 exists. => "
+    if ! command -v $1 &> /dev/null
+    then
+      echo "not found. $2"
+      exit 1
+    else
+      echo "found"
+    fi
+  }
+
+  function prompt() {
+    local __default="$1"
+    read -p "$2" ans
+    if [[ ! -z "$ans" ]]
+    then
+      eval $__default="'$ans'"
+    fi
+  }
+
+  # parse arguments
+  while [[ $# -gt 0 ]]
+  do
+    key="$1"
+    case $key in
+      --config)
+        config_file=$2
+        shift
+      ;;
+      --image)
+        image_name=$2
+        shift
+      ;;
+    esac
+    shift
+  done
+
+  VM_NAME=nvflare_server
+  SECURITY_GROUP=nvflare_server_sg
+  DEST_FOLDER=/var/tmp/cloud
+  KEY_PAIR=NVFlareServerKeyPair
+  KEY_FILE=${KEY_PAIR}.pem
+
+  echo "This script requires aws (AWS CLI), sshpass, dig and jq.  Now checking if they are installed."
+
+  check_binary aws "Please see https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html on how to install it on your system."
+  check_binary sshpass "Please install it first."
+  check_binary dig "Please install it first."
+  check_binary jq "Please install it first."
+
+  if [ -z ${image_name+x} ]
+  then
+      container=false
+  else
+      container=true
+  fi
+
+  if [ $container = true ]
+  then
+    AMI_IMAGE=ami-06b8d5099f3a8d79d
+    EC2_TYPE=t2.xlarge
+    REGION=us-west-2
+  else
+    AMI_IMAGE=ami-04bad3c587fe60d89
+    EC2_TYPE=t2.small
+    REGION=us-west-2
+  fi
+
+  if [ -z ${config_file+x} ]
+  then
+      useDefault=true
+  else
+      useDefault=false
+      . $config_file
+      report_status "$?" "Loading config file"
+  fi
+
+
+  if [ $useDefault = true ]
+  then
+    while true
+    do
+      prompt AMI_IMAGE "Cloud AMI image, press ENTER to accept default ${AMI_IMAGE}: "
+      prompt EC2_TYPE "Cloud EC2 type, press ENTER to accept default ${EC2_TYPE}: "
+      prompt REGIION "Cloud EC2 region, press ENTER to accept default ${REGION}: "
+      prompt ans "region = ${REGION}, ami image = ${AMI_IMAGE}, EC2 type = ${EC2_TYPE}, OK? (Y/n) "
+      if [[ $ans = "" ]] || [[ $ans =~ ^(y|Y)$ ]]
+      then
+        break
+      fi
+    done
+  fi
+
+  if [ $container = false ]
+  then
+    echo "If the server requires additional dependencies, please copy the requirements.txt to ${DIR}."
+    prompt ans "Press ENTER when it's done or no additional dependencies. "
+  fi
+
+  cd $DIR/..
+  # Generate key pair
+
+  echo "Generating key pair for VM"
+
+  aws ec2 delete-key-pair --key-name $KEY_PAIR > /dev/null 2>&1
+  rm -rf $KEY_FILE
+  aws ec2 create-key-pair --key-name $KEY_PAIR --query 'KeyMaterial' --output text > $KEY_FILE
+  report_status "$?" "creating key pair"
+  chmod 400 $KEY_FILE
+
+  # Generate Security Group
+
+  sg_result=$(aws ec2 create-security-group --group-name $SECURITY_GROUP --description "NVFlare security group")
+  report_status "$?" "Only one NVFL server VM and its security group is allowed.  $SECURITY_GROUP exists and thus creating duplicate security group"
+  sg_id=$(echo $sg_result | jq -r .GroupId)
+  my_public_ip=$(dig +short myip.opendns.com @resolver1.opendns.com)
+  report_status "$?" "getting my public IP"
+  aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr ${my_public_ip}/32 > /tmp/sec_grp.log
+  aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 8002-8003 --cidr 0.0.0.0/0 >> /tmp/sec_grp.log
+  report_status "$?" "creating security group rules"
+
+  # Start provisioning
+
+  echo "Creating VM at region $REGION, may take a few minutes."
+
+  aws ec2 run-instances --region $REGION --image-id $AMI_IMAGE --count 1 --instance-type $EC2_TYPE --key-name $KEY_PAIR --security-group-ids $sg_id > vm_create.json
+  report_status "$?" "creating VM"
+  instance_id=$(jq -r .Instances[0].InstanceId vm_create.json)
+
+  aws ec2 wait instance-status-ok --instance-ids $instance_id
+  aws ec2 describe-instances --instance-ids $instance_id > vm_result.json
+
+  IP_ADDRESS=$(jq -r .Reservations[0].Instances[0].PublicIpAddress vm_result.json)
+
+  echo "VM created with IP address: ${IP_ADDRESS}"
+
+  echo "Copying files to $VM_NAME"
+  DEST_SITE=ubuntu@${IP_ADDRESS}
+  DEST=${DEST_SITE}:${DEST_FOLDER}
+  echo "Destination folder is ${DEST}"
+  scp -q -i $KEY_FILE -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $PWD $DEST
+  report_status "$?" "copying startup kits to VM"
+
+  if [ $container = true ]
+  then
+    echo "Launching container with docker option ${DOCKER_OPTION}."
+    ssh -f -i $KEY_FILE -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEST_SITE} \
+    "docker run -d -v ${DEST_FOLDER}:${DEST_FOLDER} --network host ${DOCKER_OPTION} ${image_name} \
+    /bin/bash -c \"python -u -m nvflare.private.fed.app.server.server_train -m ${DEST_FOLDER} \
+    -s fed_server.json --set secure_train=true config_folder=config org={~~ORG~~} \" " > /tmp/nvflare.log 2>&1 
+    report_status "$?" "launching container"
+  else
+    ssh -f -i $KEY_FILE -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEST_SITE} \
+    "pwd && wget -q https://bootstrap.pypa.io/get-pip.py && \
+    python3 get-pip.py && python3 -m pip install nvflare && \
+    touch ${DEST_FOLDER}/startup/requirements.txt && \
+    python3 -m pip install -r ${DEST_FOLDER}/startup/requirements.txt && \
+    nohup ${DEST_FOLDER}/startup/start.sh && sleep 20 && \
+    exit" > /tmp/nvflare.log 2>&1 
+    report_status "$?" "installing packages"
+  fi
+
+  echo "System was provisioned"
+  echo "To terminate the EC2 instance, run the following command."
+  echo "aws ec2 terminate-instances --instance-ids ${instance_id}"
+  echo "Other resources provisioned"
+  echo "security group: ${SECURITY_GROUP}"
+  echo "key pair: ${KEY_PAIR}"
+
+aws_start_cln_sh: |
+  #!/usr/bin/env bash
+
+  set +e
+  DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+
+  function report_status() {
+    status="$1"
+    if [ "${status}" -ne 0 ]
+    then
+      echo "$2 failed"
+      exit "${status}"
+    fi
+  }
+
+  function check_binary() {
+    echo -n "Checking if $1 exists. => "
+    if ! command -v $1 &> /dev/null
+    then
+      echo "not found. $2"
+      exit 1
+    else
+      echo "found"
+    fi
+  }
+
+  function prompt() {
+    local __default="$1"
+    read -p "$2" ans
+    if [[ ! -z "$ans" ]]
+    then
+      eval $__default="'$ans'"
+    fi
+  }
+
+  # parse arguments
+  while [[ $# -gt 0 ]]
+  do
+    key="$1"
+    case $key in
+      --config)
+        config_file=$2
+        shift
+      ;;
+      --image)
+        image_name=$2
+        shift
+      ;;
+    esac
+    shift
+  done
+
+  VM_NAME=nvflare_client
+  SECURITY_GROUP=nvflare_client_sg_$RANDOM
+  DEST_FOLDER=/var/tmp/cloud
+  KEY_PAIR=NVFlareClientKeyPair
+  KEY_FILE=${KEY_PAIR}.pem
+
+  echo "This script requires aws (AWS CLI), sshpass, dig and jq.  Now checking if they are installed."
+
+  check_binary aws "Please see https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html on how to install it on your system."
+  check_binary sshpass "Please install it first."
+  check_binary dig "Please install it first."
+  check_binary jq "Please install it first."
+
+  if [ -z ${image_name+x} ]
+  then
+      container=false
+  else
+      container=true
+  fi
+
+  if [ $container = true ]
+  then
+    AMI_IMAGE=ami-06b8d5099f3a8d79d
+    EC2_TYPE=t2.xlarge
+    REGION=us-west-2
+  else
+    AMI_IMAGE=ami-04bad3c587fe60d89
+    EC2_TYPE=t2.small
+    REGION=us-west-2
+  fi
+
+  if [ -z ${config_file+x} ]
+  then
+      useDefault=true
+  else
+      useDefault=false
+      . $config_file
+      report_status "$?" "Loading config file"
+  fi
+
+  if [ $useDefault = true ]
+  then
+    while true
+    do
+      prompt AMI_IMAGE "Cloud AMI image, press ENTER to accept default ${AMI_IMAGE}: "
+      prompt EC2_TYPE "Cloud EC2 type, press ENTER to accept default ${EC2_TYPE}: "
+      prompt REGIION "Cloud EC2 region, press ENTER to accept default ${REGION}: "
+      prompt ans "region = ${REGION}, ami image = ${AMI_IMAGE}, EC2 type = ${EC2_TYPE}, OK? (Y/n) "
+      if [[ $ans = "" ]] || [[ $ans =~ ^(y|Y)$ ]]
+      then
+        break
+      fi
+    done
+  fi
+
+  if [ $container = false ]
+  then
+    echo "If the client requires additional dependencies, please copy the requirements.txt to ${DIR}."
+    prompt ans "Press ENTER when it's done or no additional dependencies. "
+  fi
+
+  cd $DIR/..
+  # Generate key pair
+
+  echo "Generating key pair for VM"
+
+  aws ec2 delete-key-pair --key-name $KEY_PAIR > /dev/null 2>&1
+  rm -rf $KEY_FILE
+  aws ec2 create-key-pair --key-name $KEY_PAIR --query 'KeyMaterial' --output text > $KEY_FILE
+  report_status "$?" "creating key pair"
+  chmod 400 $KEY_FILE
+
+  # Generate Security Group
+  # Try not reusing existing security group because we have to modify it for our own need.
+  sg_id=$(aws ec2 create-security-group --group-name $SECURITY_GROUP --description "NVFlare security group" | jq -r .GroupId)
+  report_status "$?" "creating security group"
+  my_public_ip=$(dig +short myip.opendns.com @resolver1.opendns.com)
+  report_status "$?" "getting my public IP"
+  aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr ${my_public_ip}/32 > /tmp/sec_grp.log
+  report_status "$?" "creating security group rules"
+
+  # Start provisioning
+
+  echo "Creating VM at region $REGION, may take a few minutes."
+
+  aws ec2 run-instances --region $REGION --image-id $AMI_IMAGE --count 1 --instance-type $EC2_TYPE --key-name $KEY_PAIR --security-group-ids $sg_id > vm_create.json
+  report_status "$?" "creating VM"
+  instance_id=$(jq -r .Instances[0].InstanceId vm_create.json)
+
+  aws ec2 wait instance-status-ok --instance-ids $instance_id
+  aws ec2 describe-instances --instance-ids $instance_id > vm_result.json
+
+  IP_ADDRESS=$(jq -r .Reservations[0].Instances[0].PublicIpAddress vm_result.json)
+
+  echo "VM created with IP address: ${IP_ADDRESS}"
+
+  echo "Copying files to $VM_NAME"
+  DEST_SITE=ubuntu@${IP_ADDRESS}
+  DEST=${DEST_SITE}:${DEST_FOLDER}
+  echo "Destination folder is ${DEST}"
+  scp -q -i $KEY_FILE -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $PWD $DEST
+  report_status "$?" "copying startup kits to VM"
+
+  if [ $container = true ]
+  then
+    echo "Launching container with docker option ${DOCKER_OPTION}."
+    ssh -f -i $KEY_FILE -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEST_SITE} \
+    "docker run -d -v ${DEST_FOLDER}:${DEST_FOLDER} --network host ${DOCKER_OPTION} ${image_name} \
+    /bin/bash -c \"python -u -m nvflare.private.fed.app.client.client_train -m ${DEST_FOLDER} \
+    -s fed_client.json --set uid={~~SITE~~} secure_train=true config_folder=config org={~~ORG~~} \" " > /tmp/nvflare.log 2>&1 
+    report_status "$?" "launching container"
+  else
+    echo "Installing packages in $VM_NAME, may take a few minutes."
+    ssh -f -i $KEY_FILE -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEST_SITE} \
+    "pwd && wget -q https://bootstrap.pypa.io/get-pip.py && \
+    python3 get-pip.py && python3 -m pip install nvflare && \
+    touch ${DEST_FOLDER}/startup/requirements.txt && \
+    python3 -m pip install -r ${DEST_FOLDER}/startup/requirements.txt && \
+    nohup ${DEST_FOLDER}/startup/start.sh && sleep 20 && \
+    exit" > /tmp/nvflare.log 2>&1 
+
+    report_status "$?" "installing packages"
+  fi
+
+  echo "System was provisioned"
+  echo "To terminate the EC2 instance, run the following command."
+  echo "aws ec2 terminate-instances --instance-ids ${instance_id}"
+  echo "Other resources provisioned"
+  echo "security group: ${SECURITY_GROUP}"
+  echo "key pair: ${KEY_PAIR}"
+
+
+aws_start_dsb_sh: |
+  #!/usr/bin/env bash
+
+  function report_status() {
+    status="$1"
+    if [ "${status}" -ne 0 ]
+    then
+      echo "$2 failed"
+      exit "${status}"
+    fi
+  }
+
+  function check_binary() {
+    echo -n "Checking if $1 exists. => "
+    if ! command -v $1 &> /dev/null
+    then
+      echo "not found $2"
+      exit 1
+    else
+      echo "found"
+    fi
+  }
+  
+  function prompt() {
+  local __default="$1"
+  read -p "$2" ans
+  if [[ ! -z "$ans" ]]
+  then
+    eval $__default="'$ans'"
+  fi
+  }
+
+  VM_NAME=nvflare_dashboard
+  AMI_IMAGE=ami-04bad3c587fe60d89
+  EC2_TYPE=t2.small
+  SECURITY_GROUP=nvflare_dashboard_sg_$RANDOM
+  REGION=us-west-2
+  ADMIN_USERNAME=ubuntu
+  DEST_FOLDER=/home/${ADMIN_USERNAME}
+  KEY_PAIR=NVFlareDashboardKeyPair
+  KEY_FILE=${KEY_PAIR}.pem
+  
+  echo "This script requires aws (AWS CLI), sshpass, dig and jq.  Now checking if they are installed."
+
+  check_binary aws "Please see https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html on how to install it on your system."
+  check_binary sshpass "Please install it first."
+  check_binary dig "Please install it first."
+  check_binary jq "Please install it first."
+
+  echo "One initial user will be created when starting dashboard."
+  echo "Please enter the email address for this user."
+  read email
+  credential="${email}:$RANDOM"
+
+  # Generate key pair
+
+  echo "Generating key pair for VM"
+
+  aws ec2 delete-key-pair --key-name $KEY_PAIR > /dev/null 2>&1
+  rm -rf $KEY_FILE
+  aws ec2 create-key-pair --key-name $KEY_PAIR --query 'KeyMaterial' --output text > $KEY_FILE
+  report_status "$?" "creating key pair"
+  chmod 400 $KEY_FILE
+
+  # Generate Security Group
+
+  sg_id=$(aws ec2 create-security-group --group-name $SECURITY_GROUP --description "NVFlare security group" | jq -r .GroupId)
+  report_status "$?" "creating security group"
+  echo "Security group id: ${sg_id}"
+  my_public_ip=$(dig +short myip.opendns.com @resolver1.opendns.com)
+  report_status "$?" "getting my public IP"
+  aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 22 --cidr ${my_public_ip}/32 > /tmp/sec_grp.log
+  aws ec2 authorize-security-group-ingress --group-id $sg_id --protocol tcp --port 443 --cidr 0.0.0.0/0 >> /tmp/sec_grp.log
+  report_status "$?" "creating security group rules"
+
+  # Start provisioning
+
+  echo "Creating VM at region $REGION, may take a few minutes."
+
+  aws ec2 run-instances --region $REGION --image-id $AMI_IMAGE --count 1 --instance-type $EC2_TYPE --key-name $KEY_PAIR --security-group-ids $sg_id > vm_create.json
+  report_status "$?" "creating VM"
+  instance_id=$(jq -r .Instances[0].InstanceId vm_create.json)
+
+  aws ec2 wait instance-status-ok --instance-ids $instance_id
+  aws ec2 describe-instances --instance-ids $instance_id > vm_result.json
+
+  IP_ADDRESS=$(jq -r .Reservations[0].Instances[0].PublicIpAddress vm_result.json)
+
+  echo "VM created with IP address: ${IP_ADDRESS}"
+
+  echo "Installing docker engine in $VM_NAME, may take a few minutes."
+  DEST_SITE=${ADMIN_USERNAME}@${IP_ADDRESS}
+  ssh -t -i $KEY_FILE -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEST_SITE} \
+    "sudo apt-get update && \
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl gnupg lsb-release && \
+    sudo mkdir -p /etc/apt/keyrings && \
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
+    echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable\" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null && \
+    sudo apt-get update && \
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io && \
+    sudo usermod -aG docker $ADMIN_USERNAME && exit" > /tmp/docker_engine.log
+  report_status "$?" "installing docker engine"
+
+  echo "Installing nvflare in $VM_NAME, may take a few minutes."
+  ssh -i $KEY_FILE -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEST_SITE} \
+    "export PATH=/home/ubuntu/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin && \
+    wget -q https://bootstrap.pypa.io/get-pip.py && python3 get-pip.py && \
+    python3 -m pip install {~~NVFLARE~~} && \
+    mkdir -p ./cert && \
+    exit" > /tmp/nvflare.json
+  report_status "$?" "installing nvflare"
+
+  echo "Checking if certificate (web.crt) and private key (web.key) are available"
+  if [[ -f "web.crt" && -f "web.key" ]]; then
+    CERT_FOLDER=${DEST_SITE}:${DEST_FOLDER}/cert
+    echo "Cert folder is ${CERT_FOLDER}"
+    scp -i $KEY_FILE -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null web.{crt,key} $CERT_FOLDER
+    report_status "$?" "copying cert/key to VM ${CERT_FOLDER} folder"
+    secure=true
+  else
+    echo "No web.crt and web.key found"
+    secure=false
+  fi
+
+  echo "Starting dashboard"
+  ssh -i $KEY_FILE -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${DEST_SITE} \
+    "export PATH=/home/ubuntu/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin && \
+    python3 -m nvflare.dashboard.cli --start -f ${DEST_FOLDER} --cred ${credential} {~~START_OPT~~}" > /tmp/dashboard.json
+
+  echo "Dashboard url is running at IP address ${IP_ADDRESS}, listening to port 443."
+  if [ "$secure" = true ]
+  then
+    echo "URL is https://${IP_ADDRESS}"
+  else
+    echo "URL is http://${IP_ADDRESS}:443"
+  fi
+  echo "Note: you may need to configure DNS server with your DNS hostname and the above IP address."
+  echo "Project admin credential (username:password) is ${credential} ."
+  echo "To terminate the EC2 instance, run the following command."
+  echo "aws ec2 terminate-instances --instance-ids ${instance_id}"
+  echo "Other resources provisioned"
+  echo "security group: ${SECURITY_GROUP}"
+  echo "key pair: ${KEY_PAIR}"

@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,8 +19,9 @@ from typing import List
 
 from nvflare.fuel.hci.cmd_arg_utils import join_args
 from nvflare.fuel.hci.conn import Connection
+from nvflare.fuel.hci.proto import MetaStatusValue, make_meta
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
-from nvflare.fuel.hci.server.constants import ConnProps
+from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
 from nvflare.fuel.hci.shell_cmd_val import (
     CatValidator,
     GrepValidator,
@@ -29,10 +30,11 @@ from nvflare.fuel.hci.shell_cmd_val import (
     ShellCommandValidator,
     TailValidator,
 )
+from nvflare.private.admin_defs import Message
 from nvflare.private.defs import SysCommandTopic
-from nvflare.private.fed.server.admin import ClientReply, new_message
+from nvflare.private.fed.server.admin import new_message
+from nvflare.private.fed.server.message_send import ClientReply
 from nvflare.private.fed.server.server_engine_internal_spec import ServerEngineInternalSpec
-from nvflare.security.security import Action, FLAuthzContext
 
 
 class _CommandExecutor(object):
@@ -43,7 +45,7 @@ class _CommandExecutor(object):
     def authorize_command(self, conn: Connection, args: List[str]):
         if len(args) < 2:
             conn.append_error("syntax error: missing target")
-            return False, None
+            return PreAuthzReturnCode.ERROR
 
         shell_cmd_args = [self.cmd_name]
         for a in args[2:]:
@@ -56,31 +58,29 @@ class _CommandExecutor(object):
             err, result = self.validator.validate(shell_cmd_args[1:])
             if len(err) > 0:
                 conn.append_error(err)
-                return False, None
+                return PreAuthzReturnCode.ERROR
 
         # validate the command and make sure file destinations are protected
         err = self.validate_shell_command(shell_cmd_args, result)
         if len(err) > 0:
             conn.append_error(err)
-            return False, None
+            return PreAuthzReturnCode.ERROR
 
         site_name = args[1]
-        authz_ctx = FLAuthzContext.new_authz_context(site_names=[site_name], actions=[Action.VIEW])
         conn.set_prop("shell_cmd", shell_cmd)
-        return True, authz_ctx
+        conn.set_prop("target_site", site_name)
+
+        if site_name == "server":
+            return PreAuthzReturnCode.REQUIRE_AUTHZ
+        else:
+            # client site authorization will be done by the client itself
+            return PreAuthzReturnCode.OK
 
     def validate_shell_command(self, args: List[str], parse_result) -> str:
         return ""
 
     def execute_command(self, conn: Connection, args: List[str]):
-        authz_ctx = conn.get_prop(ConnProps.AUTHZ_CTX, None)
-        if not authz_ctx:
-            conn.append_error("program error: no authorization context")
-            return
-
-        if not isinstance(authz_ctx, FLAuthzContext):
-            raise TypeError("authz_ctx must be FLAuthzContext but got {}".format(type(authz_ctx)))
-        target = authz_ctx.site_names[0]
+        target = conn.get_prop("target_site")
         shell_cmd = conn.get_prop("shell_cmd")
         if target == "server":
             # run the shell command on server
@@ -91,28 +91,39 @@ class _CommandExecutor(object):
         engine = conn.app_ctx
         if not isinstance(engine, ServerEngineInternalSpec):
             raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
-        clients, invalid_inputs = engine.validate_clients([target])
+        clients, invalid_inputs = engine.validate_targets([target])
         if len(invalid_inputs) > 0:
-            conn.append_error("invalid client: {}".format(target))
+            msg = f"invalid target: {target}"
+            conn.append_error(msg, meta=make_meta(MetaStatusValue.INVALID_TARGET, info=msg))
             return
 
         if len(clients) > 1:
-            conn.append_error("this command can only be applied to one client at a time")
+            msg = "this command can only be applied to one client at a time"
+            conn.append_error(msg, meta=make_meta(MetaStatusValue.INVALID_TARGET, info=msg))
             return
 
         valid_tokens = []
         for c in clients:
             valid_tokens.append(c.token)
 
-        req = new_message(conn=conn, topic=SysCommandTopic.SHELL, body=shell_cmd)
+        req = new_message(conn=conn, topic=SysCommandTopic.SHELL, body=shell_cmd, require_authz=True)
         server = conn.server
         reply = server.send_request_to_client(req, valid_tokens[0], timeout_secs=server.timeout)
         if reply is None:
-            conn.append_error("no reply from client - timed out")
+            conn.append_error(
+                "no reply from client - timed out", meta=make_meta(MetaStatusValue.INTERNAL_ERROR, "client timeout")
+            )
             return
 
         if not isinstance(reply, ClientReply):
             raise TypeError("reply must be ClientReply but got {}".format(type(reply)))
+        if reply.reply is None:
+            conn.append_error(
+                "no reply from client - timed out", meta=make_meta(MetaStatusValue.INTERNAL_ERROR, "client timeout")
+            )
+            return
+        if not isinstance(reply.reply, Message):
+            raise TypeError("reply in ClientReply must be Message but got {}".format(type(reply.reply)))
         conn.append_string(reply.reply.body)
 
     def get_usage(self):
@@ -148,13 +159,18 @@ class _FileCmdExecutor(_CommandExecutor):
         self.file_required = file_required
 
     def validate_shell_command(self, args: List[str], parse_result):
-        if self.file_required:
+        if self.file_required or parse_result.files:
             if not hasattr(parse_result, "files"):
                 return "a file is required as an argument"
             if self.single_file_only and len(parse_result.files) != 1:
                 return "only one file is allowed"
 
-            for f in parse_result.files:
+            if isinstance(parse_result.files, list):
+                file_list = parse_result.files
+            else:
+                file_list = [parse_result.files]
+
+            for f in file_list:
                 if not isinstance(f, str):
                     raise TypeError("file must be str but got {}".format(type(f)))
 
@@ -190,7 +206,6 @@ class ShellCommandModule(CommandModule):
         head_exe = _FileCmdExecutor("head", HeadValidator())
         tail_exe = _FileCmdExecutor("tail", TailValidator())
         grep_exe = _FileCmdExecutor("grep", GrepValidator())
-        env_exe = _NoArgCmdExecutor("env")
 
         return CommandModuleSpec(
             name="sys",
@@ -251,14 +266,6 @@ class ShellCommandModule(CommandModule):
                     + grep_exe.get_usage(),
                     handler_func=grep_exe.execute_command,
                     authz_func=grep_exe.authorize_command,
-                    visible=True,
-                ),
-                CommandSpec(
-                    name="env",
-                    description="show system environment vars",
-                    usage="env target\n " + 'where target is "server" or client name\n' + env_exe.get_usage(),
-                    handler_func=env_exe.execute_command,
-                    authz_func=env_exe.authorize_command,
                     visible=True,
                 ),
             ],

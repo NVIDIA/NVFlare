@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,6 +21,7 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.learner_spec import Learner
 from nvflare.app_common.app_constant import AppConstants, ValidateType
+from nvflare.security.logging import secure_format_exception
 
 
 class LearnerExecutor(Executor):
@@ -34,10 +35,10 @@ class LearnerExecutor(Executor):
         """Key component to run learner on clients.
 
         Args:
-            learner_id (str): id pointing to the learner object
-            train_task (str, optional): label to dispatch train task. Defaults to AppConstants.TASK_TRAIN.
-            submit_model_task (str, optional): label to dispatch submit model task. Defaults to AppConstants.TASK_SUBMIT_MODEL.
-            validate_task (str, optional): label to dispatch validation task. Defaults to AppConstants.TASK_VALIDATION.
+            learner_id (str): id of the learner object
+            train_task (str, optional): task name for train. Defaults to AppConstants.TASK_TRAIN.
+            submit_model_task (str, optional): task name for submit model. Defaults to AppConstants.TASK_SUBMIT_MODEL.
+            validate_task (str, optional): task name for validation. Defaults to AppConstants.TASK_VALIDATION.
         """
         super().__init__()
         self.learner_id = learner_id
@@ -45,18 +46,23 @@ class LearnerExecutor(Executor):
         self.train_task = train_task
         self.submit_model_task = submit_model_task
         self.validate_task = validate_task
+        self.is_initialized = False
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
-        if event_type == EventType.START_RUN:
-            self.initialize(fl_ctx)
-        elif event_type == EventType.ABORT_TASK:
+        if event_type == EventType.ABORT_TASK:
             try:
                 if self.learner:
-                    self.learner.abort(fl_ctx)
+                    if not self.unsafe:
+                        self.learner.abort(fl_ctx)
+                    else:
+                        self.log_warning(fl_ctx, f"skipped abort of unsafe learner {self.learner.__class__.__name__}")
             except Exception as e:
-                self.log_exception(fl_ctx, f"learner abort exception: {e}")
+                self.log_exception(fl_ctx, f"learner abort exception: {secure_format_exception(e)}")
         elif event_type == EventType.END_RUN:
-            self.finalize(fl_ctx)
+            if not self.unsafe:
+                self.finalize(fl_ctx)
+            elif self.learner:
+                self.log_warning(fl_ctx, f"skipped finalize of unsafe learner {self.learner.__class__.__name__}")
 
     def initialize(self, fl_ctx: FLContext):
         try:
@@ -65,26 +71,25 @@ class LearnerExecutor(Executor):
             if not isinstance(self.learner, Learner):
                 raise TypeError(f"learner must be Learner type. Got: {type(self.learner)}")
             self.learner.initialize(engine.get_all_components(), fl_ctx)
-        except Exception as e:
-            self.log_exception(fl_ctx, f"learner initialize exception: {e}")
+        except BaseException as e:
+            self.log_exception(fl_ctx, f"learner initialize exception: {secure_format_exception(e)}")
+            raise e
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         self.log_info(fl_ctx, f"Client trainer got task: {task_name}")
+        if not self.is_initialized:
+            self.is_initialized = True
+            self.initialize(fl_ctx)
 
-        try:
-            if task_name == self.train_task:
-                return self.train(shareable, fl_ctx, abort_signal)
-            elif task_name == self.submit_model_task:
-                return self.submit_model(shareable, fl_ctx)
-            elif task_name == self.validate_task:
-                return self.validate(shareable, fl_ctx, abort_signal)
-            else:
-                self.log_error(fl_ctx, f"Could not handle task: {task_name}")
-                return make_reply(ReturnCode.TASK_UNKNOWN)
-        except Exception as e:
-            # Task execution error, return EXECUTION_EXCEPTION Shareable
-            self.log_exception(fl_ctx, f"learner execute exception: {e}")
-            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+        if task_name == self.train_task:
+            return self.train(shareable, fl_ctx, abort_signal)
+        elif task_name == self.submit_model_task:
+            return self.submit_model(shareable, fl_ctx)
+        elif task_name == self.validate_task:
+            return self.validate(shareable, fl_ctx, abort_signal)
+        else:
+            self.log_error(fl_ctx, f"Could not handle task: {task_name}")
+            return make_reply(ReturnCode.TASK_UNKNOWN)
 
     def train(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         self.log_debug(fl_ctx, f"train abort signal: {abort_signal.triggered}")
@@ -136,4 +141,4 @@ class LearnerExecutor(Executor):
             if self.learner:
                 self.learner.finalize(fl_ctx)
         except Exception as e:
-            self.log_exception(fl_ctx, f"learner finalize exception: {e}")
+            self.log_exception(fl_ctx, f"learner finalize exception: {secure_format_exception(e)}")

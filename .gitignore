@@ -46,6 +46,8 @@ coverage.xml
 *.cover
 .hypothesis/
 .pytest_cache/
+cov.xml
+unit_test.xml
 
 # Translations
 *.mo
@@ -142,5 +144,26 @@ variables.*
 
 wrksp/*
 
-# poc run data
-*run_*
+# IDE
+*.iml
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+nvflare/dashboard/application/static/**/*
+
+# ide
+.idea/
+.ipynb_checkpoints/
+
+# nvflare artifacts
+log.txt
+client_token.txt
+*.fl
+audit.log
+*.crt
+.__nvfl_sig.json
+
+# python
+__pycache__
+.pyc

@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,18 +14,18 @@
 
 """The client of the federated training process."""
 
-import pickle
 from typing import List, Optional
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.filter import Filter
 from nvflare.apis.fl_component import FLComponent
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable
+from nvflare.fuel.f3.cellnet.cell import Cell
+from nvflare.private.defs import SpecialTaskName
 from nvflare.private.event import fire_event
 
-from ..utils.numproto import proto_to_bytes
 from .fed_client_base import FederatedClientBase
 
 
@@ -43,7 +43,10 @@ class FederatedClient(FederatedClientBase):
         handlers: Optional[List[FLComponent]] = None,
         executors: Optional[List[Executor]] = None,
         compression=None,
-        enable_byoc=False,
+        overseer_agent=None,
+        args=None,
+        components=None,
+        cell: Cell = None,
     ):
         """To init FederatedClient.
 
@@ -57,7 +60,7 @@ class FederatedClient(FederatedClientBase):
             handlers: handlers
             executors: executors
             compression: communication compression algorithm
-            enable_byoc: True/False to allow byoc
+            cell (object): CellNet communicator
         """
         # We call the base implementation directly.
         super().__init__(
@@ -69,27 +72,36 @@ class FederatedClient(FederatedClientBase):
             client_state_processors=client_state_processors,
             handlers=handlers,
             compression=compression,
+            overseer_agent=overseer_agent,
+            args=args,
+            components=components,
+            cell=cell,
         )
 
         self.executors = executors
-        self.enable_byoc = enable_byoc
 
     def fetch_task(self, fl_ctx: FLContext):
         fire_event(EventType.BEFORE_PULL_TASK, self.handlers, fl_ctx)
 
-        pull_success, task_name, remote_tasks = self.pull_task(fl_ctx)
+        pull_success, task_name, shareable = self.pull_task(fl_ctx)
         fire_event(EventType.AFTER_PULL_TASK, self.handlers, fl_ctx)
-        self.logger.info(f"pull_task completed. Task name:{task_name} Status:{pull_success} ")
-        return pull_success, task_name, remote_tasks
+        if task_name == SpecialTaskName.TRY_AGAIN:
+            self.logger.debug(f"pull_task completed. Task name:{task_name} Status:{pull_success} ")
+        else:
+            self.logger.info(f"pull_task completed. Task name:{task_name} Status:{pull_success} ")
+        return pull_success, task_name, shareable
 
     def extract_shareable(self, responses, fl_ctx: FLContext):
-        shareable = Shareable()
-        peer_context = FLContext()
-        for item in responses:
-            shareable = shareable.from_bytes(proto_to_bytes(item.data.params["data"]))
-            peer_context = pickle.loads(proto_to_bytes(item.data.params["fl_context"]))
+        # shareable = Shareable()
+        # peer_context = FLContext()
+        # for item in responses:
+        #     shareable = shareable.from_bytes(proto_to_bytes(item.data.params["data"]))
+        #     peer_context = fobs.loads(proto_to_bytes(item.data.params["fl_context"]))
+
+        # shareable = fobs.loads(responses.payload)
+        peer_context = responses.get_header(FLContextKey.PEER_CONTEXT)
 
         fl_ctx.set_peer_context(peer_context)
-        shareable.set_peer_props(peer_context.get_all_public_props())
+        responses.set_peer_props(peer_context.get_all_public_props())
 
-        return shareable
+        return responses

@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,15 +17,21 @@ import time
 from typing import List
 
 from nvflare.fuel.hci.conn import Connection
+from nvflare.fuel.hci.proto import InternalCommands
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
 from nvflare.fuel.hci.security import make_session_token
 from nvflare.fuel.utils.time_utils import time_to_string
+
+LIST_SESSIONS_CMD_NAME = InternalCommands.LIST_SESSIONS
+CHECK_SESSION_CMD_NAME = InternalCommands.CHECK_SESSION
 
 
 class Session(object):
     def __init__(self):
         """Object keeping track of an admin client session with token and time data."""
         self.user_name = None
+        self.user_org = None
+        self.user_role = None
         self.start_time = None
         self.last_active_time = None
         self.token = None
@@ -51,6 +57,7 @@ class SessionManager(CommandModule):
         self.monitor_interval = monitor_interval
         self.asked_to_stop = False
         self.monitor = threading.Thread(target=self.monitor_sessions)
+        self.monitor.daemon = True
         self.monitor.start()
 
     def monitor_sessions(self):
@@ -79,13 +86,15 @@ class SessionManager(CommandModule):
 
     def shutdown(self):
         self.asked_to_stop = True
-        self.monitor.join(timeout=10)
+        # self.monitor.join(timeout=10)
 
-    def create_session(self, user_name):
+    def create_session(self, user_name, user_org, user_role):
         """Creates new session with a new session token.
 
         Args:
             user_name: user name for session
+            user_org: org of the user
+            user_role: user's role
 
         Returns: Session
 
@@ -93,6 +102,8 @@ class SessionManager(CommandModule):
         token = make_session_token()
         sess = Session()
         sess.user_name = user_name
+        sess.user_role = user_role
+        sess.user_org = user_org
         sess.start_time = time.time()
         sess.last_active_time = sess.start_time
         sess.token = token
@@ -120,30 +131,59 @@ class SessionManager(CommandModule):
             name="sess",
             cmd_specs=[
                 CommandSpec(
-                    name="list_sessions",
+                    name=LIST_SESSIONS_CMD_NAME,
                     description="list user sessions",
-                    usage="list_sessions",
+                    usage=LIST_SESSIONS_CMD_NAME,
                     handler_func=self.handle_list_sessions,
-                    visible=True,
-                )
+                    visible=False,
+                    enabled=False,
+                ),
+                CommandSpec(
+                    name=CHECK_SESSION_CMD_NAME,
+                    description="check if session is active",
+                    usage=CHECK_SESSION_CMD_NAME,
+                    handler_func=self.handle_check_session,
+                    visible=False,
+                ),
             ],
         )
 
     def handle_list_sessions(self, conn: Connection, args: List[str]):
         """Lists sessions and the details in a table.
 
-        Not registered by default but can be registered in FedAdminServer with ``cmd_reg.register_module(sess_mgr)``.
+        Registered in the FedAdminServer with ``cmd_reg.register_module(sess_mgr)``.
         """
-        sess_list = list(self.sessions.values())
+        with self.sess_update_lock:
+            sess_list = list(self.sessions.values())
         sess_list.sort(key=lambda x: x.user_name, reverse=False)
-        table = conn.append_table(["User", "Session ID", "Start", "Last Active", "Idle"])
+        table = conn.append_table(["User", "Org", "Role", "Session ID", "Start", "Last Active", "Idle"])
         for s in sess_list:
             table.add_row(
                 [
                     s.user_name,
+                    s.user_org,
+                    s.user_role,
                     "{}".format(s.token),
                     time_to_string(s.start_time),
                     time_to_string(s.last_active_time),
                     "{}".format(time.time() - s.last_active_time),
                 ]
+            )
+
+    def handle_check_session(self, conn: Connection, args: List[str]):
+        token = None
+        data = conn.request["data"]
+        for item in data:
+            it = item["type"]
+            if it == "token":
+                token = item["data"]
+                break
+
+        sess = self.get_session(token)
+        if sess:
+            conn.append_string("OK")
+        else:
+            conn.append_error("session_inactive")
+            conn.append_string(
+                "admin client session timed out after {} seconds of inactivity - logging out".format(self.idle_timeout)
             )

@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,15 +16,24 @@
 class EventType(object):
     """Built-in system events."""
 
+    SYSTEM_START = "_system_start"
+    SYSTEM_END = "_system_end"
     ABOUT_TO_START_RUN = "_about_to_start_run"
     START_RUN = "_start_run"
     ABOUT_TO_END_RUN = "_about_to_end_run"
     END_RUN = "_end_run"
+    SWAP_IN = "_swap_in"
+    SWAP_OUT = "_swap_out"
     START_WORKFLOW = "_start_workflow"
     END_WORKFLOW = "_end_workflow"
     ABORT_TASK = "_abort_task"
     FATAL_SYSTEM_ERROR = "_fatal_system_error"
     FATAL_TASK_ERROR = "_fatal_task_error"
+    JOB_DEPLOYED = "_job_deployed"
+    JOB_STARTED = "_job_started"
+    JOB_COMPLETED = "_job_completed"
+    JOB_ABORTED = "_job_aborted"
+    JOB_CANCELLED = "_job_cancelled"
 
     BEFORE_PULL_TASK = "_before_pull_task"
     AFTER_PULL_TASK = "_after_pull_task"
@@ -46,3 +55,11 @@ class EventType(object):
     WARNING_LOG_AVAILABLE = "_warning_log_available"
     INFO_LOG_AVAILABLE = "_info_log_available"
     DEBUG_LOG_AVAILABLE = "_debug_log_available"
+
+    PRE_RUN_RESULT_AVAILABLE = "_pre_run_result_available"
+
+    # event types for job scheduling - server side
+    BEFORE_CHECK_CLIENT_RESOURCES = "_before_check_client_resources"
+
+    # event types for job scheduling - client side
+    BEFORE_CHECK_RESOURCE_MANAGER = "_before_check_resource_manager"

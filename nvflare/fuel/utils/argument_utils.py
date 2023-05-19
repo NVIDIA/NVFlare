@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,7 +12,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from distutils.util import strtobool
+import argparse
+import io
+
+_true_set = {"yes", "true", "t", "y", "1"}
+_false_set = {"no", "false", "f", "n", "0"}
+
+
+def str2bool(value, raise_exc=False):
+    if isinstance(value, bool):
+        return value
+
+    if isinstance(value, str):
+        value = value.lower()
+        if value in _true_set:
+            return True
+        if value in _false_set:
+            return False
+
+    if isinstance(value, int):
+        return value != 0
+
+    if raise_exc:
+        raise ValueError('Expected "%s"' % '", "'.join(_true_set | _false_set))
+    return None
 
 
 def parse_var(s):
@@ -53,14 +76,24 @@ def parse_vars(items):
             try:
                 d[key] = int(value)
             except ValueError:
-                pass
                 try:
                     d[key] = float(value)
                 except ValueError:
-                    pass
                     try:
-                        d[key] = bool(strtobool(str(value)))
+                        d[key] = bool(str2bool(str(value), True))
                     except ValueError:
-                        pass
                         d[key] = value
     return d
+
+
+class SafeArgumentParser(argparse.ArgumentParser):
+    """Safe version of ArgumentParser which doesn't exit on error"""
+
+    def __init__(self, **kwargs):
+        kwargs["add_help"] = False
+        super().__init__(**kwargs)
+
+    def error(self, message):
+        writer = io.StringIO()
+        self.print_help(writer)
+        raise ValueError(message + "\n" + writer.getvalue())

@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,3 +28,5 @@ class APIStatus(str, Enum):
     ERROR_SYNTAX = "ERROR_SYNTAX"  # command syntax incorrect
     ERROR_RUNTIME = "ERROR_RUNTIME"  # various errors at runtime depending on the command
     ERROR_INVALID_CLIENT = "ERROR_INVALID_CLIENT"  # wrong/invalid client names exists in command
+    ERROR_INACTIVE_SESSION = "ERROR_INACTIVE_SESSION"  # admin client session is inactive
+    ERROR_SERVER_CONNECTION = "ERROR_SERVER_CONNECTION"  # server connection error

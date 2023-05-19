@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -34,6 +34,7 @@ class TaskCompletionStatus(Enum):
     CANCELLED = "cancelled"
     ABORTED = "aborted"
     IGNORED = "ignored"
+    CLIENT_DEAD = "client_dead"
 
 
 class Task(object):
@@ -127,8 +128,6 @@ class Task(object):
         self.props[key] = value
 
     def get_prop(self, key):
-        if key.startswith("__"):
-            raise ValueError("Keys start with __ is reserved. Please use other key instead of {}.".format(key))
         return self.props.get(key)
 
 

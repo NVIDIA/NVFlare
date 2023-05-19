@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 client=$1
-server=$2
-
+sp=$2
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 echo "WORKSPACE set to $DIR/.."
@@ -24,7 +23,7 @@ start_fl() {
     exit
   fi
   lst=$SECONDS
-((python3 -u -m nvflare.private.fed.app.client.client_train -m $DIR/.. -s fed_client.json --set secure_train=false uid=${client} config_folder=config host=${server} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl | tee -a $DIR/../log.txt &)
+((python3 -u -m nvflare.private.fed.app.client.client_train -m $DIR/.. -s fed_client.json --set secure_train=false uid=${client} config_folder=config sp=${sp} 2>&1 & echo $! >&3 ) 3>$DIR/../pid.fl )
   pid=`cat $DIR/../pid.fl`
 }
 
@@ -37,11 +36,11 @@ stop_fl() {
   sleep 10
   kill -0 ${pid} 2> /dev/null 1>&2
   if [[ $? -ne 0 ]]; then
-    echo "Process alreday terminated"
+    echo "Process already terminated"
     return
   fi
   kill -9 $pid
-  rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl
+  rm -f $DIR/../pid.fl $DIR/../shutdown.fl $DIR/../restart.fl 2> /dev/null 1>&2
 }
   
 if [[ -f "$DIR/../daemon_pid.fl" ]]; then

@@ -1,0 +1,30 @@
+n_servers: 1
+n_clients: 2
+jobs_root_dir: ../../examples/hello-world
+cleanup: True
+
+
+tests:
+  - test_name: "run hello-pt"
+    event_sequence:
+      - "trigger":
+          "type": "server_log"
+          "data": "Server started"
+        "actions": [ "submit_job hello-pt/jobs/hello-pt" ]
+        "result":
+          "type": "job_submit_success"
+      - "trigger":
+          "type": "run_state"
+          "data": { "run_finished": True }
+        "actions": [ "ensure_current_job_done" ]
+        "result":
+          "type": "run_state"
+          "data": { "run_finished": True }
+    validators:
+      - path: tests.integration_test.src.validators.PTModelValidator
+      - path: tests.integration_test.src.validators.CrossValResultValidator
+        args: { server_model_names: [ "server" ] }
+    setup:
+      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='~/data', download=True)"
+    teardown:
+      - rm -rf ~/data

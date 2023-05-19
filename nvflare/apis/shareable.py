@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,9 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import copy
 
-import pickle
-
+from ..fuel.utils import fobs
 from .fl_constant import ReservedKey, ReturnCode
 
 
@@ -28,6 +28,7 @@ class ReservedHeaderKey(object):
     TASK_NAME = ReservedKey.TASK_NAME
     TASK_ID = ReservedKey.TASK_ID
     WORKFLOW = ReservedKey.WORKFLOW
+    AUDIT_EVENT_ID = ReservedKey.AUDIT_EVENT_ID
     CONTENT_TYPE = "__content_type__"
 
 
@@ -113,7 +114,7 @@ class Shareable(dict):
             object serialized in bytes.
 
         """
-        return pickle.dumps(self)
+        return fobs.dumps(self)
 
     @classmethod
     def from_bytes(cls, data: bytes):
@@ -123,14 +124,33 @@ class Shareable(dict):
             data: a bytes object
 
         Returns:
-            an object loaded by pickle from data
+            an object loaded by FOBS from data
 
         """
-        return pickle.loads(data)
+        return fobs.loads(data)
 
 
 # some convenience functions
-def make_reply(rc) -> Shareable:
+def make_reply(rc, headers=None) -> Shareable:
     reply = Shareable()
     reply.set_return_code(rc)
+    if headers and isinstance(headers, dict):
+        for k, v in headers.items():
+            reply.set_header(k, v)
     return reply
+
+
+def make_copy(source: Shareable) -> Shareable:
+    """
+    Make a copy from the source.
+    The content (non-headers) will be kept intact. Headers will be deep-copied into the new instance.
+    """
+    assert isinstance(source, Shareable)
+    c = copy.copy(source)
+    headers = source.get(ReservedHeaderKey.HEADERS, None)
+    if headers:
+        new_headers = copy.deepcopy(headers)
+    else:
+        new_headers = {}
+    c[ReservedHeaderKey.HEADERS] = new_headers
+    return c

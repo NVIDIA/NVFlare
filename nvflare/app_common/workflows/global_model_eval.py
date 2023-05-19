@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -41,7 +41,7 @@ class GlobalModelEval(CrossSiteModelEval):
             model_locator_id (str, optional): ID for model_locator component. Defaults to None.
             formatter_id (str, optional): ID for formatter component. Defaults to None.
             validation_task_name (str, optional): Name of validate_model task. Defaults to "validate".
-            cleanup_models (bool, optional): Whether or not models should be deleted after run. Defaults to False.
+            cleanup_models (bool, optional): Whether models should be deleted after run. Defaults to False.
             participating_clients (list, optional): List of participating client names. If not provided, defaults
                 to all clients connected at start of controller.
             wait_for_clients_timeout (int, optional): Timeout for clients to appear. Defaults to 300 secs

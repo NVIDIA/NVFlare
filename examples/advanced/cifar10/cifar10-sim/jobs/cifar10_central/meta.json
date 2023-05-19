@@ -1,0 +1,12 @@
+{
+  "name": "cifar10_central",
+  "deploy_map": {
+    "cifar10_central": [
+      "@ALL"
+    ]
+  },
+  "min_clients": 1,
+  "mandatory_clients": [
+    "site-1"
+  ]
+}

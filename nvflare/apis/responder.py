@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -63,11 +63,22 @@ class Responder(FLComponent, ABC):
         """
         pass
 
+    @abstractmethod
+    def handle_dead_job(self, client_name: str, fl_ctx: FLContext):
+        """Called by the Engine to handle the case that the job on the client is dead.
+
+        Args:
+            client_name: name of the client on which the job is dead
+            fl_ctx: the FLContext
+
+        """
+        pass
+
     def initialize_run(self, fl_ctx: FLContext):
         """Called when a new RUN is about to start.
 
         Args:
-            fl_ctx: FL context. It must contain 'run_number' that is to be initialized
+            fl_ctx: FL context. It must contain 'job_id' that is to be initialized
 
         """
         pass

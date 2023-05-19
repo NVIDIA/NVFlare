@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,6 +19,32 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 
 
+class ContentBlockedException(BaseException):
+    """
+    A filter should raise this exception when the content is to be blocked
+    """
+
+    pass
+
+
+class FilterChainType(object):
+
+    TASK_DATA_CHAIN = "task_data"
+    TASK_RESULT_CHAIN = "task_result"
+
+
+class FilterSource(object):
+
+    JOB = "job"
+    SITE = "site"
+
+
+class FilterContextKey(object):
+
+    SOURCE = "__source"
+    CHAIN_TYPE = "__chain_type"
+
+
 class Filter(FLComponent, ABC):
     @abstractmethod
     def process(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
@@ -33,3 +59,12 @@ class Filter(FLComponent, ABC):
 
         """
         pass
+
+    def set_prop(self, key: str, value):
+        setattr(self, key, value)
+
+    def get_prop(self, key: str, default=None):
+        try:
+            return getattr(self, key)
+        except AttributeError:
+            return default

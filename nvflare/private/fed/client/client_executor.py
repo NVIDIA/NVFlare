@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,172 +13,156 @@
 # limitations under the License.
 
 import logging
-import math
 import os
 import shlex
 import subprocess
 import sys
 import threading
 import time
-from multiprocessing.connection import Client
+from abc import ABC, abstractmethod
 
-from nvflare.apis.fl_constant import AdminCommandNames, ReturnCode
-from nvflare.apis.shareable import Shareable, make_reply
-from nvflare.fuel.utils.pipe.file_pipe import FilePipe
+from nvflare.apis.fl_constant import AdminCommandNames, RunProcessKey
+from nvflare.apis.resource_manager_spec import ResourceManagerSpec
+from nvflare.fuel.f3.cellnet.cell import FQCN
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
+from nvflare.fuel.utils import fobs
+from nvflare.private.defs import CellChannel, new_cell_message
+from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .client_status import ClientStatus, get_status_message
 
 
-class ClientExecutor(object):
-    def __init__(self, uid, startup) -> None:
-        """To init the ClientExecutor.
-
-        Args:
-            uid: client name
-            startup: startup folder
-        """
-        pipe_path = startup + "/comm"
-        if not os.path.exists(pipe_path):
-            os.makedirs(pipe_path)
-
-        self.pipe = FilePipe(root_path=pipe_path, name="training")
-        self.logger = logging.getLogger(self.__class__.__name__)
-
-    def start_train(self, client, args, app_root, app_custom_folder, listen_port):
-        """start_train method to start the FL client training.
+class ClientExecutor(ABC):
+    @abstractmethod
+    def start_app(
+        self,
+        client,
+        job_id,
+        args,
+        app_custom_folder,
+        listen_port,
+        allocated_resource,
+        token,
+        resource_manager,
+        target: str,
+    ):
+        """Starts the client app.
 
         Args:
             client: the FL client object
+            job_id: the job_id
             args: admin command arguments for starting the FL client training
-            app_root: the root folder of the running APP
             app_custom_folder: FL application custom folder
             listen_port: port to listen the command.
-
+            allocated_resource: allocated resources
+            token: token from resource manager
+            resource_manager: resource manager
+            target: SP target location
         """
         pass
 
-    def check_status(self, client):
-        """To check the status of the running client.
+    @abstractmethod
+    def check_status(self, job_id) -> str:
+        """Checks the status of the running client.
 
         Args:
-            client: the FL client object
+            job_id: the job_id
 
-        Returns:  running FL client status message
-
+        Returns:
+            A client status message
         """
         pass
 
-    def abort_train(self, client):
-        """To abort the running client.
+    @abstractmethod
+    def abort_app(self, job_id):
+        """Aborts the running app.
 
         Args:
-            client: the FL client object
-
-        Returns: N/A
-
+            job_id: the job_id
         """
         pass
 
-    def abort_task(self, client):
-        """To abort the client executing task.
+    @abstractmethod
+    def abort_task(self, job_id):
+        """Aborts the client executing task.
 
         Args:
-            client: the FL client object
-
-        Returns: N/A
-
+            job_id: the job_id
         """
         pass
 
-    def get_run_info(self):
-        """To get the run_info from the InfoCollector.
-
-        Returns: current run info
-
-        """
-        pass
-
-    def get_errors(self):
-        """To get the error_info from the InfoCollector.
-
-        Returns: current errors
-
-        """
-        pass
-
-    def reset_errors(self):
-        """To reset the error_info for the InfoCollector.
-
-        Returns: N/A
-
-        """
-        pass
-
-    def send_aux_command(self, shareable: Shareable):
-        """To send the aux command to child process.
+    @abstractmethod
+    def get_run_info(self, job_id):
+        """Gets the run information.
 
         Args:
-            shareable: aux message Shareable
+            job_id: the job_id
 
-        Returns: N/A
+        Returns:
+            A dict of run information.
+        """
+
+    @abstractmethod
+    def get_errors(self, job_id):
+        """Get the error information.
+
+        Returns:
+            A dict of error information.
 
         """
-        pass
 
-    def cleanup(self):
-        """Finalize cleanup."""
-        self.pipe.clear()
+    @abstractmethod
+    def reset_errors(self, job_id):
+        """Resets the error information.
+
+        Args:
+            job_id: the job_id
+        """
 
 
 class ProcessExecutor(ClientExecutor):
     """Run the Client executor in a child process."""
 
-    def __init__(self, uid, startup):
+    def __init__(self, client, startup):
         """To init the ProcessExecutor.
 
         Args:
-            uid: client name
             startup: startup folder
         """
-        ClientExecutor.__init__(self, uid, startup)
-        # self.client = client
+        self.client = client
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.startup = startup
-
-        self.conn_client = None
-        # self.pool = None
-
-        self.listen_port = 6000
-
+        self.run_processes = {}
         self.lock = threading.Lock()
 
-    def get_conn_client(self):
-        if not self.conn_client:
-            try:
-                address = ("localhost", self.listen_port)
-                self.conn_client = Client(address, authkey="client process secret password".encode())
-            except Exception as e:
-                pass
+    def start_app(
+        self,
+        client,
+        job_id,
+        args,
+        app_custom_folder,
+        listen_port,
+        allocated_resource,
+        token,
+        resource_manager: ResourceManagerSpec,
+        target: str,
+    ):
+        """Starts the app.
 
-    def create_pipe(self):
-        """Create pipe to communicate between child (training) and main (logic) thread."""
-        pipe = FilePipe(root_path="/fl/server", name="training")
-
-        return pipe
-
-    def start_train(self, client, args, app_root, app_custom_folder, listen_port):
-        # self.pool = multiprocessing.Pool(processes=1)
-        # result = self.pool.apply_async(_start_client, (client, args, app_root))
-
-        # self.conn_client, child_conn = mp.Pipe()
-        # process = multiprocessing.Process(target=_start_client, args=(client, args, app_root, child_conn, self.pipe))
-        # # process = multiprocessing.Process(target=_start_new)
-        # process.start()
-
-        self.listen_port = listen_port
-
+        Args:
+            client: the FL client object
+            job_id: the job_id
+            args: admin command arguments for starting the worker process
+            app_custom_folder: FL application custom folder
+            listen_port: port to listen the command.
+            allocated_resource: allocated resources
+            token: token from resource manager
+            resource_manager: resource manager
+            target: SP target location
+        """
         new_env = os.environ.copy()
         if app_custom_folder != "":
-            new_env["PYTHONPATH"] = new_env["PYTHONPATH"] + ":" + app_custom_folder
+            new_env["PYTHONPATH"] = new_env.get("PYTHONPATH", "") + os.pathsep + app_custom_folder
 
         command_options = ""
         for t in args.set:
@@ -188,231 +172,278 @@ class ProcessExecutor(ClientExecutor):
             + args.workspace
             + " -w "
             + self.startup
+            + " -t "
+            + client.token
+            + " -d "
+            + client.ssid
+            + " -n "
+            + job_id
+            + " -c "
+            + client.client_name
+            + " -p "
+            + str(client.cell.get_internal_listener_url())
+            + " -g "
+            + target
             + " -s fed_client.json "
             " --set" + command_options + " print_conf=True"
         )
         # use os.setsid to create new process group ID
-        process = subprocess.Popen(shlex.split(command, " "), preexec_fn=os.setsid, env=new_env)
+        process = subprocess.Popen(shlex.split(command, True), preexec_fn=os.setsid, env=new_env)
 
-        print("training child process ID: {}".format(process.pid))
+        self.logger.info("Worker child process ID: {}".format(process.pid))
 
-        client.process = process
         client.multi_gpu = False
 
-        client.status = ClientStatus.STARTED
+        with self.lock:
+            self.run_processes[job_id] = {
+                RunProcessKey.LISTEN_PORT: listen_port,
+                RunProcessKey.CONNECTION: None,
+                RunProcessKey.CHILD_PROCESS: process,
+                RunProcessKey.STATUS: ClientStatus.STARTED,
+            }
+
         thread = threading.Thread(
-            target=self.wait_training_process_finish, args=(client, args, app_root, app_custom_folder)
+            target=self._wait_child_process_finish,
+            args=(client, job_id, allocated_resource, token, resource_manager),
         )
         thread.start()
 
-    def check_status(self, client):
-        try:
-            self.get_conn_client()
+    def check_status(self, job_id):
+        """Checks the status of the running client.
 
-            if self.conn_client:
-                data = {"command": AdminCommandNames.CHECK_STATUS, "data": {}}
-                self.conn_client.send(data)
-                status_message = self.conn_client.recv()
-                print("check status from process listener......")
-                return status_message
-            else:
-                return get_status_message(client.status)
-        except:
-            self.logger.error("Check_status execution exception.")
+        Args:
+            job_id: the job_id
+
+        Returns:
+            A client status message
+        """
+        try:
+            with self.lock:
+                data = {}
+                fqcn = FQCN.join([self.client.client_name, job_id])
+                request = new_cell_message({}, fobs.dumps(data))
+                return_data = self.client.cell.send_request(
+                    target=fqcn,
+                    channel=CellChannel.CLIENT_COMMAND,
+                    topic=AdminCommandNames.CHECK_STATUS,
+                    request=request,
+                    optional=True,
+                )
+                return_code = return_data.get_header(MessageHeaderKey.RETURN_CODE)
+                if return_code == ReturnCode.OK:
+                    status_message = fobs.loads(return_data.payload)
+                    self.logger.debug("check status from process listener......")
+                    return status_message
+                else:
+                    process_status = ClientStatus.NOT_STARTED
+                    return get_status_message(process_status)
+        except Exception as e:
+            self.logger.error(f"check_status execution exception: {secure_format_exception(e)}.")
+            secure_log_traceback()
             return "execution exception. Please try again."
 
-    def get_run_info(self):
-        try:
-            self.get_conn_client()
+    def get_run_info(self, job_id):
+        """Gets the run information.
 
-            if self.conn_client:
-                data = {"command": AdminCommandNames.SHOW_STATS, "data": {}}
-                self.conn_client.send(data)
-                run_info = self.conn_client.recv()
-                return run_info
-            else:
-                return {}
-        except:
-            self.logger.error("get_run_info() execution exception.")
+        Args:
+            job_id: the job_id
+
+        Returns:
+            A dict of run information.
+        """
+        try:
+            with self.lock:
+                data = {}
+                fqcn = FQCN.join([self.client.client_name, job_id])
+                request = new_cell_message({}, fobs.dumps(data))
+                return_data = self.client.cell.send_request(
+                    target=fqcn,
+                    channel=CellChannel.CLIENT_COMMAND,
+                    topic=AdminCommandNames.SHOW_STATS,
+                    request=request,
+                    optional=True,
+                )
+                return_code = return_data.get_header(MessageHeaderKey.RETURN_CODE)
+                if return_code == ReturnCode.OK:
+                    run_info = fobs.loads(return_data.payload)
+                    return run_info
+                else:
+                    return {}
+        except Exception as e:
+            self.logger.error(f"get_run_info execution exception: {secure_format_exception(e)}.")
+            secure_log_traceback()
             return {"error": "no info collector. Please try again."}
 
-    def get_errors(self):
-        try:
-            self.get_conn_client()
+    def get_errors(self, job_id):
+        """Get the error information.
 
-            if self.conn_client:
+        Args:
+            job_id: the job_id
+
+        Returns:
+            A dict of error information.
+        """
+        try:
+            with self.lock:
                 data = {"command": AdminCommandNames.SHOW_ERRORS, "data": {}}
-                self.conn_client.send(data)
-                errors_info = self.conn_client.recv()
-                return errors_info
-            else:
-                return None
-        except:
-            self.logger.error("get_errors() execution exception.")
+                fqcn = FQCN.join([self.client.client_name, job_id])
+                request = new_cell_message({}, fobs.dumps(data))
+                return_data = self.client.cell.send_request(
+                    target=fqcn,
+                    channel=CellChannel.CLIENT_COMMAND,
+                    topic=AdminCommandNames.SHOW_ERRORS,
+                    request=request,
+                    optional=True,
+                )
+                return_code = return_data.get_header(MessageHeaderKey.RETURN_CODE)
+                if return_code == ReturnCode.OK:
+                    errors_info = return_data.payload
+                    return errors_info
+                else:
+                    return None
+        except Exception as e:
+            self.logger.error(f"get_errors execution exception: {secure_format_exception(e)}.")
+            secure_log_traceback()
             return None
 
-    def reset_errors(self):
+    def reset_errors(self, job_id):
+        """Resets the error information.
+
+        Args:
+            job_id: the job_id
+        """
         try:
-            self.get_conn_client()
-
-            if self.conn_client:
-                data = {"command": AdminCommandNames.RESET_ERRORS, "data": {}}
-                self.conn_client.send(data)
-        except:
-            self.logger.error("reset_errors() execution exception.")
-
-    def send_aux_command(self, shareable: Shareable):
-        try:
-            self.get_conn_client()
-            if self.conn_client:
-                data = {"command": AdminCommandNames.AUX_COMMAND, "data": shareable}
-                self.conn_client.send(data)
-                reply = self.conn_client.recv()
-                return reply
-            else:
-                return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-        except:
-            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-
-    def abort_train(self, client):
-        # if client.status == ClientStatus.CROSS_SITE_VALIDATION:
-        #     # Only aborts cross site validation.
-        #     client.abort()
-        # elif client.status == ClientStatus.TRAINING_STARTED:
-        if client.status == ClientStatus.STARTED:
             with self.lock:
-                if client.process:
-                    # if client.platform == 'PT' and client.multi_gpu:
-                    #     # kill the sub-process group directly
-                    #     os.killpg(os.getpgid(client.process.pid), 9)
-                    # else:
-                    #     client.process.terminate()
+                data = {"command": AdminCommandNames.RESET_ERRORS, "data": {}}
+                fqcn = FQCN.join([self.client.client_name, job_id])
+                request = new_cell_message({}, fobs.dumps(data))
+                self.client.cell.fire_and_forget(
+                    targets=fqcn,
+                    channel=CellChannel.CLIENT_COMMAND,
+                    topic=AdminCommandNames.RESET_ERRORS,
+                    message=request,
+                    optional=True,
+                )
 
-                    # kill the sub-process group directly
-                    if self.conn_client:
-                        data = {"command": AdminCommandNames.ABORT, "data": {}}
-                        self.conn_client.send(data)
-                        self.logger.debug("abort sent")
-                        # wait for client to handle abort
-                        time.sleep(2.0)
+        except Exception as e:
+            self.logger.error(f"reset_errors execution exception: {secure_format_exception(e)}.")
+            secure_log_traceback()
 
-                    # kill the sub-process group directly
+    def abort_app(self, job_id):
+        """Aborts the running app.
+
+        Args:
+            job_id: the job_id
+        """
+        with self.lock:
+            # When the HeartBeat cleanup process try to abort the worker process, the job maybe already terminated,
+            # Use retry to avoid print out the error stack trace.
+            retry = 1
+            while retry >= 0:
+                process_status = self.run_processes.get(job_id, {}).get(RunProcessKey.STATUS, ClientStatus.NOT_STARTED)
+                if process_status == ClientStatus.STARTED:
                     try:
-                        os.killpg(os.getpgid(client.process.pid), 9)
-                        self.logger.debug("kill signal sent")
+                        child_process = self.run_processes[job_id][RunProcessKey.CHILD_PROCESS]
+                        data = {}
+                        fqcn = FQCN.join([self.client.client_name, job_id])
+                        request = new_cell_message({}, fobs.dumps(data))
+                        self.client.cell.fire_and_forget(
+                            targets=fqcn,
+                            channel=CellChannel.CLIENT_COMMAND,
+                            topic=AdminCommandNames.ABORT,
+                            message=request,
+                            optional=True,
+                        )
+                        self.logger.debug("abort sent to worker")
+                        t = threading.Thread(target=self._terminate_process, args=[child_process, job_id])
+                        t.start()
+                        t.join()
+                        break
                     except Exception as e:
-                        pass
-                    client.process.terminate()
-                    self.logger.debug("terminated")
+                        if retry == 0:
+                            self.logger.error(
+                                f"abort_worker_process execution exception: {secure_format_exception(e)} for run: {job_id}."
+                            )
+                            secure_log_traceback()
+                        retry -= 1
+                        time.sleep(5.0)
+                else:
+                    self.logger.info(f"Client worker process for run: {job_id} was already terminated.")
+                    break
 
-                # if self.pool:
-                #     self.pool.terminate()
-                if self.conn_client:
-                    self.conn_client.close()
-                self.conn_client = None
-                self.cleanup()
+        self.logger.info("Client worker process is terminated.")
 
-        self.logger.info("Client training was terminated.")
-
-    def abort_task(self, client):
-        if client.status == ClientStatus.STARTED:
-            if self.conn_client:
-                data = {"command": AdminCommandNames.ABORT_TASK, "data": {}}
-                self.conn_client.send(data)
-                self.logger.debug("abort_task sent")
-
-    def wait_training_process_finish(self, client, args, app_root, app_custom_folder):
-        # wait for the listen_command thread to start, and send "start" message to wake up the connection.
+    def _terminate_process(self, child_process, job_id):
+        max_wait = 10.0
+        done = False
         start = time.time()
         while True:
-            self.get_conn_client()
-            if self.conn_client:
-                data = {"command": AdminCommandNames.START_APP, "data": {}}
-                self.conn_client.send(data)
-                break
-            time.sleep(1.0)
-            if time.time() - start > 15:
+            process = self.run_processes.get(job_id)
+            if not process:
+                # already finished gracefully
+                done = True
                 break
 
-        self.logger.info("waiting for process to finish.")
-        client.process.wait()
-        returncode = client.process.returncode
-        self.logger.info(f"process finished with execution code: {returncode}")
+            if time.time() - start > max_wait:
+                # waited enough
+                break
 
+            time.sleep(0.05)  # we want to quickly check
+
+        # kill the sub-process group directly
+        if not done:
+            self.logger.debug(f"still not done after {max_wait} secs")
+            try:
+                os.killpg(os.getpgid(child_process.pid), 9)
+                self.logger.debug("kill signal sent")
+            except:
+                pass
+
+        child_process.terminate()
+        self.logger.info(f"run ({job_id}): child worker process terminated")
+
+    def abort_task(self, job_id):
+        """Aborts the client executing task.
+
+        Args:
+            job_id: the job_id
+        """
         with self.lock:
-            client.process = None
+            process_status = self.run_processes.get(job_id, {}).get(RunProcessKey.STATUS, ClientStatus.NOT_STARTED)
+            if process_status == ClientStatus.STARTED:
+                data = {"command": AdminCommandNames.ABORT_TASK, "data": {}}
+                fqcn = FQCN.join([self.client.client_name, job_id])
+                request = new_cell_message({}, fobs.dumps(data))
+                return_data = self.client.cell.fire_and_forget(
+                    targets=fqcn,
+                    channel=CellChannel.CLIENT_COMMAND,
+                    topic=AdminCommandNames.ABORT_TASK,
+                    message=request,
+                    optional=True,
+                )
+                self.logger.debug("abort_task sent")
 
-            if self.conn_client:
-                self.conn_client.close()
-            self.conn_client = None
+    def _wait_child_process_finish(self, client, job_id, allocated_resource, token, resource_manager):
+        self.logger.info(f"run ({job_id}): waiting for child worker process to finish.")
+        with self.lock:
+            child_process = self.run_processes.get(job_id, {}).get(RunProcessKey.CHILD_PROCESS)
+        if child_process:
+            child_process.wait()
+            # return_code = child_process.returncode
+            self.logger.info(f"run ({job_id}): child worker process finished.")
 
-        # # result.get()
-        # self.pool.close()
-        # self.pool.join()
-        # self.pool.terminate()
+        if allocated_resource:
+            resource_manager.free_resources(
+                resources=allocated_resource, token=token, fl_ctx=client.engine.new_context()
+            )
+        self.run_processes.pop(job_id, None)
+        self.logger.debug(f"run ({job_id}): child worker resources freed.")
 
-        # Not to run cross_validation in a new process any more.
-        client.cross_site_validate = False
+    def get_status(self, job_id):
+        with self.lock:
+            process_status = self.run_processes.get(job_id, {}).get(RunProcessKey.STATUS, ClientStatus.STOPPED)
+            return process_status
 
-        client.status = ClientStatus.STOPPED
-
-    def close(self):
-        if self.conn_client:
-            data = {"command": AdminCommandNames.SHUTDOWN, "data": {}}
-            self.conn_client.send(data)
-            self.conn_client = None
-        self.cleanup()
-
-
-# class ThreadExecutor(ClientExecutor):
-#     def __init__(self, client, executor):
-#         self.client = client
-#         self.executor = executor
-
-#     def start_train(self, client, args, app_root, app_custom_folder, listen_port):
-#         future = self.executor.submit(lambda p: _start_client(*p), [client, args, app_root])
-
-#     def start_mgpu_train(self, client, args, app_root, gpu_number, app_custom_folder, listen_port):
-#         self.start_train(client, args, app_root)
-
-#     def check_status(self, client):
-#         return get_status_message(self.client.status)
-
-#     def abort_train(self, client):
-#         self.client.train_end = True
-#         self.client.fitter.train_ctx.ask_to_stop_immediately()
-#         self.client.fitter.train_ctx.set_prop("early_end", True)
-#         # self.client.model_manager.close()
-#         # self.client.status = ClientStatus.TRAINING_STOPPED
-#         return "Aborting the client..."
-
-
-def update_client_properties(client, trainer):
-    # servers = [{t['name']: t['service']} for t in trainer.server_config]
-    retry_timeout = 30
-    # if trainer.client_config['retry_timeout']:
-    #     retry_timeout = trainer.client_config['retry_timeout']
-    client.client_args = trainer.client_config
-    # client.servers = sorted(servers)[0]
-    # client.model_manager.federated_meta = {task_name: list() for task_name in tuple(client.servers)}
-    exclude_vars = trainer.client_config.get("exclude_vars", "dummy")
-    # client.model_manager.exclude_vars = re.compile(exclude_vars) if exclude_vars else None
-    # client.model_manager.privacy_policy = trainer.privacy
-    # client.model_manager.model_reader_writer = trainer.model_reader_writer
-    # client.model_manager.model_validator = trainer.model_validator
-    # client.pool = ThreadPool(len(client.servers))
-    # client.communicator.ssl_args = trainer.client_config
-    # client.communicator.secure_train = trainer.secure_train
-    # client.communicator.model_manager = client.model_manager
-    client.communicator.should_stop = False
-    client.communicator.retry = int(math.ceil(float(retry_timeout) / 5))
-    # client.communicator.outbound_filters = trainer.outbound_filters
-    # client.communicator.inbound_filters = trainer.inbound_filters
-    client.handlers = trainer.handlers
-    # client.inbound_filters = trainer.inbound_filters
-    client.executors = trainer.executors
-    # client.task_inbound_filters = trainer.task_inbound_filters
-    # client.task_outbound_filters = trainer.task_outbound_filters
-    # client.secure_train = trainer.secure_train
-    client.heartbeat_done = False
-    # client.fl_ctx = FLContext()
+    def get_run_processes_keys(self):
+        with self.lock:
+            return [x for x in self.run_processes.keys()]

@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ from enum import Enum
 class FLDetailKey(str, Enum):
     """Constants for FL details that can be returned in the FLAdminAPI."""
 
-    RUN_NUMBER = "run_number"
     APP_NAME = "app_name"
     REGISTERED_CLIENTS = "registered_clients"
     CONNECTED_CLIENTS = "connected_clients"

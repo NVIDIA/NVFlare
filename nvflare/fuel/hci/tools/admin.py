@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,9 +13,15 @@
 # limitations under the License.
 
 import argparse
+import os
 
+from nvflare.apis.workspace import Workspace
+from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.client.cli import AdminClient, CredentialType
 from nvflare.fuel.hci.client.file_transfer import FileTransferModule
+from nvflare.fuel.hci.client.overseer_service_finder import ServiceFinderByOverseer
+from nvflare.private.fed.app.fl_conf import FLAdminClientStarterConfigurator
+from nvflare.security.logging import secure_format_exception
 
 
 def main():
@@ -23,50 +29,53 @@ def main():
     Script to launch the admin client to issue admin commands to the server.
     """
     parser = argparse.ArgumentParser()
-    parser.add_argument("--host", default="localhost")
-    parser.add_argument("--port", type=int, default=55550)
-    parser.add_argument("--prompt", type=str, default="> ")
-    parser.add_argument("--with_file_transfer", action="store_true")
-    parser.add_argument("--upload_folder_cmd_name", type=str, default="upload_app")
-    parser.add_argument("--upload_dir", type=str, default="")
-    parser.add_argument("--download_dir", type=str, default="")
-    parser.add_argument("--with_shell", action="store_true")
-    parser.add_argument("--with_login", action="store_true")
-    parser.add_argument("--cred_type", default="password")
-    parser.add_argument("--with_ssl", action="store_true")
-    parser.add_argument("--ca_cert", type=str, default="")
-    parser.add_argument("--client_cert", type=str, default="")
-    parser.add_argument("--client_key", type=str, default="")
+    parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
+
+    parser.add_argument(
+        "--fed_admin", "-s", type=str, help="json file with configurations for launching admin client", required=True
+    )
+    parser.add_argument("--cli_history_size", type=int, default=1000)
     parser.add_argument("--with_debug", action="store_true")
 
     args = parser.parse_args()
 
+    try:
+        os.chdir(args.workspace)
+        workspace = Workspace(root_dir=args.workspace)
+        conf = FLAdminClientStarterConfigurator(workspace=workspace)
+        conf.configure()
+    except ConfigError as e:
+        print(f"ConfigError: {secure_format_exception(e)}")
+        return
+
+    try:
+        admin_config = conf.config_data["admin"]
+    except KeyError:
+        print("Missing admin section in fed_admin configuration.")
+        return
+
     modules = []
 
-    if args.with_file_transfer:
+    if admin_config.get("with_file_transfer"):
         modules.append(
-            FileTransferModule(
-                upload_dir=args.upload_dir,
-                download_dir=args.download_dir,
-                upload_folder_cmd_name=args.upload_folder_cmd_name,
-            )
+            FileTransferModule(upload_dir=admin_config.get("upload_dir"), download_dir=admin_config.get("download_dir"))
         )
 
-    ca_cert = args.ca_cert
-    client_cert = args.client_cert
-    client_key = args.client_key
+    ca_cert = admin_config.get("ca_cert", "")
+    client_cert = admin_config.get("client_cert", "")
+    client_key = admin_config.get("client_key", "")
 
-    if args.with_ssl:
+    if admin_config.get("with_ssl"):
         if len(ca_cert) <= 0:
-            print("missing CA Cert file name")
+            print("missing CA Cert file name field ca_cert in fed_admin configuration")
             return
 
         if len(client_cert) <= 0:
-            print("missing Client Cert file name")
+            print("missing Client Cert file name field client_cert in fed_admin configuration")
             return
 
         if len(client_key) <= 0:
-            print("missing Client Key file name")
+            print("missing Client Key file name field client_key in fed_admin configuration")
             return
     else:
         ca_cert = None
@@ -74,27 +83,29 @@ def main():
         client_cert = None
 
     if args.with_debug:
-        print("SSL: {}".format(args.with_ssl))
-        print("User Login: {}".format(args.with_login))
-        print("File Transfer: {}".format(args.with_file_transfer))
+        print("SSL: {}".format(admin_config.get("with_ssl")))
+        print("File Transfer: {}".format(admin_config.get("with_file_transfer")))
 
-        if args.with_file_transfer:
-            print("  Upload Dir: {}".format(args.upload_dir))
-            print("  Download Dir: {}".format(args.download_dir))
+        if admin_config.get("with_file_transfer"):
+            print("  Upload Dir: {}".format(admin_config.get("upload_dir")))
+            print("  Download Dir: {}".format(admin_config.get("download_dir")))
 
-    print("Admin Server: {} on port {}".format(args.host, args.port))
+    service_finder = None
+    if conf.overseer_agent:
+        service_finder = ServiceFinderByOverseer(conf.overseer_agent)
 
     client = AdminClient(
-        host=args.host,
-        port=args.port,
-        prompt=args.prompt,
+        prompt=admin_config.get("prompt", "> "),
         cmd_modules=modules,
         ca_cert=ca_cert,
         client_cert=client_cert,
         client_key=client_key,
-        require_login=args.with_login,
-        credential_type=CredentialType.PASSWORD if args.cred_type == "password" else CredentialType.CERT,
+        upload_dir=admin_config.get("upload_dir"),
+        download_dir=admin_config.get("download_dir"),
+        credential_type=CredentialType.PASSWORD if admin_config.get("cred_type") == "password" else CredentialType.CERT,
         debug=args.with_debug,
+        service_finder=service_finder,
+        # cli_history_size=args.cli_history_size,
     )
 
     client.run()

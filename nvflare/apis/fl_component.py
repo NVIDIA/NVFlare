@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,23 +13,24 @@
 # limitations under the License.
 
 import logging
-import traceback
 
 from nvflare.apis.utils.fl_context_utils import generate_log_message
+from nvflare.security.logging import secure_format_traceback
 
 from .analytix import AnalyticsData, AnalyticsDataType
 from .event_type import EventType
 from .fl_constant import EventScope, FedEventHeader, FLContextKey, LogMessageTag
 from .fl_context import FLContext
+from .persistable import StatePersistable
 from .shareable import Shareable
 
 
-class FLComponent(object):
+class FLComponent(StatePersistable):
     def __init__(self):
         """Init FLComponent.
 
         The FLComponent is the base class of all FL Components.
-        (executors, controllers, responders, filters, aggregrators, and widgets are all FLComponents)
+        (executors, controllers, responders, filters, aggregators, and widgets are all FLComponents)
 
         FLComponents have the capability to handle and fire events and contain various methods for logging.
         """
@@ -213,10 +214,10 @@ class FLComponent(object):
         """
         log_msg = generate_log_message(fl_ctx, msg)
         self.logger.error(log_msg)
-        traceback.print_exc()
+        ex_text = secure_format_traceback()
+        self.logger.error(ex_text)
 
         if fire_event:
-            ex_text = traceback.format_exc()
             ex_msg = "{}\n{}".format(log_msg, ex_text)
             self._fire_log_event(
                 event_type=EventType.EXCEPTION_LOG_AVAILABLE,
@@ -226,7 +227,7 @@ class FLComponent(object):
             )
 
     def _fire_log_event(self, event_type: str, log_tag: str, log_msg: str, fl_ctx: FLContext):
-        event_data = AnalyticsData(tag=log_tag, value=log_msg, data_type=AnalyticsDataType.TEXT, kwargs=None)
+        event_data = AnalyticsData(key=log_tag, value=log_msg, data_type=AnalyticsDataType.TEXT, kwargs=None)
         dxo = event_data.to_dxo()
         fl_ctx.set_prop(key=FLContextKey.EVENT_DATA, value=dxo.to_shareable(), private=True, sticky=False)
         self.fire_event(event_type=event_type, fl_ctx=fl_ctx)

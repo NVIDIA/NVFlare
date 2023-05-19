@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,15 +13,15 @@
 # limitations under the License.
 
 import subprocess
+from typing import List
 
 from nvflare.private.admin_defs import Message
 from nvflare.private.defs import SysCommandTopic
-
-from .admin import RequestProcessor
+from nvflare.private.fed.client.admin import RequestProcessor
 
 
 class ShellCommandProcessor(RequestProcessor):
-    def get_topics(self) -> [str]:
+    def get_topics(self) -> List[str]:
         return [SysCommandTopic.SHELL]
 
     def process(self, req: Message, app_ctx) -> Message:

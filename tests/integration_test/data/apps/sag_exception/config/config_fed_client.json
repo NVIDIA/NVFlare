@@ -1,0 +1,18 @@
+{
+  "format_version": 2,
+  "handlers": [],
+  "executors": [
+    {
+      "tasks": [
+        "train"
+      ],
+      "executor": {
+        "path": "exception_trainer.ExceptionTrainer",
+        "args": {}
+      }
+    }
+  ],
+  "task_result_filters": [],
+  "task_data_filters": [],
+  "components": []
+}

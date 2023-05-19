@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,13 +14,20 @@
 
 from nvflare.fuel.hci.reg import CommandModule
 from nvflare.private.fed.server.info_coll_cmd import InfoCollectorCommandModule
+from nvflare.private.fed.server.job_cmds import JobCommandModule
 from nvflare.private.fed.server.shell_cmd import ShellCommandModule
 from nvflare.private.fed.server.sys_cmd import SystemCommandModule
 from nvflare.private.fed.server.training_cmds import TrainingCommandModule
 
 
 class ServerCommandModules:
-    cmd_modules = [ShellCommandModule(), SystemCommandModule(), TrainingCommandModule(), InfoCollectorCommandModule()]
+    cmd_modules = [
+        ShellCommandModule(),
+        SystemCommandModule(),
+        TrainingCommandModule(),
+        JobCommandModule(),
+        InfoCollectorCommandModule(),
+    ]
 
     @staticmethod
     def register_cmd_module(cmd_module: CommandModule):

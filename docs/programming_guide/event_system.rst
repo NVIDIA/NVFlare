@@ -90,8 +90,8 @@ NVIDIA FLARE's system-defined event types are specified in :class:`nvflare.apis.
 .. csv-table::
    :header: Event, Description, Data Key, Data Type, Server, Client
 
-    START_RUN,A new RUN is about to start,fl_ctx.get_run_number(),int,X,X
-    END_RUN,The current RUN is about to end,fl_ctx.get_run_number(),int,X,X
+    START_RUN,A new RUN is about to start,fl_ctx.get_job_id(),int,X,X
+    END_RUN,The current RUN is about to end,fl_ctx.get_job_id(),int,X,X
     START_WORKFLOW,Workflow is about start,FLContextKey.WORKFLOW,int,X,
     END_WORKFLOW,Workflow is about to end,FLContextKey.WORKFLOW,int,X,
     BEFORE_PROCESS_SUBMISSION,Task result submission is about to be processed,FLContextKey.TASK_NAME,str,X,
@@ -156,8 +156,6 @@ Local events are local to the client, and federated events or fed events are bro
 The :class:`ConvertToFedEvent<nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent>` widget will convert
 local events to federated events.
 
-One example of how this is applied in use is in log streaming as seen in the `hello-pt-tb example <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-pt-tb>`_.
-
 The :class:`AnalyticsSender<nvflare.app_common.widgets.streaming.AnalyticsSender>` triggers an event called "analytix_log_stats",
 as a local event on the client. If we want server side to receive this event, we will need to convert the local event
 to a federated event, and this can be done with the :class:`ConvertToFedEvent<nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent>` widget.
@@ -166,3 +164,5 @@ The :class:`ConvertToFedEvent<nvflare.app_common.widgets.convert_to_fed_event.Co
 to a federated event and adds a prefix to that event, which in the example becomes "fed.analytix_log_stats". This event
 is processed by the :class:`TBAnalyticsReceiver<nvflare.app_common.pt.tb_receiver.TBAnalyticsReceiver>` component
 on the server so the server can receive the streamed analytics.
+
+See the :ref:`TensorBoard Streaming <tensorboard_streaming>` example for an example that uses these components.

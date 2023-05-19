@@ -1,0 +1,71 @@
+api_version: 3
+name: secure_project
+description: NVIDIA FLARE sample project yaml file for CIFAR-10 example
+
+participants:
+  - name: overseer.example.com
+    type: overseer
+    org: nvidia
+    protocol: https
+    api_root: /api/v1
+    port: 8443
+  - name: localhost
+    type: server
+    org: nvidia
+    fed_learn_port: 8102
+    admin_port: 8103
+  - name: site-1
+    type: client
+    org: nvidia
+  - name: site-2
+    type: client
+    org: nvidia
+  - name: site-3
+    type: client
+    org: nvidia
+  - name: site-4
+    type: client
+    org: nvidia
+  - name: site-5
+    type: client
+    org: nvidia
+  - name: site-6
+    type: client
+    org: nvidia
+  - name: site-7
+    type: client
+    org: nvidia
+  - name: site-8
+    type: client
+    org: nvidia
+  - name: admin@nvidia.com
+    type: admin
+    org: nvidia
+    role: project_admin
+
+# The same methods in all builders are called in their order defined in builders section
+builders:
+  - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
+    args:
+      template_file: master_template.yml
+  - path: nvflare.lighter.impl.template.TemplateBuilder
+  - path: nvflare.lighter.impl.static_file.StaticFileBuilder
+    args:
+      config_folder: config
+      overseer_agent:
+        path: nvflare.ha.dummy_overseer_agent.DummyOverseerAgent
+        # if overseer_exists is true, args here are ignored.  Provisioning
+        #   tool will fill role, name and other local parameters automatically.
+        # if overseer_exists is false, args in this section will be used.
+        overseer_exists: false
+        args:
+           sp_end_point: localhost:8102:8103
+           heartbeat_interval: 6
+  - path: nvflare.lighter.impl.he.HEBuilder
+    args:
+      poly_modulus_degree: 8192
+      coeff_mod_bit_sizes: [60, 40, 40]
+      scale_bits: 40
+      scheme: CKKS
+  - path: nvflare.lighter.impl.cert.CertBuilder
+  - path: nvflare.lighter.impl.signature.SignatureBuilder

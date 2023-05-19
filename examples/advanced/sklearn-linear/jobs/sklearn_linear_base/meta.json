@@ -1,0 +1,9 @@
+{
+  "name": "sklearn_linear",
+  "resource_spec": {},
+  "deploy_map": {
+    "app": [
+      "@ALL"
+    ]
+  }
+}

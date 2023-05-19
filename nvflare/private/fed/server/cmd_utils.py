@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,9 +14,13 @@
 
 from typing import List
 
+from nvflare.apis.job_def import JobMetaKey, is_valid_job_id
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.fuel.hci.conn import Connection
-from nvflare.security.security import Action, FLAuthzContext
+from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, make_meta
+from nvflare.fuel.hci.server.authz import PreAuthzReturnCode
+from nvflare.fuel.hci.server.constants import ConnProps
+from nvflare.private.fed.server.admin import FedAdminServer
 
 
 class CommandUtil(object):
@@ -30,7 +34,47 @@ class CommandUtil(object):
     TARGET_TYPE_SERVER = "server"
     TARGET_TYPE_ALL = "all"
 
-    SITE_SERVER = "server"
+    JOB_ID = "job_id"
+    JOB = "job"
+
+    def command_authz_required(self, conn: Connection, args: List[str]) -> PreAuthzReturnCode:
+        return PreAuthzReturnCode.REQUIRE_AUTHZ
+
+    def authorize_client_operation(self, conn: Connection, args: List[str]) -> PreAuthzReturnCode:
+        auth_args = [args[0], self.TARGET_TYPE_CLIENT]
+        auth_args.extend(args[1:])
+
+        err = self.validate_command_targets(conn, auth_args[1:])
+        if err:
+            conn.append_error(err)
+            return PreAuthzReturnCode.ERROR
+
+        return PreAuthzReturnCode.REQUIRE_AUTHZ
+
+    def authorize_abort_client_task(self, conn: Connection, args: List[str]) -> PreAuthzReturnCode:
+        if len(args) < 2:
+            conn.append_error(
+                "missing job_id (syntax is: abort_task job_id <client-name>)",
+                meta=make_meta(MetaStatusValue.SYNTAX_ERROR, "missing job_id"),
+            )
+            return PreAuthzReturnCode.ERROR
+
+        auth_args = [args[0], self.TARGET_TYPE_CLIENT]
+        auth_args.extend(args[2:])
+
+        job_id = args[1].lower()
+        if not is_valid_job_id(job_id):
+            conn.append_error(f"invalid job_id {job_id}", meta=make_meta(MetaStatusValue.INVALID_JOB_ID, job_id))
+            return PreAuthzReturnCode.ERROR
+
+        conn.set_prop(self.JOB_ID, job_id)
+
+        err = self.validate_command_targets(conn, auth_args[1:])
+        if err:
+            conn.append_error(err)
+            return PreAuthzReturnCode.ERROR
+
+        return PreAuthzReturnCode.REQUIRE_AUTHZ
 
     def validate_command_targets(self, conn: Connection, args: List[str]) -> str:
         """Validate specified args and determine and set target type and target names in the Connection.
@@ -72,7 +116,7 @@ class CommandUtil(object):
             # get all clients
             clients = engine.get_clients()
         else:
-            clients, invalid_inputs = engine.validate_clients(client_names)
+            clients, invalid_inputs = engine.validate_targets(client_names)
             if invalid_inputs:
                 return "invalid client(s): {}".format(" ".join(invalid_inputs))
 
@@ -95,54 +139,29 @@ class CommandUtil(object):
         conn.set_prop(self.TARGET_CLIENTS, all_clients)
         return ""
 
-    def _authorize_actions(self, conn: Connection, args: List[str], actions):
-        err = self.validate_command_targets(conn, args)
+    def must_be_project_admin(self, conn: Connection, args: List[str]):
+        role = conn.get_prop(ConnProps.USER_ROLE, "")
+        if role not in ["project_admin"]:
+            conn.append_error(f"Not authorized for {role}", meta=make_meta(MetaStatusValue.NOT_AUTHORIZED))
+            return PreAuthzReturnCode.ERROR
+        else:
+            return PreAuthzReturnCode.OK
+
+    def authorize_server_operation(self, conn: Connection, args: List[str]):
+        err = self.validate_command_targets(conn, args[1:])
         if err:
             conn.append_error(err)
-            return False, None
+            return PreAuthzReturnCode.ERROR
 
         target_type = conn.get_prop(self.TARGET_TYPE)
-        authorize_server = False
-        authorize_clients = False
-
-        if target_type == self.TARGET_TYPE_SERVER:
-            authorize_server = True
-        elif target_type == self.TARGET_TYPE_CLIENT:
-            authorize_clients = True
+        if target_type == self.TARGET_TYPE_SERVER or target_type == self.TARGET_TYPE_ALL:
+            return PreAuthzReturnCode.REQUIRE_AUTHZ
         else:
-            # all
-            authorize_server = True
-            authorize_clients = True
+            return PreAuthzReturnCode.OK
 
-        sites = []
-        if authorize_clients:
-            client_names = conn.get_prop(self.TARGET_CLIENT_NAMES)
-
-            if client_names:
-                sites.extend(client_names)
-
-        if authorize_server:
-            sites.append(self.SITE_SERVER)
-
-        authz_ctx = FLAuthzContext.new_authz_context(site_names=sites, actions=actions)
-        return True, authz_ctx
-
-    def authorize_view(self, conn: Connection, args: List[str]):
-        return self._authorize_actions(conn, args[1:], [Action.VIEW])
-
-    def authorize_train(self, conn: Connection, args: List[str]):
-        return self._authorize_actions(conn, args[1:], [Action.TRAIN])
-
-    def authorize_operate(self, conn: Connection, args: List[str]):
-        return self._authorize_actions(conn, args[1:], [Action.OPERATE])
-
-    def send_request_to_clients(self, conn, message, process_client_replies=None):
+    def send_request_to_clients(self, conn, message):
         client_tokens = conn.get_prop(self.TARGET_CLIENT_TOKENS)
 
-        # for client in clients:
-        #     requests.update({client.strip(): message})
-
-        # client_names = conn.get_prop(self.TARGET_CLIENT_NAMES, None)
         if not client_tokens:
             return None
 
@@ -150,13 +169,23 @@ class CommandUtil(object):
         for token in client_tokens:
             requests.update({token: message})
 
-        admin_server = conn.server
-        replies = admin_server.send_requests(requests, timeout_secs=admin_server.timeout)
+        admin_server: FedAdminServer = conn.server
+        cmd_timeout = conn.get_prop(ConnProps.CMD_TIMEOUT)
+        if not cmd_timeout:
+            cmd_timeout = admin_server.timeout
+        replies = admin_server.send_requests(requests, timeout_secs=cmd_timeout)
 
-        if process_client_replies:
-            return process_client_replies(replies)
-        else:
-            return replies
+        return replies
+
+    @staticmethod
+    def get_job_name(meta: dict) -> str:
+        """Gets job name from job meta."""
+
+        name = meta.get(JobMetaKey.JOB_NAME)
+        if not name:
+            name = meta.get(JobMetaKey.JOB_FOLDER_NAME, "No name")
+
+        return name
 
     def process_replies_to_table(self, conn: Connection, replies):
         """Process the clients' replies and put in a table format.
@@ -168,14 +197,13 @@ class CommandUtil(object):
         if not replies:
             conn.append_string("no responses from clients")
 
-        engine = conn.app_ctx
         table = conn.append_table(["Client", "Response"])
         for r in replies:
             if r.reply:
                 resp = r.reply.body
             else:
                 resp = ""
-            client_name = engine.get_client_name_from_token(r.client_token)
+            client_name = r.client_name
             if not client_name:
                 clients = conn.get_prop(self.TARGET_CLIENTS)
                 client_name = clients.get(r.client_token, "")
@@ -192,15 +220,19 @@ class CommandUtil(object):
         Returns:
             A string response.
         """
-        engine = conn.app_ctx
         response = "no responses from clients"
+        client_replies = {}
         if replies:
             response = ""
             for r in replies:
-                client_name = engine.get_client_name_from_token(r.client_token)
+                client_name = r.client_name
                 response += "client:" + client_name
                 if r.reply:
                     response += " : " + r.reply.body + "\n"
+                    client_replies[client_name] = r.reply.body
                 else:
                     response += " : No replies\n"
+                    client_replies[client_name] = MetaStatusValue.NO_REPLY
+
+        conn.update_meta({MetaKey.CLIENT_STATUS: client_replies})
         return response

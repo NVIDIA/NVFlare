@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -38,6 +38,7 @@ class ReturnCode(object):
     MODEL_UNRECOGNIZED = "MODEL_UNRECOGNIZED"
     VALIDATE_TYPE_UNKNOWN = "VALIDATE_TYPE_UNKNOWN"
     EMPTY_RESULT = "EMPTY_RESULT"
+    UNSAFE_JOB = "UNSAFE_JOB"
 
     SERVER_NOT_READY = "SERVER_NOT_READY"
 
@@ -73,6 +74,7 @@ class ReservedKey(object):
     TASK_RESULT = "__task_result__"
     TASK_ID = "__task_id__"
     EVENT_ID = "__event_id__"
+    AUDIT_EVENT_ID = "__audit_event_id__"
     IS_RESEND = "__is_resend__"
     RUNNER = "__runner__"
     WORKFLOW = "__workflow__"
@@ -83,12 +85,22 @@ class ReservedKey(object):
     EVENT_SCOPE = "__event_scope__"
     RUN_ABORT_SIGNAL = "__run_abort_signal__"
     SHAREABLE = "__shareable__"
+    SHARED_FL_CONTEXT = "__shared_fl_context__"
     ARGS = "__args__"
     WORKSPACE_OBJECT = "__workspace_object__"
     RANK_NUMBER = "__rank_number__"
     NUM_OF_PROCESSES = "__num_of_processes__"
     FROM_RANK_NUMBER = "__from_rank_number__"
     SECURE_MODE = "__secure_mode__"
+    SIMULATE_MODE = "__simulate_mode__"
+    SP_END_POINT = "__sp_end_point__"
+    JOB_INFO = "__job_info__"
+    JOB_META = "__job_meta__"
+    CURRENT_JOB_ID = "__current_job_id__"
+    JOB_RUN_NUMBER = "__job_run_number__"
+    JOB_DEPLOY_DETAIL = "__job_deploy_detail__"
+    FATAL_SYSTEM_ERROR = "__fatal_system_error__"
+    JOB_IS_UNSAFE = "__job_is_unsafe__"
 
 
 class FLContextKey(object):
@@ -119,6 +131,24 @@ class FLContextKey(object):
     NUM_OF_PROCESSES = ReservedKey.NUM_OF_PROCESSES
     FROM_RANK_NUMBER = ReservedKey.FROM_RANK_NUMBER
     SECURE_MODE = ReservedKey.SECURE_MODE
+    SIMULATE_MODE = ReservedKey.SIMULATE_MODE
+    SP_END_POINT = ReservedKey.SP_END_POINT
+    JOB_INFO = ReservedKey.JOB_INFO
+    JOB_META = ReservedKey.JOB_META
+    CURRENT_JOB_ID = ReservedKey.CURRENT_JOB_ID
+    JOB_RUN_NUMBER = ReservedKey.JOB_RUN_NUMBER
+    JOB_DEPLOY_DETAIL = ReservedKey.JOB_DEPLOY_DETAIL
+    JOB_SCOPE_NAME = "__job_scope_name__"
+    EFFECTIVE_JOB_SCOPE_NAME = "__effective_job_scope_name__"
+    SCOPE_PROPERTIES = "__scope_props__"
+    SCOPE_OBJECT = "__scope_object__"
+    FATAL_SYSTEM_ERROR = ReservedKey.FATAL_SYSTEM_ERROR
+    COMMUNICATION_ERROR = "Flare_communication_error__"
+    UNAUTHENTICATED = "Flare_unauthenticated__"
+    CLIENT_RESOURCE_SPECS = "__client_resource_specs"
+    JOB_PARTICIPANTS = "__job_participants"
+    JOB_BLOCK_REASON = "__job_block_reason"  # why the job should be blocked from scheduling
+    SSID = "__ssid__"
 
 
 class ReservedTopic(object):
@@ -130,11 +160,18 @@ class ReservedTopic(object):
 
 class AdminCommandNames(object):
 
-    SET_RUN_NUMBER = "set_run_number"
-    DELETE_RUN_NUMBER = "delete_run_number"
+    SUBMIT_JOB = "submit_job"
+    LIST_JOBS = "list_jobs"
+    GET_JOB_META = "get_job_meta"
+    DOWNLOAD_JOB = "download_job"
+    ABORT_JOB = "abort_job"
+    DELETE_JOB = "delete_job"
+    CLONE_JOB = "clone_job"
+    DELETE_WORKSPACE = "delete_workspace"
     DEPLOY_APP = "deploy_app"
     START_APP = "start_app"
     CHECK_STATUS = "check_status"
+    ADMIN_CHECK_STATUS = "admin_check_status"
     ABORT = "abort"
     ABORT_TASK = "abort_task"
     REMOVE_CLIENT = "remove_client"
@@ -145,6 +182,51 @@ class AdminCommandNames(object):
     SHOW_ERRORS = "show_errors"
     RESET_ERRORS = "reset_errors"
     AUX_COMMAND = "aux_command"
+    SYS_INFO = "sys_info"
+    REPORT_RESOURCES = "report_resources"
+    SHOW_SCOPES = "show_scopes"
+    CALL = "call"
+    SHELL_PWD = "pwd"
+    SHELL_LS = "ls"
+    SHELL_CAT = "cat"
+    SHELL_HEAD = "head"
+    SHELL_TAIL = "tail"
+    SHELL_GREP = "grep"
+
+
+class ServerCommandNames(object):
+
+    GET_RUN_INFO = "get_run_info"
+    GET_TASK = "get_task"
+    SUBMIT_UPDATE = "submit_update"
+    AUX_COMMUNICATE = "aux_communicate"
+    HEARTBEAT = "heartbeat"
+    GET_CLIENTS = "get_clients"
+    AUX_SEND = "aux_send"
+    SHOW_STATS = "show_stats"
+    GET_ERRORS = "get_errors"
+    RESET_ERRORS = "reset_errors"
+    UPDATE_RUN_STATUS = "update_run_status"
+    HANDLE_DEAD_JOB = "handle_dead_job"
+    SERVER_STATE = "server_state"
+
+
+class ServerCommandKey(object):
+
+    COMMAND = "command"
+    DATA = "data"
+    FL_CONTEXT = "fl_context"
+    PEER_FL_CONTEXT = "peer_fl_ctx"
+    SHAREABLE = "shareable"
+    TASK_NAME = "task_name"
+    TASK_ID = "task_id"
+    FL_CLIENT = "fl_client"
+    TOPIC = "topic"
+    AUX_REPLY = "aux_reply"
+    JOB_ID = "job_id"
+    CLIENTS = "clients"
+    COLLECTOR = "collector"
+    TURN_TO_COLD = "__turn_to_cold__"
 
 
 class FedEventHeader(object):
@@ -164,7 +246,16 @@ class EventScope(object):
 
 class NonSerializableKeys(object):
 
-    KEYS = [ReservedKey.ENGINE, ReservedKey.MANAGER, ReservedKey.RUNNER]
+    KEYS = [
+        ReservedKey.ENGINE,
+        ReservedKey.MANAGER,
+        ReservedKey.RUNNER,
+        FLContextKey.SCOPE_PROPERTIES,
+        FLContextKey.SCOPE_OBJECT,
+        FLContextKey.WORKSPACE_OBJECT,
+        FLContextKey.TASK_DATA,
+        FLContextKey.SHAREABLE,
+    ]
 
 
 class LogMessageTag(object):
@@ -176,3 +267,96 @@ class LogMessageTag(object):
     WARNING = "log/warning"
     CRITICAL = "log/critical"
     LOG_RECORD = "log_record"
+
+
+class SnapshotKey(object):
+
+    FL_CONTEXT = "fl_context"
+    SERVER_RUNNER = "_Server_Runner"
+    WORKSPACE = "_workspace"
+    JOB_INFO = "_job_info"
+    JOB_ID = "_job_id"
+    JOB_CLIENTS = "_job_clients"
+
+
+class RunProcessKey(object):
+    LISTEN_PORT = "_listen_port"
+    CONNECTION = "_conn"
+    CHILD_PROCESS = "_child_process"
+    STATUS = "_status"
+    JOB_ID = "_job_id"
+    PARTICIPANTS = "_participants"
+    PROCESS_FINISHED = "_process_finished"
+    PROCESS_RETURN_CODE = "_process_return_code"
+
+
+class SystemComponents(object):
+
+    JOB_SCHEDULER = "job_scheduler"
+    JOB_MANAGER = "job_manager"
+    JOB_RUNNER = "job_runner"
+    SERVER_RUNNER = "server_runner"
+    CLIENT_RUNNER = "client_runner"
+    CHECK_RESOURCE_PROCESSOR = "check_resource_processor"
+    CANCEL_RESOURCE_PROCESSOR = "cancel_resource_processor"
+    RESOURCE_MANAGER = "resource_manager"
+    RESOURCE_CONSUMER = "resource_consumer"
+
+
+class WorkspaceConstants:
+    """hard coded file names inside the workspace folder."""
+
+    STARTUP_FOLDER_NAME = "startup"
+    SITE_FOLDER_NAME = "local"
+    CUSTOM_FOLDER_NAME = "custom"
+
+    LOGGING_CONFIG = "log.config"
+    DEFAULT_LOGGING_CONFIG = LOGGING_CONFIG + ".default"
+    AUDIT_LOG = "audit.log"
+    LOG_FILE_NAME = "log.txt"
+    STATS_POOL_SUMMARY_FILE_NAME = "stats_pool_summary.json"
+    STATS_POOL_RECORDS_FILE_NAME = "stats_pool_records.csv"
+
+    # these two files is used by shell scripts to determine restart / shutdown
+    RESTART_FILE = "restart.fl"
+    SHUTDOWN_FILE = "shutdown.fl"
+
+    WORKSPACE_PREFIX = ""
+    APP_PREFIX = "app_"
+
+    SERVER_STARTUP_CONFIG = "fed_server.json"
+    CLIENT_STARTUP_CONFIG = "fed_client.json"
+    JOB_META_FILE = "meta.json"
+
+    AUTHORIZATION_CONFIG = "authorization.json"
+    DEFAULT_AUTHORIZATION_CONFIG = AUTHORIZATION_CONFIG + ".default"
+    RESOURCES_CONFIG = "resources.json"
+    DEFAULT_RESOURCES_CONFIG = RESOURCES_CONFIG + ".default"
+    PRIVACY_CONFIG = "privacy.json"
+    SAMPLE_PRIVACY_CONFIG = PRIVACY_CONFIG + ".sample"
+
+    ADMIN_STARTUP_CONFIG = "fed_admin.json"
+
+
+class JobConstants:
+    SERVER_JOB_CONFIG = "config_fed_server.json"
+    CLIENT_JOB_CONFIG = "config_fed_client.json"
+    META_FILE = "meta.json"
+
+
+class SiteType:
+    SERVER = "server"
+    CLIENT = "client"
+    ALL = "@ALL"
+
+
+class SystemConfigs:
+    STARTUP_CONF = "start_config"
+    RESOURCES_CONF = "resources_config"
+    APPLICATION_CONF = "application_config"
+
+
+class SecureTrainConst:
+    SSL_ROOT_CERT = "ssl_root_cert"
+    SSL_CERT = "ssl_cert"
+    PRIVATE_KEY = "ssl_private_key"

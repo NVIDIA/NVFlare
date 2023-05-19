@@ -1,0 +1,7 @@
+nvflare>=2.3.0
+torch
+torchvision
+tensorboard
+monai
+tqdm
+nibabel

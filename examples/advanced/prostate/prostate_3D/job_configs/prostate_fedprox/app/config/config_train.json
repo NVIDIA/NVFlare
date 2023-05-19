@@ -1,0 +1,7 @@
+{
+  "learning_rate": 1e-2,
+  "fedproxloss_mu": 0.1,
+  "cache_dataset": 0.0,
+  "dataset_base_dir": "DATASET_ROOT/dataset",
+  "datalist_json_path": "DATASET_ROOT/datalist"
+}

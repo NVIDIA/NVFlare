@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,21 +13,46 @@
 # limitations under the License.
 
 import logging
-import math
 import socket
 import time
 from typing import List, Optional
 
-import grpc
-from google.protobuf.struct_pb2 import Struct
-
-import nvflare.private.fed.protos.federated_pb2 as fed_msg
-import nvflare.private.fed.protos.federated_pb2_grpc as fed_service
 from nvflare.apis.filter import Filter
 from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_constant import ReturnCode as ShareableRC
+from nvflare.apis.fl_constant import ServerCommandKey, ServerCommandNames
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import FLCommunicationError
-from nvflare.private.fed.utils.fed_utils import make_context_data, make_shareeable_data, shareable_to_modeldata
+from nvflare.apis.shareable import Shareable
+from nvflare.apis.utils.fl_context_utils import get_serializable_data
+from nvflare.fuel.f3.cellnet.cell import FQCN, Cell
+from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
+from nvflare.fuel.utils import fobs
+from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeaderKeys, SpecialTaskName, new_cell_message
+from nvflare.private.fed.client.client_engine_internal_spec import ClientEngineInternalSpec
+from nvflare.security.logging import secure_format_exception
+
+
+def _get_client_ip():
+    """Return localhost IP.
+
+    More robust than ``socket.gethostbyname(socket.gethostname())``. See
+    https://stackoverflow.com/questions/166506/finding-local-ip-addresses-using-pythons-stdlib/28950776#28950776
+    for more details.
+
+    Returns:
+        The host IP
+
+    """
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("10.255.255.255", 1))  # doesn't even have to be reachable
+        ip = s.getsockname()[0]
+    except Exception:
+        ip = "127.0.0.1"
+    finally:
+        s.close()
+    return ip
 
 
 class Communicator:
@@ -35,109 +60,33 @@ class Communicator:
         self,
         ssl_args=None,
         secure_train=False,
-        retry_timeout=30,
         client_state_processors: Optional[List[Filter]] = None,
         compression=None,
+        cell: Cell = None,
+        client_register_interval=2,
+        timeout=5.0,
     ):
         """To init the Communicator.
 
         Args:
             ssl_args: SSL args
             secure_train: True/False to indicate if secure train
-            retry_timeout: retry timeout in seconds
             client_state_processors: Client state processor filters
             compression: communicate compression algorithm
         """
+        self.cell = cell
         self.ssl_args = ssl_args
         self.secure_train = secure_train
 
         self.verbose = False
         self.should_stop = False
         self.heartbeat_done = False
-        self.retry = int(math.ceil(float(retry_timeout) / 5))
         self.client_state_processors = client_state_processors
         self.compression = compression
+        self.client_register_interval = client_register_interval
+        self.timeout = timeout
 
         self.logger = logging.getLogger(self.__class__.__name__)
-
-    def set_up_channel(self, channel_dict, token=None):
-        """Connect client to the server.
-
-        Args:
-            channel_dict: grpc channel parameters
-            token: client token
-
-        Returns: an initialised grpc channel
-
-        """
-        if self.secure_train:
-            with open(self.ssl_args["ssl_root_cert"], "rb") as f:
-                trusted_certs = f.read()
-            with open(self.ssl_args["ssl_private_key"], "rb") as f:
-                private_key = f.read()
-            with open(self.ssl_args["ssl_cert"], "rb") as f:
-                certificate_chain = f.read()
-
-            credentials = grpc.ssl_channel_credentials(
-                certificate_chain=certificate_chain, private_key=private_key, root_certificates=trusted_certs
-            )
-
-            # make sure that all headers are in lowecase,
-            # otherwise grpc throws an exception
-            call_credentials = grpc.metadata_call_credentials(
-                lambda context, callback: callback((("x-custom-token", token),), None)
-            )
-            # use this if you want standard "Authorization" header
-            # call_credentials = grpc.access_token_call_credentials(
-            #     "x-custom-token")
-            composite_credentials = grpc.composite_channel_credentials(credentials, call_credentials)
-            channel = grpc.secure_channel(
-                **channel_dict, credentials=composite_credentials, compression=self.compression
-            )
-
-        else:
-            channel = grpc.insecure_channel(**channel_dict, compression=self.compression)
-        return channel
-
-    def get_client_state(self, project_name, token, fl_ctx: FLContext):
-        """Client's metadata used to authenticate and communicate.
-
-        Args:
-            project_name: FL study project name
-            token: FL client token
-            fl_ctx: FLContext
-
-        Returns: a ClientState message
-
-        """
-        state_message = fed_msg.ClientState(token=token)
-        state_message.meta.project.name = project_name
-        state_message.meta.run_number = fl_ctx.get_prop(FLContextKey.CURRENT_RUN)
-
-        context_data = make_context_data(fl_ctx)
-        state_message.context["fl_context"].CopyFrom(context_data)
-
-        return state_message
-
-    def get_client_ip(self):
-        """Return localhost IP.
-
-        More robust than ``socket.gethostbyname(socket.gethostname())``. See
-        https://stackoverflow.com/questions/166506/finding-local-ip-addresses-using-pythons-stdlib/28950776#28950776
-        for more details.
-
-        Returns: The host IP
-
-        """
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        try:
-            s.connect(("10.255.255.255", 1))  # doesn't even have to be reachable
-            ip = s.getsockname()[0]
-        except Exception:
-            ip = "127.0.0.1"
-        finally:
-            s.close()
-        return ip
 
     def client_registration(self, client_name, servers, project_name):
         """Client's metadata used to authenticate and communicate.
@@ -147,198 +96,182 @@ class Communicator:
             servers: FL servers
             project_name: FL study project name
 
-        Returns: FL token
+        Returns:
+            The client's token
 
         """
-        local_ip = self.get_client_ip()
+        local_ip = _get_client_ip()
 
-        login_message = fed_msg.ClientLogin(client_name=client_name, client_ip=local_ip)
-        # login_message = fed_msg.ClientLogin(
-        #     client_id=None, token=None, client_ip=local_ip)
-        login_message.meta.project.name = project_name
+        login_message = new_cell_message(
+            {
+                CellMessageHeaderKeys.CLIENT_NAME: client_name,
+                CellMessageHeaderKeys.CLIENT_IP: local_ip,
+                CellMessageHeaderKeys.PROJECT_NAME: project_name,
+            }
+        )
 
-        result, retry = None, self.retry
-        retry = 1500  # retry register for 2 hours (7500s)
-        with self.set_up_channel(servers[project_name]) as channel:
-            stub = fed_service.FederatedTrainingStub(channel)
-            while retry > 0:
-                try:
-                    start_time = time.time()
-                    result = stub.Register(login_message)
-                    token = result.token
-                    self.should_stop = False
+        start = time.time()
+        while not self.cell:
+            self.logger.info("Waiting for the client cell to be created.")
+            if time.time() - start > 15.0:
+                raise RuntimeError("Client cell could not be created. Failed to login the client.")
+            time.sleep(0.5)
+
+        while not self.cell.is_cell_connected(FQCN.ROOT_SERVER):
+            time.sleep(0.1)
+            if time.time() - start > 30.0:
+                raise FLCommunicationError("error:Could not connect to the server for client_registration.")
+
+        while True:
+            try:
+                result = self.cell.send_request(
+                    target=FQCN.ROOT_SERVER,
+                    channel=CellChannel.SERVER_MAIN,
+                    topic=CellChannelTopic.Register,
+                    request=login_message,
+                    timeout=self.timeout,
+                )
+                return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
+                if return_code == ReturnCode.UNAUTHENTICATED:
+                    unauthenticated = result.get_header(MessageHeaderKey.ERROR)
+                    raise FLCommunicationError("error:client_registration " + unauthenticated)
+
+                token = result.get_header(CellMessageHeaderKeys.TOKEN)
+                ssid = result.get_header(CellMessageHeaderKeys.SSID)
+                if not token and not self.should_stop:
+                    time.sleep(self.client_register_interval)
+                else:
                     break
-                except grpc.RpcError as grpc_error:
-                    self.grpc_error_handler(
-                        servers[project_name],
-                        grpc_error,
-                        "client_registration",
-                        start_time,
-                        retry,
-                        verbose=self.verbose,
-                    )
-                    excep = FLCommunicationError(grpc_error)
-                    if isinstance(grpc_error, grpc.Call):
-                        status_code = grpc_error.code()
-                        if grpc.StatusCode.UNAUTHENTICATED == status_code:
-                            raise excep
-                    retry -= 1
-                    time.sleep(5)
-            if self.should_stop:
-                raise excep
-            if result is None:
-                return None
 
-        return token
+            except BaseException as ex:
+                raise FLCommunicationError("error:client_registration", ex)
 
-    def getTask(self, servers, project_name, token, fl_ctx: FLContext):
-        """Get registered with the remote server via channel, and fetch the server's model parameters.
+        return token, ssid
+
+    def pull_task(self, servers, project_name, token, ssid, fl_ctx: FLContext):
+        """Get a task from server.
 
         Args:
             servers: FL servers
             project_name: FL study project name
-            token: FL client token
+            token: client token
+            ssid: service session ID
             fl_ctx: FLContext
 
-        Returns: a CurrentTask message from server
+        Returns:
+            A CurrentTask message from server
 
         """
-        global_model, retry = None, self.retry
-        with self.set_up_channel(servers[project_name]) as channel:
-            stub = fed_service.FederatedTrainingStub(channel)
-            while retry > 0:
-                # get the global model
-                try:
-                    start_time = time.time()
-                    global_model = stub.GetTask(self.get_client_state(project_name, token, fl_ctx))
-                    # Clear the stopping flag
-                    # if the connection to server recovered.
-                    self.should_stop = False
+        start_time = time.time()
+        shareable = Shareable()
+        shared_fl_ctx = FLContext()
+        shared_fl_ctx.set_public_props(get_serializable_data(fl_ctx).get_all_public_props())
+        shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_ctx)
+        client_name = fl_ctx.get_identity_name()
+        task_message = new_cell_message(
+            {
+                CellMessageHeaderKeys.TOKEN: token,
+                CellMessageHeaderKeys.CLIENT_NAME: client_name,
+                CellMessageHeaderKeys.SSID: ssid,
+                CellMessageHeaderKeys.PROJECT_NAME: project_name,
+            },
+            fobs.dumps(shareable),
+        )
+        job_id = str(shared_fl_ctx.get_prop(FLContextKey.CURRENT_RUN))
 
-                    end_time = time.time()
-                    self.logger.info(
-                        f"Received from {project_name} server "
-                        f" ({global_model.ByteSize()} Bytes). getTask time: {end_time - start_time} seconds"
-                    )
+        fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
+        task = self.cell.send_request(
+            target=fqcn,
+            channel=CellChannel.SERVER_COMMAND,
+            topic=ServerCommandNames.GET_TASK,
+            request=task_message,
+            timeout=self.timeout,
+            optional=True,
+        )
+        end_time = time.time()
+        return_code = task.get_header(MessageHeaderKey.RETURN_CODE)
 
-                    task = fed_msg.CurrentTask()
-                    task.meta.CopyFrom(global_model.meta)
-                    task.meta_data.CopyFrom(global_model.meta_data)
-                    task.data.CopyFrom(global_model.data)
-                    task.task_name = global_model.task_name
+        if return_code == ReturnCode.OK:
+            size = len(task.payload)
+            task.payload = fobs.loads(task.payload)
+            task_name = task.payload.get_header(ServerCommandKey.TASK_NAME)
+            fl_ctx.set_prop(FLContextKey.SSID, ssid, sticky=False)
+            if task_name not in [SpecialTaskName.END_RUN, SpecialTaskName.TRY_AGAIN]:
+                self.logger.info(
+                    f"Received from {project_name} server "
+                    f" ({size} Bytes). getTask: {task_name} time: {end_time - start_time} seconds"
+                )
+        elif return_code == ReturnCode.AUTHENTICATION_ERROR:
+            self.logger.warning("get_task request authentication failed.")
+            time.sleep(5.0)
+            return None
+        else:
+            task = None
+            self.logger.warning(f"Failed to get_task from {project_name} server. Will try it again.")
 
-                    return task
-                except grpc.RpcError as grpc_error:
-                    self.grpc_error_handler(
-                        servers[project_name], grpc_error, "getTask", start_time, retry, verbose=self.verbose
-                    )
-                    excep = FLCommunicationError(grpc_error)
-                    retry -= 1
-                    time.sleep(5)
-            if self.should_stop:
-                raise excep
+        return task
 
-        # Failed to get global, return None
-        return None
-
-    def submitUpdate(self, servers, project_name, token, fl_ctx: FLContext, client_name, shareable, execute_task_name):
+    def submit_update(
+        self, servers, project_name, token, ssid, fl_ctx: FLContext, client_name, shareable, execute_task_name
+    ):
         """Submit the task execution result back to the server.
 
         Args:
             servers: FL servers
             project_name: server project name
             token: client token
+            ssid: service session ID
             fl_ctx: fl_ctx
             client_name: client name
             shareable: execution task result shareable
             execute_task_name: execution task name
 
-        Returns: server message from the server
-
+        Returns:
+            ReturnCode
         """
-        client_state = self.get_client_state(project_name, token, fl_ctx)
-        client_state.client_name = client_name
-        contrib = self._get_communication_data(shareable, client_state, fl_ctx, execute_task_name)
+        start_time = time.time()
+        shared_fl_ctx = FLContext()
+        shared_fl_ctx.set_public_props(get_serializable_data(fl_ctx).get_all_public_props())
+        shareable.set_header(ServerCommandKey.PEER_FL_CONTEXT, shared_fl_ctx)
 
-        server_msg, retry = None, self.retry
-        with self.set_up_channel(servers[project_name]) as channel:
-            stub = fed_service.FederatedTrainingStub(channel)
-            while retry > 0:
-                try:
-                    start_time = time.time()
-                    self.logger.info(f"Send submitUpdate to {project_name} server")
-                    server_msg = stub.SubmitUpdate(contrib)
-                    # Clear the stopping flag
-                    # if the connection to server recovered.
-                    self.should_stop = False
+        # shareable.add_cookie(name=FLContextKey.TASK_ID, data=task_id)
+        shareable.set_header(FLContextKey.TASK_NAME, execute_task_name)
+        task_ssid = fl_ctx.get_prop(FLContextKey.SSID)
+        if task_ssid != ssid:
+            self.logger.warning("submit_update request failed because SSID mismatch.")
+            return ReturnCode.INVALID_SESSION
+        rc = shareable.get_return_code()
+        optional = rc == ShareableRC.TASK_ABORTED
 
-                    end_time = time.time()
-                    self.logger.info(
-                        f"Received comments: {server_msg.meta.project.name} {server_msg.comment}."
-                        f" SubmitUpdate time: {end_time - start_time} seconds"
-                    )
-                    break
-                except grpc.RpcError as grpc_error:
-                    if isinstance(grpc_error, grpc.Call):
-                        if grpc_error.details().startswith("Contrib"):
-                            self.logger.info(f"submitUpdate failed: {grpc_error.details()}")
-                            break  # outdated contribution, no need to retry
-                    self.grpc_error_handler(
-                        servers[project_name], grpc_error, "submitUpdate", start_time, retry, verbose=self.verbose
-                    )
-                    retry -= 1
-                    time.sleep(5)
-        return server_msg
+        task_message = new_cell_message(
+            {
+                CellMessageHeaderKeys.TOKEN: token,
+                CellMessageHeaderKeys.CLIENT_NAME: client_name,
+                CellMessageHeaderKeys.SSID: ssid,
+                CellMessageHeaderKeys.PROJECT_NAME: project_name,
+            },
+            fobs.dumps(shareable),
+        )
+        job_id = str(shared_fl_ctx.get_prop(FLContextKey.CURRENT_RUN))
 
-    def auxCommunicate(self, servers, project_name, token, fl_ctx: FLContext, client_name, shareable, topic, timeout):
-        """To send the aux communication message to the server.
+        fqcn = FQCN.join([FQCN.ROOT_SERVER, job_id])
+        result = self.cell.send_request(
+            target=fqcn,
+            channel=CellChannel.SERVER_COMMAND,
+            topic=ServerCommandNames.SUBMIT_UPDATE,
+            request=task_message,
+            timeout=self.timeout,
+            optional=optional,
+        )
+        end_time = time.time()
+        return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
+        self.logger.info(
+            f" SubmitUpdate size: {len(task_message.payload)} Bytes. time: {end_time - start_time} seconds"
+        )
 
-        Args:
-            servers: FL servers
-            project_name: server project name
-            token: client token
-            fl_ctx: fl_ctx
-            client_name: client name
-            shareable: aux message shareable
-            topic: aux message topic
-            timeout: aux communication timeout
+        return return_code
 
-        Returns: server response message
-
-        """
-        client_state = self.get_client_state(project_name, token, fl_ctx)
-        client_state.client_name = client_name
-
-        aux_message = fed_msg.AuxMessage()
-        # set client auth. data
-        aux_message.client.CopyFrom(client_state)
-
-        # shareable.set_header("Topic", topic)
-        aux_message.data["data"].CopyFrom(make_shareeable_data(shareable))
-        aux_message.data["fl_context"].CopyFrom(make_context_data(fl_ctx))
-
-        server_msg, retry = None, self.retry
-        with self.set_up_channel(servers[project_name]) as channel:
-            stub = fed_service.FederatedTrainingStub(channel)
-            while retry > 0:
-                try:
-                    start_time = time.time()
-                    self.logger.info(f"Send AuxMessage to {project_name} server")
-                    server_msg = stub.AuxCommunicate(aux_message, timeout=timeout)
-                    # Clear the stopping flag
-                    # if the connection to server recovered.
-                    self.should_stop = False
-
-                    break
-                except grpc.RpcError as grpc_error:
-                    self.grpc_error_handler(
-                        servers[project_name], grpc_error, "AuxCommunicate", start_time, retry, verbose=self.verbose
-                    )
-                    retry -= 1
-                    time.sleep(5)
-        return server_msg
-
-    def quit_remote(self, servers, task_name, token, fl_ctx: FLContext):
+    def quit_remote(self, servers, task_name, token, ssid, fl_ctx: FLContext):
         """Sending the last message to the server before leaving.
 
         Args:
@@ -347,111 +280,94 @@ class Communicator:
             token: FL client token
             fl_ctx: FLContext
 
-        Returns: server's reply to the last message
+        Returns:
+            server's reply to the last message
 
         """
-        server_message, retry = None, self.retry
-        with self.set_up_channel(servers[task_name]) as channel:
-            stub = fed_service.FederatedTrainingStub(channel)
-            while retry > 0:
-                try:
-                    start_time = time.time()
-                    self.logger.info(f"Quitting server: {task_name}")
-                    server_message = stub.Quit(self.get_client_state(task_name, token, fl_ctx))
-                    # Clear the stopping flag
-                    # if the connection to server recovered.
-                    self.should_stop = False
+        client_name = fl_ctx.get_identity_name()
+        quit_message = new_cell_message(
+            {
+                CellMessageHeaderKeys.TOKEN: token,
+                CellMessageHeaderKeys.CLIENT_NAME: client_name,
+                CellMessageHeaderKeys.SSID: ssid,
+                CellMessageHeaderKeys.PROJECT_NAME: task_name,
+            }
+        )
+        try:
+            result = self.cell.send_request(
+                target=FQCN.ROOT_SERVER,
+                channel=CellChannel.SERVER_MAIN,
+                topic=CellChannelTopic.Quit,
+                request=quit_message,
+                timeout=self.timeout,
+            )
+            return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
+            if return_code == ReturnCode.UNAUTHENTICATED:
+                self.logger.info(f"Client token: {token} has been removed from the server.")
 
-                    end_time = time.time()
-                    self.logger.info(
-                        f"Received comment from server: {server_message.comment}. Quit time: {end_time - start_time} seconds"
-                    )
-                    break
-                except grpc.RpcError as grpc_error:
-                    self.grpc_error_handler(servers[task_name], grpc_error, "quit_remote", start_time, retry)
-                    retry -= 1
-                    time.sleep(3)
+            server_message = result.get_header(CellMessageHeaderKeys.MESSAGE)
+
+        except BaseException as ex:
+            raise FLCommunicationError("error:client_quit", ex)
+
         return server_message
 
-    def send_heartbeat(self, servers, task_name, token, client_name):
-        message = fed_msg.Token()
-        message.token = token
-        message.client_name = client_name
+    def send_heartbeat(self, servers, task_name, token, ssid, client_name, engine: ClientEngineInternalSpec, interval):
+        fl_ctx = engine.new_context()
+        simulate_mode = fl_ctx.get_prop(FLContextKey.SIMULATE_MODE, False)
+        wait_times = int(interval / 2)
+        while not self.heartbeat_done:
+            try:
+                job_ids = engine.get_all_job_ids()
+                heartbeat_message = new_cell_message(
+                    {
+                        CellMessageHeaderKeys.TOKEN: token,
+                        CellMessageHeaderKeys.SSID: ssid,
+                        CellMessageHeaderKeys.CLIENT_NAME: client_name,
+                        CellMessageHeaderKeys.PROJECT_NAME: task_name,
+                        CellMessageHeaderKeys.JOB_IDS: job_ids,
+                    }
+                )
 
-        with self.set_up_channel(servers[task_name]) as channel:
-            while not self.heartbeat_done:
-                stub = fed_service.FederatedTrainingStub(channel)
-                # retry the heartbeat call for 10 minutes
-                retry = 120
-                while retry > 0:
-                    try:
-                        self.logger.debug(f"Send {task_name} heartbeat {token}")
-                        stub.Heartbeat(message)
+                try:
+                    result = self.cell.send_request(
+                        target=FQCN.ROOT_SERVER,
+                        channel=CellChannel.SERVER_MAIN,
+                        topic=CellChannelTopic.HEART_BEAT,
+                        request=heartbeat_message,
+                        timeout=self.timeout,
+                    )
+                    return_code = result.get_header(MessageHeaderKey.RETURN_CODE)
+                    if return_code == ReturnCode.UNAUTHENTICATED:
+                        unauthenticated = result.get_header(MessageHeaderKey.ERROR)
+                        raise FLCommunicationError("error:client_quit " + unauthenticated)
+
+                    if not simulate_mode:
+                        # server_message = result.get_header(CellMessageHeaderKeys.MESSAGE)
+                        abort_jobs = result.get_header(CellMessageHeaderKeys.ABORT_JOBS, [])
+                        self._clean_up_runs(engine, abort_jobs)
+                    else:
+                        if return_code != ReturnCode.OK:
+                            break
+
+                except BaseException as ex:
+                    raise FLCommunicationError("error:client_quit", ex)
+
+                for i in range(wait_times):
+                    time.sleep(2)
+                    if self.heartbeat_done:
                         break
-                    except grpc.RpcError as grpc_error:
-                        self.logger.debug(grpc_error)
-                        excep = FLCommunicationError(grpc_error)
-                        retry -= 1
-                        time.sleep(5)
-                        # pass
-                # if retry <= 0:
-                #     raise excep
+            except BaseException as e:
+                self.logger.info(f"Failed to send heartbeat. Will try again. Exception: {secure_format_exception(e)}")
+                time.sleep(5)
 
-                time.sleep(60)
-
-    def _get_communication_data(self, shareable, client_state, fl_ctx: FLContext, execute_task_name):
-        contrib = fed_msg.Contribution()
-        # set client auth. data
-        contrib.client.CopyFrom(client_state)
-        contrib.task_name = execute_task_name
-
-        current_model = shareable_to_modeldata(shareable, fl_ctx)
-        contrib.data.CopyFrom(current_model)
-
-        s = Struct()
-        contrib.meta_data.CopyFrom(s)
-
-        return contrib
-
-    def grpc_error_handler(self, service, grpc_error, action, start_time, retry, verbose=False):
-        """Handling grpc exceptions.
-
-        Args:
-            service: FL service
-            grpc_error: grpc error
-            action: action to take
-            start_time: communication start time
-            retry: retry number
-            verbose: verbose to error print out
-
-        Returns: N/A
-
-        """
-        status_code = None
-        if isinstance(grpc_error, grpc.Call):
-            status_code = grpc_error.code()
-
-        if grpc.StatusCode.RESOURCE_EXHAUSTED == status_code:
-            if grpc_error.details().startswith("No token"):
-                self.logger.info("No token for this client in current round. " "Waiting for server new round. ")
-                self.should_stop = False
-                return
-
-        self.logger.error(
-            f"Action: {action} grpc communication error. retry: {retry}, First start till now: {time.time() - start_time} seconds."
-        )
-        if grpc.StatusCode.UNAVAILABLE == status_code:
-            self.logger.error(
-                f"Could not connect to server: {service.get('target')}\t"
-                f"Setting flag for stopping training. {grpc_error.details()}"
-            )
-            self.should_stop = True
-
-        if grpc.StatusCode.OUT_OF_RANGE == status_code:
-            self.logger.error(
-                f"Server training has stopped.\t" f"Setting flag for stopping training. {grpc_error.details()}"
-            )
-            self.should_stop = True
-
-        if verbose:
-            self.logger.info(grpc_error)
+    def _clean_up_runs(self, engine, abort_runs):
+        # abort_runs = list(set(response.abort_jobs))
+        display_runs = ",".join(abort_runs)
+        try:
+            if abort_runs:
+                for job in abort_runs:
+                    engine.abort_app(job)
+                self.logger.debug(f"These runs: {display_runs} are not running on the server. Aborted them.")
+        except:
+            self.logger.debug(f"Failed to clean up the runs: {display_runs}")

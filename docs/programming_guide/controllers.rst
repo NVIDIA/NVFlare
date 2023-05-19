@@ -2,6 +2,11 @@
 
 Controllers and Controller API
 ==============================
+The Controller API makes it possible to create any client coordination logic in an FL workflow that is executed on the FL
+Server. A workflow has one or more controllers, each implementing a specific coordination strategy. For example, the ScatterAndGather
+(SAG) controller implements a popular strategy that is typically used for the fed-average type of federated training. The
+CrossSiteValidation controller implements a strategy to let every client site evaluate every other site's model. You can put together
+a workflow that uses any number of controllers.
 
 Controller/Worker Interactions
 ------------------------------
@@ -9,14 +14,11 @@ Controller/Worker Interactions
 NVIDIA FLARE 2.0's collaborative computing is achieved through the Controller/Worker interactions. The following diagram
 shows how the Controller and Worker interact.
 
-.. image:: ../resources/Controller_worker.png
+.. image:: ../resources/Controller.png
     :height: 300px
 
 The Controller is a python object that controls or coordinates the Workers to get a job done. The controller is run on
 the FL server (highlighted on the right).
-
-.. image:: ../resources/Controller.png
-    :height: 300px
 
 A Worker is capable of performing tasks. Workers run on FL clients.
 
@@ -44,6 +46,7 @@ implementations of the following controller workflows:
    controllers/scatter_and_gather_workflow
    controllers/cross_site_model_evaluation.rst
    controllers/cyclic_workflow.rst
+   controllers/initialize_global_weights.rst
 
 You can study the source code and use it as a starting point to write your own controller workflows.
 

@@ -1,0 +1,9 @@
+{
+  "learning_rate": 1e-2,
+  "ditto_learning_rate": 1e-2,
+  "ditto_lambda": 1.0,
+  "fedproxloss_mu": 0.0,
+  "cache_dataset": 0.0,
+  "dataset_base_dir": "DATASET_ROOT/dataset",
+  "datalist_json_path": "DATASET_ROOT/datalist"
+}

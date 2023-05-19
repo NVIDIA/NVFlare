@@ -1,0 +1,62 @@
+api_version: 3
+name: cifar_test
+description: NVFlare project to test cifar10
+
+participants:
+  - name: localhost
+    type: overseer
+    org: org_a
+    protocol: https
+    api_root: /api/v1
+    port: 8443
+  - name: localhost0
+    type: server
+    org: org_a
+    fed_learn_port: 8002
+    admin_port: 8003
+  - name: site-1
+    type: client
+    org: org_a
+  - name: site-2
+    type: client
+    org: org_a
+  - name: super@test.org
+    type: admin
+    org: org_a
+    role: project_admin
+
+# The same methods in all builders are called in their order defined in builders section
+builders:
+  - path: nvflare.lighter.impl.workspace.WorkspaceBuilder
+    args:
+      template_file: master_template.yml
+  - path: nvflare.lighter.impl.template.TemplateBuilder
+  - path: nvflare.lighter.impl.static_file.StaticFileBuilder
+    args:
+      # config_folder can be set to inform NVIDIA FLARE where to get configuration
+      config_folder: config
+
+      # app_validator is used to verify if uploaded app has proper structures
+      # if not set, no app_validator is included in fed_server.json
+      # app_validator: PATH_TO_YOUR_OWN_APP_VALIDATOR
+
+      # when docker_image is set to a docker image name, docker.sh will be generated on server/client/admin
+      # docker_image:
+
+      overseer_agent:
+        path: nvflare.ha.overseer_agent.HttpOverseerAgent
+        # if overseer_exists is true, args here are ignored.  Provisioning
+        #   tool will fill role, name and other local parameters automatically.
+        # if overseer_exists is false, args in this section will be used.
+        overseer_exists: true
+        # args:
+        #   sp_end_point: example1.com.8002:8003
+
+  - path: nvflare.lighter.impl.he.HEBuilder
+    args:
+      poly_modulus_degree: 8192
+      coeff_mod_bit_sizes: [60, 40, 40]
+      scale_bits: 40
+      scheme: CKKS
+  - path: nvflare.lighter.impl.cert.CertBuilder
+  - path: nvflare.lighter.impl.signature.SignatureBuilder

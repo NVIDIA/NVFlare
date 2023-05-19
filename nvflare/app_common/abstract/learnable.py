@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,11 +13,13 @@
 # limitations under the License.
 
 # from __future__ import annotations
-
-import pickle
+from nvflare.fuel.utils import fobs
 
 
 class Learnable(dict):
+    def is_empty(self):
+        return False
+
     def to_bytes(self) -> bytes:
         """Method to serialize the Learnable object into bytes.
 
@@ -25,7 +27,7 @@ class Learnable(dict):
             object serialized in bytes.
 
         """
-        return pickle.dumps(self)
+        return fobs.dumps(self)
 
     @classmethod
     def from_bytes(cls, data: bytes):
@@ -35,7 +37,7 @@ class Learnable(dict):
             data: a bytes object
 
         Returns:
-            an object loaded by pickle from data
+            an object loaded by FOBS from data
 
         """
-        return pickle.loads(data)
+        return fobs.loads(data)

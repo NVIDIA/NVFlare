@@ -1,0 +1,24 @@
+{
+    "format_version": 2,
+    "client": {
+      "retry_timeout": 30,
+      "compression": "Gzip"
+    },
+    "components": [
+         {
+           "id": "resource_manager",
+           "path": "nvflare.app_common.resource_managers.list_resource_manager.ListResourceManager",
+           "args": {
+             "resources": {
+               "gpu": [0, 1]
+             }
+           }
+        },
+        {
+          "id": "resource_consumer",
+          "path": "nvflare.app_common.resource_consumers.list_resource_consumer.ListResourceConsumer",
+          "args": {
+          }
+        }
+    ]
+}

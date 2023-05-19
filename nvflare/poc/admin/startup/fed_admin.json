@@ -1,0 +1,17 @@
+{
+  "format_version": 2,
+  "admin": {
+    "with_file_transfer": true,
+    "upload_dir": "transfer",
+    "download_dir": "transfer",
+    "cred_type": "password",
+    "prompt": "> ",
+    "overseer_agent": {
+      "path": "nvflare.ha.dummy_overseer_agent.DummyOverseerAgent",
+      "args": {
+        "sp_end_point": "localhost:8002:8003",
+        "heartbeat_interval": 6
+      }
+    }
+  }
+}

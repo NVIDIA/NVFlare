@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,24 +12,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from abc import ABC, abstractmethod
 from typing import List
 
 from nvflare.fuel.hci.conn import Connection
+from nvflare.fuel.hci.proto import CredentialType, InternalCommands
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandSpec
-from nvflare.fuel.hci.security import verify_password
+from nvflare.fuel.hci.security import IdentityKey, verify_password
 from nvflare.fuel.hci.server.constants import ConnProps
 
 from .reg import CommandFilter
-from .sess import SessionManager
-
-LOGIN_CMD_NAME = "_login"
-CERT_LOGIN_CMD_NAME = "_cert_login"
+from .sess import Session, SessionManager
 
 
-class Authenticator(object):
+class Authenticator(ABC):
     """Base class for authenticating credentials."""
 
-    def authenticate(self, user_name: str, credential: str, credential_type: str) -> bool:
+    @abstractmethod
+    def authenticate(self, user_name: str, credential: str, credential_type: CredentialType) -> bool:
         """Authenticate a specified user with the provided credential.
 
         Args:
@@ -63,9 +63,9 @@ class SimpleAuthenticator(Authenticator):
         return user_name == cn
 
     def authenticate(self, user_name: str, credential, credential_type):
-        if credential_type == "password":
+        if credential_type == CredentialType.PASSWORD:
             return self.authenticate_password(user_name, credential)
-        elif credential_type == "cn":
+        elif credential_type == CredentialType.CERT:
             return self.authenticate_cn(user_name, credential)
         else:
             return False
@@ -83,13 +83,11 @@ class LoginModule(CommandModule, CommandFilter):
             sess_mgr: SessionManager
         """
         if authenticator:
-            assert isinstance(authenticator, Authenticator), "authenticator must be Authenticator but got {}.".format(
-                type(authenticator)
-            )
+            if not isinstance(authenticator, Authenticator):
+                raise TypeError("authenticator must be Authenticator but got {}.".format(type(authenticator)))
 
-        assert isinstance(sess_mgr, SessionManager), "sess_mgr must be SessionManager but got {}.".format(
-            type(sess_mgr)
-        )
+        if not isinstance(sess_mgr, SessionManager):
+            raise TypeError("sess_mgr must be SessionManager but got {}.".format(type(sess_mgr)))
 
         self.authenticator = authenticator
         self.session_mgr = sess_mgr
@@ -99,14 +97,14 @@ class LoginModule(CommandModule, CommandFilter):
             name="login",
             cmd_specs=[
                 CommandSpec(
-                    name=LOGIN_CMD_NAME,
+                    name=InternalCommands.PWD_LOGIN,
                     description="login to server",
                     usage="login userName password",
                     handler_func=self.handle_login,
                     visible=False,
                 ),
                 CommandSpec(
-                    name=CERT_LOGIN_CMD_NAME,
+                    name=InternalCommands.CERT_LOGIN,
                     description="login to server with SSL cert",
                     usage="login userName",
                     handler_func=self.handle_cert_login,
@@ -134,12 +132,12 @@ class LoginModule(CommandModule, CommandFilter):
         user_name = args[1]
         pwd = args[2]
 
-        ok = self.authenticator.authenticate(user_name, pwd, "password")
+        ok = self.authenticator.authenticate(user_name, pwd, CredentialType.PASSWORD)
         if not ok:
             conn.append_string("REJECT")
             return
 
-        session = self.session_mgr.create_session(user_name)
+        session = self.session_mgr.create_session(user_name=user_name, user_org="global", user_role="project_admin")
         conn.append_string("OK")
         conn.append_token(session.token)
 
@@ -152,19 +150,23 @@ class LoginModule(CommandModule, CommandFilter):
             conn.append_string("REJECT")
             return
 
-        cn = conn.get_prop("_client_cn", None)
-        if cn is None:
+        identity = conn.get_prop(ConnProps.CLIENT_IDENTITY, None)
+        if identity is None:
             conn.append_string("REJECT")
             return
 
         user_name = args[1]
 
-        ok = self.authenticator.authenticate(user_name, cn, "cn")
+        ok = self.authenticator.authenticate(user_name, identity[IdentityKey.NAME], CredentialType.CERT)
         if not ok:
             conn.append_string("REJECT")
             return
 
-        session = self.session_mgr.create_session(user_name)
+        session = self.session_mgr.create_session(
+            user_name=identity[IdentityKey.NAME],
+            user_org=identity.get(IdentityKey.ORG, ""),
+            user_role=identity.get(IdentityKey.ROLE, ""),
+        )
         conn.append_string("OK")
         conn.append_token(session.token)
 
@@ -176,8 +178,8 @@ class LoginModule(CommandModule, CommandFilter):
         conn.append_string("OK")
 
     def pre_command(self, conn: Connection, args: List[str]):
-        if args[0] in [LOGIN_CMD_NAME, CERT_LOGIN_CMD_NAME]:
-            # skip login command
+        if args[0] in [InternalCommands.PWD_LOGIN, InternalCommands.CERT_LOGIN, InternalCommands.CHECK_SESSION]:
+            # skip login and check session commands
             return True
 
         # validate token
@@ -196,11 +198,22 @@ class LoginModule(CommandModule, CommandFilter):
 
         sess = self.session_mgr.get_session(token)
         if sess:
+            assert isinstance(sess, Session)
             sess.mark_active()
             conn.set_prop(ConnProps.SESSION, sess)
             conn.set_prop(ConnProps.USER_NAME, sess.user_name)
+            conn.set_prop(ConnProps.USER_ORG, sess.user_org)
+            conn.set_prop(ConnProps.USER_ROLE, sess.user_role)
             conn.set_prop(ConnProps.TOKEN, token)
             return True
         else:
-            conn.append_error("not authenticated - no user")
+            conn.append_error("session_inactive")
+            conn.append_string(
+                "user not authenticated or session timed out after {} seconds of inactivity - logged out".format(
+                    self.session_mgr.idle_timeout
+                )
+            )
             return False
+
+    def close(self):
+        self.session_mgr.shutdown()

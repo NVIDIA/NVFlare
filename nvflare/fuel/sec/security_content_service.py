@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
 
 import json
 import os
-import pickle
+from base64 import b64decode
 from enum import Enum
 
 from cryptography import x509
@@ -36,19 +36,21 @@ class LoadResult(Enum):
 
 
 class SecurityContentManager(object):
-    def __init__(self, content_folder, signature_filename="signature.pkl", root_cert="rootCA.pem"):
+    def __init__(self, content_folder, signature_filename="signature.json", root_cert="rootCA.pem"):
         """Content manager used by SecurityContentService to load secure content.
 
         Args:
             content_folder (str): the folder path that includes signature file
-            signature_filename (str, optional): the signature file (pickled dictionary). Defaults to "signature.pkl".
+            signature_filename (str, optional): the signature file (signed dictionary). Defaults to "signature.json".
             root_cert (str, optional): root CA certificate filename. Defaults to "rootCA.pem".
         """
         self.content_folder = content_folder
         signature_path = os.path.join(self.content_folder, signature_filename)
         rootCA_cert_path = os.path.join(self.content_folder, root_cert)
         if os.path.exists(signature_path) and os.path.exists(rootCA_cert_path):
-            self.signature = pickle.load(open(signature_path, "rb"))
+            self.signature = json.load(open(signature_path, "rt"))
+            for k in self.signature:
+                self.signature[k] = b64decode(self.signature[k].encode("utf-8"))
             cert = x509.load_pem_x509_certificate(open(rootCA_cert_path, "rb").read(), default_backend())
             self.public_key = cert.public_key()
             self.valid_config = True
@@ -62,8 +64,8 @@ class SecurityContentManager(object):
         Args:
             file_under_verification: file to load and verify
 
-        Returns: Tuple of the file data and the LoadResult. File data may be None if the data cannot be loaded.
-
+        Returns:
+            A tuple of the file data and the LoadResult. File data may be None if the data cannot be loaded.
         """
         full_path = os.path.join(self.content_folder, file_under_verification)
         data = None
@@ -98,7 +100,7 @@ class SecurityContentService(object):
     security_content_manager = None
 
     @staticmethod
-    def initialize(content_folder: str, signature_filename="signature.pkl", root_cert="rootCA.pem"):
+    def initialize(content_folder: str, signature_filename="signature.json", root_cert="rootCA.pem"):
         if SecurityContentService.security_content_manager is None:
             SecurityContentService.security_content_manager = SecurityContentManager(
                 content_folder, signature_filename, root_cert
@@ -113,6 +115,9 @@ class SecurityContentService(object):
 
     @staticmethod
     def load_json(file_under_verification):
+        if not SecurityContentService.security_content_manager:
+            return None, LoadResult.NOT_MANAGED
+
         json_data = None
 
         data_bytes, result = SecurityContentService.security_content_manager.load_content(file_under_verification)

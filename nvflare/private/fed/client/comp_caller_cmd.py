@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -34,7 +34,7 @@ class ComponentCallerProcessor(RequestProcessor):
             raise TypeError("caller must be ComponentCaller, but got {}".format(type(caller)))
 
         run_info = engine.get_current_run_info()
-        if not run_info or run_info.run_number < 0:
+        if not run_info or run_info.job_id < 0:
             result = {"error": "app not running"}
         else:
             comp_target = req.get_header(RequestHeader.COMPONENT_TARGET)
