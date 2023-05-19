@@ -18,6 +18,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import traceback
 from typing import Dict, List, Optional, OrderedDict
 
 import yaml
@@ -64,8 +65,8 @@ def client_gpu_assignments(clients: List[str], gpu_ids: List[int]) -> Dict[str, 
 
 def get_package_command(cmd_type: str, prod_dir: str, package_dir) -> str:
     cmd = ""
+    admin_package = global_packages.get(SC.FLARE_PROJ_ADMIN, SC.FLARE_PROJ_ADMIN)
     if cmd_type == SC.CMD_START:
-        admin_package = global_packages.get(SC.FLARE_PROJ_ADMIN, SC.FLARE_PROJ_ADMIN)
         if not global_packages.get(SC.IS_DOCKER_RUN):
             if package_dir == admin_package:
                 cmd = get_cmd_path(prod_dir, package_dir, "fl_admin.sh")
@@ -73,16 +74,18 @@ def get_package_command(cmd_type: str, prod_dir: str, package_dir) -> str:
                 cmd = get_cmd_path(prod_dir, package_dir, "start.sh")
         else:
             if package_dir == admin_package:
-                cmd = get_cmd_path(prod_dir, package_dir, "docker.sh")
+                cmd = get_cmd_path(prod_dir, package_dir, "fl_admin.sh")
             else:
                 cmd = get_cmd_path(prod_dir, package_dir, "docker.sh -d")
 
     elif cmd_type == SC.CMD_STOP:
-
         if not global_packages.get(SC.IS_DOCKER_RUN):
             cmd = get_stop_cmd(prod_dir, package_dir)
         else:
-            cmd = f"docker stop {package_dir}"
+            if package_dir == admin_package:
+                cmd = get_stop_cmd(prod_dir, package_dir)
+            else:
+                cmd = f"docker stop {package_dir}"
 
     else:
         raise ValueError("unknown cmd_type :", cmd_type)
@@ -95,11 +98,13 @@ def get_stop_cmd(poc_workspace: str, service_dir_name: str):
     return f"touch {stop_file}"
 
 
-def get_nvflare_home() -> str:
-    nvflare_home = os.getenv("NVFLARE_HOME")
-    if nvflare_home:
-        if nvflare_home.endswith("/"):
-            nvflare_home = nvflare_home[:-1]
+def get_nvflare_home() -> Optional[str]:
+    nvflare_home = None
+    if "NVFLARE_HOME" in os.environ:
+        nvflare_home = os.getenv("NVFLARE_HOME")
+        if nvflare_home:
+            if nvflare_home.endswith("/"):
+                nvflare_home = nvflare_home[:-1]
     return nvflare_home
 
 
@@ -113,11 +118,11 @@ def get_upload_dir(startup_dir) -> str:
         raise CLIException(f"failed to load {console_config_path} {e}")
     except json.decoder.JSONDecodeError as e:
         raise CLIException(f"failed to load {console_config_path}, please double check the configuration {e}")
-
     return upload_dir
 
 
 def prepare_examples(example_dir: str, workspace: str):
+    project_config = setup_global_packages(workspace)
     if example_dir is None or example_dir == "":
         raise ValueError("example_dir is required")
     src = os.path.abspath(example_dir)
@@ -126,14 +131,25 @@ def prepare_examples(example_dir: str, workspace: str):
 
     prod_dir = get_prod_dir(workspace)
     if not os.path.exists(prod_dir):
-        print("please use nvflare local --prepare to create workspace first")
+        print("please use nvflare poc --prepare to create workspace first")
         exit(0)
-
     startup_dir = os.path.join(prod_dir, f"{global_packages[SC.FLARE_PROJ_ADMIN]}/{SC.STARTUP}")
     transfer = get_upload_dir(startup_dir)
     dst = os.path.join(startup_dir, transfer)
-    print(f"link examples from {src} to {dst}")
-    if not os.path.islink(dst):
+    if os.path.islink(dst) or os.path.isdir(dst):
+        print(f" ")
+        answer = input(f"Examples link or directory at {dst} is already exists, replace with new one ? (y/N) ")
+        if answer.strip().upper() == "Y":
+            if os.path.islink(dst):
+                print("unlink dir")
+                os.unlink(dst)
+            if os.path.isdir(dst):
+                shutil.rmtree(dst, ignore_errors=True)
+
+            print(f"link examples from {src} to {dst}")
+            os.symlink(src, dst)
+    else:
+        print(f"link examples from {src} to {dst}")
         os.symlink(src, dst)
 
 
@@ -388,6 +404,10 @@ def prepare_poc_provision(
             local_dir=f"{workspace}/{server_name}/local", default_resource_name="resources.json", workspace=workspace
         )
 
+    nvflare_home = get_nvflare_home()
+    if nvflare_home is not None:
+        prepare_examples(os.path.join(nvflare_home, "examples"), workspace)
+
 
 def sort_package_cmds(cmd_type, package_cmds: list) -> list:
     def sort_first(val):
@@ -494,7 +514,7 @@ def stop_poc(poc_workspace: str, excluded=None, white_list=None):
     else:
         excluded.append(global_packages[SC.FLARE_PROJ_ADMIN])
 
-    validate_packages(project_config, white_list)
+    validate_packages(project_config, white_list, excluded)
 
     validate_poc_workspace(poc_workspace)
     gpu_ids: List[int] = []
