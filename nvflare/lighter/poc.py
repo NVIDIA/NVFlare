@@ -49,7 +49,7 @@ def unpack_poc(dest_poc_folder) -> bool:
 def copy_from_src(src_poc_folder, dest_poc_folder):
     try:
         shutil.copytree(src_poc_folder, dest_poc_folder)
-    except BaseException as e:
+    except Exception as e:
         print(f"Unable to copy poc folder from {src_poc_folder}, Exit. {e} ")
         exit(1)
 
@@ -65,7 +65,7 @@ def clone_poc_folder(src_poc_folder, dest_poc_folder):
             if dir == "admin":
                 try:
                     os.mkdir(os.path.join(root, dir, "local"))
-                except BaseException:
+                except Exception:
                     pass
                 break
         for file in files:

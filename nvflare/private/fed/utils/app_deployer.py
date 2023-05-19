@@ -81,5 +81,5 @@ class AppDeployer(object):
             if not authorized:
                 return "not authorized"
 
-        except BaseException as e:
+        except Exception as e:
             raise Exception(f"exception {secure_format_exception(e)} when deploying app {self.app_name}")

@@ -318,7 +318,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                                     table.add_row([client_name, app_name, job_id, status])
                             else:
                                 table.add_row([client_name, app_name, job_id, "No Jobs"])
-                    except BaseException as e:
+                    except Exception as e:
                         self.logger.error(f"Bad reply from client: {secure_format_exception(e)}")
             else:
                 table.add_row([client_name, app_name, job_id, "No Reply"])
@@ -353,7 +353,7 @@ class TrainingCommandModule(CommandModule, CommandUtil):
                             conn.append_error(
                                 f"bad response from client {client_name}: expect dict but got {type(body)}"
                             )
-                    except BaseException as e:
+                    except Exception as e:
                         self.logger.error(f"Bad reply from client: {secure_format_exception(e)}")
                         conn.append_error(f"bad response from client {client_name}: {secure_format_exception(e)}")
             else:

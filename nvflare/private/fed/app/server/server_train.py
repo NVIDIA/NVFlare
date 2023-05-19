@@ -66,7 +66,7 @@ def main():
             f = workspace.get_file_path_in_root(name)
             if os.path.exists(f):
                 os.remove(f)
-        except BaseException:
+        except Exception:
             print(f"Could not remove file '{name}'.  Please check your system before starting FL.")
             sys.exit(-1)
 

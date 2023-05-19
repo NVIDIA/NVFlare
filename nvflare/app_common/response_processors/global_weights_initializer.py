@@ -96,7 +96,7 @@ class GlobalWeightsInitializer(ResponseProcessor):
 
         try:
             dxo = from_shareable(response)
-        except BaseException:
+        except Exception:
             self.log_exception(fl_ctx, f"bad response from client {client.name}: " f"it does not contain DXO")
             return False
 

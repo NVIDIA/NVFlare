@@ -82,7 +82,7 @@ def wait_for_system_shutdown(sess: Session, timeout_in_sec: int = 30):
                 print("waiting system to shutdown")
             cnt += 1
             time.sleep(0.1)
-        except BaseException:
+        except Exception:
             # Server is already shutdown
             return
 

@@ -170,7 +170,7 @@ class PTAutoFedRLSearchSpace(FLComponent):
                 self.optimizer = engine.build_component(self.optimizer_args)
                 # Get optimizer name for log
                 self.optimizer_name = self._get_component_name(self.optimizer_args)
-            except BaseException as e:
+            except Exception as e:
                 self.system_panic(
                     f"Exception while parsing `optimizer_args`: " f"{self.optimizer_args} with Exception {e}",
                     fl_ctx,

@@ -128,7 +128,7 @@ class AutoFedRLFedOptModelShareableGenerator(FullModelShareableGenerator):
                 self.optimizer = engine.build_component(self.optimizer_args)
                 # get optimizer name for log
                 self.optimizer_name = self._get_component_name(self.optimizer_args)
-            except BaseException as e:
+            except Exception as e:
                 self.system_panic(
                     f"Exception while parsing `optimizer_args`({self.optimizer_args}): {secure_format_exception(e)}",
                     fl_ctx,
@@ -144,7 +144,7 @@ class AutoFedRLFedOptModelShareableGenerator(FullModelShareableGenerator):
                         self.lr_scheduler_args["args"] = {}
                     self.lr_scheduler_args["args"]["optimizer"] = self.optimizer
                     self.lr_scheduler = engine.build_component(self.lr_scheduler_args)
-                except BaseException as e:
+                except Exception as e:
                     self.system_panic(
                         f"Exception while parsing `lr_scheduler_args`({self.lr_scheduler_args}): {secure_format_exception(e)}",
                         fl_ctx,
