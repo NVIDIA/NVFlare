@@ -564,7 +564,6 @@ def _build_commands(cmd_type: str, poc_workspace: str, excluded: list, white_lis
             or p_dir_name == global_packages[SC.FLARE_SERVER]
             or p_dir_name in global_packages[SC.FLARE_CLIENTS]
         )
-        print(p_dir_name, "fl_package = ", fl_package)
         return fl_package
 
     prod_dir = get_prod_dir(poc_workspace)
@@ -621,7 +620,6 @@ def _run_poc(cmd_type: str, poc_workspace: str, gpu_ids: List[int], excluded: li
     if white_list is None:
         white_list = []
     package_commands = _build_commands(cmd_type, poc_workspace, excluded, white_list)
-    print("package_commands =", package_commands)
     clients = _get_clients(package_commands)
     gpu_assignments: Dict[str, List[int]] = client_gpu_assignments(clients, gpu_ids)
     for package_name, cmd_path in package_commands:
