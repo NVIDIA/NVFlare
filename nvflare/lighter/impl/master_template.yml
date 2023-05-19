@@ -684,14 +684,15 @@ docker_svr_sh: |
   #NETARG="-p {~~admin_port~~}:{~~admin_port~~} -p {~~fed_learn_port~~}:{~~fed_learn_port~~}"
   DOCKER_IMAGE={~~docker_image~~}
   echo "Starting docker with $DOCKER_IMAGE"
+  svr_name="${SVR_NAME:-flserver}"
   mode="${1:-r}"
   if [ $mode = "-d" ]
   then
-    docker run -d --rm --name=flserver -v $DIR/..:/workspace/ -w /workspace \
+    docker run -d --rm --name=$svr_name -v $DIR/..:/workspace/ -w /workspace \
     --ipc=host $NETARG $DOCKER_IMAGE /bin/bash -c \
     "python -u -m nvflare.private.fed.app.server.server_train -m /workspace -s fed_server.json --set secure_train=true config_folder=config org={~~org_name~~}"
   else
-    docker run --rm -it --name=flserver -v $DIR/..:/workspace/ -w /workspace/ --ipc=host $NETARG $DOCKER_IMAGE /bin/bash
+    docker run --rm -it --name=$svr_name -v $DIR/..:/workspace/ -w /workspace/ --ipc=host $NETARG $DOCKER_IMAGE /bin/bash
   fi
 
 docker_adm_sh: |
