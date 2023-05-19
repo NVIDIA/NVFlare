@@ -236,3 +236,27 @@ def create_stats_pool_files_for_job(workspace: Workspace, job_id: str, prefix=No
         err = f"Failed to create stats pool summary file {summary_file}: {secure_format_exception(e)}"
     StatsPoolManager.close()
     return err
+
+
+def split_gpus(gpus) -> ([str], bool):
+    gpus = gpus.replace(" ", "")
+    if not (gpus.startswith("[") and gpus.endswith("]")):
+        return None, False
+    result = []
+    index = 0
+    while index < len(gpus):
+        if gpus[index] != "[":
+            return None, False
+        a = ""
+        while True:
+            index += 1
+            if gpus[index] == "]":
+                break
+            a += gpus[index]
+        result.append(a)
+        index += 1
+        if index < len(gpus) and gpus[index] != ",":
+            return None, False
+        else:
+            index += 1
+    return result, True

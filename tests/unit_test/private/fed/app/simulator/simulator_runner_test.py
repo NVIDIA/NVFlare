@@ -20,6 +20,7 @@ from unittest.mock import patch
 import pytest
 
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
+from nvflare.private.fed.utils.fed_utils import split_gpus
 
 
 class TestSimulatorRunner:
@@ -98,9 +99,8 @@ class TestSimulatorRunner:
         ],
     )
     def test_split_gpus_success(self, gpus, expected_gpus):
-        runner = SimulatorRunner(job_folder="", workspace="")
-        split_gpus, _ = runner.split_gpus(gpus)
-        assert split_gpus == expected_gpus
+        splitted_gpus, _ = split_gpus(gpus)
+        assert splitted_gpus == expected_gpus
 
     @pytest.mark.parametrize(
         "gpus",
@@ -111,9 +111,8 @@ class TestSimulatorRunner:
         ],
     )
     def test_split_gpus_fail(self, gpus):
-        runner = SimulatorRunner(job_folder="", workspace="")
-        split_gpus, success = runner.split_gpus(gpus)
-        assert split_gpus is None
+        splitted_gpus, success = split_gpus(gpus)
+        assert splitted_gpus is None
         assert success is False
 
 

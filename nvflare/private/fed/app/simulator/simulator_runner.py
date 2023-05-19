@@ -49,7 +49,7 @@ from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 from nvflare.private.fed.simulator.simulator_app_runner import SimulatorServerAppRunner
 from nvflare.private.fed.simulator.simulator_audit import SimulatorAuditor
 from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
-from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize
+from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize, split_gpus
 from nvflare.security.logging import secure_format_exception
 from nvflare.security.security import EmptyAuthorizer
 
@@ -175,7 +175,7 @@ class SimulatorRunner(FLComponent):
                 return False
 
             if self.args.gpu:
-                gpus, success = self.split_gpus(self.args.gpu)
+                gpus, success = split_gpus(self.args.gpu)
                 if not success:
                     self.logger.error("GPUs group list in wrong format. Please use format like: [0,1],[1,2] ...")
                     return False
@@ -373,7 +373,7 @@ class SimulatorRunner(FLComponent):
                 #     client.start_heartbeat(interval=2)
 
                 if self.args.gpu:
-                    gpus, _ = self.split_gpus(self.args.gpu)
+                    gpus, _ = split_gpus(self.args.gpu)
                     split_clients = self.split_clients(self.federated_clients, gpus)
                 else:
                     gpus = [None]
@@ -398,29 +398,6 @@ class SimulatorRunner(FLComponent):
         else:
             run_status = 1
         return run_status
-
-    def split_gpus(self, gpus) -> ([str], bool):
-        gpus = gpus.replace(" ", "")
-        if not (gpus.startswith("[") and gpus.endswith("]")):
-            return None, False
-        result = []
-        index = 0
-        while index < len(gpus):
-            if gpus[index] != "[":
-                return None, False
-            a = ""
-            while True:
-                index += 1
-                if gpus[index] == "]":
-                    break
-                a += gpus[index]
-            result.append(a)
-            index += 1
-            if index < len(gpus) and gpus[index] != ",":
-                return None, False
-            else:
-                index += 1
-        return result, True
 
     def client_run(self, clients, gpu):
         client_runner = SimulatorClientRunner(self.args, clients, self.client_config, self.deploy_args, self.build_ctx)
