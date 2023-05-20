@@ -19,7 +19,7 @@ import socket
 import subprocess
 import sys
 import time
-from typing import Dict, List, Optional, OrderedDict
+from typing import Dict, List, Optional, OrderedDict, Tuple
 
 import yaml
 
@@ -34,7 +34,6 @@ from nvflare.tool.api_utils import shutdown_system
 
 DEFAULT_WORKSPACE = "/tmp/nvflare/poc"
 DEFAULT_PROJECT_NAME = "example_project"
-global_packages = {}
 
 
 def client_gpu_assignments(clients: List[str], gpu_ids: List[int]) -> Dict[str, List[int]]:
@@ -63,7 +62,7 @@ def client_gpu_assignments(clients: List[str], gpu_ids: List[int]) -> Dict[str, 
     return gpu_assignments
 
 
-def get_package_command(cmd_type: str, prod_dir: str, package_dir) -> str:
+def get_package_command(cmd_type: str, prod_dir: str, package_dir, global_packages: Dict) -> str:
     cmd = ""
     admin_package = global_packages.get(SC.FLARE_PROJ_ADMIN, SC.FLARE_PROJ_ADMIN)
     if cmd_type == SC.CMD_START:
@@ -88,7 +87,7 @@ def get_package_command(cmd_type: str, prod_dir: str, package_dir) -> str:
                 cmd = f"docker stop {package_dir}"
 
     else:
-        raise ValueError("unknown cmd_type :", cmd_type)
+        raise CLIException("unknown cmd_type :", cmd_type)
     return cmd
 
 
@@ -126,18 +125,18 @@ def is_dir_empty(path: str):
     return len(targe_dir) == 0
 
 
-def prepare_examples(example_dir: str, workspace: str):
-    project_config = setup_global_packages(workspace)
+def prepare_examples(example_dir: str, workspace: str, config_packages: Optional[Tuple] = None):
+    _, global_packages = config_packages if config_packages else setup_global_packages(workspace)
     if example_dir is None or example_dir == "":
-        raise ValueError("example_dir is required")
+        raise CLIException("example_dir is required")
     src = os.path.abspath(example_dir)
     if not os.path.isdir(src):
-        raise ValueError(f"example_dir '{example_dir}' is not valid directory")
+        raise CLIException(f"example_dir '{example_dir}' is not valid directory")
 
     prod_dir = get_prod_dir(workspace)
     if not os.path.exists(prod_dir):
-        print("please use nvflare poc --prepare to create workspace first")
-        exit(0)
+        raise CLIException("please use nvflare poc --prepare to create workspace first")
+
 
     console_dir = os.path.join(prod_dir, f"{global_packages[SC.FLARE_PROJ_ADMIN]}")
     startup_dir = os.path.join(console_dir, SC.STARTUP)
@@ -148,7 +147,6 @@ def prepare_examples(example_dir: str, workspace: str):
         answer = input(f"Examples at {dst} is already exists, replace with new one ? (y/N) ")
         if answer.strip().upper() == "Y":
             if os.path.islink(dst):
-                print("unlink dir")
                 os.unlink(dst)
             if os.path.isdir(dst):
                 shutil.rmtree(dst, ignore_errors=True)
@@ -201,7 +199,7 @@ def get_fl_server_name(project_config: OrderedDict) -> str:
     if len(servers) == 1:
         return servers[0]
     else:
-        raise ValueError(f"project should only have one server, but {len(servers)} are provided: {servers}")
+        raise CLIException(f"project should only have one server, but {len(servers)} are provided: {servers}")
 
 
 def get_proj_admin(project_config: OrderedDict):
@@ -211,7 +209,7 @@ def get_proj_admin(project_config: OrderedDict):
     if len(admins) == 1:
         return admins[0]
     else:
-        raise ValueError(f"project should only have only one project admin, but {len(admins)} are provided: {admins}")
+        raise CLIException(f"project should only have only one project admin, but {len(admins)} are provided: {admins}")
 
 
 def get_fl_client_names(project_config: OrderedDict) -> List[str]:
@@ -246,7 +244,7 @@ def local_provision(
     docker_image: str,
     use_he: bool = False,
     project_conf_path: str = "",
-) -> dict:
+) -> Tuple:
     user_provided_project_config = False
     if project_conf_path:
         src_project_file = project_conf_path
@@ -259,7 +257,7 @@ def local_provision(
     print(f"provision at {workspace} for {number_of_clients} clients with {src_project_file}")
     project_config: OrderedDict = load_yaml(src_project_file)
     if not project_config:
-        raise ValueError(f"empty or invalid project config from project yaml file: {src_project_file}")
+        raise CLIException(f"empty or invalid project config from project yaml file: {src_project_file}")
 
     if not user_provided_project_config:
         project_config = update_server_name(project_config)
@@ -274,7 +272,7 @@ def local_provision(
     provisioner = Provisioner(workspace, builders)
     provisioner.provision(project)
 
-    return packages
+    return project_config, packages
 
 
 def get_packages(project_config):
@@ -301,6 +299,8 @@ def update_server_name(project_config):
 
 
 def is_docker_run(project_config: OrderedDict):
+    if "builders" not in project_config:
+        return False
     static_builder = [
         b
         for b in project_config.get("builders")
@@ -385,6 +385,14 @@ def prepare_poc(
             f"This will delete poc folder in {workspace} directory and create a new one. Is it OK to proceed? (y/N) "
         )
         if answer.strip().upper() == "Y":
+            from pathlib import Path
+            workspace_path = Path(workspace)
+            project_file = Path(project_conf_path)
+            if workspace_path in project_file.parents:
+                raise CLIException(f"\nProject file: '{project_conf_path}' is under workspace directory:"
+                                   f"'{workspace}', which is to be deleted. "
+                                   f"Please copy {project_conf_path} to different location before running this command.")
+
             shutil.rmtree(workspace, ignore_errors=True)
             prepare_poc_provision(clients, number_of_clients, workspace, docker_image, use_he, project_conf_path, examples_dir)
             return True
@@ -406,8 +414,7 @@ def prepare_poc_provision(
 ):
     os.makedirs(workspace, exist_ok=True)
     os.makedirs(os.path.join(workspace, "data"), exist_ok=True)
-    global global_packages
-    global_packages = local_provision(clients, number_of_clients, workspace, docker_image, use_he, project_conf_path)
+    _, global_packages = local_provision(clients, number_of_clients, workspace, docker_image, use_he, project_conf_path)
     server_name = global_packages[SC.FLARE_SERVER]
     # update storage
     if workspace != DEFAULT_WORKSPACE:
@@ -416,7 +423,7 @@ def prepare_poc_provision(
         )
     examples_dir = get_examples_dir(examples_dir)
     if examples_dir is not None:
-        prepare_examples(examples_dir, workspace)
+        prepare_examples(examples_dir, workspace, None)
 
 
 def get_examples_dir(examples_dir):
@@ -428,7 +435,7 @@ def get_examples_dir(examples_dir):
     return default_examples_dir
 
 
-def sort_package_cmds(cmd_type, package_cmds: list) -> list:
+def sort_package_cmds(cmd_type, package_cmds: list, global_packages) -> list:
     def sort_first(val):
         return val[0]
 
@@ -457,7 +464,7 @@ def get_cmd_path(poc_workspace, service_name, cmd):
     return cmd_path
 
 
-def is_poc_ready(poc_workspace: str):
+def is_poc_ready(poc_workspace: str, global_packages):
     # check server and admin directories exist
     prod_dir = get_prod_dir(poc_workspace)
     console_dir = os.path.join(prod_dir, global_packages[SC.FLARE_PROJ_ADMIN])
@@ -465,8 +472,8 @@ def is_poc_ready(poc_workspace: str):
     return os.path.isdir(server_dir) and os.path.isdir(console_dir)
 
 
-def validate_poc_workspace(poc_workspace: str):
-    if not is_poc_ready(poc_workspace):
+def validate_poc_workspace(poc_workspace: str, global_packages):
+    if not is_poc_ready(poc_workspace, global_packages):
         raise CLIException(f"workspace {poc_workspace} is not ready, please use poc --prepare to prepare poc workspace")
 
 
@@ -488,15 +495,15 @@ def get_gpu_ids(user_input_gpu_ids, host_gpu_ids) -> List[int]:
 
 
 def start_poc(poc_workspace: str, gpu_ids: List[int], excluded=None, white_list=None):
-    project_config = setup_global_packages(poc_workspace)
+    project_config, global_packages = setup_global_packages(poc_workspace)
     if white_list is None:
         white_list = []
     if excluded is None:
         excluded = []
     print(f"start_poc at {poc_workspace}, gpu_ids={gpu_ids}, excluded = {excluded}, white_list={white_list}")
     validate_packages(project_config, white_list, excluded)
-    validate_poc_workspace(poc_workspace)
-    _run_poc(SC.CMD_START, poc_workspace, gpu_ids, excluded=excluded, white_list=white_list)
+    validate_poc_workspace(poc_workspace, global_packages)
+    _run_poc(SC.CMD_START, poc_workspace, gpu_ids, global_packages, excluded=excluded, white_list=white_list)
 
 
 def validate_packages(project_config, white_list: List, excluded: List):
@@ -512,19 +519,18 @@ def validate_participants(participant_names, list_participants):
             exit(1)
 
 
-def setup_global_packages(poc_workspace) -> Optional[Dict]:
+def setup_global_packages(poc_workspace) -> Tuple:
     project_file = os.path.join(poc_workspace, "project.yml")
     if os.path.isfile(project_file):
         project_config = load_yaml(project_file)
-        global global_packages
-        global_packages = get_packages(project_config)
-        return project_config
+        global_packages = get_packages(project_config) if project_config else None
+        return project_config, global_packages
     else:
-        raise ValueError(f"{project_file} is missing, make sure you have first run 'nvflare poc --prepare'")
+        raise CLIException(f"{project_file} is missing, make sure you have first run 'nvflare poc --prepare'")
 
 
 def stop_poc(poc_workspace: str, excluded=None, white_list=None):
-    project_config = setup_global_packages(poc_workspace)
+    project_config, global_packages = setup_global_packages(poc_workspace)
 
     if white_list is None:
         white_list = []
@@ -535,7 +541,7 @@ def stop_poc(poc_workspace: str, excluded=None, white_list=None):
 
     validate_packages(project_config, white_list, excluded)
 
-    validate_poc_workspace(poc_workspace)
+    validate_poc_workspace(poc_workspace, global_packages)
     gpu_ids: List[int] = []
     prod_dir = get_prod_dir(poc_workspace)
 
@@ -546,10 +552,10 @@ def stop_poc(poc_workspace: str, excluded=None, white_list=None):
     else:
         print(f"start shutdown {white_list}")
 
-    _run_poc(SC.CMD_STOP, poc_workspace, gpu_ids, excluded=excluded, white_list=white_list)
+    _run_poc(SC.CMD_STOP, poc_workspace, gpu_ids, global_packages, excluded=excluded, white_list=white_list)
 
 
-def _get_clients(package_commands: list) -> List[str]:
+def _get_clients(package_commands: list, global_packages) -> List[str]:
     clients = [
         package_dir_name
         for package_dir_name, _ in package_commands
@@ -559,7 +565,7 @@ def _get_clients(package_commands: list) -> List[str]:
     return clients
 
 
-def _build_commands(cmd_type: str, poc_workspace: str, excluded: list, white_list=None) -> list:
+def _build_commands(cmd_type: str, poc_workspace: str, global_packages, excluded: list, white_list=None) -> list:
     """
     :param cmd_type: start/stop
     :param poc_workspace:  poc workspace directory path
@@ -587,13 +593,13 @@ def _build_commands(cmd_type: str, poc_workspace: str, excluded: list, white_lis
             for package_dir_name in fl_dirs:
                 if package_dir_name not in excluded:
                     if len(white_list) == 0 or package_dir_name in white_list:
-                        cmd = get_package_command(cmd_type, prod_dir, package_dir_name)
+                        cmd = get_package_command(cmd_type, prod_dir, package_dir_name, global_packages)
                         if cmd:
                             package_commands.append((package_dir_name, cmd))
-    return sort_package_cmds(cmd_type, package_commands)
+    return sort_package_cmds(cmd_type, package_commands, global_packages)
 
 
-def prepare_env(package_name, gpu_ids: Optional[List[int]] = None):
+def prepare_env(package_name, gpu_ids: Optional[List[int]], global_packages: Dict):
     import os
 
     my_env = None
@@ -613,8 +619,8 @@ def prepare_env(package_name, gpu_ids: Optional[List[int]] = None):
     return my_env
 
 
-def async_process(package_name, cmd_path, gpu_ids: Optional[List[int]] = None):
-    my_env = prepare_env(package_name, gpu_ids)
+def async_process(package_name, cmd_path, gpu_ids: Optional[List[int]], global_packages:Dict):
+    my_env = prepare_env(package_name, gpu_ids, global_packages)
     if my_env:
         subprocess.Popen(cmd_path.split(" "), env=my_env)
     else:
@@ -626,11 +632,11 @@ def sync_process(package_name, cmd_path):
     subprocess.run(cmd_path.split(" "), env=my_env)
 
 
-def _run_poc(cmd_type: str, poc_workspace: str, gpu_ids: List[int], excluded: list, white_list=None):
+def _run_poc(cmd_type: str, poc_workspace: str, gpu_ids: List[int], global_packages: Dict, excluded: list, white_list=None):
     if white_list is None:
         white_list = []
-    package_commands = _build_commands(cmd_type, poc_workspace, excluded, white_list)
-    clients = _get_clients(package_commands)
+    package_commands = _build_commands(cmd_type, poc_workspace, global_packages, excluded, white_list)
+    clients = _get_clients(package_commands, global_packages)
     gpu_assignments: Dict[str, List[int]] = client_gpu_assignments(clients, gpu_ids)
     for package_name, cmd_path in package_commands:
         if package_name == global_packages[SC.FLARE_PROJ_ADMIN]:
@@ -639,18 +645,18 @@ def _run_poc(cmd_type: str, poc_workspace: str, gpu_ids: List[int], excluded: li
                 time.sleep(2)
             sync_process(package_name, cmd_path)
         elif package_name == global_packages[SC.FLARE_SERVER]:
-            async_process(package_name, cmd_path, None)
+            async_process(package_name, cmd_path, None, global_packages)
         else:
-            async_process(package_name, cmd_path, gpu_assignments[package_name])
+            async_process(package_name, cmd_path, gpu_assignments[package_name], global_packages)
 
 
 def clean_poc(poc_workspace: str):
     import shutil
 
     if os.path.isdir(poc_workspace):
-        project_config = setup_global_packages(poc_workspace)
+        project_config, global_packages = setup_global_packages(poc_workspace)
         if project_config is not None:
-            if is_poc_ready(poc_workspace):
+            if is_poc_ready(poc_workspace, global_packages):
                 shutil.rmtree(poc_workspace, ignore_errors=True)
                 print(f"{poc_workspace} is removed")
             else:
@@ -782,7 +788,8 @@ def handle_poc_cmd(cmd_args):
         excluded = [cmd_args.exclude]
 
     if cmd_args.gpu is not None and cmd_args.prepare_poc:
-        raise ValueError("-gpu should not be used for 'nvflare poc --prepare' command ")
+        raise CLIException("-gpu should not be used for 'nvflare poc --prepare' command,"
+                           " it is intended to use in 'nvflare poc --start' command ")
 
     poc_workspace = get_poc_workspace()
     if cmd_args.start_poc:
