@@ -240,23 +240,34 @@ def create_stats_pool_files_for_job(workspace: Workspace, job_id: str, prefix=No
 
 def split_gpus(gpus) -> ([str], bool):
     gpus = gpus.replace(" ", "")
-    if not (gpus.startswith("[") and gpus.endswith("]")):
-        return None, False
+    # if not (gpus.startswith("[") and gpus.endswith("]")):
+    #     return None, False
     result = []
     index = 0
     while index < len(gpus):
         if gpus[index] != "[":
-            return None, False
-        a = ""
-        while True:
+            a = ""
+            while index < len(gpus) and gpus[index] != ",":
+                if gpus[index] == "[" or gpus[index] == "]":
+                    return None, False
+                a += gpus[index]
+                index += 1
+            result.append(a)
             index += 1
-            if gpus[index] == "]":
-                break
-            a += gpus[index]
-        result.append(a)
-        index += 1
-        if index < len(gpus) and gpus[index] != ",":
-            return None, False
+            # return None, False
         else:
+            a = ""
+            while True:
+                index += 1
+                if index >= len(gpus):
+                    return None, False
+                if gpus[index] == "]":
+                    break
+                a += gpus[index]
+            result.append(a)
             index += 1
+            if index < len(gpus) and gpus[index] != ",":
+                return None, False
+            else:
+                index += 1
     return result, True

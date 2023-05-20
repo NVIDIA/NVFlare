@@ -95,7 +95,9 @@ class TestSimulatorRunner:
             ("[0,1],[3]", ["0,1", "3"]),
             ("[0,1],[ 3 ]", ["0,1", "3"]),
             ("[02,1],[ a ]", ["02,1", "a"]),
-            ("[]", [""])
+            ("[]", [""]),
+            ("[0,1],3", ["0,1", "3"]),
+            ("0,1,2", ["0", "1", "2"]),
         ],
     )
     def test_split_gpus_success(self, gpus, expected_gpus):
@@ -105,8 +107,8 @@ class TestSimulatorRunner:
     @pytest.mark.parametrize(
         "gpus",
         [
-            "[0,1],3",
-            "0,1,2",
+            "[0,1],3]",
+            "0,1,[2",
             "[0,1]extra"
         ],
     )
