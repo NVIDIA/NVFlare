@@ -137,7 +137,6 @@ def prepare_examples(example_dir: str, workspace: str, config_packages: Optional
     if not os.path.exists(prod_dir):
         raise CLIException("please use nvflare poc --prepare to create workspace first")
 
-
     console_dir = os.path.join(prod_dir, f"{global_packages[SC.FLARE_PROJ_ADMIN]}")
     startup_dir = os.path.join(console_dir, SC.STARTUP)
     transfer = get_upload_dir(startup_dir)
@@ -371,7 +370,7 @@ def prepare_poc(
     docker_image: str,
     use_he: bool,
     project_conf_path: str = "",
-    examples_dir: Optional[str] = None
+    examples_dir: Optional[str] = None,
 ) -> bool:
     if clients:
         number_of_clients = len(clients)
@@ -386,20 +385,27 @@ def prepare_poc(
         )
         if answer.strip().upper() == "Y":
             from pathlib import Path
+
             workspace_path = Path(workspace)
             project_file = Path(project_conf_path)
             if workspace_path in project_file.parents:
-                raise CLIException(f"\nProject file: '{project_conf_path}' is under workspace directory:"
-                                   f"'{workspace}', which is to be deleted. "
-                                   f"Please copy {project_conf_path} to different location before running this command.")
+                raise CLIException(
+                    f"\nProject file: '{project_conf_path}' is under workspace directory:"
+                    f"'{workspace}', which is to be deleted. "
+                    f"Please copy {project_conf_path} to different location before running this command."
+                )
 
             shutil.rmtree(workspace, ignore_errors=True)
-            prepare_poc_provision(clients, number_of_clients, workspace, docker_image, use_he, project_conf_path, examples_dir)
+            prepare_poc_provision(
+                clients, number_of_clients, workspace, docker_image, use_he, project_conf_path, examples_dir
+            )
             return True
         else:
             return False
     else:
-        prepare_poc_provision(clients, number_of_clients, workspace, docker_image, use_he, project_conf_path, examples_dir)
+        prepare_poc_provision(
+            clients, number_of_clients, workspace, docker_image, use_he, project_conf_path, examples_dir
+        )
         return True
 
 
@@ -410,7 +416,7 @@ def prepare_poc_provision(
     docker_image: str,
     use_he: bool = False,
     project_conf_path: str = "",
-    examples_dir: Optional[str] = None
+    examples_dir: Optional[str] = None,
 ):
     os.makedirs(workspace, exist_ok=True)
     os.makedirs(os.path.join(workspace, "data"), exist_ok=True)
@@ -619,7 +625,7 @@ def prepare_env(package_name, gpu_ids: Optional[List[int]], global_packages: Dic
     return my_env
 
 
-def async_process(package_name, cmd_path, gpu_ids: Optional[List[int]], global_packages:Dict):
+def async_process(package_name, cmd_path, gpu_ids: Optional[List[int]], global_packages: Dict):
     my_env = prepare_env(package_name, gpu_ids, global_packages)
     if my_env:
         subprocess.Popen(cmd_path.split(" "), env=my_env)
@@ -632,7 +638,9 @@ def sync_process(package_name, cmd_path):
     subprocess.run(cmd_path.split(" "), env=my_env)
 
 
-def _run_poc(cmd_type: str, poc_workspace: str, gpu_ids: List[int], global_packages: Dict, excluded: list, white_list=None):
+def _run_poc(
+    cmd_type: str, poc_workspace: str, gpu_ids: List[int], global_packages: Dict, excluded: list, white_list=None
+):
     if white_list is None:
         white_list = []
     package_commands = _build_commands(cmd_type, poc_workspace, global_packages, excluded, white_list)
@@ -788,8 +796,10 @@ def handle_poc_cmd(cmd_args):
         excluded = [cmd_args.exclude]
 
     if cmd_args.gpu is not None and cmd_args.prepare_poc:
-        raise CLIException("-gpu should not be used for 'nvflare poc --prepare' command,"
-                           " it is intended to use in 'nvflare poc --start' command ")
+        raise CLIException(
+            "-gpu should not be used for 'nvflare poc --prepare' command,"
+            " it is intended to use in 'nvflare poc --start' command "
+        )
 
     poc_workspace = get_poc_workspace()
     if cmd_args.start_poc:
@@ -809,7 +819,7 @@ def handle_poc_cmd(cmd_args):
             cmd_args.docker_image,
             cmd_args.he,
             project_conf_path,
-            cmd_args.examples
+            cmd_args.examples,
         )
     elif cmd_args.prepare_examples:
         prepare_examples(cmd_args.examples, poc_workspace)
