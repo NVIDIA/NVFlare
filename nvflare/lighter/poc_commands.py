@@ -371,6 +371,7 @@ def prepare_poc(
     docker_image: str,
     use_he: bool,
     project_conf_path: str = "",
+    examples_dir: Optional[str] = None
 ) -> bool:
     if clients:
         number_of_clients = len(clients)
@@ -385,12 +386,12 @@ def prepare_poc(
         )
         if answer.strip().upper() == "Y":
             shutil.rmtree(workspace, ignore_errors=True)
-            prepare_poc_provision(clients, number_of_clients, workspace, docker_image, use_he, project_conf_path)
+            prepare_poc_provision(clients, number_of_clients, workspace, docker_image, use_he, project_conf_path, examples_dir)
             return True
         else:
             return False
     else:
-        prepare_poc_provision(clients, number_of_clients, workspace, docker_image, use_he, project_conf_path)
+        prepare_poc_provision(clients, number_of_clients, workspace, docker_image, use_he, project_conf_path, examples_dir)
         return True
 
 
@@ -401,6 +402,7 @@ def prepare_poc_provision(
     docker_image: str,
     use_he: bool = False,
     project_conf_path: str = "",
+    examples_dir: Optional[str] = None
 ):
     os.makedirs(workspace, exist_ok=True)
     os.makedirs(os.path.join(workspace, "data"), exist_ok=True)
@@ -412,10 +414,18 @@ def prepare_poc_provision(
         update_storage_locations(
             local_dir=f"{workspace}/{server_name}/local", default_resource_name="resources.json", workspace=workspace
         )
+    examples_dir = get_examples_dir(examples_dir)
+    if examples_dir is not None:
+        prepare_examples(examples_dir, workspace)
+
+
+def get_examples_dir(examples_dir):
+    if examples_dir:
+        return examples_dir
 
     nvflare_home = get_nvflare_home()
-    if nvflare_home is not None:
-        prepare_examples(os.path.join(nvflare_home, "examples"), workspace)
+    default_examples_dir = os.path.join(nvflare_home, "examples") if nvflare_home else None
+    return default_examples_dir
 
 
 def sort_package_cmds(cmd_type, package_cmds: list) -> list:
@@ -676,8 +686,8 @@ def def_poc_parser(sub_cmd):
         "--examples",
         type=str,
         nargs="?",
-        default="all",
-        help="examples directory, only used in '--prepare-examples' command",
+        default=None,
+        help="examples directory, only used in '--prepare' or '--prepare-example' command",
     )
     poc_parser.add_argument(
         "-ex",
@@ -792,6 +802,7 @@ def handle_poc_cmd(cmd_args):
             cmd_args.docker_image,
             cmd_args.he,
             project_conf_path,
+            cmd_args.examples
         )
     elif cmd_args.prepare_examples:
         prepare_examples(cmd_args.examples, poc_workspace)
