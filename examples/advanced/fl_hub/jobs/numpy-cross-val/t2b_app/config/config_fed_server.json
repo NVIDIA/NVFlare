@@ -1,0 +1,43 @@
+{
+  "format_version": 2,
+
+  "operators": {
+    "train": {
+      "method": "bcast",
+      "aggregator": "aggregator",
+      "timeout": 600,
+      "min_targets": 2
+    },
+    "submit_model": {
+      "method": "bcast",
+      "aggregator": "model_collector",
+      "timeout": 600,
+      "min_targets": 2
+    },
+    "validate": {
+      "method": "bcast",
+      "aggregator": "val_collector",
+      "timeout": 600,
+      "min_targets": 2
+    }
+  },
+  "components": [
+    {
+      "id": "aggregator",
+      "path": "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",
+      "args": {
+        "expected_data_kind": "WEIGHTS"
+      }
+    },
+    {
+      "id": "model_collector",
+      "path": "nvflare.app_common.aggregators.dxo_collector.DXOCollector",
+      "args": {}
+    },
+    {
+      "id": "val_collector",
+      "path": "nvflare.app_common.aggregators.dxo_collector.DXOCollector",
+      "args": {}
+    }
+  ]
+}
