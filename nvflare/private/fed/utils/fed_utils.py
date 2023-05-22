@@ -242,7 +242,7 @@ def create_stats_pool_files_for_job(workspace: Workspace, job_id: str, prefix=No
     return err
 
 
-def split_gpus(gpus) -> ([str], bool):
+def split_gpus(gpus) -> [str]:
     gpus = gpus.replace(" ", "")
     lefts = find_char_positions(gpus, "[")
     rights = find_char_positions(gpus, "]")
