@@ -97,11 +97,12 @@ class TestSimulatorRunner:
             ("[02,1],[ a ]", ["02,1", "a"]),
             ("[]", [""]),
             ("[0,1],3", ["0,1", "3"]),
+            ("[0,1],[1,2],3", ["0,1", "1,2", "3"]),
             ("0,1,2", ["0", "1", "2"]),
         ],
     )
     def test_split_gpus_success(self, gpus, expected_gpus):
-        splitted_gpus, _ = split_gpus(gpus)
+        splitted_gpus = split_gpus(gpus)
         assert splitted_gpus == expected_gpus
 
     @pytest.mark.parametrize(
@@ -109,12 +110,12 @@ class TestSimulatorRunner:
         [
             "[0,1],3]",
             "0,1,[2",
-            "[0,1]extra"
+            "[0,1]extra",
+            "[1, [2, 3], 4]",
         ],
     )
     def test_split_gpus_fail(self, gpus):
-        splitted_gpus, success = split_gpus(gpus)
-        assert splitted_gpus is None
-        assert success is False
+        with pytest.raises(ValueError):
+            split_gpus(gpus)
 
 

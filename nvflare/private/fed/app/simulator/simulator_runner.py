@@ -175,9 +175,10 @@ class SimulatorRunner(FLComponent):
                 return False
 
             if self.args.gpu:
-                gpus, success = split_gpus(self.args.gpu)
-                if not success:
-                    self.logger.error("GPUs group list in wrong format. Please use format like: [0,1],[1,2] ...")
+                try:
+                    gpus = split_gpus(self.args.gpu)
+                except ValueError as e:
+                    self.logger.error(f"GPUs group list option in wrong format. Error: {e}")
                     return False
 
                 host_gpus = [str(x) for x in (get_host_gpu_ids())]
@@ -373,7 +374,7 @@ class SimulatorRunner(FLComponent):
                 #     client.start_heartbeat(interval=2)
 
                 if self.args.gpu:
-                    gpus, _ = split_gpus(self.args.gpu)
+                    gpus = split_gpus(self.args.gpu)
                     split_clients = self.split_clients(self.federated_clients, gpus)
                 else:
                     gpus = [None]
