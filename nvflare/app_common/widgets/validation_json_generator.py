@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,7 +15,7 @@
 import json
 import os.path
 
-from nvflare.apis.dxo import DataKind, from_shareable
+from nvflare.apis.dxo import DataKind, from_shareable, get_leaf_dxos
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.app_constant import AppConstants
@@ -64,11 +64,24 @@ class ValidationJsonGenerator(Widget):
                         if data_client not in self._val_results:
                             self._val_results[data_client] = {}
                         self._val_results[data_client][model_owner] = dxo.data
+                    elif dxo.data_kind == DataKind.COLLECTION:
+                        # The DXO could contain multiple sub-DXOs (e.g. received from a T2 system)
+                        leaf_dxos, errors = get_leaf_dxos(dxo, data_client)
+                        if errors:
+                            for err in errors:
+                                self.log_error(fl_ctx, f"Bad result from {data_client}: {err}")
+                        for _sub_data_client, _dxo in leaf_dxos.items():
+                            _dxo.validate()
+                            if _sub_data_client not in self._val_results:
+                                self._val_results[_sub_data_client] = {}
+                            self._val_results[_sub_data_client][model_owner] = _dxo.data
                     else:
                         self.log_error(
-                            fl_ctx, f"Expected dxo of kind METRICS but got {dxo.data_kind} instead.", fire_event=False
+                            fl_ctx,
+                            f"Expected dxo of kind METRICS or COLLECTION but got {dxo.data_kind} instead.",
+                            fire_event=False,
                         )
-                except:
+                except Exception:
                     self.log_exception(fl_ctx, "Exception in handling validation result.", fire_event=False)
             else:
                 self.log_error(fl_ctx, "Validation result not found.", fire_event=False)

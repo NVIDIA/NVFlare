@@ -90,7 +90,8 @@ class JobRunner(FLComponent):
         elif event_type == EventType.SYSTEM_END:
             self.stop()
 
-    def _make_deploy_message(self, job: Job, app_data, app_name):
+    @staticmethod
+    def _make_deploy_message(job: Job, app_data, app_name):
         message = Message(topic=TrainingTopic.DEPLOY, body=app_data)
         message.set_header(RequestHeader.REQUIRE_AUTHZ, "true")
 
@@ -143,18 +144,23 @@ class JobRunner(FLComponent):
             client_sites = []
             for p in participants:
                 if p == "server":
-                    app_deployer = AppDeployer(
-                        app_name=app_name, workspace=workspace, job_id=job.job_id, job_meta=job.meta, app_data=app_data
+                    app_deployer = AppDeployer()
+                    err = app_deployer.deploy(
+                        app_name=app_name,
+                        workspace=workspace,
+                        job_id=job.job_id,
+                        job_meta=job.meta,
+                        app_data=app_data,
+                        fl_ctx=fl_ctx,
                     )
-
-                    err = app_deployer.deploy()
                     if err:
                         deploy_detail.append(f"server: {err}")
                         raise RuntimeError(f"Failed to deploy app '{app_name}': {err}")
 
                     kv_list = parse_vars(engine.args.set)
                     secure_train = kv_list.get("secure_train", True)
-                    if secure_train:
+                    from_hub_site = job.meta.get(JobMetaKey.FROM_HUB_SITE.value)
+                    if secure_train and not from_hub_site:
                         app_path = workspace.get_app_dir(job.job_id)
                         if not verify_folder_signature(app_path):
                             err = "job signature verification failed"
@@ -468,7 +474,8 @@ class JobRunner(FLComponent):
         else:
             self.log_error(fl_ctx, "There's no Job Manager defined. Won't be able to run the jobs.")
 
-    def _check_job_status(self, job_manager, job_id, job_run_status, fl_ctx: FLContext):
+    @staticmethod
+    def _check_job_status(job_manager, job_id, job_run_status, fl_ctx: FLContext):
         reload_job = job_manager.get_job(job_id, fl_ctx)
         return reload_job.meta.get(JobMetaKey.STATUS) != job_run_status
 
@@ -524,7 +531,8 @@ class JobRunner(FLComponent):
                     f"Failed to update the job: {job.job_id} to {RunStatus.ABANDONED}: {secure_format_exception(e)}.",
                 )
 
-    def _get_all_running_jobs(self, job_manager, fl_ctx):
+    @staticmethod
+    def _get_all_running_jobs(job_manager, fl_ctx):
         all_jobs = []
         dispatched_jobs = job_manager.get_jobs_by_status(RunStatus.DISPATCHED, fl_ctx)
         all_jobs.extend(dispatched_jobs)

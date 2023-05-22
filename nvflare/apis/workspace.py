@@ -108,6 +108,12 @@ class Workspace:
         # this is to get the full path to "fed_server.json"
         return self.get_file_path_in_startup(WorkspaceConstants.SERVER_STARTUP_CONFIG)
 
+    def get_server_app_config_file_path(self, job_id):
+        return os.path.join(self.get_app_config_dir(job_id), WorkspaceConstants.SERVER_APP_CONFIG)
+
+    def get_client_app_config_file_path(self, job_id):
+        return os.path.join(self.get_app_config_dir(job_id), WorkspaceConstants.CLIENT_APP_CONFIG)
+
     def get_client_startup_file_path(self):
         # this is to get the full path to "fed_client.json"
         return self.get_file_path_in_startup(WorkspaceConstants.CLIENT_STARTUP_CONFIG)

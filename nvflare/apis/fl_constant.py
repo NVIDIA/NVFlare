@@ -39,8 +39,8 @@ class ReturnCode(object):
     VALIDATE_TYPE_UNKNOWN = "VALIDATE_TYPE_UNKNOWN"
     EMPTY_RESULT = "EMPTY_RESULT"
     UNSAFE_JOB = "UNSAFE_JOB"
-
     SERVER_NOT_READY = "SERVER_NOT_READY"
+    SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"
 
 
 class MachineStatus(Enum):
@@ -301,6 +301,15 @@ class SystemComponents(object):
     CANCEL_RESOURCE_PROCESSOR = "cancel_resource_processor"
     RESOURCE_MANAGER = "resource_manager"
     RESOURCE_CONSUMER = "resource_consumer"
+    APP_DEPLOYER = "app_deployer"
+    DEFAULT_APP_DEPLOYER = "default_app_deployer"
+    JOB_META_VALIDATOR = "job_meta_validator"
+
+
+class JobConstants:
+    SERVER_JOB_CONFIG = "config_fed_server.json"
+    CLIENT_JOB_CONFIG = "config_fed_client.json"
+    META_FILE = "meta.json"
 
 
 class WorkspaceConstants:
@@ -326,6 +335,10 @@ class WorkspaceConstants:
 
     SERVER_STARTUP_CONFIG = "fed_server.json"
     CLIENT_STARTUP_CONFIG = "fed_client.json"
+
+    SERVER_APP_CONFIG = JobConstants.SERVER_JOB_CONFIG
+    CLIENT_APP_CONFIG = JobConstants.CLIENT_JOB_CONFIG
+
     JOB_META_FILE = "meta.json"
 
     AUTHORIZATION_CONFIG = "authorization.json"
@@ -336,12 +349,6 @@ class WorkspaceConstants:
     SAMPLE_PRIVACY_CONFIG = PRIVACY_CONFIG + ".sample"
 
     ADMIN_STARTUP_CONFIG = "fed_admin.json"
-
-
-class JobConstants:
-    SERVER_JOB_CONFIG = "config_fed_server.json"
-    CLIENT_JOB_CONFIG = "config_fed_client.json"
-    META_FILE = "meta.json"
 
 
 class SiteType:

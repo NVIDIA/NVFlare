@@ -154,6 +154,7 @@ class CyclicController(Controller):
         # prepare task shareable data for next client
         task.data = self.shareable_generator.learnable_to_shareable(self._last_learnable, fl_ctx)
         task.data.set_header(AppConstants.CURRENT_ROUND, self._current_round)
+        task.data.add_cookie(AppConstants.CONTRIBUTION_ROUND, self._current_round)
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         try:
@@ -173,6 +174,7 @@ class CyclicController(Controller):
 
                 shareable = self.shareable_generator.learnable_to_shareable(self._last_learnable, fl_ctx)
                 shareable.set_header(AppConstants.CURRENT_ROUND, self._current_round)
+                shareable.add_cookie(AppConstants.CONTRIBUTION_ROUND, self._current_round)
 
                 task = Task(
                     name=self.task_name,
@@ -203,7 +205,7 @@ class CyclicController(Controller):
                     # Call the self._engine to persist the snapshot of all the FLComponents
                     self._engine.persist_components(fl_ctx, completed=False)
 
-                self.log_debug(fl_ctx, "Ending current round={}.".format(self._current_round))
+                self.log_info(fl_ctx, "Ending current round={}.".format(self._current_round))
 
             self.log_debug(fl_ctx, "Cyclic ended.")
         except BaseException as e:
