@@ -19,7 +19,7 @@ import random
 import threading
 import time
 import uuid
-from typing import Dict, List, Tuple, Union
+from typing import Callable, Dict, List, Optional, Tuple, Union
 from urllib.parse import urlparse
 
 from nvflare.fuel.f3.cellnet.connector_manager import ConnectorManager
@@ -37,6 +37,7 @@ from nvflare.fuel.f3.cellnet.defs import (
     ServiceUnavailable,
 )
 from nvflare.fuel.f3.cellnet.fqcn import FQCN, FqcnInfo, same_family
+from nvflare.fuel.f3.cellnet.stream_api import ObjectStream, ObjectStreamFuture, Stream, StreamFuture
 from nvflare.fuel.f3.cellnet.utils import decode_payload, encode_payload, format_log_message, make_reply, new_message
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.communicator import Communicator, MessageReceiver
@@ -625,7 +626,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                     try:
                         self.communicator.remove_connector(connector.handle)
                         self.communicator.remove_endpoint(cell_name)
-                    except:
+                    except Exception:
                         self.log_error(
                             msg=None, log_text=f"error removing adhoc connector to {cell_name}", log_except=True
                         )
@@ -968,7 +969,7 @@ class Cell(MessageReceiver, EndpointMonitor):
             if not ep:
                 return ReturnCode.TARGET_UNREACHABLE, None
             return "", ep
-        except:
+        except Exception:
             self.log_error(msg=for_msg, log_text=f"Error when finding {target_fqcn}", log_except=True)
             return ReturnCode.TARGET_UNREACHABLE, None
 
@@ -1570,7 +1571,6 @@ class Cell(MessageReceiver, EndpointMonitor):
         msg_type = message.get_header(MessageHeaderKey.MSG_TYPE, "?")
         dest = message.get_header(MessageHeaderKey.DESTINATION, "")
         origin = message.get_header(MessageHeaderKey.ORIGIN, "")
-        to_cell = message.get_header(MessageHeaderKey.TO_CELL, "")
         type_tag = msg_type
         if dest and origin:
             if dest != self.my_info.fqcn and origin != self.my_info.fqcn:
@@ -1972,3 +1972,137 @@ class Cell(MessageReceiver, EndpointMonitor):
             if candidate_info.is_root and not candidate_info.is_on_server:
                 return self.SUB_TYPE_CLIENT
         return self.SUB_TYPE_NONE
+
+    # Stream API
+
+    def send_stream(self, channel: str, topic: str, target: str, stream: Stream) -> StreamFuture:
+        """
+        Send a byte-stream over a channel/topic asynchronously. The streaming is performed in a different thread.
+        The streamer will read from stream and send the data in chunks till the stream reaches EOF.
+
+        If error is not None, the streaming failed with the exception
+
+        Args:
+            channel: channel for the stream
+            topic: topic for the stream
+            target: destination cell FQCN
+            stream: the stream to send
+
+        Returns: StreamFuture that can be used to check status/progress, or register callbacks
+
+        """
+        pass
+
+    def register_stream_cb(self, channel: str, topic: str, stream_cb: Callable, resume_cb: Callable, *args, **kwargs):
+        """
+        Register a callback for reading stream. The stream_cb must have the following signature,
+            stream_cb(stream: Stream, *args, **kwargs)
+
+        The resume_cb returns the offset to resume from:
+            resume_cb(stream_id: str, *args, **kwargs) -> int
+
+        Args:
+            channel: the channel of the request
+            topic: topic of the request
+            stream_cb: The callback to handle the stream. This CB is invoked in a dedicated thread, and it can block
+            resume_cb: This callback will be invoked to negotiate offset to resume a failed stream. If None,
+                the stream is not resumable
+            *args: positional args to be passed to the callbacks
+            **kwargs: keyword args to be passed to the callbacks
+
+        """
+        pass
+
+    def send_blob(self, channel: str, topic: str, target: str, blob: bytes) -> StreamFuture:
+        """
+        Send a BLOB (Binary Large Object) to the target. The blob must fit in memory on the receiving end.
+
+        Args:
+            channel: channel for the message
+            topic: topic of the message
+            target: destination cell IDs
+            blob: the binary bytes
+
+        Returns: StreamFuture that can be used to check status/progress
+
+        """
+        pass
+
+    def register_blob_cb(self, channel: str, topic: str, blob_cb, *args, **kwargs):
+        """
+        Register a callback for receiving the blob. This callback is invoked when the whole
+        blob is received. If streaming fails, the streamer will try again. The failed streaming
+        is ignored.
+
+        The callback must have the following signature,
+            blob_cb(stream_id: str, blob: Message, *args, **kwargs)
+
+        Args:
+            channel: the channel of the request
+            topic: topic of the request
+            blob_cb: The callback to handle the stream
+        """
+        pass
+
+    def send_file(
+        self, channel: str, topic: str, target: str, path: str, headers: Optional[dict] = None
+    ) -> StreamFuture:
+        """
+        Send a file to target using stream.
+
+        Args:
+            channel: channel for the message
+            topic: topic for the message
+            target: destination cell FQCN
+            path: the full path of the file to be sent
+            headers: Optional headers to be sent
+
+        Returns: StreamFuture that can be used to check status/progress
+
+        """
+        pass
+
+    def register_file_cb(self, channel: str, topic: str, file_done_cb, path_cb, *args, **kwargs):
+        """
+        Register a callback for reading stream. The callback must have the following signature,
+            file_done_cb(stream_id: str, path: str, headers: Optional[dict], *args, **kwargs)
+            path_cb(stream_id: str, filename: str, headers: Optional[dict], *args, **kwargs) -> str
+
+        Args:
+            channel: the channel of the request
+            topic: topic of the request
+            file_done_cb: This CB is called when file transfer is done
+            path_cb: This CB is invoked to negotiate a full path for the file
+        """
+        pass
+
+    def send_objects(self, channel: str, topic: str, target: str, objects: ObjectStream) -> ObjectStreamFuture:
+        """
+        Send a list of objects to the destination. Each object is sent as BLOB, so it must fit in memory
+
+        Args:
+            channel: channel for the message
+            topic: topic of the message
+            target: destination cell IDs
+            objects: An iterator that provides the next object
+
+        Returns: ObjectStreamFuture that can be used to check status/progress, or register callbacks
+
+        """
+        pass
+
+    def register_objects_cb(self, channel: str, topic: str, objects_cb, resume_cb=None, *args, **kwargs):
+        """
+        Register a callback for receiving the object. This callback is invoked when each object
+        is received. The index starts from 0. The callback must have the following signature,
+            objects_cb(stream_id: str, index: int, object: Any, headers: Optional[dict], *args, **kwargs)
+            resume_cb(stream_id: str, *args, **kwargs) -> int
+
+        Args:
+            channel: the channel of the request
+            topic: topic of the request
+            objects_cb: The callback to handle the object
+            resume_cb: The callback that provides the index of object to restart from. If none,
+                the object stream is not resumable
+        """
+        pass
