@@ -123,7 +123,7 @@ class PTFileModelPersistor(ModelPersistor):
                 try:
                     with open(env_config_file_name) as file:
                         env = json.load(file)
-                except BaseException:
+                except Exception:
                     self.system_panic(
                         reason="error opening env config file {}".format(env_config_file_name), fl_ctx=fl_ctx
                     )
@@ -197,7 +197,7 @@ class PTFileModelPersistor(ModelPersistor):
                 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
                 data = torch.load(src_file_name, map_location=device)
                 # "checkpoint may contain 'model', 'optimizer', 'lr_scheduler', etc. or only contain model dict directly."
-            except BaseException:
+            except Exception:
                 self.log_exception(fl_ctx, "error loading checkpoint from {}".format(src_file_name))
                 self.system_panic(reason="cannot load model checkpoint", fl_ctx=fl_ctx)
                 return None
@@ -206,7 +206,7 @@ class PTFileModelPersistor(ModelPersistor):
             # note that, if set "determinism" in the config, the init model weights will always be the same
             try:
                 data = self.model.state_dict() if self.model is not None else OrderedDict()
-            except BaseException:
+            except Exception:
                 self.log_exception(fl_ctx, "error getting state_dict from model object")
                 self.system_panic(reason="cannot create state_dict from model object", fl_ctx=fl_ctx)
                 return None
@@ -241,7 +241,7 @@ class PTFileModelPersistor(ModelPersistor):
             data = torch.load(location, map_location=device)
             persistence_manager = PTModelPersistenceFormatManager(data, default_train_conf=self.default_train_conf)
             return persistence_manager.to_model_learnable(self.exclude_vars)
-        except BaseException:
+        except Exception:
             self.log_exception(fl_ctx, "error loading checkpoint from {}".format(model_file))
             return {}
 

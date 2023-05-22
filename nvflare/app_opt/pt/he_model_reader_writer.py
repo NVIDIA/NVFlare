@@ -64,5 +64,5 @@ class HEPTModelReaderWriter(PTModelReaderWriter):
             self.logger.debug(f"updated_local_model: {len(updated_local_model)}")
             net.load_state_dict(updated_local_model)
             return assign_ops
-        except BaseException as e:
+        except Exception as e:
             raise RuntimeError(f"{self._name} apply_model Exception: {secure_format_exception(e)}")

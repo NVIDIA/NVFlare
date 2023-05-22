@@ -105,7 +105,7 @@ class FLServerStarterConfiger(JsonConfigurator):
                     server[SSLConstants.ROOT_CERT] = self.workspace.get_file_path_in_startup(
                         server[SSLConstants.ROOT_CERT]
                     )
-        except BaseException:
+        except Exception:
             raise ValueError(f"Server config error: '{self.server_config_file_names}'")
 
     def build_component(self, config_dict):
@@ -299,7 +299,7 @@ class FLClientStarterConfiger(JsonConfigurator):
                 client[SSLConstants.CERT] = self.workspace.get_file_path_in_startup(client[SSLConstants.CERT])
             if client.get(SSLConstants.ROOT_CERT):
                 client[SSLConstants.ROOT_CERT] = self.workspace.get_file_path_in_startup(client[SSLConstants.ROOT_CERT])
-        except BaseException:
+        except Exception:
             raise ValueError(f"Client config error: '{self.client_config_file_names}'")
 
     def finalize_config(self, config_ctx: ConfigContext):

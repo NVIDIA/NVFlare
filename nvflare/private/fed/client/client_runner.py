@@ -195,7 +195,7 @@ class ClientRunner(FLComponent):
             for f in filter_list:
                 try:
                     task_data = f.process(task_data, fl_ctx)
-                except BaseException:
+                except Exception:
                     self.log_exception(fl_ctx, "processing error in Task Data Filter {}".format(type(f)))
                     return self._reply_and_audit(
                         reply=make_reply(ReturnCode.TASK_DATA_FILTER_ERROR),
@@ -278,7 +278,7 @@ class ClientRunner(FLComponent):
                 fl_ctx=fl_ctx,
                 msg=f"submit result: {ReturnCode.EXECUTION_RESULT_ERROR}",
             )
-        except BaseException:
+        except Exception:
             self.log_exception(fl_ctx, "processing error in task executor {}".format(type(executor)))
             return self._reply_and_audit(
                 reply=make_reply(ReturnCode.EXECUTION_EXCEPTION),
@@ -307,7 +307,7 @@ class ClientRunner(FLComponent):
             for f in filter_list:
                 try:
                     reply = f.process(reply, fl_ctx)
-                except BaseException:
+                except Exception:
                     self.log_exception(fl_ctx, "processing error in Task Result Filter {}".format(type(f)))
                     return self._reply_and_audit(
                         reply=make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR),
@@ -425,7 +425,7 @@ class ClientRunner(FLComponent):
 
         try:
             self._try_run()
-        except BaseException as e:
+        except Exception as e:
             with self.engine.new_context() as fl_ctx:
                 self.log_exception(fl_ctx, f"processing error in RUN execution: {secure_format_exception(e)}")
         finally:

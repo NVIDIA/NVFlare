@@ -161,7 +161,7 @@ class FedEventRunner(Widget):
                 event_type = event_to_post.get_header(FedEventHeader.EVENT_TYPE)
                 try:
                     self.engine.fire_event(event_type=event_type, fl_ctx=fl_ctx)
-                except BaseException as e:
+                except Exception as e:
                     if self.asked_to_stop:
                         self.log_warning(fl_ctx, f"event {event_to_post} fired unsuccessfully during END_RUN")
                     else:
