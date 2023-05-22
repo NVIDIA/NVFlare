@@ -119,6 +119,7 @@ def gen_server(key, first_server=True):
         "fed_learn_port": fl_port,
         "config_folder": "config",
         "ha_mode": "true" if project.ha_mode else "false",
+        "docker_image": project.app_location.split(" ")[-1] if project.app_location else "nvflare/nvflare",
         "org_name": "",
     }
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -127,6 +128,12 @@ def gen_server(key, first_server=True):
         os.mkdir(server_dir)
         os.mkdir(dest_dir)
         _write(os.path.join(dest_dir, "fed_server.json"), json.dumps(config, indent=2), "t")
+        _write(
+            os.path.join(dest_dir, "docker.sh"),
+            utils.sh_replace(template["docker_svr_sh"], replacement_dict),
+            "t",
+            exe=True,
+        )
         _write(
             os.path.join(dest_dir, "start.sh"),
             utils.sh_replace(template["start_svr_sh"], replacement_dict),
@@ -151,13 +158,13 @@ def gen_server(key, first_server=True):
         if not project.ha_mode:
             _write(
                 os.path.join(dest_dir, get_csp_start_script_name("azure")),
-                utils.sh_replace(get_csp_template("azure", "svr", template), {"server_name": entity.name}),
+                utils.sh_replace(get_csp_template("azure", "svr", template), {"server_name": entity.name, "ORG": ""}),
                 "t",
                 exe=True,
             )
             _write(
                 os.path.join(dest_dir, get_csp_start_script_name("aws")),
-                utils.sh_replace(get_csp_template("aws", "svr", template), {"server_name": entity.name}),
+                utils.sh_replace(get_csp_template("aws", "svr", template), {"server_name": entity.name, "ORG": ""}),
                 "t",
                 exe=True,
             )
@@ -217,7 +224,7 @@ def gen_client(key, id):
     replacement_dict = {
         "client_name": entity.name,
         "config_folder": "config",
-        "docker_image": "",
+        "docker_image": project.app_location.split(" ")[-1] if project.app_location else "nvflare/nvflare",
         "org_name": entity.org,
     }
     if project.ha_mode:
@@ -241,6 +248,12 @@ def gen_client(key, id):
 
         _write(os.path.join(dest_dir, "fed_client.json"), json.dumps(config, indent=2), "t")
         _write(
+            os.path.join(dest_dir, "docker.sh"),
+            utils.sh_replace(template["docker_cln_sh"], replacement_dict),
+            "t",
+            exe=True,
+        )
+        _write(
             os.path.join(dest_dir, "start.sh"),
             template["start_cln_sh"],
             "t",
@@ -263,13 +276,13 @@ def gen_client(key, id):
         _write(os.path.join(dest_dir, "rootCA.pem"), project.root_cert, "b", exe=False)
         _write(
             os.path.join(dest_dir, get_csp_start_script_name("azure")),
-            get_csp_template("azure", "cln", template),
+            utils.sh_replace(get_csp_template("azure", "cln", template), {"SITE": entity.name, "ORG": entity.org}),
             "t",
             exe=True,
         )
         _write(
             os.path.join(dest_dir, get_csp_start_script_name("aws")),
-            get_csp_template("aws", "cln", template),
+            utils.sh_replace(get_csp_template("aws", "cln", template), {"SITE": entity.name, "ORG": entity.org}),
             "t",
             exe=True,
         )

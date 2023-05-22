@@ -16,7 +16,6 @@ from nvflare.apis.job_def import is_valid_job_id
 
 
 class TestJobDef:
-
     def test_is_valid_job_id(self):
         assert not is_valid_job_id("site-1")
         assert is_valid_job_id("c2564481-536a-4548-8dfa-cf183a3652a1")
