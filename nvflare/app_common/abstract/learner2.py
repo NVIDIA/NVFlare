@@ -17,6 +17,7 @@ from typing import Union
 
 from nvflare.apis.dxo import DXO
 from nvflare.apis.fl_component import FLComponent
+from nvflare.apis.fl_context import FLContext
 
 
 class Learner2(FLComponent):
@@ -39,6 +40,17 @@ class Learner2(FLComponent):
 
     def is_aborted(self) -> bool:
         return self.abort_signal and self.abort_signal.triggered
+
+    def get_shareable_header(self, key: str, default=None):
+        if not self.shareable:
+            return default
+        return self.shareable.get_header(key, default)
+
+    def get_context_prop(self, key: str, default=None):
+        if not self.fl_ctx:
+            return default
+        assert isinstance(self.fl_ctx, FLContext)
+        return self.fl_ctx.get_prop(key, default)
 
     def debug(self, msg: str):
         self.log_debug(self.fl_ctx, msg)
@@ -105,11 +117,12 @@ class Learner2(FLComponent):
         """
         pass
 
-    def validate(self, dxo: DXO, model_owner: str) -> Union[str, DXO]:
+    def validate(self, dxo: DXO, validate_type: str, model_owner: str) -> Union[str, DXO]:
         """Validate the model with the specified weights in dxo
 
         Args:
             dxo: the DXO object that contains model weights
+            validate_type: type of validation
             model_owner: the owner of the model weights
 
         Returns: validation metrics in DXO if successful; or return code if failed.

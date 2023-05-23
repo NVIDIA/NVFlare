@@ -30,7 +30,7 @@ from torchvision import datasets, transforms
 from nvflare.apis.dxo import DXO, DataKind, MetaKey
 from nvflare.apis.fl_constant import ReturnCode
 from nvflare.app_common.abstract.learner2 import Learner2
-from nvflare.app_common.app_constant import ModelName
+from nvflare.app_common.app_constant import ModelName, ValidateType
 from nvflare.app_opt.pt.fedproxloss import PTFedProxLoss
 
 
@@ -367,12 +367,15 @@ class CIFAR10Learner(Learner2):  # also supports CIFAR10ScaffoldLearner
                 self.writer.add_scalar(tb_id, metric, self.epoch_global)
         return metric
 
-    def _prepare_validate(self, dxo: DXO, model_owner: str):
+    def validate(self, dxo: DXO, validate_type: str, model_owner: str) -> Union[str, DXO]:
         self._create_datasets()
+
+        # Check abort signal
+        if self.is_aborted():
+            return ReturnCode.TASK_ABORTED
 
         # get validation information
         self.info(f"Client identity: {self.site_name}")
-        self.info(f"Evaluating model from {model_owner} on {self.site_name}")
 
         # update local model weights with received weights
         global_weights = dxo.data
@@ -394,34 +397,30 @@ class CIFAR10Learner(Learner2):  # also supports CIFAR10ScaffoldLearner
         if n_loaded == 0:
             raise ValueError(f"No weights loaded for validation! Received weight dict is {global_weights}")
 
-    def validate_before_train(self, dxo: DXO) -> Union[str, DXO]:
-        model_owner = "global_model"
-        self._prepare_validate(dxo, model_owner)
+        if validate_type == ValidateType.BEFORE_TRAIN_VALIDATE:
+            # perform valid before local train
+            global_acc = self.local_valid(self.valid_loader, tb_id="val_acc_global_model")
+            if self.is_aborted():
+                return ReturnCode.TASK_ABORTED
+            self.info(f"val_acc_global_model ({model_owner}): {global_acc}")
 
-        global_acc = self.local_valid(self.valid_loader, tb_id="val_acc_global_model")
-        if self.is_aborted():
-            return ReturnCode.TASK_ABORTED
+            return DXO(data_kind=DataKind.METRICS, data={MetaKey.INITIAL_METRICS: global_acc}, meta={})
 
-        self.info(f"val_acc_global_model ({model_owner}): {global_acc}")
-        return DXO(data_kind=DataKind.METRICS, data={MetaKey.INITIAL_METRICS: global_acc}, meta={})
+        elif validate_type == ValidateType.MODEL_VALIDATE:
+            # perform valid
+            train_acc = self.local_valid(self.train_loader)
+            if self.is_aborted():
+                return ReturnCode.TASK_ABORTED
+            self.info(f"training acc ({model_owner}): {train_acc}")
 
-    def validate(self, dxo: DXO, model_owner: str) -> Union[str, DXO]:
-        self._prepare_validate(dxo, model_owner)
+            val_acc = self.local_valid(self.valid_loader)
+            if self.is_aborted():
+                return ReturnCode.TASK_ABORTED
+            self.info(f"validation acc ({model_owner}): {val_acc}")
+            self.info("Evaluation finished. Returning result")
 
-        # Check abort signal
-        if self.is_aborted():
-            return ReturnCode.TASK_ABORTED
+            val_results = {"train_accuracy": train_acc, "val_accuracy": val_acc}
+            return DXO(data_kind=DataKind.METRICS, data=val_results)
 
-        # perform valid
-        train_acc = self.local_valid(self.train_loader)
-        if self.is_aborted():
-            return ReturnCode.TASK_ABORTED
-        self.info(f"training acc ({model_owner}): {train_acc}")
-
-        val_acc = self.local_valid(self.valid_loader)
-        if self.is_aborted():
-            return ReturnCode.TASK_ABORTED
-        self.info(f"validation acc ({model_owner}): {val_acc}")
-        self.info("Evaluation finished. Returning result")
-        val_results = {"train_accuracy": train_acc, "val_accuracy": val_acc}
-        return DXO(data_kind=DataKind.METRICS, data=val_results)
+        else:
+            return ReturnCode.VALIDATE_TYPE_UNKNOWN

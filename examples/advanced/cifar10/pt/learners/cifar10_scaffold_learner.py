@@ -15,13 +15,12 @@
 import copy
 
 import torch
+from typing import Union
+
 from pt.learners.cifar10_learner import CIFAR10Learner
 
-from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
+from nvflare.apis.dxo import DXO, DataKind, MetaKey
 from nvflare.apis.fl_constant import ReturnCode
-from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable, make_reply
-from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AlgorithmConstants, AppConstants
 from nvflare.app_opt.pt.scaffold import PTScaffoldHelper, get_lr_values
 
@@ -72,24 +71,24 @@ class CIFAR10ScaffoldLearner(CIFAR10Learner):
         )
         self.scaffold_helper = PTScaffoldHelper()
 
-    def initialize(self, parts: dict, fl_ctx: FLContext):
+    def initialize(self, parts: dict):
         # Initialize super class and SCAFFOLD
-        CIFAR10Learner.initialize(self, parts=parts, fl_ctx=fl_ctx)
+        CIFAR10Learner.initialize(self, parts=parts)
         self.scaffold_helper.init(model=self.model)
 
-    def local_train(self, fl_ctx, train_loader, model_global, abort_signal: Signal, val_freq: int = 0):
+    def local_train(self, train_loader, model_global, val_freq: int = 0):
         # local_train with SCAFFOLD steps
         c_global_para, c_local_para = self.scaffold_helper.get_params()
         for epoch in range(self.aggregation_epochs):
-            if abort_signal.triggered:
+            if self.is_aborted():
                 return
             self.model.train()
             epoch_len = len(train_loader)
             self.epoch_global = self.epoch_of_start_time + epoch
-            self.log_info(fl_ctx, f"Local epoch {self.client_id}: {epoch + 1}/{self.aggregation_epochs} (lr={self.lr})")
+            self.info(f"Local epoch {self.client_id}: {epoch + 1}/{self.aggregation_epochs} (lr={self.lr})")
 
             for i, (inputs, labels) in enumerate(train_loader):
-                if abort_signal.triggered:
+                if self.is_aborted():
                     return
                 inputs, labels = inputs.to(self.device), labels.to(self.device)
                 # zero the parameter gradients
@@ -116,7 +115,7 @@ class CIFAR10ScaffoldLearner(CIFAR10Learner):
                 self.writer.add_scalar("train_loss", loss.item(), current_step)
 
             if val_freq > 0 and epoch % val_freq == 0:
-                acc = self.local_valid(self.valid_loader, abort_signal, tb_id="val_acc_local_model", fl_ctx=fl_ctx)
+                acc = self.local_valid(self.valid_loader, tb_id="val_acc_local_model")
                 if acc > self.best_acc:
                     self.save_model(is_best=True)
 
@@ -129,35 +128,31 @@ class CIFAR10ScaffoldLearner(CIFAR10Learner):
             model_global=model_global,
         )
 
-    def train(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
+    def train(self, dxo: DXO) -> Union[str, DXO]:
         # return DXO with extra control differences for SCAFFOLD
-        dxo_collection = from_shareable(shareable)
+        dxo_collection = dxo
         if dxo_collection.data_kind != DataKind.COLLECTION:
-            self.log_error(
-                fl_ctx,
+            self.error(
                 f"SCAFFOLD learner expected shareable to contain a collection of two DXOs "
                 f"but got data kind {dxo_collection.data_kind}.",
             )
-            return make_reply(ReturnCode.ERROR)
+            return ReturnCode.ERROR
         dxo_global_weights = dxo_collection.data.get(AppConstants.MODEL_WEIGHTS)
         dxo_global_ctrl_weights = dxo_collection.data.get(AlgorithmConstants.SCAFFOLD_CTRL_GLOBAL)
         if dxo_global_ctrl_weights is None:
-            self.log_error(fl_ctx, "DXO collection doesn't contain the SCAFFOLD controls!")
-            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+            self.error("DXO collection doesn't contain the SCAFFOLD controls!")
+            return ReturnCode.EXECUTION_EXCEPTION
         # convert to tensor and load into c_global model
         global_ctrl_weights = dxo_global_ctrl_weights.data
         for k in global_ctrl_weights.keys():
             global_ctrl_weights[k] = torch.as_tensor(global_ctrl_weights[k])
         self.scaffold_helper.load_global_controls(weights=global_ctrl_weights)
 
-        # modify shareable to only contain global weights
-        shareable = dxo_global_weights.update_shareable(shareable)  # TODO: add set_dxo() method to Shareable
-
         # local training
-        result_shareable = super().train(shareable, fl_ctx, abort_signal)
-        if result_shareable.get_return_code() == ReturnCode.OK:
+        train_result = super().train(dxo_global_weights)
+        if isinstance(train_result, DXO):
             # get DXO with weight updates from local training
-            dxo_weights_diff = from_shareable(result_shareable)
+            dxo_weights_diff = train_result
 
             # Create a DXO collection with weights and scaffold controls
             dxo_weigths_diff_ctrl = DXO(data_kind=DataKind.WEIGHT_DIFF, data=self.scaffold_helper.get_delta_controls())
@@ -170,20 +165,14 @@ class CIFAR10ScaffoldLearner(CIFAR10Learner):
                 AppConstants.MODEL_WEIGHTS: dxo_weights_diff,
                 AlgorithmConstants.SCAFFOLD_CTRL_DIFF: dxo_weigths_diff_ctrl,
             }
-            dxo = DXO(data_kind=DataKind.COLLECTION, data=collection_data)
-
-            return dxo.to_shareable()
+            return DXO(data_kind=DataKind.COLLECTION, data=collection_data)
         else:
-            return result_shareable
+            return train_result  # this is error code
 
-    def validate(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
-        dxo = from_shareable(shareable)
-
+    def validate(self, dxo: DXO, validate_type: str, model_owner: str) -> Union[str, DXO]:
         # If collection, extract only global weights to validate
         if dxo.data_kind == DataKind.COLLECTION:
             # create a new shareable with only model weights
-            shareable = copy.deepcopy(shareable)  # TODO: Is this the best way?
-            dxo_global_weights = dxo.data.get(AppConstants.MODEL_WEIGHTS)
-            shareable = dxo_global_weights.update_shareable(shareable)  # TODO: add set_dxo() method to Shareable
+            dxo = dxo.data.get(AppConstants.MODEL_WEIGHTS)
+        return super().validate(dxo, validate_type, model_owner)
 
-        return super().validate(shareable=shareable, fl_ctx=fl_ctx, abort_signal=abort_signal)

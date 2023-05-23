@@ -221,16 +221,16 @@ class LearnerExecutor(Executor):
             self.log_error(fl_ctx, "request does not contain DXO")
             return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
-        val_result = self.learner.validate_before_train(dxo)
+        val_result = self.learner.validate(dxo, ValidateType.BEFORE_TRAIN_VALIDATE, "")
         if isinstance(val_result, str):
             # this is an error code!
-            self.log_warning(fl_ctx, f"Learner {self.learner_name}: validate_before_train failed: {val_result}")
+            self.log_warning(fl_ctx, f"Learner {self.learner_name}: pretrain validate failed: {val_result}")
             val_result = None
 
         if val_result and not isinstance(val_result, DXO):
             self.log_warning(
                 fl_ctx,
-                f"Learner {self.learner_name}: bad result from validate_before_train: expect DXO but got {type(val_result)}",
+                f"Learner {self.learner_name}: pretrain validate: expect DXO but got {type(val_result)}",
             )
             val_result = None
 
@@ -280,25 +280,18 @@ class LearnerExecutor(Executor):
         else:
             model_owner = "global_model"  # evaluating global model during training
 
-        validate_type = shareable.get_header(AppConstants.VALIDATE_TYPE)
-        if validate_type == ValidateType.BEFORE_TRAIN_VALIDATE:
-            result = self.learner.validate_before_train(dxo)
-            method_name = "validate_before_train"
-        elif validate_type == ValidateType.MODEL_VALIDATE:
-            result = self.learner.validate(dxo, model_owner)
-            method_name = "validate"
-        else:
-            return make_reply(ReturnCode.VALIDATE_TYPE_UNKNOWN)
+        validate_type = shareable.get_header(AppConstants.VALIDATE_TYPE, "")
+        result = self.learner.validate(dxo, validate_type, model_owner)
 
         if isinstance(result, str):
-            self.log_error(fl_ctx, f"Learner {self.learner_name} failed to {method_name}: {result}")
+            self.log_error(fl_ctx, f"Learner {self.learner_name} failed to validate: {result}")
             return make_reply(result)
 
         if isinstance(result, DXO):
             return result.to_shareable()
         else:
             self.log_error(
-                fl_ctx, f"Learner {self.learner_name}: bad result from {method_name}: expect DXO but got {type(result)}"
+                fl_ctx, f"Learner {self.learner_name}: bad result from validate: expect DXO but got {type(result)}"
             )
             return make_reply(ReturnCode.EMPTY_RESULT)
 
