@@ -21,6 +21,7 @@ from zipfile import ZipFile
 
 from nvflare.apis.fl_constant import JobConstants
 from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME, JobMetaKey
+from nvflare.apis.job_meta_validator_spec import JobMetaValidatorSpec
 from nvflare.security.logging import secure_format_exception
 
 MAX_CLIENTS = 1000000
@@ -28,7 +29,7 @@ MAX_CLIENTS = 1000000
 logger = logging.getLogger(__name__)
 
 
-class JobMetaValidator:
+class JobMetaValidator(JobMetaValidatorSpec):
     """Job validator"""
 
     def validate(self, job_name: str, job_data: bytes) -> Tuple[bool, str, dict]:

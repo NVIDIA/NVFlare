@@ -37,6 +37,34 @@ class TaskCompletionStatus(Enum):
     CLIENT_DEAD = "client_dead"
 
 
+class TaskOperatorKey:
+
+    OP_ID = "op_id"
+    METHOD = "method"  # bcast, relay, etc.
+    NUM_ROUNDS = "num_rounds"
+    TARGETS = "targets"  # list of leaf nodes
+    DATA_FILTERS = "data_filters"
+    RESULT_FILTERS = "result_filters"
+    AGGREGATOR = "aggregator"  # only for bcast
+    SHAREABLE_GENERATOR = "shareable_gen"  # only for relay
+    PERSISTOR = "persistor"  # only for relay
+    TIMEOUT = "timeout"
+    TASK_ASSIGNMENT_TIMEOUT = "task_assign_timeout"  # for relay
+    MIN_TARGETS = "min_targets"
+    WAIT_TIME_AFTER_MIN_RESPS = "wait_time_after_min_received"
+
+
+class OperatorMethod:
+
+    BROADCAST = "bcast"
+    RELAY = "relay"
+
+
+class OperatorConfigKey:
+
+    OPERATORS = "operators"
+
+
 class Task(object):
     def __init__(
         self,
@@ -48,6 +76,7 @@ class Task(object):
         after_task_sent_cb=None,
         result_received_cb=None,
         task_done_cb=None,
+        operator=None,
     ):
         """Init the Task.
 
@@ -67,6 +96,7 @@ class Task(object):
                 It needs to follow the result_received_cb_signature.
             task_done_cb: If provided, this callback would be called when task is done.
                 It needs to follow the task_done_cb_signature.
+            operator: task operator that describes the operation of the task
 
         """
         if not isinstance(name, str):
@@ -75,8 +105,12 @@ class Task(object):
         if not isinstance(data, Shareable):
             raise TypeError("data must be an instance of Shareable, but got {}.".format(type(data)))
 
+        if operator and not isinstance(operator, dict):
+            raise TypeError(f"operator must be a dict but got {type(operator)}")
+
         self.name = name  # name of the task
         self.data = data  # task data to be sent to client(s)
+        self.operator = operator
         self.cb_lock = threading.Lock()
 
         if props is None:

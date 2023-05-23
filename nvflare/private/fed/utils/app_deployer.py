@@ -16,6 +16,8 @@ import json
 import os
 import shutil
 
+from nvflare.apis.app_deployer_spec import AppDeployerSpec
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.zip_utils import unzip_all_from_bytes
@@ -25,31 +27,26 @@ from nvflare.security.logging import secure_format_exception
 from .app_authz import AppAuthzService
 
 
-class AppDeployer(object):
-    def __init__(self, workspace: Workspace, job_id: str, job_meta: dict, app_name: str, app_data):
-        self.app_name = app_name
-        self.workspace = workspace
-        self.app_data = app_data
-        self.job_id = job_id
-        self.job_meta = job_meta
-
-    def deploy(self) -> str:
+class AppDeployer(AppDeployerSpec):
+    def deploy(
+        self, workspace: Workspace, job_id: str, job_meta: dict, app_name: str, app_data: bytes, fl_ctx: FLContext
+    ) -> str:
         """Deploys the app.
 
         Returns:
             error message if any
         """
-        privacy_scope = self.job_meta.get(JobMetaKey.SCOPE, "")
+        privacy_scope = job_meta.get(JobMetaKey.SCOPE, "")
 
         # check whether this scope is allowed
         if not PrivacyService.is_scope_allowed(privacy_scope):
             return f"privacy scope '{privacy_scope}' is not allowed"
 
         try:
-            run_dir = self.workspace.get_run_dir(self.job_id)
-            app_path = self.workspace.get_app_dir(self.job_id)
+            run_dir = workspace.get_run_dir(job_id)
+            app_path = workspace.get_app_dir(job_id)
             app_file = os.path.join(run_dir, "fl_app.txt")
-            job_meta_file = self.workspace.get_job_meta_path(self.job_id)
+            job_meta_file = workspace.get_job_meta_path(job_id)
 
             if os.path.exists(run_dir):
                 shutil.rmtree(run_dir)
@@ -57,17 +54,17 @@ class AppDeployer(object):
             if not os.path.exists(app_path):
                 os.makedirs(app_path)
 
-            unzip_all_from_bytes(self.app_data, app_path)
+            unzip_all_from_bytes(app_data, app_path)
 
             with open(app_file, "wt") as f:
-                f.write(f"{self.app_name}")
+                f.write(f"{app_name}")
 
             with open(job_meta_file, "w") as f:
-                json.dump(self.job_meta, f, indent=4)
+                json.dump(job_meta, f, indent=4)
 
-            submitter_name = self.job_meta.get(JobMetaKey.SUBMITTER_NAME, "")
-            submitter_org = self.job_meta.get(JobMetaKey.SUBMITTER_ORG, "")
-            submitter_role = self.job_meta.get(JobMetaKey.SUBMITTER_ROLE, "")
+            submitter_name = job_meta.get(JobMetaKey.SUBMITTER_NAME, "")
+            submitter_org = job_meta.get(JobMetaKey.SUBMITTER_ORG, "")
+            submitter_role = job_meta.get(JobMetaKey.SUBMITTER_ROLE, "")
 
             authorized, err = AppAuthzService.authorize(
                 app_path=app_path,
@@ -82,4 +79,4 @@ class AppDeployer(object):
                 return "not authorized"
 
         except BaseException as e:
-            raise Exception(f"exception {secure_format_exception(e)} when deploying app {self.app_name}")
+            raise Exception(f"exception {secure_format_exception(e)} when deploying app {app_name}")

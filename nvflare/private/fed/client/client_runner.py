@@ -169,6 +169,10 @@ class ClientRunner(FLComponent):
 
         executor = self.task_table.get(task.name)
         if not executor:
+            # try default
+            executor = self.task_table.get("*")
+
+        if not executor:
             self.log_error(fl_ctx, f"bad task assignment: no executor available for task {task.name}")
             return self._reply_and_audit(
                 reply=make_reply(ReturnCode.TASK_UNKNOWN),
