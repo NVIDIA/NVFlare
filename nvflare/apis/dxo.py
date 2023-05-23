@@ -189,3 +189,43 @@ def from_bytes(data: bytes) -> DXO:
         return x
     else:
         raise ValueError("Data bytes are from type {} and do not represent a valid DXO instance.".format(type(x)))
+
+
+def get_leaf_dxos(dxo: DXO, root_name: str = "") -> (dict, list):
+    """Traverse the specified dxo tree and return all leaf DXOs.
+    The input dxo is a simple DXO or a collection DXO as a dict of DXOs.
+
+    Args:
+        dxo: the DXO object to be traversed
+        root_name: the root name of the DXO
+
+    Returns: a dict of dxo_path => DXO object. The dxo path is the full path from the root to the leaf node,
+    concatenation of all node names, separated by dots.
+    A list of errors encountered during traversing.
+
+    """
+    result = {}
+    errors = []
+    _traverse(dxo, root_name, result, errors, {})
+    return result, errors
+
+
+def _traverse(dxo: DXO, name: str, result, errors, visited: dict):
+    obj_id = id(dxo)
+    if visited.get(obj_id):
+        print(f"dxo {name} already visited - ignore it")
+        return
+    visited[obj_id] = True
+
+    if not isinstance(dxo, DXO):
+        errors.append(f"dxo '{name}' must be DXO but got {type(dxo)}")
+        return
+
+    if dxo.data_kind == DataKind.COLLECTION:
+        if not isinstance(dxo.data, dict):
+            errors.append(f"dxo '{name}' is a collection but data is {type(dxo.data)} - must be dict")
+            return
+        for k, v in dxo.data.items():
+            _traverse(v, f"{name}.{k}", result, errors, visited)
+    else:
+        result[name] = dxo

@@ -20,7 +20,7 @@ from zipfile import ZipFile
 
 from nvflare.apis.fl_constant import JobConstants
 from nvflare.apis.job_def import ALL_SITES, JobMetaKey
-from nvflare.fuel.utils.zip_utils import normpath_for_zip
+from nvflare.fuel.utils.zip_utils import normpath_for_zip, zip_directory_to_bytes
 
 
 def _get_default_meta(job_folder_name: str) -> str:
@@ -81,3 +81,18 @@ def convert_legacy_zipped_app_to_job(zip_data: bytes) -> bytes:
                     out_zip.writestr(info, content)
 
         return writer.getvalue()
+
+
+def load_job_def_bytes(from_path: str, def_name: str) -> bytes:
+    """Load a job definition from specified path and return zipped bytes
+
+    Args:
+        from_path: path where the job definition is located
+        def_name: name of the job
+
+    Returns:
+
+    """
+    # zip the job folder
+    data = zip_directory_to_bytes(from_path, def_name)
+    return convert_legacy_zipped_app_to_job(data)

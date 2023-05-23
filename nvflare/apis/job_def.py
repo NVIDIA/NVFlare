@@ -71,6 +71,7 @@ class JobMetaKey(str, Enum):
     LAST_SCHEDULE_TIME = "last_schedule_time"
     SCHEDULE_HISTORY = "schedule_history"
     STATS_POOL_CONFIG = "stats_pool_config"
+    FROM_HUB_SITE = "from_hub_site"
 
     def __repr__(self):
         return self.value

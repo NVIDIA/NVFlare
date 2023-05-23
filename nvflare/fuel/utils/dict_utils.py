@@ -14,6 +14,8 @@
 
 import collections
 
+from .validation_utils import check_object_type
+
 
 def update(d, u):
     for k, v in u.items():
@@ -71,11 +73,8 @@ def augment(to_dict: dict, from_dict: dict, from_override_to=False) -> str:
        The content of the to_dict is updated
 
     """
-    if not isinstance(to_dict, dict):
-        return f"to_dict must be dict but got {type(to_dict)}"
-
-    if not isinstance(from_dict, dict):
-        return f"from_dict must be dict but got {type(from_dict)}"
+    check_object_type("to_dict", to_dict, dict)
+    check_object_type("from_dict", from_dict, dict)
 
     for k, fv in from_dict.items():
         if k not in to_dict:
@@ -119,4 +118,67 @@ def augment(to_dict: dict, from_dict: dict, from_override_to=False) -> str:
         if from_override_to:
             to_dict[k] = fv
 
+    return ""
+
+
+def _update_component_dict(comp_list: list, target: dict) -> str:
+    for c in comp_list:
+        check_object_type("element in comp_list", c, dict)
+        cid = c.get("id", None)
+        if not cid:
+            return "missing 'id' from a component"
+        target[cid] = c
+    return ""
+
+
+def update_components(target_dict: dict, from_dict: dict) -> str:
+    """update components in target_dict with components from the from_dict.
+    If a component with the same ID exists in both target_dict and from_dict, the component in from_dict
+    will replace the one in target_dict.
+    If a component only exists in from_dict, it will be added to the component list of target_dict.
+    Args:
+        target_dict: the dict to be updated
+        from_dict: the dict that will be used to update the target_dict
+    Returns:
+    """
+    key_components = "components"
+
+    from_comp_list = from_dict.get(key_components, None)
+    if not from_comp_list:
+        # no components to update
+        return ""
+
+    check_object_type("from_comp_list", from_comp_list, list)
+
+    target_comp_list = target_dict.get(key_components, None)
+    if not target_comp_list:
+        target_dict[key_components] = from_comp_list
+        return ""
+
+    check_object_type("target_comp_list", target_comp_list, list)
+
+    from_comp_dict = {}
+    err = _update_component_dict(from_comp_list, from_comp_dict)
+    if err:
+        return f"error in from_dict: {err}"
+
+    target_comp_dict = {}
+    err = _update_component_dict(target_comp_list, target_comp_dict)
+    if err:
+        return f"error in target_dict: {err}"
+
+    # determine components in both
+    dups = []
+    for cid in target_comp_dict.keys():
+        if cid in from_comp_dict:
+            dups.append(cid)
+
+    for cid in dups:
+        # remove from target_comp_dict
+        target_comp_dict.pop(cid)
+
+    new_target_comp_list = list(target_comp_dict.values())
+    new_target_comp_list.extend(from_comp_list)
+
+    target_dict[key_components] = new_target_comp_list
     return ""
