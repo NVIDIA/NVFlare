@@ -227,6 +227,9 @@ class FLComponent(StatePersistable):
             )
 
     def _fire_log_event(self, event_type: str, log_tag: str, log_msg: str, fl_ctx: FLContext):
+        if not fl_ctx:
+            return
+
         event_data = AnalyticsData(key=log_tag, value=log_msg, data_type=AnalyticsDataType.TEXT, kwargs=None)
         dxo = event_data.to_dxo()
         fl_ctx.set_prop(key=FLContextKey.EVENT_DATA, value=dxo.to_shareable(), private=True, sticky=False)
