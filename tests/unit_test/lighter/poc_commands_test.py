@@ -16,8 +16,8 @@ import collections
 import pytest
 
 from nvflare.cli_exception import CLIException
-from nvflare.lighter.poc_commands import client_gpu_assignments, get_gpu_ids, get_package_command, update_clients, \
-    prepare_builders, get_packages
+from nvflare.lighter.poc_commands import client_gpu_assignments, get_gpu_ids, get_service_command, update_clients, \
+    prepare_builders, get_service_config
 from nvflare.lighter.service_constants import FlareServiceConstants as SC
 from nvflare.lighter.spec import Participant
 from nvflare.lighter.utils import update_project_server_name_config
@@ -64,13 +64,13 @@ class TestPOCCommands:
             gpu_ids = get_gpu_ids([0, 1], host_gpu_ids)
 
     def test_get_package_command(self):
-        cmd = get_package_command(SC.CMD_START, "/tmp/nvflare/poc", SC.FLARE_SERVER, {})
+        cmd = get_service_command(SC.CMD_START, "/tmp/nvflare/poc", SC.FLARE_SERVER, {})
         assert "/tmp/nvflare/poc/server/startup/start.sh" == cmd
 
-        cmd = get_package_command(SC.CMD_START, "/tmp/nvflare/poc", SC.FLARE_PROJ_ADMIN, {})
+        cmd = get_service_command(SC.CMD_START, "/tmp/nvflare/poc", SC.FLARE_PROJ_ADMIN, {})
         assert "/tmp/nvflare/poc/admin@nvidia.com/startup/fl_admin.sh" == cmd
 
-        cmd = get_package_command(SC.CMD_START, "/tmp/nvflare/poc", "site-2000",{})
+        cmd = get_service_command(SC.CMD_START, "/tmp/nvflare/poc", "site-2000", {})
         assert "/tmp/nvflare/poc/site-2000/startup/start.sh" == cmd
 
     def test_get_package_command2(self):
@@ -91,24 +91,24 @@ class TestPOCCommands:
                           }
 
         project_config = collections.OrderedDict(project_config)
-        global_packages = get_packages(project_config)
+        global_packages = get_service_config(project_config)
         assert(global_packages[SC.IS_DOCKER_RUN] == True)
-        cmd = get_package_command(SC.CMD_START, "/tmp/nvflare/poc", SC.FLARE_SERVER, global_packages)
+        cmd = get_service_command(SC.CMD_START, "/tmp/nvflare/poc", SC.FLARE_SERVER, global_packages)
         assert "/tmp/nvflare/poc/server/startup/docker.sh -d" == cmd
 
-        cmd = get_package_command(SC.CMD_START, "/tmp/nvflare/poc", SC.FLARE_PROJ_ADMIN, global_packages)
+        cmd = get_service_command(SC.CMD_START, "/tmp/nvflare/poc", SC.FLARE_PROJ_ADMIN, global_packages)
         assert "/tmp/nvflare/poc/admin@nvidia.com/startup/fl_admin.sh" == cmd
 
-        cmd = get_package_command(SC.CMD_START, "/tmp/nvflare/poc", "site-2000", global_packages)
+        cmd = get_service_command(SC.CMD_START, "/tmp/nvflare/poc", "site-2000", global_packages)
         assert "/tmp/nvflare/poc/site-2000/startup/docker.sh -d" == cmd
 
-        cmd = get_package_command(SC.CMD_STOP, "/tmp/nvflare/poc", SC.FLARE_SERVER, global_packages)
+        cmd = get_service_command(SC.CMD_STOP, "/tmp/nvflare/poc", SC.FLARE_SERVER, global_packages)
         assert "docker stop server" == cmd
 
-        cmd = get_package_command(SC.CMD_STOP, "/tmp/nvflare/poc", SC.FLARE_PROJ_ADMIN, global_packages)
+        cmd = get_service_command(SC.CMD_STOP, "/tmp/nvflare/poc", SC.FLARE_PROJ_ADMIN, global_packages)
         assert "touch /tmp/nvflare/poc/admin@nvidia.com/shutdown.fl" == cmd
 
-        cmd = get_package_command(SC.CMD_STOP, "/tmp/nvflare/poc", "site-2000", global_packages)
+        cmd = get_service_command(SC.CMD_STOP, "/tmp/nvflare/poc", "site-2000", global_packages)
         assert "docker stop site-2000" == cmd
 
 
@@ -300,7 +300,7 @@ class TestPOCCommands:
 
         project_config = collections.OrderedDict(project_config)
 
-        global_config = get_packages(project_config)
+        global_config = get_service_config(project_config)
         assert "server1" == global_config[SC.FLARE_SERVER]
         assert "admin@nvidia.com" == global_config[SC.FLARE_PROJ_ADMIN]
         assert ["client-1", "client-2"] == global_config[SC.FLARE_CLIENTS]

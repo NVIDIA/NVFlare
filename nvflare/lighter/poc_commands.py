@@ -62,29 +62,29 @@ def client_gpu_assignments(clients: List[str], gpu_ids: List[int]) -> Dict[str, 
     return gpu_assignments
 
 
-def get_package_command(cmd_type: str, prod_dir: str, package_dir, global_packages: Dict) -> str:
+def get_service_command(cmd_type: str, prod_dir: str, service_dir, service_config: Dict) -> str:
     cmd = ""
-    admin_package = global_packages.get(SC.FLARE_PROJ_ADMIN, SC.FLARE_PROJ_ADMIN)
+    admin_dir_name = service_config.get(SC.FLARE_PROJ_ADMIN, SC.FLARE_PROJ_ADMIN)
     if cmd_type == SC.CMD_START:
-        if not global_packages.get(SC.IS_DOCKER_RUN):
-            if package_dir == admin_package:
-                cmd = get_cmd_path(prod_dir, package_dir, "fl_admin.sh")
+        if not service_config.get(SC.IS_DOCKER_RUN):
+            if service_dir == admin_dir_name:
+                cmd = get_cmd_path(prod_dir, service_dir, "fl_admin.sh")
             else:
-                cmd = get_cmd_path(prod_dir, package_dir, "start.sh")
+                cmd = get_cmd_path(prod_dir, service_dir, "start.sh")
         else:
-            if package_dir == admin_package:
-                cmd = get_cmd_path(prod_dir, package_dir, "fl_admin.sh")
+            if service_dir == admin_dir_name:
+                cmd = get_cmd_path(prod_dir, service_dir, "fl_admin.sh")
             else:
-                cmd = get_cmd_path(prod_dir, package_dir, "docker.sh -d")
+                cmd = get_cmd_path(prod_dir, service_dir, "docker.sh -d")
 
     elif cmd_type == SC.CMD_STOP:
-        if not global_packages.get(SC.IS_DOCKER_RUN):
-            cmd = get_stop_cmd(prod_dir, package_dir)
+        if not service_config.get(SC.IS_DOCKER_RUN):
+            cmd = get_stop_cmd(prod_dir, service_dir)
         else:
-            if package_dir == admin_package:
-                cmd = get_stop_cmd(prod_dir, package_dir)
+            if service_dir == admin_dir_name:
+                cmd = get_stop_cmd(prod_dir, service_dir)
             else:
-                cmd = f"docker stop {package_dir}"
+                cmd = f"docker stop {service_dir}"
 
     else:
         raise CLIException("unknown cmd_type :", cmd_type)
@@ -126,7 +126,7 @@ def is_dir_empty(path: str):
 
 
 def prepare_examples(example_dir: str, workspace: str, config_packages: Optional[Tuple] = None):
-    _, global_packages = config_packages if config_packages else setup_global_packages(workspace)
+    _, service_config = config_packages if config_packages else setup_service_config(workspace)
     if example_dir is None or example_dir == "":
         raise CLIException("example_dir is required")
     src = os.path.abspath(example_dir)
@@ -137,7 +137,7 @@ def prepare_examples(example_dir: str, workspace: str, config_packages: Optional
     if not os.path.exists(prod_dir):
         raise CLIException("please use nvflare poc --prepare to create workspace first")
 
-    console_dir = os.path.join(prod_dir, f"{global_packages[SC.FLARE_PROJ_ADMIN]}")
+    console_dir = os.path.join(prod_dir, f"{service_config[SC.FLARE_PROJ_ADMIN]}")
     startup_dir = os.path.join(console_dir, SC.STARTUP)
     transfer = get_upload_dir(startup_dir)
     dst = os.path.join(console_dir, transfer)
@@ -265,23 +265,23 @@ def local_provision(
         if docker_image:
             project_config = update_static_file_builder(docker_image, project_config)
     save_project_config(project_config, dst_project_file)
-    packages = get_packages(project_config)
+    service_config = get_service_config(project_config)
     project = prepare_project(project_config)
     builders = prepare_builders(project_config)
     provisioner = Provisioner(workspace, builders)
     provisioner.provision(project)
 
-    return project_config, packages
+    return project_config, service_config
 
 
-def get_packages(project_config):
-    packages = {
+def get_service_config(project_config):
+    service_config = {
         SC.FLARE_SERVER: get_fl_server_name(project_config),
         SC.FLARE_PROJ_ADMIN: get_proj_admin(project_config),
         SC.FLARE_CLIENTS: get_fl_client_names(project_config),
         SC.IS_DOCKER_RUN: is_docker_run(project_config),
     }
-    return packages
+    return service_config
 
 
 def save_project_config(project_config, project_file):
@@ -420,8 +420,8 @@ def prepare_poc_provision(
 ):
     os.makedirs(workspace, exist_ok=True)
     os.makedirs(os.path.join(workspace, "data"), exist_ok=True)
-    _, global_packages = local_provision(clients, number_of_clients, workspace, docker_image, use_he, project_conf_path)
-    server_name = global_packages[SC.FLARE_SERVER]
+    _, service_config = local_provision(clients, number_of_clients, workspace, docker_image, use_he, project_conf_path)
+    server_name = service_config[SC.FLARE_SERVER]
     # update storage
     if workspace != DEFAULT_WORKSPACE:
         update_storage_locations(
@@ -441,26 +441,26 @@ def get_examples_dir(examples_dir):
     return default_examples_dir
 
 
-def sort_package_cmds(cmd_type, package_cmds: list, global_packages) -> list:
+def sort_service_cmds(cmd_type, service_cmds: list, service_config) -> list:
     def sort_first(val):
         return val[0]
 
-    order_packages = []
-    for package_name, cmd_path in package_cmds:
-        if package_name == global_packages[SC.FLARE_SERVER]:
-            order_packages.append((0, package_name, cmd_path))
-        elif package_name == global_packages[SC.FLARE_PROJ_ADMIN]:
-            order_packages.append((sys.maxsize, package_name, cmd_path))
+    order_services = []
+    for service_name, cmd_path in service_cmds:
+        if service_name == service_config[SC.FLARE_SERVER]:
+            order_services.append((0, service_name, cmd_path))
+        elif service_name == service_config[SC.FLARE_PROJ_ADMIN]:
+            order_services.append((sys.maxsize, service_name, cmd_path))
         else:
-            if len(package_cmds) == 1:
-                order_packages.append((0, package_name, cmd_path))
+            if len(service_cmds) == 1:
+                order_services.append((0, service_name, cmd_path))
             else:
-                order_packages.append((random.randint(2, len(package_cmds)), package_name, cmd_path))
+                order_services.append((random.randint(2, len(service_cmds)), service_name, cmd_path))
 
-    order_packages.sort(key=sort_first)
+    order_services.sort(key=sort_first)
     if cmd_type == SC.CMD_STOP:
-        order_packages.reverse()
-    return [(package_name, cmd_path) for n, package_name, cmd_path in order_packages]
+        order_services.reverse()
+    return [(service_name, cmd_path) for n, service_name, cmd_path in order_services]
 
 
 def get_cmd_path(poc_workspace, service_name, cmd):
@@ -470,16 +470,16 @@ def get_cmd_path(poc_workspace, service_name, cmd):
     return cmd_path
 
 
-def is_poc_ready(poc_workspace: str, global_packages):
+def is_poc_ready(poc_workspace: str, service_config):
     # check server and admin directories exist
     prod_dir = get_prod_dir(poc_workspace)
-    console_dir = os.path.join(prod_dir, global_packages[SC.FLARE_PROJ_ADMIN])
-    server_dir = os.path.join(prod_dir, global_packages[SC.FLARE_SERVER])
+    console_dir = os.path.join(prod_dir, service_config[SC.FLARE_PROJ_ADMIN])
+    server_dir = os.path.join(prod_dir, service_config[SC.FLARE_SERVER])
     return os.path.isdir(server_dir) and os.path.isdir(console_dir)
 
 
-def validate_poc_workspace(poc_workspace: str, global_packages):
-    if not is_poc_ready(poc_workspace, global_packages):
+def validate_poc_workspace(poc_workspace: str, service_config):
+    if not is_poc_ready(poc_workspace, service_config):
         raise CLIException(f"workspace {poc_workspace} is not ready, please use poc --prepare to prepare poc workspace")
 
 
@@ -501,18 +501,18 @@ def get_gpu_ids(user_input_gpu_ids, host_gpu_ids) -> List[int]:
 
 
 def start_poc(poc_workspace: str, gpu_ids: List[int], excluded=None, white_list=None):
-    project_config, global_packages = setup_global_packages(poc_workspace)
+    project_config, service_config = setup_service_config(poc_workspace)
     if white_list is None:
         white_list = []
     if excluded is None:
         excluded = []
     print(f"start_poc at {poc_workspace}, gpu_ids={gpu_ids}, excluded = {excluded}, white_list={white_list}")
-    validate_packages(project_config, white_list, excluded)
-    validate_poc_workspace(poc_workspace, global_packages)
-    _run_poc(SC.CMD_START, poc_workspace, gpu_ids, global_packages, excluded=excluded, white_list=white_list)
+    validate_services(project_config, white_list, excluded)
+    validate_poc_workspace(poc_workspace, service_config)
+    _run_poc(SC.CMD_START, poc_workspace, gpu_ids, service_config, excluded=excluded, white_list=white_list)
 
 
-def validate_packages(project_config, white_list: List, excluded: List):
+def validate_services(project_config, white_list: List, excluded: List):
     participant_names = [p["name"] for p in project_config["participants"]]
     validate_participants(participant_names, white_list)
     validate_participants(participant_names, excluded)
@@ -521,91 +521,92 @@ def validate_packages(project_config, white_list: List, excluded: List):
 def validate_participants(participant_names, list_participants):
     for p in list_participants:
         if p not in participant_names:
-            print(f"package for participant '{p}' is not defined, expecting one of followings: {participant_names}")
+            print(f"participant '{p}' is not defined, expecting one of followings: {participant_names}")
             exit(1)
 
 
-def setup_global_packages(poc_workspace) -> Tuple:
+def setup_service_config(poc_workspace) -> Tuple:
     project_file = os.path.join(poc_workspace, "project.yml")
     if os.path.isfile(project_file):
         project_config = load_yaml(project_file)
-        global_packages = get_packages(project_config) if project_config else None
-        return project_config, global_packages
+        service_config = get_service_config(project_config) if project_config else None
+        return project_config, service_config
     else:
         raise CLIException(f"{project_file} is missing, make sure you have first run 'nvflare poc --prepare'")
 
 
 def stop_poc(poc_workspace: str, excluded=None, white_list=None):
-    project_config, global_packages = setup_global_packages(poc_workspace)
+    project_config, service_config = setup_service_config(poc_workspace)
 
     if white_list is None:
         white_list = []
     if excluded is None:
-        excluded = [global_packages[SC.FLARE_PROJ_ADMIN]]
+        excluded = [service_config[SC.FLARE_PROJ_ADMIN]]
     else:
-        excluded.append(global_packages[SC.FLARE_PROJ_ADMIN])
+        excluded.append(service_config[SC.FLARE_PROJ_ADMIN])
 
-    validate_packages(project_config, white_list, excluded)
+    validate_services(project_config, white_list, excluded)
 
-    validate_poc_workspace(poc_workspace, global_packages)
+    validate_poc_workspace(poc_workspace, service_config)
     gpu_ids: List[int] = []
     prod_dir = get_prod_dir(poc_workspace)
 
     p_size = len(white_list)
-    if p_size == 0 or global_packages[SC.FLARE_SERVER] in white_list:
+    if p_size == 0 or service_config[SC.FLARE_SERVER] in white_list:
         print("start shutdown NVFLARE")
-        shutdown_system(prod_dir, username=global_packages[SC.FLARE_PROJ_ADMIN])
+        shutdown_system(prod_dir, username=service_config[SC.FLARE_PROJ_ADMIN])
     else:
         print(f"start shutdown {white_list}")
 
-    _run_poc(SC.CMD_STOP, poc_workspace, gpu_ids, global_packages, excluded=excluded, white_list=white_list)
+    _run_poc(SC.CMD_STOP, poc_workspace, gpu_ids, service_config, excluded=excluded, white_list=white_list)
 
 
-def _get_clients(package_commands: list, global_packages) -> List[str]:
+def _get_clients(service_commands: list, service_config) -> List[str]:
     clients = [
-        package_dir_name
-        for package_dir_name, _ in package_commands
-        if package_dir_name != global_packages[SC.FLARE_PROJ_ADMIN]
-        and package_dir_name != global_packages[SC.FLARE_SERVER]
+        service_dir_name
+        for service_dir_name, _ in service_commands
+        if service_dir_name != service_config[SC.FLARE_PROJ_ADMIN]
+        and service_dir_name != service_config[SC.FLARE_SERVER]
     ]
     return clients
 
 
-def _build_commands(cmd_type: str, poc_workspace: str, global_packages, excluded: list, white_list=None) -> list:
+def _build_commands(cmd_type: str, poc_workspace: str, service_config, excluded: list, white_list=None) -> list:
     """
     :param cmd_type: start/stop
     :param poc_workspace:  poc workspace directory path
-    :param excluded: excluded package namae
-    :param white_list: whitelist, package name. If empty, include every package
+    :param service_config:  service_config
+    :param excluded: excluded service/participants name
+    :param white_list: whitelist, service name. If empty, include every service/participants
     :return:
     """
 
-    def is_fl_package_dir(p_dir_name: str) -> bool:
-        fl_package = (
-            p_dir_name == global_packages[SC.FLARE_PROJ_ADMIN]
-            or p_dir_name == global_packages[SC.FLARE_SERVER]
-            or p_dir_name in global_packages[SC.FLARE_CLIENTS]
+    def is_fl_service_dir(p_dir_name: str) -> bool:
+        fl_service = (
+            p_dir_name == service_config[SC.FLARE_PROJ_ADMIN]
+            or p_dir_name == service_config[SC.FLARE_SERVER]
+            or p_dir_name in service_config[SC.FLARE_CLIENTS]
         )
-        return fl_package
+        return fl_service
 
     prod_dir = get_prod_dir(poc_workspace)
 
     if white_list is None:
         white_list = []
-    package_commands = []
+    service_commands = []
     for root, dirs, files in os.walk(prod_dir):
         if root == prod_dir:
-            fl_dirs = [d for d in dirs if is_fl_package_dir(d)]
-            for package_dir_name in fl_dirs:
-                if package_dir_name not in excluded:
-                    if len(white_list) == 0 or package_dir_name in white_list:
-                        cmd = get_package_command(cmd_type, prod_dir, package_dir_name, global_packages)
+            fl_dirs = [d for d in dirs if is_fl_service_dir(d)]
+            for service_dir_name in fl_dirs:
+                if service_dir_name not in excluded:
+                    if len(white_list) == 0 or service_dir_name in white_list:
+                        cmd = get_service_command(cmd_type, prod_dir, service_dir_name, service_config)
                         if cmd:
-                            package_commands.append((package_dir_name, cmd))
-    return sort_package_cmds(cmd_type, package_commands, global_packages)
+                            service_commands.append((service_dir_name, cmd))
+    return sort_service_cmds(cmd_type, service_commands, service_config)
 
 
-def prepare_env(package_name, gpu_ids: Optional[List[int]], global_packages: Dict):
+def prepare_env(service_name, gpu_ids: Optional[List[int]], service_config: Dict):
     import os
 
     my_env = None
@@ -614,57 +615,57 @@ def prepare_env(package_name, gpu_ids: Optional[List[int]], global_packages: Dic
         if len(gpu_ids) > 0:
             my_env["CUDA_VISIBLE_DEVICES"] = ",".join([str(gid) for gid in gpu_ids])
 
-    if global_packages.get(SC.IS_DOCKER_RUN):
+    if service_config.get(SC.IS_DOCKER_RUN):
         my_env = os.environ.copy() if my_env is None else my_env
         if gpu_ids and len(gpu_ids) > 0:
             my_env["GPU2USE"] = f"--gpus={my_env['CUDA_VISIBLE_DEVICES']}"
 
         my_env["MY_DATA_DIR"] = os.path.join(get_poc_workspace(), "data")
-        my_env["SVR_NAME"] = package_name
+        my_env["SVR_NAME"] = service_name
 
     return my_env
 
 
-def async_process(package_name, cmd_path, gpu_ids: Optional[List[int]], global_packages: Dict):
-    my_env = prepare_env(package_name, gpu_ids, global_packages)
+def async_process(service_name, cmd_path, gpu_ids: Optional[List[int]], service_config: Dict):
+    my_env = prepare_env(service_name, gpu_ids, service_config)
     if my_env:
         subprocess.Popen(cmd_path.split(" "), env=my_env)
     else:
         subprocess.Popen(cmd_path.split(" "))
 
 
-def sync_process(package_name, cmd_path):
+def sync_process(service_name, cmd_path):
     my_env = os.environ.copy()
     subprocess.run(cmd_path.split(" "), env=my_env)
 
 
 def _run_poc(
-    cmd_type: str, poc_workspace: str, gpu_ids: List[int], global_packages: Dict, excluded: list, white_list=None
+    cmd_type: str, poc_workspace: str, gpu_ids: List[int], service_config: Dict, excluded: list, white_list=None
 ):
     if white_list is None:
         white_list = []
-    package_commands = _build_commands(cmd_type, poc_workspace, global_packages, excluded, white_list)
-    clients = _get_clients(package_commands, global_packages)
+    service_commands = _build_commands(cmd_type, poc_workspace, service_config, excluded, white_list)
+    clients = _get_clients(service_commands, service_config)
     gpu_assignments: Dict[str, List[int]] = client_gpu_assignments(clients, gpu_ids)
-    for package_name, cmd_path in package_commands:
-        if package_name == global_packages[SC.FLARE_PROJ_ADMIN]:
+    for service_name, cmd_path in service_commands:
+        if service_name == service_config[SC.FLARE_PROJ_ADMIN]:
             # give other commands a chance to start first
-            if len(package_commands) > 1:
+            if len(service_commands) > 1:
                 time.sleep(2)
-            sync_process(package_name, cmd_path)
-        elif package_name == global_packages[SC.FLARE_SERVER]:
-            async_process(package_name, cmd_path, None, global_packages)
+            sync_process(service_name, cmd_path)
+        elif service_name == service_config[SC.FLARE_SERVER]:
+            async_process(service_name, cmd_path, None, service_config)
         else:
-            async_process(package_name, cmd_path, gpu_assignments[package_name], global_packages)
+            async_process(service_name, cmd_path, gpu_assignments[service_name], service_config)
 
 
 def clean_poc(poc_workspace: str):
     import shutil
 
     if os.path.isdir(poc_workspace):
-        project_config, global_packages = setup_global_packages(poc_workspace)
+        project_config, service_config = setup_service_config(poc_workspace)
         if project_config is not None:
-            if is_poc_ready(poc_workspace, global_packages):
+            if is_poc_ready(poc_workspace, service_config):
                 shutil.rmtree(poc_workspace, ignore_errors=True)
                 print(f"{poc_workspace} is removed")
             else:
@@ -689,7 +690,7 @@ def def_poc_parser(sub_cmd):
     )
     poc_parser.add_argument(
         "-p",
-        "--package",
+        "--service",
         type=str,
         nargs="?",
         default="all",
@@ -709,7 +710,7 @@ def def_poc_parser(sub_cmd):
         type=str,
         nargs="?",
         default="",
-        help="exclude package directory during --start or --stop, default to " ", i.e. nothing to exclude",
+        help="exclude service directory during --start or --stop, default to " ", i.e. nothing to exclude",
     )
     poc_parser.add_argument(
         "-gpu",
@@ -786,8 +787,8 @@ def get_local_host_gpu_ids():
 
 
 def handle_poc_cmd(cmd_args):
-    if cmd_args.package != "all":
-        white_list = [cmd_args.package]
+    if cmd_args.service != "all":
+        white_list = [cmd_args.service]
     else:
         white_list = []
 
