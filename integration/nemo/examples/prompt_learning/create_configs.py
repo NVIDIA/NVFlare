@@ -100,6 +100,7 @@ def main():
     meta_cfg_file = os.path.join(args.job_folder, "meta.json")
     shutil.copyfile(os.path.join(args.template_folder, "meta.json"), meta_cfg_file)
     meta_cfg = load_config(meta_cfg_file)
+    meta_cfg["name"] = os.path.basename(args.job_folder)
     meta_cfg["deploy_map"] = {"server": ["server"]}
     for i in range(args.num_clients):
         meta_cfg["deploy_map"][f"app{i+1}"] = [f"site-{i+1}"]
