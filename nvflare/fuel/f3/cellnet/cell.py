@@ -19,7 +19,7 @@ import random
 import threading
 import time
 import uuid
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from typing import Callable, Dict, List, Tuple, Union
 from urllib.parse import urlparse
 
 from nvflare.fuel.f3.cellnet.connector_manager import ConnectorManager
@@ -37,7 +37,7 @@ from nvflare.fuel.f3.cellnet.defs import (
     ServiceUnavailable,
 )
 from nvflare.fuel.f3.cellnet.fqcn import FQCN, FqcnInfo, same_family
-from nvflare.fuel.f3.cellnet.stream_api import ObjectIterator, ObjectStreamFuture, Stream, StreamFuture
+from nvflare.fuel.f3.cellnet.stream_api import ObjectStreamFuture, StreamFuture
 from nvflare.fuel.f3.cellnet.utils import decode_payload, encode_payload, format_log_message, make_reply, new_message
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.communicator import Communicator, MessageReceiver
@@ -2098,7 +2098,7 @@ class Cell(MessageReceiver, EndpointMonitor):
         """
         pass
 
-    def register_objects_cb(self, channel: str, topic: str, object_stream_cb, *args, **kwargs):
+    def register_objects_cb(self, channel: str, topic: str, object_stream_cb, object_cb, *args, **kwargs):
         """
         Register callback for receiving the object. The callback signature is,
             objects_stream_cb(future: ObjectStreamFuture, resume: bool, *args, **kwargs) -> int
@@ -2106,6 +2106,10 @@ class Cell(MessageReceiver, EndpointMonitor):
                 to receive each object.
                 resume: True if this is a restarted stream
                 This CB returns the index to restart if this is a restarted stream
+
+            object_cb(index: int, message: Message, *args, ** kwargs)
+                index: The index of the object
+                message: The header and payload is the object
 
             resume_cb(stream_id: str, *args, **kwargs) -> int
         is received. The index starts from 0. The callback must have the following signature,
@@ -2116,5 +2120,6 @@ class Cell(MessageReceiver, EndpointMonitor):
             channel: the channel of the request
             topic: topic of the request
             object_stream_cb: The callback when an object stream is started
+            object_cb: The callback is invoked when each object is received
         """
         pass

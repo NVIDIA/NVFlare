@@ -284,18 +284,3 @@ class ObjectStreamFuture(StreamFuture):
     def set_index(self, index: int):
         """Set current object index"""
         self.index = index
-
-    def register_object_cb(self, object_cb: Callable, *args, **kwargs):
-        """Register a callback when each object is received.
-        The callback must have the following signature
-            object_cb(index: int, message: Message, *args, ** kwargs)
-                index: The index of the object
-                message: The header and payload is the object
-
-        Args:
-            object_cb: The callback to be invoked when each object is received
-        """
-
-        self.object_cb = object_cb
-        self.cb_args = args
-        self.cb_kwargs = kwargs
