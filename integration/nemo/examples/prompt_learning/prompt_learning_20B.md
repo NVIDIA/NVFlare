@@ -139,9 +139,14 @@ tensorboard --logdir /tmp/nvflare/nemo
 ```
 
 ## Results
-In this scenario, all clients utilize the same validation set, allowing for a direct comparison between the locally p-tuned and federated global models. As anticipated, the FedAvg-trained global model exhibits lower validation loss than the models trained solely on their local datasets. This is because the global model has access to all client datasets and can, consequently, generalize better.
+In this scenario, all clients utilize the same validation set, allowing for a direct comparison between the locally p-tuned and federated global models. 
 
-[validation loss](./val_loss.svg)
+The FedAvg-trained global model performs similar to the scenario where all data is centralized as shown in the next figure.
+![validation loss](./figs/val_loss_central_20B.svg)
+
+As anticipated, the global model exhibits lower validation loss than the models trained solely on their local datasets. 
+This is because the global model has access to all client datasets and can, consequently, generalize better.
+![validation loss](./figs/val_loss_local_20B.svg)
 
 ## Inference
 
