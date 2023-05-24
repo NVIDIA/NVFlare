@@ -11,12 +11,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import collections
 
 import pytest
 
 from nvflare.cli_exception import CLIException
-from nvflare.lighter.poc_commands import client_gpu_assignments, get_gpu_ids, get_package_command
+from nvflare.lighter.poc_commands import client_gpu_assignments, get_gpu_ids, get_service_command, update_clients, \
+    prepare_builders, get_service_config
 from nvflare.lighter.service_constants import FlareServiceConstants as SC
+from nvflare.lighter.spec import Participant
+from nvflare.lighter.utils import update_project_server_name_config
+
 
 
 class TestPOCCommands:
@@ -59,11 +64,243 @@ class TestPOCCommands:
             gpu_ids = get_gpu_ids([0, 1], host_gpu_ids)
 
     def test_get_package_command(self):
-        cmd = get_package_command(SC.CMD_START, "/tmp/nvflare/poc", SC.FLARE_SERVER)
+        cmd = get_service_command(SC.CMD_START, "/tmp/nvflare/poc", SC.FLARE_SERVER, {})
         assert "/tmp/nvflare/poc/server/startup/start.sh" == cmd
 
-        cmd = get_package_command(SC.CMD_START, "/tmp/nvflare/poc", SC.FLARE_CONSOLE)
-        assert "/tmp/nvflare/poc/admin/startup/fl_admin.sh" == cmd
+        cmd = get_service_command(SC.CMD_START, "/tmp/nvflare/poc", SC.FLARE_PROJ_ADMIN, {})
+        assert "/tmp/nvflare/poc/admin@nvidia.com/startup/fl_admin.sh" == cmd
 
-        cmd = get_package_command(SC.CMD_START, "/tmp/nvflare/poc", "site-2000")
+        cmd = get_service_command(SC.CMD_START, "/tmp/nvflare/poc", "site-2000", {})
         assert "/tmp/nvflare/poc/site-2000/startup/start.sh" == cmd
+
+    def test_get_package_command2(self):
+        project_config = {'api_version': 3, 'name': 'example_project',
+                          'description': 'NVIDIA FLARE sample project yaml file',
+                          'participants': [
+                              {'name': 'server', 'type': 'server', 'org': 'nvidia', 'fed_learn_port': 8002,
+                               'admin_port': 8003},
+                              {'name': 'admin@nvidia.com', 'type': 'admin', 'org': 'nvidia', 'role': 'project_admin'},
+                              {'name': 'site-1', 'type': 'client', 'org': 'nvidia'},
+                              {'name': 'site-2000', 'type': 'client', 'org': 'nvidia'}
+                          ],
+                          'builders': [
+                              {'path': 'nvflare.lighter.impl.static_file.StaticFileBuilder',
+                               'args': {'config_folder': 'config', 'docker_image': 'nvflare/nvflare'}
+                               },
+                          ]
+                          }
+
+        project_config = collections.OrderedDict(project_config)
+        global_packages = get_service_config(project_config)
+        assert(global_packages[SC.IS_DOCKER_RUN] == True)
+        cmd = get_service_command(SC.CMD_START, "/tmp/nvflare/poc", SC.FLARE_SERVER, global_packages)
+        assert "/tmp/nvflare/poc/server/startup/docker.sh -d" == cmd
+
+        cmd = get_service_command(SC.CMD_START, "/tmp/nvflare/poc", SC.FLARE_PROJ_ADMIN, global_packages)
+        assert "/tmp/nvflare/poc/admin@nvidia.com/startup/fl_admin.sh" == cmd
+
+        cmd = get_service_command(SC.CMD_START, "/tmp/nvflare/poc", "site-2000", global_packages)
+        assert "/tmp/nvflare/poc/site-2000/startup/docker.sh -d" == cmd
+
+        cmd = get_service_command(SC.CMD_STOP, "/tmp/nvflare/poc", SC.FLARE_SERVER, global_packages)
+        assert "docker stop server" == cmd
+
+        cmd = get_service_command(SC.CMD_STOP, "/tmp/nvflare/poc", SC.FLARE_PROJ_ADMIN, global_packages)
+        assert "touch /tmp/nvflare/poc/admin@nvidia.com/shutdown.fl" == cmd
+
+        cmd = get_service_command(SC.CMD_STOP, "/tmp/nvflare/poc", "site-2000", global_packages)
+        assert "docker stop site-2000" == cmd
+
+
+    def test_update_server_name(self):
+
+        project_config = {
+            "participants": [
+                {
+                    "name": "server1",
+                    "org": "nvidia",
+                    "type": "server"
+                },
+                {
+                    "name": "admin@nvidia.com",
+                    "org": "nvidia",
+                    "role": "project_admin",
+                    "type": "admin"
+                },
+                {
+                    "name": "client-1",
+                    "org": "nvidia",
+                    "type": "client"
+                }
+            ]
+        }
+
+        project_config = collections.OrderedDict(project_config)
+
+        old_server_name = "server1"
+        server_name = "server"
+        update_project_server_name_config(project_config, old_server_name, server_name)
+        servers = [p for p in project_config["participants"] if p["type"] == "server"]
+        assert (len(servers) == 1)
+        assert (servers[0]["name"] == server_name)
+
+        overseer_agent_builder = {
+            "args": {
+                "overseer_agent": {
+                    "args": {
+                        "sp_end_point": "server1: 8002: 8003"
+                    }
+
+                }
+            }
+        }
+        project_config["builders"] = [overseer_agent_builder]
+
+        update_project_server_name_config(project_config, old_server_name, server_name)
+
+        assert (project_config["builders"][0]["args"]["overseer_agent"]["args"]["sp_end_point"] == "server: 8002: 8003")
+
+    def test_update_clients(self):
+        project_config = {
+            "participants": [
+                {
+                    "name": "server1",
+                    "org": "nvidia",
+                    "type": "server"
+                },
+                {
+                    "name": "admin@nvidia.com",
+                    "org": "nvidia",
+                    "role": "project_admin",
+                    "type": "admin"
+                },
+                {
+                    "name": "client-1",
+                    "org": "nvidia",
+                    "type": "client"
+                }
+            ]
+        }
+
+        project_config = collections.OrderedDict(project_config)
+        clients = []
+        n_clients = 3
+        project_config = update_clients(clients, n_clients, project_config)
+        result_clients = [p["name"] for p in project_config["participants"] if p["type"] == "client"]
+        assert (len(result_clients) == 3)
+        assert (result_clients == ["site-1", "site-2", "site-3"])
+
+        clients = ["client-1", "client-2", "client-3", "client-4"]
+        n_clients = 3
+        project_config = update_clients(clients, n_clients, project_config)
+        result_clients = [p["name"] for p in project_config["participants"] if p["type"] == "client"]
+        assert (len(result_clients) == len(clients))
+        assert (result_clients == clients)
+
+    def test_prepare_builders(self):
+        project_config = {
+            "participants": [
+                {
+                    "name": "server1",
+                    "org": "nvidia",
+                    "type": "server"
+                },
+                {
+                    "name": "admin@nvidia.com",
+                    "org": "nvidia",
+                    "role": "project_admin",
+                    "type": "admin"
+                },
+                {
+                    "name": "client-1",
+                    "org": "nvidia",
+                    "type": "client"
+                }
+            ],
+            "builders": [
+                {
+                    "path": "nvflare.lighter.impl.static_file.StaticFileBuilder",
+                    "args": {
+                        "overseer_agent": {
+                            "args": {
+                                "sp_end_point": "server1: 8002: 8003"
+                            }
+
+                        }
+                    }
+                },
+                {
+                    "path": "nvflare.lighter.impl.cert.CertBuilder",
+                    "args": {}
+                },
+            ]
+        }
+
+        project_config = collections.OrderedDict(project_config)
+
+        builders = prepare_builders(project_config)
+        assert (len(builders) == 2)
+        for c in builders:
+            assert (c.__class__.__name__ == "LocalStaticFileBuilder" or c.__class__.__name__ == "LocalCertBuilder")
+            if c.__class__.__name__ == "LocalStaticFileBuilder":
+                assert (c.get_server_name(None) == "localhost")
+                assert (c.get_overseer_name(None) == "localhost")
+
+            if c.__class__.__name__ == "LocalCertBuilder":
+                participants = project_config["participants"]
+                for p in participants:
+                    if p["type"] == "server":
+                        assert (c.get_subject(Participant(**p)) == "localhost")
+                    else:
+                        assert (c.get_subject(Participant(**p)) == p["name"])
+
+    def test_get_packages_config(self):
+        project_config = {
+            "participants": [
+                {
+                    "name": "server1",
+                    "org": "nvidia",
+                    "type": "server"
+                },
+                {
+                    "name": "admin@nvidia.com",
+                    "org": "nvidia",
+                    "role": "project_admin",
+                    "type": "admin"
+                },
+                {
+                    "name": "client-1",
+                    "org": "nvidia",
+                    "type": "client"
+                },
+                {
+                    "name": "client-2",
+                    "org": "nvidia",
+                    "type": "client"
+                }
+            ],
+            "builders": [
+                {
+                    "path": "nvflare.lighter.impl.static_file.StaticFileBuilder",
+                    "args": {
+                        "overseer_agent": {
+                            "args": {
+                                "sp_end_point": "server1: 8002: 8003"
+                            }
+
+                        }
+                    }
+                },
+                {
+                    "path": "nvflare.lighter.impl.cert.CertBuilder",
+                    "args": {}
+                },
+            ]
+        }
+
+        project_config = collections.OrderedDict(project_config)
+
+        global_config = get_service_config(project_config)
+        assert "server1" == global_config[SC.FLARE_SERVER]
+        assert "admin@nvidia.com" == global_config[SC.FLARE_PROJ_ADMIN]
+        assert ["client-1", "client-2"] == global_config[SC.FLARE_CLIENTS]

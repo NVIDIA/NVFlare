@@ -68,6 +68,12 @@ class StaticFileBuilder(Builder):
         if exe:
             os.chmod(file_full_path, 0o755)
 
+    def get_server_name(self, server):
+        return server.name
+
+    def get_overseer_name(self, overseer):
+        return overseer.name
+
     def _build_overseer(self, overseer, ctx):
         dest_dir = self.get_kit_dir(overseer, ctx)
         self._write(
@@ -80,7 +86,7 @@ class StaticFileBuilder(Builder):
         api_root = overseer.props.get("api_root", "/api/v1/")
         default_port = "443" if protocol == "https" else "80"
         port = overseer.props.get("port", default_port)
-        replacement_dict = {"port": port, "hostname": overseer.name}
+        replacement_dict = {"port": port, "hostname": self.get_overseer_name(overseer)}
         admins = self.project.get_participants_by_type("admin", first_only=False)
         privilege_dict = dict()
         for admin in admins:
@@ -116,9 +122,9 @@ class StaticFileBuilder(Builder):
             exe=True,
         )
         if port:
-            ctx["overseer_end_point"] = f"{protocol}://{overseer.name}:{port}{api_root}"
+            ctx["overseer_end_point"] = f"{protocol}://{self.get_overseer_name(overseer)}:{port}{api_root}"
         else:
-            ctx["overseer_end_point"] = f"{protocol}://{overseer.name}{api_root}"
+            ctx["overseer_end_point"] = f"{protocol}://{self.get_overseer_name(overseer)}{api_root}"
 
     def _build_server(self, server, ctx):
         config = json.loads(self.template["fed_server"])
@@ -129,10 +135,10 @@ class StaticFileBuilder(Builder):
         ctx["admin_port"] = admin_port
         fed_learn_port = server.props.get("fed_learn_port", 8002)
         ctx["fed_learn_port"] = fed_learn_port
-        ctx["server_name"] = server.name
-        server_0["service"]["target"] = f"{server.name}:{fed_learn_port}"
+        ctx["server_name"] = self.get_server_name(server)
+        server_0["service"]["target"] = f"{self.get_server_name(server)}:{fed_learn_port}"
         server_0["service"]["scheme"] = self.scheme
-        server_0["admin_host"] = server.name
+        server_0["admin_host"] = self.get_server_name(server)
         server_0["admin_port"] = admin_port
         # if self.download_job_url:
         #     server_0["download_job_url"] = self.download_job_url
@@ -146,7 +152,7 @@ class StaticFileBuilder(Builder):
                     "role": "server",
                     "overseer_end_point": ctx.get("overseer_end_point", ""),
                     "project": self.project_name,
-                    "name": server.name,
+                    "name": self.get_server_name(server),
                     "fl_port": str(fed_learn_port),
                     "admin_port": str(admin_port),
                 }
@@ -317,7 +323,6 @@ class StaticFileBuilder(Builder):
         )
 
     def _build_admin(self, admin, ctx):
-        config = json.loads(self.template["fed_admin"])
         dest_dir = self.get_kit_dir(admin, ctx)
         admin_port = ctx.get("admin_port")
         server_name = ctx.get("server_name")
@@ -327,19 +332,9 @@ class StaticFileBuilder(Builder):
             "admin_port": f"{admin_port}",
             "docker_image": self.docker_image,
         }
-        agent_config = dict()
-        if self.overseer_agent:
-            overseer_agent = copy.deepcopy(self.overseer_agent)
-            if overseer_agent.get("overseer_exists", True):
-                overseer_agent["args"] = {
-                    "role": "admin",
-                    "overseer_end_point": ctx.get("overseer_end_point", ""),
-                    "project": self.project_name,
-                    "name": admin.subject,
-                }
-            overseer_agent.pop("overseer_exists", None)
-            agent_config["overseer_agent"] = overseer_agent
-        config["admin"].update(agent_config)
+
+        config = self.prepare_admin_config(admin, ctx)
+
         self._write(os.path.join(dest_dir, "fed_admin.json"), json.dumps(config, indent=2), "t")
         if self.docker_image:
             self._write(
@@ -359,6 +354,23 @@ class StaticFileBuilder(Builder):
             self.template["readme_am"],
             "t",
         )
+
+    def prepare_admin_config(self, admin, ctx):
+        config = json.loads(self.template["fed_admin"])
+        agent_config = dict()
+        if self.overseer_agent:
+            overseer_agent = copy.deepcopy(self.overseer_agent)
+            if overseer_agent.get("overseer_exists", True):
+                overseer_agent["args"] = {
+                    "role": "admin",
+                    "overseer_end_point": ctx.get("overseer_end_point", ""),
+                    "project": self.project_name,
+                    "name": admin.subject,
+                }
+            overseer_agent.pop("overseer_exists", None)
+            agent_config["overseer_agent"] = overseer_agent
+        config["admin"].update(agent_config)
+        return config
 
     def build(self, project, ctx):
         self.template = ctx.get("template")

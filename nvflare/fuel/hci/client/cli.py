@@ -77,6 +77,7 @@ class AdminClient(cmd.Cmd):
         service_finder: ServiceFinder = None,
         session_timeout_interval=900,  # close the client after 15 minutes of inactivity
         debug: bool = False,
+        username: str = "",
     ):
         super().__init__()
         self.intro = "Type help or ? to list commands.\n"
@@ -90,6 +91,7 @@ class AdminClient(cmd.Cmd):
         self.out_file = None
         self.no_stdout = False
         self.stopped = False  # use this flag to prevent unnecessary signal exception
+        self.username = username
 
         if not isinstance(service_finder, ServiceFinder):
             raise TypeError("service_finder must be ServiceProvider but got {}.".format(type(service_finder)))
@@ -436,6 +438,8 @@ class AdminClient(cmd.Cmd):
         if self.credential_type == CredentialType.PASSWORD:
             self.user_name = "admin"
             self.pwd = hash_password("admin")
+        elif self.credential_type == CredentialType.LOCAL_CERT:
+            self.user_name = self.username
         else:
             self.user_name = input("User Name: ")
 
