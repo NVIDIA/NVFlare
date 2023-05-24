@@ -37,7 +37,7 @@ from nvflare.fuel.f3.cellnet.defs import (
     ServiceUnavailable,
 )
 from nvflare.fuel.f3.cellnet.fqcn import FQCN, FqcnInfo, same_family
-from nvflare.fuel.f3.cellnet.stream_api import ObjectStream, ObjectStreamFuture, Stream, StreamFuture
+from nvflare.fuel.f3.cellnet.stream_api import ObjectIterator, ObjectStreamFuture, Stream, StreamFuture
 from nvflare.fuel.f3.cellnet.utils import decode_payload, encode_payload, format_log_message, make_reply, new_message
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.communicator import Communicator, MessageReceiver
@@ -1975,7 +1975,7 @@ class Cell(MessageReceiver, EndpointMonitor):
 
     # Stream API
 
-    def send_stream(self, channel: str, topic: str, target: str, stream: Stream) -> StreamFuture:
+    def send_stream(self, channel: str, topic: str, target: str, message: Message) -> StreamFuture:
         """
         Send a byte-stream over a channel/topic asynchronously. The streaming is performed in a different thread.
         The streamer will read from stream and send the data in chunks till the stream reaches EOF.
@@ -1986,44 +1986,53 @@ class Cell(MessageReceiver, EndpointMonitor):
             channel: channel for the stream
             topic: topic for the stream
             target: destination cell FQCN
-            stream: the stream to send
+            message: The payload is the stream to send
 
-        Returns: StreamFuture that can be used to check status/progress, or register callbacks
+        Returns: StreamFuture that can be used to check status/progress, or register callbacks.
+            The future result is the number of bytes sent
 
         """
         pass
 
-    def register_stream_cb(self, channel: str, topic: str, stream_cb: Callable, resume_cb: Callable, *args, **kwargs):
+    def register_stream_cb(self, channel: str, topic: str, stream_cb: Callable, *args, **kwargs):
         """
         Register a callback for reading stream. The stream_cb must have the following signature,
-            stream_cb(stream: Stream, *args, **kwargs)
+            stream_cb(future: StreamFuture, stream: Stream, resume: bool, *args, **kwargs) -> int
+                future: The future represents the ongoing streaming. It's done when streaming is complete.
+                stream: The stream to read the receiving data from
+                resume: True if this is a restarted stream
+                It returns the offset to resume from if this is a restarted stream
 
         The resume_cb returns the offset to resume from:
             resume_cb(stream_id: str, *args, **kwargs) -> int
 
+        If None, the stream is not resumable.
+
         Args:
             channel: the channel of the request
             topic: topic of the request
-            stream_cb: The callback to handle the stream. This CB is invoked in a dedicated thread, and it can block
-            resume_cb: This callback will be invoked to negotiate offset to resume a failed stream. If None,
-                the stream is not resumable
+            stream_cb: The callback to handle the stream. This is called when a stream is started. It also
+                provides restart offset for restarted streams. This CB is invoked in a dedicated thread,
+                and it can block
             *args: positional args to be passed to the callbacks
             **kwargs: keyword args to be passed to the callbacks
 
         """
         pass
 
-    def send_blob(self, channel: str, topic: str, target: str, blob: bytes) -> StreamFuture:
+    def send_blob(self, channel: str, topic: str, target: str, message: Message) -> StreamFuture:
         """
-        Send a BLOB (Binary Large Object) to the target. The blob must fit in memory on the receiving end.
+        Send a BLOB (Binary Large Object) to the target. The payload of message is the BLOB. The BLOB must fit in
+        memory on the receiving end.
 
         Args:
             channel: channel for the message
             topic: topic of the message
             target: destination cell IDs
-            blob: the binary bytes
+            message: the headers and the blob as payload
 
-        Returns: StreamFuture that can be used to check status/progress
+        Returns: StreamFuture that can be used to check status/progress and get result
+            The future result is the total number of bytes sent
 
         """
         pass
@@ -2035,7 +2044,9 @@ class Cell(MessageReceiver, EndpointMonitor):
         is ignored.
 
         The callback must have the following signature,
-            blob_cb(stream_id: str, blob: Message, *args, **kwargs)
+            blob_cb(future: StreamFuture, *args, **kwargs)
+
+        The future's result is the final BLOB received
 
         Args:
             channel: the channel of the request
@@ -2044,39 +2055,36 @@ class Cell(MessageReceiver, EndpointMonitor):
         """
         pass
 
-    def send_file(
-        self, channel: str, topic: str, target: str, path: str, headers: Optional[dict] = None
-    ) -> StreamFuture:
+    def send_file(self, channel: str, topic: str, target: str, message: Message) -> StreamFuture:
         """
-        Send a file to target using stream.
+        Send a file to target using stream API.
 
         Args:
             channel: channel for the message
             topic: topic for the message
             target: destination cell FQCN
-            path: the full path of the file to be sent
-            headers: Optional headers to be sent
+            message: the headers and the full path of the file to be sent as payload
 
-        Returns: StreamFuture that can be used to check status/progress
+        Returns: StreamFuture that can be used to check status/progress and get the total bytes sent
 
         """
         pass
 
-    def register_file_cb(self, channel: str, topic: str, file_done_cb, path_cb, *args, **kwargs):
+    def register_file_cb(self, channel: str, topic: str, file_cb, *args, **kwargs):
         """
-        Register a callback for reading stream. The callback must have the following signature,
-            file_done_cb(stream_id: str, path: str, headers: Optional[dict], *args, **kwargs)
-            path_cb(stream_id: str, filename: str, headers: Optional[dict], *args, **kwargs) -> str
+        Register callbacks for file receiving. The callbacks must have the following signatures,
+            file_cb(future: StreamFuture, *args, **kwargs) -> str
+                The future represents the file receiving task and the result is the final file path
+                It returns the full path where the file will be written to
 
         Args:
             channel: the channel of the request
             topic: topic of the request
-            file_done_cb: This CB is called when file transfer is done
-            path_cb: This CB is invoked to negotiate a full path for the file
+            file_cb: This CB is called when file transfer starts
         """
         pass
 
-    def send_objects(self, channel: str, topic: str, target: str, objects: ObjectStream) -> ObjectStreamFuture:
+    def send_objects(self, channel: str, topic: str, target: str, message: Message) -> ObjectStreamFuture:
         """
         Send a list of objects to the destination. Each object is sent as BLOB, so it must fit in memory
 
@@ -2084,25 +2092,29 @@ class Cell(MessageReceiver, EndpointMonitor):
             channel: channel for the message
             topic: topic of the message
             target: destination cell IDs
-            objects: An iterator that provides the next object
+            message: Headers and the payload which is an iterator that provides next object
 
         Returns: ObjectStreamFuture that can be used to check status/progress, or register callbacks
-
         """
         pass
 
-    def register_objects_cb(self, channel: str, topic: str, objects_cb, resume_cb=None, *args, **kwargs):
+    def register_objects_cb(self, channel: str, topic: str, object_stream_cb, *args, **kwargs):
         """
-        Register a callback for receiving the object. This callback is invoked when each object
+        Register callback for receiving the object. The callback signature is,
+            objects_stream_cb(future: ObjectStreamFuture, resume: bool, *args, **kwargs) -> int
+                future: It represents the streaming of all objects. An object CB can be registered with the future
+                to receive each object.
+                resume: True if this is a restarted stream
+                This CB returns the index to restart if this is a restarted stream
+
+            resume_cb(stream_id: str, *args, **kwargs) -> int
         is received. The index starts from 0. The callback must have the following signature,
-            objects_cb(stream_id: str, index: int, object: Any, headers: Optional[dict], *args, **kwargs)
+            objects_cb(future: ObjectStreamFuture, index: int, object: Any, headers: Optional[dict], *args, **kwargs)
             resume_cb(stream_id: str, *args, **kwargs) -> int
 
         Args:
             channel: the channel of the request
             topic: topic of the request
-            objects_cb: The callback to handle the object
-            resume_cb: The callback that provides the index of object to restart from. If none,
-                the object stream is not resumable
+            object_stream_cb: The callback when an object stream is started
         """
         pass

@@ -17,7 +17,7 @@ import time
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from concurrent.futures import Future
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 log = logging.getLogger(__name__)
 lock = threading.Lock()
@@ -98,8 +98,8 @@ class Stream(ABC):
         self.pos = offset
 
 
-class ObjectStream(Iterator, ABC):
-    """An object stream in the form of an iterator.
+class ObjectIterator(Iterator, ABC):
+    """An object iterator that returns next object
     The __next__() method must be defined to return next object.
     """
 
@@ -127,18 +127,23 @@ class StreamFuture:
     Fashioned after concurrent.futures.Future
     """
 
-    def __init__(self, stream_id: str, task: Future):
+    def __init__(self, stream_id: str, task: Future, headers: Optional[dict] = None):
         self.stream_id = stream_id
         self.task = task
+        self.headers = headers
         self.waiter = threading.Event()
         self.lock = threading.Lock()
         self.error: Optional[StreamError] = None
+        self.value = None
         self.size = 0
         self.progress = 0
         self.done_callbacks = []
 
     def get_stream_id(self) -> str:
         return self.stream_id
+
+    def get_headers(self) -> Optional[dict]:
+        return self.headers
 
     def get_size(self) -> int:
         return self.size
@@ -191,15 +196,15 @@ class StreamFuture:
         with self.lock:
             self.done_callbacks.append((status_cb, args, kwargs))
 
-    def result(self, timeout=None) -> int:
-        """Return the result of the call that the future represents. It returns number of bytes streamed
+    def result(self, timeout=None) -> Any:
+        """Return the result of the call that the future represents.
 
         Args:
             timeout: The number of seconds to wait for the result if the future
                 isn't done. If None, then there is no limit on the wait time.
 
         Returns:
-            The number of bytes streamed
+            The final result
 
         Raises:
             CancelledError: If the future was cancelled.
@@ -213,7 +218,7 @@ class StreamFuture:
             if self.error:
                 raise self.error
 
-            return self.progress
+            return self.value
 
     def exception(self, timeout=None):
         """Return the exception raised by the call that the future represents.
@@ -237,13 +242,13 @@ class StreamFuture:
             self.waiter.wait(timeout)
             return self.error
 
-    def set_result(self, result: int):
+    def set_result(self, value: Any):
         """Sets the return value of work associated with the future."""
 
         with self.lock:
             if self.error:
                 raise StreamError("Invalid state, future already failed")
-            self.progress = result
+            self.value = value
             self.waiter.set()
 
         self._invoke_callbacks()
@@ -268,6 +273,9 @@ class ObjectStreamFuture(StreamFuture):
     def __init__(self, stream_id: str, task: Future):
         super().__init__(stream_id, task)
         self.index = 0
+        self.object_cb = None
+        self.cb_args = None
+        self.cb_kwargs = None
 
     def get_index(self) -> int:
         """Current object index, which is only available for ObjectStream"""
@@ -276,3 +284,18 @@ class ObjectStreamFuture(StreamFuture):
     def set_index(self, index: int):
         """Set current object index"""
         self.index = index
+
+    def register_object_cb(self, object_cb: Callable, *args, **kwargs):
+        """Register a callback when each object is received.
+        The callback must have the following signature
+            object_cb(index: int, message: Message, *args, ** kwargs)
+                index: The index of the object
+                message: The header and payload is the object
+
+        Args:
+            object_cb: The callback to be invoked when each object is received
+        """
+
+        self.object_cb = object_cb
+        self.cb_args = args
+        self.cb_kwargs = kwargs
