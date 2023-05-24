@@ -8,12 +8,21 @@ to produce virtual tokens that guide the model toward the desired output of the 
 
 ## Dependencies
 We assume you followed the instructions [here](../../README.md#requirements) 
-to install the NeMo framework and the NeMo-NVFlare package. 
+to install the NeMo, NVFlare, and the NeMo-NVFlare package. 
 
-## Run the example
+## Examples
+### 1. Federated p-tuning using a 345 million parameter GPT model
+This example requires a GPU with at least 16GB memory to run three clients in parallel on the same GPU.
 We use [JupyterLab](https://jupyterlab.readthedocs.io) for this example.
 To start JupyterLab, run
 ```
 jupyter lab .
 ```
 and open [prompt_learning.ipynb](./prompt_learning.ipynb).
+
+### 2. Federated p-tuning using a 20 billion parameter GPT model
+This example running a 20B GPT model requires more computational resources. 
+To run three clients in parallel, we require at least six GPUs with 64 GB memory or more each 
+(Ampere or later GPU architecture).
+
+To run the example, follow the instructions in [prompt_learning_20B.md](prompt_learning_20B.md).
