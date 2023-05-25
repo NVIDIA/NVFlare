@@ -28,13 +28,12 @@
       "args": {
         "lr": 0.01,
         "epochs": 5,
-        "analytic_sender_id": "analytic_sender"
+        "analytic_sender_id": "log_writer"
       }
     },
     {
-      "id": "analytic_sender",
-      "name": "TBWriter",
-      "args": {"event_type": "analytix_log_stats"}
+      "id": "log_writer",
+      "name": "TBWriter"
     },
     {
       "id": "event_to_fed",

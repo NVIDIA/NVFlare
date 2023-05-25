@@ -31,30 +31,8 @@ FUNCTION_MAPPING = {
 }
 
 
-class TBAnalyticsReceiver(AnalyticsReceiver):
+class TBAnalyticsReceiver2(AnalyticsReceiver):
     def __init__(self, tb_folder="tb_events", events: Optional[List[str]] = None):
-        """Receives analytics data to save to TensorBoard.
-
-        Args:
-            tb_folder (str): the folder to store tensorboard files.
-            events (optional, List[str]): A list of events to be handled by this receiver.
-
-        .. code-block:: text
-            :caption: Folder structure
-
-            Inside run_XX folder:
-              - workspace
-                - run_01 (already created):
-                  - output_dir (default: tb_events):
-                    - peer_name_1:
-                    - peer_name_2:
-
-                - run_02 (already created):
-                  - output_dir (default: tb_events):
-                    - peer_name_1:
-                    - peer_name_2:
-
-        """
         super().__init__(events=events)
         self.writers_table = {}
         self.tb_folder = tb_folder
