@@ -176,31 +176,32 @@ class SimulatorRunner(FLComponent):
 
             if self.args.gpu:
                 try:
-                    gpus = split_gpus(self.args.gpu)
+                    gpu_groups = split_gpus(self.args.gpu)
                 except ValueError as e:
                     self.logger.error(f"GPUs group list option in wrong format. Error: {e}")
                     return False
 
                 host_gpus = [str(x) for x in (get_host_gpu_ids())]
-                if host_gpus and not set(gpus).issubset(host_gpus):
-                    wrong_gpus = [x for x in gpus if x not in host_gpus]
+                gpu_ids = [x.split(",") for x in gpu_groups]
+                if host_gpus and not set().union(*gpu_ids).issubset(host_gpus):
+                    wrong_gpus = [x for x in gpu_groups if x not in host_gpus]
                     self.logger.error(f"These GPUs are not available: {wrong_gpus}")
                     return False
 
-                if len(gpus) > len(self.client_names):
+                if len(gpu_groups) > len(self.client_names):
                     self.logger.error(
                         f"The number of clients ({len(self.client_names)}) must be larger than or equal to "
-                        f"the number of GPUS: ({len(gpus)})"
+                        f"the number of GPU groups: ({len(gpu_groups)})"
                     )
                     return False
-                if len(gpus) > 1:
+                if len(gpu_groups) > 1:
                     if self.args.threads and self.args.threads > 1:
                         self.logger.info(
                             "When running with multi GPU, each GPU will run with only 1 thread. "
                             "Set the Threads to 1."
                         )
                     self.args.threads = 1
-                elif len(gpus) == 1:
+                elif len(gpu_groups) == 1:
                     if self.args.threads is None:
                         self.args.threads = 1
                         self.logger.warn("The number of threads is not provided. Set it to default: 1")
