@@ -56,4 +56,4 @@ For example:
 ssh -L {local_machine_port}:127.0.0.1:6006 user@server_ip
 ```
 
-> **_NOTE:_** For a more in-depth guide about the TensorBoard streaming feature, see [PyTorch with TensorBoard](https://nvflare.readthedocs.io/en/main/examples/hello_pt_tb.html).
+> **_NOTE:_** For a more in-depth guide about the TensorBoard streaming feature, see [PyTorch with TensorBoard](https://nvflare.readthedocs.io/en/dev/examples/tensorboard_streaming.html).
