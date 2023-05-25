@@ -904,7 +904,7 @@ helm_chart_values: |
   persist: /home/nvflare
 
 
-azure_start_svr_sh: |
+cloud_script_header: |
   #!/usr/bin/env bash
   
   DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
@@ -953,7 +953,8 @@ azure_start_svr_sh: |
     esac
     shift
   done
-  
+
+azure_start_svr_sh: |
   RESOURCE_GROUP=nvflare_rg
   VM_NAME=nvflare_server
   VM_IMAGE=Canonical:0001-com-ubuntu-server-focal:20_04-lts-gen2:latest
@@ -1198,54 +1199,6 @@ azure_start_svr_sh: |
   echo "To login to the VM with SSH, use ${ADMIN_USERNAME} : ${PASSWORD}" > vm_credential.txt
 
 azure_start_cln_sh: |
-  #!/usr/bin/env bash
-  DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-  function report_status() {
-    status="$1"
-    if [ "${status}" -ne 0 ]
-    then
-      echo "$2 failed"
-      exit "${status}"
-    fi
-  }
-
-  function check_binary() {
-    echo -n "Checking if $1 exists. => "
-    if ! command -v $1 &> /dev/null
-    then
-      echo "not found. $2"
-      exit 1
-    else
-      echo "found"
-    fi
-  }
-
-  function prompt() {
-    local __default="$1"
-    read -p "$2" ans
-    if [[ ! -z "$ans" ]]
-    then
-      eval $__default="'$ans'"
-    fi
-  }
-
-  # parse arguments
-  while [[ $# -gt 0 ]]
-  do
-      key="$1"
-      case $key in
-          --config)
-              config_file=$2
-              shift
-          ;;
-      --image)
-        image_name=$2
-        shift
-      ;;
-      esac
-      shift
-  done
-
   RESOURCE_GROUP=nvflare_client_rg_${RANDOM}_${RANDOM}
   VM_NAME=nvflare_client
   VM_IMAGE=Canonical:0001-com-ubuntu-server-focal:20_04-lts-gen2:latest
@@ -1422,37 +1375,6 @@ azure_start_cln_sh: |
   echo "To login to the VM with SSH, use ${ADMIN_USERNAME} : ${PASSWORD}" > vm_credential.txt
 
 azure_start_dsb_sh: |
-  #!/usr/bin/env bash
-
-  function report_status() {
-    status="$1"
-    if [ "${status}" -ne 0 ]
-    then
-      echo "$2 failed"
-      exit "${status}"
-    fi
-  }
-
-  function check_binary() {
-    echo -n "Checking if $1 exists. => "
-    if ! command -v $1 &> /dev/null
-    then
-      echo "not found $2"
-      exit 1
-    else
-      echo "found"
-    fi
-  }
-  
-  function prompt() {
-  local __default="$1"
-  read -p "$2" ans
-  if [[ ! -z "$ans" ]]
-  then
-    eval $__default="'$ans'"
-  fi
-  }
-
   RESOURCE_GROUP=nvflare_dashboard_rg_${RANDOM}_${RANDOM}
   VM_NAME=nvflare_dashboard
   VM_IMAGE=Canonical:0001-com-ubuntu-server-focal:20_04-lts-gen2:latest
@@ -1729,57 +1651,6 @@ adm_notebook: |
   }
 
 aws_start_svr_sh: |
-  #!/usr/bin/env bash
-
-  set +e
-  DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-
-  function report_status() {
-    status="$1"
-    if [ "${status}" -ne 0 ]
-    then
-      echo "$2 failed"
-      exit "${status}"
-    fi
-  }
-
-  function check_binary() {
-    echo -n "Checking if $1 exists. => "
-    if ! command -v $1 &> /dev/null
-    then
-      echo "not found. $2"
-      exit 1
-    else
-      echo "found"
-    fi
-  }
-
-  function prompt() {
-    local __default="$1"
-    read -p "$2" ans
-    if [[ ! -z "$ans" ]]
-    then
-      eval $__default="'$ans'"
-    fi
-  }
-
-  # parse arguments
-  while [[ $# -gt 0 ]]
-  do
-    key="$1"
-    case $key in
-      --config)
-        config_file=$2
-        shift
-      ;;
-      --image)
-        image_name=$2
-        shift
-      ;;
-    esac
-    shift
-  done
-
   VM_NAME=nvflare_server
   SECURITY_GROUP=nvflare_server_sg
   DEST_FOLDER=/var/tmp/cloud
@@ -1913,57 +1784,6 @@ aws_start_svr_sh: |
   echo "key pair: ${KEY_PAIR}"
 
 aws_start_cln_sh: |
-  #!/usr/bin/env bash
-
-  set +e
-  DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
-
-  function report_status() {
-    status="$1"
-    if [ "${status}" -ne 0 ]
-    then
-      echo "$2 failed"
-      exit "${status}"
-    fi
-  }
-
-  function check_binary() {
-    echo -n "Checking if $1 exists. => "
-    if ! command -v $1 &> /dev/null
-    then
-      echo "not found. $2"
-      exit 1
-    else
-      echo "found"
-    fi
-  }
-
-  function prompt() {
-    local __default="$1"
-    read -p "$2" ans
-    if [[ ! -z "$ans" ]]
-    then
-      eval $__default="'$ans'"
-    fi
-  }
-
-  # parse arguments
-  while [[ $# -gt 0 ]]
-  do
-    key="$1"
-    case $key in
-      --config)
-        config_file=$2
-        shift
-      ;;
-      --image)
-        image_name=$2
-        shift
-      ;;
-    esac
-    shift
-  done
-
   VM_NAME=nvflare_client
   SECURITY_GROUP=nvflare_client_sg_$RANDOM
   DEST_FOLDER=/var/tmp/cloud
@@ -2097,37 +1917,6 @@ aws_start_cln_sh: |
 
 
 aws_start_dsb_sh: |
-  #!/usr/bin/env bash
-
-  function report_status() {
-    status="$1"
-    if [ "${status}" -ne 0 ]
-    then
-      echo "$2 failed"
-      exit "${status}"
-    fi
-  }
-
-  function check_binary() {
-    echo -n "Checking if $1 exists. => "
-    if ! command -v $1 &> /dev/null
-    then
-      echo "not found $2"
-      exit 1
-    else
-      echo "found"
-    fi
-  }
-  
-  function prompt() {
-  local __default="$1"
-  read -p "$2" ans
-  if [[ ! -z "$ans" ]]
-  then
-    eval $__default="'$ans'"
-  fi
-  }
-
   VM_NAME=nvflare_dashboard
   AMI_IMAGE=ami-04bad3c587fe60d89
   EC2_TYPE=t2.small

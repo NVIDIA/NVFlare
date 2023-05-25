@@ -18,7 +18,7 @@ import os
 import subprocess
 import tempfile
 
-from nvflare.lighter import utils
+from nvflare.lighter import tplt_utils, utils
 
 from .cert import CertPair, Entity, deserialize_ca_key, make_cert
 from .models import Client, Project, User
@@ -122,6 +122,7 @@ def gen_server(key, first_server=True):
         "docker_image": project.app_location.split(" ")[-1] if project.app_location else "nvflare/nvflare",
         "org_name": "",
     }
+    tplt = tplt_utils.Template(template)
     with tempfile.TemporaryDirectory() as tmp_dir:
         server_dir = os.path.join(tmp_dir, entity.name)
         dest_dir = os.path.join(server_dir, "startup")
@@ -158,13 +159,19 @@ def gen_server(key, first_server=True):
         if not project.ha_mode:
             _write(
                 os.path.join(dest_dir, get_csp_start_script_name("azure")),
-                utils.sh_replace(get_csp_template("azure", "svr", template), {"server_name": entity.name, "ORG": ""}),
+                utils.sh_replace(
+                    tplt.get_cloud_script_header() + get_csp_template("azure", "svr", template),
+                    {"server_name": entity.name, "ORG": ""},
+                ),
                 "t",
                 exe=True,
             )
             _write(
                 os.path.join(dest_dir, get_csp_start_script_name("aws")),
-                utils.sh_replace(get_csp_template("aws", "svr", template), {"server_name": entity.name, "ORG": ""}),
+                utils.sh_replace(
+                    tplt.get_cloud_script_header() + get_csp_template("aws", "svr", template),
+                    {"server_name": entity.name, "ORG": ""},
+                ),
                 "t",
                 exe=True,
             )
@@ -240,6 +247,7 @@ def gen_client(key, id):
         overseer_agent["args"] = {"sp_end_point": f"{project.server1}:8002:8003"}
     config["overseer_agent"] = overseer_agent
 
+    tplt = tplt_utils.Template(template)
     with tempfile.TemporaryDirectory() as tmp_dir:
         client_dir = os.path.join(tmp_dir, entity.name)
         dest_dir = os.path.join(client_dir, "startup")
@@ -276,13 +284,19 @@ def gen_client(key, id):
         _write(os.path.join(dest_dir, "rootCA.pem"), project.root_cert, "b", exe=False)
         _write(
             os.path.join(dest_dir, get_csp_start_script_name("azure")),
-            utils.sh_replace(get_csp_template("azure", "cln", template), {"SITE": entity.name, "ORG": entity.org}),
+            utils.sh_replace(
+                tplt.get_cloud_script_header() + get_csp_template("azure", "cln", template),
+                {"SITE": entity.name, "ORG": entity.org},
+            ),
             "t",
             exe=True,
         )
         _write(
             os.path.join(dest_dir, get_csp_start_script_name("aws")),
-            utils.sh_replace(get_csp_template("aws", "cln", template), {"SITE": entity.name, "ORG": entity.org}),
+            utils.sh_replace(
+                tplt.get_cloud_script_header() + get_csp_template("aws", "cln", template),
+                {"SITE": entity.name, "ORG": entity.org},
+            ),
             "t",
             exe=True,
         )
