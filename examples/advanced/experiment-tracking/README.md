@@ -1,6 +1,6 @@
 # Experiment Tracking Overview
 
-Please make sure you set up virtual environment and follows [example root readme](../../README.md)
+Please make sure you set up a virtual environment and follow the installation steps on the [example root readme](../../README.md).
 
 This folder contains examples for experiment tracking in NVFlare.
 

@@ -102,6 +102,8 @@ class InfoCollector(Widget):
                 return
 
             analytic_data = AnalyticsData.from_dxo(dxo)
+            if not analytic_data:
+                return
 
             if event_type == EventType.CRITICAL_LOG_AVAILABLE:
                 key = "critical"

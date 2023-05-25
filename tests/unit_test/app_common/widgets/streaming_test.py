@@ -18,7 +18,7 @@ from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.tracking.tracker_types import Tracker
+from nvflare.app_common.tracking.tracker_types import LogWriterName
 from nvflare.app_common.widgets.streaming import create_analytic_dxo, send_analytic_dxo
 
 INVALID_TEST_CASES = [
@@ -95,4 +95,4 @@ class TestStreaming:
     @pytest.mark.parametrize("tag,value,step, data_type,expected_error,expected_msg", INVALID_WRITE_TEST_CASES)
     def test_invalid_write_func(self, tag, value, step, data_type, expected_error, expected_msg):
         with pytest.raises(expected_error, match=expected_msg):
-            create_analytic_dxo(tag=tag, value=value, data_type=data_type, step=step, sender=Tracker.TORCH_TB)
+            create_analytic_dxo(tag=tag, value=value, data_type=data_type, step=step, writer=LogWriterName.TORCH_TB)
