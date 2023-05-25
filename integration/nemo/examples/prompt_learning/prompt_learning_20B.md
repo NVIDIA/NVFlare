@@ -70,9 +70,9 @@ fi
 ```
 
 #### 2. Download the Financial PhraseBank Dataset
-
-Download the `FinancialPhraseBank-v1.0.zip` dataset from [here](https://www.researchgate.net/publication/251231364_FinancialPhraseBank-v10/link/0c96051eee4fb1d56e000000/download).
-
+<!-- markdown-link-check-disable -->
+Download the `FinancialPhraseBank-v1.0.zip` dataset from [here](https://www.researchgate.net/profile/Pekka_Malo/publication/251231364_FinancialPhraseBank-v1.0/data/0c96051eee4fb1d56e000000/FinancialPhraseBank-v1.0.zip).
+<!-- markdown-link-check-enable -->
 Then extract it under `./data`.
 
 #### 3. Preprocess the dataset
