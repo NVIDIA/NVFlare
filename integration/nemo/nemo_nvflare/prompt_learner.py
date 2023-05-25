@@ -154,7 +154,7 @@ class PromptLearner(Learner):
 
         if self.devices > 1:
             # distributed environment is set by PTMultiProcessExecutor
-            if "MASTER_ADDR" not in os.environment or "MASTER_PORT" not in os.environment:
+            if "MASTER_ADDR" not in os.environ or "MASTER_PORT" not in os.environ:
                 raise ValueError(
                     f"Distributed environment not set up correctly for {self.devices} devices. "
                     f"Did you use `PTMultiProcessExecutor`?"
