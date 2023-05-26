@@ -100,7 +100,7 @@ class CIFAR10Learner(Learner2):  # also supports CIFAR10ScaffoldLearner
         self.train_loader = None
         self.valid_loader = None
 
-    def initialize(self, parts: dict):
+    def initialize(self):
         """
         Note: this code assumes a FL simulation setting
         Datasets will be initialized in train() and validate() when calling self._create_datasets()
@@ -119,7 +119,7 @@ class CIFAR10Learner(Learner2):  # also supports CIFAR10ScaffoldLearner
         self.best_local_model_file = os.path.join(self.app_root, "best_local_model.pt")
 
         # Select local TensorBoard writer or event-based writer for streaming
-        self.writer = parts.get(self.analytic_sender_id)  # user configured config_fed_client.json for streaming
+        self.writer = self.get_component(self.analytic_sender_id)  # user configured config_fed_client.json for streaming
         if not self.writer:  # use local TensorBoard writer only
             self.writer = SummaryWriter(self.app_root)
 
@@ -168,7 +168,7 @@ class CIFAR10Learner(Learner2):  # also supports CIFAR10ScaffoldLearner
                     self.info("Loading subset index")
                     site_idx = np.load(site_idx_file_name).tolist()  # TODO: get from fl_ctx/shareable?
                 else:
-                    self.panic(f"No subset index found! File {site_idx_file_name} does not exist!")
+                    self.stop_run(f"No subset index found! File {site_idx_file_name} does not exist!")
                     return
                 self.info(f"Client subset size: {len(site_idx)}")
             else:
@@ -316,7 +316,7 @@ class CIFAR10Learner(Learner2):  # also supports CIFAR10ScaffoldLearner
                 continue
             model_diff[name] = np.subtract(local_weights[name].cpu().numpy(), global_weights[name], dtype=np.float32)
             if np.any(np.isnan(model_diff[name])):
-                self.panic(f"{name} weights became NaN...")
+                self.stop_run(f"{name} weights became NaN...")
                 return ReturnCode.EXECUTION_EXCEPTION
 
         # build the shareable

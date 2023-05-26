@@ -91,9 +91,9 @@ class CIFAR10AutoFedRLearner(CIFAR10Learner):  # TODO: also support CIFAR10Scaff
         # Use FOBS serializing/deserializing PyTorch tensors
         fobs.register(TensorDecomposer)
 
-    def initialize(self, parts: dict):
+    def initialize(self):
         # Initialize super class
-        CIFAR10Learner.initialize(self, parts=parts)
+        CIFAR10Learner.initialize(self)
         # Enabling the Nesterov momentum can stabilize the training.
         self.optimizer = optim.SGD(self.model.parameters(), lr=self.lr, momentum=0.9, weight_decay=0.0, nesterov=True)
 
@@ -110,7 +110,7 @@ class CIFAR10AutoFedRLearner(CIFAR10Learner):  # TODO: also support CIFAR10Scaff
                     self.info("Loading subset index")
                     site_idx = np.load(site_idx_file_name).tolist()  # TODO: get from fl_ctx/shareable?
                 else:
-                    self.panic(f"No subset index found! File {site_idx_file_name} does not exist!")
+                    self.stop_run(f"No subset index found! File {site_idx_file_name} does not exist!")
                     return
                 self.info(f"Client subset size: {len(site_idx)}")
             else:

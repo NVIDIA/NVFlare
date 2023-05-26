@@ -95,7 +95,8 @@ class LearnerExecutor(Executor):
                 self.learner.initialize(engine.get_all_components(), fl_ctx)
             elif isinstance(self.learner, Learner2):
                 self.learner.fl_ctx = fl_ctx
-                self.learner.initialize(engine.get_all_components())
+                self.learner.engine = engine
+                self.learner.initialize()
             else:
                 raise TypeError(f"learner must be Learner or Learner2 type, but got: {type(self.learner)}")
         except Exception as e:
@@ -253,9 +254,9 @@ class LearnerExecutor(Executor):
 
     def submit_model2(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
         model_name = shareable.get_header(AppConstants.SUBMIT_MODEL_NAME)
-        result = self.learner.get_model_for_validation(model_name)
+        result = self.learner.get_model(model_name)
         if isinstance(result, str):
-            self.log_error(fl_ctx, f"Learner {self.learner_name} failed to get_model_for_validation: {result}")
+            self.log_error(fl_ctx, f"Learner {self.learner_name} failed to get_model: {result}")
             return make_reply(result)
 
         if isinstance(result, DXO):
@@ -263,7 +264,7 @@ class LearnerExecutor(Executor):
         else:
             self.log_error(
                 fl_ctx,
-                f"Learner {self.learner_name} bad result from get_model_for_validation: expect DXO but got {type(result)}",
+                f"Learner {self.learner_name} bad result from get_model: expect DXO but got {type(result)}",
             )
             return make_reply(ReturnCode.EMPTY_RESULT)
 

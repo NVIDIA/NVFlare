@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from abc import abstractmethod
-from typing import Union
+from typing import Any, Union
 
 from nvflare.apis.dxo import DXO
 from nvflare.apis.fl_component import FLComponent
@@ -52,6 +52,12 @@ class Learner2(FLComponent):
         assert isinstance(self.fl_ctx, FLContext)
         return self.fl_ctx.get_prop(key, default)
 
+    def get_component(self, component_id: str) -> Any:
+        if self.engine:
+            return self.engine.get_component(component_id)
+        else:
+            return None
+
     def debug(self, msg: str):
         self.log_debug(self.fl_ctx, msg)
 
@@ -70,16 +76,14 @@ class Learner2(FLComponent):
     def critical(self, msg: str):
         self.log_critical(self.fl_ctx, msg)
 
-    def panic(self, reason: str):
+    def stop_run(self, reason: str):
         self.system_panic(reason, self.fl_ctx)
 
-    def initialize(self, parts: dict):
+    def initialize(self):
         """Initialize the Learner object. This is called before the Learner can train or validate.
 
         This is called only once.
 
-        Args:
-            parts: components to be used by the Trainer
         """
         pass
 
@@ -95,24 +99,13 @@ class Learner2(FLComponent):
         """
         pass
 
-    def get_model_for_validation(self, model_name: str) -> Union[str, DXO]:
+    def get_model(self, model_name: str) -> Union[str, DXO]:
         """Called to return the trained model from the Learner.
 
         Args:
             model_name: type of the model for validation
 
-        Returns: trained model for validation
-
-        """
-        pass
-
-    def validate_before_train(self, dxo: DXO) -> Union[str, DXO]:
-        """Validate the current model with the specified weights in dxo before training.
-
-        Args:
-            dxo: the DXO object that contains model weights
-
-        Returns: validation metrics in DXO if successful; or return code if failed.
+        Returns: trained model
 
         """
         pass

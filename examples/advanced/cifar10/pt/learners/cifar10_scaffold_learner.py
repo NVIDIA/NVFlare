@@ -71,9 +71,9 @@ class CIFAR10ScaffoldLearner(CIFAR10Learner):
         )
         self.scaffold_helper = PTScaffoldHelper()
 
-    def initialize(self, parts: dict):
+    def initialize(self):
         # Initialize super class and SCAFFOLD
-        CIFAR10Learner.initialize(self, parts=parts)
+        CIFAR10Learner.initialize(self)
         self.scaffold_helper.init(model=self.model)
 
     def local_train(self, train_loader, model_global, val_freq: int = 0):
