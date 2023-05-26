@@ -49,6 +49,7 @@ class FilePipe(Pipe):
 
     def set_file_accessor(self, accessor: FileAccessor):
         """Set the file accessor to be used by the pipe.
+        The default file accessor is FobsFileAccessor.
 
         Args:
             accessor: the accessor to be used.

@@ -21,11 +21,28 @@ from .file_accessor import FileAccessor
 
 class FobsFileAccessor(FileAccessor):
     def read(self, file_path: str) -> Any:
+        """Read the file as a binary file and decode it with FOBS.
+
+        Args:
+            file_path: path to the file to be read
+
+        Returns:
+
+        """
         with open(file_path, mode="rb") as file:  # b is important -> binary
             data = file.read()
         return fobs.loads(data)
 
     def write(self, data: Any, file_path):
+        """Write the data as binary file.
+
+        Args:
+            data: data to be written
+            file_path: path of the file
+
+        Returns:
+
+        """
         data = fobs.dumps(data)
         with open(file_path, "wb") as f:
             f.write(data)

@@ -29,4 +29,12 @@ class FileAccessor:
         pass
 
     def read(self, file_path: str) -> Any:
+        """Read the data located at the specified file_path
+
+        Args:
+            file_path: location of the data to be read
+
+        Returns: the data object read
+
+        """
         pass
