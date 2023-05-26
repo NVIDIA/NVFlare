@@ -15,8 +15,6 @@
 import os.path
 
 import torch
-from pt_constants import PTConstants
-from simple_network import SimpleNetwork
 from torch import nn
 from torch.optim import SGD
 from torch.utils.data.dataloader import DataLoader
@@ -38,8 +36,8 @@ from nvflare.app_common.abstract.model import (
 )
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.pt.pt_fed_utils import PTModelPersistenceFormatManager
-from pt_constants import PTConstants
-from simple_network import SimpleNetwork
+from pt.pt_constants import PTConstants
+from pt.simple_network import SimpleNetwork
 
 
 class PTLearner(Learner):
