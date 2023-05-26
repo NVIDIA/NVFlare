@@ -49,6 +49,6 @@ Please also install "./requirements.txt" in each example folder.
   * Discuss the federated site policies for authorization, resource and data privacy management
 
 ## Experiment tracking
-* [Hello PyTorch with TensorBoard Streaming](./experiment-tracking/tensorboard-streaming/README.md)
+* [Hello PyTorch with TensorBoard Streaming](./experiment-tracking/tensorboard/README.md)
   * Example building upon [Hello PyTorch](../hello-world/hello-pt/README.md) showcasing the [TensorBoard](https://tensorflow.org/tensorboard) streaming capability from the clients to the server.
 
