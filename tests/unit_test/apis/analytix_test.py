@@ -86,7 +86,7 @@ class TestAnalytix:
 
     @pytest.mark.parametrize("tag,value,step, data_type", FROM_DXO_TEST_CASES)
     def test_from_dxo(self, tag, value, step, data_type):
-        dxo = create_analytic_dxo(tag=tag, value=value, data_type=data_type, step=step)
+        dxo = create_analytic_dxo(tag=tag, value=value, data_type=data_type, global_step=step)
         assert dxo.get_meta_prop(_DATA_TYPE_KEY) == data_type
         result = AnalyticsData.from_dxo(dxo)
         assert result.tag == tag

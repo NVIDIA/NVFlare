@@ -56,7 +56,6 @@ def create_analytic_dxo(
     tag: str,
     value,
     data_type: AnalyticsDataType,
-    step: int = None,
     writer: LogWriterName = LogWriterName.TORCH_TB,
     **kwargs,
 ) -> DXO:
@@ -72,7 +71,6 @@ def create_analytic_dxo(
     Returns:
         A DXO object that contains the analytic data.
     """
-    step = step if step else kwargs.get("global_step", None)
     data = AnalyticsData(key=tag, value=value, data_type=data_type, sender=writer, **kwargs)
     dxo = data.to_dxo()
     return dxo

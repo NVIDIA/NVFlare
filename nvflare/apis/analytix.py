@@ -13,7 +13,6 @@
 # limitations under the License.
 
 from enum import Enum
-from typing import Dict, Optional
 
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.app_common.tracking.tracker_types import LogWriterName, TrackConst
@@ -48,9 +47,7 @@ class AnalyticsData:
         value,
         data_type: AnalyticsDataType,
         sender: LogWriterName = LogWriterName.TORCH_TB,
-        kwargs: Optional[dict] = None,
-        step: Optional[int] = None,
-        path: Optional[str] = None,
+        **kwargs,
     ):
         """This class defines AnalyticsData format.
 
@@ -63,14 +60,14 @@ class AnalyticsData:
             sender (LogWriterName): Type of sender for syntax such as Tensorboard or MLflow
             kwargs (optional, dict): additional arguments to be passed.
         """
-        self._validate_data_types(data_type, kwargs, key, value, step, path)
+        self._validate_data_types(data_type, key, value, **kwargs)
         self.tag = key
         self.value = value
         self.data_type = data_type
         self.kwargs = kwargs
-        self.step = step
-        self.path = path
         self.sender = sender
+        self.step = kwargs.get(TrackConst.GLOBAL_STEP_KEY, None)
+        self.path = kwargs.get(TrackConst.PATH_KEY, None)
 
     def to_dxo(self):
         """Converts the AnalyticsData to DXO object.
@@ -129,11 +126,9 @@ class AnalyticsData:
     def _validate_data_types(
         self,
         data_type: AnalyticsDataType,
-        kwargs: Optional[Dict],
         key: str,
         value: any,
-        step: Optional[int] = None,
-        path: Optional[str] = None,
+        **kwargs,
     ):
         if not isinstance(key, str):
             raise TypeError("expect tag to be an instance of str, but got {}.".format(type(key)))
@@ -143,11 +138,13 @@ class AnalyticsData:
             )
         if kwargs and not isinstance(kwargs, dict):
             raise TypeError("expect kwargs to be an instance of dict, but got {}.".format(type(kwargs)))
+        step = kwargs.get(TrackConst.GLOBAL_STEP_KEY, None)
         if step:
             if not isinstance(step, int):
                 raise TypeError("expect step to be an instance of int, but got {}.".format(type(step)))
             if step < 0:
                 raise ValueError("expect step to be non-negative int, but got {}.".format(step))
+        path = kwargs.get(TrackConst.PATH_KEY, None)
         if path and not isinstance(path, str):
             raise TypeError("expect path to be an instance of str, but got {}.".format(type(step)))
         if data_type in [AnalyticsDataType.SCALAR, AnalyticsDataType.METRIC] and not isinstance(value, float):
