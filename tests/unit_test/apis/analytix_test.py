@@ -64,14 +64,6 @@ INVALID_TEST_CASES = [
         TypeError,
         f"expect data_type to be an instance of AnalyticsDataType, but got {type('')}.",
     ),
-    # (
-    #     "tag",
-    #     1.0,
-    #     AnalyticsDataType.SCALAR,
-    #     [1],
-    #     TypeError,
-    #     f"expect kwargs to be an instance of dict, but got {type(list())}.",
-    # ),
 ]
 
 
