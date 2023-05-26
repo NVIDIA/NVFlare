@@ -16,9 +16,12 @@ import os
 import shutil
 import time
 
-from nvflare.fuel.utils.validation_utils import check_positive_number, check_str
+from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_number, check_str
 
-from .pipe import Pipe, Message
+from .file_accessor import FileAccessor
+from .file_name_utils import file_name_to_message, message_to_file_name
+from .fobs_file_accessor import FobsFileAccessor
+from .pipe import Message, Pipe
 
 
 class FilePipe(Pipe):
@@ -42,6 +45,19 @@ class FilePipe(Pipe):
         self.t_path = None
         self.get_f = None
         self.put_f = None
+        self.accessor = FobsFileAccessor()  # default
+
+    def set_file_accessor(self, accessor: FileAccessor):
+        """Set the file accessor to be used by the pipe.
+
+        Args:
+            accessor: the accessor to be used.
+
+        Returns:
+
+        """
+        check_object_type("accessor", accessor, FileAccessor)
+        self.accessor = accessor
 
     @staticmethod
     def _make_dir(path):
@@ -52,6 +68,8 @@ class FilePipe(Pipe):
             pass
 
     def open(self, name: str, me: str):
+        if not self.accessor:
+            raise RuntimeError("File accessor is not set. Make sure to set a FileAccessor before opening the pipe")
         if me == "x":
             self.get_f = self.x_get
             self.put_f = self.x_put
@@ -94,50 +112,15 @@ class FilePipe(Pipe):
                 except FileNotFoundError:
                     pass
 
-    @staticmethod
-    def _message_to_file_name(msg: Message) -> str:
-        if msg.msg_type == Message.REQUEST:
-            return f"{msg.msg_type}.{msg.topic}.{msg.msg_id}"
-        elif msg.msg_type == Message.REPLY:
-            return f"{msg.msg_type}.{msg.topic}.{msg.req_id}.{msg.msg_id}"
-        else:
-            raise ValueError(f"invalid message type '{msg.msg_type}'")
-
-    @staticmethod
-    def _file_name_to_message(file_name: str) -> Message:
-        parts = file_name.split(".")
-        num_parts = len(parts)
-        if num_parts < 3 or num_parts > 4:
-            raise ValueError(f"bad file name: {file_name} - wrong number of parts {num_parts}")
-        msg_type = parts[0]
-        topic = parts[1]
-        msg_id = parts[-1]
-        data = None
-        if msg_type == Message.REQUEST:
-            if num_parts != 3:
-                raise ValueError(f"bad file name for request: {file_name} - must be 3 parts but got {num_parts}")
-            return Message.new_request(topic, data, msg_id)
-        elif msg_type == Message.REPLY:
-            if num_parts != 4:
-                raise ValueError(f"bad file name for request: {file_name} - must be 4 parts but got {num_parts}")
-            req_id = parts[2]
-            return Message.new_reply(topic, data, req_id, msg_id)
-        else:
-            raise ValueError(f"bad file name for request: {file_name} - invalid msg type '{msg_id}'")
-
     def _create_file(self, to_dir: str, msg: Message) -> str:
-        if not isinstance(msg.data, bytes):
-            raise ValueError(f"message data {type(msg.data)} has not been converted to bytes")
-
-        file_name = self._message_to_file_name(msg)
+        file_name = message_to_file_name(msg)
         file_path = os.path.join(to_dir, file_name)
 
         tmp_path = os.path.join(self.t_path, file_name)
         if not self.pipe_path:
             raise BrokenPipeError("pipe broken")
         try:
-            with open(tmp_path, "wb") as f:
-                f.write(msg.data)
+            self.accessor.write(msg.data, tmp_path)
             os.rename(tmp_path, file_path)
         except FileNotFoundError:
             raise BrokenPipeError("pipe closed")
@@ -199,14 +182,18 @@ class FilePipe(Pipe):
         # since reading file may take time and another process may try to delete the file
         # we move the file to a temp name before reading it
         file_name = os.path.basename(file_path)
-        msg = self._file_name_to_message(file_name)
+        msg = file_name_to_message(file_name)
         tmp_path = os.path.join(self.t_path, file_name)
         try:
             create_time = os.path.getctime(file_path)
             os.rename(file_path, tmp_path)
-            with open(tmp_path, mode="rb") as file:  # b is important -> binary
-                data = file.read()
-            os.remove(tmp_path)  # remove this file
+            data = self.accessor.read(tmp_path)
+            if os.path.isfile(tmp_path):
+                os.remove(tmp_path)  # remove this file
+            elif os.path.isdir(tmp_path):
+                shutil.rmtree(tmp_path)
+            else:
+                raise RuntimeError(f"cannot removed unsupported path: '{tmp_path}'")
             msg.data = data
             msg.sent_time = create_time
             msg.received_time = time.time()

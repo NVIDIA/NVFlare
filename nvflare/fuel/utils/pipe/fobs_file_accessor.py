@@ -15,16 +15,17 @@
 from typing import Any
 
 from nvflare.fuel.utils import fobs
-from .pipe_monitor import DataConverter
+
+from .file_accessor import FileAccessor
 
 
-class FobsDataConverter(DataConverter):
-
-    def from_bytes(self, data: bytes) -> Any:
+class FobsFileAccessor(FileAccessor):
+    def read(self, file_path: str) -> Any:
+        with open(file_path, mode="rb") as file:  # b is important -> binary
+            data = file.read()
         return fobs.loads(data)
 
-    def to_bytes(self, data: Any) -> bytes:
-        if not isinstance(data, bytes):
-            return fobs.dumps(data)
-        else:
-            return data
+    def write(self, data: Any, file_path):
+        data = fobs.dumps(data)
+        with open(file_path, "wb") as f:
+            f.write(data)

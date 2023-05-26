@@ -21,8 +21,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.fuel.utils.pipe.fobs_data_converter import FobsDataConverter
-from nvflare.fuel.utils.pipe.pipe import Pipe, Message
+from nvflare.fuel.utils.pipe.pipe import Message, Pipe
 from nvflare.fuel.utils.pipe.pipe_monitor import PipeMonitor, Topic
 from nvflare.fuel.utils.validation_utils import check_positive_number, check_str
 
@@ -67,7 +66,6 @@ class HubExecutor(Executor):
                 raise TypeError(f"pipe must be Pipe type. Got: {type(pipe)}")
             pipe.open(name=job_id, me="x")
             self.pipe_monitor = PipeMonitor(pipe)
-            self.pipe_monitor.set_data_converter(FobsDataConverter())
             self.pipe_monitor.start()
         elif event_type == EventType.END_RUN:
             # tell T2 system to end run
@@ -87,8 +85,7 @@ class HubExecutor(Executor):
         task_received_by_t2 = self.pipe_monitor.send_to_peer(req, timeout=self.task_read_wait_time)
         if not task_received_by_t2:
             self.log_error(
-                fl_ctx,
-                f"T2 failed to read task '{task_name}' in {self.task_read_wait_time} secs - aborting task!"
+                fl_ctx, f"T2 failed to read task '{task_name}' in {self.task_read_wait_time} secs - aborting task!"
             )
             return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
 
@@ -117,17 +114,13 @@ class HubExecutor(Executor):
                 return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
             elif reply.msg_type != Message.REPLY:
                 self.log_warning(
-                    fl_ctx,
-                    f"ignored msg '{reply.topic}.{reply.req_id}' when waiting for '{req.topic}.{req.msg_id}'")
+                    fl_ctx, f"ignored msg '{reply.topic}.{reply.req_id}' when waiting for '{req.topic}.{req.msg_id}'"
+                )
             elif req.topic != reply.topic:
                 # ignore wrong task name
-                self.log_warning(
-                    fl_ctx,
-                    f"ignored '{reply.topic}' when waiting for '{req.topic}'")
+                self.log_warning(fl_ctx, f"ignored '{reply.topic}' when waiting for '{req.topic}'")
             elif req.msg_id != reply.req_id:
-                self.log_warning(
-                    fl_ctx,
-                    f"ignored '{reply.req_id}' when waiting for '{req.msg_id}'")
+                self.log_warning(fl_ctx, f"ignored '{reply.req_id}' when waiting for '{req.msg_id}'")
             else:
                 self.log_info(fl_ctx, f"got result for request '{task_name}' from T2")
                 if not isinstance(reply.data, Shareable):

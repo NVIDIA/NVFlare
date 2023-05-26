@@ -14,9 +14,9 @@
 
 import re
 import uuid
-
 from abc import ABC, abstractmethod
-from typing import Union, Any
+from typing import Any, Union
+
 from nvflare.fuel.utils.validation_utils import check_str
 
 
@@ -35,7 +35,7 @@ class Message:
         if not topic:
             raise ValueError("topic must not be empty")
 
-        if not re.match('[a-zA-Z0-9_]+$', topic):
+        if not re.match("[a-zA-Z0-9_]+$", topic):
             raise ValueError("topic contains invalid char - only alphanumeric and underscore are allowed")
 
         self.topic = topic

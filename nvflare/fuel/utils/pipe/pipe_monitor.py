@@ -15,10 +15,7 @@
 import threading
 import time
 
-from abc import ABC, abstractmethod
-from typing import Any
-
-from nvflare.fuel.utils.pipe.pipe import Pipe, Message
+from nvflare.fuel.utils.pipe.pipe import Message, Pipe
 from nvflare.fuel.utils.validation_utils import check_callable, check_object_type, check_positive_number
 
 
@@ -28,17 +25,6 @@ class Topic(object):
     END = "_END_"
     HEARTBEAT = "_HEARTBEAT_"
     PEER_GONE = "_PEER_GONE_"
-
-
-class DataConverter(ABC):
-
-    @abstractmethod
-    def to_bytes(self, data: Any) -> bytes:
-        pass
-
-    @abstractmethod
-    def from_bytes(self, data: bytes) -> Any:
-        pass
 
 
 class PipeMonitor(object):
@@ -96,11 +82,6 @@ class PipeMonitor(object):
         self.status_cb = None
         self.cb_args = None
         self.cb_kwargs = None
-        self.data_converter = None
-
-    def set_data_converter(self, converter: DataConverter):
-        check_object_type('converter', converter, DataConverter)
-        self.data_converter = converter
 
     def set_status_cb(self, cb, *args, **kwargs):
         """Set CB for status handling. When the peer status is changed (ABORT, END, GONE), this CB is called.
@@ -128,21 +109,10 @@ class PipeMonitor(object):
         self.cb_kwargs = kwargs
 
     def _send_to_pipe(self, msg: Message, timeout=None):
-        if not isinstance(msg.data, bytes):
-            if not self.data_converter:
-                raise RuntimeError(f"no data converter to convert {type(msg.data)} to bytes")
-            assert isinstance(self.data_converter, DataConverter)
-            data = self.data_converter.to_bytes(msg.data)
-            if not isinstance(data, bytes):
-                raise RuntimeError(f"Converter {self.data_converter.__class__.__name__} failed to convert to bytes")
-            msg.data = data
         return self.pipe.send(msg, timeout)
 
     def _receive_from_pipe(self):
-        msg = self.pipe.receive()
-        if msg and self.data_converter:
-            msg.data = self.data_converter.from_bytes(msg.data)
-        return msg
+        return self.pipe.receive()
 
     def start(self):
         """

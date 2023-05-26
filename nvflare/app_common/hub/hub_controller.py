@@ -38,7 +38,6 @@ from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
 from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
-from nvflare.fuel.utils.pipe.fobs_data_converter import FobsDataConverter
 from nvflare.fuel.utils.pipe.pipe import Message, Pipe
 from nvflare.fuel.utils.pipe.pipe_monitor import PipeMonitor, Topic
 from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_number, check_str
@@ -288,7 +287,6 @@ class HubController(Controller):
             check_object_type("pipe", pipe, Pipe)
             pipe.open(name=job_id, me="y")
             self.pipe_monitor = PipeMonitor(pipe)
-            self.pipe_monitor.set_data_converter(FobsDataConverter())
         elif event_type == EventType.END_RUN:
             self.run_ended = True
 
