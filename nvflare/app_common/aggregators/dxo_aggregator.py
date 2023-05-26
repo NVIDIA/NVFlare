@@ -177,7 +177,8 @@ class DXOAggregator(FLComponent):
         self.log_debug(fl_ctx, "End aggregation")
 
         dxo = DXO(data_kind=self.expected_data_kind, data=aggregated_dict)
-        dxo.set_meta_prop(MetaKey.PROCESSED_ALGORITHM, self.processed_algorithm)
-        self.processed_algorithm = None
+        if self.processed_algorithm is not None:
+            dxo.set_meta_prop(MetaKey.PROCESSED_ALGORITHM, self.processed_algorithm)
+            self.processed_algorithm = None
 
         return dxo
