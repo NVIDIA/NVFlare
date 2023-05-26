@@ -25,7 +25,7 @@ class MLflowWriter(LogWriter):
         """MLflowWriter mimics the usage of mlflow.
 
         For a client, replacing the import of mlflow with MLflowWriter will send log records to
-        the receiver on the server side instead of 
+        the receiver on the server side instead of
 
         Args:
             event_type (str, optional): _description_. Defaults to ANALYTIC_EVENT_TYPE.

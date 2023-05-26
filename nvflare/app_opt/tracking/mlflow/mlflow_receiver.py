@@ -237,7 +237,7 @@ class MLflowReceiver(AnalyticsReceiver):
     def buffer_data(self, data: AnalyticsData, record_origin: str) -> None:
         """Buffer the data to send later.
 
-        A buffer for each data_type is in each site_buffer, all of which are in self.buffer 
+        A buffer for each data_type is in each site_buffer, all of which are in self.buffer
 
         Args:
             data (AnalyticsData): Data.
