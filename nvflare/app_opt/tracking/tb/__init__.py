@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,14 +11,3 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-import warnings
-
-warnings.warn(
-    f"This module: {__file__} is deprecated. Please use nvflare.app_opt.tracking.tb_receiver.",
-    category=FutureWarning,
-    stacklevel=2,
-)
-
-# flake8: noqa: F401
-from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
