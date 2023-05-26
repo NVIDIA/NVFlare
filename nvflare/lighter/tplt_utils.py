@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,13 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import warnings
 
-warnings.warn(
-    f"This module: {__file__} is deprecated. Please use nvflare.app_opt.tracking.tb_receiver.",
-    category=FutureWarning,
-    stacklevel=2,
-)
+class Template:
+    def __init__(self, template):
+        self.template = template
 
-# flake8: noqa: F401
-from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver
+    def get_cloud_script_header(self):
+        return self.template.get("cloud_script_header")

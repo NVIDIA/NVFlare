@@ -36,7 +36,7 @@ app_server  app_site-1  app_site-2  log.txt tb_events
 
 ### 4. Tensorboard Streaming
 
-On the client side, the `AnalyticsSender` works as a TensorBoard SummaryWriter.
+On the client side, `TBWriter` works as a TensorBoard SummaryWriter.
 Instead of writing to TB files, it actually generates NVFLARE events of type `analytix_log_stats`.
 The `ConvertToFedEvent` widget will turn the event `analytix_log_stats` into a fed event `fed.analytix_log_stats`,
 which will be delivered to the server side.
@@ -50,10 +50,10 @@ To view training metrics that are being streamed to the server, run:
 tensorboard --logdir=/tmp/nvflare/simulate_job/tb_events
 ```
 
-Note: if the server is running on a remote machine, use port forwarding to view the TensorBoard dashboard in a browser.
+Note: If the server is running on a remote machine, use port forwarding to view the TensorBoard dashboard in a browser.
 For example:
 ```
 ssh -L {local_machine_port}:127.0.0.1:6006 user@server_ip
 ```
 
-> **_NOTE:_** For a more in-depth guide about the TensorBoard streaming feature, see [PyTorch with TensorBoard](https://nvflare.readthedocs.io/en/main/examples/hello_pt_tb.html).
+> **_NOTE:_** For a more in-depth guide about the TensorBoard streaming feature, see [PyTorch with TensorBoard](https://nvflare.readthedocs.io/en/dev/examples/tensorboard_streaming.html).

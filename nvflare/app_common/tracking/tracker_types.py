@@ -12,38 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""
-    W&B vs MLFLOW vs. Tensorboad
-    DATA --> PARAMETER --> Scalar
-    DATA --> PARAMETERS --> Scalars
-    DATA --> METRIC --> Scalar
-    DATA --> METRICS --> Scalars
-    DATA --> TEXT --> TEXT
-    DATA --> IMAGE --> IMAGE
-    ARTIFACT:type=model --> MODEL
-
-    NOT SUPPORTED
-    PLOT --> FIGURE
-    ARTIFACT --> TEXT
-    DATA --> ? --> Histogram
-    ARTIFACT --> DICT
-    ARTIFACT:type=dataset --> ARTIFACT
-
-    wandb.log(data) ==> mlflow.log_params(data) ==> writer.add_scalas(data)
-    wandb.log(data) ==> mlflow.log_metrics(data) ==> writer.add_scalas(data)
-    wandb.log({"examples": images} ==>  mlflow.log_image(image, output_path) ==> writer.add_image('images', image, 0)
-
-    art = wandb.Artifact("my-object-detector", type="model")
-    art.add_file("saved_model_weights.pt")
-    wandb.log_artifact(art) ==> mlflow.register_model(model_uri, "my-object-detector")  ==> ?
-
-  """
 from enum import Enum
 
 ANALYTIC_EVENT_TYPE = "analytix_log_stats"
 
 
-class Tracker(Enum):
+class LogWriterName(Enum):
     TORCH_TB = "TORCH_TENSORBOARD"
     MLFLOW = "MLFLOW"
     WANDB = "WEIGHTS_AND_BIASES"
@@ -69,7 +43,8 @@ class TrackConst(object):
     PROJECT_TAGS = "project_name"
 
     EXPERIMENT_NAME = "experiment_name"
-    EXPERIMENT_TAG = "experiment_tag"
+    RUN_NAME = "run_name"
+    EXPERIMENT_TAGS = "experiment_tags"
     INIT_CONFIG = "init_config"
     RUN_TAGS = "run_tags"
 
