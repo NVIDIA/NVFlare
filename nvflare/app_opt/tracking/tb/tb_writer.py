@@ -54,28 +54,6 @@ class TBWriter(LogWriter):
         """
         self.sender.add(tag=tag, value=scalars, data_type=AnalyticsDataType.SCALARS, global_step=global_step, **kwargs)
 
-    def add_text(self, tag: str, text: str, global_step: Optional[int] = None, **kwargs):
-        """Sends text.
-
-        Args:
-            tag (str): Data identifier.
-            text (str): String to send.
-            global_step (optional, int): Global step value.
-            **kwargs: Additional arguments to pass to the receiver side.
-        """
-        self.sender.add(tag=tag, value=text, data_type=AnalyticsDataType.TEXT, global_step=global_step, **kwargs)
-
-    def add_image(self, tag: str, image, global_step: Optional[int] = None, **kwargs):
-        """Sends an image.
-
-        Args:
-            tag (str): Data identifier.
-            image: Image to send.
-            global_step (optional, int): Global step value.
-            **kwargs: Additional arguments to pass to the receiver side.
-        """
-        self.sender.add(tag=tag, value=image, data_type=AnalyticsDataType.IMAGE, global_step=global_step, **kwargs)
-
     def flush(self):
         """Flushes out the message.
 

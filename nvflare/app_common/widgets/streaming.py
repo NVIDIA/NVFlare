@@ -102,7 +102,7 @@ class AnalyticsSender(Widget):
 
     def add(self, tag: str, value, data_type: AnalyticsDataType, global_step: Optional[int] = None, **kwargs):
         kwargs = kwargs if kwargs else {}
-        global_step = kwargs["global_step"] if "global_step" in kwargs else None
+        global_step = kwargs.get("global_step", None)
         if global_step:
             if not isinstance(global_step, int):
                 raise TypeError(f"Expect global step to be an instance of int, but got {type(global_step)}")
@@ -137,34 +137,6 @@ class AnalyticsSender(Widget):
             **kwargs: Additional arguments to pass to the receiver side.
         """
         self.add(tag=tag, value=scalars, data_type=AnalyticsDataType.SCALARS, global_step=global_step, **kwargs)
-
-    def add_text(self, tag: str, text: str, global_step: Optional[int] = None, **kwargs):
-        """Legacy method to send text.
-
-        This follows the signature from PyTorch SummaryWriter and is here in case it is used in previous code. If
-        you are writing new code, use :py:class:`TBWriter <nvflare.app_opt.tracking.tb.tb_writer.TBWriter>` instead.
-
-        Args:
-            tag (str): Data identifier.
-            text (str): String to send.
-            global_step (optional, int): Global step value.
-            **kwargs: Additional arguments to pass to the receiver side.
-        """
-        self.add(tag=tag, value=text, data_type=AnalyticsDataType.TEXT, global_step=global_step, **kwargs)
-
-    def add_image(self, tag: str, image, global_step: Optional[int] = None, **kwargs):
-        """Legacy method to send image.
-
-        This follows the signature from PyTorch SummaryWriter and is here in case it is used in previous code. If
-        you are writing new code, use :py:class:`TBWriter <nvflare.app_opt.tracking.tb.tb_writer.TBWriter>` instead.
-
-        Args:
-            tag (str): Data identifier.
-            image: Image to send.
-            global_step (optional, int): Global step value.
-            **kwargs: Additional arguments to pass to the receiver side.
-        """
-        self.add(tag=tag, value=image, data_type=AnalyticsDataType.IMAGE, global_step=global_step, **kwargs)
 
     def flush(self):
         """Legacy method to flush out the message.
