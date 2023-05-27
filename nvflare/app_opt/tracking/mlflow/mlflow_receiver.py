@@ -27,7 +27,7 @@ from nvflare.apis.dxo import from_shareable
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.tracking.track_exception import ExpTrackingException
-from nvflare.app_common.tracking.tracker_types import LogWriterName, TrackConst
+from nvflare.app_common.tracking.tracker_types import ANALYTIC_EVENT_TYPE, LogWriterName, TrackConst
 from nvflare.app_common.widgets.streaming import AnalyticsReceiver
 
 
@@ -70,7 +70,7 @@ class MLflowReceiver(AnalyticsReceiver):
                                        traffic to the MLflow tracking server, which in some cases can actually cause more latency.
         """
         if events is None:
-            events = ["fed.analytix_log_stats"]
+            events = ["fed."+ANALYTIC_EVENT_TYPE]
         super().__init__(events=events)
         self.artifact_location = artifact_location
         self.fl_ctx = None
@@ -83,7 +83,7 @@ class MLflowReceiver(AnalyticsReceiver):
         self.run_ids = {}
         self.buffer = {}
         self.time_start = 0
-        self.time_taken = 0
+        self.time_since_flush = 0
         self.buff_flush_time = buffer_flush_time
 
         if self.tracking_uri:
@@ -218,9 +218,6 @@ class MLflowReceiver(AnalyticsReceiver):
         if not data:
             return
 
-        # mlflow_client = self.get_mlflow_client(record_origin)
-        # run_id = self.get_run_id(record_origin)
-
         if data.data_type == AnalyticsDataType.TEXT:
             # not currently supported
             pass
@@ -232,7 +229,9 @@ class MLflowReceiver(AnalyticsReceiver):
             pass
         else:
             self.buffer_data(data, record_origin)
-            self.flush_buffer(record_origin)
+            self.time_since_flush += timeit.default_timer() - self.time_start
+            if self.time_since_flush >= self.buff_flush_time:
+                self.flush_buffer(record_origin)
 
     def buffer_data(self, data: AnalyticsData, record_origin: str) -> None:
         """Buffer the data to send later.
@@ -273,33 +272,28 @@ class MLflowReceiver(AnalyticsReceiver):
         else:
             return data_type
 
-    def flush_buffer(self, record_origin, force_flush: bool = False):
+    def flush_buffer(self, record_origin):
         """Flush the buffer and send all the data to the MLflow tracking server.
 
         Args:
             record_origin (str): Origin of the data, or site name.
-            force_flush (bool): Whether or not to force flush and send the data now, even if
-                                the buffer_flush_time has not elapsed since the last flush.
         """
-        self.time_taken += timeit.default_timer() - self.time_start
+        mlflow_client = self.get_mlflow_client(record_origin)
+        if not mlflow_client:
+            raise RuntimeError(f"mlflow client is None for site {record_origin}")
 
-        if self.time_taken >= self.buff_flush_time or force_flush:
-            mlflow_client = self.get_mlflow_client(record_origin)
-            if not mlflow_client:
-                raise RuntimeError(f"mlflow client is None for site {record_origin}")
+        run_id = self.get_run_id(record_origin)
 
-            run_id = self.get_run_id(record_origin)
+        site_buff = self.buffer[record_origin]
 
-            site_buff = self.buffer[record_origin]
+        metrics_arr = self.pop_from_buffer(site_buff[AnalyticsDataType.METRICS])
+        params_arr = self.pop_from_buffer(site_buff[AnalyticsDataType.PARAMETERS])
+        tags_arr = self.pop_from_buffer(site_buff[AnalyticsDataType.TAGS])
 
-            metrics_arr = self.pop_from_buffer(site_buff[AnalyticsDataType.METRICS])
-            params_arr = self.pop_from_buffer(site_buff[AnalyticsDataType.PARAMETERS])
-            tags_arr = self.pop_from_buffer(site_buff[AnalyticsDataType.TAGS])
+        mlflow_client.log_batch(run_id=run_id, metrics=metrics_arr, params=params_arr, tags=tags_arr)
 
-            mlflow_client.log_batch(run_id=run_id, metrics=metrics_arr, params=params_arr, tags=tags_arr)
-
-            self.time_start = 0
-            self.time_taken = 0
+        self.time_start = 0
+        self.time_since_flush = 0
 
     def pop_from_buffer(self, log_buffer):
         item_arr = []
@@ -309,7 +303,7 @@ class MLflowReceiver(AnalyticsReceiver):
 
     def finalize(self, fl_ctx: FLContext):
         for site_name in self.buffer:
-            self.flush_buffer(site_name, force_flush=True)
+            self.flush_buffer(site_name)
 
         for site_name in self.run_ids:
             run_id = self.run_ids[site_name]

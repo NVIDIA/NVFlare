@@ -24,8 +24,9 @@ class MLflowWriter(LogWriter):
     def __init__(self, event_type: str = ANALYTIC_EVENT_TYPE):
         """MLflowWriter mimics the usage of mlflow.
 
-        For a client, replacing the import of mlflow with MLflowWriter will send log records to
-        the receiver on the server side instead of
+        Users can replace the import of mlflow with MLflowWriter. They would then use
+        MLflowWriter the same as they would use mlflow. MLflowWriter will send log records to
+        the receiver.
 
         Args:
             event_type (str, optional): _description_. Defaults to ANALYTIC_EVENT_TYPE.
