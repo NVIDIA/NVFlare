@@ -70,7 +70,7 @@ class MLflowReceiver(AnalyticsReceiver):
                                        traffic to the MLflow tracking server, which in some cases can actually cause more latency.
         """
         if events is None:
-            events = ["fed."+ANALYTIC_EVENT_TYPE]
+            events = ["fed." + ANALYTIC_EVENT_TYPE]
         super().__init__(events=events)
         self.artifact_location = artifact_location
         self.fl_ctx = None
