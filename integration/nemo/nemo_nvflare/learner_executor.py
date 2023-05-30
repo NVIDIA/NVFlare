@@ -50,6 +50,10 @@ class NemoLearnerExecutor(LearnerExecutor):
         self.share_config_task = share_config_task
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
+        if not self.is_initialized:
+            self.is_initialized = True
+            self.initialize(fl_ctx)
+
         if task_name == self.share_config_task:
             self.log_info(fl_ctx, f"Client trainer got task: {task_name}")
             try:
