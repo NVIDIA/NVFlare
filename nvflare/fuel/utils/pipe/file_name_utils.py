@@ -51,12 +51,12 @@ def file_name_to_message(file_name: str) -> Message:
     data = None
     if msg_type == Message.REQUEST:
         if num_parts != 3:
-            raise ValueError(f"bad file name for request: {file_name} - must be 3 parts but got {num_parts}")
+            raise ValueError(f"bad file name for {msg_type}: {file_name} - must be 3 parts but got {num_parts}")
         return Message.new_request(topic, data, msg_id)
     elif msg_type == Message.REPLY:
         if num_parts != 4:
-            raise ValueError(f"bad file name for request: {file_name} - must be 4 parts but got {num_parts}")
+            raise ValueError(f"bad file name for {msg_type}: {file_name} - must be 4 parts but got {num_parts}")
         req_id = parts[2]
         return Message.new_reply(topic, data, req_id, msg_id)
     else:
-        raise ValueError(f"bad file name for request: {file_name} - invalid msg type '{msg_id}'")
+        raise ValueError(f"bad file name: {file_name} - invalid msg type '{msg_type}'")

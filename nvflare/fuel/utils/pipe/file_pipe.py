@@ -125,8 +125,6 @@ class FilePipe(Pipe):
             os.rename(tmp_path, file_path)
         except FileNotFoundError:
             raise BrokenPipeError("pipe closed")
-
-        print(f"********** created file: {file_path}")
         return file_path
 
     def clear(self):

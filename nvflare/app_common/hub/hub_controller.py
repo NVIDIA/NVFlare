@@ -350,7 +350,6 @@ class HubController(Controller):
                     )
                     return
             else:
-                assert isinstance(msg, Message)
                 if msg.topic in [Topic.ABORT, Topic.END, Topic.PEER_GONE]:
                     # the T1 peer is gone
                     self.log_info(fl_ctx, f"T1 stopped: '{msg.topic}'")
