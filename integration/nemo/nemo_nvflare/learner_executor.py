@@ -68,7 +68,7 @@ class NemoLearnerExecutor(LearnerExecutor):
             raise ValueError(f"Expected DXO data to be of kind NemoDataKind.CONFIGS but got {dxo.data_kind}")
 
         if not dxo.data:
-            raise ValueError(f"Received config data is empty!")
+            raise ValueError("Received config data is empty!")
 
         self.learner.set_configs(configs=dxo.data)
         self.log_info(fl_ctx, f"Received config with {len(dxo.data)} entries from server.")
