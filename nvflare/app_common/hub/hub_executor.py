@@ -21,7 +21,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.fuel.utils.pipe.pipe import Pipe
+from nvflare.fuel.utils.pipe.pipe import Message, Pipe
 from nvflare.fuel.utils.pipe.pipe_monitor import PipeMonitor, Topic
 from nvflare.fuel.utils.validation_utils import check_positive_number, check_str
 
@@ -70,7 +70,7 @@ class HubExecutor(Executor):
         elif event_type == EventType.END_RUN:
             # tell T2 system to end run
             self.log_info(fl_ctx, "END_RUN received - telling T2 to stop")
-            self.pipe_monitor.notify_end()
+            self.pipe_monitor.notify_end("END_RUN received")
             self.pipe_monitor.stop()
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
@@ -80,12 +80,9 @@ class HubExecutor(Executor):
 
         # send the task to T2
         task_id = shareable.get_header(ReservedHeaderKey.TASK_ID)
-        self.task_seq_num += 1
-        req_topic = f"{task_name}.{self.task_seq_num}"
         self.log_info(fl_ctx, f"sending task data to T2 for task {task_name}")
-        task_received_by_t2 = self.pipe_monitor.send_to_peer(
-            topic=req_topic, data=shareable, timeout=self.task_read_wait_time
-        )
+        req = Message.new_request(topic=task_name, data=shareable)
+        task_received_by_t2 = self.pipe_monitor.send_to_peer(req, timeout=self.task_read_wait_time)
         if not task_received_by_t2:
             self.log_error(
                 fl_ctx, f"T2 failed to read task '{task_name}' in {self.task_read_wait_time} secs - aborting task!"
@@ -100,32 +97,38 @@ class HubExecutor(Executor):
                 self.pipe_monitor.notify_abort(task_id)
                 return make_reply(ReturnCode.TASK_ABORTED)
 
-            topic, data = self.pipe_monitor.get_next()
-            if not topic:
+            reply = self.pipe_monitor.get_next()
+            if not reply:
                 if self.task_wait_time and time.time() - start > self.task_wait_time:
                     # timed out
-                    self.log_error(fl_ctx, f"task '{req_topic}' timeout after {self.task_wait_time} secs")
+                    self.log_error(fl_ctx, f"task '{task_name}' timeout after {self.task_wait_time} secs")
                     # also tell T2 to abort the task
                     self.pipe_monitor.notify_abort(task_id)
                     return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-            elif topic == Topic.ABORT:
+            elif reply.topic == Topic.ABORT:
                 # T2 told us to abort the task!
-                if data == task_id:
-                    return make_reply(ReturnCode.TASK_ABORTED)
-            elif topic in [Topic.END, Topic.PEER_GONE]:
+                return make_reply(ReturnCode.TASK_ABORTED)
+            elif reply.topic in [Topic.END, Topic.PEER_GONE]:
                 # T2 told us it has ended the run
-                self.log_error(fl_ctx, f"received {topic} from T2 while waiting for result for {req_topic}")
+                self.log_error(fl_ctx, f"received {reply.topic} from T2 while waiting for result for {task_name}")
                 return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
-            elif topic != req_topic:
+            elif reply.msg_type != Message.REPLY:
+                self.log_warning(
+                    fl_ctx, f"ignored msg '{reply.topic}.{reply.req_id}' when waiting for '{req.topic}.{req.msg_id}'"
+                )
+            elif req.topic != reply.topic:
                 # ignore wrong task name
-                self.log_error(fl_ctx, f"ignored '{topic}' when waiting for '{req_topic}'")
+                self.log_warning(fl_ctx, f"ignored '{reply.topic}' when waiting for '{req.topic}'")
+            elif req.msg_id != reply.req_id:
+                self.log_warning(fl_ctx, f"ignored '{reply.req_id}' when waiting for '{req.msg_id}'")
             else:
-                self.log_info(fl_ctx, f"got result for request '{req_topic}' from T2")
-                if not isinstance(data, Shareable):
-                    self.log_error(fl_ctx, f"bad result data from T2 - must be Shareable but got {type(data)}")
+                self.log_info(fl_ctx, f"got result for request '{task_name}' from T2")
+                if not isinstance(reply.data, Shareable):
+                    self.log_error(fl_ctx, f"bad result data from T2 - must be Shareable but got {type(reply.data)}")
                     return make_reply(ReturnCode.EXECUTION_EXCEPTION)
                 # add important meta information
-                if shareable.get_header(AppConstants.CURRENT_ROUND):
-                    data.set_header(AppConstants.CURRENT_ROUND, shareable.get_header(AppConstants.CURRENT_ROUND))
-                return data
+                current_round = shareable.get_header(AppConstants.CURRENT_ROUND)
+                if current_round:
+                    reply.data.set_header(AppConstants.CURRENT_ROUND, current_round)
+                return reply.data
             time.sleep(self.result_poll_interval)
