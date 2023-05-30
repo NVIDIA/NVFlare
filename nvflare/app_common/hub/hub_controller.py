@@ -38,7 +38,7 @@ from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
 from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
-from nvflare.fuel.utils.pipe.pipe import Pipe
+from nvflare.fuel.utils.pipe.pipe import Message, Pipe
 from nvflare.fuel.utils.pipe.pipe_monitor import PipeMonitor, Topic
 from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_number, check_str
 
@@ -325,7 +325,9 @@ class HubController(Controller):
             self._abort(f"control_flow exception {ex}", abort_signal, fl_ctx)
 
     def _control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
-        start = time.time()
+        control_flow_start = time.time()
+        task_start = control_flow_start
+
         while True:
             if self.run_ended:
                 # tell T1 to end the run
@@ -337,9 +339,9 @@ class HubController(Controller):
                 self._abort(reason="", abort_signal=abort_signal, fl_ctx=fl_ctx)
                 return
 
-            topic, data = self.pipe_monitor.get_next()
-            if not topic:
-                if self.task_wait_time and time.time() - start > self.task_wait_time:
+            msg = self.pipe_monitor.get_next()
+            if not msg:
+                if self.task_wait_time and time.time() - task_start > self.task_wait_time:
                     # timed out - tell T1 to end the RUN
                     self._abort(
                         reason=f"task data timeout after {self.task_wait_time} secs",
@@ -348,39 +350,44 @@ class HubController(Controller):
                     )
                     return
             else:
-                if topic in [Topic.ABORT, Topic.END, Topic.PEER_GONE]:
+                if msg.topic in [Topic.ABORT, Topic.END, Topic.PEER_GONE]:
                     # the T1 peer is gone
-                    self.log_info(fl_ctx, f"T1 stopped: '{topic}'")
+                    self.log_info(fl_ctx, f"T1 stopped: '{msg.topic}'")
                     return
 
-                self.log_info(fl_ctx, f"got data for task '{topic}' from T1")
-                if not isinstance(data, Shareable):
+                if msg.msg_type != Message.REQUEST:
+                    self.log_info(fl_ctx, f"ignored '{msg.topic}' from T1 - not a request!")
+                    continue
+
+                self.log_info(fl_ctx, f"got data for task '{msg.topic}' from T1")
+                if not isinstance(msg.data, Shareable):
                     self._abort(
-                        reason=f"bad data for task '{topic}' from T1 - must be Shareable but got {type(data)}",
+                        reason=f"bad data for task '{msg.topic}' from T1 - must be Shareable but got {type(msg.data)}",
                         abort_signal=abort_signal,
                         fl_ctx=fl_ctx,
                     )
                     return
 
-                task_name = data.get_header(ReservedHeaderKey.TASK_NAME)
+                task_data = msg.data
+                task_name = task_data.get_header(ReservedHeaderKey.TASK_NAME)
                 if not task_name:
                     self._abort(
-                        reason=f"bad data for task '{topic}' from T1 - missing task name",
+                        reason=f"bad data for task '{msg.topic}' from T1 - missing task name",
                         abort_signal=abort_signal,
                         fl_ctx=fl_ctx,
                     )
                     return
 
-                task_id = data.get_header(ReservedHeaderKey.TASK_ID)
+                task_id = task_data.get_header(ReservedHeaderKey.TASK_ID)
                 if not task_id:
                     self._abort(
-                        reason=f"bad data for task '{topic}' from T1 - missing task id",
+                        reason=f"bad data for task '{msg.topic}' from T1 - missing task id",
                         abort_signal=abort_signal,
                         fl_ctx=fl_ctx,
                     )
                     return
 
-                op_desc = data.get_header(ReservedHeaderKey.TASK_OPERATOR, {})
+                op_desc = task_data.get_header(ReservedHeaderKey.TASK_OPERATOR, {})
                 op_id = op_desc.get(TaskOperatorKey.OP_ID)
                 if not op_id:
                     # use task_name as the operation id
@@ -395,22 +402,22 @@ class HubController(Controller):
                 operator_name = operator.__class__.__name__
                 self.log_info(fl_ctx, f"Invoking Operator {operator_name} for task {task_name}")
                 try:
-                    current_round = data.get_header(AppConstants.CURRENT_ROUND, 0)
+                    current_round = task_data.get_header(AppConstants.CURRENT_ROUND, 0)
                     fl_ctx.set_prop(AppConstants.CURRENT_ROUND, current_round, private=True, sticky=True)
 
-                    contrib_round = data.get_cookie(AppConstants.CONTRIBUTION_ROUND)
+                    contrib_round = task_data.get_cookie(AppConstants.CONTRIBUTION_ROUND)
                     if contrib_round is None:
                         self.log_warning(fl_ctx, "CONTRIBUTION_ROUND Not Set!")
 
                     self.fire_event(AppEventType.ROUND_STARTED, fl_ctx)
-                    fl_ctx.set_prop(key=FLContextKey.TASK_DATA, value=data, private=True, sticky=False)
+                    fl_ctx.set_prop(key=FLContextKey.TASK_DATA, value=task_data, private=True, sticky=False)
                     self.current_task_name = task_name
                     self.current_task_id = task_id
                     self.task_abort_signal = abort_signal
                     self.current_operator = operator
                     result = operator.operate(
                         task_name=task_name,
-                        task_data=data,
+                        task_data=task_data,
                         op_description=op_desc,
                         controller=self,
                         abort_signal=abort_signal,
@@ -434,8 +441,9 @@ class HubController(Controller):
                     )
                     result = make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-                self.pipe_monitor.send_to_peer(topic, result)
-                start = time.time()
+                reply = Message.new_reply(topic=msg.topic, data=result, req_msg_id=msg.msg_id)
+                self.pipe_monitor.send_to_peer(reply)
+                task_start = time.time()
 
             time.sleep(self.task_data_poll_interval)
 
