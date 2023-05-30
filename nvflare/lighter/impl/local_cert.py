@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,16 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from nvflare.lighter.impl.cert import CertBuilder
 
 
-class FlareServiceConstants(object):
-    FLARE_PROJ_ADMIN = "admin@nvidia.com"
-    FLARE_SERVER = "server"
-    FLARE_CLIENTS = "clients"
-    FLARE_OVERSEER = "overseer"
-    STARTUP = "startup"
-    CMD_START = "start"
-    CMD_STOP = "stop"
-    EXAMPLES = "examples"
-    TRANSFER = "transfer"
-    IS_DOCKER_RUN = "is_docker_run"
+class LocalCertBuilder(CertBuilder):
+    def get_subject(self, participant):
+        if participant.type == "server":
+            return "localhost"
+        else:
+            return participant.name

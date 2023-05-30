@@ -128,7 +128,7 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 ## 8. Experiment tracking
 | Example                                                                                                                                | Framework    | Summary                                                                                                                                                         |
 |----------------------------------------------------------------------------------------------------------------------------------------|--------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| [Hello PyTorch with TensorBoard Streaming](./advanced/experiment-tracking/tensorboard-streaming/README.md)                             | PyTorch      | Example building upon [Hello PyTorch](./hello-world/hello-pt/README.md) showcasing the [TensorBoard](https://tensorflow.org/tensorboard) streaming capability from the clients to the server.  |
+| [Hello PyTorch with TensorBoard Streaming](./advanced/experiment-tracking/tensorboard/README.md)                             | PyTorch      | Example building upon [Hello PyTorch](./hello-world/hello-pt/README.md) showcasing the [TensorBoard](https://tensorflow.org/tensorboard) streaming capability from the clients to the server.  |
 
 ## 9. NLP
 | Example                                                                               | Summary                                                                                                                                                         |

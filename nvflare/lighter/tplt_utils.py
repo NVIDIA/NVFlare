@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,14 +13,9 @@
 # limitations under the License.
 
 
-class FlareServiceConstants(object):
-    FLARE_PROJ_ADMIN = "admin@nvidia.com"
-    FLARE_SERVER = "server"
-    FLARE_CLIENTS = "clients"
-    FLARE_OVERSEER = "overseer"
-    STARTUP = "startup"
-    CMD_START = "start"
-    CMD_STOP = "stop"
-    EXAMPLES = "examples"
-    TRANSFER = "transfer"
-    IS_DOCKER_RUN = "is_docker_run"
+class Template:
+    def __init__(self, template):
+        self.template = template
+
+    def get_cloud_script_header(self):
+        return self.template.get("cloud_script_header")

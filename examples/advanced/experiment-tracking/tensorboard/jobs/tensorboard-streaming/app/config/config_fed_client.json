@@ -33,7 +33,7 @@
     },
     {
       "id": "analytic_sender",
-      "name": "AnalyticsSender",
+      "name": "TBWriter",
       "args": {"event_type": "analytix_log_stats"}
     },
     {
