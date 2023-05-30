@@ -15,28 +15,16 @@
 import threading
 import time
 
-from nvflare.fuel.utils import fobs
-from nvflare.fuel.utils.pipe.pipe import Pipe
+from nvflare.fuel.utils.pipe.pipe import Message, Pipe
 from nvflare.fuel.utils.validation_utils import check_callable, check_object_type, check_positive_number
 
 
 class Topic(object):
 
-    ABORT = "_Abort_"
-    END = "_End_"
-    HEARTBEAT = "_Heartbeat_"
-    PEER_GONE = "_PeerGone_"
-
-
-def _send_to_pipe(pipe: Pipe, topic: str, data, timeout=None):
-    return pipe.send(topic, fobs.dumps(data), timeout)
-
-
-def _receive_from_pipe(pipe: Pipe):
-    topic, data = pipe.receive()
-    if data:
-        data = fobs.loads(data)
-    return topic, data
+    ABORT = "_ABORT_"
+    END = "_END_"
+    HEARTBEAT = "_HEARTBEAT_"
+    PEER_GONE = "_PEER_GONE_"
 
 
 class PipeMonitor(object):
@@ -120,6 +108,12 @@ class PipeMonitor(object):
         self.cb_args = args
         self.cb_kwargs = kwargs
 
+    def _send_to_pipe(self, msg: Message, timeout=None):
+        return self.pipe.send(msg, timeout)
+
+    def _receive_from_pipe(self):
+        return self.pipe.receive()
+
     def start(self):
         """
         Start the PipeMonitor.
@@ -146,12 +140,15 @@ class PipeMonitor(object):
         if pipe and close_pipe:
             pipe.close()
 
-    def send_to_peer(self, topic, data, timeout=None):
+    @staticmethod
+    def _make_event_message(topic: str, data):
+        return Message.new_request(topic, data)
+
+    def send_to_peer(self, msg: Message, timeout=None):
         """Send a message to peer.
 
         Args:
-            topic: topic of the message
-            data: data of the message
+            msg: message to be sent
             timeout: how long to wait for the peer to read the data. If not specified, return False immediately.
 
         Returns: whether the peer has read the data.
@@ -160,69 +157,61 @@ class PipeMonitor(object):
         if timeout is not None:
             check_positive_number("timeout", timeout)
         try:
-            return _send_to_pipe(self.pipe, topic, data, timeout)
+            return self._send_to_pipe(msg, timeout)
         except BrokenPipeError:
-            self._add_message(Topic.PEER_GONE, "")
+            self._add_message(self._make_event_message(Topic.PEER_GONE, ""))
 
-    def notify_end(self, data=""):
+    def notify_end(self, data):
         """Notify the peer that the communication is ended normally.
 
-        Args:
-            data: optional data to be sent
-
         Returns: None
 
         """
-        self.send_to_peer(Topic.END, data)
+        self.send_to_peer(self._make_event_message(Topic.END, data))
 
-    def notify_abort(self, data=""):
+    def notify_abort(self, data):
         """Notify the peer that the communication is aborted.
 
-        Args:
-            data: optional data to be sent
-
         Returns: None
 
         """
-        self.send_to_peer(Topic.ABORT, data)
+        self.send_to_peer(self._make_event_message(Topic.ABORT, data))
 
-    def _add_message(self, topic, data):
-        if topic in [Topic.END, Topic.ABORT, Topic.PEER_GONE]:
+    def _add_message(self, msg: Message):
+        if msg.topic in [Topic.END, Topic.ABORT, Topic.PEER_GONE]:
             if self.status_cb is not None:
-                self.status_cb(topic, data, *self.cb_args, **self.cb_kwargs)
+                self.status_cb(msg, *self.cb_args, **self.cb_kwargs)
                 return
         with self.lock:
-            self.messages.append((topic, data))
+            self.messages.append(msg)
 
     def _read(self):
         try:
             self._try_read()
-        except BrokenPipeError:
-            self._add_message(Topic.PEER_GONE, "pipe closed")
-        except:
-            self._add_message(Topic.PEER_GONE, "error")
+        except Exception:
+            self._add_message(self._make_event_message(Topic.PEER_GONE, ""))
 
     def _try_read(self):
         last_heartbeat_received_time = time.time()
         last_heartbeat_sent_time = 0.0
         while not self.asked_to_stop:
             now = time.time()
-            topic, data = _receive_from_pipe(self.pipe)
-            if topic is not None:
+            msg = self._receive_from_pipe()
+            if msg:
                 last_heartbeat_received_time = now
-                if topic != Topic.HEARTBEAT:
-                    self._add_message(topic, data)
-                if topic in [Topic.END, Topic.ABORT]:
+                if msg.topic != Topic.HEARTBEAT:
+                    self._add_message(msg)
+                if msg.topic in [Topic.END, Topic.ABORT]:
                     break
             else:
                 # is peer gone?
                 if now - last_heartbeat_received_time > self.heartbeat_timeout:
-                    self._add_message(Topic.PEER_GONE, "")
+                    self._add_message(self._make_event_message(Topic.PEER_GONE, ""))
                     break
 
             # send heartbeat to the peer
             if now - last_heartbeat_sent_time > self.heartbeat_interval:
-                _send_to_pipe(self.pipe, Topic.HEARTBEAT, "")
+                self.send_to_peer(self._make_event_message(Topic.HEARTBEAT, ""))
                 last_heartbeat_sent_time = now
 
             time.sleep(self.read_interval)
@@ -238,4 +227,4 @@ class PipeMonitor(object):
             if len(self.messages) > 0:
                 return self.messages.pop(0)
             else:
-                return None, None
+                return None

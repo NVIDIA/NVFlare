@@ -12,7 +12,50 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import re
+import uuid
 from abc import ABC, abstractmethod
+from typing import Any, Union
+
+from nvflare.fuel.utils.validation_utils import check_str
+
+
+class Message:
+
+    REQUEST = "REQ"
+    REPLY = "REP"
+
+    def __init__(self, msg_type: str, topic: str, data: Any, msg_id=None, req_id=None):
+        check_str("msg_type", msg_type)
+        if msg_type not in [Message.REPLY, Message.REQUEST]:
+            raise ValueError(f"invalid note_type '{msg_type}': must be one of {[Message.REPLY, Message.REQUEST]}")
+        self.msg_type = msg_type
+
+        check_str("topic", topic)
+        if not topic:
+            raise ValueError("topic must not be empty")
+
+        if not re.match("[a-zA-Z0-9_]+$", topic):
+            raise ValueError("topic contains invalid char - only alphanumeric and underscore are allowed")
+
+        self.topic = topic
+
+        if not msg_id:
+            msg_id = str(uuid.uuid4())
+
+        self.data = data
+        self.msg_id = msg_id
+        self.req_id = req_id
+        self.sent_time = None
+        self.received_time = None
+
+    @staticmethod
+    def new_request(topic: str, data: Any, msg_id=None):
+        return Message(Message.REQUEST, topic, data, msg_id)
+
+    @staticmethod
+    def new_reply(topic: str, data: Any, req_msg_id, msg_id=None):
+        return Message(Message.REPLY, topic, data, msg_id, req_id=req_msg_id)
 
 
 class Pipe(ABC):
@@ -35,12 +78,11 @@ class Pipe(ABC):
         pass
 
     @abstractmethod
-    def send(self, topic: str, data: bytes, timeout=None) -> bool:
-        """Send message with the specified topic and data to the peer.
+    def send(self, msg: Message, timeout=None) -> bool:
+        """Send the specified message to the peer.
 
         Args:
-            topic: topic of the message
-            data: data of the message
+            msg: the message to be sent
             timeout: if specified, number of secs to wait for the peer to read the message.
 
         Returns: whether the message is read by the peer.
@@ -50,13 +92,13 @@ class Pipe(ABC):
         pass
 
     @abstractmethod
-    def receive(self, timeout=None) -> (str, bytes):
-        """Try to receive data from peer.
+    def receive(self, timeout=None) -> Union[None, Message]:
+        """Try to receive message from peer.
 
         Args:
             timeout: how long (number of seconds) to try
 
-        Returns: topic and data, if data is received; (None, None) if not
+        Returns: the message received; or None if no message
 
         """
         pass

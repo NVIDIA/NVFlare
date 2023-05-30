@@ -15,11 +15,13 @@
 import os
 import shutil
 import time
-import uuid
 
-from nvflare.fuel.utils.validation_utils import check_positive_number, check_str
+from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_number, check_str
 
-from .pipe import Pipe
+from .file_accessor import FileAccessor
+from .file_name_utils import file_name_to_message, message_to_file_name
+from .fobs_file_accessor import FobsFileAccessor
+from .pipe import Message, Pipe
 
 
 class FilePipe(Pipe):
@@ -43,8 +45,32 @@ class FilePipe(Pipe):
         self.t_path = None
         self.get_f = None
         self.put_f = None
+        self.accessor = FobsFileAccessor()  # default
+
+    def set_file_accessor(self, accessor: FileAccessor):
+        """Set the file accessor to be used by the pipe.
+        The default file accessor is FobsFileAccessor.
+
+        Args:
+            accessor: the accessor to be used.
+
+        Returns:
+
+        """
+        check_object_type("accessor", accessor, FileAccessor)
+        self.accessor = accessor
+
+    @staticmethod
+    def _make_dir(path):
+        try:
+            os.mkdir(path)
+        except FileExistsError:
+            # this is okay
+            pass
 
     def open(self, name: str, me: str):
+        if not self.accessor:
+            raise RuntimeError("File accessor is not set. Make sure to set a FileAccessor before opening the pipe")
         if me == "x":
             self.get_f = self.x_get
             self.put_f = self.x_put
@@ -57,22 +83,19 @@ class FilePipe(Pipe):
         pipe_path = os.path.join(self.root_path, name)
 
         if not os.path.exists(pipe_path):
-            os.mkdir(pipe_path)
+            self._make_dir(pipe_path)
 
         x_path = os.path.join(pipe_path, "x")
         if not os.path.exists(x_path):
-            os.mkdir(x_path)
-            print(f"created {x_path}")
+            self._make_dir(x_path)
 
         y_path = os.path.join(pipe_path, "y")
         if not os.path.exists(y_path):
-            os.mkdir(y_path)
-            print(f"created {y_path}")
+            self._make_dir(y_path)
 
         t_path = os.path.join(pipe_path, "t")
         if not os.path.exists(t_path):
-            os.mkdir(t_path)
-            print(f"created {t_path}")
+            self._make_dir(t_path)
 
         Pipe.__init__(self)
         self.pipe_path = pipe_path
@@ -85,27 +108,20 @@ class FilePipe(Pipe):
         file_list = os.listdir(p)
         if file_list:
             for f in file_list:
-                os.remove(os.path.join(p, f))
+                try:
+                    os.remove(os.path.join(p, f))
+                except FileNotFoundError:
+                    pass
 
-    @staticmethod
-    def _topic_to_file_name(topic: str):
-        return f"{topic}.{uuid.uuid4()}"
-
-    @staticmethod
-    def _file_name_to_topic(file_name: str):
-        parts = file_name.split(".")
-        return ".".join(parts[0 : len(parts) - 1])
-
-    def _create_file(self, to_dir: str, topic: str, data_bytes) -> str:
-        file_name = self._topic_to_file_name(topic)
+    def _create_file(self, to_dir: str, msg: Message) -> str:
+        file_name = message_to_file_name(msg)
         file_path = os.path.join(to_dir, file_name)
 
         tmp_path = os.path.join(self.t_path, file_name)
         if not self.pipe_path:
             raise BrokenPipeError("pipe broken")
         try:
-            with open(tmp_path, "wb") as f:
-                f.write(data_bytes)
+            self.accessor.write(msg.data, tmp_path)
             os.rename(tmp_path, file_path)
         except FileNotFoundError:
             raise BrokenPipeError("pipe closed")
@@ -147,41 +163,47 @@ class FilePipe(Pipe):
                 return False
             time.sleep(self.file_check_interval)
 
-    def x_put(self, topic: str, data_bytes, timeout) -> bool:
+    def x_put(self, msg: Message, timeout) -> bool:
         """
 
         Args:
-            topic:
-            data_bytes:
+            msg:
             timeout:
 
-        Returns: tuple of (file_path, whether file is read by the peer)
+        Returns: whether file is read by the peer
 
         """
         # put it in Y's queue
-        file_path = self._create_file(self.y_path, topic, data_bytes)
+        file_path = self._create_file(self.y_path, msg)
         return self._monitor_file(file_path, timeout)
 
     def _read_file(self, file_path: str):
         # since reading file may take time and another process may try to delete the file
         # we move the file to a temp name before reading it
         file_name = os.path.basename(file_path)
-        topic = self._file_name_to_topic(file_name)
+        msg = file_name_to_message(file_name)
         tmp_path = os.path.join(self.t_path, file_name)
         try:
+            create_time = os.path.getctime(file_path)
             os.rename(file_path, tmp_path)
-            with open(tmp_path, mode="rb") as file:  # b is important -> binary
-                data = file.read()
-            os.remove(tmp_path)  # remove this file
-            return topic, data
+            data = self.accessor.read(tmp_path)
+            if os.path.isfile(tmp_path):
+                os.remove(tmp_path)  # remove this file
+            elif os.path.isdir(tmp_path):
+                shutil.rmtree(tmp_path)
+            else:
+                raise RuntimeError(f"cannot removed unsupported path: '{tmp_path}'")
+            msg.data = data
+            msg.sent_time = create_time
+            msg.received_time = time.time()
+            return msg
         except FileNotFoundError:
             raise BrokenPipeError("pipe closed")
 
     def _get_next(self, from_dir: str):
-        # print('get from dir: {}'.format(from_dir))
         try:
             files = os.listdir(from_dir)
-        except:
+        except Exception:
             raise BrokenPipeError(f"error reading from {from_dir}")
 
         if files:
@@ -190,7 +212,7 @@ class FilePipe(Pipe):
             file_path = files[0]
             return self._read_file(file_path)
         else:
-            return None, None
+            return None
 
     def _get_from_dir(self, from_dir: str, timeout=None):
         if not timeout or timeout <= 0:
@@ -198,35 +220,34 @@ class FilePipe(Pipe):
 
         start = time.time()
         while True:
-            topic, data = self._get_next(from_dir)
-            if topic is not None:
-                return topic, data
+            msg = self._get_next(from_dir)
+            if msg:
+                return msg
 
             if time.time() - start >= timeout:
                 break
             time.sleep(self.file_check_interval)
 
-        return None, None
+        return None
 
-    def x_get(self, timeout=None) -> (str, bytes):
+    def x_get(self, timeout=None):
         # read from X's queue
         return self._get_from_dir(self.x_path, timeout)
 
-    def y_put(self, topic: str, data_bytes, timeout) -> bool:
+    def y_put(self, msg: Message, timeout) -> bool:
         # put it in X's queue
-        file_path = self._create_file(self.x_path, topic, data_bytes)
+        file_path = self._create_file(self.x_path, msg)
         return self._monitor_file(file_path, timeout)
 
     def y_get(self, timeout=None):
         # read from Y's queue
         return self._get_from_dir(self.y_path, timeout)
 
-    def send(self, topic: str, data: bytes, timeout=None) -> bool:
+    def send(self, msg: Message, timeout=None) -> bool:
         """
 
         Args:
-            topic:
-            data:
+            msg:
             timeout:
 
         Returns: whether the message is read by peer (if timeout is specified)
@@ -234,7 +255,7 @@ class FilePipe(Pipe):
         """
         if not self.pipe_path:
             raise BrokenPipeError("pipe is not open")
-        return self.put_f(topic, data, timeout)
+        return self.put_f(msg, timeout)
 
     def receive(self, timeout=None):
         if not self.pipe_path:
@@ -247,5 +268,5 @@ class FilePipe(Pipe):
         if pipe_path and os.path.exists(pipe_path):
             try:
                 shutil.rmtree(pipe_path)
-            except:
+            except Exception:
                 pass
