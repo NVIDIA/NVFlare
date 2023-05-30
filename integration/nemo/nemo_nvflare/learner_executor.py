@@ -48,6 +48,7 @@ class NemoLearnerExecutor(LearnerExecutor):
             validate_task=validate_task,
         )
         self.share_config_task = share_config_task
+        self.is_initialized = False
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         if task_name == self.share_config_task:
