@@ -16,7 +16,12 @@ import threading
 import time
 
 from nvflare.fuel.utils.pipe.pipe import Message, Pipe
-from nvflare.fuel.utils.validation_utils import check_callable, check_object_type, check_positive_number
+from nvflare.fuel.utils.validation_utils import (
+    check_callable,
+    check_non_negative_number,
+    check_object_type,
+    check_positive_number,
+)
 
 
 class Topic(object):
@@ -60,14 +65,15 @@ class PipeMonitor(object):
             pipe: the pipe to be monitored
             read_interval: how often to read from the pipe
             heartbeat_interval: how often to send a heartbeat to the peer
-            heartbeat_timeout: how long to wait for a heartbeat from the peer before treating the peer as gone
+            heartbeat_timeout: how long to wait for a heartbeat from the peer before treating the peer as gone,
+                0 means DO NOT check for heartbeat.
         """
         check_positive_number("read_interval", read_interval)
         check_positive_number("heartbeat_interval", heartbeat_interval)
-        check_positive_number("heartbeat_timeout", heartbeat_timeout)
+        check_non_negative_number("heartbeat_timeout", heartbeat_timeout)
         check_object_type("pipe", pipe, Pipe)
 
-        if heartbeat_interval >= heartbeat_timeout:
+        if 0 < heartbeat_timeout <= heartbeat_interval:
             raise ValueError(f"heartbeat_interval {heartbeat_interval} must < heartbeat_timeout {heartbeat_timeout}")
 
         self.pipe = pipe
@@ -159,7 +165,7 @@ class PipeMonitor(object):
         try:
             return self._send_to_pipe(msg, timeout)
         except BrokenPipeError:
-            self._add_message(self._make_event_message(Topic.PEER_GONE, ""))
+            self._add_message(self._make_event_message(Topic.PEER_GONE, "send failed"))
 
     def notify_end(self, data):
         """Notify the peer that the communication is ended normally.
@@ -188,8 +194,8 @@ class PipeMonitor(object):
     def _read(self):
         try:
             self._try_read()
-        except Exception:
-            self._add_message(self._make_event_message(Topic.PEER_GONE, ""))
+        except Exception as e:
+            self._add_message(self._make_event_message(Topic.PEER_GONE, f"error: {e}"))
 
     def _try_read(self):
         last_heartbeat_received_time = time.time()
@@ -205,8 +211,8 @@ class PipeMonitor(object):
                     break
             else:
                 # is peer gone?
-                if now - last_heartbeat_received_time > self.heartbeat_timeout:
-                    self._add_message(self._make_event_message(Topic.PEER_GONE, ""))
+                if self.heartbeat_timeout and now - last_heartbeat_received_time > self.heartbeat_timeout:
+                    self._add_message(self._make_event_message(Topic.PEER_GONE, "missing heartbeat"))
                     break
 
             # send heartbeat to the peer

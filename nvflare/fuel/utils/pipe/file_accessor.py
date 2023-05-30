@@ -12,10 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from abc import ABC, abstractmethod
 from typing import Any
 
 
-class FileAccessor:
+class FileAccessor(ABC):
+    @abstractmethod
     def write(self, data: Any, file_path: str):
         """Write the specified data to file(s) in the specified path
 
@@ -28,6 +30,7 @@ class FileAccessor:
         """
         pass
 
+    @abstractmethod
     def read(self, file_path: str) -> Any:
         """Read the data located at the specified file_path
 
