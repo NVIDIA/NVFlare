@@ -42,7 +42,7 @@
     },
     {
       "id": "tb_analytics_receiver",
-      "name": "TBAnalyticsReceiver"
+      "path": "nvflare.app_opt.tracking.tb.tb_receiver.TBAnalyticsReceiver"
     },
     {
       "id": "mlflow_receiver_with_tracking_uri",
