@@ -14,7 +14,7 @@
 
 import json
 import os
-from typing import List, Union
+from typing import List, Union, Dict
 
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.utils.class_utils import ModuleScanner, get_class
@@ -23,6 +23,15 @@ from nvflare.fuel.utils.dict_utils import augment, extract_first_level_primitive
 from nvflare.fuel.utils.json_scanner import JsonObjectProcessor, JsonScanner, Node
 from nvflare.fuel.utils.wfconf import _EnvUpdater
 from nvflare.security.logging import secure_format_exception
+
+from enum import Enum
+
+
+class ConfigFormat(Enum):
+    # use file format extension as value indicator
+    JSON = ".json"
+    PYHOCON = ".conf"
+    YAML = ".yml"
 
 
 class ConfigContext(object):
@@ -87,6 +96,16 @@ class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
 
         self.config_data = config_data
         self.json_scanner = JsonScanner(config_data, config_files)
+
+    def load_config(self, file_path) -> Dict:
+        import pathlib
+        # function to return the file extension
+        file_extension = pathlib.Path(file_path).suffix
+        job_config_format = ConfigFormat(file_extension)
+        return self.load_config(file_path, job_config_format)
+
+    def load_config(self, file_path, config_format: ConfigFormat):
+        pass
 
     def get_module_scanner(self):
         return self.module_scanner
