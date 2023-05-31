@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
 from abc import ABC, abstractmethod
 from threading import Lock
 from typing import List, Optional
+
+from typing_extensions import deprecated
 
 from nvflare.apis.analytix import AnalyticsData, AnalyticsDataType
 from nvflare.apis.dxo import DXO
@@ -110,6 +112,9 @@ class AnalyticsSender(Widget):
         with self.engine.new_context() as fl_ctx:
             send_analytic_dxo(self, dxo=dxo, fl_ctx=fl_ctx, event_type=self.event_type)
 
+    @deprecated(
+        "This method is deprecated, please use :py:class:`TBWriter <nvflare.app_opt.tracking.tb.tb_writer.TBWriter>` instead."
+    )
     def add_scalar(self, tag: str, scalar: float, global_step: Optional[int] = None, **kwargs):
         """Legacy method to send a scalar.
 
@@ -124,6 +129,9 @@ class AnalyticsSender(Widget):
         """
         self.add(tag=tag, value=scalar, data_type=AnalyticsDataType.SCALAR, global_step=global_step, **kwargs)
 
+    @deprecated(
+        "This method is deprecated, please use :py:class:`TBWriter <nvflare.app_opt.tracking.tb.tb_writer.TBWriter>` instead."
+    )
     def add_scalars(self, tag: str, scalars: dict, global_step: Optional[int] = None, **kwargs):
         """Legacy method to send scalars.
 
@@ -138,6 +146,9 @@ class AnalyticsSender(Widget):
         """
         self.add(tag=tag, value=scalars, data_type=AnalyticsDataType.SCALARS, global_step=global_step, **kwargs)
 
+    @deprecated(
+        "This method is deprecated, please use :py:class:`TBWriter <nvflare.app_opt.tracking.tb.tb_writer.TBWriter>` instead."
+    )
     def flush(self):
         """Legacy method to flush out the message.
 

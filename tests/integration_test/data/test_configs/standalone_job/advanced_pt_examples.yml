@@ -1,6 +1,6 @@
 n_servers: 1
 n_clients: 2
-jobs_root_dir: ../../examples/advanced/experiment-tracking/tensorboard-streaming/jobs
+jobs_root_dir: ../../examples/advanced/experiment-tracking/tensorboard/jobs
 cleanup: True
 
 
@@ -27,5 +27,5 @@ tests:
       - path: tests.integration_test.src.validators.TBResultValidator
         args: { require_result_on_client: False }
     setup:
-      - python -m pip install -r ../../examples/advanced/experiment-tracking/tensorboard-streaming/requirements.txt
-      - bash ../../examples/advanced/experiment-tracking/tensorboard-streaming/prepare_data.sh
+      - python -m pip install -r ../../examples/advanced/experiment-tracking/tensorboard/requirements.txt
+      - bash ../../examples/advanced/experiment-tracking/tensorboard/prepare_data.sh

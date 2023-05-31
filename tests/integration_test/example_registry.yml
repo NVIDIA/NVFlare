@@ -5,7 +5,7 @@ examples:
   - root: advanced/cifar10/cifar10-sim
     additional_python_path: advanced/cifar10
     prepare_data_script: prepare_data.sh
-  - root: advanced/experiment-tracking/tensorboard-streaming
+  - root: advanced/experiment-tracking/tensorboard
     prepare_data_script: prepare_data.sh
   - root: advanced/sklearn-kmeans
     prepare_data_script: prepare_data.sh
