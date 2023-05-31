@@ -52,7 +52,3 @@ Please also install "./requirements.txt" in each example folder.
 * [Hello PyTorch with TensorBoard Streaming](./experiment-tracking/tensorboard/README.md)
   * Example building upon [Hello PyTorch](../hello-world/hello-pt/README.md) showcasing the [TensorBoard](https://tensorflow.org/tensorboard) streaming capability from the clients to the server.
 
-## Federated Learning Hub
-
-* [FL Hub](./fl_hub/README.md) 
-  * Allow hierarchical interaction between several levels of nvflare FL systems, e.g. Tier-1 (hub) and Tier-2 (sub-systems).
