@@ -134,3 +134,9 @@ When you open a notebook, select the kernel `nvflare_example` using the dropdown
 | Example                                                                               | Summary                                                                                                                                                         |
 |---------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | [NLP-NER](./advanced/nlp-ner/README.md)                                               | Illustrates both [BERT](https://github.com/google-research/bert) and [GPT-2](https://github.com/openai/gpt-2) models from [Hugging Face](https://huggingface.co/) ([BERT-base-uncased](https://huggingface.co/bert-base-uncased), [GPT-2](https://huggingface.co/gpt2)) on a Named Entity Recognition (NER) task using the [NCBI disease dataset](https://pubmed.ncbi.nlm.nih.gov/24393765/).  |
+
+## 10. Federated Learning Hub
+
+| Example                               | Framework      | Summary                                                                                                                  |
+|---------------------------------------|----------------|--------------------------------------------------------------------------------------------------------------------------|
+| [FL Hub](./advanced/fl_hub/README.md) | PyTorch/MONAI  | Allow hierarchical interaction between several levels of nvflare FL systems, e.g. Tier-1 (hub) and Tier-2 (sub-systems). |
