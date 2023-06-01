@@ -197,7 +197,7 @@ class SimulatorRunner(FLComponent):
                 if len(gpu_groups) > 1:
                     if self.args.threads and self.args.threads > 1:
                         self.logger.info(
-                            "When running with multi GPU, each GPU will run with only 1 thread. "
+                            "When running with multi GPU, each GPU group will run with only 1 thread. "
                             "Set the Threads to 1."
                         )
                     self.args.threads = 1
