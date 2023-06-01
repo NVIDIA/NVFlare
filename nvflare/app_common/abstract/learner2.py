@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from abc import abstractmethod
 from typing import Any, Union
 
 from nvflare.apis.dxo import DXO
@@ -39,57 +38,145 @@ class Learner2(FLComponent):
         self.total_rounds = 0
 
     def is_aborted(self) -> bool:
+        """Check whether the task has been asked to abort by the framework.
+
+        Returns: whether the task has been asked to abort by the framework
+
+        """
         return self.abort_signal and self.abort_signal.triggered
 
     def get_shareable_header(self, key: str, default=None):
+        """Convenience method for getting specified header from the shareable.
+
+        Args:
+            key: name of the header
+            default: default value if the header doesn't exist
+
+        Returns: value of the header if it exists in the shareable; or the specified default if it doesn't.
+
+        """
         if not self.shareable:
             return default
         return self.shareable.get_header(key, default)
 
     def get_context_prop(self, key: str, default=None):
+        """Convenience method for getting specified property from the FL Context.
+
+        Args:
+            key: name of the property
+            default: default value if the prop doesn't exist in FL Context
+
+        Returns: value of the prop if it exists in the context; or the specified default if it doesn't.
+
+        """
         if not self.fl_ctx:
             return default
         assert isinstance(self.fl_ctx, FLContext)
         return self.fl_ctx.get_prop(key, default)
 
     def get_component(self, component_id: str) -> Any:
+        """Get the specified component from the context
+
+        Args:
+            component_id: ID of the component
+
+        Returns: the specified component if it is defined; or None if not.
+
+        """
         if self.engine:
             return self.engine.get_component(component_id)
         else:
             return None
 
     def debug(self, msg: str):
+        """Convenience method for logging a DEBUG message with contextual info
+
+        Args:
+            msg: the message to be logged
+
+        Returns:
+
+        """
         self.log_debug(self.fl_ctx, msg)
 
     def info(self, msg: str):
+        """Convenience method for logging an INFO message with contextual info
+
+        Args:
+            msg: the message to be logged
+
+        Returns:
+
+        """
         self.log_info(self.fl_ctx, msg)
 
     def error(self, msg: str):
+        """Convenience method for logging an ERROR message with contextual info
+
+        Args:
+            msg: the message to be logged
+
+        Returns:
+
+        """
         self.log_error(self.fl_ctx, msg)
 
     def warning(self, msg: str):
+        """Convenience method for logging a WARNING message with contextual info
+
+        Args:
+            msg: the message to be logged
+
+        Returns:
+
+        """
         self.log_warning(self.fl_ctx, msg)
 
     def exception(self, msg: str):
+        """Convenience method for logging an EXCEPTION message with contextual info
+
+        Args:
+            msg: the message to be logged
+
+        Returns:
+
+        """
         self.log_exception(self.fl_ctx, msg)
 
     def critical(self, msg: str):
+        """Convenience method for logging a CRITICAL message with contextual info
+
+        Args:
+            msg: the message to be logged
+
+        Returns:
+
+        """
         self.log_critical(self.fl_ctx, msg)
 
-    def stop_run(self, reason: str):
-        self.system_panic(reason, self.fl_ctx)
+    def stop_task(self, reason: str):
+        """Stop the current task.
+        This method is to be called by the Learner's training or validation code when it runs into
+        a situation that the task processing cannot continue.
+
+        Args:
+            reason: why the task cannot continue
+
+        Returns:
+
+        """
+        self.task_panic(reason, self.fl_ctx)
 
     def initialize(self):
-        """Initialize the Learner object. This is called before the Learner can train or validate.
-
+        """Called by the framework to initialize the Learner object.
+        This is called before the Learner can train or validate.
         This is called only once.
 
         """
         pass
 
-    @abstractmethod
     def train(self, dxo: DXO) -> Union[str, DXO]:
-        """Called to perform training. Can be called many times during the lifetime of the Learner.
+        """Called by the framework to perform training. Can be called many times during the lifetime of the Learner.
 
         Args:
             dxo: the training input data (e.g. model weights)
@@ -100,39 +187,50 @@ class Learner2(FLComponent):
         pass
 
     def get_model(self, model_name: str) -> Union[str, DXO]:
-        """Called to return the trained model from the Learner.
+        """Called by the framework to return the trained model from the Learner.
 
         Args:
             model_name: type of the model for validation
 
-        Returns: trained model
+        Returns: trained model; or return code if failed
 
         """
         pass
 
-    def validate(self, dxo: DXO, validate_type: str, model_owner: str) -> Union[str, DXO]:
-        """Validate the model with the specified weights in dxo
+    def validate(self, dxo: DXO) -> Union[str, DXO]:
+        """Called by the framework to validate the model with the specified weights in dxo
 
         Args:
             dxo: the DXO object that contains model weights
-            validate_type: type of validation
-            model_owner: the owner of the model weights
 
         Returns: validation metrics in DXO if successful; or return code if failed.
 
         """
         pass
 
-    def abort(self):
-        """Called (from another thread) to abort the current task (validate or train).
+    def configure(self, dxo: DXO):
+        """Called by the framework to configure the Learner with the parameters in the DXO
 
-        Note: this is to abort the current task only, not the Trainer. After aborting, the Learner may still be called
-        to perform another task.
+        Args:
+            dxo: the object that contains config parameters
+
+        Returns: None
+
+        """
+        pass
+
+    def abort(self):
+        """Called by the framework for the Learner to gracefully abort the current task.
+
+        This could be caused by multiple reasons:
+        - user issued the abort command to stop the whole job
+        - Controller runs into some condition that requires the job to be aborted
         """
         pass
 
     def finalize(self):
-        """Called to finalize the Learner (close/release resources gracefully).
+        """Called by the framework to finalize the Learner (close/release resources gracefully) when
+        the job is finished.
 
         After this call, the Learner will be destroyed.
 

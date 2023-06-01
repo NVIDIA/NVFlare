@@ -11,7 +11,7 @@
             ],
             "executor": {
                 "id": "Executor",
-                "path": "nvflare.app_common.executors.learner_executor.LearnerExecutor",
+                "path": "nvflare.app_common.executors.learner2_executor.LearnerExecutor",
                 "args": {
                     "learner_id": "cifar10-learner"
                 }
