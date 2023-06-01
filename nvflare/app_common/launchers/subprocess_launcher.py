@@ -17,7 +17,7 @@ import shlex
 import subprocess
 import sys
 import threading
-from typing import Tuple
+from typing import Optional, Tuple
 
 from nvflare.apis.dxo import DXO
 from nvflare.apis.fl_context import FLContext
@@ -25,7 +25,7 @@ from nvflare.app_common.abstract.launcher import Launcher, LauncherStatus
 
 
 class SubprocessLauncher(Launcher):
-    def __init__(self, script: str):
+    def __init__(self, script: str, clean_up_script: Optional[str] = None):
         """SubprocessLauncher.
 
         Args:
@@ -36,18 +36,20 @@ class SubprocessLauncher(Launcher):
         self._app_dir = None
         self._process = None
         self._script = script
+        self._clean_up_script = clean_up_script
 
     def initialize(self, fl_ctx: FLContext):
         super().initialize(fl_ctx)
         self._app_dir = self.get_app_dir()
 
     def launch(self, task_name: str, dxo: DXO, stop_event: threading.Event):
-        command = self._script
-        env = os.environ.copy()
-        command_seq = shlex.split(command)
-        self._process = subprocess.Popen(
-            command_seq, stdout=sys.stdout, stderr=subprocess.STDOUT, cwd=self._app_dir, env=env
-        )
+        if self._process is None:
+            command = self._script
+            env = os.environ.copy()
+            command_seq = shlex.split(command)
+            self._process = subprocess.Popen(
+                command_seq, stdout=sys.stdout, stderr=subprocess.STDOUT, cwd=self._app_dir, env=env
+            )
 
     def check_status(self, task_name: str) -> Tuple[str, str]:
         if not self._process:
@@ -65,4 +67,8 @@ class SubprocessLauncher(Launcher):
         if self._process:
             self._process.terminate()
             self._process.wait()
+            if self._clean_up_script:
+                command_seq = shlex.split(self._clean_up_script)
+                process = subprocess.Popen(command_seq, cwd=self._app_dir)
+                process.wait()
             self._process = None
