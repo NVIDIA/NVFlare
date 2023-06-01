@@ -56,8 +56,9 @@ class DockerLauncher(Launcher):
         self._options["working_dir"] = self._app_root
 
     def launch(self, task_name: str, dxo: DXO, stop_event: threading.Event):
-        client = docker.from_env()
-        self._container = client.containers.run(self._image, self._script, **self._options)
+        if self._container is None:
+            client = docker.from_env()
+            self._container = client.containers.run(self._image, self._script, **self._options)
 
     def check_status(self, task_name: str) -> Tuple[str, str]:
         if not self._container:
