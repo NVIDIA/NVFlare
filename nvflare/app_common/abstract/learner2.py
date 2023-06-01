@@ -19,7 +19,7 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
 
 
-class Learner2(FLComponent):
+class Learner(FLComponent):
 
     STATE = None
 

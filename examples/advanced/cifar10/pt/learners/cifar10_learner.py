@@ -29,12 +29,12 @@ from torchvision import datasets, transforms
 
 from nvflare.apis.dxo import DXO, DataKind, MetaKey
 from nvflare.apis.fl_constant import ReturnCode
-from nvflare.app_common.abstract.learner2 import Learner2
+from nvflare.app_common.abstract.learner2 import Learner
 from nvflare.app_common.app_constant import AppConstants, ModelName, ValidateType
 from nvflare.app_opt.pt.fedproxloss import PTFedProxLoss
 
 
-class CIFAR10Learner(Learner2):  # also supports CIFAR10ScaffoldLearner
+class CIFAR10Learner(Learner):  # also supports CIFAR10ScaffoldLearner
     def __init__(
         self,
         train_idx_root: str = "./dataset",
