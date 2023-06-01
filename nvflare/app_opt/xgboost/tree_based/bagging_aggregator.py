@@ -51,7 +51,7 @@ class XGBBaggingAggregator(Aggregator):
         """
         try:
             dxo = from_shareable(shareable)
-        except BaseException:
+        except Exception:
             self.log_exception(fl_ctx, "shareable data is not a valid DXO")
             return False
 

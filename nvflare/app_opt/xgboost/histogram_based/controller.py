@@ -159,7 +159,7 @@ class XGBFedController(Controller):
 
             self.log_info(fl_ctx, "Finish training phase.")
 
-        except BaseException as e:
+        except Exception as e:
             err = secure_format_traceback()
             error_msg = f"Exception in control_flow: {secure_format_exception(e)}: {err}"
             self.log_exception(fl_ctx, error_msg)

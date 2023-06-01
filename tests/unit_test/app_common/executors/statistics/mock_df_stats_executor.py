@@ -39,7 +39,7 @@ def load_data() -> Dict[str, pd.DataFrame]:
 
         return {"train": train, "test": test}
 
-    except BaseException as e:
+    except Exception as e:
         raise Exception(f"Load data failed! {e}")
 
 

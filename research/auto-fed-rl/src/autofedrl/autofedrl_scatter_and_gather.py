@@ -249,7 +249,7 @@ class ScatterAndGatherAutoFedRL(ScatterAndGather):
 
             self._phase = AppConstants.PHASE_FINISHED
             self.log_info(fl_ctx, "Finished ScatterAndGather Training.")
-        except BaseException as e:
+        except Exception as e:
             traceback.print_exc()
             error_msg = f"Exception in ScatterAndGather control_flow: {e}"
             self.log_exception(fl_ctx, error_msg)

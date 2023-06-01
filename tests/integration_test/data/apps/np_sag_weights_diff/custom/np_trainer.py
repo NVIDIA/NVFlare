@@ -45,7 +45,7 @@ class NPTrainer(BaseNPTrainer):
         # First we extract DXO from the shareable.
         try:
             incoming_dxo = from_shareable(shareable)
-        except BaseException as e:
+        except Exception as e:
             self.system_panic(f"Unable to convert shareable to model definition. Exception {e.__str__()}", fl_ctx)
             return make_reply(ReturnCode.BAD_TASK_DATA)
 

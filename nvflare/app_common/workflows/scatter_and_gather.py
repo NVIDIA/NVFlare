@@ -297,7 +297,7 @@ class ScatterAndGather(Controller):
 
             self._phase = AppConstants.PHASE_FINISHED
             self.log_info(fl_ctx, "Finished ScatterAndGather Training.")
-        except BaseException as e:
+        except Exception as e:
             error_msg = f"Exception in ScatterAndGather control_flow: {secure_format_exception(e)}"
             self.log_exception(fl_ctx, error_msg)
             self.system_panic(error_msg, fl_ctx)

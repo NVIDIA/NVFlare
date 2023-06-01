@@ -71,7 +71,7 @@ class LearnerExecutor(Executor):
             if not isinstance(self.learner, Learner):
                 raise TypeError(f"learner must be Learner type. Got: {type(self.learner)}")
             self.learner.initialize(engine.get_all_components(), fl_ctx)
-        except BaseException as e:
+        except Exception as e:
             self.log_exception(fl_ctx, f"learner initialize exception: {secure_format_exception(e)}")
             raise e
 

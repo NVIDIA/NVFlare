@@ -111,7 +111,7 @@ def verify_folder_signature(folder):
                         algorithm=hashes.SHA256(),
                     )
         return True
-    except BaseException as e:
+    except Exception as e:
         return False
 
 

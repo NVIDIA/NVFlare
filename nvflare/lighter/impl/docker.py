@@ -97,6 +97,6 @@ class DockerBuilder(Builder):
             f.write(self.template.get("dockerfile"))
         try:
             shutil.copyfile(self.requirements_file, os.path.join(compose_build_dir, "requirements.txt"))
-        except BaseException:
+        except Exception:
             f = open(os.path.join(compose_build_dir, "requirements.txt"), "wt")
             f.close()

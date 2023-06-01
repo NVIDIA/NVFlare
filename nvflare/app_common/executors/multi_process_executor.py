@@ -141,7 +141,7 @@ class MultiProcessExecutor(Executor):
                             topic=MultiProcessCommandNames.FIRE_EVENT,
                             message=request,
                         )
-                    except BaseException:
+                    except Exception:
                         # Warning: Have to set fire_event=False, otherwise it will cause dead loop on the event handling!!!
                         self.log_warning(
                             fl_ctx,
@@ -231,7 +231,7 @@ class MultiProcessExecutor(Executor):
                 if reply.get_header(MessageHeaderKey.RETURN_CODE) != F3ReturnCode.OK:
                     self.log_exception(fl_ctx, "error initializing multi_process executor")
                     raise ValueError(reply.get_header(MessageHeaderKey.ERROR))
-        except BaseException as e:
+        except Exception as e:
             self.log_exception(fl_ctx, f"error initializing multi_process executor: {secure_format_exception(e)}")
 
     def receive_execute_result(self, request: CellMessage) -> CellMessage:
@@ -299,7 +299,7 @@ class MultiProcessExecutor(Executor):
                 topic=MultiProcessCommandNames.TASK_EXECUTION,
                 message=request,
             )
-        except BaseException:
+        except Exception:
             self.log_error(fl_ctx, "Multi-Process Execution error.")
             return make_reply(ReturnCode.EXECUTION_RESULT_ERROR)
 
