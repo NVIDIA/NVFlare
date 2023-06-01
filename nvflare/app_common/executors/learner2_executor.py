@@ -20,7 +20,7 @@ from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
-from nvflare.app_common.abstract.learner2 import Learner2
+from nvflare.app_common.abstract.learner2 import Learner
 from nvflare.app_common.app_constant import AppConstants, ValidateType
 from nvflare.security.logging import secure_format_exception
 
@@ -82,8 +82,8 @@ class LearnerExecutor(Executor):
         if self.learner:
             self.learner_name = self.learner.__class__.__name__
 
-        if not isinstance(self.learner, Learner2):
-            raise TypeError(f"learner must be Learner2 type, but got: {type(self.learner)}")
+        if not isinstance(self.learner, Learner):
+            raise TypeError(f"learner must be Learner type, but got: {type(self.learner)}")
 
         self.log_info(fl_ctx, f"Got learner: {self.learner_name}")
 
@@ -98,7 +98,7 @@ class LearnerExecutor(Executor):
             raise e
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
-        # For Learner2, do one task at a time since the shareable and fl_ctx are kept in "self".
+        # Do one task at a time since the shareable and fl_ctx are kept in "self".
         with self.learner_exe_lock:
             return self._do_execute(task_name, shareable, fl_ctx, abort_signal)
 
@@ -123,7 +123,7 @@ class LearnerExecutor(Executor):
             return make_reply(ReturnCode.TASK_UNKNOWN)
 
     @staticmethod
-    def _setup_learner(learner: Learner2, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal):
+    def _setup_learner(learner: Learner, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal):
         learner.shareable = shareable
         learner.fl_ctx = fl_ctx
         learner.abort_signal = abort_signal
