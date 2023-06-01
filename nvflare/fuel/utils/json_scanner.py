@@ -17,6 +17,7 @@ import logging
 from abc import ABC, abstractmethod
 
 from nvflare.fuel.common.excepts import ConfigError
+from nvflare.fuel.utils.config_service import convert_dict_to_config
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 
@@ -96,18 +97,19 @@ class JsonScanner(object):
     def _do_scan(self, node: Node):
         try:
             node.processor.process_element(node)
-        except BaseException as e:
+        except Exception as e:
             secure_log_traceback(self.logger)
 
             if self.location:
+                elmt = convert_dict_to_config(self.location[0], node.element)
                 raise ConfigError(
-                    "Error processing {} in JSON element {}: path: {}, exception: {}".format(
-                        self.location, node.element, node.path(), secure_format_exception(e)
+                    "Error processing '{}' in element '{}': path: '{}', exception: '{}'".format(
+                        self.location, elmt, node.path(), secure_format_exception(e)
                     )
                 )
             else:
                 raise ConfigError(
-                    "Error in JSON element: {}, path: {}, exception: {}".format(
+                    "Error in element: '{}', path: '{}', exception: '{}'".format(
                         node.element, node.path(), secure_format_exception(e)
                     )
                 )

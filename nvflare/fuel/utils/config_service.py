@@ -14,9 +14,72 @@
 import argparse
 import json
 import os
+import pathlib
+from enum import Enum
 from typing import Dict, List, Union
 
+import yaml
+
+from nvflare.security.logging import secure_format_exception
+from nvflare.utils.pyhocon_utils import to_dict
+
 ENV_VAR_PREFIX = "NVFLARE_"
+
+
+class ConfigFormat(Enum):
+    # use file format extension as value indicator
+    JSON = ".json"
+    PYHOCON = ".conf"
+    YAML = ".yml"
+
+
+def load_config(file_path) -> Dict:
+    # function to return the file extension
+    job_config_format = get_config_format(file_path)
+    return load_config_by_format(file_path, job_config_format)
+
+
+def get_config_format(file_path):
+    file_extension = pathlib.Path(file_path).suffix
+    job_config_format = ConfigFormat(file_extension)
+    return job_config_format
+
+
+def load_config_by_format(file_path, config_format: ConfigFormat):
+    if config_format == ConfigFormat.PYHOCON:
+        from pyhocon import ConfigFactory
+
+        config = ConfigFactory.parse_file(file_path)
+        return to_dict(config.get_config("config"))
+    else:
+        with open(file_path, "r") as file:
+            try:
+                if config_format == ConfigFormat.JSON:
+                    return json.load(file)
+                elif config_format == ConfigFormat.YAML:
+                    return yaml.safe_load(file)
+                else:
+                    raise ValueError(f"unsupported config format {config_format.name}")
+            except Exception as e:
+                print("Error loading config file {}: {}".format(file, secure_format_exception(e)))
+                raise e
+
+
+def convert_dict_to_config(file_path: str, element: Dict):
+    config_format = get_config_format(file_path)
+    if config_format == ConfigFormat.JSON:
+        data = json.dumps(element)
+    elif config_format == ConfigFormat.YAML:
+        data = yaml.dump(element)
+    elif config_format == ConfigFormat.PYHOCON:
+        from pyhocon import ConfigFactory
+        from pyhocon.converter import HOCONConverter
+
+        config = ConfigFactory.from_dict(element)
+        data = HOCONConverter.to_hocon(config)
+    else:
+        raise ValueError(f"unsupported file format {config_format.name}")
+    return data
 
 
 def find_file_in_dir(file_basename, path) -> Union[None, str]:
@@ -81,7 +144,7 @@ class ConfigService:
         Args:
             section_files: dict: section name => config file
             config_path: list of config directories
-            process_start_cmd_args: command args for starting the program
+            parsed_args: command args for starting the program
             var_dict: dict for additional vars
 
         Returns:
@@ -112,7 +175,7 @@ class ConfigService:
         cls._config_path = config_path
 
         for section, file_basename in section_files.items():
-            cls._sections[section] = cls.load_json(file_basename)
+            cls._sections[section] = cls.load_configuration(file_basename)
 
         cls._var_dict = var_dict
         if parsed_args:
@@ -146,7 +209,7 @@ class ConfigService:
             cls._sections[section_name] = data
 
     @classmethod
-    def load_json(cls, file_basename: str) -> dict:
+    def load_configuration(cls, file_basename: str) -> dict:
         """
         Load a specified JSON config file
 
@@ -159,7 +222,7 @@ class ConfigService:
         file_path = cls.find_file(file_basename)
         if not file_path:
             raise FileNotFoundError(f"cannot find file '{file_basename}' from search path '{cls._config_path}'")
-        return json.load(open(file_path, "rt"))
+        return load_config(file_path)
 
     @classmethod
     def find_file(cls, file_basename: str) -> Union[None, str]:

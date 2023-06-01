@@ -120,6 +120,7 @@ copy NVFlare/examples/advanced/psi/user_email_match/data to /tmp/nvflare/psi dir
 
 **run job** 
 ```
+export NVFLARE_JOB_CONFIG_EXT=".conf"
 nvflare simulator -w /tmp/nvflare/psi -n 3 -t 3 user_email_match/jobs/user_email_match
 ```
 Once job completed and succeed, you should be able to find the intersection for different sites at

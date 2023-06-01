@@ -40,7 +40,7 @@ class CommConfigurator:
         config = None
         for file_name in _comm_config_files:
             try:
-                config = ConfigService.load_json(file_name)
+                config = ConfigService.load_configuration(file_name)
                 if config:
                     break
             except FileNotFoundError:

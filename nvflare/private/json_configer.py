@@ -12,26 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import os
-from typing import List, Union, Dict
+from typing import List, Union
 
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.utils.class_utils import ModuleScanner, get_class
 from nvflare.fuel.utils.component_builder import ComponentBuilder
+from nvflare.fuel.utils.config_service import load_config
 from nvflare.fuel.utils.dict_utils import augment, extract_first_level_primitive
 from nvflare.fuel.utils.json_scanner import JsonObjectProcessor, JsonScanner, Node
 from nvflare.fuel.utils.wfconf import _EnvUpdater
 from nvflare.security.logging import secure_format_exception
-
-from enum import Enum
-
-
-class ConfigFormat(Enum):
-    # use file format extension as value indicator
-    JSON = ".json"
-    PYHOCON = ".conf"
-    YAML = ".yml"
 
 
 class ConfigContext(object):
@@ -86,26 +77,15 @@ class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
 
         config_data = {}
         for f in config_files:
-            with open(f) as file:
-                try:
-                    data = json.load(file)
-                    augment(to_dict=config_data, from_dict=data, from_override_to=False)
-                except BaseException as e:
-                    print("Error processing config file {}: {}".format(file, secure_format_exception(e)))
-                    raise e
+            data = load_config(f)
+            try:
+                augment(to_dict=config_data, from_dict=data, from_override_to=False)
+            except Exception as e:
+                print("Error processing config file {}: {}".format(f, secure_format_exception(e)))
+                raise e
 
         self.config_data = config_data
         self.json_scanner = JsonScanner(config_data, config_files)
-
-    def load_config(self, file_path) -> Dict:
-        import pathlib
-        # function to return the file extension
-        file_extension = pathlib.Path(file_path).suffix
-        job_config_format = ConfigFormat(file_extension)
-        return self.load_config(file_path, job_config_format)
-
-    def load_config(self, file_path, config_format: ConfigFormat):
-        pass
 
     def get_module_scanner(self):
         return self.module_scanner
