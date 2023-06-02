@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+import os
 from typing import List
 
 from nvflare.apis.workspace import Workspace
@@ -128,7 +129,8 @@ class DeployProcessor(RequestProcessor):
         if secure_train:
             workspace = Workspace(root_dir=engine.args.workspace, site_name=client_name)
             app_path = workspace.get_app_dir(job_id)
-            if not verify_folder_signature(app_path):
+            root_ca_path = os.path.join(workspace.get_startup_kit_dir(), "rootCA.pem")
+            if not verify_folder_signature(app_path, root_ca_path):
                 return error_reply(f"app {app_name} does not pass signature verification")
         return ok_reply(body=f"deployed {app_name} to {client_name}")
 
