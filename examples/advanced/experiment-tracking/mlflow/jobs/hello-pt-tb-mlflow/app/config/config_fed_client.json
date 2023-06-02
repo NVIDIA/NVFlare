@@ -24,7 +24,7 @@
   "components": [
     {
       "id": "pt_learner",
-      "path": "pt_learner.PTLearner",
+      "path": "learner_with_tb.PTLearner",
       "args": {
         "lr": 0.01,
         "epochs": 5,
@@ -33,7 +33,8 @@
     },
     {
       "id": "log_writer",
-      "name": "TBWriter"
+      "path": "nvflare.app_opt.tracking.tb.tb_writer.TBWriter",
+      "args": {"event_type": "analytix_log_stats"}
     },
     {
       "id": "event_to_fed",

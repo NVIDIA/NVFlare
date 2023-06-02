@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,21 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from unittest.mock import patch, Mock
+from unittest.mock import Mock, patch
 
 import numpy
-
-from nvflare.apis.shareable import Shareable
-from pt_learner import PTLearner
+from learner_with_tb import PTLearner
 
 from nvflare.apis.dxo import DXO, DataKind
-from nvflare.apis.fl_constant import ReturnCode, ReservedKey
+from nvflare.apis.fl_constant import ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 
 
 class TestPTLearner:
-
     @patch.object(PTLearner, "save_local_model")
     def test_train_empty_input(self, mock_save_local_model):
         fl_ctx = FLContext()
