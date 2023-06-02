@@ -15,15 +15,16 @@
 import os.path
 
 import torch
+from pt_constants import PTConstants
+from simple_network import SimpleNetwork
 from torch import nn
 from torch.optim import SGD
 from torch.utils.data.dataloader import DataLoader
-from torch.utils.tensorboard import SummaryWriter
 from torchvision.datasets import CIFAR10
 from torchvision.transforms import Compose, Normalize, ToTensor
 
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
-from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReturnCode
+from nvflare.apis.fl_constant import ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
@@ -35,9 +36,7 @@ from nvflare.app_common.abstract.model import (
     model_learnable_to_dxo,
 )
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.pt.pt_fed_utils import PTModelPersistenceFormatManager
-from pt.pt_constants import PTConstants
-from pt.simple_network import SimpleNetwork
+from nvflare.app_opt.pt.model_persistence_format_manager import PTModelPersistenceFormatManager
 
 
 class PTLearner(Learner):
@@ -52,7 +51,6 @@ class PTLearner(Learner):
                 If configured, TensorBoard events will be fired. Defaults to "analytic_sender".
         """
         super().__init__()
-        self.fl_ctx = None
         self.writer = None
         self.persistence_manager = None
         self.default_train_conf = None
@@ -72,7 +70,6 @@ class PTLearner(Learner):
         self.analytic_sender_id = analytic_sender_id
 
     def initialize(self, parts: dict, fl_ctx: FLContext):
-        self.fl_ctx = fl_ctx
         # Training setup
         self.model = SimpleNetwork()
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -171,7 +168,10 @@ class PTLearner(Learner):
                         fl_ctx, f"Epoch: {epoch}/{self.epochs}, Iteration: {i}, " f"Loss: {running_loss/3000}"
                     )
                     running_loss = 0.0
-                    self.writer.log_text(f"last running_loss reset at '{len(self.train_loader) * epoch + i}' step", "running_loss_reset.txt")
+                    self.writer.log_text(
+                        f"last running_loss reset at '{len(self.train_loader) * epoch + i}' step",
+                        "running_loss_reset.txt",
+                    )
 
                 # Stream training loss at each step
                 current_step = len(self.train_loader) * epoch + i
