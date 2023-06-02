@@ -5,10 +5,12 @@ feature to showcase how to adapt a large language model (LLM) to
 a downstream task such as financial sentiment predictions. 
 As the prompt learning technique shown in the example is p-tuning which adds a small prompt encoder network to the LLM
 to produce virtual tokens that guide the model toward the desired output of the downstream task.
-![p-tuning](./figs/p-tuning.svg)
+
+<img src="./figs/p-tuning.svg"  width="75%" height="75%">
 
 In our federated implementation, the LLM parameters stay fixed. Prompt encoder parameters are trained/updated and averaged on the server.
-![federated p-tuning](./figs/fed_p-tuning.svg)
+
+<img src="./figs/fed_p-tuning.svg"  width="90%" height="90%">
 
 ## Dependencies
 We assume you followed the instructions [here](../../README.md#requirements) 
