@@ -74,7 +74,7 @@ Talks: 2022
 
 Talks: 2021
 -----------
-* **2021-09** `Federated Learning <https://www.youtube.com/watch?v=YeYO4JGTBb0&amp>`__ (`MONAI MICCAI Bootcamp 2021 <https://www.gpuhackathons.org/event/monai-miccai-bootcamp-2021>`__)
+* **2021-09** `Federated Learning <https://www.youtube.com/watch?v=YeYO4JGTBb0&amp>`__ (MONAI MICCAI Bootcamp 2021)
 * **2021-03** `NVIDIA FLARE: An Open Federated Learning Platform <https://www.nvidia.com/en-us/on-demand/session/gtcspring22-se1991/>`__ (`GTC Spring 2022 <https://www.nvidia.com/gtc/>`__)
 * **2021-03** `Federated Learning for Healthcare – Collaborative AI without Sharing Patient Data  <https://www.youtube.com/watch?v=xr_eJp3ctzw>`__ (`Data Science Seminar <https://www.dkfz.de/en/datascience/seminar/Rieke.html>`__)
 
