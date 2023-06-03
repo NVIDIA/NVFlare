@@ -116,7 +116,7 @@ class JobMetaValidator(JobMetaValidatorSpec):
 
             if (all_sites or SERVER_SITE_NAME in deployments) and not self._config_exists(
                 zip_file, zip_folder + JobConstants.SERVER_JOB_CONFIG
-            ) :
+            ):
                 raise ValueError(f"App '{app}' will be deployed to server but server config is missing")
 
             if (all_sites or [site for site in deployments if site != SERVER_SITE_NAME]) and not self._config_exists(
@@ -200,5 +200,5 @@ class JobMetaValidator(JobMetaValidatorSpec):
     def _config_exists(zip_file: ZipFile, init_config_path: str) -> bool:
         def match(parent, config_path: str):
             return config_path in parent.namelist()
-        return ConfigFactory.match_config(zip_file, init_config_path, match)
 
+        return ConfigFactory.match_config(zip_file, init_config_path, match)

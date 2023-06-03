@@ -14,15 +14,14 @@
 
 import json
 import logging
-from typing import Dict, Optional, List
+from typing import Dict, List, Optional
 
 from nvflare.fuel.common.excepts import ConfigError
-from nvflare.fuel.utils.config import ConfigFormat, Config, ConfigLoader
+from nvflare.fuel.utils.config import Config, ConfigFormat, ConfigLoader
 from nvflare.security.logging import secure_format_exception
 
 
 class JsonConfig(Config):
-
     def __init__(self, conf: Dict, file_path: Optional[str] = None):
         self.conf = conf
         self.format = ConfigFormat.JSON
@@ -48,16 +47,14 @@ class JsonConfig(Config):
         try:
             return int(value) if value is not None else None
         except (TypeError, ValueError):
-            raise ConfigError(
-                u"{key} has type '{type}' rather than 'int'".format(key=key, type=type(value).__name__))
+            raise ConfigError("{key} has type '{type}' rather than 'int'".format(key=key, type=type(value).__name__))
 
     def get_float(self, key: str, conf=None, default=None) -> Optional[float]:
         value = self.conf.get(key, default)
         try:
             return float(value) if value is not None else None
         except (TypeError, ValueError):
-            raise ConfigError(
-                u"{key} has type '{type}' rather than 'float'".format(key=key, type=type(value).__name__))
+            raise ConfigError("{key} has type '{type}' rather than 'float'".format(key=key, type=type(value).__name__))
 
     def get_bool(self, key: str, default=None) -> Optional[bool]:
         v = self.conf.get(key, default)
@@ -79,7 +76,8 @@ class JsonConfig(Config):
             return str(value) if value is not None else None
         except (TypeError, ValueError):
             raise ConfigError(
-                u"{key} has type '{type}' cannot covert to 'str'".format(key=key, type=type(value).__name__))
+                "{key} has type '{type}' cannot covert to 'str'".format(key=key, type=type(value).__name__)
+            )
 
     def get_list(self, key: str, default=None) -> Optional[List]:
         value = self.conf.get(key, default)
@@ -88,7 +86,8 @@ class JsonConfig(Config):
                 return value
             else:
                 raise ConfigError(
-                    u"{key} has type '{type}' rather than 'List'".format(key=key, type=type(value).__name__))
+                    "{key} has type '{type}' rather than 'List'".format(key=key, type=type(value).__name__)
+                )
         else:
             return None
 
@@ -99,22 +98,22 @@ class JsonConfig(Config):
                 return JsonConfig(value, self.file_path)
             else:
                 raise ConfigError(
-                    u"{key} has type '{type}' rather than 'Dict' or 'JsonConfig' ".format(key=key,
-                                                                                          type=type(value).__name__))
+                    "{key} has type '{type}' rather than 'Dict' or 'JsonConfig' ".format(
+                        key=key, type=type(value).__name__
+                    )
+                )
         else:
             return None
 
 
 class JsonConfigLoader(ConfigLoader):
-
     def __init__(self):
         self.format = ConfigFormat.JSON
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def load_config(self,
-                    file_path: str,
-                    default_file_path: Optional[str] = None,
-                    overwrite_config: Optional[Dict] = None) -> Config:
+    def load_config(
+        self, file_path: str, default_file_path: Optional[str] = None, overwrite_config: Optional[Dict] = None
+    ) -> Config:
 
         conf_dict = self._from_file(file_path)
         if default_file_path:

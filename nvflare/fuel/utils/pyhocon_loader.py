@@ -12,18 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict, Optional, List
+from typing import Dict, List, Optional
 
 from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree
 from pyhocon.converter import HOCONConverter
 
 from nvflare.fuel.common.excepts import ConfigError
-from nvflare.fuel.utils.config import ConfigFormat, Config, ConfigLoader
+from nvflare.fuel.utils.config import Config, ConfigFormat, ConfigLoader
 
 
 class PyhoconConfig(Config):
-
     def __init__(self, conf: ConfigTree, file_path: Optional[str] = None):
         self.conf = conf
         self.format = ConfigFormat.PYHOCON
@@ -99,14 +98,12 @@ class PyhoconConfig(Config):
 
 
 class PyhoconLoader(ConfigLoader):
-
     def __init__(self):
         self.format = ConfigFormat.PYHOCON
 
-    def load_config(self,
-                    file_path: str,
-                    default_file_path: Optional[str] = None,
-                    overwrite_config: Optional[Dict] = None) -> Config:
+    def load_config(
+        self, file_path: str, default_file_path: Optional[str] = None, overwrite_config: Optional[Dict] = None
+    ) -> Config:
 
         config: ConfigTree = self._from_file(file_path)
         if default_file_path:

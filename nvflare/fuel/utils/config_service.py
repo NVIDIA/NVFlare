@@ -13,7 +13,7 @@
 # limitations under the License.
 import argparse
 import os
-from typing import Dict, List, Union, Optional
+from typing import Dict, List, Optional, Union
 
 from nvflare.fuel.utils.config import Config
 from nvflare.fuel.utils.config_factory import ConfigFactory
@@ -149,7 +149,7 @@ class ConfigService:
 
     @classmethod
     def load_configuration(cls, file_basename: str) -> Optional[Config]:
-        return ConfigFactory.load_config(file_basename,  cls._config_paths)
+        return ConfigFactory.load_config(file_basename, cls._config_paths)
 
     @classmethod
     def convert_dict_to_config(cls, file_path: str, element: Dict) -> (str, str):
@@ -184,10 +184,10 @@ class ConfigService:
             conf_exts = ConfigFactory.config_exts()
             if search_dirs:
                 raise FileNotFoundError(
-                    f"cannot find file '{basename}[{conf_exts}]' from search paths: '{search_dirs}'")
+                    f"cannot find file '{basename}[{conf_exts}]' from search paths: '{search_dirs}'"
+                )
             else:
                 raise FileNotFoundError(f"cannot find file '{basename}[{conf_exts}]'")
-
 
     @classmethod
     def find_file(cls, file_basename: str) -> Union[None, str]:

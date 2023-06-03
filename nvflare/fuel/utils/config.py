@@ -14,7 +14,7 @@
 
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Dict, Optional, List
+from typing import Dict, List, Optional
 
 
 class ConfigFormat(Enum):
@@ -75,12 +75,10 @@ class Config(ABC):
 
 
 class ConfigLoader(ABC):
-
     @abstractmethod
-    def load_config(self,
-                    file_path: str,
-                    default_file_path: Optional[str] = None,
-                    overwrite_config: Optional[Dict] = None) -> Config:
+    def load_config(
+        self, file_path: str, default_file_path: Optional[str] = None, overwrite_config: Optional[Dict] = None
+    ) -> Config:
         pass
 
     def load_config_from_str(self, config_str: str) -> Config:

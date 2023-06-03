@@ -64,6 +64,7 @@ class TestPyHoconConfig:
         config = loader.load_config("test.conf", "default_test.conf", dicts)
         assert config is not None
         assert config.get_config("a").get_int("a1") == 200
+        assert config.get_int("a.a1") == 200
         assert config.get_int("b") == 1
         assert config.get_str("c") == "hello"
         assert config.get_list("d") == [200,400,500]

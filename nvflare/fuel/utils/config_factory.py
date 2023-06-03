@@ -15,9 +15,9 @@
 import logging
 import os
 import pathlib
-from typing import Optional, List
+from typing import List, Optional
 
-from nvflare.fuel.utils.config import ConfigFormat, Config, ConfigLoader
+from nvflare.fuel.utils.config import Config, ConfigFormat, ConfigLoader
 from nvflare.fuel.utils.json_config_loader import JsonConfigLoader
 from nvflare.fuel.utils.omegaconf_loader import OmegaConfLoader
 from nvflare.fuel.utils.pyhocon_loader import PyhoconLoader
@@ -25,9 +25,14 @@ from nvflare.fuel.utils.pyhocon_loader import PyhoconLoader
 
 class ConfigFactory:
     logger = logging.getLogger(__qualname__)
-    config_format_search_order = [ConfigFormat.JSON, ConfigFormat.JSON_DEFAULT,
-                                  ConfigFormat.PYHOCON, ConfigFormat.PYHOCON_DEFAULT,
-                                  ConfigFormat.OMEGACONF, ConfigFormat.OMEGACONF_DEFAULT]
+    config_format_search_order = [
+        ConfigFormat.JSON,
+        ConfigFormat.JSON_DEFAULT,
+        ConfigFormat.PYHOCON,
+        ConfigFormat.PYHOCON_DEFAULT,
+        ConfigFormat.OMEGACONF,
+        ConfigFormat.OMEGACONF_DEFAULT,
+    ]
 
     @staticmethod
     def config_exts() -> str:
@@ -35,8 +40,9 @@ class ConfigFactory:
         return "|".join(iter(exts))
 
     @staticmethod
-    def search_config_format(init_file_path,
-                             search_dirs: Optional[List[str]] = None) -> (Optional[ConfigFormat], Optional[str]):
+    def search_config_format(
+        init_file_path, search_dirs: Optional[List[str]] = None
+    ) -> (Optional[ConfigFormat], Optional[str]):
         # we ignore the original extension
         logger = ConfigFactory.logger
         if not search_dirs:
@@ -89,5 +95,6 @@ class ConfigFactory:
         elif config_format == ConfigFormat.PYHOCON or config_format == ConfigFormat.PYHOCON_DEFAULT:
             return PyhoconLoader()
         else:
-            raise NotImplemented(
-                f"configuration format {config_format.name} with file ext {config_format.value} is not implemented")
+            raise NotImplementedError(
+                f"configuration format {config_format.name} with file ext {config_format.value} is not implemented"
+            )
