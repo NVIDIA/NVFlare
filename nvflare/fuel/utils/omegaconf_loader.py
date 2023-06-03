@@ -1,23 +1,34 @@
-from typing import Dict
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+from typing import Optional, Dict
 
-import yaml
-
-from nvflare.fuel.utils.config import ConfigFormat, Config
-from nvflare.fuel.utils.config_loader import ConfigLoader
-from nvflare.fuel.utils.json_config_loader import JsonConfig
-from nvflare.security.logging import secure_format_exception
+from nvflare.fuel.utils.config import ConfigFormat, Config, ConfigLoader
 
 
 class OmegaConfLoader(ConfigLoader):
+
     def __init__(self):
         self.format = ConfigFormat.OMEGACONF
 
-    def load_config(self, file_path: str) -> Config:
-        with open(file_path, "r") as file:
-            try:
-                conf = yaml.safe_load(file)
-                return JsonConfig(conf)
-            except Exception as e:
-                print("Error loading config file {}: {}".format(file_path, secure_format_exception(e)))
-        raise e
+    def load_config(self,
+                    file_path: str,
+                    default_file_path: Optional[str] = None,
+                    overwrite_config: Optional[Dict] = None) -> Config:
+        raise NotImplemented
 
+    def load_config_from_str(self, config_str: str) -> Config:
+        raise NotImplemented
+
+    def load_config_from_dict(self, config_dict: dict) -> Config:
+        raise NotImplemented

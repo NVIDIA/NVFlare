@@ -15,27 +15,10 @@ import argparse
 import os
 from typing import Dict, List, Union, Optional
 
+from nvflare.fuel.utils.config import Config
 from nvflare.fuel.utils.config_factory import ConfigFactory
 
 ENV_VAR_PREFIX = "NVFLARE_"
-
-
-def load_config(file_path: str, search_dirs: Optional[List[str]] = None) -> Optional[Dict]:
-    config = ConfigFactory.load_config(file_path, search_dirs)
-    if config:
-        return config.to_dict()
-    else:
-        basename = os.path.splitext(file_path)[0]
-        if search_dirs:
-            raise FileNotFoundError(
-                f"cannot find file '{basename}[{ConfigFactory.config_exts()}]' from search paths: '{search_dirs}'")
-        else:
-            raise FileNotFoundError(f"cannot find file '{basename}[{ConfigFactory.config_exts()}]'")
-
-
-def convert_dict_to_config(file_path: str, element: Dict) -> str:
-    config = ConfigFactory.load_config(file_path)
-    return config.to_conf(element)
 
 
 def find_file_in_dir(file_basename, path) -> Union[None, str]:
@@ -131,7 +114,7 @@ class ConfigService:
         cls._config_paths = config_paths
 
         for section, file_basename in section_files.items():
-            cls._sections[section] = cls.load_configuration(file_basename)
+            cls._sections[section] = cls.load_config_dict(file_basename)
 
         cls._var_dict = var_dict
         if parsed_args:
@@ -165,17 +148,46 @@ class ConfigService:
             cls._sections[section_name] = data
 
     @classmethod
-    def load_configuration(cls, file_basename: str) -> dict:
-        """
-        Load a specified JSON config file
+    def load_configuration(cls, file_basename: str) -> Optional[Config]:
+        return ConfigFactory.load_config(file_basename,  cls._config_paths)
 
+    @classmethod
+    def convert_dict_to_config(cls, file_path: str, element: Dict) -> (str, str):
+        config = ConfigFactory.load_config(file_path)
+        return config.to_conf(element), config.get_location()
+
+    @classmethod
+    def load_config_dict(cls, file_basename: str, raise_exception: bool = True) -> Optional[Dict]:
+        """
+        Load a specified config file ( ignore extension)
         Args:
-            file_basename: base name of the config file to be loaded
-
-        Returns:
-
+            raise_exception: if True raise exception when error occurs
+            file_basename: base name of the config file to be loaded.
+            for example: file_basename = config_fed_server.json
+            what the function does is to search for config file that matches
+            config_fed_server.[json|json.default|conf|conf.default|yml|yml.default]
+            in given search directories: cls._config_paths
+            if json or json.default is not found;
+            then switch to Pyhoncon [.conf] or corresponding default file; if still not found; then we switch
+            to YAML files. We use OmegaConf to load YAML
+        Returns: Dictionary from the configuration
+                if not found, exception will be raised.
         """
-        return load_config(file_basename, cls._config_paths)
+        search_dirs = cls._config_paths
+        conf = ConfigFactory.load_config(file_basename, search_dirs)
+        if conf:
+            return conf.to_dict()
+        else:
+            if not raise_exception:
+                return None
+            basename = os.path.splitext(file_basename)[0]
+            conf_exts = ConfigFactory.config_exts()
+            if search_dirs:
+                raise FileNotFoundError(
+                    f"cannot find file '{basename}[{conf_exts}]' from search paths: '{search_dirs}'")
+            else:
+                raise FileNotFoundError(f"cannot find file '{basename}[{conf_exts}]'")
+
 
     @classmethod
     def find_file(cls, file_basename: str) -> Union[None, str]:

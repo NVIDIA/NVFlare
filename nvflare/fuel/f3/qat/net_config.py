@@ -11,35 +11,27 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+from nvflare.fuel.utils.config import Config
 from nvflare.fuel.utils.config_service import ConfigService
 
 
 class NetConfig:
     def __init__(self, config_file_name="net_config.json"):
-        self.config = ConfigService.load_configuration(config_file_name)
+        self.config: Config = ConfigService.load_configuration(config_file_name)
         if not self.config:
             raise RuntimeError(f"cannot load {config_file_name}")
 
     def get_root_url(self):
-        return self.config.get("root_url")
+        return self.config.get_str("root_url")
 
     def get_children(self, me: str):
-        my_config = self.config.get(me)
-        if my_config:
-            return my_config.get("children", [])
-        else:
-            return []
+        my_config = self.config.get_config(me)
+        return my_config.get_list("children", []) if my_config else []
 
     def get_clients(self):
-        server_config = self.config.get("server")
-        if server_config:
-            return server_config.get("clients", [])
-        else:
-            return []
+        server_config = self.config.get_config("server")
+        return server_config.get_list("clients", []) if server_config else []
 
     def get_admin(self) -> (str, str):
-        admin_config = self.config.get("admin")
-        if admin_config:
-            return admin_config.get("host"), admin_config.get("port")
-        return "", ""
+        admin_config = self.config.get_config("admin")
+        return admin_config.get_str("host", ""), admin_config.get_str("port", "") if admin_config else "", ""

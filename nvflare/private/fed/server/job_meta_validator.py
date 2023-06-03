@@ -15,8 +15,6 @@
 import collections
 import json
 import logging
-import os
-import pathlib
 from io import BytesIO
 from typing import Optional, Set, Tuple
 from zipfile import ZipFile
@@ -201,8 +199,6 @@ class JobMetaValidator(JobMetaValidatorSpec):
     @staticmethod
     def _config_exists(zip_file: ZipFile, init_config_path: str) -> bool:
         def match(parent, config_path: str):
-            print("config_path=", config_path)
-            print("parent.namelist()=", parent.namelist())
             return config_path in parent.namelist()
         return ConfigFactory.match_config(zip_file, init_config_path, match)
 

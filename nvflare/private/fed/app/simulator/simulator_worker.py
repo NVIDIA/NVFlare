@@ -110,6 +110,8 @@ class ClientTaskWorker(FLComponent):
                                 break
                             time.sleep(0.5)
         except Exception as e:
+            import traceback
+            print(traceback.format_exc())
             self.logger.error(f"do_one_task execute exception: {secure_format_exception(e)}")
             interval = 1.0
             stop_run = True

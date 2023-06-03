@@ -12,14 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 from typing import List, Union
 
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.utils.class_utils import ModuleScanner, get_class
 from nvflare.fuel.utils.component_builder import ComponentBuilder
 from nvflare.fuel.utils.config_factory import ConfigFactory
-from nvflare.fuel.utils.config_service import load_config
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.dict_utils import augment, extract_first_level_primitive
 from nvflare.fuel.utils.json_scanner import JsonObjectProcessor, JsonScanner, Node
 from nvflare.fuel.utils.wfconf import _EnvUpdater
@@ -63,21 +62,21 @@ class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
         elif isinstance(config_file_name, list):
             config_files = config_file_name
         else:
-            raise TypeError(f"config_file_name must be str or list of strs but got {type(config_file_name)}")
+            raise TypeError(f"config_file_names must be str or list of strs but got {type(config_file_name)}")
 
         for f in config_files:
             # if not os.path.exists(f):
             if not ConfigFactory.has_config(f):
-                raise FileNotFoundError(f"config_file_name {f} does not exist or not a file")
+                raise FileNotFoundError(f"config_file_names {f} does not exist or not a file")
 
-        self.config_file_name = config_files
+        self.config_file_names = config_files
         self.num_passes = num_passes
         self.module_scanner = ModuleScanner(base_pkgs, module_names, exclude_libs)
         self.config_ctx = None
 
         config_data = {}
         for f in config_files:
-            data = load_config(f)
+            data = ConfigService.load_config_dict(f)
             try:
                 augment(to_dict=config_data, from_dict=data, from_override_to=False)
             except Exception as e:
@@ -112,9 +111,9 @@ class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
         try:
             self._do_configure()
         except ConfigError as e:
-            raise ConfigError("Config error in {}: {}".format(self.config_file_name, secure_format_exception(e)))
+            raise ConfigError(secure_format_exception(e))
         except Exception as e:
-            print("Error processing config {}: {}".format(self.config_file_name, secure_format_exception(e)))
+            print(f"Error processing config {secure_format_exception(e)}")
             raise e
 
     def process_element(self, node: Node):
