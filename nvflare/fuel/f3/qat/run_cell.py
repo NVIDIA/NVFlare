@@ -46,7 +46,7 @@ def main():
         log_level = logging.ERROR
     logging.getLogger().setLevel(log_level)
 
-    ConfigService.initialize(section_files={}, config_path=[args.config_dir])
+    ConfigService.initialize(section_files={}, config_paths=[args.config_dir])
     runner = CellRunner(
         config_path=args.config_dir,
         config_file=args.config_file,

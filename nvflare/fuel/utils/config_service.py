@@ -12,74 +12,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import argparse
-import json
 import os
-import pathlib
-from enum import Enum
-from typing import Dict, List, Union
+from typing import Dict, List, Union, Optional
 
-import yaml
-
-from nvflare.security.logging import secure_format_exception
-from nvflare.utils.pyhocon_utils import to_dict
+from nvflare.fuel.utils.config_factory import ConfigFactory
 
 ENV_VAR_PREFIX = "NVFLARE_"
 
 
-class ConfigFormat(Enum):
-    # use file format extension as value indicator
-    JSON = ".json"
-    PYHOCON = ".conf"
-    YAML = ".yml"
-
-
-def load_config(file_path) -> Dict:
-    # function to return the file extension
-    job_config_format = get_config_format(file_path)
-    return load_config_by_format(file_path, job_config_format)
-
-
-def get_config_format(file_path):
-    file_extension = pathlib.Path(file_path).suffix
-    job_config_format = ConfigFormat(file_extension)
-    return job_config_format
-
-
-def load_config_by_format(file_path, config_format: ConfigFormat):
-    if config_format == ConfigFormat.PYHOCON:
-        from pyhocon import ConfigFactory
-
-        config = ConfigFactory.parse_file(file_path)
-        return to_dict(config.get_config("config"))
+def load_config(file_path: str, search_dirs: Optional[List[str]] = None) -> Optional[Dict]:
+    config = ConfigFactory.load_config(file_path, search_dirs)
+    if config:
+        return config.to_dict()
     else:
-        with open(file_path, "r") as file:
-            try:
-                if config_format == ConfigFormat.JSON:
-                    return json.load(file)
-                elif config_format == ConfigFormat.YAML:
-                    return yaml.safe_load(file)
-                else:
-                    raise ValueError(f"unsupported config format {config_format.name}")
-            except Exception as e:
-                print("Error loading config file {}: {}".format(file, secure_format_exception(e)))
-                raise e
+        basename = os.path.splitext(file_path)[0]
+        if search_dirs:
+            raise FileNotFoundError(
+                f"cannot find file '{basename}[{ConfigFactory.config_exts()}]' from search paths: '{search_dirs}'")
+        else:
+            raise FileNotFoundError(f"cannot find file '{basename}[{ConfigFactory.config_exts()}]'")
 
 
-def convert_dict_to_config(file_path: str, element: Dict):
-    config_format = get_config_format(file_path)
-    if config_format == ConfigFormat.JSON:
-        data = json.dumps(element)
-    elif config_format == ConfigFormat.YAML:
-        data = yaml.dump(element)
-    elif config_format == ConfigFormat.PYHOCON:
-        from pyhocon import ConfigFactory
-        from pyhocon.converter import HOCONConverter
-
-        config = ConfigFactory.from_dict(element)
-        data = HOCONConverter.to_hocon(config)
-    else:
-        raise ValueError(f"unsupported file format {config_format.name}")
-    return data
+def convert_dict_to_config(file_path: str, element: Dict) -> str:
+    config = ConfigFactory.load_config(file_path)
+    return config.to_conf(element)
 
 
 def find_file_in_dir(file_basename, path) -> Union[None, str]:
@@ -127,13 +83,13 @@ class ConfigService:
     """
 
     _sections = {}
-    _config_path = []
+    _config_paths = []
     _cmd_args = None
     _var_dict = None
     _var_values = {}
 
     @classmethod
-    def initialize(cls, section_files: Dict[str, str], config_path: List[str], parsed_args=None, var_dict=None):
+    def initialize(cls, section_files: Dict[str, str], config_paths: List[str], parsed_args=None, var_dict=None):
         """
         Initialize the ConfigService.
         Configuration is divided into sections, and each section must have a JSON config file.
@@ -143,7 +99,7 @@ class ConfigService:
 
         Args:
             section_files: dict: section name => config file
-            config_path: list of config directories
+            config_paths: list of config directories
             parsed_args: command args for starting the program
             var_dict: dict for additional vars
 
@@ -153,16 +109,16 @@ class ConfigService:
         if not isinstance(section_files, dict):
             raise TypeError(f"section_files must be dict but got {type(section_files)}")
 
-        if not isinstance(config_path, list):
-            raise TypeError(f"config_dirs must be list but got {type(config_path)}")
+        if not isinstance(config_paths, list):
+            raise TypeError(f"config_dirs must be list but got {type(config_paths)}")
 
-        if not config_path:
+        if not config_paths:
             raise ValueError("config_dirs is empty")
 
         if var_dict and not isinstance(var_dict, dict):
             raise ValueError(f"var_dict must dict but got {type(var_dict)}")
 
-        for d in config_path:
+        for d in config_paths:
             if not isinstance(d, str):
                 raise ValueError(f"config_dirs must contain str but got {type(d)}")
 
@@ -172,7 +128,7 @@ class ConfigService:
             if not os.path.isdir(d):
                 raise ValueError(f"'{d}' is not a valid directory")
 
-        cls._config_path = config_path
+        cls._config_paths = config_paths
 
         for section, file_basename in section_files.items():
             cls._sections[section] = cls.load_configuration(file_basename)
@@ -219,10 +175,7 @@ class ConfigService:
         Returns:
 
         """
-        file_path = cls.find_file(file_basename)
-        if not file_path:
-            raise FileNotFoundError(f"cannot find file '{file_basename}' from search path '{cls._config_path}'")
-        return load_config(file_path)
+        return load_config(file_basename, cls._config_paths)
 
     @classmethod
     def find_file(cls, file_basename: str) -> Union[None, str]:
@@ -238,7 +191,7 @@ class ConfigService:
         """
         if not isinstance(file_basename, str):
             raise TypeError(f"file_basename must be str but got {type(file_basename)}")
-        return search_file(file_basename, cls._config_path)
+        return search_file(file_basename, cls._config_paths)
 
     @classmethod
     def _get_var(cls, name: str, conf):
@@ -271,8 +224,8 @@ class ConfigService:
             return default
         try:
             return int(v)
-        except:
-            raise ValueError(f"var {name}'s value '{v}' cannot be converted to int")
+        except Exception as e:
+            raise ValueError(f"var {name}'s value '{v}' cannot be converted to int: {e}")
 
     @classmethod
     def _any_var(cls, func, name, conf, default):

@@ -18,6 +18,7 @@ from typing import List, Union
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.utils.class_utils import ModuleScanner, get_class
 from nvflare.fuel.utils.component_builder import ComponentBuilder
+from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.fuel.utils.config_service import load_config
 from nvflare.fuel.utils.dict_utils import augment, extract_first_level_primitive
 from nvflare.fuel.utils.json_scanner import JsonObjectProcessor, JsonScanner, Node
@@ -65,10 +66,9 @@ class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
             raise TypeError(f"config_file_name must be str or list of strs but got {type(config_file_name)}")
 
         for f in config_files:
-            if not os.path.exists(f):
-                raise FileNotFoundError(f"config_file_name {f} does not exist")
-            if not os.path.isfile(f):
-                raise FileNotFoundError(f"config_file_name {f} is not a valid file")
+            # if not os.path.exists(f):
+            if not ConfigFactory.has_config(f):
+                raise FileNotFoundError(f"config_file_name {f} does not exist or not a file")
 
         self.config_file_name = config_files
         self.num_passes = num_passes

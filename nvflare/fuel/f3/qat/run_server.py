@@ -44,7 +44,7 @@ def main():
         log_level = logging.ERROR
     logging.getLogger().setLevel(log_level)
 
-    ConfigService.initialize(section_files={}, config_path=[args.config_dir])
+    ConfigService.initialize(section_files={}, config_paths=[args.config_dir])
     server = Server(config_path=args.config_dir, config_file=args.config_file, log_level=args.log_level)
     start_all = not args.self_only
     server.start(start_all)

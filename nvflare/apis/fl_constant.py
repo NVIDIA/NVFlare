@@ -14,8 +14,6 @@
 import os
 from enum import Enum
 
-JOB_CONFIG_EXT = os.getenv("NVFLARE_JOB_CONFIG_EXT", ".json")
-
 
 class ReturnCode(object):
 
@@ -309,8 +307,8 @@ class SystemComponents(object):
 
 
 class JobConstants:
-    SERVER_JOB_CONFIG = "config_fed_server" + JOB_CONFIG_EXT
-    CLIENT_JOB_CONFIG = "config_fed_client" + JOB_CONFIG_EXT
+    SERVER_JOB_CONFIG = "config_fed_server.json"
+    CLIENT_JOB_CONFIG = "config_fed_client.json"
     META_FILE = "meta.json"
 
 

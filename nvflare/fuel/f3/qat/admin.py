@@ -32,7 +32,7 @@ def main():
     )
     args = parser.parse_args()
 
-    ConfigService.initialize(section_files={}, config_path=[args.config_dir])
+    ConfigService.initialize(section_files={}, config_paths=[args.config_dir])
     net_config = NetConfig(args.config_file)
     admin_host, admin_port = net_config.get_admin()
     if not admin_host or not admin_port:
