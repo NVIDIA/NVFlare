@@ -31,6 +31,10 @@ class ConfigFormat(Enum):
 class Config(ABC):
     @abstractmethod
     def get_conf(self):
+        # Return the original underline config object representation if you prefer to use it directly
+        # Pyhocon → ConfigTree
+        # JSON → Dict
+        # OMEGACONF → Conf
         pass
 
     @abstractmethod
@@ -39,6 +43,9 @@ class Config(ABC):
 
     @abstractmethod
     def get_location(self) -> Optional[str]:
+        # return the real file path of the reel configuration.
+        # For example, if initial config_fed_json.json was initially input file path. but the real file path is
+        # config_fed_json.conf. the get location will be return config_fed_json.conf
         pass
 
     @abstractmethod
@@ -79,6 +86,19 @@ class ConfigLoader(ABC):
     def load_config(
         self, file_path: str, default_file_path: Optional[str] = None, overwrite_config: Optional[Dict] = None
     ) -> Config:
+        """
+        configuration from default_file_path will be the default config if specified
+        configuration from file_path will be the merge with default config overwrite the same key
+        configuration from overwrite_config if provided will be the merge with config overwrite the same key
+        Args:
+            file_path: file path for configuration to be loaded
+            default_file_path: file path for default configuration
+            overwrite_config: dict config that will be overwrite the final config if provided
+
+        Returns:
+
+        """
+
         pass
 
     def load_config_from_str(self, config_str: str) -> Config:
