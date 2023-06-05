@@ -37,9 +37,9 @@ class ConfigFactory:
             search_dirs = [str(parent_dir)]
         file_path = os.path.splitext(pathlib.Path(init_file_path).name)[0]
         for search_dir in search_dirs:
-            for fmt, ext in ConfigFormat.ordered_search_extensions():
-                logger.debug(f"search format {fmt.name} with ext {ext},file:{file_path}, search dirs = {search_dirs}")
-                for root, dirs, files in os.walk(search_dir):
+            logger.debug(f"search file:{file_path} basename, search dirs = {search_dirs}")
+            for root, dirs, files in os.walk(search_dir):
+                for fmt, ext in ConfigFormat.ordered_search_extensions():
                     file = f"{file_path}{ext}"
                     if file in files:
                         config_file_path = os.path.join(root, file)
