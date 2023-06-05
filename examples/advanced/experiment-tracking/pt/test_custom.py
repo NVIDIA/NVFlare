@@ -15,7 +15,7 @@
 from unittest.mock import Mock, patch
 
 import numpy
-from learner_with_tb import PTLearner
+from pt.learner_with_tb import PTLearner
 
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_constant import ReservedKey, ReturnCode
