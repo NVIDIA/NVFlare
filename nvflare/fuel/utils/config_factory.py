@@ -28,7 +28,7 @@ class ConfigFactory:
 
     @staticmethod
     def search_config_format(
-            init_file_path, search_dirs: Optional[List[str]] = None
+        init_file_path, search_dirs: Optional[List[str]] = None
     ) -> (Optional[ConfigFormat], Optional[str]):
         # we ignore the original extension
         logger = ConfigFactory.logger
