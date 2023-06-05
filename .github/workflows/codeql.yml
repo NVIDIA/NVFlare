@@ -16,10 +16,7 @@ name: "CodeQL"
 
 on:
   push:
-    branches: [ "main", "dev" ]
   pull_request:
-    # The branches below must be a subset of the branches above
-    branches: [ "main", "dev" ]
 
 jobs:
   analyze:
@@ -71,3 +68,6 @@ jobs:
 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v2
+      with:
+        paths-ignore: |
+          tests
