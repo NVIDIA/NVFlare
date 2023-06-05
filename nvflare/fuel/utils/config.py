@@ -19,13 +19,48 @@ from typing import Dict, List, Optional
 
 class ConfigFormat(Enum):
     # use file format extension as value indicator
-    JSON = ".json"
-    PYHOCON = ".conf"
-    OMEGACONF = ".yml"
+    JSON = "JSON"
+    PYHOCON = "PYHOCON"
+    OMEGACONF = "OMEGACONF"
 
-    JSON_DEFAULT = ".json.default"
-    PYHOCON_DEFAULT = ".conf.default"
-    OMEGACONF_DEFAULT = ".yml.default"
+    @classmethod
+    def _config_format_extensions(cls):
+        return {
+            "JSON": [".json", ".json.default"],
+            "PYHOCON": [".conf", ".conf.default"],
+            "OMEGACONF": [".yml", ".yml.default"],
+        }
+
+    @classmethod
+    def search_order(cls):
+        return [cls.JSON, cls.PYHOCON, cls.OMEGACONF]
+
+    @classmethod
+    def ordered_search_extensions(cls) -> List:
+        search_sequence: List[ConfigFormat] = cls.search_order()
+        extensions = []
+        for fmt in search_sequence:
+            exts = cls.get_extensions(fmt.name)
+            if exts:
+                for ext in exts:
+                    extensions.append((fmt, ext))
+
+        return extensions
+
+    @classmethod
+    def get_extensions(cls, fmt: str) -> Optional[List[str]]:
+        return cls._config_format_extensions().get(fmt, None)
+
+    @classmethod
+    def config_exts(cls) -> str:
+        search_sequence: List[ConfigFormat] = cls.search_order()
+        extensions = []
+        for fmt in search_sequence:
+            exts = cls.get_extensions(fmt.name)
+            if exts:
+                extensions.extend(exts)
+
+        return "|".join(iter(extensions))
 
 
 class Config(ABC):

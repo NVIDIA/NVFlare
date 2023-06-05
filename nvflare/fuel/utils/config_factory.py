@@ -25,19 +25,6 @@ from nvflare.fuel.utils.pyhocon_loader import PyhoconLoader
 
 class ConfigFactory:
     logger = logging.getLogger(__qualname__)
-    config_format_search_order = [
-        ConfigFormat.JSON,
-        ConfigFormat.JSON_DEFAULT,
-        ConfigFormat.PYHOCON,
-        ConfigFormat.PYHOCON_DEFAULT,
-        ConfigFormat.OMEGACONF,
-        ConfigFormat.OMEGACONF_DEFAULT,
-    ]
-
-    @staticmethod
-    def config_exts() -> str:
-        exts = [str(f.value) for f in ConfigFactory.config_format_search_order]
-        return "|".join(iter(exts))
 
     @staticmethod
     def search_config_format(
@@ -49,11 +36,11 @@ class ConfigFactory:
             parent_dir = pathlib.Path(init_file_path).parent
             search_dirs = [str(parent_dir)]
         file_path = os.path.splitext(pathlib.Path(init_file_path).name)[0]
-        for fmt in ConfigFactory.config_format_search_order:
-            logger.debug(f"search format {fmt.name} with ext {fmt.value},file:{file_path}, search dirs = {search_dirs}")
+        for fmt, ext in ConfigFormat.ordered_search_extensions():
+            logger.debug(f"search format {fmt.name} with ext {ext},file:{file_path}, search dirs = {search_dirs}")
             for search_dir in search_dirs:
                 for root, dirs, files in os.walk(search_dir):
-                    file = f"{file_path}{fmt.value}"
+                    file = f"{file_path}{ext}"
                     if file in files:
                         config_file_path = os.path.join(root, file)
                         return fmt, config_file_path
@@ -68,9 +55,9 @@ class ConfigFactory:
     def match_config(parent, init_file_path, match_fn) -> bool:
         # we ignore the original extension
         basename = os.path.splitext(init_file_path)[0]
-        for fmt in ConfigFactory.config_format_search_order:
-            ConfigFactory.logger.debug(f"search format {fmt.name} with ext {fmt.value} in {basename}{fmt.value}")
-            if match_fn(parent, f"{basename}{fmt.value}"):
+        for fmt, ext in ConfigFormat.ordered_search_extensions():
+            ConfigFactory.logger.debug(f"search format {fmt.name} with ext {ext} in {basename}{ext}")
+            if match_fn(parent, f"{basename}{ext}"):
                 return True
         return False
 
@@ -88,11 +75,11 @@ class ConfigFactory:
     def get_config_loader(config_format: ConfigFormat) -> Optional[ConfigLoader]:
         if config_format is None:
             return None
-        if config_format == ConfigFormat.JSON or config_format == ConfigFormat.JSON_DEFAULT:
+        if config_format == ConfigFormat.JSON:
             return JsonConfigLoader()
-        elif config_format == ConfigFormat.OMEGACONF or config_format == ConfigFormat.OMEGACONF_DEFAULT:
+        elif config_format == ConfigFormat.OMEGACONF:
             return OmegaConfLoader()
-        elif config_format == ConfigFormat.PYHOCON or config_format == ConfigFormat.PYHOCON_DEFAULT:
+        elif config_format == ConfigFormat.PYHOCON:
             return PyhoconLoader()
         else:
             raise NotImplementedError(

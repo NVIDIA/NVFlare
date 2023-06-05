@@ -220,6 +220,9 @@ class SimulatorRunner(FLComponent):
             return True
 
         except BaseException as e:
+            import traceback
+
+            print(traceback.format_exc())
             self.logger.error(f"Simulator setup error: {secure_format_exception(e)}")
             return False
 

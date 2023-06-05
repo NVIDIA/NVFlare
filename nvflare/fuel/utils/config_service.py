@@ -15,7 +15,7 @@ import argparse
 import os
 from typing import Dict, List, Optional, Union
 
-from nvflare.fuel.utils.config import Config
+from nvflare.fuel.utils.config import Config, ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
 
 ENV_VAR_PREFIX = "NVFLARE_"
@@ -181,7 +181,7 @@ class ConfigService:
             if not raise_exception:
                 return None
             basename = os.path.splitext(file_basename)[0]
-            conf_exts = ConfigFactory.config_exts()
+            conf_exts = ConfigFormat.config_exts()
             if search_dirs:
                 raise FileNotFoundError(
                     f"cannot find file '{basename}[{conf_exts}]' from search paths: '{search_dirs}'"
