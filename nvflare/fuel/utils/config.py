@@ -18,7 +18,6 @@ from typing import Dict, List, Optional
 
 
 class ConfigFormat(Enum):
-    # use file format extension as value indicator
     JSON = "JSON"
     PYHOCON = "PYHOCON"
     OMEGACONF = "OMEGACONF"
