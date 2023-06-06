@@ -68,3 +68,7 @@ class FLModel:
         for key in client_weights.keys():
             if key not in [FLModelConst.AGGREGATION, FLModelConst.METRICS]:
                 raise ValueError(f"key {key} not recognized, acceptable keys: {FLModelConst.AGGREGATION} {FLModelConst.METRICS}")
+
+        for key in [FLModelConst.AGGREGATION, FLModelConst.METRICS]:
+            if key not in client_weights:
+                client_weights[key] = 1.0
