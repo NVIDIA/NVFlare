@@ -65,6 +65,6 @@ class FLModel:
 
     @staticmethod
     def validate_client_weights_keys(client_weights):
-        for key in [FLModelConst.AGGREGATION, FLModelConst.METRICS]:
-            if key not in client_weights:
-                raise ValueError(f"missing key {key} in client_weights arguments")
+        for key in client_weights.keys():
+            if key not in [FLModelConst.AGGREGATION, FLModelConst.METRICS]:
+                raise ValueError(f"key {key} not recognized, acceptable keys: {FLModelConst.AGGREGATION} {FLModelConst.METRICS}")
