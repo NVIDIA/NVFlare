@@ -42,7 +42,7 @@ class FLModelDecomposer(fobs.Decomposer):
                        metrics=data[3],
                        configs=data[4],
                        client_weights=data[5],
-                       round=data[7],
+                       round=data[6],
                        meta=data[7])
 
 
