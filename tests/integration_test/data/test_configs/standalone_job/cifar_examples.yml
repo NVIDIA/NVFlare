@@ -24,8 +24,11 @@ tests:
     validators:
       - path: tests.integration_test.src.validators.CIFAR10ResultValidator
     setup:
+      - cp ../../examples/advanced/cifar10/cifar10-real-world/requirements.txt ../../examples/advanced/cifar10/cifar10-real-world/temp_requirements.txt
+      - sed -i '/nvflare\|jupyter\|notebook/d' ../../examples/advanced/cifar10/cifar10-real-world/temp_requirements.txt
+      - python -m pip install -r ../../examples/advanced/cifar10/cifar10-real-world/temp_requirements.txt
+      - rm -f ../../examples/advanced/cifar10/cifar10-real-world/temp_requirements.txt
       - bash ../../examples/advanced/cifar10/cifar10-real-world/prepare_data.sh
-      - pip install -r ../../examples/advanced/cifar10/cifar10-real-world/requirements.txt
       - python convert_to_test_job.py --job ../../examples/advanced/cifar10/cifar10-real-world/jobs/cifar10_fedavg_he --post _copy
     teardown:
       - rm -rf ../../examples/advanced/cifar10/cifar10-real-world/jobs/cifar10_fedavg_he_copy
@@ -47,7 +50,10 @@ tests:
     validators:
       - path: tests.integration_test.src.validators.CIFAR10ResultValidator
     setup:
-      - pip install -r ../../examples/advanced/cifar10/cifar10-real-world/requirements.txt
+      - cp ../../examples/advanced/cifar10/cifar10-real-world/requirements.txt ../../examples/advanced/cifar10/cifar10-real-world/temp_requirements.txt
+      - sed -i '/nvflare\|jupyter\|notebook/d' ../../examples/advanced/cifar10/cifar10-real-world/temp_requirements.txt
+      - python -m pip install -r ../../examples/advanced/cifar10/cifar10-real-world/temp_requirements.txt
+      - rm -f ../../examples/advanced/cifar10/cifar10-real-world/temp_requirements.txt
       - python convert_to_test_job.py --job ../../examples/advanced/cifar10/cifar10-real-world/jobs/cifar10_fedavg_stream_tb --post _copy
     teardown:
       - rm -rf ../../examples/advanced/cifar10/cifar10-real-world/jobs/cifar10_fedavg_stream_tb_copy

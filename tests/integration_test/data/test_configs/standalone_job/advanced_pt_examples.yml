@@ -1,9 +1,9 @@
 n_servers: 1
 n_clients: 2
 jobs_root_dir: ../../examples/advanced/experiment-tracking/tensorboard/jobs
-cleanup: True
+cleanup: true
 additional_python_paths:
-- ../../examples/advanced/experiment-tracking/pt
+- ../../examples/advanced/experiment-tracking
 
 tests:
   - test_name: "run tensorboard-streaming"
@@ -28,5 +28,8 @@ tests:
       - path: tests.integration_test.src.validators.TBResultValidator
         args: { require_result_on_client: False }
     setup:
-      - python -m pip install -r ../../examples/advanced/experiment-tracking/tensorboard/requirements.txt
+      - cp ../../examples/advanced/experiment-tracking/tensorboard/requirements.txt ../../examples/advanced/experiment-tracking/tensorboard/temp_requirements.txt
+      - sed -i '/nvflare\|jupyter\|notebook/d' ../../examples/advanced/experiment-tracking/tensorboard/temp_requirements.txt
+      - python -m pip install -r ../../examples/advanced/experiment-tracking/tensorboard/temp_requirements.txt
+      - rm -f ../../examples/advanced/experiment-tracking/tensorboard/temp_requirements.txt
       - bash ../../examples/advanced/experiment-tracking/tensorboard/prepare_data.sh

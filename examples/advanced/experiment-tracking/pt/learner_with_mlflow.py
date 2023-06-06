@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,8 +15,8 @@
 import os.path
 
 import torch
-from pt_constants import PTConstants
-from simple_network import SimpleNetwork
+from pt.pt_constants import PTConstants
+from pt.simple_network import SimpleNetwork
 from torch import nn
 from torch.optim import SGD
 from torch.utils.data.dataloader import DataLoader
