@@ -47,8 +47,4 @@ class FLModelConverter:
     def shareable_to_model(self, shareable: Shareable) -> FLModel:
         pass
 
-    def shareable_to_fl_model_list(self, fl_models: List[FLModel]) -> Shareable:
-        pass
 
-    def shareable_to_fl_model_dict(self, fl_models: Dict[str, FLModel]) -> Shareable:
-        pass
