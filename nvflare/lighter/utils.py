@@ -79,8 +79,10 @@ def sign_folders(folder, signing_pri_key, crt_path):
         shutil.copyfile(crt_path, os.path.join(root, ".__nvfl_submitter.crt"))
 
 
-def verify_folder_signature(folder):
+def verify_folder_signature(folder, root_ca_path):
     try:
+        root_ca_cert = load_crt(root_ca_path)
+        root_ca_public_key = root_ca_cert.public_key()
         for root, folders, files in os.walk(folder):
             try:
                 signatures = json.load(open(os.path.join(root, ".__nvfl_sig.json"), "rt"))
@@ -88,6 +90,9 @@ def verify_folder_signature(folder):
                 public_key = cert.public_key()
             except:
                 continue
+            root_ca_public_key.verify(
+                cert.signature, cert.tbs_certificate_bytes, padding.PKCS1v15(), cert.signature_hash_algorithm
+            )
             for k in signatures:
                 signatures[k] = b64decode(signatures[k].encode("utf-8"))
             for file in files:

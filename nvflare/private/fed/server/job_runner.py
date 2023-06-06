@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import json
+import os
 import shutil
 import threading
 import time
@@ -162,7 +163,8 @@ class JobRunner(FLComponent):
                     from_hub_site = job.meta.get(JobMetaKey.FROM_HUB_SITE.value)
                     if secure_train and not from_hub_site:
                         app_path = workspace.get_app_dir(job.job_id)
-                        if not verify_folder_signature(app_path):
+                        root_ca_path = os.path.join(workspace.get_startup_kit_dir(), "rootCA.pem")
+                        if not verify_folder_signature(app_path, root_ca_path):
                             err = "job signature verification failed"
                             deploy_detail.append(f"server: {err}")
                             raise RuntimeError(f"Failed to verify app '{app_name}': {err}")
