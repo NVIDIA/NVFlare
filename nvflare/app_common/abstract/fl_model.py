@@ -54,7 +54,7 @@ class FLModel:
         if client_weights is None:
             client_weights = {FLModelConst.AGGREGATION: 1.0, FLModelConst.METRICS: 1.0}
         else:
-            FLModel.init_and_validate_client_weights_keys(client_weights)
+            FLModel.init_and_validate_client_weights(client_weights)
 
         self.transfer_type = transfer_type
         self.model = model
@@ -66,7 +66,7 @@ class FLModel:
         self.meta = meta
 
     @staticmethod
-    def init_and_validate_client_weights_keys(client_weights):
+    def init_and_validate_client_weights(client_weights):
         for key in client_weights.keys():
             if key not in [FLModelConst.AGGREGATION, FLModelConst.METRICS]:
                 raise ValueError(
