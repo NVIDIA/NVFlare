@@ -508,7 +508,7 @@ class SimulatorClientRunner(FLComponent):
                 time.sleep(interval)
                 with lock:
                     if not client_to_run:
-                        client = self.get_next_run_client()
+                        client = self.get_next_run_client(gpu)
                     else:
                         client = client_to_run
 
@@ -565,7 +565,7 @@ class SimulatorClientRunner(FLComponent):
 
             with lock:
                 if num_of_threads != len(self.federated_clients):
-                    next_client = self.get_next_run_client()
+                    next_client = self.get_next_run_client(gpu)
                 else:
                     next_client = client
             if not stop_run and next_client.client_name == client.client_name:
@@ -593,12 +593,12 @@ class SimulatorClientRunner(FLComponent):
                 pass
         return conn
 
-    def get_next_run_client(self):
+    def get_next_run_client(self, gpu):
         # Find the next client which is not currently running
         while True:
             self.run_client_index = (self.run_client_index + 1) % len(self.federated_clients)
             client = self.federated_clients[self.run_client_index]
             if not client.simulate_running:
                 break
-        self.logger.info(f"Simulate Run client: {client.client_name}")
+        self.logger.info(f"Simulate Run client: {client.client_name} on GPU group: {gpu}")
         return client
