@@ -20,7 +20,6 @@ from nvflare.fuel.utils.fobs import fobs
 
 
 class FLModelConverter:
-
     @staticmethod
     def fl_model_to_shareable(fl_model: FLModel) -> Shareable:
         o = fobs.serialize(fl_model)
@@ -46,5 +45,3 @@ class FLModelConverter:
 
     def shareable_to_model(self, shareable: Shareable) -> FLModel:
         pass
-
-

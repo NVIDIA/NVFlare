@@ -26,15 +26,17 @@ class FLModelConst:
 
 
 class FLModel:
-    def __init__(self,
-                 transfer_type: TransferType,
-                 model: Dict,
-                 optimizer: Optional[Dict] = None,
-                 metrics: Optional[Dict] = None,
-                 configs: Optional[Dict] = None,
-                 client_weights: Optional[Dict] = None,
-                 round: Optional[int] = None,
-                 meta: Optional[Dict] = None):
+    def __init__(
+        self,
+        transfer_type: TransferType,
+        model: Dict,
+        optimizer: Optional[Dict] = None,
+        metrics: Optional[Dict] = None,
+        configs: Optional[Dict] = None,
+        client_weights: Optional[Dict] = None,
+        round: Optional[int] = None,
+        meta: Optional[Dict] = None,
+    ):
         """
         Args:
             transfer_type: how the model will be transferred: as whole model (such as weight) or model_diff (weight_diff)
@@ -68,7 +70,8 @@ class FLModel:
         for key in client_weights.keys():
             if key not in [FLModelConst.AGGREGATION, FLModelConst.METRICS]:
                 raise ValueError(
-                    f"key {key} not recognized, acceptable keys: {FLModelConst.AGGREGATION} {FLModelConst.METRICS}")
+                    f"key {key} not recognized, acceptable keys: {FLModelConst.AGGREGATION} {FLModelConst.METRICS}"
+                )
 
         for key in [FLModelConst.AGGREGATION, FLModelConst.METRICS]:
             if key not in client_weights:

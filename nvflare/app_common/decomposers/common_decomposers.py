@@ -36,14 +36,16 @@ class FLModelDecomposer(fobs.Decomposer):
         return [b.transfer_type, b.model, b.optimizer, b.metrics, b.configs, b.client_weights, b.round, b.meta]
 
     def recompose(self, data: list) -> FLModel:
-        return FLModel(transfer_type=data[0],
-                       model=data[1],
-                       optimizer=data[2],
-                       metrics=data[3],
-                       configs=data[4],
-                       client_weights=data[5],
-                       round=data[6],
-                       meta=data[7])
+        return FLModel(
+            transfer_type=data[0],
+            model=data[1],
+            optimizer=data[2],
+            metrics=data[3],
+            configs=data[4],
+            client_weights=data[5],
+            round=data[6],
+            meta=data[7],
+        )
 
 
 class ModelLearnableDecomposer(fobs.Decomposer):
