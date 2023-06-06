@@ -32,7 +32,7 @@ class FLModel:
                  optimizer: Optional[Dict] = None,
                  metrics: Optional[Dict] = None,
                  configs: Optional[Dict] = None,
-                 client_weights=None,
+                 client_weights: Optional[Dict] = None,
                  round: Optional[int] = None,
                  meta: Optional[Dict] = None):
         """
@@ -67,7 +67,8 @@ class FLModel:
     def validate_client_weights_keys(client_weights):
         for key in client_weights.keys():
             if key not in [FLModelConst.AGGREGATION, FLModelConst.METRICS]:
-                raise ValueError(f"key {key} not recognized, acceptable keys: {FLModelConst.AGGREGATION} {FLModelConst.METRICS}")
+                raise ValueError(
+                    f"key {key} not recognized, acceptable keys: {FLModelConst.AGGREGATION} {FLModelConst.METRICS}")
 
         for key in [FLModelConst.AGGREGATION, FLModelConst.METRICS]:
             if key not in client_weights:
