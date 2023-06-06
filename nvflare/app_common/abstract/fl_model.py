@@ -41,7 +41,7 @@ class FLModel:
         Args:
             transfer_type: how the model will be transferred: as whole model (such as weight) or model_diff (weight_diff)
             model:  machine learning model, for Deep learning, this could be weights such pytorch.state_dict or others depending on type of model
-            optimizer: optionally provided optimizer, for many cases, this optimizer doesn't need to be transfer between FL training.
+            optimizer: optionally provided optimizer. For many cases, this optimizer doesn't need to be transferred during FL training.
             metrics: evaluation metrics such as loss and scores
             configs: training configurations that is dynamically changes during training and need to be passed around.
                    In many cases, the statics configurations that can be exchanged before the actually training starts.
