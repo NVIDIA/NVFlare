@@ -16,8 +16,6 @@ from abc import ABC, abstractmethod
 from threading import Lock
 from typing import List, Optional
 
-from typing_extensions import deprecated
-
 from nvflare.apis.analytix import AnalyticsData, AnalyticsDataType
 from nvflare.apis.dxo import DXO
 from nvflare.apis.event_type import EventType
@@ -26,6 +24,7 @@ from nvflare.apis.fl_constant import EventScope, FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.tracking.tracker_types import LogWriterName
+from nvflare.fuel.utils.deprecated import deprecated
 from nvflare.widgets.widget import Widget
 
 ANALYTIC_EVENT_TYPE = "analytix_log_stats"
