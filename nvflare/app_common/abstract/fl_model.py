@@ -49,7 +49,7 @@ class FLModel:
             client_weights: contains AGGREGATION and METRICS client specific weights, The client_weights will be used
                    in weighted aggregation and weighted metrics during training and evaluation process
             round:  one round trip between client/server during training. None for inference
-            meta: metadata dictionary used to contains any key, value pairs to facilitate the process.
+            meta: metadata dictionary used to contain any key-value pairs to facilitate the process.
         """
         if client_weights is None:
             client_weights = {FLModelConst.AGGREGATION: 1.0, FLModelConst.METRICS: 1.0}
