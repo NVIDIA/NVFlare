@@ -18,6 +18,7 @@ from typing import Dict, Optional
 class TransferType(Enum):
     MODEL = "MODEL"
     MODEL_DIFF = "MODEL_DIFF"
+    METRICS_ONLY = "METRICS_ONLY"
 
 
 class FLModelConst:
@@ -29,7 +30,7 @@ class FLModel:
     def __init__(
         self,
         transfer_type: TransferType,
-        model: Dict,
+        model: Optional[Dict] = None,
         optimizer: Optional[Dict] = None,
         metrics: Optional[Dict] = None,
         configs: Optional[Dict] = None,
@@ -39,7 +40,9 @@ class FLModel:
     ):
         """
         Args:
-            transfer_type: how the model will be transferred: as whole model (such as weight) or model_diff (weight_diff)
+            transfer_type:
+                how the model will be transferred: as whole model (such as weight) or model_diff (weight_diff).
+                when transfer_type is METRICS_ONLY, model is None.
             model:  machine learning model, for Deep learning, this could be weights or others depending on type of model
             optimizer: optionally provided optimizer. For many cases, this optimizer doesn't need to be transferred during FL training.
             metrics: evaluation metrics such as loss and scores
@@ -51,10 +54,8 @@ class FLModel:
             round:  one round trip between client/server during training. None for inference
             meta: metadata dictionary used to contain any key-value pairs to facilitate the process.
         """
-        if client_weights is None:
-            client_weights = {FLModelConst.AGGREGATION: 1.0, FLModelConst.METRICS: 1.0}
-        else:
-            FLModel.init_and_validate_client_weights(client_weights)
+        FLModel.validate_transfer_type(metrics, model, transfer_type)
+        FLModel.init_and_validate_client_weights(client_weights)
 
         self.transfer_type = transfer_type
         self.model = model
@@ -66,13 +67,28 @@ class FLModel:
         self.meta = meta
 
     @staticmethod
-    def init_and_validate_client_weights(client_weights):
-        for key in client_weights.keys():
-            if key not in [FLModelConst.AGGREGATION, FLModelConst.METRICS]:
-                raise ValueError(
-                    f"key {key} not recognized, acceptable keys: {FLModelConst.AGGREGATION} {FLModelConst.METRICS}"
-                )
+    def validate_transfer_type(metrics, model, transfer_type):
+        if transfer_type == TransferType.MODEL or transfer_type == TransferType.MODEL_DIFF:
+            if model is None:
+                raise ValueError("model must be provided when transfer type is MODEL or MODEL_DIFF")
 
-        for key in [FLModelConst.AGGREGATION, FLModelConst.METRICS]:
-            if key not in client_weights:
-                client_weights[key] = 1.0
+        if transfer_type == TransferType.METRICS_ONLY:
+            if metrics is None:
+                raise ValueError("metrics must be provided wehn transfer type is METRICS_ONLY")
+            if model is not None:
+                raise ValueError("model should not provided wehn transfer type is METRICS_ONLY")
+
+    @staticmethod
+    def init_and_validate_client_weights(client_weights):
+        if client_weights is None:
+            client_weights = {FLModelConst.AGGREGATION: 1.0, FLModelConst.METRICS: 1.0}
+        else:
+            for key in client_weights.keys():
+                if key not in [FLModelConst.AGGREGATION, FLModelConst.METRICS]:
+                    raise ValueError(
+                        f"key {key} not recognized, acceptable keys: {FLModelConst.AGGREGATION} {FLModelConst.METRICS}"
+                    )
+
+            for key in [FLModelConst.AGGREGATION, FLModelConst.METRICS]:
+                if key not in client_weights:
+                    client_weights[key] = 1.0
