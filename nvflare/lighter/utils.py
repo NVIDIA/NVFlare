@@ -50,11 +50,13 @@ def load_private_key_file(file_path):
     return pri_key
 
 
-def sign_folders(folder, signing_pri_key, crt_path):
+def sign_folders(folder, signing_pri_key, crt_path, max_depth=9999):
+    depth = 0
     for root, folders, files in os.walk(folder):
+        depth = depth + 1
         signatures = dict()
         for file in files:
-            if file == ".__nvfl_sig.json":
+            if file == ".__nvfl_sig.json" or file == ".__nvfl_submitter.crt":
                 continue
             signature = signing_pri_key.sign(
                 data=open(os.path.join(root, file), "rb").read(),
@@ -75,21 +77,24 @@ def sign_folders(folder, signing_pri_key, crt_path):
                 algorithm=hashes.SHA256(),
             )
             signatures[folder] = b64encode(signature).decode("utf-8")
+
         json.dump(signatures, open(os.path.join(root, ".__nvfl_sig.json"), "wt"))
         shutil.copyfile(crt_path, os.path.join(root, ".__nvfl_submitter.crt"))
+        if depth >= max_depth:
+            break
 
 
-def verify_folder_signature(folder, root_ca_path):
+def verify_folder_signature(src_folder, root_ca_path):
     try:
         root_ca_cert = load_crt(root_ca_path)
         root_ca_public_key = root_ca_cert.public_key()
-        for root, folders, files in os.walk(folder):
+        for root, folders, files in os.walk(src_folder):
             try:
                 signatures = json.load(open(os.path.join(root, ".__nvfl_sig.json"), "rt"))
                 cert = load_crt(os.path.join(root, ".__nvfl_submitter.crt"))
                 public_key = cert.public_key()
             except:
-                continue
+                continue  # TODO: shall return False
             root_ca_public_key.verify(
                 cert.signature, cert.tbs_certificate_bytes, padding.PKCS1v15(), cert.signature_hash_algorithm
             )

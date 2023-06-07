@@ -19,12 +19,33 @@ from typing import Any
 
 import numpy as np
 
+from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.abstract.learnable import Learnable
 from nvflare.app_common.abstract.model import ModelLearnable
 from nvflare.app_common.widgets.event_recorder import _CtxPropReq, _EventReq, _EventStats
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs import Decomposer
 from nvflare.fuel.utils.fobs.decomposer import DictDecomposer
+
+
+class FLModelDecomposer(fobs.Decomposer):
+    def supported_type(self):
+        return FLModel
+
+    def decompose(self, b: FLModel) -> Any:
+        return [b.transfer_type, b.model, b.optimizer, b.metrics, b.configs, b.client_weights, b.round, b.meta]
+
+    def recompose(self, data: list) -> FLModel:
+        return FLModel(
+            transfer_type=data[0],
+            model=data[1],
+            optimizer=data[2],
+            metrics=data[3],
+            configs=data[4],
+            client_weights=data[5],
+            round=data[6],
+            meta=data[7],
+        )
 
 
 class ModelLearnableDecomposer(fobs.Decomposer):
@@ -91,6 +112,7 @@ def register():
 
     fobs.register(DictDecomposer(Learnable))
     fobs.register(DictDecomposer(ModelLearnable))
+    fobs.register(FLModelDecomposer)
 
     fobs.register_data_classes(
         _CtxPropReq,

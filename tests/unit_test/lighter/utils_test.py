@@ -77,8 +77,12 @@ def get_test_certs():
 
     client_pri_key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
     client_pub_key = client_pri_key.public_key()
-    client_cert = generate_cert("client", "nvidia", "root", root_pri_key, client_pub_key, ca=True)
-    return root_cert, client_pri_key, client_cert
+    client_cert = generate_cert("client", "nvidia", "root", root_pri_key, client_pub_key)
+
+    server_pri_key = rsa.generate_private_key(public_exponent=65537, key_size=2048, backend=default_backend())
+    server_pub_key = server_pri_key.public_key()
+    server_cert = generate_cert("client", "nvidia", "root", root_pri_key, server_pub_key)
+    return root_cert, client_pri_key, client_cert, server_pri_key, server_cert
 
 
 def create_folder():
@@ -97,23 +101,44 @@ def tamper_one_file(folder):
         f.write("fail case")
 
 
+def update_and_sign_one_folder(folder, pri_key, cert):
+    tmp_dir = tempfile.TemporaryDirectory().name
+    new_folder = os.path.join(tmp_dir, "new_folder")
+    shutil.move(folder, new_folder)
+    with open(os.path.join(tmp_dir, "test_file"), "wt") as f:
+        f.write("fail case")
+    with open("server.crt", "wb") as f:
+        f.write(serialize_cert(cert))
+    sign_folders(tmp_dir, pri_key, "server.crt", max_depth=1)
+    return tmp_dir
+
+
 def prepare_folders():
-    root_cert, client_pri_key, client_cert = get_test_certs()
+    root_cert, client_pri_key, client_cert, server_pri_key, server_cert = get_test_certs()
     folder = create_folder()
     with open("client.crt", "wb") as f:
         f.write(serialize_cert(client_cert))
     with open("root.crt", "wb") as f:
         f.write(serialize_cert(root_cert))
     sign_folders(folder, client_pri_key, "client.crt")
-    return folder
+    return folder, server_pri_key, server_cert
 
 
 class TestSignFolder:
     def test_verify_folder(self):
-        folder = prepare_folders()
+        folder, server_pri_key, server_cert = prepare_folders()
         assert verify_folder_signature(folder, "root.crt") is True
         tamper_one_file(folder)
         assert verify_folder_signature(folder, "root.crt") is False
+        os.unlink("client.crt")
+        os.unlink("root.crt")
+        shutil.rmtree(folder)
+
+    def test_verify_updated_folder(self):
+        folder, server_pri_key, server_cert = prepare_folders()
+        assert verify_folder_signature(folder, "root.crt") is True
+        folder = update_and_sign_one_folder(folder, server_pri_key, server_cert)
+        assert verify_folder_signature(folder, "root.crt") is True
         os.unlink("client.crt")
         os.unlink("root.crt")
         shutil.rmtree(folder)
