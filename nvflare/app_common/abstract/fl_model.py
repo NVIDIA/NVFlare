@@ -38,7 +38,7 @@ class FLModel:
         self,
         params_type: Optional[ParamsType] = None,
         params: Any = None,
-        optimizer_params: Optional[Dict] = None,
+        optimizer_params: Any = None,
         metrics: Optional[Dict] = None,
         client_weights: Optional[Dict] = None,
         current_round: Optional[int] = None,
