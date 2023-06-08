@@ -33,11 +33,11 @@ class FLModelDecomposer(fobs.Decomposer):
         return FLModel
 
     def decompose(self, b: FLModel) -> Any:
-        return [b.transfer_type, b.model, b.optimizer, b.metrics, b.configs, b.client_weights, b.round, b.meta]
+        return [b.model_type, b.model, b.optimizer, b.metrics, b.configs, b.client_weights, b.round, b.meta]
 
     def recompose(self, data: list) -> FLModel:
         return FLModel(
-            transfer_type=data[0],
+            model_type=data[0],
             model=data[1],
             optimizer=data[2],
             metrics=data[3],

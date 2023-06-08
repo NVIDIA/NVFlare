@@ -16,14 +16,16 @@ from enum import Enum
 from typing import Dict, Optional
 
 
-class TransferType(str, Enum):
+class ModelType(str, Enum):
     MODEL = "MODEL"
     MODEL_DIFF = "MODEL_DIFF"
     METRICS = "METRICS"
+    WEIGHTS = "WEIGHTS"
+    WEIGHT_DIFF = "WEIGHT_DIFF"
 
 
 class FLModelConst:
-    TRANSFER_TYPE = "transfer_type"
+    MODEL_TYPE = "model_type"
     MODEL = "model"
     OPTIMIZER = "optimizer"
     METRICS = "metrics"
@@ -38,7 +40,7 @@ class FLModelConst:
 class FLModel:
     def __init__(
         self,
-        transfer_type: TransferType,
+        model_type: Optional[ModelType] = None,
         model: Optional[Dict] = None,
         optimizer: Optional[Dict] = None,
         metrics: Optional[Dict] = None,
@@ -50,9 +52,7 @@ class FLModel:
     ):
         """
         Args:
-            transfer_type:
-                how the model will be transferred: as whole model (such as weight) or model_diff (weight_diff).
-                when transfer_type is METRICS_ONLY, model is None.
+            model_type: type of the model.
             model: machine learning model, for example: weights for deep learning
             optimizer: model optimizer. For many cases, this optimizer doesn't need to be transferred during FL training.
             metrics: evaluation metrics such as loss and scores
@@ -69,10 +69,10 @@ class FLModel:
         """
         if client_weights is None:
             client_weights = {FLModelConst.AGGREGATION: 1.0, FLModelConst.METRICS: 1.0}
-        FLModel.validate_transfer_type(metrics, model, transfer_type)
+        FLModel.validate_model_type(metrics, model, model_type)
         FLModel.validate_client_weights(client_weights)
 
-        self.transfer_type = transfer_type
+        self.model_type = model_type
         self.model = model
         self.optimizer = optimizer
         self.metrics = metrics
@@ -83,16 +83,16 @@ class FLModel:
         self.meta = meta
 
     @staticmethod
-    def validate_transfer_type(metrics, model, transfer_type):
-        if transfer_type == TransferType.MODEL or transfer_type == TransferType.MODEL_DIFF:
+    def validate_model_type(metrics, model, model_type):
+        if model_type == ModelType.MODEL or model_type == ModelType.MODEL_DIFF:
             if model is None:
-                raise ValueError(f"model must be provided when transfer type is {transfer_type.value}")
+                raise ValueError(f"model must be provided when transfer type is {model_type.value}")
 
-        if transfer_type == TransferType.METRICS:
+        if model_type == ModelType.METRICS:
             if metrics is None:
-                raise ValueError(f"metrics must be provided when transfer type is {transfer_type.value}")
+                raise ValueError(f"metrics must be provided when transfer type is {model_type.value}")
             if model is not None:
-                raise ValueError(f"model must not be provided when transfer type is {transfer_type.value}")
+                raise ValueError(f"model must not be provided when transfer type is {model_type.value}")
 
     @staticmethod
     def validate_client_weights(client_weights):

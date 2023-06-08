@@ -15,7 +15,7 @@
 import pytest
 
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
-from nvflare.app_common.abstract.fl_model import FLModel, FLModelConst, TransferType
+from nvflare.app_common.abstract.fl_model import FLModel, FLModelConst, ModelType
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 
@@ -32,18 +32,17 @@ class TestFLModelUtils:
         shareable = dxo.to_shareable()
         shareable.set_header(AppConstants.NUM_ROUNDS, num_rounds)
         shareable.set_header(AppConstants.CURRENT_ROUND, current_round)
+        shareable.set_header(AppConstants.VALIDATE_TYPE, "before_train_validate")
         fl_model = FLModelUtils.from_shareable(shareable=shareable)
 
         assert fl_model.model == weights
-        assert fl_model.transfer_type == TransferType.MODEL
+        assert fl_model.model_type == ModelType.MODEL
         assert fl_model.round == current_round
         assert fl_model.total_rounds == num_rounds
 
     @pytest.mark.parametrize("weights,num_rounds,current_round", TEST_CASES)
     def test_to_shareable(self, weights, num_rounds, current_round):
-        fl_model = FLModel(
-            model=weights, transfer_type=TransferType.MODEL, round=current_round, total_rounds=num_rounds
-        )
+        fl_model = FLModel(model=weights, model_type=ModelType.MODEL, round=current_round, total_rounds=num_rounds)
         shareable = FLModelUtils.to_shareable(fl_model)
         dxo = from_shareable(shareable)
         assert shareable.get_header(AppConstants.CURRENT_ROUND) == current_round
@@ -52,30 +51,40 @@ class TestFLModelUtils:
         assert dxo.data_kind == DataKind.MODEL
 
     @pytest.mark.parametrize("weights,num_rounds,current_round", TEST_CASES)
+    def test_from_to_shareable(self, weights, num_rounds, current_round):
+        dxo = DXO(data_kind=DataKind.MODEL, data=weights)
+        shareable = dxo.to_shareable()
+        shareable.set_header(AppConstants.NUM_ROUNDS, num_rounds)
+        shareable.set_header(AppConstants.CURRENT_ROUND, current_round)
+        shareable.set_header(AppConstants.VALIDATE_TYPE, "before_train_validate")
+        fl_model = FLModelUtils.from_shareable(shareable=shareable)
+        result_shareable = FLModelUtils.to_shareable(fl_model)
+        result_dxo = from_shareable(result_shareable)
+        assert shareable == result_shareable
+
+    @pytest.mark.parametrize("weights,num_rounds,current_round", TEST_CASES)
     def test_from_dxo(self, weights, num_rounds, current_round):
         dxo = DXO(
             data_kind=DataKind.FL_MODEL,
             data={
                 FLModelConst.MODEL: weights,
-                FLModelConst.TRANSFER_TYPE: TransferType.MODEL,
+                FLModelConst.MODEL_TYPE: ModelType.MODEL,
                 FLModelConst.TOTAL_ROUNDS: num_rounds,
                 FLModelConst.ROUND: current_round,
             },
         )
         fl_model = FLModelUtils.from_dxo(dxo)
         assert fl_model.model == weights
-        assert fl_model.transfer_type == TransferType.MODEL
+        assert fl_model.model_type == ModelType.MODEL
         assert fl_model.round == current_round
         assert fl_model.total_rounds == num_rounds
 
     @pytest.mark.parametrize("weights,num_rounds,current_round", TEST_CASES)
     def test_to_dxo(self, weights, num_rounds, current_round):
-        fl_model = FLModel(
-            model=weights, transfer_type=TransferType.MODEL, round=current_round, total_rounds=num_rounds
-        )
+        fl_model = FLModel(model=weights, model_type=ModelType.MODEL, round=current_round, total_rounds=num_rounds)
         dxo = FLModelUtils.to_dxo(fl_model)
         assert dxo.data_kind == DataKind.FL_MODEL
         assert dxo.data[FLModelConst.MODEL] == weights
-        assert dxo.data[FLModelConst.TRANSFER_TYPE] == TransferType.MODEL
+        assert dxo.data[FLModelConst.MODEL_TYPE] == ModelType.MODEL
         assert dxo.data[FLModelConst.ROUND] == current_round
         assert dxo.data[FLModelConst.TOTAL_ROUNDS] == num_rounds
