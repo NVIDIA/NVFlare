@@ -11,7 +11,7 @@ which is an optimized distributed gradient boosting library covering random fore
 Follow along in this [notebook](./random_forest.ipynb) for an interactive experience.
 
 ### Dataset
-This example illustrate a binary classification task based on [HIGGS dataset](https://archive.ics.uci.edu/ml/datasets/HIGGS).
+This example illustrate a binary classification task based on [HIGGS dataset](https://archive.ics.uci.edu/dataset/280/higgs).
 This dataset contains 11 million instances, each with 28 attributes.
 
 ## Federated Training of Random Forest using XGBoost
