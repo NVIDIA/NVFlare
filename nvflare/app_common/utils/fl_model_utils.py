@@ -58,7 +58,7 @@ class FLModelUtils:
                 raise ValueError(f"Invalid ModelType: ({fl_model.params_type}).")
             dxo = DXO(data_kind, data=fl_model.params, meta={})
         elif fl_model.metrics is not None:
-            dxo = DXO(data_kind, data=fl_model.metrics, meta={})
+            dxo = DXO(DataKind.METRICS, data=fl_model.metrics, meta={})
 
         shareable = dxo.to_shareable()
         if fl_model.current_round is not None:
