@@ -22,7 +22,6 @@ MODEL_ATTRS = [
     FLModelConst.PARAMS,
     FLModelConst.METRICS,
     FLModelConst.OPTIMIZER_PARAMS,
-    FLModelConst.METRICS,
     FLModelConst.CLIENT_WEIGHTS,
     FLModelConst.CURRENT_ROUND,
     FLModelConst.TOTAL_ROUNDS,
@@ -105,6 +104,7 @@ class FLModelUtils:
 
         kwargs[FLModelConst.CURRENT_ROUND] = current_round
         kwargs[FLModelConst.TOTAL_ROUNDS] = total_rounds
+        kwargs[FLModelConst.CLIENT_WEIGHTS] = dxo.meta.get(MetaKey.CLIENT_WEIGHTS)
         kwargs[FLModelConst.META] = dxo.meta
         if validate_type is not None:
             kwargs[FLModelConst.META][MetaKey.VALIDATE_TYPE] = validate_type
