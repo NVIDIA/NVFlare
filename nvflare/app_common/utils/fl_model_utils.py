@@ -14,16 +14,15 @@
 
 from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.shareable import Shareable
-from nvflare.app_common.abstract.fl_model import FLModel, FLModelConst, ModelType
+from nvflare.app_common.abstract.fl_model import FLModel, FLModelConst, MetaKey, ParamsType
 from nvflare.app_common.app_constant import AppConstants
 
 MODEL_ATTRS = [
-    FLModelConst.MODEL_TYPE,
-    FLModelConst.MODEL,
+    FLModelConst.PARAMS_TYPE,
+    FLModelConst.PARAMS,
     FLModelConst.METRICS,
-    FLModelConst.OPTIMIZER,
+    FLModelConst.OPTIMIZER_PARAMS,
     FLModelConst.METRICS,
-    FLModelConst.CONFIGS,
     FLModelConst.CLIENT_WEIGHTS,
     FLModelConst.ROUND,
     FLModelConst.TOTAL_ROUNDS,
@@ -31,14 +30,12 @@ MODEL_ATTRS = [
 ]
 
 
-model_type_to_data_kind = {
-    ModelType.MODEL.value: DataKind.MODEL,
-    ModelType.MODEL_DIFF.value: DataKind.MODEL_DIFF,
-    ModelType.METRICS.value: DataKind.METRICS,
+params_type_to_data_kind = {
+    ParamsType.WEIGHTS.value: DataKind.WEIGHTS,
+    ParamsType.WEIGHT_DIFF.value: DataKind.WEIGHT_DIFF,
+    ParamsType.METRICS.value: DataKind.METRICS,
 }
-data_kind_to_model_type = {v: k for k, v in model_type_to_data_kind.items()}
-
-FROM_NVF = "__from_nvf__"
+data_kind_to_params_type = {v: k for k, v in params_type_to_data_kind.items()}
 
 
 class FLModelUtils:
@@ -52,11 +49,11 @@ class FLModelUtils:
         In the future, we should be using the to_dxo, from_dxo directly.
         And all the components should be changed to accept the standard DXO.
         """
-        data_kind = model_type_to_data_kind.get(fl_model.model_type)
+        data_kind = params_type_to_data_kind.get(fl_model.params_type)
         if data_kind is None:
-            raise ValueError(f"Invalid ModelType: ({fl_model.model_type}).")
+            raise ValueError(f"Invalid ModelType: ({fl_model.params_type}).")
 
-        dxo = DXO(data_kind, data=fl_model.model, meta={})
+        dxo = DXO(data_kind, data=fl_model.params, meta={})
         shareable = dxo.to_shareable()
         if fl_model.round is not None:
             shareable.set_header(AppConstants.CURRENT_ROUND, fl_model.round)
@@ -64,12 +61,12 @@ class FLModelUtils:
             shareable.set_header(AppConstants.NUM_ROUNDS, fl_model.total_rounds)
         if fl_model.meta is not None:
             dxo.meta = fl_model.meta
-            if FROM_NVF in fl_model.meta:
-                if AppConstants.VALIDATE_TYPE in fl_model.meta[FROM_NVF]:
+            if MetaKey.NVF in fl_model.meta:
+                if AppConstants.VALIDATE_TYPE in fl_model.meta[MetaKey.NVF]:
                     shareable.set_header(
-                        AppConstants.VALIDATE_TYPE, fl_model.meta[FROM_NVF][AppConstants.VALIDATE_TYPE]
+                        AppConstants.VALIDATE_TYPE, fl_model.meta[MetaKey.NVF][AppConstants.VALIDATE_TYPE]
                     )
-                fl_model.meta.pop(FROM_NVF)
+                fl_model.meta.pop(MetaKey.NVF)
         return shareable
 
     @staticmethod
@@ -84,22 +81,22 @@ class FLModelUtils:
         """
         kwargs = {}
         dxo = from_shareable(shareable)
-        model_type = data_kind_to_model_type.get(dxo.data_kind)
-        if model_type is None:
+        params_type = data_kind_to_params_type.get(dxo.data_kind)
+        if params_type is None:
             raise ValueError(f"Invalid shareable with dxo that has data kind: {dxo.data_kind}")
 
-        kwargs[FLModelConst.MODEL_TYPE] = ModelType(model_type)
+        kwargs[FLModelConst.PARAMS_TYPE] = ParamsType(params_type)
 
         current_round = shareable.get_header(AppConstants.CURRENT_ROUND, None)
         total_rounds = shareable.get_header(AppConstants.NUM_ROUNDS, None)
         validate_type = shareable.get_header(AppConstants.VALIDATE_TYPE, None)
 
-        kwargs[FLModelConst.MODEL] = dxo.data
+        kwargs[FLModelConst.PARAMS] = dxo.data
         kwargs[FLModelConst.ROUND] = current_round
         kwargs[FLModelConst.TOTAL_ROUNDS] = total_rounds
         kwargs[FLModelConst.META] = dxo.meta
         if validate_type is not None:
-            kwargs[FLModelConst.META][FROM_NVF] = {AppConstants.VALIDATE_TYPE: validate_type}
+            kwargs[FLModelConst.META][MetaKey.NVF] = {AppConstants.VALIDATE_TYPE: validate_type}
 
         result = FLModel(**kwargs)
         return result

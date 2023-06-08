@@ -13,23 +13,20 @@
 # limitations under the License.
 
 from enum import Enum
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 
-class ModelType(str, Enum):
-    MODEL = "MODEL"
-    MODEL_DIFF = "MODEL_DIFF"
+class ParamsType(str, Enum):
     METRICS = "METRICS"
     WEIGHTS = "WEIGHTS"
     WEIGHT_DIFF = "WEIGHT_DIFF"
 
 
 class FLModelConst:
-    MODEL_TYPE = "model_type"
-    MODEL = "model"
-    OPTIMIZER = "optimizer"
+    PARAMS_TYPE = "params_type"
+    PARAMS = "params"
+    OPTIMIZER_PARAMS = "optimizer_params"
     METRICS = "metrics"
-    CONFIGS = "configs"
     CLIENT_WEIGHTS = "client_weights"
     ROUND = "round"
     TOTAL_ROUNDS = "total_rounds"
@@ -37,14 +34,18 @@ class FLModelConst:
     AGGREGATION = "aggregation"
 
 
+class MetaKey:
+    CONFIGS = "configs"
+    NVF = "nvf"
+
+
 class FLModel:
     def __init__(
         self,
-        model_type: Optional[ModelType] = None,
-        model: Optional[Dict] = None,
-        optimizer: Optional[Dict] = None,
+        params_type: Optional[ParamsType] = None,
+        params: Any = None,
+        optimizer_params: Optional[Dict] = None,
         metrics: Optional[Dict] = None,
-        configs: Optional[Dict] = None,
         client_weights: Optional[Dict] = None,
         round: Optional[int] = None,
         total_rounds: Optional[int] = None,
@@ -52,13 +53,11 @@ class FLModel:
     ):
         """
         Args:
-            model_type: type of the model.
-            model: machine learning model, for example: weights for deep learning
-            optimizer: model optimizer. For many cases, this optimizer doesn't need to be transferred during FL training.
+            params_type: type of the parameters.
+            params: model parameters, for example: weights for deep learning
+            optimizer_params: optimizer parameters.
+                For many cases, the optimizer parameters doesn't need to be transferred during FL training.
             metrics: evaluation metrics such as loss and scores
-            configs: training configurations that is dynamically changes during training and need to be passed around.
-                In many cases, the statics configurations that can be exchanged before the actually training starts.
-                This should only contain the dynamics configs.
             client_weights: contains AGGREGATION and METRICS client specific weights, The client_weights will be used
                 in weighted aggregation and weighted metrics during training and evaluation process
             round: the current FL rounds. A round means round trip between client/server during training.
@@ -69,30 +68,29 @@ class FLModel:
         """
         if client_weights is None:
             client_weights = {FLModelConst.AGGREGATION: 1.0, FLModelConst.METRICS: 1.0}
-        FLModel.validate_model_type(metrics, model, model_type)
+        FLModel.validate_params_type(metrics, params, params_type)
         FLModel.validate_client_weights(client_weights)
 
-        self.model_type = model_type
-        self.model = model
-        self.optimizer = optimizer
+        self.params_type = params_type
+        self.params = params
+        self.optimizer_params = optimizer_params
         self.metrics = metrics
-        self.configs = configs
         self.client_weights = client_weights
         self.round = round
         self.total_rounds = total_rounds
         self.meta = meta
 
     @staticmethod
-    def validate_model_type(metrics, model, model_type):
-        if model_type == ModelType.MODEL or model_type == ModelType.MODEL_DIFF:
-            if model is None:
-                raise ValueError(f"model must be provided when transfer type is {model_type.value}")
+    def validate_params_type(metrics, params, params_type):
+        if params_type == ParamsType.WEIGHTS or params_type == ParamsType.WEIGHT_DIFF:
+            if params is None:
+                raise ValueError(f"params must be provided when params type is {params_type.value}")
 
-        if model_type == ModelType.METRICS:
+        if params_type == ParamsType.METRICS:
             if metrics is None:
-                raise ValueError(f"metrics must be provided when transfer type is {model_type.value}")
-            if model is not None:
-                raise ValueError(f"model must not be provided when transfer type is {model_type.value}")
+                raise ValueError(f"metrics must be provided when params type is {params_type.value}")
+            if params is not None:
+                raise ValueError(f"params must not be provided when params type is {params_type.value}")
 
     @staticmethod
     def validate_client_weights(client_weights):
