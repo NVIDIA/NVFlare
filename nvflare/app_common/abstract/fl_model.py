@@ -17,7 +17,6 @@ from typing import Any, Dict, Optional
 
 
 class ParamsType(str, Enum):
-    METRICS = "METRICS"
     WEIGHTS = "WEIGHTS"
     WEIGHT_DIFF = "WEIGHT_DIFF"
 
@@ -28,15 +27,10 @@ class FLModelConst:
     OPTIMIZER_PARAMS = "optimizer_params"
     METRICS = "metrics"
     CLIENT_WEIGHTS = "client_weights"
-    ROUND = "round"
+    CURRENT_ROUND = "current_round"
     TOTAL_ROUNDS = "total_rounds"
     META = "meta"
     AGGREGATION = "aggregation"
-
-
-class MetaKey:
-    CONFIGS = "configs"
-    NVF = "nvf"
 
 
 class FLModel:
@@ -47,7 +41,7 @@ class FLModel:
         optimizer_params: Optional[Dict] = None,
         metrics: Optional[Dict] = None,
         client_weights: Optional[Dict] = None,
-        round: Optional[int] = None,
+        current_round: Optional[int] = None,
         total_rounds: Optional[int] = None,
         meta: Optional[Dict] = None,
     ):
@@ -60,7 +54,7 @@ class FLModel:
             metrics: evaluation metrics such as loss and scores
             client_weights: contains AGGREGATION and METRICS client specific weights, The client_weights will be used
                 in weighted aggregation and weighted metrics during training and evaluation process
-            round: the current FL rounds. A round means round trip between client/server during training.
+            current_round: the current FL rounds. A round means round trip between client/server during training.
                 None for inference
             total_rounds: total number of FL rounds. A round means round trip between client/server during training.
                 None for inference
@@ -68,7 +62,7 @@ class FLModel:
         """
         if client_weights is None:
             client_weights = {FLModelConst.AGGREGATION: 1.0, FLModelConst.METRICS: 1.0}
-        FLModel.validate_params_type(metrics, params, params_type)
+        FLModel.validate_params_type(params, params_type)
         FLModel.validate_client_weights(client_weights)
 
         self.params_type = params_type
@@ -76,21 +70,15 @@ class FLModel:
         self.optimizer_params = optimizer_params
         self.metrics = metrics
         self.client_weights = client_weights
-        self.round = round
+        self.current_round = current_round
         self.total_rounds = total_rounds
         self.meta = meta
 
     @staticmethod
-    def validate_params_type(metrics, params, params_type):
+    def validate_params_type(params, params_type):
         if params_type == ParamsType.WEIGHTS or params_type == ParamsType.WEIGHT_DIFF:
             if params is None:
                 raise ValueError(f"params must be provided when params type is {params_type.value}")
-
-        if params_type == ParamsType.METRICS:
-            if metrics is None:
-                raise ValueError(f"metrics must be provided when params type is {params_type.value}")
-            if params is not None:
-                raise ValueError(f"params must not be provided when params type is {params_type.value}")
 
     @staticmethod
     def validate_client_weights(client_weights):

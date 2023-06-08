@@ -37,12 +37,12 @@ class TestFLModelUtils:
 
         assert fl_model.params == weights
         assert fl_model.params_type == ParamsType.WEIGHTS
-        assert fl_model.round == current_round
+        assert fl_model.current_round == current_round
         assert fl_model.total_rounds == num_rounds
 
     @pytest.mark.parametrize("weights,num_rounds,current_round", TEST_CASES)
     def test_to_shareable(self, weights, num_rounds, current_round):
-        fl_model = FLModel(params=weights, params_type=ParamsType.WEIGHTS, round=current_round, total_rounds=num_rounds)
+        fl_model = FLModel(params=weights, params_type=ParamsType.WEIGHTS, current_round=current_round, total_rounds=num_rounds)
         shareable = FLModelUtils.to_shareable(fl_model)
         dxo = from_shareable(shareable)
         assert shareable.get_header(AppConstants.CURRENT_ROUND) == current_round
@@ -70,21 +70,21 @@ class TestFLModelUtils:
                 FLModelConst.PARAMS: weights,
                 FLModelConst.PARAMS_TYPE: ParamsType.WEIGHTS,
                 FLModelConst.TOTAL_ROUNDS: num_rounds,
-                FLModelConst.ROUND: current_round,
+                FLModelConst.CURRENT_ROUND: current_round,
             },
         )
         fl_model = FLModelUtils.from_dxo(dxo)
         assert fl_model.params == weights
         assert fl_model.params_type == ParamsType.WEIGHTS
-        assert fl_model.round == current_round
+        assert fl_model.current_round == current_round
         assert fl_model.total_rounds == num_rounds
 
     @pytest.mark.parametrize("weights,num_rounds,current_round", TEST_CASES)
     def test_to_dxo(self, weights, num_rounds, current_round):
-        fl_model = FLModel(params=weights, params_type=ParamsType.WEIGHTS, round=current_round, total_rounds=num_rounds)
+        fl_model = FLModel(params=weights, params_type=ParamsType.WEIGHTS, current_round=current_round, total_rounds=num_rounds)
         dxo = FLModelUtils.to_dxo(fl_model)
         assert dxo.data_kind == DataKind.FL_MODEL
         assert dxo.data[FLModelConst.PARAMS] == weights
         assert dxo.data[FLModelConst.PARAMS_TYPE] == ParamsType.WEIGHTS
-        assert dxo.data[FLModelConst.ROUND] == current_round
+        assert dxo.data[FLModelConst.CURRENT_ROUND] == current_round
         assert dxo.data[FLModelConst.TOTAL_ROUNDS] == num_rounds

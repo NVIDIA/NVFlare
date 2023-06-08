@@ -40,7 +40,7 @@ class FLModelDecomposer(fobs.Decomposer):
             b.optimizer_params,
             b.metrics,
             b.client_weights,
-            b.round,
+            b.current_round,
             b.total_rounds,
             b.meta,
         ]
@@ -52,7 +52,7 @@ class FLModelDecomposer(fobs.Decomposer):
             optimizer_params=data[2],
             metrics=data[3],
             client_weights=data[4],
-            round=data[5],
+            current_round=data[5],
             total_rounds=data[6],
             meta=data[7],
         )

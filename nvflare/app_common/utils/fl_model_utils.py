@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.apis.dxo import DXO, DataKind, from_shareable
+from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.shareable import Shareable
-from nvflare.app_common.abstract.fl_model import FLModel, FLModelConst, MetaKey, ParamsType
+from nvflare.app_common.abstract.fl_model import FLModel, FLModelConst, ParamsType
 from nvflare.app_common.app_constant import AppConstants
 
 MODEL_ATTRS = [
@@ -24,7 +24,7 @@ MODEL_ATTRS = [
     FLModelConst.OPTIMIZER_PARAMS,
     FLModelConst.METRICS,
     FLModelConst.CLIENT_WEIGHTS,
-    FLModelConst.ROUND,
+    FLModelConst.CURRENT_ROUND,
     FLModelConst.TOTAL_ROUNDS,
     FLModelConst.META,
 ]
@@ -33,7 +33,6 @@ MODEL_ATTRS = [
 params_type_to_data_kind = {
     ParamsType.WEIGHTS.value: DataKind.WEIGHTS,
     ParamsType.WEIGHT_DIFF.value: DataKind.WEIGHT_DIFF,
-    ParamsType.METRICS.value: DataKind.METRICS,
 }
 data_kind_to_params_type = {v: k for k, v in params_type_to_data_kind.items()}
 
@@ -49,24 +48,33 @@ class FLModelUtils:
         In the future, we should be using the to_dxo, from_dxo directly.
         And all the components should be changed to accept the standard DXO.
         """
-        data_kind = params_type_to_data_kind.get(fl_model.params_type)
-        if data_kind is None:
-            raise ValueError(f"Invalid ModelType: ({fl_model.params_type}).")
+        if fl_model.params is None and fl_model.metrics is None:
+            raise ValueError("FLModel without params and metrics is NOT supported.")
+        if fl_model.params is not None and fl_model.metrics is not None:
+            raise ValueError("FLModel with both params and metrics is NOT supported.")
 
-        dxo = DXO(data_kind, data=fl_model.params, meta={})
+        if fl_model.params is not None:
+            data_kind = params_type_to_data_kind.get(fl_model.params_type)
+            if data_kind is None:
+                raise ValueError(f"Invalid ModelType: ({fl_model.params_type}).")
+            dxo = DXO(data_kind, data=fl_model.params, meta={})
+        elif fl_model.metrics is not None:
+            dxo = DXO(data_kind, data=fl_model.metrics, meta={})
+
         shareable = dxo.to_shareable()
-        if fl_model.round is not None:
-            shareable.set_header(AppConstants.CURRENT_ROUND, fl_model.round)
+        if fl_model.current_round is not None:
+            shareable.set_header(AppConstants.CURRENT_ROUND, fl_model.current_round)
         if fl_model.total_rounds is not None:
             shareable.set_header(AppConstants.NUM_ROUNDS, fl_model.total_rounds)
-        if fl_model.meta is not None:
-            dxo.meta = fl_model.meta
-            if MetaKey.NVF in fl_model.meta:
-                if AppConstants.VALIDATE_TYPE in fl_model.meta[MetaKey.NVF]:
-                    shareable.set_header(
-                        AppConstants.VALIDATE_TYPE, fl_model.meta[MetaKey.NVF][AppConstants.VALIDATE_TYPE]
-                    )
-                fl_model.meta.pop(MetaKey.NVF)
+
+        meta = fl_model.meta if fl_model.meta is not None else {}
+        meta[MetaKey.CLIENT_WEIGHTS] = fl_model.client_weights
+        meta[MetaKey.CURRENT_ROUND] = fl_model.current_round
+        meta[MetaKey.TOTAL_ROUNDS] = fl_model.total_rounds
+
+        dxo.meta.update(meta)
+        if MetaKey.VALIDATE_TYPE in meta:
+            shareable.set_header(AppConstants.VALIDATE_TYPE, meta[MetaKey.VALIDATE_TYPE])
         return shareable
 
     @staticmethod
@@ -81,22 +89,25 @@ class FLModelUtils:
         """
         kwargs = {}
         dxo = from_shareable(shareable)
-        params_type = data_kind_to_params_type.get(dxo.data_kind)
-        if params_type is None:
-            raise ValueError(f"Invalid shareable with dxo that has data kind: {dxo.data_kind}")
 
-        kwargs[FLModelConst.PARAMS_TYPE] = ParamsType(params_type)
+        if dxo.data_kind == DataKind.METRICS:
+            kwargs[FLModelConst.METRICS] = dxo.data
+        else:
+            params_type = data_kind_to_params_type.get(dxo.data_kind)
+            if params_type is None:
+                raise ValueError(f"Invalid shareable with dxo that has data kind: {dxo.data_kind}")
+            kwargs[FLModelConst.PARAMS_TYPE] = ParamsType(params_type)
+            kwargs[FLModelConst.PARAMS] = dxo.data
 
         current_round = shareable.get_header(AppConstants.CURRENT_ROUND, None)
         total_rounds = shareable.get_header(AppConstants.NUM_ROUNDS, None)
         validate_type = shareable.get_header(AppConstants.VALIDATE_TYPE, None)
 
-        kwargs[FLModelConst.PARAMS] = dxo.data
-        kwargs[FLModelConst.ROUND] = current_round
+        kwargs[FLModelConst.CURRENT_ROUND] = current_round
         kwargs[FLModelConst.TOTAL_ROUNDS] = total_rounds
         kwargs[FLModelConst.META] = dxo.meta
         if validate_type is not None:
-            kwargs[FLModelConst.META][MetaKey.NVF] = {AppConstants.VALIDATE_TYPE: validate_type}
+            kwargs[FLModelConst.META][MetaKey.VALIDATE_TYPE] = validate_type
 
         result = FLModel(**kwargs)
         return result
