@@ -22,6 +22,7 @@ from nvflare.fuel.utils import fobs
 class DataKind(object):
     FL_MODEL = "FL_MODEL"
     MODEL = "MODEL"
+    MODEL_DIFF = "MODEL_DIFF"
     WEIGHTS = "WEIGHTS"
     WEIGHT_DIFF = "WEIGHT_DIFF"
     XGB_MODEL = "XGB_MODEL"

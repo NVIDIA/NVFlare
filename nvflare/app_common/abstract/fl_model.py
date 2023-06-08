@@ -19,7 +19,7 @@ from typing import Dict, Optional
 class TransferType(str, Enum):
     MODEL = "MODEL"
     MODEL_DIFF = "MODEL_DIFF"
-    METRICS_ONLY = "METRICS_ONLY"
+    METRICS = "METRICS"
 
 
 class FLModelConst:
@@ -88,7 +88,7 @@ class FLModel:
             if model is None:
                 raise ValueError(f"model must be provided when transfer type is {transfer_type.value}")
 
-        if transfer_type == TransferType.METRICS_ONLY:
+        if transfer_type == TransferType.METRICS:
             if metrics is None:
                 raise ValueError(f"metrics must be provided when transfer type is {transfer_type.value}")
             if model is not None:
@@ -102,6 +102,6 @@ class FLModel:
                     f"key {key} not recognized, acceptable keys: {FLModelConst.AGGREGATION} {FLModelConst.METRICS}"
                 )
 
-            for key in [FLModelConst.AGGREGATION, FLModelConst.METRICS]:
-                if key not in client_weights:
-                    client_weights[key] = 1.0
+        for key in [FLModelConst.AGGREGATION, FLModelConst.METRICS]:
+            if key not in client_weights:
+                client_weights[key] = 1.0

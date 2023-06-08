@@ -20,7 +20,6 @@ from nvflare.app_common.app_constant import AppConstants
 MODEL_ATTRS = [
     FLModelConst.MODEL,
     FLModelConst.METRICS,
-    FLModelConst.TRANSFER_TYPE,
     FLModelConst.OPTIMIZER,
     FLModelConst.METRICS,
     FLModelConst.CONFIGS,
@@ -32,9 +31,9 @@ MODEL_ATTRS = [
 
 
 transfer_type_to_data_kind = {
-    TransferType.MODEL.value: DataKind.WEIGHTS,
-    TransferType.MODEL_DIFF.value: DataKind.WEIGHT_DIFF,
-    TransferType.METRICS_ONLY.value: DataKind.METRICS,
+    TransferType.MODEL.value: DataKind.MODEL,
+    TransferType.MODEL_DIFF.value: DataKind.MODEL_DIFF,
+    TransferType.METRICS.value: DataKind.METRICS,
 }
 data_kind_to_transfer_type = {v: k for k, v in transfer_type_to_data_kind.items()}
 
@@ -50,16 +49,15 @@ class FLModelUtils:
         In the future, we should be using the to_dxo, from_dxo directly.
         And all the components should be changed to accept the standard DXO.
         """
-        if fl_model.transfer_type.value not in transfer_type_to_data_kind:
-            raise ValueError(f"Invalid TransferType: ({fl_model.transfer_type.value}).")
-
-        data_kind = transfer_type_to_data_kind[fl_model.transfer_type.value]
+        data_kind = transfer_type_to_data_kind.get(fl_model.transfer_type.value)
+        if data_kind is None:
+            raise ValueError(f"Invalid TransferType: ({fl_model.transfer_type}).")
 
         dxo = DXO(data_kind, data=fl_model.model, meta={})
         shareable = dxo.to_shareable()
-        if fl_model.round:
+        if fl_model.round is not None:
             shareable.set_header(AppConstants.CURRENT_ROUND, fl_model.round)
-        if fl_model.total_rounds:
+        if fl_model.total_rounds is not None:
             shareable.set_header(AppConstants.NUM_ROUNDS, fl_model.total_rounds)
         if fl_model.meta:
             if AppConstants.VALIDATE_TYPE in fl_model.meta:
@@ -90,7 +88,8 @@ class FLModelUtils:
         kwargs[FLModelConst.MODEL] = dxo.data
         kwargs[FLModelConst.ROUND] = current_round
         kwargs[FLModelConst.TOTAL_ROUNDS] = total_rounds
-        kwargs[FLModelConst.META] = {AppConstants.VALIDATE_TYPE: validate_type}
+        if validate_type is not None:
+            kwargs[FLModelConst.META] = {AppConstants.VALIDATE_TYPE: validate_type}
 
         result = FLModel(**kwargs)
         return result
@@ -98,12 +97,12 @@ class FLModelUtils:
     @staticmethod
     def to_dxo(fl_model: FLModel) -> DXO:
         """Converts FLModel to a DXO."""
-        dxo_dict = {}
+        attr_dict = {FLModelConst.TRANSFER_TYPE: fl_model.transfer_type.value}
         for attr in MODEL_ATTRS:
             value = getattr(fl_model, attr, None)
             if value is not None:
-                dxo_dict[attr] = value
-        result = DXO(data_kind=DataKind.FL_MODEL, data=dxo_dict)
+                attr_dict[attr] = value
+        result = DXO(data_kind=DataKind.FL_MODEL, data=attr_dict)
         return result
 
     @staticmethod
@@ -115,7 +114,7 @@ class FLModelUtils:
         if not isinstance(dxo.data, dict):
             raise ValueError(f"Invalid dxo with data of type: {type(dxo.data)}")
 
-        kwargs = {}
+        kwargs = {FLModelConst.TRANSFER_TYPE: dxo.data[FLModelConst.TRANSFER_TYPE]}
         for attr in MODEL_ATTRS:
             value = dxo.data.get(attr, None)
             if value is not None:
