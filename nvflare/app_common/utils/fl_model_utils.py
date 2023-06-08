@@ -52,7 +52,7 @@ class FLModelUtils:
         In the future, we should be using the to_dxo, from_dxo directly.
         And all the components should be changed to accept the standard DXO.
         """
-        data_kind = model_type_to_data_kind.get(fl_model.model_type.value)
+        data_kind = model_type_to_data_kind.get(fl_model.model_type)
         if data_kind is None:
             raise ValueError(f"Invalid ModelType: ({fl_model.model_type}).")
 
@@ -84,10 +84,11 @@ class FLModelUtils:
         """
         kwargs = {}
         dxo = from_shareable(shareable)
-        if dxo.data_kind not in data_kind_to_model_type:
+        model_type = data_kind_to_model_type.get(dxo.data_kind)
+        if model_type is None:
             raise ValueError(f"Invalid shareable with dxo that has data kind: {dxo.data_kind}")
 
-        kwargs[FLModelConst.MODEL_TYPE] = ModelType(data_kind_to_model_type[dxo.data_kind])
+        kwargs[FLModelConst.MODEL_TYPE] = ModelType(model_type)
 
         current_round = shareable.get_header(AppConstants.CURRENT_ROUND, None)
         total_rounds = shareable.get_header(AppConstants.NUM_ROUNDS, None)
