@@ -48,8 +48,8 @@ class FLModel:
         """
         Args:
             params_type: type of the parameters. It only describes the "params".
-            params: model parameters, for example: model weights for deep learning.
                 If params_type is None, params need to be None. Usually, metrics will be provided.
+            params: model parameters, for example: model weights for deep learning.
             optimizer_params: optimizer parameters.
                 For many cases, the optimizer parameters don't need to be transferred during FL training.
             metrics: evaluation metrics such as loss and scores.
