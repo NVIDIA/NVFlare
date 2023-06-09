@@ -30,7 +30,7 @@ This can be achieved by setting the `warm_start` flag of SGDClassifier to
 `True` in order to allow repeated fitting of the classifiers to the local data.
 
 ## Data preparation 
-The examples illustrate a binary classification task based on [HIGGS dataset](https://archive.ics.uci.edu/ml/datasets/HIGGS).
+The examples illustrate a binary classification task based on [HIGGS dataset](https://archive.ics.uci.edu/dataset/280/higgs).
 This dataset contains 11 million instances, each with 28 attributes. Download the dataset from the HIGGS link above, containing a single `.csv` file.
 By default, we assume the dataset is downloaded, uncompressed, and stored 
 in `DATASET_ROOT/HIGGS.csv`. 
