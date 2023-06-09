@@ -47,7 +47,8 @@ class FLModel:
     ):
         """
         Args:
-            params_type: type of the parameters.
+            params_type: type of the parameters. It only describes the "params".
+                In the case of "metrics", this params_type has no use.
             params: model parameters, for example: weights for deep learning
             optimizer_params: optimizer parameters.
                 For many cases, the optimizer parameters doesn't need to be transferred during FL training.
@@ -64,6 +65,9 @@ class FLModel:
             client_weights = {FLModelConst.AGGREGATION: 1.0, FLModelConst.METRICS: 1.0}
         FLModel.validate_params_type(params, params_type)
         FLModel.validate_client_weights(client_weights)
+        for key in [FLModelConst.AGGREGATION, FLModelConst.METRICS]:
+            if key not in client_weights:
+                client_weights[key] = 1.0
 
         self.params_type = params_type
         self.params = params
@@ -78,16 +82,16 @@ class FLModel:
     def validate_params_type(params, params_type):
         if params_type == ParamsType.WEIGHTS or params_type == ParamsType.WEIGHT_DIFF:
             if params is None:
-                raise ValueError(f"params must be provided when params type is {params_type.value}")
+                raise ValueError(f"params must be provided when params_type is {params_type.value}")
+        if params is not None and params_type is None:
+            raise ValueError("params_type must be provided when params is not None.")
 
     @staticmethod
-    def validate_client_weights(client_weights):
-        for key in client_weights.keys():
-            if key not in [FLModelConst.AGGREGATION, FLModelConst.METRICS]:
-                raise ValueError(
-                    f"key {key} not recognized, acceptable keys: {FLModelConst.AGGREGATION} {FLModelConst.METRICS}"
-                )
+    def validate_client_weights(client_weights: dict):
+        if not isinstance(client_weights, dict):
+            raise ValueError(f"client_weights need to be a dict but get {type(client_weights)}")
+        acceptable_keys = [FLModelConst.AGGREGATION, FLModelConst.METRICS]
 
-        for key in [FLModelConst.AGGREGATION, FLModelConst.METRICS]:
-            if key not in client_weights:
-                client_weights[key] = 1.0
+        for key in client_weights.keys():
+            if key not in acceptable_keys:
+                raise ValueError(f"key {key} not recognized, acceptable keys: {acceptable_keys}")

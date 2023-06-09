@@ -24,6 +24,11 @@ TEST_CASES = [
     ({"cool": 123, "very": 4}, 10, 0),
 ]
 
+FL_MODEL_TEST_CASES = [
+    (FLModel(params={"hello": 123}, params_type=ParamsType.WEIGHTS, current_round=0, total_rounds=10), DataKind.WEIGHTS),
+    (FLModel(metrics={"loss": 0.79}, current_round=0, total_rounds=10), DataKind.METRICS),
+]
+
 
 class TestFLModelUtils:
     @pytest.mark.parametrize("weights,num_rounds,current_round", TEST_CASES)
@@ -35,20 +40,22 @@ class TestFLModelUtils:
         shareable.set_header(AppConstants.VALIDATE_TYPE, "before_train_validate")
         fl_model = FLModelUtils.from_shareable(shareable=shareable)
 
-        assert fl_model.params == weights
+        assert fl_model.params == dxo.data
         assert fl_model.params_type == ParamsType.WEIGHTS
         assert fl_model.current_round == current_round
         assert fl_model.total_rounds == num_rounds
 
-    @pytest.mark.parametrize("weights,num_rounds,current_round", TEST_CASES)
-    def test_to_shareable(self, weights, num_rounds, current_round):
-        fl_model = FLModel(params=weights, params_type=ParamsType.WEIGHTS, current_round=current_round, total_rounds=num_rounds)
+    @pytest.mark.parametrize("fl_model,expected_data_kind", FL_MODEL_TEST_CASES)
+    def test_to_shareable(self, fl_model, expected_data_kind):
         shareable = FLModelUtils.to_shareable(fl_model)
         dxo = from_shareable(shareable)
-        assert shareable.get_header(AppConstants.CURRENT_ROUND) == current_round
-        assert shareable.get_header(AppConstants.NUM_ROUNDS) == num_rounds
-        assert dxo.data == weights
-        assert dxo.data_kind == DataKind.WEIGHTS
+        assert shareable.get_header(AppConstants.CURRENT_ROUND) == fl_model.current_round
+        assert shareable.get_header(AppConstants.NUM_ROUNDS) == fl_model.total_rounds
+        assert dxo.data_kind == expected_data_kind
+        if expected_data_kind == DataKind.METRICS:
+            assert dxo.data == fl_model.metrics
+        else:
+            assert dxo.data == fl_model.params
 
     @pytest.mark.parametrize("weights,num_rounds,current_round", TEST_CASES)
     def test_from_to_shareable(self, weights, num_rounds, current_round):
@@ -81,7 +88,9 @@ class TestFLModelUtils:
 
     @pytest.mark.parametrize("weights,num_rounds,current_round", TEST_CASES)
     def test_to_dxo(self, weights, num_rounds, current_round):
-        fl_model = FLModel(params=weights, params_type=ParamsType.WEIGHTS, current_round=current_round, total_rounds=num_rounds)
+        fl_model = FLModel(
+            params=weights, params_type=ParamsType.WEIGHTS, current_round=current_round, total_rounds=num_rounds
+        )
         dxo = FLModelUtils.to_dxo(fl_model)
         assert dxo.data_kind == DataKind.FL_MODEL
         assert dxo.data[FLModelConst.PARAMS] == weights
