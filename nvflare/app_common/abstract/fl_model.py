@@ -48,17 +48,16 @@ class FLModel:
         """
         Args:
             params_type: type of the parameters. It only describes the "params".
-                In the case of "metrics", this params_type has no use.
-            params: model parameters, for example: weights for deep learning
+            params: model parameters, for example: model weights for deep learning.
             optimizer_params: optimizer parameters.
-                For many cases, the optimizer parameters doesn't need to be transferred during FL training.
-            metrics: evaluation metrics such as loss and scores
+                For many cases, the optimizer parameters don't need to be transferred during FL training.
+            metrics: evaluation metrics such as loss and scores.
             client_weights: contains AGGREGATION and METRICS client specific weights, The client_weights will be used
-                in weighted aggregation and weighted metrics during training and evaluation process
+                in weighted aggregation and weighted metrics during training and evaluation process.
             current_round: the current FL rounds. A round means round trip between client/server during training.
-                None for inference
+                None for inference.
             total_rounds: total number of FL rounds. A round means round trip between client/server during training.
-                None for inference
+                None for inference.
             meta: metadata dictionary used to contain any key-value pairs to facilitate the process.
         """
         if client_weights is None:
