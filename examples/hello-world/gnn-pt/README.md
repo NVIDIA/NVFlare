@@ -4,9 +4,9 @@ Example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.htm
 using federated averaging ([FedAvg](https://arxiv.org/abs/1602.05629))
 and [PyTorch](https://pytorch.org/) as the deep learning training framework.
 
-> **_NOTE:_** This example uses the [CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html) dataset and will load its data within the trainer code.
+> **_NOTE:_** This example uses the [PPI]([http://snap.stanford.edu/graphsage/#code]) dataset and will load its data within the trainer code.
 
-You can follow the [hello_world notebook](../hello_world.ipynb) or the following:
+You can follow the https://github.com/pyg-team/pytorch_geometric/blob/master/examples/graph_sage_unsup_ppi.py for graphsage code.
 
 
 ### 1. Install NVIDIA FLARE
@@ -23,7 +23,7 @@ pip3 install -r requirements.txt
 Use nvflare simulator to run the hello-examples:
 
 ```
-nvflare simulator -w /tmp/nvflare/ -n 2 -t 2 hello-pt/jobs/hello-pt
+nvflare simulator -w /tmp/nvflare/ -n 2 -t 2 gnn-pt/jobs/gnn-pt
 ```
 
 ### 3. Access the logs and results
