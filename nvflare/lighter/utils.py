@@ -50,11 +50,13 @@ def load_private_key_file(file_path):
     return pri_key
 
 
-def sign_folders(folder, signing_pri_key, crt_path):
+def sign_folders(folder, signing_pri_key, crt_path, max_depth=9999):
+    depth = 0
     for root, folders, files in os.walk(folder):
+        depth = depth + 1
         signatures = dict()
         for file in files:
-            if file == ".__nvfl_sig.json":
+            if file == ".__nvfl_sig.json" or file == ".__nvfl_submitter.crt":
                 continue
             signature = signing_pri_key.sign(
                 data=open(os.path.join(root, file), "rb").read(),
@@ -75,19 +77,27 @@ def sign_folders(folder, signing_pri_key, crt_path):
                 algorithm=hashes.SHA256(),
             )
             signatures[folder] = b64encode(signature).decode("utf-8")
+
         json.dump(signatures, open(os.path.join(root, ".__nvfl_sig.json"), "wt"))
         shutil.copyfile(crt_path, os.path.join(root, ".__nvfl_submitter.crt"))
+        if depth >= max_depth:
+            break
 
 
-def verify_folder_signature(folder):
+def verify_folder_signature(src_folder, root_ca_path):
     try:
-        for root, folders, files in os.walk(folder):
+        root_ca_cert = load_crt(root_ca_path)
+        root_ca_public_key = root_ca_cert.public_key()
+        for root, folders, files in os.walk(src_folder):
             try:
                 signatures = json.load(open(os.path.join(root, ".__nvfl_sig.json"), "rt"))
                 cert = load_crt(os.path.join(root, ".__nvfl_submitter.crt"))
                 public_key = cert.public_key()
             except:
-                continue
+                continue  # TODO: shall return False
+            root_ca_public_key.verify(
+                cert.signature, cert.tbs_certificate_bytes, padding.PKCS1v15(), cert.signature_hash_algorithm
+            )
             for k in signatures:
                 signatures[k] = b64decode(signatures[k].encode("utf-8"))
             for file in files:
@@ -148,32 +158,39 @@ def sh_replace(src, mapping_dict):
     return result
 
 
-def update_project_config(project_config: dict, old_server_name, server_name) -> dict:
-    if project_config:
-        # update participants
-        participants = project_config["participants"]
-        for p in participants:
-            if p["name"] == old_server_name:
-                p["name"] = server_name
-
-        # update overseer_agent builder
-        builders = project_config["builders"]
-        for b in builders:
-            if "args" in b:
-                if "overseer_agent" in b["args"]:
-                    end_point = b["args"]["overseer_agent"]["args"]["sp_end_point"]
-                    new_end_point = end_point.replace(old_server_name, server_name)
-                    b["args"]["overseer_agent"]["args"]["sp_end_point"] = new_end_point
-    else:
-        RuntimeError("project_config is empty")
+def update_project_server_name_config(project_config: dict, old_server_name, server_name) -> dict:
+    update_participant_server_name(project_config, old_server_name, server_name)
+    update_overseer_server_name(project_config, old_server_name, server_name)
     return project_config
+
+
+def update_overseer_server_name(project_config, old_server_name, server_name):
+    # update overseer_agent builder
+    builders = project_config.get("builders", [])
+    for b in builders:
+        if "args" in b:
+            if "overseer_agent" in b["args"]:
+                end_point = b["args"]["overseer_agent"]["args"]["sp_end_point"]
+                new_end_point = end_point.replace(old_server_name, server_name)
+                b["args"]["overseer_agent"]["args"]["sp_end_point"] = new_end_point
+
+
+def update_participant_server_name(project_config, old_server_name, new_server_name):
+    participants = project_config["participants"]
+    for p in participants:
+        if p["type"] == "server" and p["name"] == old_server_name:
+            p["name"] = new_server_name
+            return
 
 
 def update_project_server_name(project_file: str, old_server_name, server_name):
     with open(project_file, "r") as file:
         project_config = yaml.safe_load(file)
 
-    update_project_config(project_config, old_server_name, server_name)
+    if not project_config:
+        raise RuntimeError("project_config is empty")
+
+    update_project_server_name_config(project_config, old_server_name, server_name)
 
     with open(project_file, "w") as file:
         yaml.dump(project_config, file)

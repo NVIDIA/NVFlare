@@ -14,12 +14,13 @@
 
 
 class FlareServiceConstants(object):
-    FLARE_CONSOLE = "admin"
+    FLARE_PROJ_ADMIN = "admin@nvidia.com"
     FLARE_SERVER = "server"
-    FLARE_CLIENT = "client"
+    FLARE_CLIENTS = "clients"
     FLARE_OVERSEER = "overseer"
     STARTUP = "startup"
     CMD_START = "start"
     CMD_STOP = "stop"
     EXAMPLES = "examples"
     TRANSFER = "transfer"
+    IS_DOCKER_RUN = "is_docker_run"

@@ -2,6 +2,8 @@
   "format_version": 2,
   "min_clients": 3,
   "num_rounds": 50,
+  "total_virtual_tokens": 10,
+  "hidden_size": 1024,
   "config_path": "config/megatron_gpt_prompt_learning_config.yaml",
   "server": {
     "heart_beat_timeout": 600
@@ -17,7 +19,9 @@
           "path": "nemo_nvflare.ServerPromptEncoder",
           "args": {
             "config_path": "{config_path}",
-            "taskname": "sentiment"
+            "taskname": "sentiment",
+            "total_virtual_tokens": "{total_virtual_tokens}",
+            "hidden_size": "{hidden_size}"
           }
         }
       }

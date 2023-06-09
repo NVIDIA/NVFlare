@@ -21,4 +21,4 @@ warnings.warn(
 )
 
 # flake8: noqa: F401
-from nvflare.app_opt.tracking.tb_receiver import TBAnalyticsReceiver
+from nvflare.app_opt.tracking.tb.tb_receiver import TBAnalyticsReceiver

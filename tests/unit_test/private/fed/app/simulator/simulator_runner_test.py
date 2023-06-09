@@ -20,6 +20,7 @@ from unittest.mock import patch
 import pytest
 
 from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
+from nvflare.private.fed.utils.fed_utils import split_gpus
 
 
 class TestSimulatorRunner:
@@ -86,3 +87,35 @@ class TestSimulatorRunner:
         runner = SimulatorRunner(job_folder="", workspace="")
         split_names = runner.split_clients(client_names, gpus)
         assert sorted(split_names) == sorted(expected_split_names)
+
+    @pytest.mark.parametrize(
+        "gpus, expected_gpus",
+        [
+            ("[0,1],[1, 2]", ["0,1", "1,2"]),
+            ("[0,1],[3]", ["0,1", "3"]),
+            ("[0,1],[ 3 ]", ["0,1", "3"]),
+            ("[02,1],[ a ]", ["02,1", "a"]),
+            ("[]", [""]),
+            ("[0,1],3", ["0,1", "3"]),
+            ("[0,1],[1,2,3],3", ["0,1", "1,2,3", "3"]),
+            ("0,1,2", ["0", "1", "2"]),
+        ],
+    )
+    def test_split_gpus_success(self, gpus, expected_gpus):
+        splitted_gpus = split_gpus(gpus)
+        assert splitted_gpus == expected_gpus
+
+    @pytest.mark.parametrize(
+        "gpus",
+        [
+            "[0,1],3]",
+            "0,1,[2",
+            "[0,1]extra",
+            "[1, [2, 3], 4]",
+        ],
+    )
+    def test_split_gpus_fail(self, gpus):
+        with pytest.raises(ValueError):
+            split_gpus(gpus)
+
+

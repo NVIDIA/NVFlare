@@ -83,6 +83,7 @@ class CredentialType(str, Enum):
 
     PASSWORD = "password"
     CERT = "cert"
+    LOCAL_CERT = "local_cert"
 
 
 class InternalCommands(object):

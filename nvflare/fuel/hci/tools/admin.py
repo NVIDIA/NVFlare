@@ -102,9 +102,10 @@ def main():
         client_key=client_key,
         upload_dir=admin_config.get("upload_dir"),
         download_dir=admin_config.get("download_dir"),
-        credential_type=CredentialType.PASSWORD if admin_config.get("cred_type") == "password" else CredentialType.CERT,
+        credential_type=CredentialType(admin_config.get("cred_type", CredentialType.PASSWORD.value)),
         debug=args.with_debug,
         service_finder=service_finder,
+        username=admin_config.get("username", ""),
         # cli_history_size=args.cli_history_size,
     )
 
