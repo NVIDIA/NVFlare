@@ -17,8 +17,8 @@ from typing import Any, Dict, Optional
 
 
 class ParamsType(str, Enum):
-    WEIGHTS = "WEIGHTS"
-    WEIGHT_DIFF = "WEIGHT_DIFF"
+    FULL = "FULL"
+    DIFF = "DIFF"
 
 
 class FLModelConst:
@@ -80,7 +80,7 @@ class FLModel:
 
     @staticmethod
     def validate_params_type(params, params_type):
-        if params_type == ParamsType.WEIGHTS or params_type == ParamsType.WEIGHT_DIFF:
+        if params_type == ParamsType.FULL or params_type == ParamsType.DIFF:
             if params is None:
                 raise ValueError(f"params must be provided when params_type is {params_type.value}")
         if params is not None and params_type is None:

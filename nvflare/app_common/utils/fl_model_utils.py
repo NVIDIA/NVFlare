@@ -30,8 +30,8 @@ MODEL_ATTRS = [
 
 
 params_type_to_data_kind = {
-    ParamsType.WEIGHTS.value: DataKind.WEIGHTS,
-    ParamsType.WEIGHT_DIFF.value: DataKind.WEIGHT_DIFF,
+    ParamsType.FULL.value: DataKind.WEIGHTS,
+    ParamsType.DIFF.value: DataKind.WEIGHT_DIFF,
 }
 data_kind_to_params_type = {v: k for k, v in params_type_to_data_kind.items()}
 
