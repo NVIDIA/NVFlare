@@ -20,7 +20,7 @@ from nvflare.fuel.utils import fobs
 
 
 class DataKind(object):
-    MODEL = "MODEL"
+    FL_MODEL = "FL_MODEL"
     WEIGHTS = "WEIGHTS"
     WEIGHT_DIFF = "WEIGHT_DIFF"
     XGB_MODEL = "XGB_MODEL"
@@ -37,6 +37,12 @@ class MetaKey(object):
     PROCESSED_KEYS = "PROCESSED_KEYS"
     INITIAL_METRICS = "initial_metrics"
     FILTER_HISTORY = "filter_history"
+
+    CONFIGS = "configs"
+    VALIDATE_TYPE = "validate_type"
+    CLIENT_WEIGHTS = "client_weights"
+    CURRENT_ROUND = "current_round"
+    TOTAL_ROUNDS = "total_rounds"
 
 
 _KEY_KIND = "kind"

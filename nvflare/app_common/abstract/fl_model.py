@@ -11,84 +11,87 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 from enum import Enum
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 
-class TransferType(Enum):
-    MODEL = "MODEL"
-    MODEL_DIFF = "MODEL_DIFF"
-    METRICS_ONLY = "METRICS_ONLY"
+class ParamsType(str, Enum):
+    FULL = "FULL"
+    DIFF = "DIFF"
 
 
 class FLModelConst:
-    AGGREGATION = "aggregation"
+    PARAMS_TYPE = "params_type"
+    PARAMS = "params"
+    OPTIMIZER_PARAMS = "optimizer_params"
     METRICS = "metrics"
+    CLIENT_WEIGHTS = "client_weights"
+    CURRENT_ROUND = "current_round"
+    TOTAL_ROUNDS = "total_rounds"
+    META = "meta"
+    AGGREGATION = "aggregation"
 
 
 class FLModel:
     def __init__(
         self,
-        transfer_type: TransferType,
-        model: Optional[Dict] = None,
-        optimizer: Optional[Dict] = None,
+        params_type: Optional[ParamsType] = None,
+        params: Any = None,
+        optimizer_params: Any = None,
         metrics: Optional[Dict] = None,
-        configs: Optional[Dict] = None,
         client_weights: Optional[Dict] = None,
-        round: Optional[int] = None,
+        current_round: Optional[int] = None,
+        total_rounds: Optional[int] = None,
         meta: Optional[Dict] = None,
     ):
         """
         Args:
-            transfer_type:
-                how the model will be transferred: as whole model (such as weight) or model_diff (weight_diff).
-                when transfer_type is METRICS_ONLY, model is None.
-            model:  machine learning model, for Deep learning, this could be weights or others depending on type of model
-            optimizer: optionally provided optimizer. For many cases, this optimizer doesn't need to be transferred during FL training.
-            metrics: evaluation metrics such as loss and scores
-            configs: training configurations that is dynamically changes during training and need to be passed around.
-                   In many cases, the statics configurations that can be exchanged before the actually training starts.
-                   This configs here should only contains the dynamics configs.
+            params_type: type of the parameters. It only describes the "params".
+                If params_type is None, params need to be None. Usually, metrics will be provided.
+            params: model parameters, for example: model weights for deep learning.
+            optimizer_params: optimizer parameters.
+                For many cases, the optimizer parameters don't need to be transferred during FL training.
+            metrics: evaluation metrics such as loss and scores.
             client_weights: contains AGGREGATION and METRICS client specific weights, The client_weights will be used
-                   in weighted aggregation and weighted metrics during training and evaluation process
-            round:  one round trip between client/server during training. None for inference
+                in weighted aggregation and weighted metrics during training and evaluation process.
+            current_round: the current FL rounds. A round means round trip between client/server during training.
+                None for inference.
+            total_rounds: total number of FL rounds. A round means round trip between client/server during training.
+                None for inference.
             meta: metadata dictionary used to contain any key-value pairs to facilitate the process.
         """
-        FLModel.validate_transfer_type(metrics, model, transfer_type)
-        FLModel.init_and_validate_client_weights(client_weights)
+        if client_weights is None:
+            client_weights = {FLModelConst.AGGREGATION: 1.0, FLModelConst.METRICS: 1.0}
+        FLModel.validate_params_type(params, params_type)
+        FLModel.validate_client_weights(client_weights)
+        for key in [FLModelConst.AGGREGATION, FLModelConst.METRICS]:
+            if key not in client_weights:
+                client_weights[key] = 1.0
 
-        self.transfer_type = transfer_type
-        self.model = model
-        self.optimizer = optimizer
+        self.params_type = params_type
+        self.params = params
+        self.optimizer_params = optimizer_params
         self.metrics = metrics
-        self.configs = configs
         self.client_weights = client_weights
-        self.round = round
+        self.current_round = current_round
+        self.total_rounds = total_rounds
         self.meta = meta
 
     @staticmethod
-    def validate_transfer_type(metrics, model, transfer_type):
-        if transfer_type == TransferType.MODEL or transfer_type == TransferType.MODEL_DIFF:
-            if model is None:
-                raise ValueError("model must be provided when transfer type is MODEL or MODEL_DIFF")
-
-        if transfer_type == TransferType.METRICS_ONLY:
-            if metrics is None:
-                raise ValueError("metrics must be provided wehn transfer type is METRICS_ONLY")
-            if model is not None:
-                raise ValueError("model should not provided wehn transfer type is METRICS_ONLY")
+    def validate_params_type(params, params_type):
+        if params_type == ParamsType.FULL or params_type == ParamsType.DIFF:
+            if params is None:
+                raise ValueError(f"params must be provided when params_type is {params_type.value}")
+        if params is not None and params_type is None:
+            raise ValueError("params_type must be provided when params is not None.")
 
     @staticmethod
-    def init_and_validate_client_weights(client_weights):
-        if client_weights is None:
-            client_weights = {FLModelConst.AGGREGATION: 1.0, FLModelConst.METRICS: 1.0}
-        else:
-            for key in client_weights.keys():
-                if key not in [FLModelConst.AGGREGATION, FLModelConst.METRICS]:
-                    raise ValueError(
-                        f"key {key} not recognized, acceptable keys: {FLModelConst.AGGREGATION} {FLModelConst.METRICS}"
-                    )
+    def validate_client_weights(client_weights: dict):
+        if not isinstance(client_weights, dict):
+            raise ValueError(f"client_weights need to be a dict but get {type(client_weights)}")
+        acceptable_keys = [FLModelConst.AGGREGATION, FLModelConst.METRICS]
 
-            for key in [FLModelConst.AGGREGATION, FLModelConst.METRICS]:
-                if key not in client_weights:
-                    client_weights[key] = 1.0
+        for key in client_weights.keys():
+            if key not in acceptable_keys:
+                raise ValueError(f"key {key} not recognized, acceptable keys: {acceptable_keys}")
