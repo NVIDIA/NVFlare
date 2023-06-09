@@ -77,7 +77,7 @@ class Config(ABC):
         pass
 
     @abstractmethod
-    def to_conf(self, element: Dict) -> str:
+    def to_conf_str(self, element: Dict) -> str:
         """
             convert dict element to the str representation of the underline configuration.
             For example, for JsonFormat, the method return json string

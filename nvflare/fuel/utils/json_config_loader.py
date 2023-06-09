@@ -38,7 +38,7 @@ class JsonConfig(Config):
     def to_dict(self) -> Dict:
         return self.conf
 
-    def to_conf(self, element: Dict) -> str:
+    def to_conf_str(self, element: Dict) -> str:
         return json.dumps(element)
 
 

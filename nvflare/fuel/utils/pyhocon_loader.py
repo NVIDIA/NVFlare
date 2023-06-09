@@ -39,7 +39,7 @@ class PyhoconConfig(Config):
     def to_dict(self) -> Dict:
         return self._convert_conf_item(self.conf)
 
-    def to_conf(self, element: Dict) -> str:
+    def to_conf_str(self, element: Dict) -> str:
         config = CF.from_dict(element)
         return HOCONConverter.to_hocon(config)
 
