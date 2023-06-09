@@ -1,5 +1,5 @@
 {
-  "name": "hello-pt",
+  "name": "gnn-pt",
   "resource_spec": {},
   "min_clients" : 2,
   "deploy_map": {

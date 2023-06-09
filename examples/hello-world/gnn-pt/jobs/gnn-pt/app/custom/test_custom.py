@@ -16,8 +16,8 @@
 from unittest.mock import patch
 
 import pytest
-from cifar10trainer import Cifar10Trainer
-from cifar10validator import Cifar10Validator
+from graphsagetrainer import GraphSageTrainer
+from graphsagevalidator import GraphSageValidator
 
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_constant import ReturnCode
@@ -28,16 +28,16 @@ TRAIN_TASK_NAME = "train"
 
 
 @pytest.fixture()
-def get_cifar_trainer():
-    with patch.object(Cifar10Trainer, "_save_local_model") as mock_save:
-        with patch.object(Cifar10Trainer, "_load_local_model") as mock_load:
-            yield Cifar10Trainer(train_task_name=TRAIN_TASK_NAME, epochs=1)
+def get_graphsage_trainer():
+    with patch.object(GraphSageTrainer, "_save_local_model") as mock_save:
+        with patch.object(GraphSageTrainer, "_load_local_model") as mock_load:
+            yield GraphSageTrainer(train_task_name=TRAIN_TASK_NAME, epochs=1)
 
 
-class TestCifar10Trainer:
+class TestGraphSageTrainer:
     @pytest.mark.parametrize("num_rounds", [1, 3])
-    def test_execute(self, get_cifar_trainer, num_rounds):
-        trainer = get_cifar_trainer
+    def test_execute(self, get_graphsage_trainer, num_rounds):
+        trainer = get_graphsage_trainer
         # just take first batch
         iterator = iter(trainer._train_loader)
         trainer._train_loader = [next(iterator)]
@@ -48,11 +48,11 @@ class TestCifar10Trainer:
             result = trainer.execute(TRAIN_TASK_NAME, shareable=result, fl_ctx=FLContext(), abort_signal=Signal())
             assert result.get_return_code() == ReturnCode.OK
 
-    @patch.object(Cifar10Trainer, "_save_local_model")
-    @patch.object(Cifar10Trainer, "_load_local_model")
+    @patch.object(GraphSageTrainer, "_save_local_model")
+    @patch.object(GraphSageTrainer, "_load_local_model")
     def test_execute_rounds(self, mock_save, mock_load):
         train_task_name = "train"
-        trainer = Cifar10Trainer(train_task_name=train_task_name, epochs=2)
+        trainer = GraphSageTrainer(train_task_name=train_task_name, epochs=2)
         # just take first batch
         myitt = iter(trainer._train_loader)
         trainer._train_loader = [next(myitt)]
@@ -64,10 +64,10 @@ class TestCifar10Trainer:
             assert result.get_return_code() == ReturnCode.OK
 
 
-class TestCifar10Validator:
+class TestGraphSageValidator:
     def test_execute(self):
         validate_task_name = "validate"
-        validator = Cifar10Validator(validate_task_name=validate_task_name)
+        validator = GraphSageValidator(validate_task_name=validate_task_name)
         # just take first batch
         iterator = iter(validator._test_loader)
         validator._test_loader = [next(iterator)]
