@@ -12,13 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree
 from pyhocon.converter import HOCONConverter
 
-from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.utils.config import Config, ConfigFormat, ConfigLoader
 
 
@@ -28,7 +27,7 @@ class PyhoconConfig(Config):
         self.format = ConfigFormat.PYHOCON
         self.file_path = file_path
 
-    def get_conf(self):
+    def get_native_conf(self):
         return self.conf
 
     def get_format(self):
@@ -43,36 +42,6 @@ class PyhoconConfig(Config):
     def to_conf(self, element: Dict) -> str:
         config = CF.from_dict(element)
         return HOCONConverter.to_hocon(config)
-
-    def get_int(self, key: str, default=None) -> Optional[int]:
-        return self.conf.get_int(key, default)
-
-    def get_float(self, key: str, conf=None, default=None) -> Optional[float]:
-        return self.conf.get_float(key, default)
-
-    def get_bool(self, key: str, default=None) -> Optional[bool]:
-        try:
-            return self.conf.get_bool(key, default)
-        except (TypeError, ValueError):
-            v = self.conf.get(key, default)
-            if v is None:
-                return v
-            if isinstance(v, int):
-                return v != 0
-            if isinstance(v, str):
-                v = v.lower()
-                return v in ["true", "t", "yes", "y", "1"]
-            raise ConfigError(f"{key} has type '{type(v).__name__}' value '{v}' cannot be converted to bool ")
-
-    def get_str(self, key: str, default=None) -> Optional[str]:
-        return self.conf.get_string(key, default)
-
-    def get_list(self, key: str, default=None) -> Optional[List]:
-        return self.conf.get_list(key, default)
-
-    def get_config(self, key: str, default=None):
-        conf: ConfigTree = self.conf.get_config(key, default)
-        return PyhoconConfig(conf, self.file_path)
 
     def _convert_conf_item(self, conf_item):
         result = {}

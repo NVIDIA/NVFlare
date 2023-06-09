@@ -14,9 +14,8 @@
 
 import json
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
-from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.utils.config import Config, ConfigFormat, ConfigLoader
 from nvflare.security.logging import secure_format_exception
 
@@ -27,7 +26,7 @@ class JsonConfig(Config):
         self.format = ConfigFormat.JSON
         self.file_path = file_path
 
-    def get_conf(self):
+    def get_native_conf(self):
         return self.conf
 
     def get_format(self):
@@ -42,69 +41,6 @@ class JsonConfig(Config):
     def to_conf(self, element: Dict) -> str:
         return json.dumps(element)
 
-    def get_int(self, key: str, default=None) -> Optional[int]:
-        value = self.conf.get(key, default)
-        try:
-            return int(value) if value is not None else None
-        except (TypeError, ValueError):
-            raise ConfigError("{key} has type '{type}' rather than 'int'".format(key=key, type=type(value).__name__))
-
-    def get_float(self, key: str, conf=None, default=None) -> Optional[float]:
-        value = self.conf.get(key, default)
-        try:
-            return float(value) if value is not None else None
-        except (TypeError, ValueError):
-            raise ConfigError("{key} has type '{type}' rather than 'float'".format(key=key, type=type(value).__name__))
-
-    def get_bool(self, key: str, default=None) -> Optional[bool]:
-        v = self.conf.get(key, default)
-
-        if v is None:
-            return v
-        if isinstance(v, bool):
-            return v
-        if isinstance(v, int):
-            return v != 0
-        if isinstance(v, str):
-            v = v.lower()
-            return v in ["true", "t", "yes", "y", "1"]
-        raise ConfigError(f"{key} has type '{type(v).__name__}' value '{v}' cannot be converted to bool ")
-
-    def get_str(self, key: str, default=None) -> Optional[str]:
-        value = self.conf.get(key, default)
-        try:
-            return str(value) if value is not None else None
-        except (TypeError, ValueError):
-            raise ConfigError(
-                "{key} has type '{type}' cannot covert to 'str'".format(key=key, type=type(value).__name__)
-            )
-
-    def get_list(self, key: str, default=None) -> Optional[List]:
-        value = self.conf.get(key, default)
-        if value:
-            if isinstance(value, List):
-                return value
-            else:
-                raise ConfigError(
-                    "{key} has type '{type}' rather than 'List'".format(key=key, type=type(value).__name__)
-                )
-        else:
-            return None
-
-    def get_config(self, key: str, default=None):
-        value = self.conf.get(key, default)
-        if value:
-            if isinstance(value, Dict):
-                return JsonConfig(value, self.file_path)
-            else:
-                raise ConfigError(
-                    "{key} has type '{type}' rather than 'Dict' or 'JsonConfig' ".format(
-                        key=key, type=type(value).__name__
-                    )
-                )
-        else:
-            return None
-
 
 class JsonConfigLoader(ConfigLoader):
     def __init__(self):
@@ -112,15 +48,15 @@ class JsonConfigLoader(ConfigLoader):
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def load_config(
-        self, file_path: str, default_file_path: Optional[str] = None, overwrite_config: Optional[Dict] = None
+            self, file_path: str, default_file_path: Optional[str] = None, overwrite_config: Optional[Dict] = None
     ) -> Config:
 
         conf_dict = self._from_file(file_path)
         if default_file_path:
             default_conf_dict = self._from_file(default_file_path)
-            conf_dict = {**default_conf_dict, **conf_dict}
+            self._dict_merge(default_conf_dict, conf_dict)
         if overwrite_config:
-            conf_dict = {**conf_dict, **overwrite_config}
+            self._dict_merge(conf_dict, overwrite_config)
 
         return JsonConfig(conf_dict, file_path)
 
@@ -142,3 +78,10 @@ class JsonConfigLoader(ConfigLoader):
             except Exception as e:
                 self.logger.error("Error loading config file {}: {}".format(path, secure_format_exception(e)))
                 raise e
+
+    def _dict_merge(self, target_dict: dict, overwrite_dict: dict):
+        for k, v in overwrite_dict.items():
+            if k in target_dict and isinstance(target_dict[k], dict) and isinstance(overwrite_dict[k], dict):
+                self._dict_merge(target_dict[k], overwrite_dict[k])
+            else:
+                target_dict[k] = overwrite_dict[k]

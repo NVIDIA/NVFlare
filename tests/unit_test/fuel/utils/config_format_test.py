@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import List
 
 from nvflare.fuel.utils.config import ConfigFormat
 
@@ -19,39 +18,15 @@ from nvflare.fuel.utils.config import ConfigFormat
 class TestConfigFormat:
 
     def test_config_exts(self):
-        exts = ConfigFormat._config_format_extensions()
-        assert (exts.get(ConfigFormat.JSON.name) == [".json", ".json.default"])
-        assert (exts.get(ConfigFormat.PYHOCON.name) == [".conf", ".conf.default"])
-        assert (exts.get(ConfigFormat.OMEGACONF.name) == [".yml", ".yml.default"])
-
-    def test_get_exts(self):
-        exts = ConfigFormat.get_extensions(ConfigFormat.JSON.name)
-        assert exts == [".json", ".json.default"]
-
-        exts = ConfigFormat.get_extensions(ConfigFormat.PYHOCON.name)
-        assert exts == [".conf", ".conf.default"]
-
-        exts = ConfigFormat.get_extensions(ConfigFormat.OMEGACONF.name)
-        assert exts == [".yml", ".yml.default"]
+        exts2fmt_map = ConfigFormat.config_ext_formats()
+        assert (exts2fmt_map.get(".json") == ConfigFormat.JSON)
+        assert (exts2fmt_map.get(".conf") == ConfigFormat.PYHOCON)
+        assert (exts2fmt_map.get(".yml") == ConfigFormat.OMEGACONF)
+        assert (exts2fmt_map.get( ".json.default") == ConfigFormat.JSON)
+        assert (exts2fmt_map.get( ".conf.default") == ConfigFormat.PYHOCON)
+        assert (exts2fmt_map.get( ".yml.default") == ConfigFormat.OMEGACONF)
 
     def test_config_exts2(self):
-        config_exts = ConfigFormat.config_exts()
-        assert config_exts == ".json|.json.default|.conf|.conf.default|.yml|.yml.default"
+        exts2fmt_map = ConfigFormat.config_ext_formats()
+        assert "|".join(exts2fmt_map.keys()) == ".json|.conf|.yml|.json.default|.conf.default|.yml.default"
 
-    def test_ordered_lookup_exts(self):
-        xs: List[(ConfigFormat, str)] = ConfigFormat.ordered_search_extensions()
-        assert (len(xs) == 6)
-        exts = xs[:2]
-        for fmt, f in exts:
-            assert(fmt == ConfigFormat.JSON)
-            assert(f.startswith(".json"))
-
-        exts = xs[2:4]
-        for fmt, f in exts:
-            assert(fmt == ConfigFormat.PYHOCON)
-            assert(f.startswith(".conf"))
-
-        exts = xs[4:6]
-        for fmt, f in exts:
-            assert(fmt == ConfigFormat.OMEGACONF)
-            assert(f.startswith(".yml"))

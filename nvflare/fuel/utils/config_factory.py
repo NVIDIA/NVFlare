@@ -30,48 +30,53 @@ class ConfigFactory:
     def search_config_format(
         init_file_path, search_dirs: Optional[List[str]] = None
     ) -> (Optional[ConfigFormat], Optional[str]):
-        # we ignore the original extension
+        """
+        find the configuration format and the location (file_path) for given initial init_file_path and search directories.
+        for example, the initial config file path given is config_client.json
+        the search function will ignore the .json extension and search "config_client.xxx" in the given directory in
+        specified extension search order. The first found file_path will be used as configuration.
+        the ".xxx" is one of the extensions defined in the configuration format.
+
+        Args:
+            init_file_path: initial file_path for the configuration
+            search_dirs: search directory. If none, the parent directory of init_file_path will be used as search dir
+
+        Returns: Tuple of None,None or ConfigFormat and real configuration path
+
+        """
         logger = ConfigFactory.logger
         if not search_dirs:
             parent_dir = pathlib.Path(init_file_path).parent
             search_dirs = [str(parent_dir)]
-        file_path = os.path.splitext(pathlib.Path(init_file_path).name)[0]
-        for search_dir in search_dirs:
-            logger.debug(f"search file:{file_path} basename, search dirs = {search_dirs}")
-            for root, dirs, files in os.walk(search_dir):
-                for fmt, ext in ConfigFormat.ordered_search_extensions():
-                    found_one = ConfigFactory._search_config_file(file_path, fmt, ext, root, files)
-                    if found_one:
-                        return found_one
-
-        return None, None
-
-    @staticmethod
-    def _search_config_file(base_filename, fmt, ext, root, files):
-        file = f"{base_filename}{ext}"
-        if file in files:
-            config_file_path = os.path.join(root, file)
-            return fmt, config_file_path
-
-        return None, None
-
-    @staticmethod
-    def has_config(init_file_path: str, search_dirs: Optional[List[str]] = None) -> bool:
-        _, real_file_path = ConfigFactory.search_config_format(init_file_path, search_dirs)
-        return real_file_path is not None
-
-    @staticmethod
-    def match_config(parent, init_file_path, match_fn) -> bool:
         # we ignore the original extension
-        basename = os.path.splitext(init_file_path)[0]
-        for fmt, ext in ConfigFormat.ordered_search_extensions():
-            ConfigFactory.logger.debug(f"search format {fmt.name} with ext {ext} in {basename}{ext}")
-            if match_fn(parent, f"{basename}{ext}"):
-                return True
-        return False
+        file_basename = os.path.splitext(pathlib.Path(init_file_path).name)[0]
+        ext2fmt_map = ConfigFormat.config_ext_formats()
+        for search_dir in search_dirs:
+            logger.debug(f"search file:{file_basename} basename, search dirs = {search_dirs}")
+            for name in os.listdir(search_dir):
+                for ext in ext2fmt_map:
+                    fmt = ext2fmt_map[ext]
+                    file = f"{file_basename}{ext}"
+                    if file == name:
+                        return file
+
+        return None, None
 
     @staticmethod
     def load_config(file_path: str, search_dirs: Optional[List[str]] = None) -> Optional[Config]:
+        """
+        find the configuration for given initial init_file_path and search directories.
+        for example, the initial config file path given is config_client.json
+        the search function will ignore the .json extension and search "config_client.xxx" in the given directory in
+        specified extension search order. The first found file_path will be used as configuration.
+        the ".xxx" is one of the extensions defined in the configuration format.
+        Args:
+            file_path: initial file path
+            search_dirs: search directory. If none, the parent directory of init_file_path will be used as search dir
+
+        Returns: None if not found, or Config
+
+        """
         config_format, real_config_file_path = ConfigFactory.search_config_format(file_path, search_dirs)
         config_loader = ConfigFactory.get_config_loader(config_format)
         if config_loader:

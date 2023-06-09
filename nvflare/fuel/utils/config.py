@@ -13,8 +13,9 @@
 # limitations under the License.
 
 from abc import ABC, abstractmethod
+from collections import OrderedDict
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 
 class ConfigFormat(Enum):
@@ -23,95 +24,71 @@ class ConfigFormat(Enum):
     OMEGACONF = "OMEGACONF"
 
     @classmethod
-    def _config_format_extensions(cls):
-        return {
-            "JSON": [".json", ".json.default"],
-            "PYHOCON": [".conf", ".conf.default"],
-            "OMEGACONF": [".yml", ".yml.default"],
-        }
-
-    @classmethod
-    def search_order(cls):
-        return [cls.JSON, cls.PYHOCON, cls.OMEGACONF]
-
-    @classmethod
-    def ordered_search_extensions(cls) -> List:
-        search_sequence: List[ConfigFormat] = cls.search_order()
-        extensions = []
-        for fmt in search_sequence:
-            exts = cls.get_extensions(fmt.name)
-            if exts:
-                for ext in exts:
-                    extensions.append((fmt, ext))
-
-        return extensions
-
-    @classmethod
-    def get_extensions(cls, fmt: str) -> Optional[List[str]]:
-        return cls._config_format_extensions().get(fmt, None)
-
-    @classmethod
-    def config_exts(cls) -> str:
-        search_sequence: List[ConfigFormat] = cls.search_order()
-        extensions = []
-        for fmt in search_sequence:
-            exts = cls.get_extensions(fmt.name)
-            if exts:
-                extensions.extend(exts)
-
-        return "|".join(iter(extensions))
+    def config_ext_formats(cls):
+        return OrderedDict(
+            {
+                ".json": ConfigFormat.JSON,
+                ".conf": ConfigFormat.PYHOCON,
+                ".yml": ConfigFormat.OMEGACONF,
+                ".json.default": ConfigFormat.JSON,
+                ".conf.default": ConfigFormat.PYHOCON,
+                ".yml.default": ConfigFormat.OMEGACONF,
+            }
+        )
 
 
 class Config(ABC):
     @abstractmethod
-    def get_conf(self):
-        # Return the original underline config object representation if you prefer to use it directly
-        # Pyhocon → ConfigTree
-        # JSON → Dict
-        # OMEGACONF → Conf
+    def get_native_conf(self):
+        """
+        Return the original underline config object representation if you prefer to use it directly
+        Pyhocon → ConfigTree
+        JSON → Dict
+        OMEGACONF → ConfigDict
+
+        Returns: Any, native config objects
+        """
+
         pass
 
     @abstractmethod
     def get_format(self):
+        """
+        Returns: ConfigFormat, returns the current config objects ConfigFormat
+        """
+
         pass
 
     @abstractmethod
     def get_location(self) -> Optional[str]:
-        # return the real file path of the reel configuration.
-        # For example, if initial config_fed_json.json was initially input file path. but the real file path is
-        # config_fed_json.conf. the get location will be return config_fed_json.conf
+        """
+        Returns: None if the config is not from file else return the file path where this configuration is loaded from
+
+        """
         pass
 
     @abstractmethod
     def to_dict(self) -> Dict:
+        """
+        convert underline config object to dictionary
+        Returns:Dict
+
+        """
         pass
 
     @abstractmethod
     def to_conf(self, element: Dict) -> str:
-        pass
+        """
+            convert dict element to the str representation of the underline configuration.
+            For example, for JsonFormat, the method return json string
+            for PyhoconFormat, the method return pyhocon string
+            for OmegaconfFormat, the method returns YAML string representation
+        Args:
+            element: dict
 
-    @abstractmethod
-    def get_int(self, key: str, default=None) -> Optional[int]:
-        pass
+        Returns: str string representation of the configuration in given format
 
-    @abstractmethod
-    def get_float(self, key: str, conf=None, default=None) -> Optional[float]:
-        pass
-
-    @abstractmethod
-    def get_bool(self, key: str, default=None) -> Optional[bool]:
-        pass
-
-    @abstractmethod
-    def get_str(self, key: str, default=None) -> Optional[str]:
-        pass
-
-    @abstractmethod
-    def get_list(self, key: str, default=None) -> Optional[List]:
-        pass
-
-    @abstractmethod
-    def get_config(self, key: str, default=None):
+        """
         pass
 
 
@@ -127,16 +104,31 @@ class ConfigLoader(ABC):
         Args:
             file_path: file path for configuration to be loaded
             default_file_path: file path for default configuration
-            overwrite_config: dict config that will be overwrite the final config if provided
+            overwrite_config: dict config that will  overwrite the final config if provided
 
-        Returns:
-
+        Returns:nvflare.fuel.utils.Config
         """
 
         pass
 
     def load_config_from_str(self, config_str: str) -> Config:
+        """
+        Load Configuration based on the string representation of the underline configuration
+        for example, Json String for Jsonformat. python conf string or yaml string presentation
+        Args:
+            config_str:
+        Returns:nvflare.fuel.utils.Config
+
+        """
         raise NotImplementedError
 
     def load_config_from_dict(self, config_dict: dict) -> Config:
+        """
+        Load Configuration based for given config dict.
+
+        Args:
+            config_dict:
+        Returns:nvflare.fuel.utils.Config
+
+        """
         raise NotImplementedError

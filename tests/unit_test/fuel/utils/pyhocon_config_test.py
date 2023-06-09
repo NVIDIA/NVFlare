@@ -14,9 +14,10 @@
 import json
 
 import pytest
+from pyhocon import ConfigFactory as CF
 
 from nvflare.fuel.utils.config import ConfigFormat
-from nvflare.fuel.utils.pyhocon_loader import PyhoconLoader
+from nvflare.fuel.utils.pyhocon_loader import PyhoconLoader, PyhoconConfig
 
 
 class TestPyHoconConfig:
@@ -42,10 +43,10 @@ class TestPyHoconConfig:
                         c = hello
                         d = [2,4]
             } """
-        from pyhocon import ConfigFactory as CF
+
         return CF.parse_string(x)
 
-    def test_json_loader(self):
+    def test_config_loader(self):
         loader = PyhoconLoader()
         loader._from_file = self.return_conf
         dicts = {
@@ -54,7 +55,7 @@ class TestPyHoconConfig:
                     "a1": 200,
                 },
                 "c": "hello",
-                "d": [200,400, 500],
+                "d": [200, 400, 500],
                 "e1": "Yes",
                 "e2": "True",
                 "e3": "NO",
@@ -62,30 +63,32 @@ class TestPyHoconConfig:
         }
 
         config = loader.load_config("test.conf", "default_test.conf", dicts)
+        conf = config.get_native_conf()
         assert config is not None
-        assert config.get_config("a").get_int("a1") == 200
-        assert config.get_int("a.a1") == 200
-        assert config.get_int("b") == 1
-        assert config.get_str("c") == "hello"
-        assert config.get_list("d") == [200,400,500]
-        assert config.get_str("e1") == "Yes"
-        assert config.get_str("e2") == "True"
-        assert config.get_str("e3") == "NO"
-        assert config.get_str("e4") is None
-        assert config.get_bool("e1") is True
-        assert config.get_bool("e2") is True
-        assert config.get_bool("e3") is False
+        assert conf.get_config("a").get_int("a1") == 200
+        assert conf.get_int("a.a1") == 200
+        assert conf.get_int("b") == 1
+        assert conf.get_string("c") == "hello"
+        assert conf.get_list("d") == [200, 400, 500]
+        assert conf.get_string("e1") == "Yes"
+        assert conf.get_string("e2") == "True"
+        assert conf.get_string("e3") == "NO"
+        assert conf.get_string("e4", None) is None
 
         assert config.get_format() == ConfigFormat.PYHOCON
 
+        # with pytest.raises(Exception):
+        assert conf.get("d") == [200, 400, 500]
         with pytest.raises(Exception):
-            assert config.get_str("d") == [200,400,500]
+            assert conf.get_string("d") == [200, 400, 500]
 
+        assert conf.get("b") == 1
         with pytest.raises(Exception):
-            assert config.get_str("b") == 1
+            assert conf.get_string("b") == 1
 
+        assert PyhoconConfig(CF.from_dict(conf.get("a"))).to_dict() == {'a1': 200, 'a2': 2}
         with pytest.raises(Exception):
-            assert config.get_int("a") == 1
+            assert conf.get_int("a") == 1
 
         config = loader.load_config_from_dict(dicts)
         assert config is not None
@@ -96,7 +99,3 @@ class TestPyHoconConfig:
         assert config is not None
         assert config.to_dict() == dicts.get("config")
         assert config.get_format() == ConfigFormat.PYHOCON
-
-
-
-

@@ -13,8 +13,6 @@
 # limitations under the License.
 import json
 
-import pytest
-
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.json_config_loader import JsonConfigLoader
 
@@ -30,9 +28,9 @@ class TestJsonConfig:
                 },
                 "b": 1,
                 "c": "hi",
-                "d": [1,2]
+                "d": [1, 2]
             }
-        else:
+        else: # default
             return {
                 "a": {
                     "a1": 2,
@@ -40,7 +38,7 @@ class TestJsonConfig:
                 },
                 "b": 2,
                 "c": "hello",
-                "d": [2,4]
+                "d": [2, 4]
             }
 
     def test_json_loader(self):
@@ -51,7 +49,7 @@ class TestJsonConfig:
                 "a1": 200,
             },
             "c": "hello",
-            "d": [200,400, 500],
+            "d": [200, 400, 500],
             "e1": "Yes",
             "e2": "True",
             "e3": "NO",
@@ -59,39 +57,30 @@ class TestJsonConfig:
 
         config = loader.load_config("test.json", "default_test.json", dicts)
         assert config is not None
-        assert config.get_config("a").get_int("a1") == 200
-        assert config.get_int("b") == 1
-        assert config.get_str("c") == "hello"
-        assert config.get_list("d") == [200,400,500]
-        assert config.get_str("e1") == "Yes"
-        assert config.get_str("e2") == "True"
-        assert config.get_str("e3") == "NO"
-        assert config.get_str("e4") is None
-        assert config.get_bool("e1") is True
-        assert config.get_bool("e2") is True
-        assert config.get_bool("e3") is False
+        conf = config.get_native_conf()
+        assert conf["a"]["a1"] == 200
+        assert conf.get("b") == 1
+        assert conf.get("c") == "hello"
+        assert conf.get("d") == [200, 400, 500]
+        assert conf.get("e1") == "Yes"
+        assert conf.get("e2") == "True"
+        assert conf.get("e3") == "NO"
+        assert conf.get("e4", None) is None
 
         assert config.get_format() == ConfigFormat.JSON
 
-        with pytest.raises(Exception):
-            assert config.get_str("d") == [200,400,500]
+        assert conf.get("d") == [200, 400, 500]
 
-        with pytest.raises(Exception):
-            assert config.get_str("b") == 1
-
-        with pytest.raises(Exception):
-            assert config.get_int("a") == 1
+        assert conf.get("b") == 1
+        assert conf.get("a") == {'a1': 200, "a2": 2}
 
         config = loader.load_config_from_dict(dicts)
+        conf = config.get_native_conf()
         assert config is not None
-        assert config.get_conf() == dicts
+        assert conf == dicts
         assert config.get_format() == ConfigFormat.JSON
 
         config = loader.load_config_from_str(json.dumps(dicts))
         assert config is not None
-        assert config.get_conf() == dicts
+        assert config.get_native_conf() == dicts
         assert config.get_format() == ConfigFormat.JSON
-
-
-
-
