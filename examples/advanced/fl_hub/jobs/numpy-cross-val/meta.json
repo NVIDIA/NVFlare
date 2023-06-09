@@ -1,0 +1,11 @@
+{
+  "name": "numpy-cross-val",
+  "resource_spec": {},
+  "min_clients" : 2,
+  "deploy_map": {
+    "t1_app": ["server"],
+    "t2a_app": ["t1_client_a"],
+    "t2b_app": ["t1_client_b"]
+  },
+  "mandatory_clients": ["t1_client_a", "t1_client_b"]
+}

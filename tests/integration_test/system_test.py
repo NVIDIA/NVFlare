@@ -118,6 +118,7 @@ def setup_and_teardown_system(request):
 
         workspace_root = site_launcher.prepare_workspace()
         print(f"Workspace root is {workspace_root}")
+        print(f"sys.path start is: {sys.path}")
 
         if ha:
             site_launcher.start_overseer()
@@ -165,7 +166,8 @@ def setup_and_teardown_system(request):
             if site_launcher:
                 site_launcher.cleanup()
             cleanup_path(test_temp_dir)
-        sys.path = sys.path[: -len(additional_python_paths)]
+        sys.path = sys.path[: -len(additional_python_paths) or None]
+        print(f"sys.path finish is: {sys.path}")
 
 
 @pytest.mark.xdist_group(name="system_tests_group")

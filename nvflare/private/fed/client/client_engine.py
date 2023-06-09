@@ -21,12 +21,13 @@ import threading
 
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import MachineStatus, WorkspaceConstants
+from nvflare.apis.fl_constant import MachineStatus, SystemComponents, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.utils.network_utils import get_open_ports
 from nvflare.private.defs import ERROR_MSG_PREFIX, ClientStatusKey, EngineConstant
 from nvflare.private.event import fire_event
+from nvflare.private.fed.server.job_meta_validator import JobMetaValidator
 from nvflare.private.fed.utils.app_deployer import AppDeployer
 from nvflare.private.fed.utils.fed_utils import security_close
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
@@ -66,7 +67,14 @@ class ClientEngine(ClientEngineInternalSpec):
         self.admin_agent = None
 
         self.fl_ctx_mgr = FLContextManager(
-            engine=self, identity_name=client_name, job_id="", public_stickers={}, private_stickers={}
+            engine=self,
+            identity_name=client_name,
+            job_id="",
+            public_stickers={},
+            private_stickers={
+                SystemComponents.DEFAULT_APP_DEPLOYER: AppDeployer(),
+                SystemComponents.JOB_META_VALIDATOR: JobMetaValidator(),
+            },
         )
 
         self.status = MachineStatus.STOPPED
@@ -222,12 +230,20 @@ class ClientEngine(ClientEngineInternalSpec):
         return "Restart the client..."
 
     def deploy_app(self, app_name: str, job_id: str, job_meta: dict, client_name: str, app_data) -> str:
-
         workspace = Workspace(root_dir=self.args.workspace, site_name=client_name)
-        app_deployer = AppDeployer(
-            workspace=workspace, job_id=job_id, job_meta=job_meta, app_name=app_name, app_data=app_data
+        app_deployer = self.get_component(SystemComponents.APP_DEPLOYER)
+        if not app_deployer:
+            # use default deployer
+            app_deployer = AppDeployer()
+
+        err = app_deployer.deploy(
+            workspace=workspace,
+            job_id=job_id,
+            job_meta=job_meta,
+            app_name=app_name,
+            app_data=app_data,
+            fl_ctx=self.new_context(),
         )
-        err = app_deployer.deploy()
         if err:
             return f"{ERROR_MSG_PREFIX}: {err}"
 
