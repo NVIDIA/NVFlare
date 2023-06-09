@@ -102,7 +102,7 @@ class ConfigLoader(ABC):
     def load_config(
         self, file_path: str, default_file_path: Optional[str] = None, overwrite_config: Optional[Dict] = None
     ) -> Config:
-        """ configuration from default_file_path will be the default config if specified
+        """configuration from default_file_path will be the default config if specified
             configuration from file_path will be the merge with default config overwrite the same key
             configuration from overwrite_config if provided will be the merge with config overwrite the same key
 
@@ -118,7 +118,7 @@ class ConfigLoader(ABC):
         pass
 
     def load_config_from_str(self, config_str: str) -> Config:
-        """ Load Configuration based on the string representation of the underline configuration
+        """Load Configuration based on the string representation of the underline configuration
             for example, Json String for Jsonformat. python conf string or yaml string presentation
 
         Args:
@@ -130,7 +130,7 @@ class ConfigLoader(ABC):
         raise NotImplementedError
 
     def load_config_from_dict(self, config_dict: dict) -> Config:
-        """ Load Configuration based for given config dict.
+        """Load Configuration based for given config dict.
 
         Args:
             config_dict:
