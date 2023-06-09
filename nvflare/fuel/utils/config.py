@@ -40,11 +40,10 @@ class ConfigFormat(Enum):
 class Config(ABC):
     @abstractmethod
     def get_native_conf(self):
-        """
-            Return the original underline config object representation if you prefer to use it directly
-            Pyhocon → ConfigTree
-            JSON → Dict
-            OMEGACONF → ConfigDict
+        """Return the original underline config object representation if you prefer to use it directly
+           Pyhocon → ConfigTree
+           JSON → Dict
+           OMEGACONF → ConfigDict
 
         Returns: Any,
             return native config objects
@@ -54,8 +53,7 @@ class Config(ABC):
 
     @abstractmethod
     def get_format(self):
-        """
-            returns the current config objects ConfigFormat
+        """returns the current config objects ConfigFormat
         Returns:
             return ConfigFormat
         """
@@ -64,8 +62,7 @@ class Config(ABC):
 
     @abstractmethod
     def get_location(self) -> Optional[str]:
-        """
-           return the file path where this configuration is loaded from
+        """return the file path where this configuration is loaded from
 
         Returns:
             return None if the config is not from file else return file path
@@ -75,8 +72,7 @@ class Config(ABC):
 
     @abstractmethod
     def to_dict(self) -> Dict:
-        """
-            convert underline config object to dictionary
+        """convert underline config object to dictionary
 
         Returns:
             Returns: converted configuration as dict
@@ -86,11 +82,10 @@ class Config(ABC):
 
     @abstractmethod
     def to_conf_str(self, element: Dict) -> str:
-        """
-            convert dict element to the str representation of the underline configuration.
-            For example, for JsonFormat, the method return json string
-            for PyhoconFormat, the method return pyhocon string
-            for OmegaconfFormat, the method returns YAML string representation
+        """convert dict element to the str representation of the underline configuration.
+           For example, for JsonFormat, the method return json string
+           for PyhoconFormat, the method return pyhocon string
+           for OmegaconfFormat, the method returns YAML string representation
 
         Args:
             element: dict
@@ -107,8 +102,7 @@ class ConfigLoader(ABC):
     def load_config(
         self, file_path: str, default_file_path: Optional[str] = None, overwrite_config: Optional[Dict] = None
     ) -> Config:
-        """
-            configuration from default_file_path will be the default config if specified
+        """ configuration from default_file_path will be the default config if specified
             configuration from file_path will be the merge with default config overwrite the same key
             configuration from overwrite_config if provided will be the merge with config overwrite the same key
 
@@ -124,8 +118,7 @@ class ConfigLoader(ABC):
         pass
 
     def load_config_from_str(self, config_str: str) -> Config:
-        """
-            Load Configuration based on the string representation of the underline configuration
+        """ Load Configuration based on the string representation of the underline configuration
             for example, Json String for Jsonformat. python conf string or yaml string presentation
 
         Args:
@@ -137,8 +130,7 @@ class ConfigLoader(ABC):
         raise NotImplementedError
 
     def load_config_from_dict(self, config_dict: dict) -> Config:
-        """
-            Load Configuration based for given config dict.
+        """ Load Configuration based for given config dict.
 
         Args:
             config_dict:
