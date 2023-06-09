@@ -19,7 +19,7 @@ import random
 import threading
 import time
 import uuid
-from typing import Callable, Dict, List, Tuple, Union
+from typing import Dict, List, Tuple, Union
 from urllib.parse import urlparse
 
 from nvflare.fuel.f3.cellnet.connector_manager import ConnectorManager
@@ -37,7 +37,7 @@ from nvflare.fuel.f3.cellnet.defs import (
     ServiceUnavailable,
 )
 from nvflare.fuel.f3.cellnet.fqcn import FQCN, FqcnInfo, same_family
-from nvflare.fuel.f3.cellnet.stream_api import ObjectStreamFuture, StreamFuture
+from nvflare.fuel.f3.cellnet.registry import Callback, Registry
 from nvflare.fuel.f3.cellnet.utils import decode_payload, encode_payload, format_log_message, make_reply, new_message
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.communicator import Communicator, MessageReceiver
@@ -109,46 +109,6 @@ class CellAgent:
 
     def get_fqcn(self):
         return self.info.fqcn
-
-
-class _CB:
-    def __init__(self, cb, args, kwargs):
-        self.cb = cb
-        self.args = args
-        self.kwargs = kwargs
-
-
-class _Registry:
-    def __init__(self):
-        self.reg = {}  # channel/topic => _CB
-
-    @staticmethod
-    def _item_key(channel: str, topic: str) -> str:
-        return f"{channel}:{topic}"
-
-    def set(self, channel: str, topic: str, items):
-        key = self._item_key(channel, topic)
-        self.reg[key] = items
-
-    def append(self, channel: str, topic: str, items):
-        key = self._item_key(channel, topic)
-        item_list = self.reg.get(key)
-        if not item_list:
-            item_list = []
-            self.reg[key] = item_list
-        item_list.append(items)
-
-    def find(self, channel: str, topic: str):
-        items = self.reg.get(self._item_key(channel, topic))
-        if not items:
-            # try topic * in channel
-            items = self.reg.get(self._item_key(channel, "*"))
-
-        if not items:
-            # try topic * in channel *
-            items = self.reg.get(self._item_key("*", "*"))
-
-        return items
 
 
 class _Waiter(threading.Event):
@@ -381,12 +341,12 @@ class Cell(MessageReceiver, EndpointMonitor):
 
         self.communicator.register_message_receiver(app_id=self.APP_ID, receiver=self)
         self.communicator.register_monitor(monitor=self)
-        self.req_reg = _Registry()
-        self.in_req_filter_reg = _Registry()  # for request received
-        self.out_reply_filter_reg = _Registry()  # for reply going out
-        self.out_req_filter_reg = _Registry()  # for request sent
-        self.in_reply_filter_reg = _Registry()  # for reply received
-        self.error_handler_reg = _Registry()
+        self.req_reg = Registry()
+        self.in_req_filter_reg = Registry()  # for request received
+        self.out_reply_filter_reg = Registry()  # for reply going out
+        self.out_req_filter_reg = Registry()  # for request sent
+        self.in_reply_filter_reg = Registry()  # for reply received
+        self.error_handler_reg = Registry()
         self.cell_connected_cb = None
         self.cell_connected_cb_args = None
         self.cell_connected_cb_kwargs = None
@@ -626,7 +586,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                     try:
                         self.communicator.remove_connector(connector.handle)
                         self.communicator.remove_endpoint(cell_name)
-                    except Exception:
+                    except:
                         self.log_error(
                             msg=None, log_text=f"error removing adhoc connector to {cell_name}", log_except=True
                         )
@@ -906,39 +866,39 @@ class Cell(MessageReceiver, EndpointMonitor):
         """
         if not callable(cb):
             raise ValueError(f"specified request_cb {type(cb)} is not callable")
-        self.req_reg.set(channel, topic, _CB(cb, args, kwargs))
+        self.req_reg.set(channel, topic, Callback(cb, args, kwargs))
 
     def add_incoming_request_filter(self, channel: str, topic: str, cb, *args, **kwargs):
         if not callable(cb):
             raise ValueError(f"specified incoming_request_filter {type(cb)} is not callable")
-        self.in_req_filter_reg.append(channel, topic, _CB(cb, args, kwargs))
+        self.in_req_filter_reg.append(channel, topic, Callback(cb, args, kwargs))
 
     def add_outgoing_reply_filter(self, channel: str, topic: str, cb, *args, **kwargs):
         if not callable(cb):
             raise ValueError(f"specified outgoing_reply_filter {type(cb)} is not callable")
-        self.out_reply_filter_reg.append(channel, topic, _CB(cb, args, kwargs))
+        self.out_reply_filter_reg.append(channel, topic, Callback(cb, args, kwargs))
 
     def add_outgoing_request_filter(self, channel: str, topic: str, cb, *args, **kwargs):
         if not callable(cb):
             raise ValueError(f"specified outgoing_request_filter {type(cb)} is not callable")
-        self.out_req_filter_reg.append(channel, topic, _CB(cb, args, kwargs))
+        self.out_req_filter_reg.append(channel, topic, Callback(cb, args, kwargs))
 
     def add_incoming_reply_filter(self, channel: str, topic: str, cb, *args, **kwargs):
         if not callable(cb):
             raise ValueError(f"specified incoming_reply_filter {type(cb)} is not callable")
-        self.in_reply_filter_reg.append(channel, topic, _CB(cb, args, kwargs))
+        self.in_reply_filter_reg.append(channel, topic, Callback(cb, args, kwargs))
 
     def add_error_handler(self, channel: str, topic: str, cb, *args, **kwargs):
         if not callable(cb):
             raise ValueError(f"specified error_handler {type(cb)} is not callable")
-        self.error_handler_reg.set(channel, topic, _CB(cb, args, kwargs))
+        self.error_handler_reg.set(channel, topic, Callback(cb, args, kwargs))
 
     def _filter_outgoing_request(self, channel: str, topic: str, request: Message) -> Union[None, Message]:
         cbs = self.out_req_filter_reg.find(channel, topic)
         if not cbs:
             return None
         for _cb in cbs:
-            assert isinstance(_cb, _CB)
+            assert isinstance(_cb, Callback)
             reply = self._try_cb(request, _cb.cb, *_cb.args, **_cb.kwargs)
             if reply:
                 return reply
@@ -969,7 +929,7 @@ class Cell(MessageReceiver, EndpointMonitor):
             if not ep:
                 return ReturnCode.TARGET_UNREACHABLE, None
             return "", ep
-        except Exception:
+        except:
             self.log_error(msg=for_msg, log_text=f"Error when finding {target_fqcn}", log_except=True)
             return ReturnCode.TARGET_UNREACHABLE, None
 
@@ -1113,7 +1073,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                 self.logger.debug(f"{self.my_info.fqcn}: invoking outgoing request filters")
                 assert isinstance(req_filters, list)
                 for f in req_filters:
-                    assert isinstance(f, _CB)
+                    assert isinstance(f, Callback)
                     r = self._try_cb(req, f.cb, *f.args, **f.kwargs)
                     if r:
                         send_errs[t] = ReturnCode.FILTER_ERROR
@@ -1478,12 +1438,12 @@ class Cell(MessageReceiver, EndpointMonitor):
             self.logger.debug(f"{self.my_info.fqcn}: invoking incoming request filters")
             assert isinstance(req_filters, list)
             for f in req_filters:
-                assert isinstance(f, _CB)
+                assert isinstance(f, Callback)
                 reply = self._try_cb(message, f.cb, *f.args, **f.kwargs)
                 if reply:
                     return reply
 
-        assert isinstance(_cb, _CB)
+        assert isinstance(_cb, Callback)
         self.logger.debug(f"{self.my_info.fqcn}: calling registered request CB")
         cb_start = time.perf_counter()
         reply = self._try_cb(message, _cb.cb, *_cb.args, **_cb.kwargs)
@@ -1571,6 +1531,7 @@ class Cell(MessageReceiver, EndpointMonitor):
         msg_type = message.get_header(MessageHeaderKey.MSG_TYPE, "?")
         dest = message.get_header(MessageHeaderKey.DESTINATION, "")
         origin = message.get_header(MessageHeaderKey.ORIGIN, "")
+        to_cell = message.get_header(MessageHeaderKey.TO_CELL, "")
         type_tag = msg_type
         if dest and origin:
             if dest != self.my_info.fqcn and origin != self.my_info.fqcn:
@@ -1630,7 +1591,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                 self.logger.debug(f"{self.my_info.fqcn}: invoking incoming reply filters")
                 assert isinstance(reply_filters, list)
                 for f in reply_filters:
-                    assert isinstance(f, _CB)
+                    assert isinstance(f, Callback)
                     self._try_cb(message, f.cb, *f.args, **f.kwargs)
 
         for rid in req_ids:
@@ -1863,7 +1824,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                 self.logger.debug(f"{self.my_info.fqcn}: invoking outgoing reply filters")
                 assert isinstance(reply_filters, list)
                 for f in reply_filters:
-                    assert isinstance(f, _CB)
+                    assert isinstance(f, Callback)
                     r = self._try_cb(reply, f.cb, *f.args, **f.kwargs)
                     if r:
                         reply = r
@@ -1972,154 +1933,3 @@ class Cell(MessageReceiver, EndpointMonitor):
             if candidate_info.is_root and not candidate_info.is_on_server:
                 return self.SUB_TYPE_CLIENT
         return self.SUB_TYPE_NONE
-
-    # Stream API
-
-    def send_stream(self, channel: str, topic: str, target: str, message: Message) -> StreamFuture:
-        """
-        Send a byte-stream over a channel/topic asynchronously. The streaming is performed in a different thread.
-        The streamer will read from stream and send the data in chunks till the stream reaches EOF.
-
-        If error is not None, the streaming failed with the exception
-
-        Args:
-            channel: channel for the stream
-            topic: topic for the stream
-            target: destination cell FQCN
-            message: The payload is the stream to send
-
-        Returns: StreamFuture that can be used to check status/progress, or register callbacks.
-            The future result is the number of bytes sent
-
-        """
-        pass
-
-    def register_stream_cb(self, channel: str, topic: str, stream_cb: Callable, *args, **kwargs):
-        """
-        Register a callback for reading stream. The stream_cb must have the following signature,
-            stream_cb(future: StreamFuture, stream: Stream, resume: bool, *args, **kwargs) -> int
-                future: The future represents the ongoing streaming. It's done when streaming is complete.
-                stream: The stream to read the receiving data from
-                resume: True if this is a restarted stream
-                It returns the offset to resume from if this is a restarted stream
-
-        The resume_cb returns the offset to resume from:
-            resume_cb(stream_id: str, *args, **kwargs) -> int
-
-        If None, the stream is not resumable.
-
-        Args:
-            channel: the channel of the request
-            topic: topic of the request
-            stream_cb: The callback to handle the stream. This is called when a stream is started. It also
-                provides restart offset for restarted streams. This CB is invoked in a dedicated thread,
-                and it can block
-            *args: positional args to be passed to the callbacks
-            **kwargs: keyword args to be passed to the callbacks
-
-        """
-        pass
-
-    def send_blob(self, channel: str, topic: str, target: str, message: Message) -> StreamFuture:
-        """
-        Send a BLOB (Binary Large Object) to the target. The payload of message is the BLOB. The BLOB must fit in
-        memory on the receiving end.
-
-        Args:
-            channel: channel for the message
-            topic: topic of the message
-            target: destination cell IDs
-            message: the headers and the blob as payload
-
-        Returns: StreamFuture that can be used to check status/progress and get result
-            The future result is the total number of bytes sent
-
-        """
-        pass
-
-    def register_blob_cb(self, channel: str, topic: str, blob_cb, *args, **kwargs):
-        """
-        Register a callback for receiving the blob. This callback is invoked when the whole
-        blob is received. If streaming fails, the streamer will try again. The failed streaming
-        is ignored.
-
-        The callback must have the following signature,
-            blob_cb(future: StreamFuture, *args, **kwargs)
-
-        The future's result is the final BLOB received
-
-        Args:
-            channel: the channel of the request
-            topic: topic of the request
-            blob_cb: The callback to handle the stream
-        """
-        pass
-
-    def send_file(self, channel: str, topic: str, target: str, message: Message) -> StreamFuture:
-        """
-        Send a file to target using stream API.
-
-        Args:
-            channel: channel for the message
-            topic: topic for the message
-            target: destination cell FQCN
-            message: the headers and the full path of the file to be sent as payload
-
-        Returns: StreamFuture that can be used to check status/progress and get the total bytes sent
-
-        """
-        pass
-
-    def register_file_cb(self, channel: str, topic: str, file_cb, *args, **kwargs):
-        """
-        Register callbacks for file receiving. The callbacks must have the following signatures,
-            file_cb(future: StreamFuture, *args, **kwargs) -> str
-                The future represents the file receiving task and the result is the final file path
-                It returns the full path where the file will be written to
-
-        Args:
-            channel: the channel of the request
-            topic: topic of the request
-            file_cb: This CB is called when file transfer starts
-        """
-        pass
-
-    def send_objects(self, channel: str, topic: str, target: str, message: Message) -> ObjectStreamFuture:
-        """
-        Send a list of objects to the destination. Each object is sent as BLOB, so it must fit in memory
-
-        Args:
-            channel: channel for the message
-            topic: topic of the message
-            target: destination cell IDs
-            message: Headers and the payload which is an iterator that provides next object
-
-        Returns: ObjectStreamFuture that can be used to check status/progress, or register callbacks
-        """
-        pass
-
-    def register_objects_cb(self, channel: str, topic: str, object_stream_cb, object_cb, *args, **kwargs):
-        """
-        Register callback for receiving the object. The callback signature is,
-            objects_stream_cb(future: ObjectStreamFuture, resume: bool, *args, **kwargs) -> int
-                future: It represents the streaming of all objects. An object CB can be registered with the future
-                to receive each object.
-                resume: True if this is a restarted stream
-                This CB returns the index to restart if this is a restarted stream
-
-            object_cb(index: int, message: Message, *args, ** kwargs)
-                index: The index of the object
-                message: The header and payload is the object
-
-            resume_cb(stream_id: str, *args, **kwargs) -> int
-        is received. The index starts from 0. The callback must have the following signature,
-            objects_cb(future: ObjectStreamFuture, index: int, object: Any, headers: Optional[dict], *args, **kwargs)
-            resume_cb(stream_id: str, *args, **kwargs) -> int
-
-        Args:
-            channel: the channel of the request
-            topic: topic of the request
-            object_stream_cb: The callback when an object stream is started
-            object_cb: The callback is invoked when each object is received
-        """
-        pass

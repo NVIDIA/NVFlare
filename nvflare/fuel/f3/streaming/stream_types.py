@@ -13,23 +13,15 @@
 # limitations under the License.
 import logging
 import threading
-import time
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from concurrent.futures import Future
 from typing import Any, Callable, Optional
 
+from nvflare.fuel.f3.connection import BytesAlike
+from nvflare.fuel.f3.streaming.stream_utils import gen_stream_id
+
 log = logging.getLogger(__name__)
-lock = threading.Lock()
-start_time = time.time() * 1000000  # microseconds
-stream_count = 0
-
-
-def gen_stream_id():
-    global lock, stream_count, start_time
-    with lock:
-        stream_count += 1
-    return "SID%16d" % (start_time + stream_count)
 
 
 class StreamError(Exception):
@@ -40,6 +32,8 @@ class StreamError(Exception):
 
 class StreamCancelled(StreamError):
     """Streaming is cancelled by sender"""
+
+    pass
 
 
 class Stream(ABC):
@@ -52,10 +46,10 @@ class Stream(ABC):
             size: The total size of stream. 0 if unknown
             headers: Optional headers to be passed to the receiver
         """
-        self.sid = gen_stream_id()
         self.size = size
         self.pos = 0
         self.headers = headers
+        self.closed = False
 
     def get_size(self) -> int:
         return self.size
@@ -66,11 +60,8 @@ class Stream(ABC):
     def get_headers(self) -> Optional[dict]:
         return self.headers
 
-    def stream_id(self):
-        return self.sid
-
     @abstractmethod
-    def read(self, chunk_size: int) -> bytes:
+    def read(self, chunk_size: int) -> BytesAlike:
         """Read and return up to chunk_size bytes. It can return less but not more than the chunk_size.
         An empty bytes object is returned if the stream reaches the end.
 
@@ -82,10 +73,9 @@ class Stream(ABC):
         """
         pass
 
-    @abstractmethod
     def close(self):
         """Close the stream"""
-        pass
+        self.closed = True
 
     def seek(self, offset: int):
         """Change the stream position to the given byte offset.
@@ -122,15 +112,15 @@ class ObjectIterator(Iterator, ABC):
 
 
 class StreamFuture:
-    """Base future class for all stream calls.
+    """Future class for all stream calls.
 
     Fashioned after concurrent.futures.Future
     """
 
-    def __init__(self, stream_id: str, task: Future, headers: Optional[dict] = None):
+    def __init__(self, stream_id: str, headers: Optional[dict] = None):
         self.stream_id = stream_id
-        self.task = task
         self.headers = headers
+        self.task_future: Optional[Future] = None
         self.waiter = threading.Event()
         self.lock = threading.Lock()
         self.error: Optional[StreamError] = None
@@ -169,7 +159,8 @@ class StreamFuture:
                 return False
 
             self.error = StreamCancelled("Stream is cancelled")
-            self.task.cancel()
+            if self.task_future:
+                self.task_future.cancel()
 
             return True
 
@@ -187,14 +178,14 @@ class StreamFuture:
         with self.lock:
             return self.error or self.waiter.isSet()
 
-    def add_done_callback(self, status_cb: Callable, *args, **kwargs):
+    def add_done_callback(self, done_cb: Callable, *args, **kwargs):
         """Attaches a callable that will be called when the future finishes.
 
         Args:
-            status_cb: A callable that will be called with this future.
+            done_cb: A callable that will be called with this future completes
         """
         with self.lock:
-            self.done_callbacks.append((status_cb, args, kwargs))
+            self.done_callbacks.append((done_cb, args, kwargs))
 
     def result(self, timeout=None) -> Any:
         """Return the result of the call that the future represents.
@@ -258,6 +249,8 @@ class StreamFuture:
         with self.lock:
             self.error = exception
             self.waiter.set()
+            if self.task_future:
+                self.task_future.cancel()
 
         self._invoke_callbacks()
 
@@ -270,12 +263,9 @@ class StreamFuture:
 
 
 class ObjectStreamFuture(StreamFuture):
-    def __init__(self, stream_id: str, task: Future):
-        super().__init__(stream_id, task)
+    def __init__(self, stream_id: str, headers: Optional[dict] = None):
+        super().__init__(stream_id, headers)
         self.index = 0
-        self.object_cb = None
-        self.cb_args = None
-        self.cb_kwargs = None
 
     def get_index(self) -> int:
         """Current object index, which is only available for ObjectStream"""
@@ -284,3 +274,6 @@ class ObjectStreamFuture(StreamFuture):
     def set_index(self, index: int):
         """Set current object index"""
         self.index = index
+
+    def get_progress(self):
+        return self.index
