@@ -470,7 +470,7 @@ class Session(SessionSpec):
         if target_type not in _VALID_TARGET_TYPES:
             raise ValueError(f"invalid target_type {target_type} - must be in {_VALID_TARGET_TYPES}")
 
-        parts = [AdminCommandNames.CHECK_STATUS, target_type]
+        parts = [AdminCommandNames.RESTART, target_type]
         if target_type == TargetType.CLIENT and client_names:
             processed_targets_str = process_targets_into_str(client_names)
             parts.append(processed_targets_str)
