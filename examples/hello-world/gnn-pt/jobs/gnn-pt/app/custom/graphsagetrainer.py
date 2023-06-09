@@ -50,8 +50,8 @@ class GraphSageTrainer(Executor):
         exclude_vars=None,
         pre_train_task_name=AppConstants.TASK_GET_WEIGHTS,
     ):
-        """Cifar10 Trainer handles train and submit_model tasks. During train_task, it trains a
-        simple network on CIFAR10 dataset. For submit_model task, it sends the locally trained model
+        """graphsage Trainer handles train and submit_model tasks. During train_task, it trains a
+        simple network on graphsage dataset. For submit_model task, it sends the locally trained model
         (if present) to the server.
 
         Args:
