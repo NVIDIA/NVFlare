@@ -48,7 +48,7 @@ class JsonConfigLoader(ConfigLoader):
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def load_config(
-            self, file_path: str, default_file_path: Optional[str] = None, overwrite_config: Optional[Dict] = None
+        self, file_path: str, default_file_path: Optional[str] = None, overwrite_config: Optional[Dict] = None
     ) -> Config:
 
         conf_dict = self._from_file(file_path)
