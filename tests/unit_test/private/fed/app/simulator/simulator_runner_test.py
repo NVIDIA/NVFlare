@@ -117,5 +117,3 @@ class TestSimulatorRunner:
     def test_split_gpus_fail(self, gpus):
         with pytest.raises(ValueError):
             split_gpus(gpus)
-
-
