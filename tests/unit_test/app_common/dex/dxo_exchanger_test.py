@@ -18,7 +18,7 @@ import numpy as np
 import pytest
 
 from nvflare.apis.dxo import DXO, DataKind
-from nvflare.app_common.abstract.fl_model import FLModel, TransferType
+from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.dex.dxo_exchanger import DXOExchanger
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.fuel.utils.pipe.pickle_file_accessor import PickleFileAccessor
@@ -58,7 +58,7 @@ class DXOExchangerTest:
     @pytest.mark.parametrize("weights", TEST_CASES)
     def test_put_get_fl_model(self, weights, get_file_accessor):
         data_id = "test_obj"
-        fl_model = FLModel(model=weights, transfer_type=TransferType.MODEL)
+        fl_model = FLModel(params=weights, params_type=ParamsType.FULL)
         dxo = FLModelUtils.to_dxo(fl_model)
         with tempfile.TemporaryDirectory() as root_dir:
             x_dxi = DXOExchanger(pipe_role="x")
@@ -68,8 +68,8 @@ class DXOExchangerTest:
             y_dxi.initialize(root_dir, get_file_accessor)
             result_dxo = y_dxi.get(data_id)
             result = FLModelUtils.from_dxo(result_dxo)
-            for k, v in result.model.items():
-                np.testing.assert_array_equal(weights[k], v)
+            for k, v in result.params.items():
+                np.testing.assert_array_equal(fl_model.params[k], v)
             x_dxi.finalize()
             y_dxi.finalize()
 
