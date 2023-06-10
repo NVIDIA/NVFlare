@@ -47,6 +47,7 @@ class TestPyHoconConfig:
 
     def test_config_loader(self):
         loader = PyhoconLoader()
+        assert loader.get_format() == ConfigFormat.PYHOCON
         loader._from_file = self.return_conf
         dicts = {
             "config": {
@@ -61,35 +62,29 @@ class TestPyHoconConfig:
             }
         }
 
-        config = loader.load_config("test.conf", "default_test.conf", dicts)
+        config = loader.load_config("test.conf")
+        assert config.get_format() == ConfigFormat.PYHOCON
         conf = config.get_native_conf()
         assert config is not None
-        assert conf.get_config("a").get_int("a1") == 200
-        assert conf.get_int("a.a1") == 200
+        assert conf.get_config("a").get_int("a1") == 1
+        assert conf.get_int("a.a1") == 1
         assert conf.get_int("b") == 1
-        assert conf.get_string("c") == "hello"
-        assert conf.get_list("d") == [200, 400, 500]
-        assert conf.get_string("e1") == "Yes"
-        assert conf.get_string("e2") == "True"
-        assert conf.get_string("e3") == "NO"
+        assert conf.get_string("c") == "hi"
+        assert conf.get_list("d") == [1, 2]
         assert conf.get_string("e4", None) is None
 
-        assert config.get_format() == ConfigFormat.PYHOCON
-
-        # with pytest.raises(Exception):
-        assert conf.get("d") == [200, 400, 500]
         with pytest.raises(Exception):
-            assert conf.get_string("d") == [200, 400, 500]
+            assert conf.get_string("d") == [1, 2]
 
-        assert conf.get("b") == 1
         with pytest.raises(Exception):
-            assert conf.get_string("b") == 1
+            assert conf.get_string("d") == 1
 
-        assert PyhoconConfig(CF.from_dict(conf.get("a"))).to_dict() == {"a1": 200, "a2": 2}
+        assert PyhoconConfig(CF.from_dict(conf.get("a"))).to_dict() == {"a1": 1, "a2": 2}
         with pytest.raises(Exception):
             assert conf.get_int("a") == 1
 
         config = loader.load_config_from_dict(dicts)
+        assert config.get_format() == ConfigFormat.PYHOCON
         assert config is not None
         assert config.to_dict() == dicts.get("config")
         assert config.get_format() == ConfigFormat.PYHOCON

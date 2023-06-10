@@ -23,15 +23,12 @@ from nvflare.fuel.utils.config import Config, ConfigFormat, ConfigLoader
 
 class PyhoconConfig(Config):
     def __init__(self, conf: ConfigTree, file_path: Optional[str] = None):
+        super(PyhoconConfig, self).__init__(ConfigFormat.PYHOCON)
         self.conf = conf
-        self.format = ConfigFormat.PYHOCON
         self.file_path = file_path
 
     def get_native_conf(self):
         return self.conf
-
-    def get_format(self):
-        return self.format
 
     def get_location(self) -> Optional[str]:
         return self.file_path
@@ -68,18 +65,10 @@ class PyhoconConfig(Config):
 
 class PyhoconLoader(ConfigLoader):
     def __init__(self):
-        self.format = ConfigFormat.PYHOCON
+        super(PyhoconLoader, self).__init__(ConfigFormat.PYHOCON)
 
-    def load_config(
-        self, file_path: str, default_file_path: Optional[str] = None, overwrite_config: Optional[Dict] = None
-    ) -> Config:
-
+    def load_config(self, file_path: str) -> Config:
         config: ConfigTree = self._from_file(file_path)
-        if default_file_path:
-            config = config.with_fallback(self._from_file(default_file_path))
-        if overwrite_config:
-            config = CF.from_dict(overwrite_config).with_fallback(config)
-
         conf: ConfigTree = config.get_config("config")
         return PyhoconConfig(conf, file_path)
 

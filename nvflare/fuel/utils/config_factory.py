@@ -25,6 +25,11 @@ from nvflare.fuel.utils.pyhocon_loader import PyhoconLoader
 
 class ConfigFactory:
     logger = logging.getLogger(__qualname__)
+    _fmt2Loader = {
+        ConfigFormat.JSON: JsonConfigLoader,
+        ConfigFormat.PYHOCON: PyhoconLoader,
+        ConfigFormat.OMEGACONF: OmegaConfLoader,
+    }
 
     @staticmethod
     def search_config_format(
@@ -54,12 +59,11 @@ class ConfigFactory:
         ext2fmt_map = ConfigFormat.config_ext_formats()
         for search_dir in search_dirs:
             logger.debug(f"search file:{file_basename} basename, search dirs = {search_dirs}")
-            for name in os.listdir(search_dir):
-                for ext in ext2fmt_map:
-                    fmt = ext2fmt_map[ext]
-                    file = f"{file_basename}{ext}"
-                    if file == name:
-                        return file
+            for ext in ext2fmt_map:
+                fmt = ext2fmt_map[ext]
+                file = os.path.join(search_dir, file_basename, ext)
+                if os.path.isfile:
+                    return fmt, file
 
         return None, None
 
@@ -101,13 +105,4 @@ class ConfigFactory:
         """
         if config_format is None:
             return None
-        if config_format == ConfigFormat.JSON:
-            return JsonConfigLoader()
-        elif config_format == ConfigFormat.OMEGACONF:
-            return OmegaConfLoader()
-        elif config_format == ConfigFormat.PYHOCON:
-            return PyhoconLoader()
-        else:
-            raise NotImplementedError(
-                f"configuration format {config_format.name} with file ext {config_format.value} is not implemented"
-            )
+        return ConfigFactory._fmt2Loader.get(config_format)

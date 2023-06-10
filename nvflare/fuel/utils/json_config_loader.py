@@ -22,15 +22,12 @@ from nvflare.security.logging import secure_format_exception
 
 class JsonConfig(Config):
     def __init__(self, conf: Dict, file_path: Optional[str] = None):
+        super(JsonConfig, self).__init__(ConfigFormat.JSON)
         self.conf = conf
-        self.format = ConfigFormat.JSON
         self.file_path = file_path
 
     def get_native_conf(self):
         return self.conf
-
-    def get_format(self):
-        return self.format
 
     def get_location(self) -> Optional[str]:
         return self.file_path
@@ -44,20 +41,11 @@ class JsonConfig(Config):
 
 class JsonConfigLoader(ConfigLoader):
     def __init__(self):
-        self.format = ConfigFormat.JSON
+        super(JsonConfigLoader, self).__init__(fmt=ConfigFormat.JSON)
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def load_config(
-        self, file_path: str, default_file_path: Optional[str] = None, overwrite_config: Optional[Dict] = None
-    ) -> Config:
-
+    def load_config(self, file_path: str) -> Config:
         conf_dict = self._from_file(file_path)
-        if default_file_path:
-            default_conf_dict = self._from_file(default_file_path)
-            self._dict_merge(default_conf_dict, conf_dict)
-        if overwrite_config:
-            self._dict_merge(conf_dict, overwrite_config)
-
         return JsonConfig(conf_dict, file_path)
 
     def load_config_from_str(self, config_str: str) -> Config:
@@ -78,10 +66,3 @@ class JsonConfigLoader(ConfigLoader):
             except Exception as e:
                 self.logger.error("Error loading config file {}: {}".format(path, secure_format_exception(e)))
                 raise e
-
-    def _dict_merge(self, target_dict: dict, overwrite_dict: dict):
-        for k, v in overwrite_dict.items():
-            if k in target_dict and isinstance(target_dict[k], dict) and isinstance(overwrite_dict[k], dict):
-                self._dict_merge(target_dict[k], overwrite_dict[k])
-            else:
-                target_dict[k] = overwrite_dict[k]

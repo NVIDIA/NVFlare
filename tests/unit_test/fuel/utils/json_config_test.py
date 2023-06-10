@@ -42,6 +42,7 @@ class TestJsonConfig:
 
     def test_json_loader(self):
         loader = JsonConfigLoader()
+        assert loader.get_format() == ConfigFormat.JSON
         loader._from_file = self.return_dict
         dicts = {
             "a": {
@@ -54,27 +55,23 @@ class TestJsonConfig:
             "e3": "NO",
         }
 
-        config = loader.load_config("test.json", "default_test.json", dicts)
+        config = loader.load_config("test.json")
         assert config is not None
         conf = config.get_native_conf()
-        assert conf["a"]["a1"] == 200
+        assert conf["a"]["a1"] == 1
         assert conf.get("b") == 1
-        assert conf.get("c") == "hello"
-        assert conf.get("d") == [200, 400, 500]
-        assert conf.get("e1") == "Yes"
-        assert conf.get("e2") == "True"
-        assert conf.get("e3") == "NO"
+        assert conf.get("c") == "hi"
+        assert conf.get("d") == [1, 2]
         assert conf.get("e4", None) is None
-
         assert config.get_format() == ConfigFormat.JSON
 
-        assert conf.get("d") == [200, 400, 500]
-
-        assert conf.get("b") == 1
-        assert conf.get("a") == {"a1": 200, "a2": 2}
+        assert conf.get("d") == [1, 2]
+        assert conf.get("a") == {"a1": 1, "a2": 2}
 
         config = loader.load_config_from_dict(dicts)
+        assert config.get_format() == ConfigFormat.JSON
         conf = config.get_native_conf()
+
         assert config is not None
         assert conf == dicts
         assert config.get_format() == ConfigFormat.JSON

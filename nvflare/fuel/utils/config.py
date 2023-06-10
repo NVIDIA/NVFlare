@@ -38,6 +38,16 @@ class ConfigFormat(Enum):
 
 
 class Config(ABC):
+    def __init__(self, fmt: ConfigFormat):
+        self.format = fmt
+
+    def get_format(self) -> ConfigFormat:
+        """returns the current config objects ConfigFormat
+        Returns:
+            return ConfigFormat
+        """
+        return self.format
+
     @abstractmethod
     def get_native_conf(self):
         """Return the original underline config object representation if you prefer to use it directly
@@ -47,15 +57,6 @@ class Config(ABC):
 
         Returns: Any,
             return native config objects
-        """
-
-        pass
-
-    @abstractmethod
-    def get_format(self):
-        """returns the current config objects ConfigFormat
-        Returns:
-            return ConfigFormat
         """
 
         pass
@@ -98,19 +99,21 @@ class Config(ABC):
 
 
 class ConfigLoader(ABC):
-    @abstractmethod
-    def load_config(
-        self, file_path: str, default_file_path: Optional[str] = None, overwrite_config: Optional[Dict] = None
-    ) -> Config:
-        """configuration from default_file_path will be the default config if specified
-            configuration from file_path will be the merge with default config overwrite the same key
-            configuration from overwrite_config if provided will be the merge with config overwrite the same key
+    def __init__(self, fmt: ConfigFormat):
+        self.format = fmt
 
+    def get_format(self) -> ConfigFormat:
+        """returns the current configLoader's ConfigFormat
+        Returns:
+            return ConfigFormat
+        """
+        return self.format
+
+    @abstractmethod
+    def load_config(self, file_path: str) -> Config:
+        """load configuration from config file: file_path
         Args:
             file_path: file path for configuration to be loaded
-            default_file_path: file path for default configuration
-            overwrite_config: dict config that will  overwrite the final config if provided
-
         Returns:
             return Config
         """

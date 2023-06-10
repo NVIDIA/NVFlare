@@ -11,18 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Dict, Optional
 
 from nvflare.fuel.utils.config import Config, ConfigFormat, ConfigLoader
 
 
 class OmegaConfLoader(ConfigLoader):
     def __init__(self):
-        self.format = ConfigFormat.OMEGACONF
+        super(OmegaConfLoader, self).__init__(ConfigFormat.OMEGACONF)
 
-    def load_config(
-        self, file_path: str, default_file_path: Optional[str] = None, overwrite_config: Optional[Dict] = None
-    ) -> Config:
+    def load_config(self, file_path: str) -> Config:
         raise NotImplementedError
 
     def load_config_from_str(self, config_str: str) -> Config:
