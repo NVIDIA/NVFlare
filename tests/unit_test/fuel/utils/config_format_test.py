@@ -16,17 +16,15 @@ from nvflare.fuel.utils.config import ConfigFormat
 
 
 class TestConfigFormat:
-
     def test_config_exts(self):
         exts2fmt_map = ConfigFormat.config_ext_formats()
-        assert (exts2fmt_map.get(".json") == ConfigFormat.JSON)
-        assert (exts2fmt_map.get(".conf") == ConfigFormat.PYHOCON)
-        assert (exts2fmt_map.get(".yml") == ConfigFormat.OMEGACONF)
-        assert (exts2fmt_map.get( ".json.default") == ConfigFormat.JSON)
-        assert (exts2fmt_map.get( ".conf.default") == ConfigFormat.PYHOCON)
-        assert (exts2fmt_map.get( ".yml.default") == ConfigFormat.OMEGACONF)
+        assert exts2fmt_map.get(".json") == ConfigFormat.JSON
+        assert exts2fmt_map.get(".conf") == ConfigFormat.PYHOCON
+        assert exts2fmt_map.get(".yml") == ConfigFormat.OMEGACONF
+        assert exts2fmt_map.get(".json.default") == ConfigFormat.JSON
+        assert exts2fmt_map.get(".conf.default") == ConfigFormat.PYHOCON
+        assert exts2fmt_map.get(".yml.default") == ConfigFormat.OMEGACONF
 
     def test_config_exts2(self):
         exts2fmt_map = ConfigFormat.config_ext_formats()
         assert "|".join(exts2fmt_map.keys()) == ".json|.conf|.yml|.json.default|.conf.default|.yml.default"
-

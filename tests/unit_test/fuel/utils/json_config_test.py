@@ -18,7 +18,6 @@ from nvflare.fuel.utils.json_config_loader import JsonConfigLoader
 
 
 class TestJsonConfig:
-
     def return_dict(self, file_name):
         if file_name == "test.json":
             return {
@@ -28,9 +27,9 @@ class TestJsonConfig:
                 },
                 "b": 1,
                 "c": "hi",
-                "d": [1, 2]
+                "d": [1, 2],
             }
-        else: # default
+        else:  # default
             return {
                 "a": {
                     "a1": 2,
@@ -38,7 +37,7 @@ class TestJsonConfig:
                 },
                 "b": 2,
                 "c": "hello",
-                "d": [2, 4]
+                "d": [2, 4],
             }
 
     def test_json_loader(self):
@@ -72,7 +71,7 @@ class TestJsonConfig:
         assert conf.get("d") == [200, 400, 500]
 
         assert conf.get("b") == 1
-        assert conf.get("a") == {'a1': 200, "a2": 2}
+        assert conf.get("a") == {"a1": 200, "a2": 2}
 
         config = loader.load_config_from_dict(dicts)
         conf = config.get_native_conf()

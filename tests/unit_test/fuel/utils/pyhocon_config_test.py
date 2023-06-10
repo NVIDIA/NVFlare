@@ -17,11 +17,10 @@ import pytest
 from pyhocon import ConfigFactory as CF
 
 from nvflare.fuel.utils.config import ConfigFormat
-from nvflare.fuel.utils.pyhocon_loader import PyhoconLoader, PyhoconConfig
+from nvflare.fuel.utils.pyhocon_loader import PyhoconConfig, PyhoconLoader
 
 
 class TestPyHoconConfig:
-
     def return_conf(self, file_name):
         if file_name == "test.conf":
             x = """config {
@@ -86,7 +85,7 @@ class TestPyHoconConfig:
         with pytest.raises(Exception):
             assert conf.get_string("b") == 1
 
-        assert PyhoconConfig(CF.from_dict(conf.get("a"))).to_dict() == {'a1': 200, 'a2': 2}
+        assert PyhoconConfig(CF.from_dict(conf.get("a"))).to_dict() == {"a1": 200, "a2": 2}
         with pytest.raises(Exception):
             assert conf.get_int("a") == 1
 
