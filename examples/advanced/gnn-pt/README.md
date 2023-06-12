@@ -1,4 +1,4 @@
-# Hello PyTorch
+# GraphSAGE with PyTorch and PyG
 
 Example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) to train an image classifier
 using federated averaging ([FedAvg](https://arxiv.org/abs/1602.05629))
