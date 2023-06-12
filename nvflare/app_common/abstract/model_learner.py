@@ -14,12 +14,12 @@
 
 from typing import Any, Union
 
-from nvflare.apis.dxo import DXO
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
+from nvflare.app_common.abstract.fl_model import FLModel
 
 
-class Learner(FLComponent):
+class ModelLearner(FLComponent):
 
     STATE = None
 
@@ -175,18 +175,18 @@ class Learner(FLComponent):
         """
         pass
 
-    def train(self, dxo: DXO) -> Union[str, DXO]:
+    def train(self, model: FLModel) -> Union[str, FLModel]:
         """Called by the framework to perform training. Can be called many times during the lifetime of the Learner.
 
         Args:
-            dxo: the training input data (e.g. model weights)
+            model: the training input model
 
-        Returns: train result as a DXO if successful; or return code as str if failed.
+        Returns: train result as a FLModel if successful; or return code as str if failed.
 
         """
         pass
 
-    def get_model(self, model_name: str) -> Union[str, DXO]:
+    def get_model(self, model_name: str) -> Union[str, FLModel]:
         """Called by the framework to return the trained model from the Learner.
 
         Args:
@@ -197,22 +197,22 @@ class Learner(FLComponent):
         """
         pass
 
-    def validate(self, dxo: DXO) -> Union[str, DXO]:
+    def validate(self, model: FLModel) -> Union[str, FLModel]:
         """Called by the framework to validate the model with the specified weights in dxo
 
         Args:
-            dxo: the DXO object that contains model weights
+            model: the FLModel object that contains model weights to be validated
 
-        Returns: validation metrics in DXO if successful; or return code if failed.
+        Returns: validation metrics in FLModel if successful; or return code if failed.
 
         """
         pass
 
-    def configure(self, dxo: DXO):
-        """Called by the framework to configure the Learner with the parameters in the DXO
+    def configure(self, model: FLModel):
+        """Called by the framework to configure the Learner with the config info in the model
 
         Args:
-            dxo: the object that contains config parameters
+            model: the object that contains config parameters
 
         Returns: None
 

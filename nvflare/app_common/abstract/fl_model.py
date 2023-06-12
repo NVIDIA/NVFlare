@@ -15,6 +15,8 @@
 from enum import Enum
 from typing import Any, Dict, Optional
 
+from nvflare.fuel.utils.validation_utils import check_object_type
+
 
 class ParamsType(str, Enum):
     FULL = "FULL"
@@ -76,6 +78,11 @@ class FLModel:
         self.client_weights = client_weights
         self.current_round = current_round
         self.total_rounds = total_rounds
+
+        if meta is not None:
+            check_object_type("meta", meta, dict)
+        else:
+            meta = {}
         self.meta = meta
 
     @staticmethod

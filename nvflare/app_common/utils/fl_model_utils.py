@@ -12,10 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Any, Optional
+
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.fl_model import FLModel, FLModelConst, ParamsType
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.fuel.utils.validation_utils import check_object_type
 
 MODEL_ATTRS = [
     FLModelConst.PARAMS_TYPE,
@@ -138,3 +141,20 @@ class FLModelUtils:
             if value is not None:
                 kwargs[attr] = value
         return FLModel(**kwargs)
+
+    @staticmethod
+    def get_meta_prop(model: FLModel, key: str, default=None):
+        check_object_type("model", model, FLModel)
+        if not model.meta:
+            return default
+        else:
+            return model.meta.get(key, default)
+
+    @staticmethod
+    def set_meta_prop(model: FLModel, key: str, value: Any):
+        check_object_type("model", model, FLModel)
+        model.meta[key] = value
+
+    @staticmethod
+    def get_configs(model: FLModel) -> Optional[dict]:
+        return FLModelUtils.get_meta_prop(model, MetaKey.CONFIGS)

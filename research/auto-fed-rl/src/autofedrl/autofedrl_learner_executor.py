@@ -17,7 +17,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
-from nvflare.app_common.executors.learner2_executor import LearnerExecutor
+from nvflare.app_common.executors.learner_executor import LearnerExecutor
 from nvflare.security.logging import secure_format_exception
 
 from .autofedrl_constants import AutoFedRLConstants
@@ -54,10 +54,28 @@ class AutoFedRLLearnerExecutor(LearnerExecutor):
         self.log_info(fl_ctx, f"Client trainer got task: {task_name}")
 
         try:
-            if task_name == self.validate_for_search_task:
-                shareable.set_header(AppConstants.VALIDATE_TYPE, AutoFedRLConstants.MODEL_VALIDATE_FOR_SEARCH)
-            return super().execute(task_name, shareable, fl_ctx, abort_signal)
+            if task_name == self.train_task:
+                return self.train(shareable, fl_ctx, abort_signal)
+            elif task_name == self.submit_model_task:
+                return self.submit_model(shareable, fl_ctx)
+            elif task_name == self.validate_task:
+                return self.validate(shareable, fl_ctx, abort_signal)
+            elif task_name == self.validate_for_search_task:
+                return self.validate_for_search(shareable, fl_ctx, abort_signal)
+            else:
+                self.log_error(fl_ctx, f"Could not handle task: {task_name}")
+                return make_reply(ReturnCode.TASK_UNKNOWN)
         except Exception as e:
             # Task execution error, return EXECUTION_EXCEPTION Shareable
             self.log_exception(fl_ctx, f"learner execute exception: {secure_format_exception(e)}")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
+
+    def validate_for_search(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
+        self.log_debug(fl_ctx, f"validate for search abort_signal {abort_signal.triggered}")
+
+        shareable.set_header(AppConstants.VALIDATE_TYPE, AutoFedRLConstants.MODEL_VALIDATE_FOR_SEARCH)
+        validate_result: Shareable = self.learner.validate(shareable, fl_ctx, abort_signal)
+        if validate_result and isinstance(validate_result, Shareable):
+            return validate_result
+        else:
+            return make_reply(ReturnCode.EMPTY_RESULT)

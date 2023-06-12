@@ -13,19 +13,22 @@
 # limitations under the License.
 import threading
 
-from nvflare.apis.dxo import DXO, MetaKey, from_shareable
+from nvflare.apis.dxo import MetaKey
 from nvflare.apis.event_type import EventType
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
-from nvflare.app_common.abstract.learner2 import Learner
+from nvflare.app_common.abstract.fl_model import FLModel
+from nvflare.app_common.abstract.model_learner import ModelLearner
 from nvflare.app_common.app_constant import AppConstants, ValidateType
+from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+from nvflare.fuel.utils.validation_utils import check_object_type
 from nvflare.security.logging import secure_format_exception
 
 
-class LearnerExecutor(Executor):
+class ModelLearnerExecutor(Executor):
     def __init__(
         self,
         learner_id,
@@ -82,9 +85,7 @@ class LearnerExecutor(Executor):
         if self.learner:
             self.learner_name = self.learner.__class__.__name__
 
-        if not isinstance(self.learner, Learner):
-            raise TypeError(f"learner must be Learner type, but got: {type(self.learner)}")
-
+        check_object_type("learner", self.learner, ModelLearner)
         self.log_info(fl_ctx, f"Got learner: {self.learner_name}")
 
     def initialize(self, fl_ctx: FLContext):
@@ -123,7 +124,7 @@ class LearnerExecutor(Executor):
             return make_reply(ReturnCode.TASK_UNKNOWN)
 
     @staticmethod
-    def _setup_learner(learner: Learner, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal):
+    def _setup_learner(learner: ModelLearner, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal):
         learner.shareable = shareable
         learner.fl_ctx = fl_ctx
         learner.abort_signal = abort_signal
@@ -147,14 +148,14 @@ class LearnerExecutor(Executor):
 
     def train(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
         try:
-            dxo = from_shareable(shareable)
+            shareable.set_header(AppConstants.VALIDATE_TYPE, ValidateType.BEFORE_TRAIN_VALIDATE)
+            model = FLModelUtils.from_shareable(shareable)
         except ValueError:
             self.log_error(fl_ctx, "request does not contain DXO")
             return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
-        shareable.set_header(AppConstants.VALIDATE_TYPE, ValidateType.BEFORE_TRAIN_VALIDATE)
         try:
-            val_result = self.learner.validate(dxo)
+            val_result = self.learner.validate(model)
         except Exception as e:
             self.log_exception(
                 fl_ctx, f"Learner {self.learner_name} failed to pretrain validate: {secure_format_exception(e)}"
@@ -166,15 +167,22 @@ class LearnerExecutor(Executor):
             self.log_warning(fl_ctx, f"Learner {self.learner_name}: pretrain validate failed: {val_result}")
             val_result = None
 
-        if val_result and not isinstance(val_result, DXO):
-            self.log_warning(
-                fl_ctx,
-                f"Learner {self.learner_name}: pretrain validate: expect DXO but got {type(val_result)}",
-            )
-            val_result = None
+        if val_result:
+            if not isinstance(val_result, FLModel):
+                self.log_warning(
+                    fl_ctx,
+                    f"Learner {self.learner_name}: pretrain validate: expect FLModel but got {type(val_result)}",
+                )
+                val_result = None
+            elif not val_result.metrics:
+                self.log_warning(
+                    fl_ctx,
+                    f"Learner {self.learner_name}: pretrain validate: no metrics",
+                )
+                val_result = None
 
         try:
-            train_result = self.learner.train(dxo)
+            train_result = self.learner.train(model)
         except Exception as e:
             self.log_exception(fl_ctx, f"Learner {self.learner_name} failed to train: {secure_format_exception(e)}")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
@@ -183,17 +191,23 @@ class LearnerExecutor(Executor):
             # this is an error code!
             return make_reply(train_result)
 
-        if not isinstance(train_result, DXO):
+        if not isinstance(train_result, FLModel):
             self.log_error(
-                fl_ctx, f"Learner {self.learner_name}: bad result from train: expect DXO but got {type(train_result)}"
+                fl_ctx,
+                f"Learner {self.learner_name}: bad result from train: expect FLModel but got {type(train_result)}",
             )
             return make_reply(ReturnCode.EMPTY_RESULT)
 
         # if the learner returned the valid BEFORE_TRAIN_VALIDATE result, set the INITIAL_METRICS in
         # the train result, which can be used for best model selection.
         if val_result:
-            train_result.meta[MetaKey.INITIAL_METRICS] = val_result.data.get(MetaKey.INITIAL_METRICS, 0)
-        return train_result.to_shareable()
+            FLModelUtils.set_meta_prop(
+                model=train_result,
+                key=MetaKey.INITIAL_METRICS,
+                value=val_result.metrics,
+            )
+
+        return FLModelUtils.to_shareable(train_result)
 
     def submit_model(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
         model_name = shareable.get_header(AppConstants.SUBMIT_MODEL_NAME)
@@ -207,8 +221,8 @@ class LearnerExecutor(Executor):
             self.log_error(fl_ctx, f"Learner {self.learner_name} failed to get_model: {result}")
             return make_reply(result)
 
-        if isinstance(result, DXO):
-            return result.to_shareable()
+        if isinstance(result, FLModel):
+            return FLModelUtils.to_shareable(result)
         else:
             self.log_error(
                 fl_ctx,
@@ -218,13 +232,13 @@ class LearnerExecutor(Executor):
 
     def validate(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
         try:
-            dxo = from_shareable(shareable)
+            model = FLModelUtils.from_shareable(shareable)
         except ValueError:
-            self.log_error(fl_ctx, "request does not contain DXO")
+            self.log_error(fl_ctx, "request does not contain valid model")
             return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
         try:
-            result = self.learner.validate(dxo)
+            result = self.learner.validate(model)
         except Exception as e:
             self.log_exception(fl_ctx, f"Learner {self.learner_name} failed to validate: {secure_format_exception(e)}")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
@@ -233,24 +247,24 @@ class LearnerExecutor(Executor):
             self.log_error(fl_ctx, f"Learner {self.learner_name} failed to validate: {result}")
             return make_reply(result)
 
-        if isinstance(result, DXO):
-            return result.to_shareable()
+        if isinstance(result, FLModel):
+            return FLModelUtils.to_shareable(result)
         else:
             self.log_error(
-                fl_ctx, f"Learner {self.learner_name}: bad result from validate: expect DXO but got {type(result)}"
+                fl_ctx, f"Learner {self.learner_name}: bad result from validate: expect FLModel but got {type(result)}"
             )
             return make_reply(ReturnCode.EMPTY_RESULT)
 
     def configure(self, shareable: Shareable, fl_ctx: FLContext) -> Shareable:
         try:
-            dxo = from_shareable(shareable)
+            model = FLModelUtils.from_shareable(shareable)
         except ValueError:
-            self.log_error(fl_ctx, "request does not contain DXO")
+            self.log_error(fl_ctx, "request does not contain valid model data")
             return make_reply(ReturnCode.BAD_REQUEST_DATA)
 
         rc = ReturnCode.OK
         try:
-            self.learner.configure(dxo)
+            self.learner.configure(model)
         except Exception as e:
             self.log_exception(fl_ctx, f"Learner {self.learner_name} failed to configure: {secure_format_exception(e)}")
             rc = ReturnCode.EXECUTION_EXCEPTION
