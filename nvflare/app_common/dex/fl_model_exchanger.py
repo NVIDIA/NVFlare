@@ -12,18 +12,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional
+from typing import Optional, Tuple
 
 from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.dex.dxo_exchanger import DXOExchanger
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 
 
-class FLModelExchanger(DXOExchanger):
-    def get_model(self, data_id: str, timeout: Optional[float] = None) -> FLModel:
-        dxo = self.get(data_id, timeout)
+class FLModelExchanger:
+    def __init__(self, exchanger: DXOExchanger):
+        self.exchanger = exchanger
+
+    def put_request(self, model: FLModel, timeout: Optional[float] = None) -> str:
+        dxo = FLModelUtils.to_dxo(model)
+        return self.exchanger.put_request(dxo, timeout)
+
+    def get_request(self, timeout: Optional[float] = None) -> Tuple[FLModel, str]:
+        dxo, req_id = self.exchanger.get_request(timeout=timeout)
+        return FLModelUtils.from_dxo(dxo), req_id
+
+    def get_reply(self, req_msg_id: str, timeout: Optional[float] = None) -> FLModel:
+        dxo = self.exchanger.get_reply(req_msg_id, timeout)
         return FLModelUtils.from_dxo(dxo)
 
-    def put_model(self, data_id: str, model: FLModel):
+    def put_reply(self, model: FLModel, req_id: str, timeout: Optional[float] = None):
         dxo = FLModelUtils.to_dxo(model)
-        self.put(data_id, dxo)
+        return self.exchanger.put_reply(dxo, req_id, timeout)
