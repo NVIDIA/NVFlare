@@ -32,6 +32,25 @@ from nvflare.security.logging import secure_format_exception
 log = logging.getLogger(__name__)
 _running_instances = weakref.WeakSet()
 driver_mgr = DriverManager()
+driver_loaded = False
+
+
+def load_comm_drivers():
+    global driver_loaded
+
+    # Load all the drivers in the drivers module
+    driver_mgr.search_folder(os.path.dirname(drivers.__file__), drivers.__package__)
+
+    # Load custom drivers
+    driver_path = CommConfigurator().get_comm_driver_path(None)
+    if not driver_path:
+        return
+
+    for path in driver_path.split(":"):
+        log.debug(f"Custom driver folder {path} is searched")
+        driver_mgr.search_folder(path, None)
+
+    driver_loaded = True
 
 
 class Communicator:
@@ -150,6 +169,9 @@ class Communicator:
             CommError: If any errors
         """
 
+        if not driver_loaded:
+            load_comm_drivers()
+
         driver_class = driver_mgr.find_driver_class(url)
         if not driver_class:
             raise CommError(CommError.NOT_SUPPORTED, f"No driver found for URL {url}")
@@ -170,6 +192,9 @@ class Communicator:
         Raises:
             CommError: If any errors like invalid host or port not available
         """
+
+        if not driver_loaded:
+            load_comm_drivers()
 
         driver_class = driver_mgr.find_driver_class(scheme)
         if not driver_class:
@@ -234,20 +259,6 @@ class Communicator:
         self.conn_manager.remove_connector(handle)
 
 
-def load_comm_drivers():
-    # Load all the drivers in the drivers module
-    driver_mgr.search_folder(os.path.dirname(drivers.__file__), drivers.__package__)
-
-    # Load custom drivers
-    driver_path = CommConfigurator().get_comm_driver_path(None)
-    if not driver_path:
-        return
-
-    for path in driver_path.split(":"):
-        log.debug(f"Custom driver folder {path} is searched")
-        driver_mgr.search_folder(path, None)
-
-
 def _exit_func():
     for c in _running_instances:
         c.stop()
@@ -255,4 +266,3 @@ def _exit_func():
 
 
 atexit.register(_exit_func)
-load_comm_drivers()

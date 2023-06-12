@@ -216,7 +216,8 @@ class ConfigService:
         if name in cls._var_values:
             return cls._var_values.get(name)
         v = func(name, conf, default)
-        cls._var_values[name] = v
+        if v is not None:
+            cls._var_values[name] = v
         return v
 
     @classmethod
