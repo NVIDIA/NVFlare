@@ -14,11 +14,12 @@
 import logging
 import threading
 from collections import deque
-from typing import Callable
+from typing import Callable, Dict
 
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.registry import Callback, Registry
+from nvflare.fuel.f3.connection import BytesAlike
 from nvflare.fuel.f3.message import Headers, Message
 from nvflare.fuel.f3.streaming.stream_const import (
     EOS,
@@ -40,25 +41,27 @@ ACK_INTERVAL = 1024 * 1024 * 4
 class RxTask:
     """Receiving task for ByteStream"""
 
-    def __init__(self, sid: str, channel: str, topic: str, origin: str, headers: dict):
+    def __init__(self, sid: str, origin: str):
         self.sid = sid
-        self.channel = channel
-        self.topic = topic
         self.origin = origin
-        self.headers = headers
+        self.channel = None
+        self.topic = None
+        self.headers = None
         self.size = 0
 
+        # The reassembled buffer in a double-ended queue
         self.buffers = deque()
-        self.out_seq_buffers = {}
+        # Out-of-sequence buffers to be assembled
+        self.out_seq_buffers: Dict[int, BytesAlike] = {}
         self.stream_future = None
-        self.expected_seq = 0
+        self.next_seq = 0
         self.offset = 0
         self.offset_ack = 0
         self.eos = False
         self.waiter = threading.Event()
 
     def __str__(self):
-        return f"[Rx{self.sid} to {self.origin} for {self.channel}/{self.topic}]"
+        return f"[Rx{self.sid} from {self.origin} for {self.channel}/{self.topic}]"
 
 
 class RxStream(Stream):
@@ -79,7 +82,7 @@ class RxStream(Stream):
 
             return EOS
 
-        # Block if buffers are empty
+        # Block indefinitely if buffers are empty
         if not self.task.buffers:
             self.task.waiter.clear()
             self.task.waiter.wait()
@@ -131,46 +134,50 @@ class ByteReceiver:
 
         sid = message.get_header(StreamHeaderKey.STREAM_ID)
         origin = message.get_header(MessageHeaderKey.ORIGIN)
+        seq = message.get_header(StreamHeaderKey.STREAM_ID)
         task = self.rx_task_map.get(sid, None)
         if not task:
-            # Handle new stream
-            channel = message.get_header(StreamHeaderKey.CHANNEL)
-            topic = message.get_header(StreamHeaderKey.TOPIC)
-            task = RxTask(sid, channel, topic, origin, message.headers)
-            task.stream_future = StreamFuture(sid, message.headers)
-            task.size = message.get_header(StreamHeaderKey.SIZE, 0)
+            task = RxTask(sid, origin)
             self.rx_task_map[sid] = task
-
-            # Invoke callback
-            callback = self.registry.find(channel, topic)
-            if not callback:
-                self._stop_task(task, StreamError(f"No callback is registered for {channel}/{topic}"))
-                return
-
-            stream = RxStream(self.cell, task)
-            callback.cb(task.stream_future, stream, False, *callback.args, **callback.kwargs)
 
         error = message.get_header(StreamHeaderKey.ERROR_MSG, None)
         if error:
             self._stop_task(task, StreamError(f"Received error from {origin}: {error}"))
             return
 
-        seq = message.get_header(StreamHeaderKey.STREAM_ID)
+        if seq == 0:
+            # Handle new stream
+            task.channel = message.get_header(StreamHeaderKey.CHANNEL)
+            task.topic = message.get_header(StreamHeaderKey.TOPIC)
+            task.headers = message.headers
 
-        if seq == task.expected_seq:
+            task.stream_future = StreamFuture(sid, message.headers)
+            task.size = message.get_header(StreamHeaderKey.SIZE, 0)
+
+            # Invoke callback
+            callback = self.registry.find(task.channel, task.topic)
+            if not callback:
+                self._stop_task(task, StreamError(f"No callback is registered for {task.channel}/{task.topic}"))
+                return
+
+            stream = RxStream(self.cell, task)
+            callback.cb(task.stream_future, stream, False, *callback.args, **callback.kwargs)
+
+        if seq == task.next_seq:
             self._append(task, message.payload)
-            task.expected_seq += 1
+            task.next_seq += 1
 
             # Try to reassemble out-of-seq buffers
-            while task.expected_seq in task.out_seq_buffers:
-                chunk = task.out_seq_buffers.pop(task.expected_seq)
+            while task.next_seq in task.out_seq_buffers:
+                chunk = task.out_seq_buffers.pop(task.next_seq)
                 self._append(task, chunk)
-                task.expected_seq += 1
+                task.next_seq += 1
 
         else:
-
+            # Chunk comes in out of sequence
             if len(task.out_seq_buffers) >= MAX_OUT_SEQ_CHUNKS:
                 self._stop_task(task, StreamError(f"Too many out-of-sequence chunks: {len(task.out_seq_buffers)}"))
+                return
             else:
                 task.out_seq_buffers[seq] = message.payload
 

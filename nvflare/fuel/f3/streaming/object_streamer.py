@@ -62,7 +62,7 @@ class ObjectHandler:
 
     def object_done(self, future: StreamFuture, obj_sid: str, index: int, *args, **kwargs):
         blob = future.result()
-        self.object_cb(obj_sid, index, Message(future.get_headers(), blob), args, kwargs)
+        self.object_cb(obj_sid, index, Message(future.get_headers(), blob), *args, **kwargs)
 
     def handle_object(self, future: StreamFuture, *args, **kwargs):
         headers = future.get_headers()
