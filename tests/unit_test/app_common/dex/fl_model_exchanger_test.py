@@ -17,12 +17,10 @@ import tempfile
 import numpy as np
 import pytest
 
-
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.dex.dxo_file_exchanger import DXOFileExchanger
-from nvflare.fuel.utils.pipe.pickle_file_accessor import PickleFileAccessor
 from nvflare.app_common.dex.fl_model_exchanger import FLModelExchanger
-
+from nvflare.fuel.utils.pipe.pickle_file_accessor import PickleFileAccessor
 
 TEST_CASES = [
     {"a": 1, "b": 3},
