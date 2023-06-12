@@ -16,8 +16,8 @@
 from unittest.mock import patch
 
 import pytest
-from graphsagetrainer import GraphSageTrainer
-from graphsagevalidator import GraphSageValidator
+from graphsage_trainer import GraphSageTrainer
+from graphsage_validator import GraphSageValidator
 
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_constant import ReturnCode

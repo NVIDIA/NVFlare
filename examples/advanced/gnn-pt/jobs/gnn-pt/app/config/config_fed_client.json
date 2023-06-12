@@ -5,7 +5,7 @@
     {
       "tasks": ["train", "submit_model", "get_weights"],
       "executor": {
-        "path": "graphsagetrainer.GraphSageTrainer",
+        "path": "graphsage_trainer.GraphSageTrainer",
         "args": {
           "lr": 0.01,
           "epochs": 1
@@ -15,7 +15,7 @@
     {
       "tasks": ["validate"],
       "executor": {
-        "path": "graphsagevalidator.GraphSageValidator",
+        "path": "graphsage_validator.GraphSageValidator",
         "args": {
         }
       }

@@ -36,9 +36,6 @@ from torch_geometric.nn import GraphSAGE
 import tqdm
 
 
-
-
-
 class GraphSageTrainer(Executor):
     def __init__(
         self,
