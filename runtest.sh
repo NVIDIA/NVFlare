@@ -19,7 +19,7 @@ fi
 
 WORK_DIR="$( cd -P "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 NUM_PARALLEL=1
-DIR_TO_CHECK="nvflare examples tests"
+DIR_TO_CHECK=("nvflare" "examples" "tests")
 
 target="${@: -1}"
 if [[ "${target}" == -* ]] ;then
@@ -108,31 +108,32 @@ function check_license() {
 function flake8_check() {
     echo "${separator}${blue}flake8${noColor}"
     python3 -m flake8 --version
-    python3 -m flake8 "$1" --count --statistics
+    python3 -m flake8 "$@" --count --statistics
     report_status "$?"
 }
 
 function black_check() {
     echo "${separator}${blue}black-check${noColor}"
-    python3 -m black --check "$1"
+    python3 -m black --check "$@"
     report_status "$?"
-    echo "Done with black code style checks"
+    echo "Done with black code style checks on $@"
 }
 
 function black_fix() {
     echo "${separator}${blue}black-fix${noColor}"
-    python3 -m black "$1"
+    python3 -m black "$@"
+    echo "Done with black code style fix on $@"
 }
 
 function isort_check() {
     echo "${separator}${blue}isort-check${noColor}"
-    python3 -m isort --check "$1"
+    python3 -m isort --check "$@"
     report_status "$?"
 }
 
 function isort_fix() {
     echo "${separator}${blue}isort-fix${noColor}"
-    python3 -m isort "$1"
+    python3 -m isort "$@"
 }
 
 # wait for approval
@@ -152,7 +153,7 @@ function pytype_check() {
         exit 1
     else
         python3 -m pytype --version
-        python3 -m pytype -j ${NUM_PARALLEL} --python-version="$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")" "$1"
+        python3 -m pytype -j ${NUM_PARALLEL} --python-version="$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")" "$@"
         report_status "$?"
     fi
 }
@@ -165,23 +166,21 @@ function mypy_check() {
 }
 
 function check_style_type_import() {
-    check_target="$1"
     # remove pylint for now
-    # pylint_check  $check_target
-    black_check   $check_target
-    isort_check   $check_target
-    flake8_check  $check_target
+    # pylint_check  "$@"
+    black_check   "$@"
+    isort_check   "$@"
+    flake8_check  "$@"
     # pytype causing check fails, comment for now
-    # pytype_check  $check_target
+    # pytype_check  "$@"
 
     # gives a lot false alarm, comment out for now
-    # mypy_check    $check_target
+    # mypy_check    "$@"
 }
 
 function fix_style_import() {
-    fix_target="$1"
-    black_fix "${fix_target}"
-    isort_fix "${fix_target}"
+    black_fix "$@"
+    isort_fix "$@"
 }
 
 ################################################################################
@@ -240,14 +239,14 @@ do
         -s |--check-format) # check format and styles
             cmd="check_style_type_import"
             if [[ -z $target ]]; then
-                target="${DIR_TO_CHECK}"
+                target="${DIR_TO_CHECK[@]}"
             fi
         ;;
 
         -f |--fix-format)
             cmd="fix_style_import"
             if [[ -z $target ]]; then
-                target="${DIR_TO_CHECK}"
+                target="${DIR_TO_CHECK[@]}"
             fi
         ;;
         -c|--coverage)
@@ -300,8 +299,8 @@ done
 
 if [[ -z $cmd ]]; then
     cmd="check_license;
-        check_style_type_import "${DIR_TO_CHECK}";
-        fix_style_import "${DIR_TO_CHECK}";
+        check_style_type_import "${DIR_TO_CHECK[@]}";
+        fix_style_import "${DIR_TO_CHECK[@]}";
         python3 -m pytest --numprocesses=auto -v --cov=nvflare --cov-report html:cov_html --cov-report xml:cov.xml --junitxml=unit_test.xml tests/unit_test;
         "
 else
