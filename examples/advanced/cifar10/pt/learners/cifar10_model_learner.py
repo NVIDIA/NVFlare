@@ -121,7 +121,9 @@ class CIFAR10ModelLearner(ModelLearner):  # does not support CIFAR10ScaffoldLear
         self.best_local_model_file = os.path.join(self.app_root, "best_local_model.pt")
 
         # Select local TensorBoard writer or event-based writer for streaming
-        self.writer = self.get_component(self.analytic_sender_id)  # user configured config_fed_client.json for streaming
+        self.writer = self.get_component(
+            self.analytic_sender_id
+        )  # user configured config_fed_client.json for streaming
         if not self.writer:  # use local TensorBoard writer only
             self.writer = SummaryWriter(self.app_root)
 
@@ -322,9 +324,7 @@ class CIFAR10ModelLearner(ModelLearner):  # does not support CIFAR10ScaffoldLear
                 return ReturnCode.EXECUTION_EXCEPTION
 
         # build the shareable
-        fl_model = FLModel(
-            params_type=ParamsType.DIFF,
-            params=model_diff)
+        fl_model = FLModel(params_type=ParamsType.DIFF, params=model_diff)
 
         FLModelUtils.set_meta_prop(fl_model, MetaKey.NUM_STEPS_CURRENT_ROUND, epoch_len)
         self.info("Local epochs finished. Returning FLModel")
