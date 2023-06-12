@@ -6,7 +6,7 @@ CIFAR-10 dataset and the [FL simulator](https://nvflare.readthedocs.io/en/latest
 We assume one client holds the images, and the other client holds the labels to compute losses and accuracy metrics. 
 Activations and corresponding gradients are being exchanged between the clients using NVFlare.
 
-<img src="./figs/oneshotVFL.png" alt="One-shot VFL setup" width="500"/>
+<img src="./figs/oneshotVFL.png" alt="One-shot VFL setup" width="800"/>
 
 For instructions of how to run CIFAR-10 in real-world deployment settings, 
 see the example on ["Real-world Federated Learning with CIFAR-10"](../../cifar10/cifar10-real-world/README.md).
@@ -31,4 +31,4 @@ and open [cifar10_oneshot_vfl.ipynb](./cifar10_oneshot_vfl.ipynb).
 An example local training curve with an overlap of 10,000 samples is shown below.
 One-shot VFL only requires the client to conduct two uploading and one downloading, which reduces the communication cost significantly. This CIFAR10 example can achieve test accuracy of 79.0%, which is nearly the same with the results of vanilla [single-client VFL (split learning)](https://github.com/jeremy313/NVFlare/tree/dev/examples/advanced/vertical_federated_learning/cifar10-splitnn).
 
-![Local training curves](./figs/oneshotVFL_results.png)
+<img src="./figs/oneshotVFL_results.png" alt="One-shot VFL results" width="600"/>
