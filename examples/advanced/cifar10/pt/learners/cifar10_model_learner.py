@@ -14,13 +14,11 @@
 
 import copy
 import os
+from typing import Union
 
 import numpy as np
 import torch
 import torch.optim as optim
-
-from typing import Union
-
 from pt.networks.cifar10_nets import ModerateCNN
 from pt.utils.cifar10_data_utils import CIFAR10_ROOT
 from pt.utils.cifar10_dataset import CIFAR10_Idx
@@ -29,10 +27,10 @@ from torchvision import datasets, transforms
 
 from nvflare.apis.dxo import MetaKey
 from nvflare.apis.fl_constant import ReturnCode
-from nvflare.app_common.abstract.model_learner import ModelLearner
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
-from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+from nvflare.app_common.abstract.model_learner import ModelLearner
 from nvflare.app_common.app_constant import AppConstants, ModelName, ValidateType
+from nvflare.app_common.utils.fl_model_utils import FLModelUtils
 from nvflare.app_opt.pt.fedproxloss import PTFedProxLoss
 
 
