@@ -15,6 +15,8 @@ which is an optimized distributed gradient boosting library.
 The examples illustrate a binary classification task based on [HIGGS dataset](https://archive.ics.uci.edu/dataset/280/higgs).
 This dataset contains 11 million instances, each with 28 attributes.
 
+Please note that the UCI's website may experience occasional downtime.
+
 ## Federated Training of XGBoost
 Several mechanisms have been proposed for training an XGBoost model in a federated learning setting.
 In these examples, we illustrate the use of NVFlare to carry out *horizontal* federated learning using two approaches: histogram-based collaboration and tree-based collaboration.

@@ -14,6 +14,8 @@ Follow along in this [notebook](./random_forest.ipynb) for an interactive experi
 This example illustrate a binary classification task based on [HIGGS dataset](https://archive.ics.uci.edu/dataset/280/higgs).
 This dataset contains 11 million instances, each with 28 attributes.
 
+Please note that the UCI's website may experience occasional downtime.
+
 ## Federated Training of Random Forest using XGBoost
 In this example, we illustrate the use of NVFlare to carry out *horizontal* federated learning with tree-based collaboration - forming a random forest.
 
