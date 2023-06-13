@@ -18,8 +18,10 @@ import numpy as np
 import pytest
 
 from nvflare.apis.dxo import DXO, DataKind
+from nvflare.apis.utils.decomposers import flare_decomposers
+from nvflare.app_common.decomposers import common_decomposers
 from nvflare.app_common.dex.dxo_file_exchanger import DXOFileExchanger
-from nvflare.fuel.utils.pipe.pickle_file_accessor import PickleFileAccessor
+from nvflare.fuel.utils.pipe.fobs_file_accessor import FobsFileAccessor
 
 TEST_CASES = [
     {"a": 1, "b": 3},
@@ -54,7 +56,9 @@ class DXOFileExchangerTest:
             y_dxi.finalize()
 
 
-class TestPickleDXOFileExchanger(DXOFileExchangerTest):
+class TestFobsDXOFileExchanger(DXOFileExchangerTest):
     @pytest.fixture
     def get_file_accessor(self):
-        yield PickleFileAccessor()
+        flare_decomposers.register()
+        common_decomposers.register()
+        yield FobsFileAccessor()

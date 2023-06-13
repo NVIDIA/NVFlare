@@ -47,15 +47,15 @@ class DXOExchanger(ABC):
         self,
         pipe_role: str,
         pipe_name: str = "pipe",
-        get_poll_interval: float = 0.1,
-        heartbeat_interval: float = 1.0,
+        get_poll_interval: float = 0.5,
+        heartbeat_interval: float = 5.0,
         heartbeat_timeout: float = 30.0,
     ):
         """Exchanges DXO.
 
         Args:
-            get_poll_interval (float): how often to check if the other side has sent file
-            heartbeat_interval (float): how often to send a heartbeat to the peer
+            get_poll_interval (float): how often to check if the other side has sent data.
+            heartbeat_interval (float): how often to send a heartbeat to the peer.
             heartbeat_timeout (float): how long to wait for a heartbeat from the peer before treating the peer as gone,
                 0 means DO NOT check for heartbeat.
         """
@@ -75,6 +75,11 @@ class DXOExchanger(ABC):
         pass
 
     def initialize(self, *args, **kwargs):
+        """Initializes the DXOExchanger.
+
+        The *arg and **kwargs will be passed into the "create_pipe" method.
+        After the pipe is created and open, it will be passed into PipeMonitor.
+        """
         pipe = self.create_pipe(*args, **kwargs)
         pipe.open(self._pipe_name, self._pipe_role)
         self.pipe_monitor = PipeMonitor(
@@ -86,6 +91,16 @@ class DXOExchanger(ABC):
         self.pipe_monitor.start()
 
     def send_request(self, dxo: DXO, timeout: Optional[float] = None) -> Tuple[bool, str]:
+        """Sends a request.
+
+        Args:
+            dxo: The data exchange object to be sent.
+            timeout: how long to wait for the peer to read the data.
+
+        Returns:
+            A tuple of (has_been_read, request message id).
+            has_been_read indicates whether the peer has read the data.
+        """
         if self.pipe_monitor is None:
             raise RuntimeError("PipeMonitor is not initialized.")
         msg = Message.new_request(topic=self._topic, data=dxo)
@@ -93,18 +108,45 @@ class DXOExchanger(ABC):
         return has_been_read, msg.msg_id
 
     def receive_request(self, timeout: Optional[float] = None) -> Tuple[DXO, str]:
+        """Receives a request.
+
+        Args:
+            timeout: how long to wait for the request to come.
+
+        Returns:
+            A tuple of (data, request id).
+        """
         data, req_id = self._receive_message(timeout=timeout)
         return data, req_id
 
     def send_reply(self, dxo: DXO, req_id: str, timeout: Optional[float] = None) -> bool:
+        """Sends a reply.
+
+        Args:
+            dxo: The data exchange object to be sent.
+            req_id: request ID.
+            timeout: how long to wait for the peer to read the data.
+
+        Returns:
+            A bool indicates whether the peer has read the data.
+        """
         if self.pipe_monitor is None:
             raise RuntimeError("PipeMonitor is not initialized.")
         msg = Message.new_reply(topic=self._topic, data=dxo, req_msg_id=req_id)
         has_been_read = self.pipe_monitor.send_to_peer(msg, timeout)
         return has_been_read
 
-    def receive_reply(self, req_msg_id: str, timeout: Optional[float] = None) -> DXO:
-        data, _ = self._receive_message(req_msg_id=req_msg_id, timeout=timeout)
+    def receive_reply(self, req_id: str, timeout: Optional[float] = None) -> DXO:
+        """Receives a reply.
+
+        Args:
+            req_id: request ID.
+            timeout: how long to wait for the request to come.
+
+        Returns:
+            A data of type DXO.
+        """
+        data, _ = self._receive_message(req_msg_id=req_id, timeout=timeout)
         return data
 
     def _receive_message(self, req_msg_id: Optional[str] = None, timeout: Optional[float] = None) -> Tuple[DXO, str]:
@@ -116,9 +158,7 @@ class DXOExchanger(ABC):
             if not msg:
                 if timeout and time.time() - start > timeout:
                     self.pipe_monitor.notify_abort()
-                    raise ExchangeTimeoutException(f"get file timeout after {timeout} secs")
-            elif msg.topic == Topic.HEARTBEAT:
-                continue
+                    raise ExchangeTimeoutException(f"get data timeout after {timeout} secs")
             elif msg.topic == Topic.ABORT:
                 raise ExchangeAbortException("the other end is aborted")
             elif msg.topic == Topic.END:

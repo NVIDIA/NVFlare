@@ -18,16 +18,19 @@ from typing import Optional
 from nvflare.app_common.dex.dxo_exchanger import DXOExchanger
 from nvflare.fuel.utils.pipe.file_accessor import FileAccessor
 from nvflare.fuel.utils.pipe.file_pipe import FilePipe
-from nvflare.fuel.utils.pipe.pickle_file_accessor import PickleFileAccessor
 
 
 class DXOFileExchanger(DXOExchanger):
     def create_pipe(self, data_exchange_path: str, file_accessor: Optional[FileAccessor] = None) -> FilePipe:
+        """Creates a file pipe.
+
+        Args:
+            data_exchange_path: path for data exchange.
+            file_accessor: the file accessor to be used. It defines how to read/write a data into a file.
+        """
         data_exchange_path = os.path.abspath(data_exchange_path)
         file_pipe = FilePipe(data_exchange_path)
         if file_accessor is not None:
             file_pipe.set_file_accessor(file_accessor)
-        else:
-            file_pipe.set_file_accessor(PickleFileAccessor())
 
         return file_pipe

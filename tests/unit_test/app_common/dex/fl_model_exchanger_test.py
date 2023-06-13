@@ -17,10 +17,11 @@ import tempfile
 import numpy as np
 import pytest
 
+from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
+from nvflare.app_common.decomposers import common_decomposers
 from nvflare.app_common.dex.dxo_file_exchanger import DXOFileExchanger
 from nvflare.app_common.dex.fl_model_exchanger import FLModelExchanger
-from nvflare.fuel.utils.pipe.pickle_file_accessor import PickleFileAccessor
 
 TEST_CASES = [
     {"a": 1, "b": 3},
@@ -36,15 +37,17 @@ class TestFLModelExchanger:
     @pytest.mark.parametrize("weights", TEST_CASES)
     def test_put_get_fl_model_with_dxo_file_exchanger(self, weights):
         fl_model = FLModel(params=weights, params_type=ParamsType.FULL)
+        flare_decomposers.register()
+        common_decomposers.register()
 
         with tempfile.TemporaryDirectory() as root_dir:
             x_ex = DXOFileExchanger(pipe_role="x")
-            x_ex.initialize(data_exchange_path=root_dir, file_accessor=PickleFileAccessor())
+            x_ex.initialize(data_exchange_path=root_dir)
             x_mdx = FLModelExchanger(exchanger=x_ex)
             _, put_msg_id = x_mdx.send_request(model=fl_model)
 
             y_ex = DXOFileExchanger(pipe_role="y")
-            y_ex.initialize(data_exchange_path=root_dir, file_accessor=PickleFileAccessor())
+            y_ex.initialize(data_exchange_path=root_dir)
             y_mdx = FLModelExchanger(exchanger=y_ex)
             result_model, get_msg_id = y_mdx.receive_request()
             assert put_msg_id == get_msg_id
