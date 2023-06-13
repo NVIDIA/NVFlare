@@ -23,18 +23,18 @@ class FLModelExchanger:
     def __init__(self, exchanger: DXOExchanger):
         self.exchanger = exchanger
 
-    def put_request(self, model: FLModel, timeout: Optional[float] = None) -> str:
+    def send_request(self, model: FLModel, timeout: Optional[float] = None) -> str:
         dxo = FLModelUtils.to_dxo(model)
-        return self.exchanger.put_request(dxo, timeout)
+        return self.exchanger.send_request(dxo, timeout)
 
-    def get_request(self, timeout: Optional[float] = None) -> Tuple[FLModel, str]:
-        dxo, req_id = self.exchanger.get_request(timeout=timeout)
+    def receive_request(self, timeout: Optional[float] = None) -> Tuple[FLModel, str]:
+        dxo, req_id = self.exchanger.receive_request(timeout=timeout)
         return FLModelUtils.from_dxo(dxo), req_id
 
-    def get_reply(self, req_msg_id: str, timeout: Optional[float] = None) -> FLModel:
-        dxo = self.exchanger.get_reply(req_msg_id, timeout)
-        return FLModelUtils.from_dxo(dxo)
-
-    def put_reply(self, model: FLModel, req_id: str, timeout: Optional[float] = None):
+    def send_reply(self, model: FLModel, req_id: str, timeout: Optional[float] = None):
         dxo = FLModelUtils.to_dxo(model)
-        return self.exchanger.put_reply(dxo, req_id, timeout)
+        return self.exchanger.send_reply(dxo, req_id, timeout)
+
+    def receive_reply(self, req_msg_id: str, timeout: Optional[float] = None) -> FLModel:
+        dxo = self.exchanger.receive_reply(req_msg_id, timeout)
+        return FLModelUtils.from_dxo(dxo)

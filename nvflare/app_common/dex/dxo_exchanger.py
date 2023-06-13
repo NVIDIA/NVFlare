@@ -85,29 +85,29 @@ class DXOExchanger(ABC):
         )
         self.pipe_monitor.start()
 
-    def put_request(self, data: DXO, timeout: Optional[float] = None) -> Tuple[bool, str]:
+    def send_request(self, dxo: DXO, timeout: Optional[float] = None) -> Tuple[bool, str]:
         if self.pipe_monitor is None:
             raise RuntimeError("PipeMonitor is not initialized.")
-        msg = Message.new_request(self._topic, data)
+        msg = Message.new_request(topic=self._topic, data=dxo)
         has_been_read = self.pipe_monitor.send_to_peer(msg, timeout)
         return has_been_read, msg.msg_id
 
-    def get_request(self, timeout: Optional[float] = None) -> Tuple[DXO, str]:
-        data, req_id = self._get_message(timeout=timeout)
+    def receive_request(self, timeout: Optional[float] = None) -> Tuple[DXO, str]:
+        data, req_id = self._receive_message(timeout=timeout)
         return data, req_id
 
-    def put_reply(self, dxo: DXO, req_id: str, timeout: Optional[float] = None) -> bool:
+    def send_reply(self, dxo: DXO, req_id: str, timeout: Optional[float] = None) -> bool:
         if self.pipe_monitor is None:
             raise RuntimeError("PipeMonitor is not initialized.")
         msg = Message.new_reply(topic=self._topic, data=dxo, req_msg_id=req_id)
         has_been_read = self.pipe_monitor.send_to_peer(msg, timeout)
         return has_been_read
 
-    def get_reply(self, req_msg_id: str, timeout: Optional[float] = None) -> DXO:
-        data, _ = self._get_message(req_msg_id=req_msg_id, timeout=timeout)
+    def receive_reply(self, req_msg_id: str, timeout: Optional[float] = None) -> DXO:
+        data, _ = self._receive_message(req_msg_id=req_msg_id, timeout=timeout)
         return data
 
-    def _get_message(self, req_msg_id: Optional[str] = None, timeout: Optional[float] = None) -> Tuple[DXO, str]:
+    def _receive_message(self, req_msg_id: Optional[str] = None, timeout: Optional[float] = None) -> Tuple[DXO, str]:
         if self.pipe_monitor is None:
             raise RuntimeError("PipeMonitor is not initialized.")
         start = time.time()

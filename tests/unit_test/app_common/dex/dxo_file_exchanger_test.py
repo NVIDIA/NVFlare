@@ -42,10 +42,10 @@ class DXOFileExchangerTest:
         with tempfile.TemporaryDirectory() as root_dir:
             x_dxi = DXOFileExchanger(pipe_role="x")
             x_dxi.initialize(data_exchange_path=root_dir, file_accessor=get_file_accessor)
-            _, put_msg_id = x_dxi.put_request(data=dxo)
+            _, put_msg_id = x_dxi.send_request(dxo=dxo)
             y_dxi = DXOFileExchanger(pipe_role="y")
             y_dxi.initialize(data_exchange_path=root_dir, file_accessor=get_file_accessor)
-            result_dxo, get_msg_id = y_dxi.get_request()
+            result_dxo, get_msg_id = y_dxi.receive_request()
             assert put_msg_id == get_msg_id
             for k, v in result_dxo.data.items():
                 np.testing.assert_array_equal(weights[k], v)

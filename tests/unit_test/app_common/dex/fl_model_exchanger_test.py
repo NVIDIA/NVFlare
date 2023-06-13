@@ -41,14 +41,20 @@ class TestFLModelExchanger:
             x_ex = DXOFileExchanger(pipe_role="x")
             x_ex.initialize(data_exchange_path=root_dir, file_accessor=PickleFileAccessor())
             x_mdx = FLModelExchanger(exchanger=x_ex)
-            _, put_msg_id = x_mdx.put_request(model=fl_model)
+            _, put_msg_id = x_mdx.send_request(model=fl_model)
 
             y_ex = DXOFileExchanger(pipe_role="y")
             y_ex.initialize(data_exchange_path=root_dir, file_accessor=PickleFileAccessor())
             y_mdx = FLModelExchanger(exchanger=y_ex)
-            result_model, get_msg_id = y_mdx.get_request()
+            result_model, get_msg_id = y_mdx.receive_request()
             assert put_msg_id == get_msg_id
             for k, v in result_model.params.items():
                 np.testing.assert_array_equal(weights[k], v)
+
+            y_mdx.send_reply(result_model, get_msg_id)
+            receive_reply_model = x_mdx.receive_reply(get_msg_id)
+            for k, v in receive_reply_model.params.items():
+                np.testing.assert_array_equal(receive_reply_model.params[k], result_model.params[k])
+
             x_ex.finalize()
             y_ex.finalize()
