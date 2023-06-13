@@ -33,7 +33,7 @@ from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError, StreamFu
 
 log = logging.getLogger(__name__)
 
-MAX_OUT_SEQ_CHUNKS = 8
+MAX_OUT_SEQ_CHUNKS = 16
 # 1/4 of the window size
 ACK_INTERVAL = 1024 * 1024 * 4
 
@@ -174,7 +174,7 @@ class ByteReceiver:
                 task.next_seq += 1
 
         else:
-            # Chunk comes in out of sequence
+            # Out-of-seq chunk reassembly
             if len(task.out_seq_buffers) >= MAX_OUT_SEQ_CHUNKS:
                 self._stop_task(task, StreamError(f"Too many out-of-sequence chunks: {len(task.out_seq_buffers)}"))
                 return
