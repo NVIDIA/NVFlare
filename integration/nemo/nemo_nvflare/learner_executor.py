@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -48,8 +48,13 @@ class NemoLearnerExecutor(LearnerExecutor):
             validate_task=validate_task,
         )
         self.share_config_task = share_config_task
+        self.is_initialized = False
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
+        if not self.is_initialized:
+            self.is_initialized = True
+            self.initialize(fl_ctx)
+
         if task_name == self.share_config_task:
             self.log_info(fl_ctx, f"Client trainer got task: {task_name}")
             try:
@@ -67,7 +72,7 @@ class NemoLearnerExecutor(LearnerExecutor):
             raise ValueError(f"Expected DXO data to be of kind NemoDataKind.CONFIGS but got {dxo.data_kind}")
 
         if not dxo.data:
-            raise ValueError(f"Received config data is empty!")
+            raise ValueError("Received config data is empty!")
 
         self.learner.set_configs(configs=dxo.data)
         self.log_info(fl_ctx, f"Received config with {len(dxo.data)} entries from server.")

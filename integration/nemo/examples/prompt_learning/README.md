@@ -6,6 +6,12 @@ a downstream task such as financial sentiment predictions.
 As the prompt learning technique shown in the example is p-tuning which adds a small prompt encoder network to the LLM
 to produce virtual tokens that guide the model toward the desired output of the downstream task.
 
+<img src="./figs/p-tuning.svg"  width="60%" height="60%">
+
+In our federated implementation, the LLM parameters stay fixed. Prompt encoder parameters are trained/updated and averaged on the server.
+
+<img src="./figs/fed_p-tuning.svg"  width="90%" height="90%">
+
 ## Dependencies
 We assume you followed the instructions [here](../../README.md#requirements) 
 to install the NeMo, NVFlare, and the NeMo-NVFlare package. 

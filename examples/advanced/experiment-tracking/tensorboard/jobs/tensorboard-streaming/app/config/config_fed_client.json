@@ -24,16 +24,16 @@
   "components": [
     {
       "id": "pt_learner",
-      "path": "pt_learner.PTLearner",
+      "path": "pt.learner_with_tb.PTLearner",
       "args": {
         "lr": 0.01,
         "epochs": 5,
-        "analytic_sender_id": "analytic_sender"
+        "analytic_sender_id": "log_writer"
       }
     },
     {
-      "id": "analytic_sender",
-      "name": "TBWriter",
+      "id": "log_writer",
+      "path": "nvflare.app_opt.tracking.tb.tb_writer.TBWriter",
       "args": {"event_type": "analytix_log_stats"}
     },
     {

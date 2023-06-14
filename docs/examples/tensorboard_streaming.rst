@@ -9,7 +9,7 @@ Introduction
 In this exercise, you will learn how to stream TensorBoard events from the clients
 to the server in order to visualize live training metrics from a central place on the server.
 
-This exercise will be working with the ``tensorboard-streaming`` example in the examples folder,
+This exercise will be working with the ``tensorboard-streaming`` example in the advanced examples folder under experiment-tracking,
 which builds upon :doc:`hello_pt` by adding TensorBoard streaming.
 
 The setup of this exercise consists of one **server** and two **clients**.
@@ -42,7 +42,7 @@ Adding TensorBoard Streaming to Configurations
 
 Inside the config folder there are two files, ``config_fed_client.json`` and ``config_fed_server.json``.
 
-.. literalinclude:: ../../examples/advanced/experiment-tracking/tensorboard-streaming/jobs/tensorboard-streaming/app/config/config_fed_client.json
+.. literalinclude:: ../../examples/advanced/experiment-tracking/tensorboard/jobs/tensorboard-streaming/app/config/config_fed_client.json
    :language: json
    :linenos:
    :caption: config_fed_client.json
@@ -60,7 +60,7 @@ which converts local events to federated events.
 This changes the event ``analytix_log_stats`` into a fed event ``fed.analytix_log_stats``,
 which will then be streamed from the clients to the server.
 
-.. literalinclude:: ../../examples/advanced/experiment-tracking/tensorboard-streaming/jobs/tensorboard-streaming/app/config/config_fed_server.json
+.. literalinclude:: ../../examples/advanced/experiment-tracking/tensorboard/jobs/tensorboard-streaming/app/config/config_fed_server.json
    :language: json
    :linenos:
    :caption: config_fed_server.json
@@ -83,7 +83,7 @@ In this exercise, all of the TensorBoard code additions will be made in ``pt_lea
 
 First we must initialize our TensorBoard writer to the ``AnalyticsSender`` we defined in the client config:
 
-.. literalinclude:: ../../examples/advanced/experiment-tracking/tensorboard-streaming/jobs/tensorboard-streaming/app/custom/pt_learner.py
+.. literalinclude:: ../../examples/advanced/experiment-tracking/tensorboard/jobs/tensorboard-streaming/app/custom/pt_learner.py
    :language: python
    :lines: 103-106
    :lineno-start: 103
@@ -98,7 +98,7 @@ but we can also define it in the client config to be passed into the constructor
 Now that our TensorBoard writer is set to ``AnalyticsSender``,
 we can write and stream training metrics to the server in ``local_train()``:
 
-.. literalinclude:: ../../examples/advanced/experiment-tracking/tensorboard-streaming/jobs/tensorboard-streaming/app/custom/pt_learner.py
+.. literalinclude:: ../../examples/advanced/experiment-tracking/tensorboard/jobs/tensorboard-streaming/app/custom/pt_learner.py
    :language: python
    :lines: 144-174
    :lineno-start: 144
@@ -160,4 +160,4 @@ Congratulations!
 Now you will be able to see the live training metrics of each client from a central place on the server.
 
 The full source code for this exercise can be found in
-`examples/advanced/experiment-tracking/tensorboard-streaming <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/experiment-tracking/tensorboard-streaming>`_.
+`examples/advanced/experiment-tracking/tensorboard <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/experiment-tracking/tensorboard>`_.

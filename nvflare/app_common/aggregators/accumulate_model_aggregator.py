@@ -12,12 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from nvflare.fuel.utils.deprecated import deprecated
+
 from .intime_accumulate_model_aggregator import InTimeAccumulateWeightedAggregator
 
 
+@deprecated("Please use 'InTimeAccumulateWeightedAggregator'")
 class AccumulateWeightedAggregator(InTimeAccumulateWeightedAggregator):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.logger.warning(
-            "'AccumulateWeightedAggregator' was deprecated, please use " "'InTimeAccumulateWeightedAggregator'"
-        )
+    pass

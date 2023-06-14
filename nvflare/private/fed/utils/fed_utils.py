@@ -189,6 +189,10 @@ def create_job_processing_context_properties(workspace: Workspace, job_id: str) 
     }
 
 
+def find_char_positions(s, ch):
+    return [i for i, c in enumerate(s) if c == ch]
+
+
 def configure_logging(workspace: Workspace):
     log_config_file_path = workspace.get_log_config_file_path()
     assert os.path.isfile(log_config_file_path), f"missing log config file {log_config_file_path}"
@@ -236,3 +240,34 @@ def create_stats_pool_files_for_job(workspace: Workspace, job_id: str, prefix=No
         err = f"Failed to create stats pool summary file {summary_file}: {secure_format_exception(e)}"
     StatsPoolManager.close()
     return err
+
+
+def split_gpus(gpus) -> [str]:
+    gpus = gpus.replace(" ", "")
+    lefts = find_char_positions(gpus, "[")
+    rights = find_char_positions(gpus, "]")
+    if len(lefts) != len(rights):
+        raise ValueError("brackets not paired")
+    for i in range(len(lefts)):
+        if i > 0 and lefts[i] < rights[i - 1]:
+            raise ValueError("brackets cannot be nested")
+
+    offset = 0
+    for i in range(len(lefts)):
+        l: int = lefts[i] - offset
+        r: int = rights[i] - offset
+        if l > r:
+            raise ValueError("brackets not properly paired")
+
+        if l > 0 and gpus[l - 1] != ",":
+            raise ValueError(f"invalid start of a group: {gpus[l - 1]}")
+        if r < len(gpus) - 1 and gpus[r + 1] != ",":
+            raise ValueError(f"invalid end of a group: {gpus[r + 1]}")
+        g = gpus[l : r + 1]  # include both left and right brackets
+        p = g[1:-1].replace(",", "^")
+        gpus = gpus.replace(g, p, 1)  # only replace the first occurrence!
+        offset += 2  # everything after the replacement is shifted to left by 2 (since the pair of brackets removed)
+
+    result = gpus.split(",")
+    result = [g.replace("^", ",") for g in result]
+    return result

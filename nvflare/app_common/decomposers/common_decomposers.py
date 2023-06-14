@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 """Decomposers for types from app_common and Machine Learning libraries."""
 import os
 from abc import ABC
@@ -19,12 +20,42 @@ from typing import Any
 
 import numpy as np
 
+from nvflare.app_common.abstract.fl_model import FLModel
 from nvflare.app_common.abstract.learnable import Learnable
 from nvflare.app_common.abstract.model import ModelLearnable
 from nvflare.app_common.widgets.event_recorder import _CtxPropReq, _EventReq, _EventStats
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.fobs import Decomposer
 from nvflare.fuel.utils.fobs.decomposer import DictDecomposer
+
+
+class FLModelDecomposer(fobs.Decomposer):
+    def supported_type(self):
+        return FLModel
+
+    def decompose(self, b: FLModel) -> Any:
+        return [
+            b.params_type,
+            b.params,
+            b.optimizer_params,
+            b.metrics,
+            b.client_weights,
+            b.current_round,
+            b.total_rounds,
+            b.meta,
+        ]
+
+    def recompose(self, data: list) -> FLModel:
+        return FLModel(
+            params_type=data[0],
+            params=data[1],
+            optimizer_params=data[2],
+            metrics=data[3],
+            client_weights=data[4],
+            current_round=data[5],
+            total_rounds=data[6],
+            meta=data[7],
+        )
 
 
 class ModelLearnableDecomposer(fobs.Decomposer):
@@ -91,6 +122,7 @@ def register():
 
     fobs.register(DictDecomposer(Learnable))
     fobs.register(DictDecomposer(ModelLearnable))
+    fobs.register(FLModelDecomposer)
 
     fobs.register_data_classes(
         _CtxPropReq,

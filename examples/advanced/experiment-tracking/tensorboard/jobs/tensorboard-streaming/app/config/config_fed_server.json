@@ -12,7 +12,8 @@
       "name": "PTFileModelPersistor",
       "args": {
         "model": {
-          "path": "simple_network.SimpleNetwork"
+          "path": "pt.simple_network.SimpleNetwork",
+          "args": {}
         }
       }
     },
