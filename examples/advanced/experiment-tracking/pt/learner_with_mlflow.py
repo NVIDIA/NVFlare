@@ -168,10 +168,11 @@ class PTLearner(Learner):
                         fl_ctx, f"Epoch: {epoch}/{self.epochs}, Iteration: {i}, " f"Loss: {running_loss/3000}"
                     )
                     running_loss = 0.0
-                    self.writer.log_text(
-                        f"last running_loss reset at '{len(self.train_loader) * epoch + i}' step",
-                        "running_loss_reset.txt",
-                    )
+                    # TODO (Kevin): Fix the following:
+                    # self.writer.log_text(
+                    #     f"last running_loss reset at '{len(self.train_loader) * epoch + i}' step",
+                    #     "running_loss_reset.txt",
+                    # )
 
                 # Stream training loss at each step
                 current_step = len(self.train_loader) * epoch + i

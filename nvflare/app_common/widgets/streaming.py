@@ -23,7 +23,7 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import EventScope, FLContextKey, ReservedKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
-from nvflare.app_common.tracking.tracker_types import LogWriterName
+from nvflare.app_common.tracking.tracker_types import LogWriterName, TrackConst
 from nvflare.fuel.utils.deprecated import deprecated
 from nvflare.widgets.widget import Widget
 
@@ -103,10 +103,11 @@ class AnalyticsSender(Widget):
 
     def add(self, tag: str, value, data_type: AnalyticsDataType, global_step: Optional[int] = None, **kwargs):
         kwargs = kwargs if kwargs else {}
-        global_step = kwargs.get("global_step", None)
-        if global_step:
+        if global_step is not None:
             if not isinstance(global_step, int):
                 raise TypeError(f"Expect global step to be an instance of int, but got {type(global_step)}")
+            kwargs[TrackConst.GLOBAL_STEP_KEY] = global_step
+        global_step = kwargs.get(TrackConst.GLOBAL_STEP_KEY, None)
         dxo = create_analytic_dxo(tag=tag, value=value, data_type=data_type, writer=self.get_writer_name(), **kwargs)
         with self.engine.new_context() as fl_ctx:
             send_analytic_dxo(self, dxo=dxo, fl_ctx=fl_ctx, event_type=self.event_type)

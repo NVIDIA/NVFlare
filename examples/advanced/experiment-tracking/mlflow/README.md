@@ -18,7 +18,7 @@ python -m pip install -r requirements.txt
 
 Set `PYTHONPATH` to include custom files of this example:
 ```
-export PYTHONPATH=${PWD}/../pt
+export PYTHONPATH=${PWD}/..
 ```
 
 ### 2. Run the experiment
