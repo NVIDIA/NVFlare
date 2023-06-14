@@ -18,6 +18,7 @@ import weakref
 from typing import Optional
 
 from nvflare.fuel.f3 import drivers
+from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.comm_error import CommError
 from nvflare.fuel.f3.drivers.driver import Driver
 from nvflare.fuel.f3.drivers.driver_manager import DriverManager
@@ -30,23 +31,30 @@ from nvflare.security.logging import secure_format_exception
 
 log = logging.getLogger(__name__)
 _running_instances = weakref.WeakSet()
+driver_mgr = DriverManager()
+driver_loaded = False
 
 
-def _exit_func():
-    for c in _running_instances:
-        c.stop()
-        log.debug(f"Communicator {c.local_endpoint.name} was left running, stopped on exit")
+def load_comm_drivers():
+    global driver_loaded
 
+    # Load all the drivers in the drivers module
+    driver_mgr.search_folder(os.path.dirname(drivers.__file__), drivers.__package__)
 
-atexit.register(_exit_func)
+    # Load custom drivers
+    driver_path = CommConfigurator().get_comm_driver_path(None)
+    if not driver_path:
+        return
+
+    for path in driver_path.split(":"):
+        log.debug(f"Custom driver folder {path} is searched")
+        driver_mgr.search_folder(path, None)
+
+    driver_loaded = True
 
 
 class Communicator:
     """FCI (Flare Communication Interface) main communication API"""
-
-    driver_mgr = DriverManager()
-    # Load all the drivers in the drivers module
-    driver_mgr.register_folder(os.path.dirname(drivers.__file__), drivers.__package__)
 
     def __init__(self, local_endpoint: Endpoint):
         self.local_endpoint = local_endpoint
@@ -161,7 +169,10 @@ class Communicator:
             CommError: If any errors
         """
 
-        driver_class = self.driver_mgr.find_driver_class(url)
+        if not driver_loaded:
+            load_comm_drivers()
+
+        driver_class = driver_mgr.find_driver_class(url)
         if not driver_class:
             raise CommError(CommError.NOT_SUPPORTED, f"No driver found for URL {url}")
 
@@ -182,7 +193,10 @@ class Communicator:
             CommError: If any errors like invalid host or port not available
         """
 
-        driver_class = self.driver_mgr.find_driver_class(scheme)
+        if not driver_loaded:
+            load_comm_drivers()
+
+        driver_class = driver_mgr.find_driver_class(scheme)
         if not driver_class:
             raise CommError(CommError.NOT_SUPPORTED, f"No driver found for scheme {scheme}")
 
@@ -243,3 +257,12 @@ class Communicator:
             CommError: If any errors
         """
         self.conn_manager.remove_connector(handle)
+
+
+def _exit_func():
+    for c in _running_instances:
+        c.stop()
+        log.debug(f"Communicator {c.local_endpoint.name} was left running, stopped on exit")
+
+
+atexit.register(_exit_func)
