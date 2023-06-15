@@ -17,6 +17,7 @@ import os
 import shutil
 import tempfile
 
+import pytest
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
@@ -124,6 +125,7 @@ def prepare_folders():
     return folder, server_pri_key, server_cert
 
 
+@pytest.mark.xdist_group(name="lighter_utils_group")
 class TestSignFolder:
     def test_verify_folder(self):
         folder, server_pri_key, server_cert = prepare_folders()
