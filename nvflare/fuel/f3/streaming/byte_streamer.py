@@ -30,6 +30,7 @@ from nvflare.fuel.f3.streaming.stream_utils import gen_stream_id, stream_thread_
 
 STREAM_CHUNK_SIZE = 1024 * 1024
 STREAM_WINDOW_SIZE = 16 * STREAM_CHUNK_SIZE
+STREAM_FUTURE_WAIT = 5
 STREAM_ACK_WAIT = 5
 
 log = logging.getLogger(__name__)
@@ -84,9 +85,11 @@ class ByteStreamer:
     def _transmit_task(self, task: TxTask):
 
         # Wait till stream_future is set
-        future_set = task.ack_waiter.wait(5.0)
-        if not future_set:
-            raise StreamError("Stream future not set after 5 seconds")
+        if not task.ack_waiter.wait(STREAM_FUTURE_WAIT):
+            msg = f"Stream future not set up after {STREAM_FUTURE_WAIT} seconds"
+            log.error(msg)
+            self._stop_task(task, StreamError(msg))
+            return
 
         while not task.stop:
             buf = task.stream.read(STREAM_CHUNK_SIZE)
@@ -100,6 +103,7 @@ class ByteStreamer:
             window = task.offset - task.offset_ack
             # It may take several ACKs to clear up the window
             while window > STREAM_WINDOW_SIZE:
+                log.debug(f"{task} window size {window} exceeds limit: {STREAM_WINDOW_SIZE}")
                 task.ack_waiter.clear()
                 result = task.ack_waiter.wait(timeout=STREAM_ACK_WAIT)
                 if not result:
@@ -175,10 +179,22 @@ class ByteStreamer:
         # Update future
         task.stream_future.set_progress(task.offset)
 
-    @staticmethod
-    def _stop_task(task: TxTask, error: StreamError = None):
+    def _stop_task(self, task: TxTask, error: StreamError = None, notify=True):
         if error:
+            log.debug(f"Steam error: {error}")
             task.stream_future.set_exception(error)
+
+            if notify:
+                message = Message(None, None)
+                message.add_headers(
+                    {
+                        StreamHeaderKey.STREAM_ID: task.sid,
+                        StreamHeaderKey.DATA_TYPE: StreamDataType.ERROR,
+                        StreamHeaderKey.OFFSET: task.offset,
+                        StreamHeaderKey.ERROR_MSG: str(error),
+                    }
+                )
+                self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_DATA_TOPIC, task.target, message)
         else:
             # Result is the number of bytes streamed
             task.stream_future.set_result(task.offset)
@@ -193,7 +209,7 @@ class ByteStreamer:
 
         error = message.get_header(StreamHeaderKey.ERROR_MSG, None)
         if error:
-            self._stop_task(task, StreamError(f"Received error from {origin}: {error}"))
+            self._stop_task(task, StreamError(f"Received error from {origin}: {error}"), notify=False)
             return
 
         offset = message.get_header(StreamHeaderKey.OFFSET, None)

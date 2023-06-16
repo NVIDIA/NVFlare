@@ -1451,7 +1451,6 @@ class Cell(MessageReceiver, EndpointMonitor):
         self.req_cb_stats_pool.record_value(category=self._stats_category(message), value=cb_end - cb_start)
         if not reply:
             # the CB doesn't have anything to reply
-            self.logger.debug("no reply is returned from the CB")
             return None
 
         if not isinstance(reply, Message):
@@ -1769,7 +1768,6 @@ class Cell(MessageReceiver, EndpointMonitor):
             reply = self._process_request(origin, message)
 
             if not reply:
-                self.logger.debug(f"{self.my_info.fqcn}: don't send response - nothing to send")
                 self.received_msg_counter_pool.increment(
                     category=self._stats_category(message), counter_name=_CounterName.REPLY_NONE
                 )

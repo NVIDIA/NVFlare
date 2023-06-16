@@ -77,9 +77,6 @@ class RxStream(Stream):
             raise StreamError("Read from closed stream")
 
         if (not self.task.buffers) and self.task.eos:
-            if not self.task.stream_future.done():
-                self.task.stream_future.set_result(self.task.offset)
-
             return EOS
 
         # Block indefinitely if buffers are empty
@@ -109,6 +106,8 @@ class RxStream(Stream):
             self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_ACK_TOPIC, self.task.origin, message)
             self.task.offset_ack = self.task.offset
 
+        self.task.stream_future.set_progress(self.task.offset)
+
         return result
 
     def close(self):
@@ -134,15 +133,19 @@ class ByteReceiver:
 
         sid = message.get_header(StreamHeaderKey.STREAM_ID)
         origin = message.get_header(MessageHeaderKey.ORIGIN)
-        seq = message.get_header(StreamHeaderKey.STREAM_ID)
+        seq = message.get_header(StreamHeaderKey.SEQUENCE)
+        error = message.get_header(StreamHeaderKey.ERROR_MSG, None)
         task = self.rx_task_map.get(sid, None)
         if not task:
+            if error:
+                log.debug(f"Received error for non-existing stream: {sid} from {origin}")
+                return
+
             task = RxTask(sid, origin)
             self.rx_task_map[sid] = task
 
-        error = message.get_header(StreamHeaderKey.ERROR_MSG, None)
         if error:
-            self._stop_task(task, StreamError(f"Received error from {origin}: {error}"))
+            self._stop_task(task, StreamError(f"Received error from {origin}: {error}"), notify=False)
             return
 
         if seq == 0:
@@ -197,20 +200,21 @@ class ByteReceiver:
         if not task.waiter.is_set():
             task.waiter.set()
 
-    def _stop_task(self, task: RxTask, error: StreamError = None):
+    def _stop_task(self, task: RxTask, error: StreamError = None, notify=True):
         if error:
+            log.error(f"Stream error: {error}")
             task.stream_future.set_exception(error)
 
-            # Send error to sender
-            message = Message(Headers(), None)
+            if notify:
+                message = Message(Headers(), None)
 
-            message.add_headers(
-                {
-                    StreamHeaderKey.STREAM_ID: task.sid,
-                    StreamHeaderKey.DATA_TYPE: StreamDataType.ERROR,
-                    StreamHeaderKey.ERROR_MSG: str(error),
-                }
-            )
-            self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_ACK_TOPIC, task.origin, message)
+                message.add_headers(
+                    {
+                        StreamHeaderKey.STREAM_ID: task.sid,
+                        StreamHeaderKey.DATA_TYPE: StreamDataType.ERROR,
+                        StreamHeaderKey.ERROR_MSG: str(error),
+                    }
+                )
+                self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_ACK_TOPIC, task.origin, message)
 
         task.eos = True

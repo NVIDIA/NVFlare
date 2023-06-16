@@ -17,7 +17,7 @@ import time
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.stream_cell import StreamCell
 from nvflare.fuel.f3.streaming.stream_types import StreamFuture
-from nvflare.fuel.f3.streaming.tools.utils import RX_CELL, TEST_CHANNEL, TEST_TOPIC
+from nvflare.fuel.f3.streaming.tools.utils import RX_CELL, TEST_CHANNEL, TEST_TOPIC, make_buffer, BUF_SIZE
 
 logging.basicConfig(level=logging.DEBUG)
 formatter = logging.Formatter(fmt="%(relativeCreated)6d [%(threadName)-12s] [%(levelname)-5s] %(name)s: %(message)s")
@@ -43,15 +43,26 @@ class Receiver:
     def blob_cb(self, stream_future: StreamFuture, *args, **kwargs):
         sid = stream_future.get_stream_id()
         print(f"Stream {sid} received")
-        self.futures[sid] = sid
+        self.futures[sid] = stream_future
 
 
 url = "tcp://localhost:1234"
 receiver = Receiver(url)
 time.sleep(2)
+result = None
 while True:
     if receiver.get_futures:
         for sid, fut in receiver.get_futures().items():
-            print("{sid} Progress: {fut.get_progress()}")
+            if fut.done():
+                result = fut.result()
+                break
+            else:
+                print(f"{sid} Progress: {fut.get_progress()}")
     time.sleep(1)
+    if result:
+        break
 
+buffer = make_buffer(BUF_SIZE)
+
+if buffer == result:
+    print("Result is correct")

@@ -203,13 +203,12 @@ class StreamFuture:
                 timeout.
         """
 
-        with self.lock:
-            self.waiter.wait(timeout)
+        self.waiter.wait(timeout)
 
-            if self.error:
-                raise self.error
+        if self.error:
+            raise self.error
 
-            return self.value
+        return self.value
 
     def exception(self, timeout=None):
         """Return the exception raised by the call that the future represents.
@@ -229,9 +228,8 @@ class StreamFuture:
                 timeout.
         """
 
-        with self.lock:
-            self.waiter.wait(timeout)
-            return self.error
+        self.waiter.wait(timeout)
+        return self.error
 
     def set_result(self, value: Any):
         """Sets the return value of work associated with the future."""

@@ -21,7 +21,17 @@ RX_CELL = "server"
 def make_buffer(size: int) -> bytearray:
 
     buf = bytearray(size)
-    for i in range(size):
-        buf[i] = i & 0xff
+    buf_len = 0
+    n = 0
+    while True:
+        temp = n.to_bytes(8, "big", signed=False)
+        temp_len = len(temp)
+        if (buf_len + temp_len) > size:
+            temp_len = size - buf_len
+        buf[buf_len:buf_len+temp_len] = temp[0:temp_len]
+        buf_len += temp_len
+        n += 1
+        if buf_len >= size:
+            break
 
     return buf
