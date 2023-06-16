@@ -23,17 +23,9 @@ from nvflare.fuel.utils.config import Config, ConfigFormat, ConfigLoader
 
 class PyhoconConfig(Config):
     def __init__(self, conf: ConfigTree, file_path: Optional[str] = None):
-        super(PyhoconConfig, self).__init__(ConfigFormat.PYHOCON)
-        self.conf = conf
-        self.file_path = file_path
+        super(PyhoconConfig, self).__init__(conf, ConfigFormat.PYHOCON, file_path)
 
-    def get_native_conf(self):
-        return self.conf
-
-    def get_location(self) -> Optional[str]:
-        return self.file_path
-
-    def to_dict(self) -> Dict:
+    def to_dict(self, resolve: Optional[bool] = True) -> Dict:
         return self._convert_conf_item(self.conf)
 
     def to_conf_str(self, element: Dict) -> str:
@@ -61,6 +53,9 @@ class PyhoconConfig(Config):
             return conf_item
 
         return result
+
+    def to_str(self) -> str:
+        return HOCONConverter.to_hocon(self.conf)
 
 
 class PyhoconLoader(ConfigLoader):
