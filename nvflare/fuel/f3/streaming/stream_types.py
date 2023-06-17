@@ -15,7 +15,6 @@ import logging
 import threading
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
-from concurrent.futures import Future
 from typing import Any, Callable, Optional
 
 from nvflare.fuel.f3.connection import BytesAlike
@@ -120,7 +119,6 @@ class StreamFuture:
     def __init__(self, stream_id: str, headers: Optional[dict] = None):
         self.stream_id = stream_id
         self.headers = headers
-        self.task_future: Optional[Future] = None
         self.waiter = threading.Event()
         self.lock = threading.Lock()
         self.error: Optional[StreamError] = None
@@ -159,8 +157,6 @@ class StreamFuture:
                 return False
 
             self.error = StreamCancelled("Stream is cancelled")
-            if self.task_future:
-                self.task_future.cancel()
 
             return True
 
@@ -247,8 +243,6 @@ class StreamFuture:
         with self.lock:
             self.error = exception
             self.waiter.set()
-            if self.task_future:
-                self.task_future.cancel()
 
         self._invoke_callbacks()
 

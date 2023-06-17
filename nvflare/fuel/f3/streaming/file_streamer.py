@@ -13,12 +13,14 @@
 # limitations under the License.
 import logging
 import os
-from typing import Any, Callable, Optional
+from pathlib import Path
+from typing import Callable, Optional
 
 from nvflare.fuel.f3.connection import BytesAlike
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.byte_receiver import ByteReceiver
 from nvflare.fuel.f3.streaming.byte_streamer import ByteStreamer
+from nvflare.fuel.f3.streaming.stream_const import StreamHeaderKey
 from nvflare.fuel.f3.streaming.stream_types import Stream, StreamFuture
 from nvflare.fuel.f3.streaming.stream_utils import stream_thread_pool
 
@@ -40,63 +42,6 @@ class FileStream(Stream):
         self.file.close()
 
 
-class FileFuture(StreamFuture):
-    """The future used by File callback. Unlike StreamFuture, its result is the filename.
-    All other calls are delegated to StreamFuture
-    """
-
-    def __init__(self, future: StreamFuture, file_name: Optional[str]):
-        super().__init__(future.get_stream_id(), future.get_headers())
-        self.future = future
-        self.file_name = file_name
-
-    def result(self, timeout=None) -> Any:
-        self.future.result()
-        return self.file_name
-
-    def get_stream_id(self) -> str:
-        return self.future.get_stream_id()
-
-    def get_headers(self) -> Optional[dict]:
-        return self.future.get_headers()
-
-    def get_size(self) -> int:
-        return self.future.get_size()
-
-    def set_size(self, size: int):
-        self.future.set_size(size)
-
-    def get_progress(self) -> int:
-        return self.future.get_progress()
-
-    def set_progress(self, progress: int):
-        self.future.set_progress(progress)
-
-    def cancel(self):
-        self.future.cancel()
-
-    def cancelled(self):
-        return self.future.cancelled()
-
-    def running(self):
-        return self.future.running()
-
-    def done(self):
-        return self.future.done()
-
-    def add_done_callback(self, done_cb: Callable, *args, **kwargs):
-        self.future.add_done_callback(done_cb, *args, **kwargs)
-
-    def exception(self, timeout=None):
-        return self.future.exception(timeout)
-
-    def set_result(self, value: Any):
-        self.future.set_result(value)
-
-    def set_exception(self, exception):
-        self.future.set_exception(exception)
-
-
 class FileHandler:
     def __init__(self, file_cb: Callable):
         self.file_cb = file_cb
@@ -109,18 +54,16 @@ class FileHandler:
             log.warning("Resume is not supported, ignored")
 
         self.size = stream.get_size()
-        file_future = FileFuture(future, None)
+        original_name = future.headers.get(StreamHeaderKey.FILE_NAME)
 
-        file_name = self.file_cb(file_future, *args, **kwargs)
-
-        file_future.file_name = file_name
-        stream_thread_pool.submit(self._write_to_file, file_future, stream)
+        file_name = self.file_cb(future, original_name, *args, **kwargs)
+        stream_thread_pool.submit(self._write_to_file, file_name, future, stream)
 
         return 0
 
-    def _write_to_file(self, future: FileFuture, stream: Stream):
+    def _write_to_file(self, file_name: str, future: StreamFuture, stream: Stream):
 
-        file = open(future.file_name, "wb")
+        file = open(file_name, "wb")
 
         chunk_size = ByteStreamer.get_chunk_size()
         file_size = 0
@@ -134,9 +77,9 @@ class FileHandler:
 
         file.close()
         if self.size and (self.size != file_size):
-            log.warning(f"Stream size doesn't match: {self.size} <> {file_size}")
+            log.warning(f"Size doesn't match: {self.size} <> {file_size}")
 
-        future.set_result(file_size)
+        future.set_result(file_name)
 
 
 class FileStreamer:
@@ -144,9 +87,18 @@ class FileStreamer:
         self.byte_streamer = byte_streamer
         self.byte_receiver = byte_receiver
 
-    def send(self, channel: str, topic: str, target: str, headers: dict, file_name: str) -> StreamFuture:
-        file_stream = FileStream(file_name, headers)
-        return self.byte_streamer.send(channel, topic, target, headers, file_stream)
+    def send(self, channel: str, topic: str, target: str, message: Message) -> StreamFuture:
+        file_name = Path(message.payload).name
+        file_stream = FileStream(message.payload, message.headers)
+
+        message.add_headers(
+            {
+                StreamHeaderKey.SIZE: file_stream.get_size(),
+                StreamHeaderKey.FILE_NAME: file_name,
+            }
+        )
+
+        return self.byte_streamer.send(channel, topic, target, message.headers, file_stream)
 
     def register_file_callback(self, channel, topic, file_cb: Callable, *args, **kwargs):
         handler = FileHandler(file_cb)

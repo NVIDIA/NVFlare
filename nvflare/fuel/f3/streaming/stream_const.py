@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 STREAM_PREFIX = "sm__"
-STREAM_CHANNEL = STREAM_PREFIX + "STREAM_CHANNEL"
-STREAM_DATA_TOPIC = STREAM_PREFIX + "STREAM_DATA"
-STREAM_ACK_TOPIC = STREAM_PREFIX + "STREAM_ACK"
+STREAM_CHANNEL = STREAM_PREFIX + "STREAM"
+STREAM_DATA_TOPIC = STREAM_PREFIX + "DATA"
+STREAM_ACK_TOPIC = STREAM_PREFIX + "ACK"
 # End of Stream indicator
 EOS = bytes()
 
@@ -44,6 +44,7 @@ class StreamHeaderKey:
     OFFSET = STREAM_PREFIX + "os"
     ERROR_MSG = STREAM_PREFIX + "em"
     CHANNEL = STREAM_PREFIX + "ch"
+    FILE_NAME = STREAM_PREFIX + "fn"
     TOPIC = STREAM_PREFIX + "tp"
     OBJECT_STREAM_ID = STREAM_PREFIX + "os"
     OBJECT_INDEX = STREAM_PREFIX + "oi"

@@ -11,10 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-BUF_SIZE = 64*1024*1024
-TEST_CHANNEL = "test-channel"
-TEST_TOPIC = "test-topic"
-TX_CELL = "client-a"
+import logging
+
+BUF_SIZE = 64 * 1024 * 1024 + 1
+TEST_CHANNEL = "stream"
+TEST_TOPIC = "test"
+TX_CELL = "sender"
 RX_CELL = "server"
 
 
@@ -28,10 +30,22 @@ def make_buffer(size: int) -> bytearray:
         temp_len = len(temp)
         if (buf_len + temp_len) > size:
             temp_len = size - buf_len
-        buf[buf_len:buf_len+temp_len] = temp[0:temp_len]
+        buf[buf_len : buf_len + temp_len] = temp[0:temp_len]
         buf_len += temp_len
         n += 1
         if buf_len >= size:
             break
 
     return buf
+
+
+def setup_log(level):
+    logging.basicConfig(level=level)
+    formatter = logging.Formatter(
+        fmt="%(relativeCreated)6d [%(threadName)-12s] [%(levelname)-5s] %(name)s: %(message)s"
+    )
+    handler = logging.StreamHandler()
+    handler.setFormatter(formatter)
+    root_log = logging.getLogger()
+    root_log.handlers.clear()
+    root_log.addHandler(handler)

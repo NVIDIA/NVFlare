@@ -18,33 +18,36 @@ from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.stream_cell import StreamCell
 from nvflare.fuel.f3.streaming.stream_types import StreamFuture
-from nvflare.fuel.f3.streaming.tools.utils import TEST_CHANNEL, TEST_TOPIC, RX_CELL, TX_CELL, make_buffer, BUF_SIZE
-
-logging.basicConfig(level=logging.DEBUG)
-formatter = logging.Formatter(fmt="%(relativeCreated)6d [%(threadName)-12s] [%(levelname)-5s] %(name)s: %(message)s")
-handler = logging.StreamHandler()
-handler.setFormatter(formatter)
-root_log = logging.getLogger()
-root_log.handlers.clear()
-root_log.addHandler(handler)
+from nvflare.fuel.f3.streaming.tools.utils import (
+    BUF_SIZE,
+    RX_CELL,
+    TEST_CHANNEL,
+    TEST_TOPIC,
+    TX_CELL,
+    make_buffer,
+    setup_log,
+)
 
 
 class Sender:
+    """Test BLOB sending"""
 
     def __init__(self, url: str):
         core_cell = Cell(TX_CELL, url, secure=False, credentials={})
         self.stream_cell = StreamCell(core_cell)
         core_cell.start()
 
-    def send(self,  blob: bytes) -> StreamFuture:
+    def send(self, blob: bytes) -> StreamFuture:
         return self.stream_cell.send_blob(TEST_CHANNEL, TEST_TOPIC, RX_CELL, Message(None, blob))
 
 
-connect_url = "tcp://localhost:1234"
-sender = Sender(connect_url)
-time.sleep(2)
+if __name__ == "__main__":
+    setup_log(logging.INFO)
+    connect_url = "tcp://localhost:1234"
+    sender = Sender(connect_url)
+    time.sleep(2)
 
-buffer = make_buffer(BUF_SIZE)
-fut = sender.send(buffer)
-n = fut.result()
-print(f"Bytes sent: {n}")
+    buffer = make_buffer(BUF_SIZE)
+    fut = sender.send(buffer)
+    n = fut.result()
+    print(f"Bytes sent: {n}")

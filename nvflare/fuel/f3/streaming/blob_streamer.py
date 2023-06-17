@@ -15,6 +15,7 @@ import logging
 from typing import Callable, Optional
 
 from nvflare.fuel.f3.connection import BytesAlike
+from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.byte_receiver import ByteReceiver
 from nvflare.fuel.f3.streaming.byte_streamer import ByteStreamer
 from nvflare.fuel.f3.streaming.stream_const import EOS
@@ -38,7 +39,7 @@ class BlobStream(Stream):
         next_pos = self.pos + chunk_size
         if next_pos > self.get_size():
             next_pos = self.get_size()
-        buf = self.blob_view[self.pos: next_pos]
+        buf = self.blob_view[self.pos : next_pos]
         self.pos = next_pos
         return buf
 
@@ -80,7 +81,7 @@ class BlobHandler:
 
                 length = len(buf)
                 if self.size > 0:
-                    self.buffer[buf_size:buf_size+length] = buf
+                    self.buffer[buf_size : buf_size + length] = buf
                 else:
                     self.buffer += buf
 
@@ -101,9 +102,9 @@ class BlobStreamer:
         self.byte_streamer = byte_streamer
         self.byte_receiver = byte_receiver
 
-    def send(self, channel: str, topic: str, target: str, headers: dict, blob: BytesAlike) -> StreamFuture:
-        blob_stream = BlobStream(blob, headers)
-        return self.byte_streamer.send(channel, topic, target, headers, blob_stream)
+    def send(self, channel: str, topic: str, target: str, message: Message) -> StreamFuture:
+        blob_stream = BlobStream(message.payload, message.headers)
+        return self.byte_streamer.send(channel, topic, target, message.headers, blob_stream)
 
     def register_blob_callback(self, channel, topic, blob_cb: Callable, *args, **kwargs):
         handler = BlobHandler(blob_cb)

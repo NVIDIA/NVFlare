@@ -17,7 +17,7 @@ from typing import Optional
 
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
-from nvflare.fuel.f3.message import Headers, Message
+from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.stream_const import (
     STREAM_ACK_TOPIC,
     STREAM_CHANNEL,
@@ -26,12 +26,11 @@ from nvflare.fuel.f3.streaming.stream_const import (
     StreamHeaderKey,
 )
 from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError, StreamFuture
-from nvflare.fuel.f3.streaming.stream_utils import gen_stream_id, stream_thread_pool
+from nvflare.fuel.f3.streaming.stream_utils import gen_stream_id, stream_thread_pool, wrap_view
 
 STREAM_CHUNK_SIZE = 1024 * 1024
 STREAM_WINDOW_SIZE = 16 * STREAM_CHUNK_SIZE
-STREAM_FUTURE_WAIT = 5
-STREAM_ACK_WAIT = 5
+STREAM_ACK_WAIT = 10
 
 log = logging.getLogger(__name__)
 
@@ -49,6 +48,7 @@ class TxTask:
         self.headers = headers
         self.stream = stream
         self.stream_future = None
+        self.task_future = None
         self.ack_waiter = threading.Event()
         self.seq = 0
         self.offset = 0
@@ -75,21 +75,12 @@ class ByteStreamer:
 
         future = StreamFuture(tx_task.sid)
         future.set_size(stream.get_size())
-        future.task_future = stream_thread_pool.submit(self._transmit_task, tx_task)
         tx_task.stream_future = future
-        # Borrow ack_waiter to signal the future setting
-        tx_task.ack_waiter.set()
+        tx_task.task_future = stream_thread_pool.submit(self._transmit_task, tx_task)
 
         return future
 
     def _transmit_task(self, task: TxTask):
-
-        # Wait till stream_future is set
-        if not task.ack_waiter.wait(STREAM_FUTURE_WAIT):
-            msg = f"Stream future not set up after {STREAM_FUTURE_WAIT} seconds"
-            log.error(msg)
-            self._stop_task(task, StreamError(msg))
-            return
 
         while not task.stop:
             buf = task.stream.read(STREAM_CHUNK_SIZE)
@@ -107,7 +98,7 @@ class ByteStreamer:
                 task.ack_waiter.clear()
                 result = task.ack_waiter.wait(timeout=STREAM_ACK_WAIT)
                 if not result:
-                    self._stop_task(task, StreamError(f"{task} timed out waiting for ACK"))
+                    self._stop_task(task, StreamError(f"{task} ACK timeouts after {STREAM_ACK_WAIT} seconds"))
                     return
 
                 if task.stop:
@@ -137,9 +128,9 @@ class ByteStreamer:
             else:
                 payload = task.buffer
         else:
-            payload = memoryview(task.buffer)[0 : task.buffer_size]
+            payload = wrap_view(task.buffer)[0 : task.buffer_size]
 
-        message = Message(Headers(), payload)
+        message = Message(None, payload)
 
         if task.offset == 0:
             # User headers are only included in the first chunk
@@ -181,7 +172,7 @@ class ByteStreamer:
 
     def _stop_task(self, task: TxTask, error: StreamError = None, notify=True):
         if error:
-            log.debug(f"Steam error: {error}")
+            log.debug(f"Stream error: {error}")
             task.stream_future.set_exception(error)
 
             if notify:

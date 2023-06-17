@@ -20,7 +20,7 @@ from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.registry import Callback, Registry
 from nvflare.fuel.f3.connection import BytesAlike
-from nvflare.fuel.f3.message import Headers, Message
+from nvflare.fuel.f3.message import Message
 from nvflare.fuel.f3.streaming.stream_const import (
     EOS,
     STREAM_ACK_TOPIC,
@@ -30,6 +30,7 @@ from nvflare.fuel.f3.streaming.stream_const import (
     StreamHeaderKey,
 )
 from nvflare.fuel.f3.streaming.stream_types import Stream, StreamError, StreamFuture
+from nvflare.fuel.f3.streaming.stream_utils import stream_thread_pool
 
 log = logging.getLogger(__name__)
 
@@ -95,7 +96,7 @@ class RxStream(Stream):
         self.task.offset += len(buf)
         if self.task.offset - self.task.offset_ack > ACK_INTERVAL:
             # Send ACK
-            message = Message(Headers(), None)
+            message = Message()
             message.add_headers(
                 {
                     StreamHeaderKey.STREAM_ID: self.task.sid,
@@ -156,6 +157,7 @@ class ByteReceiver:
 
             task.stream_future = StreamFuture(sid, message.headers)
             task.size = message.get_header(StreamHeaderKey.SIZE, 0)
+            task.stream_future.set_size(task.size)
 
             # Invoke callback
             callback = self.registry.find(task.channel, task.topic)
@@ -163,8 +165,7 @@ class ByteReceiver:
                 self._stop_task(task, StreamError(f"No callback is registered for {task.channel}/{task.topic}"))
                 return
 
-            stream = RxStream(self.cell, task)
-            callback.cb(task.stream_future, stream, False, *callback.args, **callback.kwargs)
+            stream_thread_pool.submit(self._callback_wrapper, task, callback)
 
         if seq == task.next_seq:
             self._append(task, message.payload)
@@ -189,6 +190,16 @@ class ByteReceiver:
             # Task is not done till all buffers are read so future is not set here
             self._stop_task(task)
 
+    def _callback_wrapper(self, task: RxTask, callback: Callback):
+        """A wrapper to catch all exceptions in the callback"""
+        try:
+            stream = RxStream(self.cell, task)
+            return callback.cb(task.stream_future, stream, False, *callback.args, **callback.kwargs)
+        except Exception as ex:
+            msg = f"{task} callback {callback.cb} throws exception: {ex}"
+            log.error(msg)
+            self._stop_task(task, StreamError(msg))
+
     @staticmethod
     def _append(task: RxTask, buf: bytes):
         if not buf:
@@ -206,7 +217,7 @@ class ByteReceiver:
             task.stream_future.set_exception(error)
 
             if notify:
-                message = Message(Headers(), None)
+                message = Message()
 
                 message.add_headers(
                     {

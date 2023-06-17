@@ -38,7 +38,7 @@ from nvflare.fuel.f3.cellnet.defs import (
 )
 from nvflare.fuel.f3.cellnet.fqcn import FQCN, FqcnInfo, same_family
 from nvflare.fuel.f3.cellnet.registry import Callback, Registry
-from nvflare.fuel.f3.cellnet.utils import decode_payload, encode_payload, format_log_message, make_reply, new_message
+from nvflare.fuel.f3.cellnet.utils import decode_payload, encode_payload, format_log_message, make_reply
 from nvflare.fuel.f3.comm_config import CommConfigurator
 from nvflare.fuel.f3.communicator import Communicator, MessageReceiver
 from nvflare.fuel.f3.connection import Connection
@@ -87,7 +87,7 @@ class TargetMessage:
     @staticmethod
     def from_dict(d: dict):
         msg_dict = d.get("message")
-        msg = new_message(headers=msg_dict.get("headers"), payload=msg_dict.get("payload"))
+        msg = Message(headers=msg_dict.get("headers"), payload=msg_dict.get("payload"))
         return TargetMessage(target=d.get("target"), channel=d.get("channel"), topic=d.get("topic"), message=msg)
 
 
@@ -176,7 +176,7 @@ class _BulkSender:
             f"{self.cell.get_fqcn()}: bulk sender {self.target} sending bulk size {len(messages_to_send)}"
         )
         tms = [m.to_dict() for m in messages_to_send]
-        bulk_msg = new_message(payload=tms)
+        bulk_msg = Message(None, tms)
         send_errs = self.cell.fire_and_forget(
             channel=_CHANNEL, topic=_TOPIC_BULK, targets=[self.target], message=bulk_msg
         )
@@ -827,7 +827,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                     channel=_CHANNEL,
                     topic=_TOPIC_BYE,
                     targets=targets,
-                    request=new_message(),
+                    request=Message(),
                     timeout=0.5,
                     optional=True,
                 )
@@ -1304,7 +1304,7 @@ class Cell(MessageReceiver, EndpointMonitor):
                 self.logger.debug(f"{self.my_info.fqcn}: agent for {peer_ep.name} is already gone")
 
         # ack back
-        return new_message()
+        return Message()
 
     def _receive_bulk_message(self, request: Message):
         target_msgs = request.payload

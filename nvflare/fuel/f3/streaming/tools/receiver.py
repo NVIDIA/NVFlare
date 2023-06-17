@@ -17,18 +17,11 @@ import time
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.stream_cell import StreamCell
 from nvflare.fuel.f3.streaming.stream_types import StreamFuture
-from nvflare.fuel.f3.streaming.tools.utils import RX_CELL, TEST_CHANNEL, TEST_TOPIC, make_buffer, BUF_SIZE
-
-logging.basicConfig(level=logging.DEBUG)
-formatter = logging.Formatter(fmt="%(relativeCreated)6d [%(threadName)-12s] [%(levelname)-5s] %(name)s: %(message)s")
-handler = logging.StreamHandler()
-handler.setFormatter(formatter)
-root_log = logging.getLogger()
-root_log.handlers.clear()
-root_log.addHandler(handler)
+from nvflare.fuel.f3.streaming.tools.utils import BUF_SIZE, RX_CELL, TEST_CHANNEL, TEST_TOPIC, make_buffer, setup_log
 
 
 class Receiver:
+    """Test BLOB receiving"""
 
     def __init__(self, listening_url: str):
         cell = Cell(RX_CELL, listening_url, secure=False, credentials={})
@@ -46,23 +39,27 @@ class Receiver:
         self.futures[sid] = stream_future
 
 
-url = "tcp://localhost:1234"
-receiver = Receiver(url)
-time.sleep(2)
-result = None
-while True:
-    if receiver.get_futures:
-        for sid, fut in receiver.get_futures().items():
-            if fut.done():
-                result = fut.result()
-                break
-            else:
-                print(f"{sid} Progress: {fut.get_progress()}")
-    time.sleep(1)
-    if result:
-        break
+if __name__ == "__main__":
+    setup_log(logging.DEBUG)
+    url = "tcp://localhost:1234"
+    receiver = Receiver(url)
+    time.sleep(2)
+    result = None
+    while True:
+        if receiver.get_futures:
+            for sid, fut in receiver.get_futures().items():
+                if fut.done():
+                    result = fut.result()
+                    break
+                else:
+                    print(f"{sid} Progress: {fut.get_progress()}")
+        time.sleep(1)
+        if result:
+            break
 
-buffer = make_buffer(BUF_SIZE)
+    buffer = make_buffer(BUF_SIZE)
 
-if buffer == result:
-    print("Result is correct")
+    if buffer == result:
+        print("Result is correct")
+    else:
+        print("Result is wrong")

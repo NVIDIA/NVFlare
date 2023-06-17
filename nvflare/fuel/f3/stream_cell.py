@@ -1,16 +1,4 @@
-#  Copyright (c) 2021-2022, NVIDIA CORPORATION.  All rights reserved.
-#
-#  Licensed under the Apache License, Version 2.0 (the "License");
-#  you may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -45,11 +33,12 @@ class StreamCell:
         self.file_streamer = FileStreamer(self.byte_streamer, self.byte_receiver)
         self.object_streamer = ObjectStreamer(self.blob_streamer)
 
-    def get_chunk_size(self):
+    @staticmethod
+    def get_chunk_size():
         """Get the default chunk size used by StreamCell
         Byte stream are broken into chunks of this size before sending over Cellnet
         """
-        return self.byte_streamer.get_chunk_size()
+        return ByteStreamer.get_chunk_size()
 
     def send_stream(self, channel: str, topic: str, target: str, message: Message) -> StreamFuture:
         """
@@ -113,7 +102,11 @@ class StreamCell:
             The future result is the total number of bytes sent
 
         """
-        return self.blob_streamer.send(channel, topic, target, message.headers, message.payload)
+
+        if not isinstance(message.payload, (bytes, bytearray, memoryview)):
+            raise StreamError(f"Message payload is not a byte array: {type(message.payload)}")
+
+        return self.blob_streamer.send(channel, topic, target, message)
 
     def register_blob_cb(self, channel: str, topic: str, blob_cb, *args, **kwargs):
         """
@@ -153,12 +146,12 @@ class StreamCell:
         if not os.path.isfile(file_name) or not os.access(file_name, os.R_OK):
             raise StreamError(f"File {file_name} doesn't exist or isn't readable")
 
-        return self.file_streamer.send(channel, topic, target, message.headers, message.payload)
+        return self.file_streamer.send(channel, topic, target, message)
 
     def register_file_cb(self, channel: str, topic: str, file_cb, *args, **kwargs):
         """
         Register callbacks for file receiving. The callbacks must have the following signatures,
-            file_cb(future: StreamFuture, *args, **kwargs) -> str
+            file_cb(future: StreamFuture, file_name: str, *args, **kwargs) -> str
                 The future represents the file receiving task and the result is the final file path
                 It returns the full path where the file will be written to
 
