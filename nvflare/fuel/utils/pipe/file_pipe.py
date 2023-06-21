@@ -16,20 +16,21 @@ import os
 import shutil
 import time
 
+from nvflare.fuel.utils.pipe.file_accessor import FileAccessor
+from nvflare.fuel.utils.pipe.file_name_utils import file_name_to_message, message_to_file_name
+from nvflare.fuel.utils.pipe.fobs_file_accessor import FobsFileAccessor
+from nvflare.fuel.utils.pipe.pipe import Message, Mode, Pipe
 from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_number, check_str
-
-from .file_accessor import FileAccessor
-from .file_name_utils import file_name_to_message, message_to_file_name
-from .fobs_file_accessor import FobsFileAccessor
-from .pipe import Message, Pipe
 
 
 class FilePipe(Pipe):
-    def __init__(self, root_path: str, file_check_interval=0.1):
+    def __init__(self, mode: Mode, root_path: str, file_check_interval=0.1):
         """Implementation of communication through the file system.
+
         Args:
             root_path: root path
         """
+        super().__init__(mode=mode)
         check_str("root_path", root_path)
         check_positive_number("file_check_interval", file_check_interval)
 
@@ -43,19 +44,22 @@ class FilePipe(Pipe):
         self.x_path = None
         self.y_path = None
         self.t_path = None
-        self.get_f = None
-        self.put_f = None
+
+        if self.mode == Mode.ACTIVE:
+            self.get_f = self.x_get
+            self.put_f = self.x_put
+        elif self.mode == Mode.PASSIVE:
+            self.get_f = self.y_get
+            self.put_f = self.y_put
+
         self.accessor = FobsFileAccessor()  # default
 
     def set_file_accessor(self, accessor: FileAccessor):
-        """Set the file accessor to be used by the pipe.
+        """Sets the file accessor to be used by the pipe.
         The default file accessor is FobsFileAccessor.
 
         Args:
             accessor: the accessor to be used.
-
-        Returns:
-
         """
         check_object_type("accessor", accessor, FileAccessor)
         self.accessor = accessor
@@ -68,17 +72,9 @@ class FilePipe(Pipe):
             # this is okay
             pass
 
-    def open(self, name: str, me: str):
+    def open(self, name: str):
         if not self.accessor:
             raise RuntimeError("File accessor is not set. Make sure to set a FileAccessor before opening the pipe")
-        if me == "x":
-            self.get_f = self.x_get
-            self.put_f = self.x_put
-        elif me == "y":
-            self.get_f = self.y_get
-            self.put_f = self.y_put
-        else:
-            raise ValueError(f"me must be 'x' or 'y' but got {me}")
 
         pipe_path = os.path.join(self.root_path, name)
 
@@ -97,7 +93,6 @@ class FilePipe(Pipe):
         if not os.path.exists(t_path):
             self._make_dir(t_path)
 
-        Pipe.__init__(self)
         self.pipe_path = pipe_path
         self.x_path = x_path
         self.y_path = y_path
@@ -133,16 +128,16 @@ class FilePipe(Pipe):
         self._clear_dir(self.t_path)
 
     def _monitor_file(self, file_path: str, timeout) -> bool:
-        """
-        Monitor the file until it's read-and-removed by peer, or timed out.
+        """Monitors the file until it's read-and-removed by peer, or timed out.
+
         If timeout, remove the file.
 
         Args:
             file_path: the path to be monitored
             timeout: how long to wait for timeout
 
-        Returns: whether the file has been read and removed
-
+        Returns:
+            whether the file has been read and removed
         """
         if not timeout:
             return False

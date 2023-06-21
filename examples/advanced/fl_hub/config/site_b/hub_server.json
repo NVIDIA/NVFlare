@@ -14,7 +14,8 @@
       "id": "pipe",
       "path": "nvflare.fuel.utils.pipe.file_pipe.FilePipe",
       "args": {
-        "root_path": "/tmp/nvflare/hub/pipe/t1_t2b"
+        "root_path": "/tmp/nvflare/hub/pipe/t1_t2b",
+        "mode": "PASSIVE"
       }
     }
   ]
