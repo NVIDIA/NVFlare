@@ -1,6 +1,6 @@
 # One-shot Vertical Federated Learning with CIFAR-10
 
-This example includes instructions on how to run single-client [one-shot vertical federated learning](https://arxiv.org/abs/2303.16270) using the 
+This example includes instructions on how to run [one-shot vertical federated learning](https://arxiv.org/abs/2303.16270) using the 
 CIFAR-10 dataset and the [FL simulator](https://nvflare.readthedocs.io/en/latest/user_guide/fl_simulator.html).
 
 We assume one client holds the images, and the other client holds the labels to compute losses and accuracy metrics. 
