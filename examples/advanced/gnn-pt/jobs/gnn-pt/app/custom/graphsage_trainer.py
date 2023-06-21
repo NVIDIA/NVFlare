@@ -71,19 +71,12 @@ class GraphSageTrainer(Executor):
         # Create PPI dataset for training.
         path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data', 'PPI')
         train_dataset = PPI(path, split='train')
-        val_dataset = PPI(path, split='val')
-        test_dataset = PPI(path, split='test')
-        kwargs = {'batch_size': 1024, 'num_workers': 6, 'persistent_workers': True}
         train_data = Batch.from_data_list(train_dataset)
         self._train_loader = LinkNeighborLoader(train_data, batch_size=2048, shuffle=True,
                             neg_sampling_ratio=1.0, num_neighbors=[10, 10],
                             num_workers=6, persistent_workers=True)
-        #self._train_loader = DataLoader(train_dataset, batch_size=2)
+
         self._n_iterations = len(self._train_loader)
-        # Evaluation loaders (one datapoint corresponds to a graph)
-        train_loader = DataLoader(train_dataset, batch_size=2)
-        val_loader = DataLoader(val_dataset, batch_size=2)
-        test_loader = DataLoader(test_dataset, batch_size=2)
 
         # Training setup
         self.device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
