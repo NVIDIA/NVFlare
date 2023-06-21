@@ -15,15 +15,10 @@
 import re
 import uuid
 from abc import ABC, abstractmethod
-from enum import Enum
 from typing import Any, Union
 
+from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.validation_utils import check_str
-
-
-class Mode(str, Enum):
-    ACTIVE = "ACTIVE"
-    PASSIVE = "PASSIVE"
 
 
 class Message:

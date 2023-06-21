@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .pipe import Message
+from nvflare.fuel.utils.pipe.pipe import Message
 
 
 def message_to_file_name(msg: Message) -> str:
