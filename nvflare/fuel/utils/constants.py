@@ -12,26 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from dataclasses import dataclass
-
-from nvflare.fuel.f3.drivers.net_utils import short_url
-from nvflare.fuel.utils.constants import Mode
+from enum import Enum
 
 
-@dataclass
-class ConnectorInfo:
-    """Connector information"""
-
-    handle: str
-    # noinspection PyUnresolvedReferences
-    driver: "Driver"
-    params: dict
-    mode: Mode
-    total_conns: int
-    curr_conns: int
-    started: bool
-    stopping: bool
-
-    def __str__(self):
-        url = short_url(self.params)
-        return f"[{self.handle} {self.mode.name} {url}]"
+class Mode(str, Enum):
+    ACTIVE = "ACTIVE"
+    PASSIVE = "PASSIVE"

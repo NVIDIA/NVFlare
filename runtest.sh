@@ -301,7 +301,7 @@ if [[ -z $cmd ]]; then
     cmd="check_license;
         check_style_type_import "${DIR_TO_CHECK[@]}";
         fix_style_import "${DIR_TO_CHECK[@]}";
-        python3 -m pytest --numprocesses=auto -v --cov=nvflare --cov-report html:cov_html --cov-report xml:cov.xml --junitxml=unit_test.xml tests/unit_test;
+        python3 -m pytest --numprocesses=auto -v --cov=nvflare --cov-report html:cov_html --cov-report xml:cov.xml --junitxml=unit_test.xml --dist loadgroup tests/unit_test;
         "
 else
     cmd="$cmd $target"
