@@ -18,10 +18,11 @@ from timeit import default_timer as timer
 import numpy as np
 import torch
 import torch.optim as optim
-# from oneshotVFL.cifar10_splitnn_dataset import CIFAR10SplitNN
-from splitnn.cifar10_splitnn_dataset import CIFAR10SplitNN
 from oneshotVFL.vfl_oneshot_workflow import OSVFLDataKind, OSVFLNNConstants
 from sklearn.cluster import KMeans
+
+# from oneshotVFL.cifar10_splitnn_dataset import CIFAR10SplitNN
+from splitnn.cifar10_splitnn_dataset import CIFAR10SplitNN
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import transforms
 
@@ -100,7 +101,6 @@ class CIFAR10LearnerOneshotVFL(Learner):
 
         # use FOBS serializing/deserializing PyTorch tensors
         fobs.register(TensorDecomposer)
-
 
     def initialize(self, parts: dict, fl_ctx: FLContext):
         t_start = timer()
@@ -206,7 +206,7 @@ class CIFAR10LearnerOneshotVFL(Learner):
     def _extract_features(self):
         self.model.train()
         features = []
-        for batch_idx, (inputs, _) in enumerate(self.train_dataloader_no_shuffle):
+        for _, (inputs, _) in enumerate(self.train_dataloader_no_shuffle):
             inputs = inputs.to(self.device)
             features.append(self.model(inputs))
 
@@ -380,7 +380,7 @@ class CIFAR10LearnerOneshotVFL(Learner):
                     fl_ctx,
                     f"Label Side Epoch {e}/{self.encoder_epoch} train_loss: {loss_epoch:.4f}, train_accuracy: {acc:.4f}",
                 )
-        
+
         return make_reply(ReturnCode.OK)
 
     def _valid_label_side(self, topic: str, request: Shareable, fl_ctx: FLContext):
@@ -537,7 +537,8 @@ class CIFAR10LearnerOneshotVFL(Learner):
                 else:
                     raise ValueError(f"No message returned from {self.other_client}!")
 
-            # second round: site 1 conducts clustering,  local training, and sending features to site-2; site-2 trains the classifier
+            # second round: site-1 conducts clustering, local training, and sending features to site-2;
+            # site-2 trains the classifier
             elif _curr_round == 1:
                 # site-1 conducts clustering and local training
                 cluster_labels = self._cluster_gradients(gradients, fl_ctx)
@@ -581,7 +582,7 @@ class CIFAR10LearnerOneshotVFL(Learner):
 
         self.model.eval()
         features = []
-        for batch_idx, (inputs, _) in enumerate(self.valid_dataloader):
+        for _, (inputs, _) in enumerate(self.valid_dataloader):
             inputs = inputs.to(self.device)
             features.append(self.model(inputs))
 

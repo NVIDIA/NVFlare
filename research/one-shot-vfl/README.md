@@ -7,12 +7,12 @@ We assume one client holds the images, and the other client holds the labels to 
 Activations and corresponding gradients are being exchanged between the clients using NVFlare.
 
 ###### Abstract:
-Federated learning is a popular collaborative learning approach that enables clients to train a global model without sharing their local data. Vertical federated learning (VFL) deals with scenarios in which the data on clients have different feature spaces but share some overlapping samples. Existing VFL approaches suffer from high communication costs and cannot deal efficiently with limited overlapping samples commonly seen in the real world. We propose a practical vertical federated learning (VFL) framework called \textbf{one-shot VFL} that can solve the communication bottleneck and the problem of limited overlapping samples simultaneously based on semi-supervised learning. We also propose \textbf{few-shot VFL} to improve the accuracy further with just one more communication round between the server and the clients. In our proposed framework, the clients only need to communicate with the server once or only a few times. We evaluate the proposed VFL framework on both image and tabular datasets. Our methods can improve the accuracy by more than 46.5\% and reduce the communication cost by more than 330 times compared with state-of-the-art VFL methods when evaluated on CIFAR-10.
+> Federated learning is a popular collaborative learning approach that enables clients to train a global model without sharing their local data. Vertical federated learning (VFL) deals with scenarios in which the data on clients have different feature spaces but share some overlapping samples. Existing VFL approaches suffer from high communication costs and cannot deal efficiently with limited overlapping samples commonly seen in the real world. We propose a practical vertical federated learning (VFL) framework called **one-shot VFL** that can solve the communication bottleneck and the problem of limited overlapping samples simultaneously based on semi-supervised learning. We also propose **few-shot VFL** to improve the accuracy further with just one more communication round between the server and the clients. In our proposed framework, the clients only need to communicate with the server once or only a few times. We evaluate the proposed VFL framework on both image and tabular datasets. Our methods can improve the accuracy by more than 46.5% and reduce the communication cost by more than 330 times compared with state-of-the-art VFL methods when evaluated on CIFAR-10.
 
 <img src="./figs/oneshotVFL.png" alt="One-shot VFL setup" width="800"/>
 
 For instructions of how to run CIFAR-10 in real-world deployment settings, 
-see the example on ["Real-world Federated Learning with CIFAR-10"](../../cifar10/cifar10-real-world/README.md).
+see the example on ["Real-world Federated Learning with CIFAR-10"](../../examples/advanced/cifar10/cifar10-real-world/README.md).
 
 ## License
 The code in this directory is released under Apache v2 License.
@@ -20,7 +20,7 @@ The code in this directory is released under Apache v2 License.
 ## 1. Setup
 This examples uses [JupyterLab](https://jupyter.org).
 
-We recommend creating a [virtual environment](../../../README.md#set-up-a-virtual-environment).
+We recommend creating a [virtual environment](../../examples/README.md#set-up-a-virtual-environment).
 
 ## 2. Start JupyterLab
 Set `PYTHONPATH` to include custom files of this example and some reused files from the [CIFAR-10](../../examples/advanced/cifar10) examples:

@@ -13,6 +13,6 @@
 # limitations under the License.
 
 from oneshotVFL.cifar10_learner_oneshotVFL import CIFAR10LearnerOneshotVFL
-from splitnn.cifar10_splitnn_dataset import CIFAR10SplitNN
-from oneshotVFL.cifar10_vertical_data_splitter import Cifar10VerticalDataSplitter
 from oneshotVFL.split_nn import SplitNN
+from splitnn.cifar10_splitnn_dataset import CIFAR10SplitNN
+from splitnn.cifar10_vertical_data_splitter import Cifar10VerticalDataSplitter
