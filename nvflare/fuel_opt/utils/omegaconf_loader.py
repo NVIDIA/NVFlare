@@ -25,12 +25,12 @@ class OmegaConfConfig(Config):
     def to_dict(self, resolve: Optional[bool] = True) -> Dict:
         return OmegaConf.to_container(self.conf, resolve=resolve)
 
-    def to_conf_str(self, element: Dict) -> str:
-        config = OmegaConf.create(element)
-        return OmegaConf.to_yaml(config)
-
-    def to_str(self) -> str:
-        return OmegaConf.to_yaml(self.conf)
+    def to_str(self, element: Optional[Dict] = None) -> str:
+        if element is None:
+            return OmegaConf.to_yaml(self.conf)
+        else:
+            config = OmegaConf.create(element)
+            return OmegaConf.to_yaml(config)
 
 
 class OmegaConfLoader(ConfigLoader):

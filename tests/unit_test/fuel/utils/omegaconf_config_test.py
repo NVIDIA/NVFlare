@@ -16,7 +16,7 @@ import pytest
 from omegaconf import OmegaConf
 
 from nvflare.fuel.utils.config import ConfigFormat
-from nvflare.fuel.utils.omegaconf_loader import OmegaConfLoader
+from nvflare.fuel_opt.utils.omegaconf_loader import OmegaConfLoader
 
 
 class TestOmegaConfConfig:

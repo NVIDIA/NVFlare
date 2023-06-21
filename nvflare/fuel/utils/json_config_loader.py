@@ -27,11 +27,11 @@ class JsonConfig(Config):
     def to_dict(self, resolve: Optional[bool] = True) -> Dict:
         return self.conf
 
-    def to_conf_str(self, element: Dict) -> str:
-        return json.dumps(element)
-
-    def to_str(self) -> str:
-        return json.dumps(self.conf)
+    def to_str(self, element: Optional[Dict] = None) -> str:
+        if element is None:
+            return json.dumps(self.conf)
+        else:
+            return json.dumps(element)
 
 
 class JsonConfigLoader(ConfigLoader):

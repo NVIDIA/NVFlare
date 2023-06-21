@@ -17,7 +17,7 @@ import pytest
 from pyhocon import ConfigFactory as CF
 
 from nvflare.fuel.utils.config import ConfigFormat
-from nvflare.fuel.utils.pyhocon_loader import PyhoconConfig, PyhoconLoader
+from nvflare.fuel_opt.utils.pyhocon_loader import PyhoconConfig, PyhoconLoader
 
 
 class TestPyHoconConfig:

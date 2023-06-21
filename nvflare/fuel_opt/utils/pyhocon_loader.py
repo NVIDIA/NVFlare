@@ -28,9 +28,12 @@ class PyhoconConfig(Config):
     def to_dict(self, resolve: Optional[bool] = True) -> Dict:
         return self._convert_conf_item(self.conf)
 
-    def to_conf_str(self, element: Dict) -> str:
-        config = CF.from_dict(element)
-        return HOCONConverter.to_hocon(config)
+    def to_str(self, element: Optional[Dict] = None) -> str:
+        if element is None:
+            return HOCONConverter.to_hocon(self.conf)
+        else:
+            config = CF.from_dict(element)
+            return HOCONConverter.to_hocon(config)
 
     def _convert_conf_item(self, conf_item):
         result = {}
@@ -53,9 +56,6 @@ class PyhoconConfig(Config):
             return conf_item
 
         return result
-
-    def to_str(self) -> str:
-        return HOCONConverter.to_hocon(self.conf)
 
 
 class PyhoconLoader(ConfigLoader):
