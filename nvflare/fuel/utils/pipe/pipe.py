@@ -15,9 +15,15 @@
 import re
 import uuid
 from abc import ABC, abstractmethod
+from enum import Enum
 from typing import Any, Union
 
 from nvflare.fuel.utils.validation_utils import check_str
+
+
+class Mode(str, Enum):
+    ACTIVE = "ACTIVE"
+    PASSIVE = "PASSIVE"
 
 
 class Message:
@@ -59,16 +65,23 @@ class Message:
 
 
 class Pipe(ABC):
+    def __init__(self, mode: Mode):
+        """Creates the pipe.
+
+        Args:
+            mode (Mode): Mode of the endpoint. A pipe has two endpoints.
+                An endpoint can be either the one that initiates communication or the one listening.
+        """
+        if mode != Mode.ACTIVE and mode != Mode.PASSIVE:
+            raise ValueError(f"mode must be '{Mode.ACTIVE}' or '{Mode.PASSIVE}' but got {mode}")
+        self.mode = mode
+
     @abstractmethod
-    def open(self, name: str, me: str):
+    def open(self, name: str):
         """Open the pipe
 
         Args:
             name: name of the pipe
-            me: my endpoint name. A pipe has two endpoints. Each endpoint must have a unique name.
-
-        Returns: None
-
         """
         pass
 
