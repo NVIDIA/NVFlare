@@ -35,4 +35,4 @@ def plot_acc(path):
     plt.xlabel("Local training epoch")
     plt.ylabel("Training accuracy")
     plt.title("One-shot VFL")
-    plt.savefig("figs/oneshotVFL_results.png")
+    plt.savefig("figs/oneshotVFL_results1.png")
