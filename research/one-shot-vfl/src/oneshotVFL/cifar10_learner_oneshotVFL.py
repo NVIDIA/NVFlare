@@ -18,7 +18,8 @@ from timeit import default_timer as timer
 import numpy as np
 import torch
 import torch.optim as optim
-from oneshotVFL.cifar10_splitnn_dataset import CIFAR10SplitNN
+# from oneshotVFL.cifar10_splitnn_dataset import CIFAR10SplitNN
+from splitnn.cifar10_splitnn_dataset import CIFAR10SplitNN
 from oneshotVFL.vfl_oneshot_workflow import OSVFLDataKind, OSVFLNNConstants
 from sklearn.cluster import KMeans
 from torch.utils.tensorboard import SummaryWriter
@@ -100,44 +101,9 @@ class CIFAR10LearnerOneshotVFL(Learner):
         # use FOBS serializing/deserializing PyTorch tensors
         fobs.register(TensorDecomposer)
 
-    def _get_model(self, fl_ctx: FLContext):
-        """Get model from client config. Modelled after `PTFileModelPersistor`."""
-        if isinstance(self.model, str):
-            # treat it as model component ID
-            model_component_id = self.model
-            engine = fl_ctx.get_engine()
-            self.model = engine.get_component(model_component_id)
-            if not self.model:
-                self.log_error(fl_ctx, f"cannot find model component '{model_component_id}'")
-                return
-        if isinstance(self.model, dict):
-            # try building the model
-            try:
-                engine = fl_ctx.get_engine()
-                # use provided or default optimizer arguments and add the model parameters
-                if "args" not in self.model:
-                    self.model["args"] = {}
-                self.model = engine.build_component(self.model)
-            except BaseException as e:
-                self.system_panic(
-                    f"Exception while parsing `model`: " f"{self.model} with Exception {e}",
-                    fl_ctx,
-                )
-                return
-            
-        # valid whether the model is created correctly
-        if self.model is None:
-            self.system_panic(f"Model wasn't built correctly! It is {self.model}", fl_ctx)
-            return
-        elif not isinstance(self.model, torch.nn.Module):
-            self.system_panic(f"expect model to be torch.nn.Module but got {type(self.model)}: {self.model}", fl_ctx)
-            return
-        
-        self.log_info(fl_ctx, f"Running model {self.model}")
 
     def initialize(self, parts: dict, fl_ctx: FLContext):
         t_start = timer()
-        self._get_model(fl_ctx=fl_ctx)
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.model = self.model.to(self.device)
         self.optimizer = optim.SGD(self.model.parameters(), lr=self.lr, momentum=0.9)
