@@ -39,8 +39,6 @@ class OSVFLNNConstants(object):
     TARGET_NAMES = "_osvfl_target_names_"
 
     TASK_INIT_MODEL = "_osvfl_task_init_model_"
-    # TASK_INIT_MODEL = "_splitnn_task_init_model_"
-    # TASK_TRAIN_LABEL_STEP = "_splitnn_task_train_label_step_"
     TASK_VALID = "_osvfl_task_valid_"
     TASK_TRAIN_LABEL_SIDE = "_osvfl_task_train_label_side_"
     TASK_CLUSTER = "_osvfl_cluster_features_"

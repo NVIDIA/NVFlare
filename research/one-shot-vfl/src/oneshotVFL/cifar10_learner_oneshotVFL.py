@@ -110,7 +110,7 @@ class CIFAR10LearnerOneshotVFL(Learner):
             if not self.model:
                 self.log_error(fl_ctx, f"cannot find model component '{model_component_id}'")
                 return
-        if self.model and isinstance(self.model, dict):
+        if isinstance(self.model, dict):
             # try building the model
             try:
                 engine = fl_ctx.get_engine()
@@ -124,12 +124,15 @@ class CIFAR10LearnerOneshotVFL(Learner):
                     fl_ctx,
                 )
                 return
-        if self.model and not isinstance(self.model, torch.nn.Module):
-            self.system_panic(f"expect model to be torch.nn.Module but got {type(self.model)}: {self.model}", fl_ctx)
-            return
+            
+        # valid whether the model is created correctly
         if self.model is None:
             self.system_panic(f"Model wasn't built correctly! It is {self.model}", fl_ctx)
             return
+        elif not isinstance(self.model, torch.nn.Module):
+            self.system_panic(f"expect model to be torch.nn.Module but got {type(self.model)}: {self.model}", fl_ctx)
+            return
+        
         self.log_info(fl_ctx, f"Running model {self.model}")
 
     def initialize(self, parts: dict, fl_ctx: FLContext):
