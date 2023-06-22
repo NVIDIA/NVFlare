@@ -23,6 +23,8 @@ This examples uses [JupyterLab](https://jupyter.org).
 We recommend creating a [virtual environment](../../examples/README.md#set-up-a-virtual-environment).
 
 ## 2. Start JupyterLab
+To run the example, we recommend a GPU with at least 16 GB of memory.
+
 Set `PYTHONPATH` to include custom files of this example and some reused files from the [CIFAR-10](../../examples/advanced/cifar10) examples:
 ```
 export PYTHONPATH=${PWD}/src:${PWD}/../../examples/advanced/cifar10:${PWD}/../../examples/advanced/vertical_federated_learning/cifar10-splitnn/src
