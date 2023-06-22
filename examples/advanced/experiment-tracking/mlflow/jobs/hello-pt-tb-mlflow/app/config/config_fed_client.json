@@ -24,7 +24,7 @@
   "components": [
     {
       "id": "pt_learner",
-      "path": "learner_with_tb.PTLearner",
+      "path": "pt.learner_with_tb.PTLearner",
       "args": {
         "lr": 0.01,
         "epochs": 5,

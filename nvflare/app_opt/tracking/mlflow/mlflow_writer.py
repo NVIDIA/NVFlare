@@ -46,8 +46,8 @@ class MLflowWriter(LogWriter):
                 All backend stores support keys up to length 250, but some may
                 support larger keys.
             value (any): Parameter value, of type string, but will be string-ified if not.
-                  All backend stores support values up to length 500, but some
-                  may support larger values.
+                All backend stores support values up to length 500, but some
+                may support larger values.
         """
         self.sender.add(tag=key, value=value, data_type=AnalyticsDataType.PARAMETER)
 
@@ -64,12 +64,12 @@ class MLflowWriter(LogWriter):
 
         Args:
             key (str): Metric name. This string may only contain alphanumerics, underscores (_), dashes (-),
-                   periods (.), spaces ( ), and slashes (/). All backend stores will support keys up to length 250,
-                   but some may support larger keys.
+                periods (.), spaces ( ), and slashes (/). All backend stores will support keys up to length 250,
+                but some may support larger keys.
             value (float): Metric value. Note that some special values such as +/- Infinity may be replaced by other
-                    values depending on the store. For example, the SQLAlchemy store replaces +/- Infinity with
-                    max / min float values. All backend stores will support values up to length 5000, but some may
-                    support larger values.
+                values depending on the store. For example, the SQLAlchemy store replaces +/- Infinity with
+                max / min float values. All backend stores will support values up to length 5000, but some may
+                support larger values.
             step (int, optional): Metric step. Defaults to zero if unspecified.
         """
         self.sender.add(tag=key, value=value, data_type=AnalyticsDataType.METRIC, global_step=step)
@@ -79,12 +79,22 @@ class MLflowWriter(LogWriter):
 
         Args:
             metrics (dict): Dictionary of metric_name: String -> value: Float. Note that some special values such as +/-
-                       Infinity may be replaced by other values depending on the store. For example, sql based store
-                       may replace +/- Infinity with max / min float values.
+                Infinity may be replaced by other values depending on the store. For example, sql based store
+                may replace +/- Infinity with max / min float values.
             step (int, optional): A single integer step at which to log the specified Metrics. If unspecified, each metric is
-                    logged at step zero.
+                logged at step zero.
         """
         self.sender.add(tag="metrics", value=metrics, data_type=AnalyticsDataType.METRICS, global_step=step)
+
+    def log_text(self, text: str, artifact_file_path: str) -> None:
+        """Log text as an artifact under the current run.
+
+        Args:
+            text (str): String of text to log.
+            artifact_file_path (str): The run-relative artifact file path in posixpath format
+                to which the text is saved (e.g. “dir/file.txt”).
+        """
+        self.sender.add(tag="text", value=text, data_type=AnalyticsDataType.TEXT, path=artifact_file_path)
 
     def set_tag(self, key: str, tag: any) -> None:
         """Set a tag under the current run.
@@ -92,8 +102,8 @@ class MLflowWriter(LogWriter):
         Args:
             key (str): Name of the tag.
             tag (any): Tag value (string, but will be string-ified if not).
-                  All backend stores will support values up to length 5000, but some
-                  may support larger values.
+                All backend stores will support values up to length 5000, but some
+                may support larger values.
         """
         self.sender.add(tag=key, value=tag, data_type=AnalyticsDataType.TAG)
 
@@ -102,6 +112,6 @@ class MLflowWriter(LogWriter):
 
         Args:
             tags (dict): Dictionary of tag_name: String -> value: (String, but will be string-ified if
-                 not)
+                not)
         """
         self.sender.add(tag="tags", value=tags, data_type=AnalyticsDataType.TAGS)
