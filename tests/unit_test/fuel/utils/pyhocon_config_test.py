@@ -11,13 +11,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import json
 
 import pytest
 from pyhocon import ConfigFactory as CF
 
 from nvflare.fuel.utils.config import ConfigFormat
-from nvflare.fuel.utils.pyhocon_loader import PyhoconConfig, PyhoconLoader
+from nvflare.fuel_opt.utils.pyhocon_loader import PyhoconConfig, PyhoconLoader
 
 
 class TestPyHoconConfig:
@@ -65,6 +64,8 @@ class TestPyHoconConfig:
         config = loader.load_config("test.conf")
         assert config.get_format() == ConfigFormat.PYHOCON
         conf = config.get_native_conf()
+        print("conf=", conf)
+        conf = conf.get_config("config")
         assert config is not None
         assert conf.get_config("a").get_int("a1") == 1
         assert conf.get_int("a.a1") == 1
@@ -83,13 +84,46 @@ class TestPyHoconConfig:
         with pytest.raises(Exception):
             assert conf.get_int("a") == 1
 
+    def test_load_config_from_dict(self):
+        loader = PyhoconLoader()
+        assert loader.get_format() == ConfigFormat.PYHOCON
+        dicts = {
+            "config": {
+                "a": {
+                    "a1": 200,
+                },
+                "c": "hello",
+                "d": [200, 400, 500],
+                "e1": "Yes",
+                "e2": "True",
+                "e3": "NO",
+            }
+        }
+
         config = loader.load_config_from_dict(dicts)
         assert config.get_format() == ConfigFormat.PYHOCON
         assert config is not None
-        assert config.to_dict() == dicts.get("config")
+        assert config.to_dict() == dicts
         assert config.get_format() == ConfigFormat.PYHOCON
 
-        config = loader.load_config_from_str(json.dumps(dicts))
+    def test_load_config_from_str(self):
+        loader = PyhoconLoader()
+        assert loader.get_format() == ConfigFormat.PYHOCON
+        dicts = {
+            "config": {
+                "a": {
+                    "a1": 200,
+                },
+                "c": "hello",
+                "d": [200, 400, 500],
+                "e1": "Yes",
+                "e2": "True",
+                "e3": "NO",
+            }
+        }
+
+        config = loader.load_config_from_dict(dicts)
+        config = loader.load_config_from_str(config.to_str())
         assert config is not None
-        assert config.to_dict() == dicts.get("config")
+        assert config.to_dict() == dicts
         assert config.get_format() == ConfigFormat.PYHOCON

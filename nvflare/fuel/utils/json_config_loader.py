@@ -22,21 +22,16 @@ from nvflare.security.logging import secure_format_exception
 
 class JsonConfig(Config):
     def __init__(self, conf: Dict, file_path: Optional[str] = None):
-        super(JsonConfig, self).__init__(ConfigFormat.JSON)
-        self.conf = conf
-        self.file_path = file_path
+        super(JsonConfig, self).__init__(conf, ConfigFormat.JSON, file_path)
 
-    def get_native_conf(self):
+    def to_dict(self, resolve: Optional[bool] = True) -> Dict:
         return self.conf
 
-    def get_location(self) -> Optional[str]:
-        return self.file_path
-
-    def to_dict(self) -> Dict:
-        return self.conf
-
-    def to_conf_str(self, element: Dict) -> str:
-        return json.dumps(element)
+    def to_str(self, element: Optional[Dict] = None) -> str:
+        if element is None:
+            return json.dumps(self.conf)
+        else:
+            return json.dumps(element)
 
 
 class JsonConfigLoader(ConfigLoader):
