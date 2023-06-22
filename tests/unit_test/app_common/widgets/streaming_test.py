@@ -12,13 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Optional
+
 import pytest
 
 from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.tracking.tracker_types import LogWriterName
+from nvflare.app_common.tracking.tracker_types import LogWriterName, TrackConst
 from nvflare.app_common.widgets.streaming import create_analytic_dxo, send_analytic_dxo
 
 INVALID_TEST_CASES = [
@@ -96,3 +98,112 @@ class TestStreaming:
     def test_invalid_write_func(self, tag, value, step, data_type, expected_error, expected_msg):
         with pytest.raises(expected_error, match=expected_msg):
             create_analytic_dxo(tag=tag, value=value, data_type=data_type, step=step, writer=LogWriterName.TORCH_TB)
+
+
+def mock_add(tag: str, value, data_type: AnalyticsDataType, global_step: Optional[int] = None, **kwargs):
+    kwargs = kwargs if kwargs else {}
+    if global_step is not None:
+        if not isinstance(global_step, int):
+            raise TypeError(f"Expect global step to be an instance of int, but got {type(global_step)}")
+        kwargs[TrackConst.GLOBAL_STEP_KEY] = global_step
+    dxo = create_analytic_dxo(tag=tag, value=value, data_type=data_type, writer=LogWriterName.TORCH_TB, **kwargs)
+    return dxo
+
+
+ANALYTICS_SENDER_TEST_CASES = [
+    (
+        "text",
+        "textsample",
+        AnalyticsDataType.TEXT,
+        None,
+        {},
+        "ANALYTIC",
+        {"track_key": "text", "track_value": "textsample"},
+        {"analytics_data_type": AnalyticsDataType.TEXT, "tracker_key": LogWriterName.TORCH_TB},
+    ),
+    (
+        "text",
+        "textsample",
+        AnalyticsDataType.TEXT,
+        2,
+        {},
+        "ANALYTIC",
+        {"track_key": "text", "track_value": "textsample", "global_step": 2, "analytics_kwargs": {"global_step": 2}},
+        {"analytics_data_type": AnalyticsDataType.TEXT, "tracker_key": LogWriterName.TORCH_TB},
+    ),
+    (
+        "text",
+        "textsample",
+        AnalyticsDataType.TEXT,
+        3,
+        {"extra_arg": 4},
+        "ANALYTIC",
+        {
+            "track_key": "text",
+            "track_value": "textsample",
+            "global_step": 3,
+            "analytics_kwargs": {"global_step": 3, "extra_arg": 4},
+        },
+        {"analytics_data_type": AnalyticsDataType.TEXT, "tracker_key": LogWriterName.TORCH_TB},
+    ),
+    (
+        "set_tag_key_tag_name",
+        "tagvalue",
+        AnalyticsDataType.TAG,
+        None,
+        {},
+        "ANALYTIC",
+        {"track_key": "set_tag_key_tag_name", "track_value": "tagvalue"},
+        {"analytics_data_type": AnalyticsDataType.TAG, "tracker_key": LogWriterName.TORCH_TB},
+    ),
+    (
+        "log_metric_key_name",
+        2.4,
+        AnalyticsDataType.METRIC,
+        20,
+        {},
+        "ANALYTIC",
+        {
+            "track_key": "log_metric_key_name",
+            "track_value": 2.4,
+            "global_step": 20,
+            "analytics_kwargs": {"global_step": 20},
+        },
+        {"analytics_data_type": AnalyticsDataType.METRIC, "tracker_key": LogWriterName.TORCH_TB},
+    ),
+]
+
+INVALID_SENDER_TEST_CASES = [
+    (
+        "text",
+        "textsample",
+        AnalyticsDataType.TEXT,
+        None,
+        {"global_step": 3, "extra_arg": 4},
+        TypeError,
+        "got multiple values for keyword argument 'global_step'",
+    ),
+]
+
+
+class TestAnalyticsSender:
+    @pytest.mark.parametrize(
+        "tag,value,data_type,global_step,kwargs,expected_dxo_data_kind,expected_dxo_data,expected_dxo_meta",
+        ANALYTICS_SENDER_TEST_CASES,
+    )
+    def test_add(
+        self, tag, value, data_type, global_step, kwargs, expected_dxo_data_kind, expected_dxo_data, expected_dxo_meta
+    ):
+        dxo = mock_add(tag=tag, value=value, data_type=data_type, global_step=global_step, **kwargs)
+        assert dxo.data_kind == expected_dxo_data_kind
+        assert dxo.data == expected_dxo_data
+        assert dxo.meta == expected_dxo_meta
+
+    # Since global_step is already being set, it cannot also be in kwargs.
+    @pytest.mark.parametrize(
+        "tag,value,data_type,global_step,kwargs,expected_error,expected_msg",
+        INVALID_SENDER_TEST_CASES,
+    )
+    def test_add_invalid(self, tag, value, data_type, global_step, kwargs, expected_error, expected_msg):
+        with pytest.raises(expected_error, match=expected_msg):
+            dxo = mock_add(tag=tag, value=value, data_type=data_type, global_step=global_step, **kwargs)
