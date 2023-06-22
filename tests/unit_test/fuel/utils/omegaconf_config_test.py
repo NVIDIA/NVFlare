@@ -116,4 +116,3 @@ class TestOmegaConfConfig:
         assert config is not None
         assert config.to_dict() == dicts
         assert config.get_format() == ConfigFormat.OMEGACONF
-
