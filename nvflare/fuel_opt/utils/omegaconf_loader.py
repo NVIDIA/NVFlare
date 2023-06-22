@@ -13,19 +13,21 @@
 # limitations under the License.
 from typing import Dict, Optional
 
-from omegaconf import DictConfig, OmegaConf
-
 from nvflare.fuel.utils.config import Config, ConfigFormat, ConfigLoader
 
 
 class OmegaConfConfig(Config):
-    def __init__(self, conf: DictConfig, file_path: Optional[str] = None):
+    def __init__(self, conf, file_path: Optional[str] = None):
         super(OmegaConfConfig, self).__init__(conf, ConfigFormat.OMEGACONF, file_path)
 
     def to_dict(self, resolve: Optional[bool] = True) -> Dict:
+        from omegaconf import OmegaConf
+
         return OmegaConf.to_container(self.conf, resolve=resolve)
 
     def to_str(self, element: Optional[Dict] = None) -> str:
+        from omegaconf import OmegaConf
+
         if element is None:
             return OmegaConf.to_yaml(self.conf)
         else:
@@ -42,12 +44,18 @@ class OmegaConfLoader(ConfigLoader):
         return OmegaConfConfig(conf, file_path)
 
     def load_config_from_str(self, config_str: str) -> Config:
+        from omegaconf import OmegaConf
+
         conf = OmegaConf.create(config_str)
         return OmegaConfConfig(conf)
 
     def load_config_from_dict(self, config_dict: dict) -> Config:
+        from omegaconf import OmegaConf
+
         conf = OmegaConf.create(config_dict)
         return OmegaConfConfig(conf)
 
     def _from_file(self, file_path):
+        from omegaconf import OmegaConf
+
         return OmegaConf.load(file_path)
