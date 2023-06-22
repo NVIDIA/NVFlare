@@ -59,7 +59,7 @@ class OSVFLLearnerExecutor(Executor):
 
     def initialize(self, fl_ctx: FLContext):
         try:
-            self.log_info(fl_ctx, f"!!!Task:{self.init_model_task_name, self.train_task_name}")
+            self.log_info(fl_ctx, f"Task:{self.init_model_task_name, self.train_task_name}")
             engine = fl_ctx.get_engine()
             self.learner = engine.get_component(self.learner_id)
             if not isinstance(self.learner, Learner):
