@@ -15,7 +15,7 @@
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from enum import Enum
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 
 class ConfigFormat(Enum):
@@ -38,8 +38,10 @@ class ConfigFormat(Enum):
 
 
 class Config(ABC):
-    def __init__(self, fmt: ConfigFormat):
+    def __init__(self, conf: Any, fmt: ConfigFormat, file_path: Optional[str] = None):
         self.format = fmt
+        self.conf = conf
+        self.file_path = file_path
 
     def get_format(self) -> ConfigFormat:
         """returns the current config objects ConfigFormat
@@ -48,7 +50,6 @@ class Config(ABC):
         """
         return self.format
 
-    @abstractmethod
     def get_native_conf(self):
         """Return the original underline config object representation if you prefer to use it directly
            Pyhocon → ConfigTree
@@ -59,9 +60,8 @@ class Config(ABC):
             return native config objects
         """
 
-        pass
+        return self.conf
 
-    @abstractmethod
     def get_location(self) -> Optional[str]:
         """return the file path where this configuration is loaded from
 
@@ -69,33 +69,35 @@ class Config(ABC):
             return None if the config is not from file else return file path
 
         """
-        pass
+        return self.file_path
 
     @abstractmethod
-    def to_dict(self) -> Dict:
+    def to_dict(self, resolve: Optional[bool] = True) -> Dict:
         """convert underline config object to dictionary
+        Args:
+            resolve: optional argument to indicate if the variable need to be resolved when convert to dictionary
+                     not all underline configuration format support this.
+                     If not supported, it is treated default valueTrue.
 
         Returns:
             Returns: converted configuration as dict
 
         """
-        pass
 
     @abstractmethod
-    def to_conf_str(self, element: Dict) -> str:
-        """convert dict element to the str representation of the underline configuration.
+    def to_str(self, element: Optional[Dict] = None) -> str:
+        """convert dict element to the str representation of the underline configuration, if element is not None
            For example, for JsonFormat, the method return json string
            for PyhoconFormat, the method return pyhocon string
            for OmegaconfFormat, the method returns YAML string representation
 
+           If the element is None, return the underline config to string presentation
         Args:
-            element: dict
-
+            element: Optional[Dict]. default to None. dictionary representation of config
         Returns:
-            string representation of the configuration in given format
+            string representation of the configuration in given format for the element or config
 
         """
-        pass
 
 
 class ConfigLoader(ABC):
@@ -117,8 +119,6 @@ class ConfigLoader(ABC):
         Returns:
             return Config
         """
-
-        pass
 
     def load_config_from_str(self, config_str: str) -> Config:
         """Load Configuration based on the string representation of the underline configuration
