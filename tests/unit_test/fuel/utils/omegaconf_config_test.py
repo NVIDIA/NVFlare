@@ -77,12 +77,43 @@ class TestOmegaConfConfig:
 
         a_dict = OmegaConf.to_container(conf.a, resolve=True)
         assert a_dict == {"a1": 1, "a2": 2}
+
+    def test_load_config_from_dict(self):
+        loader = OmegaConfLoader()
+        assert loader.get_format() == ConfigFormat.OMEGACONF
+        dicts = {
+            "a": {
+                "a1": 200,
+            },
+            "c": "hello",
+            "d": [200, 400, 500],
+            "e1": "Yes",
+            "e2": "True",
+            "e3": "NO",
+        }
+
         config = loader.load_config_from_dict(dicts)
         assert config.get_format() == ConfigFormat.OMEGACONF
         assert config is not None
         assert config.to_dict() == dicts
 
+    def test_load_config_from_str(self):
+        loader = OmegaConfLoader()
+        assert loader.get_format() == ConfigFormat.OMEGACONF
+        dicts = {
+            "a": {
+                "a1": 200,
+            },
+            "c": "hello",
+            "d": [200, 400, 500],
+            "e1": "Yes",
+            "e2": "True",
+            "e3": "NO",
+        }
+
+        config = loader.load_config_from_dict(dicts)
         config = loader.load_config_from_str(config.to_str())
         assert config is not None
         assert config.to_dict() == dicts
         assert config.get_format() == ConfigFormat.OMEGACONF
+

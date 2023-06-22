@@ -63,18 +63,15 @@ class PyhoconLoader(ConfigLoader):
         super(PyhoconLoader, self).__init__(ConfigFormat.PYHOCON)
 
     def load_config(self, file_path: str) -> Config:
-        config: ConfigTree = self._from_file(file_path)
-        conf: ConfigTree = config.get_config("config")
+        conf: ConfigTree = self._from_file(file_path)
         return PyhoconConfig(conf, file_path)
 
     def load_config_from_str(self, config_str: str) -> Config:
-        config = CF.parse_string(config_str)
-        conf: ConfigTree = config.get_config("config")
+        conf = CF.parse_string(config_str)
         return PyhoconConfig(conf)
 
     def load_config_from_dict(self, config_dict: dict) -> Config:
-        config = CF.from_dict(config_dict)
-        conf: ConfigTree = config.get_config("config")
+        conf = CF.from_dict(config_dict)
         return PyhoconConfig(conf)
 
     def _from_file(self, file_path):
