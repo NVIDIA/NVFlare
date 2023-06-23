@@ -260,7 +260,9 @@ class Communicator:
 
 
 def _exit_func():
-    for c in _running_instances:
+    while _running_instances:
+        c = next(iter(_running_instances))
+        # This call will remove the entry from the set
         c.stop()
         log.debug(f"Communicator {c.local_endpoint.name} was left running, stopped on exit")
 

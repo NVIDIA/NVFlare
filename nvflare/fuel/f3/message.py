@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Optional
 
 from nvflare.fuel.f3.connection import Connection
 from nvflare.fuel.f3.endpoint import Endpoint
@@ -27,17 +27,8 @@ class AppIds:
     PUB_SUB = 3
 
 
-class Headers(dict):
-
-    # Reserved Keys
-    MSG_ID = "_MSG_ID_"
-    TOPIC = "_TOPIC_"
-    DEST = "_DEST_"
-    JOB_ID = "_JOB_ID_"
-
-
 class Message:
-    def __init__(self, headers: Headers, payload: Any):
+    def __init__(self, headers: Optional[dict] = None, payload: Any = None):
         """Construct an FCI message"""
 
         self.headers = headers

@@ -20,7 +20,6 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.fuel.f3.cellnet.cell import FQCN, Cell, Message, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.cell import ReturnCode as CellReturnCode
-from nvflare.fuel.f3.cellnet.cell import new_message
 from nvflare.private.defs import CellMessageHeaderKeys
 
 
@@ -66,7 +65,7 @@ class CellMessageInterface(FLComponent, ABC):
         self.cell.add_incoming_reply_filter(channel="*", topic="*", cb=self._filter_incoming_message)
 
     def new_cmi_message(self, fl_ctx: FLContext, headers=None, payload=None):
-        msg = new_message(headers, payload)
+        msg = Message(headers, payload)
         msg.set_prop(self.PROP_KEY_FL_CTX, fl_ctx)
         return msg
 
