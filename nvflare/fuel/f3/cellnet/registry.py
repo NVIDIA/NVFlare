@@ -11,6 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from typing import Any
+
+
 class Callback:
     def __init__(self, cb, args, kwargs):
         self.cb = cb
@@ -26,11 +29,11 @@ class Registry:
     def _item_key(channel: str, topic: str) -> str:
         return f"{channel}:{topic}"
 
-    def set(self, channel: str, topic: str, items):
+    def set(self, channel: str, topic: str, items: Any):
         key = self._item_key(channel, topic)
         self.reg[key] = items
 
-    def append(self, channel: str, topic: str, items):
+    def append(self, channel: str, topic: str, items: Any):
         key = self._item_key(channel, topic)
         item_list = self.reg.get(key)
         if not item_list:
@@ -38,7 +41,7 @@ class Registry:
             self.reg[key] = item_list
         item_list.append(items)
 
-    def find(self, channel: str, topic: str):
+    def find(self, channel: str, topic: str) -> Any:
         items = self.reg.get(self._item_key(channel, topic))
         if not items:
             # try topic * in channel

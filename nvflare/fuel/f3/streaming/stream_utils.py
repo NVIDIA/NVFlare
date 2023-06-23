@@ -38,4 +38,4 @@ def gen_stream_id():
     global lock, stream_count, start_time
     with lock:
         stream_count += 1
-    return "SID%16d" % (start_time + stream_count)
+    return f"SID{(start_time + stream_count):16.0f}"
