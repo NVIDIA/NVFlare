@@ -15,8 +15,7 @@
 from typing import Any
 
 from nvflare.fuel.utils import fobs
-
-from .file_accessor import FileAccessor
+from nvflare.fuel.utils.pipe.file_accessor import FileAccessor
 
 
 class FobsFileAccessor(FileAccessor):
