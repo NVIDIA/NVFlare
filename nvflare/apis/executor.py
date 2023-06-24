@@ -31,6 +31,10 @@ class Executor(FLComponent, ABC):
 
     """
 
+    def __init__(self):
+        FLComponent.__init__(self)
+        self.unsafe = False
+
     @abstractmethod
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         """Executes a task.

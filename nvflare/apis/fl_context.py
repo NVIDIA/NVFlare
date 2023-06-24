@@ -209,6 +209,12 @@ class FLContext(object):
     def get_identity_name(self, default=""):
         return self._simple_get(ReservedKey.IDENTITY_NAME, default=default)
 
+    def set_job_is_unsafe(self, value: bool = True):
+        self.set_prop(ReservedKey.JOB_IS_UNSAFE, value, private=True, sticky=True)
+
+    def is_job_unsafe(self):
+        return self.get_prop(ReservedKey.JOB_IS_UNSAFE, False)
+
     def get_run_abort_signal(self):
         return self._simple_get(key=ReservedKey.RUN_ABORT_SIGNAL, default=None)
 
