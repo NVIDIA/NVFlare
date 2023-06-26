@@ -46,7 +46,7 @@ def load_comm_drivers():
     if not driver_path:
         return
 
-    for path in driver_path.split(":"):
+    for path in driver_path.split(os.pathsep):
         log.debug(f"Custom driver folder {path} is searched")
         driver_mgr.search_folder(path, None)
 
