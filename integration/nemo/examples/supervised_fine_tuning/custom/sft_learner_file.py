@@ -19,8 +19,15 @@ import nemo
 import numpy as np
 from pytorch_lightning import Trainer
 import torch
+import pickle
 
-from nemo.collections.nlp.parts.nlp_overrides import NLPDDPStrategy, NLPSaveRestoreConnector
+from nemo.collections.nlp.parts.nlp_overrides import (
+    GradScaler,
+    MegatronHalfPrecisionPlugin,
+    NLPDDPStrategy,
+    NLPSaveRestoreConnector,
+    PipelineMixedPrecisionPlugin,
+)
 from nemo.collections.nlp.models.language_modeling.megatron_gpt_sft_model import MegatronGPTSFTModel
 from nemo.utils.exp_manager import exp_manager
 from omegaconf import OmegaConf, open_dict
@@ -93,17 +100,17 @@ def load_from_nemo(cls, cfg, trainer, gpt_cfg, modify_config_fn):
 
 class SFTLearner(Learner):
     def __init__(
-        self,
-        config_path: str = None,
-        train_ds_files: str = "financial_phrase_bank_train.jsonl",
-        validation_ds_files: str = "financial_phrase_bank_val.jsonl",
-        base_model_file_path: str = "megatron_gpt_345m.nemo",
-        sft_model_file_path: str = "megatron_gpt_345m_sft.nemo",
-        aggregation_epochs: int = 1,
-        master_addr: str = "localhost",
-        master_port: int = None,
-        devices: int = 1,
-        key_metric: str = "val_loss",
+            self,
+            config_path: str = None,
+            train_ds_files: str = "financial_phrase_bank_train.jsonl",
+            validation_ds_files: str = "financial_phrase_bank_val.jsonl",
+            base_model_file_path: str = "megatron_gpt_345m.nemo",
+            sft_model_file_path: str = "megatron_gpt_345m_sft.nemo",
+            aggregation_epochs: int = 1,
+            master_addr: str = "localhost",
+            master_port: int = None,
+            devices: int = 1,
+            key_metric: str = "val_loss",
     ):
         """Support SFT (Supervised Fine-Tuning) learning with NeMo
 
@@ -144,6 +151,8 @@ class SFTLearner(Learner):
         self.trainer = None
         self.model = None
         self.is_configured = False
+        self.steps_per_round = None
+        self.scaler = None
 
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -231,7 +240,10 @@ class SFTLearner(Learner):
         self.config.model.tensor_model_parallel_size = self.devices
 
         self.config.trainer.devices = self.devices
-        self.config.trainer.max_epochs = -1  # Needed to continue fit() in next round
+        # self.config.trainer.max_epochs = -1  # Needed to continue fit() in next round
+
+        megatron_amp_o2 = self.config.model.get('megatron_amp_O2', False)
+        with_distributed_adam = self.config.model.optim.get('name', 'fused_adam') == 'distributed_fused_adam'
 
         plugins = []
         strategy = NLPDDPStrategy(
@@ -239,6 +251,20 @@ class SFTLearner(Learner):
             gradient_as_bucket_view=self.config.model.gradient_as_bucket_view,
             find_unused_parameters=False,
         )
+
+        if self.config.trainer.precision in [16, 'bf16']:
+            if self.config.trainer.precision == 16:
+                self.scaler = GradScaler(
+                    init_scale=self.config.model.get('native_amp_init_scale', 2 ** 32),
+                    growth_interval=self.config.model.get('native_amp_growth_interval', 1000),
+                    hysteresis=self.config.model.get('hysteresis', 2),
+                )
+            if megatron_amp_o2 and not with_distributed_adam:
+                plugins.append(
+                    MegatronHalfPrecisionPlugin(precision=self.config.trainer.precision, device='cuda', scaler=self.scaler))
+            else:
+                plugins.append(
+                    PipelineMixedPrecisionPlugin(precision=self.config.trainer.precision, device='cuda', scaler=self.scaler))
 
         # Add TensorBoard logger
         self.config.exp_manager.explicit_log_dir = self.app_root
@@ -260,7 +286,8 @@ class SFTLearner(Learner):
             return_config=True,
             save_restore_connector=save_restore_connector,
         )
-        self.model = load_from_nemo(MegatronGPTSFTModel, self.config, self.trainer, gpt_cfg, modify_config_fn=_modify_config)
+        self.model = load_from_nemo(MegatronGPTSFTModel, self.config, self.trainer, gpt_cfg,
+                                    modify_config_fn=_modify_config)
 
         self.is_configured = True
         self.log_info(
@@ -274,7 +301,11 @@ class SFTLearner(Learner):
     def train(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         # update local model weights with received weights
         dxo = from_shareable(shareable)
-        global_weights = dxo.data
+
+        # convert data link to actual data
+        self.log_info(fl_ctx, f"Converting global data link to actual data for {dxo.data}.")
+        with open(dxo.data['path'], "rb") as f:
+            global_weights = pickle.load(f)
 
         if not self.is_configured:
             self._configure(fl_ctx)
@@ -282,8 +313,15 @@ class SFTLearner(Learner):
         # get round information
         current_round = shareable.get_header(AppConstants.CURRENT_ROUND)
 
-        if current_round > 0:
+
+        #self.model.init_consumed_samples = self.consumed_samples
+        if current_round == 0:
+            self.steps_per_round = self.trainer.fit_loop.max_steps
+        if current_round > 0:           
             self.trainer.num_sanity_validation_steps = 0  # Turn off sanity validation steps in 2nd round of FL
+            self.trainer.fit_loop.max_epochs += self.aggregation_epochs
+            self.trainer.fit_loop.max_steps += self.steps_per_round
+
         total_rounds = shareable.get_header(AppConstants.NUM_ROUNDS)
         self.log_info(fl_ctx, f"Current/Total Round: {current_round + 1}/{total_rounds}")
         self.log_info(fl_ctx, f"Client identity: {fl_ctx.get_identity_name()}")
@@ -292,11 +330,18 @@ class SFTLearner(Learner):
         self.log_info(fl_ctx, f"Loaded {n_loaded} of {len(global_weights)} weights")
 
         self.log_info(fl_ctx, f"Start training in round {current_round}")
-        self.trainer.fit_loop.max_epochs = self.trainer.current_epoch + self.aggregation_epochs
-        self.trainer.fit_loop.max_steps *= current_round + 1
+
+        self.log_info(fl_ctx, f"Current max_steps {self.trainer.fit_loop.max_steps}")
+        self.log_info(fl_ctx, f"Current max_epochs {self.trainer.fit_loop.max_epochs}")
 
         self.model.log_global = False
         self.trainer.fit(self.model)
+
+        #self.consumed_samples = self.model.compute_consumed_samples(self.trainer.fit_loop.max_steps)
+        #print("-------------------------------")
+        #print(self.model.init_global_step)
+        #print(self.model.init_consumed_samples)
+        #print("-------------------------------")
 
         model_diff = compute_model_diff(self.model, global_weights)
         self.log_info(
@@ -307,8 +352,13 @@ class SFTLearner(Learner):
         epoch_len = len(self.model._train_dl)
         self.log_info(fl_ctx, f"Local steps per epoch: {epoch_len}")
 
+        # save model_diff to a pickle file
+        client_weight_path = os.path.join(self.app_root, "transit_temp.pickle")
+        with open(client_weight_path, "wb") as f:
+            pickle.dump(model_diff, f, protocol=pickle.HIGHEST_PROTOCOL)
+
         # build the shareable
-        dxo = DXO(data_kind=DataKind.WEIGHT_DIFF, data=model_diff)
+        dxo = DXO(data_kind=DataKind.WEIGHT_DIFF, data={"path": client_weight_path})
         dxo.set_meta_prop(MetaKey.NUM_STEPS_CURRENT_ROUND, epoch_len)
 
         self.log_info(fl_ctx, "Local epochs finished. Returning shareable")
@@ -321,7 +371,11 @@ class SFTLearner(Learner):
 
         # update local model weights with received weights
         dxo = from_shareable(shareable)
-        global_weights = dxo.data
+
+        # convert data link to actual data
+        self.log_info(fl_ctx, f"Converting global data link to actual data for {dxo.data}.")
+        with open(dxo.data['path'], "rb") as f:
+            global_weights = pickle.load(f)
 
         if not self.is_configured:
             self._configure(fl_ctx)

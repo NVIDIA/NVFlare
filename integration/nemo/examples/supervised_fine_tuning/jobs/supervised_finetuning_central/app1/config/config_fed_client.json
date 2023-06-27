@@ -21,12 +21,12 @@
   "components": [
     {
       "id": "learner",
-      "path": "custom.sft_learner.SFTLearner",
+      "path": "custom.sft_learner_file.SFTLearner",
       "args": {
-        "base_model_file_path": "/model/nemo-megatron-gpt-345m/megatron_gpt_345m.nemo",
-        "sft_model_file_path": "megatron_gpt_345m_sft.nemo",
-        "train_ds_files": "/workspace/Data/databricks-dolly-15k/2-clients/site-1-training.jsonl",
-        "validation_ds_files": "/workspace/Data/databricks-dolly-15k/2-clients/site-1-validation.jsonl",
+        "base_model_file_path": "/model/nemo-megatron-gpt-1.3B/nemo_gpt1.3B_fp16.nemo",
+        "sft_model_file_path": "megatron_gpt_1.3B_sft.nemo",
+        "train_ds_files": "/workspace/Data/Processed/alpaca/1-clients/site-0-training.jsonl",
+        "validation_ds_files": "/workspace/Data/Processed/alpaca/1-clients/site-0-validation.jsonl",
         "aggregation_epochs": 1
       }
     }

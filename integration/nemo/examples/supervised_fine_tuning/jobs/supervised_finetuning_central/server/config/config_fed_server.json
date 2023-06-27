@@ -1,9 +1,9 @@
 {
   "format_version": 2,
-  "min_clients": 2,
+  "min_clients": 1,
   "num_rounds": 5,
   "config_path": "config/megatron_gpt_sft.yaml",
-  "base_model_file_path": "/model/nemo-megatron-gpt-345m/megatron_gpt_345m.nemo",
+  "base_model_file_path": "/model/nemo-megatron-gpt-1.3B/nemo_gpt1.3B_fp16.nemo",
   "server": {
     "heart_beat_timeout": 600
   },
@@ -30,7 +30,7 @@
     },
     {
       "id": "aggregator",
-      "name": "InTimeAccumulateWeightedAggregator",
+      "path": "custom.intime_accumulate_model_aggregator_file_path.InTimeAccumulateWeightedAggregatorFilePath",
       "args": {}
     },
     {
@@ -53,7 +53,7 @@
     },
     {
       "id": "scatter_and_gather",
-      "name": "ScatterAndGather",
+      "path": "custom.scatter_and_gather_file.ScatterAndGather",
       "args": {
         "min_clients": "{min_clients}",
         "num_rounds": "{num_rounds}",
