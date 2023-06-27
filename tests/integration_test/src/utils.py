@@ -25,6 +25,7 @@ from typing import List
 import yaml
 
 from nvflare.apis.job_def import RunStatus
+from nvflare.fuel.flare_api.flare_api import Session
 from nvflare.fuel.hci.client.api_status import APIStatus
 from nvflare.fuel.hci.client.fl_admin_api import FLAdminAPI
 from nvflare.fuel.hci.client.fl_admin_api_constants import FLDetailKey
@@ -177,6 +178,9 @@ def get_job_meta(admin_api: FLAdminAPI, job_id: str) -> dict:
     response = admin_api.do_command(f"get_job_meta {job_id}")
     return response.get("meta", {}).get("job_meta", {})
 
+def get_job_meta_FLARE_API(admin_api: Session, job_id: str) -> dict:
+    response = admin_api.api.do_command(f"get_job_meta {job_id}")
+    return response.get("meta", {}).get("job_meta", {})
 
 def check_client_status_ready(response: dict) -> bool:
     if response["status"] != APIStatus.SUCCESS:
@@ -197,6 +201,19 @@ def check_client_status_ready(response: dict) -> bool:
 
     return True
 
+def check_client_status_ready_FLARE_API(response: dict) -> bool:
+    data = response.get("data", [])
+    if data:
+        for d in data:
+            if d.get("type") == "error":
+                return False
+
+    # check fuel/hci/client/fl_admin_api.py for parsing
+    if response.get("data", []):
+        if data["type"] == "table":
+            return True
+
+    return False
 
 def check_job_done(job_id: str, admin_api: FLAdminAPI):
     response = admin_api.check_status(target_type=TargetType.SERVER)
@@ -233,6 +250,18 @@ def check_job_done(job_id: str, admin_api: FLAdminAPI):
                             return True
     return False
 
+def check_job_done_FLARE_API(job_id: str, admin_api: Session):
+    job_meta = get_job_meta_FLARE_API(admin_api, job_id=job_id)
+    print(job_meta)
+    job_run_status = job_meta.get("status")
+
+    print(job_run_status)
+    if job_run_status in (
+        RunStatus.FINISHED_COMPLETED.value,
+        RunStatus.FINISHED_ABORTED.value,
+    ):
+        return True
+    return False
 
 def run_admin_api_tests(admin_api: FLAdminAPI):
     print(("\n" + "*" * 120) * 20)
@@ -434,6 +463,24 @@ def ensure_admin_api_logged_in(admin_api: FLAdminAPI, timeout: int = 60):
             print(f"Admin api failed to log in within {timeout} seconds: {admin_api.fsm.current_state}.")
         else:
             print("Admin successfully logged into server.")
+    except Exception as e:
+        print(f"Exception in logging in to admin: {e.__str__()}")
+    return login_success
+
+def ensure_FLARE_API_admin_logged_in(admin_api: Session, timeout: int = 60):
+    login_success = False
+    try:
+        start_time = time.time()
+        while time.time() - start_time <= timeout:
+            if admin_api.api.is_ready():
+                login_success = True
+                break
+            time.sleep(0.2)
+
+        if not login_success:
+            print(f"FLARE API failed to log in within {timeout} seconds: {admin_api.api.fsm.current_state}.")
+        else:
+            print("FLARE API Admin successfully logged into server.")
     except Exception as e:
         print(f"Exception in logging in to admin: {e.__str__()}")
     return login_success

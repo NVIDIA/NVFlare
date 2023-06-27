@@ -12,14 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import logging
 import os
 import time
 
 from nvflare.apis.job_def import RunStatus
+from nvflare.fuel.flare_api.api_spec import JobNotFound, JobNotRunning
+from nvflare.fuel.flare_api.flare_api import new_secure_session, new_insecure_session
 from nvflare.fuel.hci.client.api_status import APIStatus
+from nvflare.fuel.hci.client.fl_admin_api_constants import FLDetailKey
 from nvflare.fuel.hci.client.fl_admin_api_spec import TargetType
-from tests.integration_test.src.action_handlers import (
+from tests.integration_test.src.action_handlers_flare_api import (
     _AbortJobHandler,
     _AdminCommandsHandler,
     _CheckJobHandler,
@@ -33,18 +37,15 @@ from tests.integration_test.src.action_handlers import (
     _SubmitJobHandler,
     _TestDoneHandler,
 )
+from tests.integration_test.src.nvf_test_driver import NVFTestError
 from tests.integration_test.src.site_launcher import SiteLauncher
 from tests.integration_test.src.utils import (
-    check_client_status_ready,
-    create_admin_api,
-    ensure_admin_api_logged_in,
-    get_job_meta,
+    check_client_status_ready_FLARE_API,
+    ensure_FLARE_API_admin_logged_in,
+    get_job_meta_FLARE_API,
 )
 
-
-class NVFTestError(Exception):
-    pass
-
+# This is copied from nvf_test_driver.py and modified to use the new FLARE API
 
 def _parse_workflow_states(stats_message: dict):
     # {
@@ -129,19 +130,13 @@ def _update_run_state(stats: dict, run_state: dict, job_run_status: str):
     #            }
     #       },
     # 'raw': {'time': '2022-04-04 15:13:09.367350', 'data': [xxx], 'status': <APIStatus.SUCCESS: 'SUCCESS'>}}
+
+    # reply.get("data")["data"] = object after message
     prev_run_state = run_state.copy()
 
     # parse stats
-    if (
-        stats
-        and "status" in stats
-        and stats["status"] == APIStatus.SUCCESS
-        and "details" in stats
-        and "message" in stats["details"]
-        and isinstance(stats["details"]["message"], dict)
-        and "server" in stats["details"]["message"]
-    ):
-        run_state["workflows"] = _parse_workflow_states(stats_message=stats["details"]["message"]["server"])
+    if stats:
+        run_state["workflows"] = _parse_workflow_states(stats_message=stats["server"])
 
     # parse job status
     run_state["run_finished"] = job_run_status == RunStatus.FINISHED_COMPLETED.value
@@ -149,9 +144,9 @@ def _update_run_state(stats: dict, run_state: dict, job_run_status: str):
     return run_state != prev_run_state, run_state
 
 
-class NVFTestDriver:
+class NVFFLAREAPITestDriver:
     def __init__(self, download_root_dir: str, site_launcher: SiteLauncher, poll_period=1):
-        """FL system test driver.
+        """FL system test driver using the new FLARE API.
 
         Args:
             download_root_dir: the root dir to download things to
@@ -189,16 +184,22 @@ class NVFTestDriver:
         }
 
     def initialize_super_user(self, workspace_root_dir: str, upload_root_dir: str, poc: bool, super_user_name: str):
+        admin_json_file = os.path.join(workspace_root_dir, super_user_name, "startup", "fed_admin.json")
+        if not os.path.exists(admin_json_file):
+            raise RuntimeError("Missing admin json file.")
+        with open(admin_json_file, "r") as f:
+            admin_config = json.load(f)
+        admin_config["admin"]["upload_dir"] = os.path.join(os.path.dirname(__file__), "..", upload_root_dir)
+        admin_config["admin"]["download_dir"] = self.download_root_dir
+        with open(admin_json_file, "w") as f:
+            json.dump(admin_config, f)
         self.super_admin_user_name = super_user_name
         try:
-            admin_api = create_admin_api(
-                workspace_root_dir=workspace_root_dir,
-                upload_root_dir=upload_root_dir,
-                download_root_dir=self.download_root_dir,
-                admin_user_name=super_user_name,
-                poc=poc,
-            )
-            login_result = ensure_admin_api_logged_in(admin_api)
+            if not poc:
+                admin_api = new_secure_session(username=super_user_name, startup_kit_location=os.path.join(workspace_root_dir, super_user_name))
+            else:
+                admin_api = new_insecure_session(startup_kit_location=os.path.join(workspace_root_dir, super_user_name))
+            login_result = ensure_FLARE_API_admin_logged_in(admin_api)
         except Exception as e:
             raise NVFTestError(f"create and login to admin failed: {e}")
         if not login_result:
@@ -211,27 +212,31 @@ class NVFTestDriver:
             if user_name == self.super_admin_user_name:
                 continue
             try:
-                admin_api = create_admin_api(
-                    workspace_root_dir=workspace_root_dir,
-                    upload_root_dir=upload_root_dir,
-                    download_root_dir=self.download_root_dir,
-                    admin_user_name=user_name,
-                    poc=poc,
-                )
-                login_result = ensure_admin_api_logged_in(admin_api)
+                admin_json_file = os.path.join(workspace_root_dir, user_name, "startup", "fed_admin.json")
+                if not os.path.exists(admin_json_file):
+                    raise RuntimeError("Missing admin json file.")
+                with open(admin_json_file, "r") as f:
+                    admin_config = json.load(f)
+                admin_config["admin"]["upload_dir"] = os.path.join(os.path.dirname(__file__), "..", upload_root_dir)
+                admin_config["admin"]["download_dir"] = self.download_root_dir
+                with open(admin_json_file, "w") as f:
+                    json.dump(admin_config, f)
+                if not poc:
+                    admin_api = new_secure_session(username=user_name, startup_kit_location=os.path.join(workspace_root_dir, user_name))
+                else:
+                    admin_api = new_insecure_session(startup_kit_location=os.path.join(workspace_root_dir, user_name))
+                login_result = ensure_FLARE_API_admin_logged_in(admin_api)
             except Exception as e:
                 self.admin_apis = None
-                raise NVFTestError(f"create and login to admin failed: {e}")
+                raise NVFTestError(f"Create and login to admin failed: {e}")
             if not login_result:
                 self.admin_apis = None
-                raise NVFTestError(f"initialize_admin_users {user_name} failed.")
+                raise NVFTestError(f"Initialize_admin_users failed for user: {user_name}.")
             self.admin_apis[user_name] = admin_api
 
     def get_job_result(self, job_id: str):
         command_name = "download_job"
-        response = self.super_admin_api.do_command(f"{command_name} {job_id}")
-        if response["status"] != APIStatus.SUCCESS:
-            raise NVFTestError(f"{command_name} failed: {response}")
+        response = self.super_admin_api.api.do_command(f"{command_name} {job_id}")
         run_data = {
             "job_id": job_id,
             "workspace_root": os.path.join(self.download_root_dir, job_id, "workspace"),
@@ -247,46 +252,90 @@ class NVFTestDriver:
                 raise NVFTestError(f"Clients could not be started in {timeout} seconds.")
 
             time.sleep(0.5)
-            response = self.super_admin_api.check_status(target_type=TargetType.CLIENT)
-            print(f"Check client status response is {response}")
-            if not check_client_status_ready(response):
+            details = self.client_status()
+            print(f"Check client status response is {details}")
+            if not details:
                 # clients not ready
                 continue
 
             # this coming from private/fed/server/training_cmds.py
-            for row in response["details"]["client_statuses"][1:]:
+            for row in details["client_statuses"][1:]:
                 if row[3] != "No Jobs":
                     raise NVFTestError("Clients started with left-over jobs.")
 
             # wait for all clients to come up
-            if len(response["details"]["client_statuses"]) < num_clients + 1:
+            if len(details["client_statuses"]) < num_clients + 1:
                 continue
             clients_up = True
             print("All clients are up.")
 
+    def _parse_section_of_response_text(
+        self, data, start_string: str, offset: int = None, end_string: str = None, end_index=None
+    ) -> str:
+        """Convenience method to get portion of string based on parameters. Copied from fl_admin_api.py"""
+        if not offset:
+            offset = len(start_string) + 1
+        if end_string:
+            return data[data.find(start_string) + offset : data.find(end_string)]
+        if end_index:
+            return data[data.find(start_string) + offset : end_index]
+        return data[data.find(start_string) + offset :]
+
+    def _parse_section_of_response_text_as_int(
+        self, data, start_string: str, offset: int = None, end_string: str = None, end_index=None
+    ) -> int:
+        """Copied from fl_admin_api.py"""
+        try:
+            return int(
+                self._parse_section_of_response_text(
+                    data=data, start_string=start_string, offset=offset, end_string=end_string, end_index=end_index
+                )
+            )
+        except ValueError:
+            return -1
+
+    # server_status and client_status seem to only be used for display for now
     def server_status(self):
-        response = self.super_admin_api.check_status(target_type=TargetType.SERVER)
-        if response and "status" in response and response["status"] == APIStatus.SUCCESS and "details" in response:
-            return response["details"]
-        return None
+        reply = self.super_admin_api.api.do_command("check_status server")
+        details = {}
+        if reply.get("data"):
+            for data in reply["data"]:
+                if data["type"] == "string":
+                    if data["data"].find("Engine status:") != -1:
+                        details[FLDetailKey.SERVER_ENGINE_STATUS] = self._parse_section_of_response_text(
+                            data=data["data"], start_string="Engine status:"
+                        )
+                    if data["data"].find("Registered clients:") != -1:
+                        details[FLDetailKey.REGISTERED_CLIENTS] = self._parse_section_of_response_text_as_int(
+                            data=data["data"], start_string="Registered clients:"
+                        )
+                if data["type"] == "table":
+                    details[FLDetailKey.STATUS_TABLE] = data["rows"]
+        return details
 
     def client_status(self):
-        response = self.super_admin_api.check_status(target_type=TargetType.CLIENT)
-        if response and "status" in response and response["status"] == APIStatus.SUCCESS and "details" in response:
-            return response["details"]
-        return None
+        reply = self.super_admin_api.api.do_command("check_status client")
+        details = {}
+        if reply.get("data"):
+            for data in reply["data"]:
+                if data["type"] == "table":
+                    details["client_statuses"] = data["rows"]
+        return details
 
     def _get_stats(self, target: str, job_id: str):
         print("getting stats for: "+target+": "+job_id)
-        return self.super_admin_api.show_stats(job_id, target)
+        try:
+            return self.super_admin_api.show_stats(job_id, target)
+        except JobNotFound:
+            return False
 
     def _get_job_log(self, target: str, job_id: str):
         job_log_file = os.path.join(job_id, "log.txt")
-        logs = self.super_admin_api.cat_target(target, file=job_log_file)["details"]["message"].splitlines()
+        logs = self.super_admin_api.cat_target(target, file=job_log_file).splitlines()
         return logs
 
     def _get_site_log(self, target: str):
-        logs = self.super_admin_api.cat_target(target, file="log.txt")["details"]["message"].splitlines()
+        logs = self.super_admin_api.cat_target(target, file="log.txt").splitlines()
         return logs
 
     def _print_state(self, state: dict, length: int = 30):
@@ -313,15 +362,15 @@ class NVFTestDriver:
         while not self.test_done:
 
             if self.job_id:
-                job_meta = get_job_meta(self.super_admin_api, job_id=self.job_id)
+                job_meta = get_job_meta_FLARE_API(self.super_admin_api, job_id=self.job_id)
                 job_run_status = job_meta.get("status")
-                stats = self._get_stats(target=TargetType.SERVER, job_id=self.job_id)
-                # update run_state
-                changed, run_state = _update_run_state(stats=stats, run_state=run_state, job_run_status=job_run_status)
-                if changed:
-                    print("****************************************************************")
-                    print("********************Updated RUN STATE***************************")
-                    print(run_state)
+                try:
+                    stats = self._get_stats(target=TargetType.SERVER, job_id=self.job_id)
+                    # update run_state
+                    changed, run_state = _update_run_state(stats=stats, run_state=run_state, job_run_status=job_run_status)
+                except JobNotRunning:
+                    print("JOB NOT FOUND FOR STATS: " + self.job_id)
+                    run_state["run_finished"] = job_run_status == RunStatus.FINISHED_COMPLETED.value
 
             if event_idx < len(event_sequence):
                 if not event_triggered[event_idx]:

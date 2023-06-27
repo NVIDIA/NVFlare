@@ -22,6 +22,7 @@ import pytest
 
 from tests.integration_test.src import (
     NVFTestDriver,
+    NVFFLAREAPITestDriver,
     NVFTestError,
     POCSiteLauncher,
     ProvisionSiteLauncher,
@@ -142,9 +143,21 @@ def setup_and_teardown_system(request):
 
         download_root_dir = os.path.join(test_temp_dir, "download_result")
         os.mkdir(download_root_dir)
-        test_driver = NVFTestDriver(
-            site_launcher=site_launcher, download_root_dir=download_root_dir, poll_period=poll_period
-        )
+        use_FLARE_API = False
+        if use_FLARE_API:
+            # for some reason admin does not have a local folder but it is required to start the FLARE API.
+            try:
+                os.mkdir(os.path.join(os.path.abspath(workspace_root), super_user_name, "local"))
+            except FileExistsError:
+                pass
+            test_driver = NVFFLAREAPITestDriver(
+                site_launcher=site_launcher, download_root_dir=download_root_dir, poll_period=poll_period
+            )
+        else:
+            # use previous test driver with FLAdminAPI
+            test_driver = NVFTestDriver(
+                site_launcher=site_launcher, download_root_dir=download_root_dir, poll_period=poll_period
+            )
         test_driver.initialize_super_user(
             workspace_root_dir=workspace_root, upload_root_dir=jobs_root_dir, poc=poc, super_user_name=super_user_name
         )
