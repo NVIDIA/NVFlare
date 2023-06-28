@@ -23,17 +23,15 @@ from nvflare.apis.workspace import Workspace
 
 
 class Launcher(ABC):
-    def __init__(self):
-        self.fl_ctx = None
-
     def initialize(self, fl_ctx: FLContext) -> None:
-        self.fl_ctx = fl_ctx
+        pass
 
     def finalize(self, fl_ctx: FLContext) -> None:
         pass
 
-    def get_app_dir(self) -> Optional[str]:
-        fl_ctx = self.fl_ctx
+    @staticmethod
+    def get_app_dir(fl_ctx: FLContext) -> Optional[str]:
+        """Gets the deployed application directory."""
         if fl_ctx is not None:
             workspace: Workspace = fl_ctx.get_engine().get_workspace()
             app_dir = workspace.get_app_dir(fl_ctx.get_job_id())
@@ -42,8 +40,14 @@ class Launcher(ABC):
         return None
 
     @abstractmethod
-    def launch_task(self, task_name: str, shareable: Shareable, abort_signal: Signal) -> bool:
+    def launch_task(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> bool:
         """Launches external system to handle a task.
+
+        Args:
+            task_name (str): task name.
+            shareable (Shareable): input shareable.
+            fl_ctx (FLContext): fl context.
+            abort_signal (Signal): signal to check during execution to determine whether this task is aborted.
 
         Returns:
             Whether launch success or not.
@@ -51,6 +55,11 @@ class Launcher(ABC):
         pass
 
     @abstractmethod
-    def stop_task(self, task_name: str) -> None:
-        """Stops external system and free up resources."""
+    def stop_task(self, task_name: str, fl_ctx: FLContext) -> None:
+        """Stops external system and free up resources.
+
+        Args:
+            task_name (str): task name.
+            fl_ctx (FLContext): fl context.
+        """
         pass

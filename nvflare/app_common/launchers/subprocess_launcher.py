@@ -39,10 +39,9 @@ class SubprocessLauncher(Launcher):
         self._clean_up_script = clean_up_script
 
     def initialize(self, fl_ctx: FLContext):
-        super().initialize(fl_ctx)
-        self._app_dir = self.get_app_dir()
+        self._app_dir = self.get_app_dir(fl_ctx)
 
-    def launch_task(self, task_name: str, shareable: Shareable, abort_signal: Signal) -> bool:
+    def launch_task(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> bool:
         if self._process is None:
             command = self._script
             env = os.environ.copy()
@@ -53,7 +52,7 @@ class SubprocessLauncher(Launcher):
             return True
         return False
 
-    def stop_task(self, task_name: str):
+    def stop_task(self, task_name: str, fl_ctx: FLContext) -> None:
         if self._process:
             self._process.terminate()
             self._process.wait()
