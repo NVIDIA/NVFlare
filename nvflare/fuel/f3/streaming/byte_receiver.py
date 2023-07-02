@@ -62,7 +62,7 @@ class RxTask:
         self.waiter = threading.Event()
 
     def __str__(self):
-        return f"[Rx{self.sid} from {self.origin} for {self.channel}/{self.topic}]"
+        return f"Rx[{self.sid} from {self.origin} for {self.channel}/{self.topic}]"
 
 
 class RxStream(Stream):

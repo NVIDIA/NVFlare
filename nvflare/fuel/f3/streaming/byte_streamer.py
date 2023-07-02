@@ -141,6 +141,7 @@ class ByteStreamer:
                 {
                     StreamHeaderKey.CHANNEL: task.channel,
                     StreamHeaderKey.TOPIC: task.topic,
+                    StreamHeaderKey.SIZE: task.stream.get_size(),
                 }
             )
 
