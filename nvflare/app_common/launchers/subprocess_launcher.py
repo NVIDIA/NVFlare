@@ -26,10 +26,11 @@ from nvflare.app_common.abstract.launcher import Launcher
 
 class SubprocessLauncher(Launcher):
     def __init__(self, script: str, clean_up_script: Optional[str] = None):
-        """SubprocessLauncher.
+        """Initializes the SubprocessLauncher.
 
         Args:
-            script (str): Script to be launched with subprocess.
+            script (str): Script to be launched using subprocess.
+            clean_up_script (Optional[str]): Optional clean up script to be run after the main script execution.
         """
         super().__init__()
 
