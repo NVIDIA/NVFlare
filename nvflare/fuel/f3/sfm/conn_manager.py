@@ -26,7 +26,7 @@ from nvflare.fuel.f3.drivers.driver import ConnMonitor, Driver
 from nvflare.fuel.f3.drivers.driver_params import DriverCap, DriverParams
 from nvflare.fuel.f3.drivers.net_utils import ssl_required
 from nvflare.fuel.f3.endpoint import Endpoint, EndpointMonitor, EndpointState
-from nvflare.fuel.f3.message import Headers, Message, MessageReceiver
+from nvflare.fuel.f3.message import Message, MessageReceiver
 from nvflare.fuel.f3.sfm.constants import HandshakeKeys, Types
 from nvflare.fuel.f3.sfm.prefix import PREFIX_LEN, Prefix
 from nvflare.fuel.f3.sfm.sfm_conn import SfmConnection
@@ -177,7 +177,7 @@ class ConnManager(ConnMonitor):
 
         return sfm_endpoint.connections
 
-    def send_message(self, endpoint: Endpoint, app_id: int, headers: Headers, payload: BytesAlike):
+    def send_message(self, endpoint: Endpoint, app_id: int, headers: Optional[dict], payload: BytesAlike):
         """Send a message to endpoint for app
 
         The message is asynchronous, no response is expected.
@@ -429,13 +429,13 @@ class ConnManager(ConnMonitor):
             if old_state != state:
                 self.notify_monitors(sfm_endpoint.endpoint)
 
-    def send_loopback_message(self, endpoint: Endpoint, app_id: int, headers: Headers, payload: BytesAlike):
+    def send_loopback_message(self, endpoint: Endpoint, app_id: int, headers: Optional[dict], payload: BytesAlike):
         """Send message to itself"""
 
         # Call receiver in a different thread to avoid deadlock
         self.frame_mgr_executor.submit(self.loopback_message_task, endpoint, app_id, headers, payload)
 
-    def loopback_message_task(self, endpoint: Endpoint, app_id: int, headers: Headers, payload: BytesAlike):
+    def loopback_message_task(self, endpoint: Endpoint, app_id: int, headers: Optional[dict], payload: BytesAlike):
 
         receiver = self.receivers.get(app_id)
         if not receiver:

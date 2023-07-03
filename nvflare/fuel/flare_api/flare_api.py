@@ -62,12 +62,12 @@ _VALID_TARGET_TYPES = [TargetType.ALL, TargetType.SERVER, TargetType.CLIENT]
 
 class Session(SessionSpec):
     def __init__(self, username: str = None, startup_path: str = None, secure_mode: bool = True, debug: bool = False):
-        """Initializes a session with the NVFLARE system
+        """Initializes a session with the NVFLARE system.
 
         Args:
-            username: string of username to log in with
-            startup_path: path to the provisioned startup kit, which contains endpoint of the system
-            secure_mode: whether to run in secure mode or not
+            username (str): string of username to log in with
+            startup_path (str): path to the provisioned startup kit, which contains endpoint of the system
+            secure_mode (bool): whether to run in secure mode or not
         """
         assert isinstance(username, str), "username must be str"
         self.username = username
@@ -135,11 +135,7 @@ class Session(SessionSpec):
         self.overseer_agent = conf.overseer_agent
 
     def close(self):
-        """Close the session
-
-        Returns:
-
-        """
+        """Close the session."""
         self.api.close()
 
     def try_connect(self, timeout):
@@ -226,7 +222,7 @@ class Session(SessionSpec):
             raise JobNotFound(f"invalid job_id {job_id}")
 
     def clone_job(self, job_id: str) -> str:
-        """Create a new job by cloning a specified job
+        """Create a new job by cloning a specified job.
 
         Args:
             job_id: job to be cloned
@@ -244,14 +240,14 @@ class Session(SessionSpec):
         return job_id
 
     def submit_job(self, job_definition_path: str) -> str:
-        """Submit a predefined job to the NVFLARE system
+        """Submit a predefined job to the NVFLARE system.
 
         Args:
             job_definition_path: path to the folder that defines a NVFLARE job
 
         Returns: the job id if accepted by the system
 
-        If the submission fails, exception will be raised:
+        If the submission fails, an exception will be raised.
 
         """
         if not job_definition_path:
@@ -274,7 +270,7 @@ class Session(SessionSpec):
         return job_id
 
     def get_job_meta(self, job_id: str) -> dict:
-        """Get the meta info of the specified job
+        """Get the meta info of the specified job.
 
         Args:
             job_id: ID of the job
@@ -298,14 +294,15 @@ class Session(SessionSpec):
         name_prefix: str = None,
         reverse: bool = False,
     ) -> List[dict]:
-        """Get the job info from the server
+        """Get the job info from the server.
 
         Args:
-            detailed: True to get the detailed information for each job, False by default
-            limit: maximum number of jobs to show, with 0 or None to show all (defaults to None to show all)
-            id_prefix: if included, only return jobs with the beginning of the job ID matching the id_prefix
-            name_prefix: if included, only return jobs with the beginning of the job name matching the name_prefix
-            reverse: if specified, list jobs in the reverse order of submission times
+            detailed (bool): True to get the detailed information for each job, False by default
+            limit (int, optional): maximum number of jobs to show, with 0 or None to show all (defaults to None to show all)
+            id_prefix (str): if included, only return jobs with the beginning of the job ID matching the id_prefix
+            name_prefix (str): if included, only return jobs with the beginning of the job name matching the name_prefix
+            reverse (bool): if specified, list jobs in the reverse order of submission times
+
         Returns: a list of job metadata
 
         """
@@ -345,11 +342,10 @@ class Session(SessionSpec):
         return jobs_list
 
     def download_job_result(self, job_id: str) -> str:
-        """
-        Download result of the job
+        """Download result of the job.
 
         Args:
-            job_id: ID of the job
+            job_id (str): ID of the job
 
         Returns: folder path to the location of the job result
 
@@ -369,16 +365,16 @@ class Session(SessionSpec):
             return job_download_url
 
     def abort_job(self, job_id: str):
-        """Abort the specified job
+        """Abort the specified job.
 
         Args:
-            job_id: job to be aborted
+            job_id (str): job to be aborted
 
         Returns: dict of (status, info)
 
         If the job is already done, no effect;
-        If job is not started yet, it will be cancelled and won't be scheduled
-        If the job is being executed, it will be aborted
+        If job is not started yet, it will be cancelled and won't be scheduled.
+        If the job is being executed, it will be aborted.
 
         """
         self._validate_job_id(job_id)
@@ -387,14 +383,14 @@ class Session(SessionSpec):
         self._do_command(AdminCommandNames.ABORT_JOB + " " + job_id)
 
     def delete_job(self, job_id: str):
-        """Delete the specified job completely from the system
+        """Delete the specified job completely from the system.
 
         Args:
-            job_id: job to be deleted
+            job_id (str): job to be deleted
 
         Returns: None
 
-        The job will be deleted from the job store if the job is not currently running
+        The job will be deleted from the job store if the job is not currently running.
 
         """
         self._validate_job_id(job_id)
@@ -432,10 +428,10 @@ class Session(SessionSpec):
         return SystemInfo(server_info=server_info, client_info=clients, job_info=jobs)
 
     def get_client_job_status(self, client_names: List[str] = None) -> List[dict]:
-        """Get job status info of specified FL clients
+        """Get job status info of specified FL clients.
 
         Args:
-            client_names: names of the clients to get status info
+            client_names (List[str]): names of the clients to get status info
 
         Returns: A list of jobs running on the clients. Each job is described by a dict of: id, app name and status.
         If there are multiple jobs running on one client, the list contains one entry for each job for that client.
@@ -453,24 +449,23 @@ class Session(SessionSpec):
         return meta.get(MetaKey.CLIENT_STATUS, None)
 
     def restart(self, target_type: str, client_names: Optional[List[str]] = None) -> dict:
-        """
-        Restart specified system target(s)
+        """Restart specified system target(s).
 
         Args:
-            target_type: what system target (server, client, or all) to restart
-            client_names: clients to be restarted if target_type is client. If not specified, all clients.
+            target_type (str): what system target (server, client, or all) to restart
+            client_names (List[str]): clients to be restarted if target_type is client. If not specified, all clients.
 
         Returns: a dict that contains detailed info about the restart request:
-        status - the overall status of the result.
-        server_status - whether the server is restarted successfully - only if target_type is "all" or "server".
-        client_status - a dict (keyed on client name) that specifies status of each client - only if target_type
-        is "all" or "client".
+            status - the overall status of the result.
+            server_status - whether the server is restarted successfully - only if target_type is "all" or "server".
+            client_status - a dict (keyed on client name) that specifies status of each client - only if target_type
+            is "all" or "client".
 
         """
         if target_type not in _VALID_TARGET_TYPES:
             raise ValueError(f"invalid target_type {target_type} - must be in {_VALID_TARGET_TYPES}")
 
-        parts = [AdminCommandNames.CHECK_STATUS, target_type]
+        parts = [AdminCommandNames.RESTART, target_type]
         if target_type == TargetType.CLIENT and client_names:
             processed_targets_str = process_targets_into_str(client_names)
             parts.append(processed_targets_str)
@@ -480,7 +475,7 @@ class Session(SessionSpec):
         return result[ResultKey.META]
 
     def shutdown(self, target_type: TargetType, client_names: Optional[List[str]] = None):
-        """Shut down specified system target(s)
+        """Shut down specified system target(s).
 
         Args:
             target_type: what system target (server, client, or all) to shut down
@@ -500,14 +495,14 @@ class Session(SessionSpec):
         self._do_command(command)
 
     def set_timeout(self, value: float):
-        """
-        Set a session-specific command timeout. This is the amount of time the server will wait for responses
-        after sending commands to FL clients.
+        """Set a session-specific command timeout.
+
+        This is the amount of time the server will wait for responses after sending commands to FL clients.
 
         Note that this value is only effective for the current API session.
 
         Args:
-            value: a positive float number
+            value (float): a positive float number for the timeout in seconds
 
         Returns: None
 
@@ -515,8 +510,9 @@ class Session(SessionSpec):
         self.api.set_command_timeout(value)
 
     def unset_timeout(self):
-        """
-        Unset the session-specific command timeout. Once unset, the FL Admin Server's default will be used.
+        """Unset the session-specific command timeout.
+
+        Once unset, the FL Admin Server's default timeout will be used.
 
         Returns: None
 
@@ -524,7 +520,7 @@ class Session(SessionSpec):
         self.api.unset_command_timeout()
 
     def list_sp(self) -> dict:
-        """List available service providers
+        """List available service providers.
 
         Returns: a dict that contains information about the primary SP and others
 
@@ -554,7 +550,7 @@ class Session(SessionSpec):
         self._do_command("promote_sp " + sp_end_point)
 
     def get_available_apps_to_upload(self):
-        """Get defined FLARE app folders from the upload folder on the machine the FLARE API is running
+        """Get defined FLARE app folders from the upload folder on the machine the FLARE API is running.
 
         Returns: a list of app folders
 
@@ -570,7 +566,7 @@ class Session(SessionSpec):
 
         Returns: None
 
-        Note: the user must be a Project Admin to use this method; otherwise the NOT_AUTHORIZED exception will raise.
+        Note: the user must be a Project Admin to use this method; otherwise the NOT_AUTHORIZED exception will be raised.
 
         """
         sys_info = self._do_get_system_info(AdminCommandNames.ADMIN_CHECK_STATUS)
@@ -583,10 +579,10 @@ class Session(SessionSpec):
             raise RuntimeError(err)
 
     def ls_target(self, target: str, options: str = None, path: str = None) -> str:
-        """Run the "ls" command on the specified target and return result
+        """Run the "ls" command on the specified target and return the result.
 
         Args:
-            target: the target (server or a client name) the command will run
+            target: the target (server or a client name) the command will be run on
             options: options of the "ls" command
             path: the optional file path
 
@@ -596,10 +592,10 @@ class Session(SessionSpec):
         return self._shell_command_on_target("ls", target, options, path)
 
     def cat_target(self, target: str, options: str = None, file: str = None) -> str:
-        """Run the "cat" command on the specified target and return result
+        """Run the "cat" command on the specified target and return the result.
 
         Args:
-            target: the target (server or a client name) the command will run
+            target: the target (server or a client name) the command will be run on
             options: options of the "cat" command
             file: the file that the "cat" command will run against
 
@@ -609,10 +605,10 @@ class Session(SessionSpec):
         return self._shell_command_on_target("cat", target, options, file, fp_required=True, fp_type="file")
 
     def tail_target(self, target: str, options: str = None, file: str = None) -> str:
-        """Run the "tail" command on the specified target and return result
+        """Run the "tail" command on the specified target and return the result.
 
         Args:
-            target: the target (server or a client name) the command will run
+            target: the target (server or a client name) the command will be run on
             options: options of the "tail" command
             file: the file that the "tail" command will run against
 
@@ -622,10 +618,10 @@ class Session(SessionSpec):
         return self._shell_command_on_target("tail", target, options, file, fp_required=True, fp_type="file")
 
     def tail_target_log(self, target: str, options: str = None) -> str:
-        """Run the "tail log.txt" command on the specified target and return result
+        """Run the "tail log.txt" command on the specified target and return the result.
 
         Args:
-            target: the target (server or a client name) the command will run
+            target: the target (server or a client name) the command will be run on
             options: options of the "tail" command
 
         Returns: result of "tail" command
@@ -634,10 +630,10 @@ class Session(SessionSpec):
         return self.tail_target(target, options, file="log.txt")
 
     def head_target(self, target: str, options: str = None, file: str = None) -> str:
-        """Run the "head" command on the specified target and return result
+        """Run the "head" command on the specified target and return the result.
 
         Args:
-            target: the target (server or a client name) the command will run
+            target: the target (server or a client name) the command will be run on
             options: options of the "head" command
             file: the file that the "head" command will run against
 
@@ -647,10 +643,10 @@ class Session(SessionSpec):
         return self._shell_command_on_target("head", target, options, file, fp_required=True, fp_type="file")
 
     def head_target_log(self, target: str, options: str = None) -> str:
-        """Run the "head log.txt" command on the specified target and return result
+        """Run the "head log.txt" command on the specified target and return the result.
 
         Args:
-            target: the target (server or a client name) the command will run
+            target: the target (server or a client name) the command will be run on
             options: options of the "head" command
 
         Returns: result of "head" command
@@ -659,10 +655,10 @@ class Session(SessionSpec):
         return self.head_target(target, options, file="log.txt")
 
     def grep_target(self, target: str, options: str = None, pattern: str = None, file: str = None) -> str:
-        """Run the "grep" command on the specified target and return result
+        """Run the "grep" command on the specified target and return the result.
 
         Args:
-            target: the target (server or a client name) the command will run
+            target: the target (server or a client name) the command will be run on
             options: options of the "grep" command
             pattern: the grep pattern
             file: the file that the "grep" command will run against
@@ -675,10 +671,10 @@ class Session(SessionSpec):
         )
 
     def get_working_directory(self, target: str) -> str:
-        """Get the working directory of the specified target
+        """Get the working directory of the specified target.
 
         Args:
-            target: the target (server of a client name)
+            target (str): the target (server of a client name)
 
         Returns: current working directory of the specified target
 
@@ -743,11 +739,11 @@ class Session(SessionSpec):
         return result
 
     def show_stats(self, job_id: str, target_type: str, targets: Optional[List[str]] = None) -> dict:
-        """Show processing stats of specified job on specified targets
+        """Show processing stats of specified job on specified targets.
 
         Args:
-            job_id: ID of the job
-            target_type: type of target (server or client)
+            job_id (str): ID of the job
+            target_type (str): type of target (server or client)
             targets: list of client names if target type is "client". All clients if not specified.
 
         Returns: a dict that contains job stats on specified targets. The key of the dict is target name. The value is
@@ -757,11 +753,11 @@ class Session(SessionSpec):
         return self._collect_info(AdminCommandNames.SHOW_STATS, job_id, target_type, targets)
 
     def show_errors(self, job_id: str, target_type: str, targets: Optional[List[str]] = None) -> dict:
-        """Show processing errors of specified job on specified targets
+        """Show processing errors of specified job on specified targets.
 
         Args:
-            job_id: ID of the job
-            target_type: type of target (server or client)
+            job_id (str): ID of the job
+            target_type (str): type of target (server or client)
             targets: list of client names if target type is "client". All clients if not specified.
 
         Returns: a dict that contains job errors (if any) on specified targets. The key of the dict is target name.
@@ -771,10 +767,10 @@ class Session(SessionSpec):
         return self._collect_info(AdminCommandNames.SHOW_ERRORS, job_id, target_type, targets)
 
     def reset_errors(self, job_id: str):
-        """Clear errors for all system targets for the specified job
+        """Clear errors for all system targets for the specified job.
 
         Args:
-            job_id: ID of the job
+            job_id (str): ID of the job
 
         Returns: None
 
@@ -801,7 +797,7 @@ class Session(SessionSpec):
         return self._get_dict_data(reply)
 
     def get_connected_client_list(self) -> List[ClientInfo]:
-        """Get the list of connected clients
+        """Get the list of connected clients.
 
         Returns: a list of ClientInfo objects
 
@@ -812,15 +808,17 @@ class Session(SessionSpec):
     def monitor_job(
         self, job_id: str, timeout: float = 0.0, poll_interval: float = 2.0, cb=None, *cb_args, **cb_kwargs
     ) -> MonitorReturnCode:
-        """Monitor the job progress until one of the conditions occurs:
-         - job is done
-         - timeout
-         - the status_cb returns False
+        """Monitor the job progress.
+
+        Monitors until one of the conditions occurs:
+            - job is done
+            - timeout
+            - the status_cb returns False
 
         Args:
-            job_id: the job to be monitored
-            timeout: how long to monitor. If 0, never time out.
-            poll_interval: how often to poll job status
+            job_id (str): the job to be monitored
+            timeout (float): how long to monitor. If 0, never time out.
+            poll_interval (float): how often to poll job status
             cb: if provided, callback to be called after each status poll
 
         Returns: a MonitorReturnCode
@@ -852,8 +850,9 @@ class Session(SessionSpec):
 
 
 def basic_cb_with_print(session: Session, job_id: str, job_meta, *cb_args, **cb_kwargs) -> bool:
-    """This is a sample callback to use with monitor_job that demonstrates how a custom callback can
-    be used
+    """This is a sample callback to use with monitor_job.
+
+    This demonstrates how a custom callback can be used.
 
     """
     if job_meta["status"] == "RUNNING":
@@ -869,13 +868,13 @@ def basic_cb_with_print(session: Session, job_id: str, job_meta, *cb_args, **cb_
 
 
 def new_secure_session(username: str, startup_kit_location: str, debug: bool = False, timeout: float = 10.0) -> Session:
-    """Create a new secure session with NVFLARE system
+    """Create a new secure FLARE API session with the NVFLARE system.
 
     Args:
-        username: username assigned to the user
-        startup_kit_location: path to the provisioned startup folder, the root admin dir containing the startup folder
-        debug: enable debug mode
-        timeout: how long to try to establish the session
+        username (str): username assigned to the user
+        startup_kit_location (str): path to the provisioned startup folder, the root admin dir containing the startup folder
+        debug (bool): enable debug mode
+        timeout (float): how long to try to establish the session, in seconds
 
     Returns: a Session object
 
@@ -887,16 +886,16 @@ def new_secure_session(username: str, startup_kit_location: str, debug: bool = F
 
 
 def new_insecure_session(startup_kit_location: str, debug: bool = False, timeout: float = 10.0) -> Session:
-    """Create a new secure session with NVFLARE system
+    """Create a new insecure FLARE API session with the NVFLARE system.
 
     Args:
-        startup_kit_location: path to the provisioned startup folder
-        debug: enable debug mode
-        timeout: how long to try to establish the session
+        startup_kit_location (str): path to the provisioned startup folder
+        debug (bool): enable debug mode
+        timeout (float): how long to try to establish the session, in seconds
 
     Returns: a Session object
 
-    The username for insecure session is always "admin"
+    The username for insecure session is always "admin".
 
     """
     session = Session(username="admin", startup_path=startup_kit_location, secure_mode=False, debug=debug)
