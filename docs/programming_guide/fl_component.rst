@@ -9,7 +9,7 @@ example trainer are all FLComponents now.
 
 .. literalinclude:: ../../nvflare/apis/fl_component.py
     :language: python
-    :lines: 7-21
+    :lines: 28-90
 
 Each ``FLComponent`` is automatically added as an event handler in the system when a new instance is created.
 You can implement the :meth:`handle_event<handle_event>` to plugin additional customized actions to the FL workflows.
