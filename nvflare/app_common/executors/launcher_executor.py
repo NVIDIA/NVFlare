@@ -22,13 +22,9 @@ from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
-from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.app_common.abstract.launcher import Launcher
-from nvflare.app_common.decomposers import common_decomposers
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
-from nvflare.fuel.utils.constants import Mode
-from nvflare.fuel.utils.pipe.file_pipe import FilePipe
-from nvflare.fuel.utils.pipe.pipe import Message
+from nvflare.fuel.utils.pipe.pipe import Message, Pipe
 from nvflare.fuel.utils.pipe.pipe_handler import PipeHandler, Topic
 from nvflare.fuel.utils.validation_utils import check_object_type
 from nvflare.security.logging import secure_format_exception
@@ -37,10 +33,9 @@ from nvflare.security.logging import secure_format_exception
 class LauncherExecutor(Executor):
     def __init__(
         self,
-        pipe_id: Optional[str] = None,
+        pipe_id: str,
         pipe_name: str = "pipe",
         launcher_id: Optional[str] = None,
-        data_exchange_path: Optional[str] = None,
         launch_timeout: Optional[float] = None,
         task_wait_time: Optional[float] = None,
         task_read_wait_time: Optional[float] = 30.0,
@@ -50,19 +45,20 @@ class LauncherExecutor(Executor):
         heartbeat_timeout: float = 30.0,
         workers: int = 1,
     ) -> None:
-        """Executor for Launcher class.
+        """Initializes the LauncherExecutor.
 
         Args:
-            pipe_id (str): use to get the Pipe from NVFlare components.
-            launcher_id (str): use to get the Launcher from NVFlare components.
-            data_exchange_path (str, optional): use this path to do data exchange. If it is None,
-                then the "app_dir" will be used as data exchange path.
-            launch_timeout (float, optional): how long do we wait for the "launch" method to end. None means forever.
-            read_interval: how often to read from the pipe
-            heartbeat_interval: how often to send a heartbeat to the peer
-            heartbeat_timeout: how long to wait for a heartbeat from the peer before treating the peer as gone,
-                0 means DO NOT check for heartbeat.
-            workers (int): how many worker threads needed.
+            pipe_id (str): Identifier used to get the Pipe from NVFlare components.
+            pipe_name (str): Name of the pipe. Defaults to "pipe".
+            launcher_id (Optional[str]): Identifier used to get the Launcher from NVFlare components.
+            launch_timeout (Optional[float]): Timeout for the "launch" method to end. None means forever.
+            task_wait_time (Optional[float]): Time to wait for tasks to complete before exiting the executor.
+            task_read_wait_time (Optional[float]): Time to wait for task results from the pipe. Defaults to 30.0.
+            result_poll_interval (float): Interval for polling task results from the pipe. Defaults to 0.1.
+            read_interval (float): Interval for reading from the pipe. Defaults to 0.1.
+            heartbeat_interval (float): Interval for sending heartbeat to the peer. Defaults to 5.0.
+            heartbeat_timeout (float): Timeout for waiting for a heartbeat from the peer. Defaults to 30.0.
+            workers (int): Number of worker threads needed.
         """
         super().__init__()
         self._launcher_id = launcher_id
@@ -70,7 +66,6 @@ class LauncherExecutor(Executor):
         self.launcher: Optional[Launcher] = None
         self._thread_pool_executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix=self.__class__.__name__)
 
-        self._data_exchange_path = data_exchange_path
         self.pipe_handler: Optional[PipeHandler] = None
         self._pipe_id = pipe_id
         self._pipe_name = pipe_name
@@ -92,21 +87,10 @@ class LauncherExecutor(Executor):
             self.launcher = launcher
 
         # gets pipe
-        if self._pipe_id:
-            pipe: FilePipe = engine.get_component(self._pipe_id)
-            check_object_type(self._pipe_id, pipe, FilePipe)
-        else:
-            # default value
-            pipe = FilePipe(mode=Mode.ACTIVE)
-
-        if self._data_exchange_path is None:
-            app_dir = fl_ctx.get_engine().get_workspace().get_app_dir(fl_ctx.get_job_id())
-            self._data_exchange_path = app_dir
-        pipe.set_root_path(self._data_exchange_path)
+        pipe: Pipe = engine.get_component(self._pipe_id)
+        check_object_type(self._pipe_id, pipe, Pipe)
 
         # init pipe
-        flare_decomposers.register()
-        common_decomposers.register()
         pipe.open(self._pipe_name)
         self.pipe_handler = PipeHandler(
             pipe,
@@ -127,24 +111,8 @@ class LauncherExecutor(Executor):
                 self.pipe_handler.notify_end("END_RUN received")
                 self.pipe_handler.stop(close_pipe=True)
 
-    def _launch(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> bool:
-        if self.launcher:
-            return self.launcher.launch_task(task_name, shareable, fl_ctx, abort_signal)
-        return True
-
-    def launch_in_new_thread(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal):
-        future = self._thread_pool_executor.submit(self._launch, task_name, shareable, fl_ctx, abort_signal)
-        return future
-
-    def _stop_launcher(self, task_name: str, fl_ctx: FLContext) -> None:
-        try:
-            if self.launcher:
-                self.launcher.stop_task(task_name=task_name, fl_ctx=fl_ctx)
-        except Exception as e:
-            self.log_exception(fl_ctx, f"launcher stop exception: {secure_format_exception(e)}")
-
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
-        future = self.launch_in_new_thread(task_name, shareable, fl_ctx, abort_signal)
+        future = self._launch_in_new_thread(task_name, shareable, fl_ctx, abort_signal)
 
         try:
             launch_success = future.result(timeout=self.launch_timeout)
@@ -156,13 +124,29 @@ class LauncherExecutor(Executor):
             self.log_error(fl_ctx, f"launch task: {task_name} failed")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-        result = self.exchange(task_name, shareable, fl_ctx, abort_signal)
+        result = self._exchange(task_name, shareable, fl_ctx, abort_signal)
         if self.launcher:
             self._stop_launcher(task_name, fl_ctx)
 
         return result
 
-    def exchange(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
+    def _launch(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> bool:
+        if self.launcher:
+            return self.launcher.launch_task(task_name, shareable, fl_ctx, abort_signal)
+        return True
+
+    def _launch_in_new_thread(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal):
+        future = self._thread_pool_executor.submit(self._launch, task_name, shareable, fl_ctx, abort_signal)
+        return future
+
+    def _stop_launcher(self, task_name: str, fl_ctx: FLContext) -> None:
+        try:
+            if self.launcher:
+                self.launcher.stop_task(task_name=task_name, fl_ctx=fl_ctx)
+        except Exception as e:
+            self.log_exception(fl_ctx, f"launcher stop exception: {secure_format_exception(e)}")
+
+    def _exchange(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         if self.pipe_handler is None:
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
         model = FLModelUtils.from_shareable(shareable)
