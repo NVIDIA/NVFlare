@@ -26,6 +26,7 @@ from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.app_common.abstract.launcher import Launcher
 from nvflare.app_common.decomposers import common_decomposers
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.pipe.file_pipe import FilePipe
 from nvflare.fuel.utils.pipe.pipe import Message
 from nvflare.fuel.utils.pipe.pipe_handler import PipeHandler, Topic
@@ -36,7 +37,7 @@ from nvflare.security.logging import secure_format_exception
 class LauncherExecutor(Executor):
     def __init__(
         self,
-        pipe_id: str,
+        pipe_id: Optional[str] = None,
         pipe_name: str = "pipe",
         launcher_id: Optional[str] = None,
         data_exchange_path: Optional[str] = None,
@@ -91,8 +92,12 @@ class LauncherExecutor(Executor):
             self.launcher = launcher
 
         # gets pipe
-        pipe: FilePipe = engine.get_component(self._pipe_id)
-        check_object_type(self._pipe_id, pipe, FilePipe)
+        if self._pipe_id:
+            pipe: FilePipe = engine.get_component(self._pipe_id)
+            check_object_type(self._pipe_id, pipe, FilePipe)
+        else:
+            # default value
+            pipe = FilePipe(mode=Mode.ACTIVE)
 
         if self._data_exchange_path is None:
             app_dir = fl_ctx.get_engine().get_workspace().get_app_dir(fl_ctx.get_job_id())
