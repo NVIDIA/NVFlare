@@ -35,7 +35,6 @@ class WandBTask(NamedTuple):
 
 
 class WandBReceiver(AnalyticsReceiver):
-
     def __init__(self, kwargs: dict, mode: str = "offline", events=None, process_timeout=10):
         if events is None:
             events = ["fed.analytix_log_stats"]
