@@ -379,7 +379,7 @@ class JobCommandModule(CommandModule, CommandUtil):
             with engine.new_context() as fl_ctx:
                 job_def_manager.delete(job_id, fl_ctx)
                 conn.append_string(f"Job {job_id} deleted.")
-        except BaseException as e:
+        except Exception as e:
             conn.append_error(
                 f"exception occurred: {secure_format_exception(e)}",
                 meta=make_meta(MetaStatusValue.INTERNAL_ERROR, f"exception {type(e)}"),
@@ -432,7 +432,7 @@ class JobCommandModule(CommandModule, CommandUtil):
                         message = "Abort signal has been sent to the server app."
                         conn.append_string(message)
                         conn.append_success("", meta=make_meta(MetaStatusValue.OK, message))
-        except BaseException as e:
+        except Exception as e:
             conn.append_error(
                 f"Exception occurred trying to abort job: {secure_format_exception(e)}",
                 meta=make_meta(MetaStatusValue.INTERNAL_ERROR, f"exception {type(e)}"),
@@ -465,7 +465,7 @@ class JobCommandModule(CommandModule, CommandUtil):
                 meta = job_def_manager.create(job_meta, data_bytes, fl_ctx)
                 new_job_id = meta.get(JobMetaKey.JOB_ID)
                 conn.append_string("Cloned job {} as: {}".format(job_id, new_job_id))
-        except BaseException as e:
+        except Exception as e:
             conn.append_error(
                 f"Exception occurred trying to clone job: {secure_format_exception(e)}",
                 meta=make_meta(MetaStatusValue.INTERNAL_ERROR, f"exception {type(e)}"),
@@ -604,7 +604,7 @@ class JobCommandModule(CommandModule, CommandUtil):
                 job_id = meta.get(JobMetaKey.JOB_ID)
                 conn.append_string(f"Submitted job: {job_id}")
                 conn.append_success("", meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOB_ID: job_id}))
-        except BaseException as e:
+        except Exception as e:
             conn.append_error(
                 f"Exception occurred trying to submit job: {secure_format_exception(e)}",
                 meta=make_meta(MetaStatusValue.INTERNAL_ERROR, f"exception {type(e)} occurred"),
@@ -663,6 +663,6 @@ class JobCommandModule(CommandModule, CommandUtil):
             conn.append_string(b64str, meta=make_meta(MetaStatusValue.OK, extra={MetaKey.JOB_ID: job_id}))
         except FileNotFoundError:
             conn.append_error("No record found for job '{}'".format(job_id))
-        except BaseException:
+        except Exception:
             secure_log_traceback()
             conn.append_error("Exception occurred during attempt to zip data to send for job: {}".format(job_id))

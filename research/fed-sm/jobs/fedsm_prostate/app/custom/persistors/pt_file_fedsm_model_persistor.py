@@ -207,6 +207,6 @@ class PTFileFedSMModelPersistor(PTFileModelPersistor):
             data = torch.load(location, map_location=device)
             persistence_manager = PTModelPersistenceFormatManagerFedSM(data, default_train_conf=self.default_train_conf)
             return persistence_manager.to_model_learnable(self.exclude_vars)
-        except BaseException:
+        except Exception:
             self.log_exception(fl_ctx, f"error loading checkpoint from {model_file}")
             return {}

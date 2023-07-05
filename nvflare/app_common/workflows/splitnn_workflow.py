@@ -254,7 +254,7 @@ class SplitNNController(Controller):
 
             self._phase = AppConstants.PHASE_FINISHED
             self.log_debug(fl_ctx, "SplitNN training ended.")
-        except BaseException as e:
+        except Exception as e:
             error_msg = f"SplitNN control_flow exception {secure_format_exception(e)}"
             self.log_error(fl_ctx, error_msg)
             self.system_panic(error_msg, fl_ctx)

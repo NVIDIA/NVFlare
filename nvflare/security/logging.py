@@ -115,7 +115,7 @@ def secure_log_traceback(logger: logging.Logger = None):
     logger.error(exc_detail)
 
 
-def secure_format_exception(e: BaseException) -> str:
+def secure_format_exception(e: Exception) -> str:
     """Formats the specified exception and return a string without sensitive info.
 
     If secure mode is set, only return the type of the exception;

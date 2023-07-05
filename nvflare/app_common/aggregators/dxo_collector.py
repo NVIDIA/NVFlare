@@ -30,7 +30,7 @@ class DXOCollector(Aggregator):
     def accept(self, shareable: Shareable, fl_ctx: FLContext):
         try:
             dxo = from_shareable(shareable)
-        except BaseException:
+        except Exception:
             self.log_exception(fl_ctx, "shareable data is not a valid DXO")
             return False
         peer_ctx = fl_ctx.get_peer_context()

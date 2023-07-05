@@ -31,7 +31,7 @@ from nvflare.ha.overseer.utils import (
 heartbeat_timeout = os.environ.get("NVFL_OVERSEER_HEARTBEAT_TIMEOUT", "10")
 try:
     heartbeat_timeout = int(heartbeat_timeout)
-except BaseException:
+except Exception:
     heartbeat_timeout = 10
 
 

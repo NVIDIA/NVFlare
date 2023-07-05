@@ -112,7 +112,7 @@ class ImageStatistics(Statistics):
                     self.logger.info(
                         f"{self.client_name}, adding {i + 1} of {len(self.data_list[dataset_name])}: {file}"
                     )
-            except BaseException as e:
+            except Exception as e:
                 self.failure_images += 1
                 self.logger.critical(
                     f"Failed to load file {file} with exception: {e.__str__()}. " f"Skipping this image..."

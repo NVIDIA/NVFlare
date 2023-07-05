@@ -85,7 +85,7 @@ class ErrorHandlingExecutor(Executor, ABC):
             )
             return make_reply(ReturnCode.EXECUTION_RESULT_ERROR)
 
-        except BaseException:
+        except Exception:
             self.log_exception(fl_ctx, f"{self.__class__.__name__} executes task {task_name} failed.")
             return make_reply(ReturnCode.EXECUTION_RESULT_ERROR)
 

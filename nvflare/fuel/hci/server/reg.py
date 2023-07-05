@@ -103,7 +103,7 @@ class ServerCommandRegister(CommandRegister):
     def process_command(self, conn: Connection, command: str):
         try:
             self._do_command(conn, command)
-        except BaseException as e:
+        except Exception as e:
             secure_log_traceback()
             conn.append_error(f"Exception Occurred: {secure_format_exception(e)}")
 
