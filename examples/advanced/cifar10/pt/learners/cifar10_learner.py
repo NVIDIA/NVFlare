@@ -276,7 +276,7 @@ class CIFAR10Learner(Learner):  # also supports CIFAR10ScaffoldLearner
                     global_weights[var_name] = np.reshape(weights, local_var_dict[var_name].shape)
                     # update the local dict
                     local_var_dict[var_name] = torch.as_tensor(global_weights[var_name])
-                except BaseException as e:
+                except Exception as e:
                     raise ValueError(f"Convert weight from {var_name} failed") from e
         self.model.load_state_dict(local_var_dict)
 
@@ -338,7 +338,7 @@ class CIFAR10Learner(Learner):  # also supports CIFAR10ScaffoldLearner
             try:
                 # load model to cpu as server might or might not have a GPU
                 model_data = torch.load(self.best_local_model_file, map_location="cpu")
-            except BaseException as e:
+            except Exception as e:
                 raise ValueError("Unable to load best model") from e
 
             # Create DXO and shareable from model data.
@@ -404,7 +404,7 @@ class CIFAR10Learner(Learner):  # also supports CIFAR10ScaffoldLearner
                     # update the local dict
                     local_var_dict[var_name] = torch.as_tensor(torch.reshape(weights, local_var_dict[var_name].shape))
                     n_loaded += 1
-                except BaseException as e:
+                except Exception as e:
                     raise ValueError(f"Convert weight from {var_name} failed") from e
         self.model.load_state_dict(local_var_dict)
         if n_loaded == 0:

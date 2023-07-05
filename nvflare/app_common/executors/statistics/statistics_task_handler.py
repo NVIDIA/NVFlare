@@ -107,7 +107,7 @@ class StatisticsTaskHandler(TaskHandler):
                     statistics_result[tm.name][ds_name][feature.feature_name] = fn(
                         ds_name, feature.feature_name, tm, shareable, fl_ctx
                     )
-                except BaseException as e:
+                except Exception as e:
                     self.log_exception(
                         fl_ctx,
                         f"Failed to populate result  statistics of dataset {ds_name}"

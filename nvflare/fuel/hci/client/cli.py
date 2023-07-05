@@ -271,7 +271,7 @@ class AdminClient(cmd.Cmd):
             return self._do_default(line)
         except KeyboardInterrupt:
             self.write_stdout("\n")
-        except BaseException as e:
+        except Exception as e:
             if self.debug:
                 secure_log_traceback()
             self.write_stdout(f"exception occurred: {secure_format_exception(e)}")
@@ -310,7 +310,7 @@ class AdminClient(cmd.Cmd):
             line = join_args(args)
             try:
                 out_file = open(out_file_name, "w")
-            except BaseException as e:
+            except Exception as e:
                 self.write_error(f"cannot open file {out_file_name}: {secure_format_exception(e)}")
                 return
 

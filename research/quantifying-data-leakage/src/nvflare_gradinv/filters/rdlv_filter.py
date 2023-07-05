@@ -242,7 +242,7 @@ class RelativeDataLeakageValueFilter(DXOFilter):
                     rdlv = np.min(img_recon_sim_reduced, axis=0)
                 else:
                     raise ValueError(f"No such `rdlv_reduce` supported {self.rdlv_reduce}")
-            except BaseException as e:
+            except Exception as e:
                 raise RuntimeError("Computing RDLV failed!") from e
 
             self.log_info(fl_ctx, f"RDLV: {rdlv}")

@@ -96,7 +96,7 @@ class JsonScanner(object):
     def _do_scan(self, node: Node):
         try:
             node.processor.process_element(node)
-        except BaseException as e:
+        except Exception as e:
             secure_log_traceback(self.logger)
 
             if self.location:
@@ -126,7 +126,7 @@ class JsonScanner(object):
         if node.exit_cb is not None:
             try:
                 node.exit_cb(node)
-            except BaseException as e:
+            except Exception as e:
                 if self.location:
                     raise ConfigError(
                         "Error post-processing {} in JSON element: {}, exception: {}".format(
