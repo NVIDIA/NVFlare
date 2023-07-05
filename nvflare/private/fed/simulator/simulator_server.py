@@ -105,7 +105,7 @@ class SimulatorServer(FederatedServer):
         try:
             with self.engine.lock:
                 reply = self.engine.dispatch(topic=topic, request=shareable, fl_ctx=fl_ctx)
-        except BaseException:
+        except Exception:
             self.logger.info("Could not connect to server runner process - asked client to end the run")
             reply = make_reply(ReturnCode.COMMUNICATION_ERROR)
 

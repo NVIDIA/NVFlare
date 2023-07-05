@@ -143,7 +143,7 @@ class Communicator:
                 else:
                     break
 
-            except BaseException as ex:
+            except Exception as ex:
                 raise FLCommunicationError("error:client_registration", ex)
 
         return token, ssid
@@ -307,7 +307,7 @@ class Communicator:
 
             server_message = result.get_header(CellMessageHeaderKeys.MESSAGE)
 
-        except BaseException as ex:
+        except Exception as ex:
             raise FLCommunicationError("error:client_quit", ex)
 
         return server_message
@@ -350,14 +350,14 @@ class Communicator:
                         if return_code != ReturnCode.OK:
                             break
 
-                except BaseException as ex:
+                except Exception as ex:
                     raise FLCommunicationError("error:client_quit", ex)
 
                 for i in range(wait_times):
                     time.sleep(2)
                     if self.heartbeat_done:
                         break
-            except BaseException as e:
+            except Exception as e:
                 self.logger.info(f"Failed to send heartbeat. Will try again. Exception: {secure_format_exception(e)}")
                 time.sleep(5)
 

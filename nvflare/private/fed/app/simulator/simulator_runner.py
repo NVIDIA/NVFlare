@@ -225,7 +225,7 @@ class SimulatorRunner(FLComponent):
 
             return True
 
-        except BaseException as e:
+        except Exception as e:
             self.logger.error(f"Simulator setup error: {secure_format_exception(e)}")
             return False
 
@@ -395,7 +395,7 @@ class SimulatorRunner(FLComponent):
                 self.server.abort_run()
                 server_thread.join()
                 run_status = 0
-            except BaseException as e:
+            except Exception as e:
                 self.logger.error(f"Simulator run error: {secure_format_exception(e)}")
                 run_status = 2
             finally:
@@ -480,7 +480,7 @@ class SimulatorClientRunner(FLComponent):
 
             # wait for the server and client running thread to finish.
             executor.shutdown()
-        except BaseException as e:
+        except Exception as e:
             self.logger.error(f"SimulatorClientRunner run error: {secure_format_exception(e)}")
         finally:
             for client in self.federated_clients:
@@ -516,7 +516,7 @@ class SimulatorClientRunner(FLComponent):
                 stop_run, client_to_run = self.do_one_task(client, num_of_threads, gpu, lock, timeout=timeout)
 
                 client.simulate_running = False
-        except BaseException as e:
+        except Exception as e:
             self.logger.error(f"run_client_thread error: {secure_format_exception(e)}")
 
     def do_one_task(self, client, num_of_threads, gpu, lock, timeout=60.0):
@@ -583,7 +583,7 @@ class SimulatorClientRunner(FLComponent):
             try:
                 address = ("localhost", open_port)
                 conn = Client(address, authkey=CommunicationMetaData.CHILD_PASSWORD.encode())
-            except BaseException:
+            except Exception:
                 if time.time() - start > timeout:
                     raise RuntimeError(
                         f"Failed to create connection to the child process in {self.__class__.__name__},"

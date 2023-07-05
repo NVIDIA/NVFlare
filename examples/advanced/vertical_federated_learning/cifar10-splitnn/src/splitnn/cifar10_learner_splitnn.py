@@ -113,7 +113,7 @@ class CIFAR10LearnerSplitNN(Learner):
                 if "args" not in self.model:
                     self.model["args"] = {}
                 self.model = engine.build_component(self.model)
-            except BaseException as e:
+            except Exception as e:
                 self.system_panic(
                     f"Exception while parsing `model`: " f"{self.model} with Exception {e}",
                     fl_ctx,

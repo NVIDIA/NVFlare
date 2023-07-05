@@ -281,6 +281,6 @@ def shutdown_client(federated_client, touch_file):
         federated_client.status = ClientStatus.STOPPED
         # federated_client.cell.stop()
         security_close()
-    except BaseException as e:
+    except Exception as e:
         secure_log_traceback()
         print(f"Failed to shutdown client: {secure_format_exception(e)}")

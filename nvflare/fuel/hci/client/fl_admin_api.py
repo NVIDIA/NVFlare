@@ -891,7 +891,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
                 else:
                     print("Could not get reply from check status client, trying again later")
                     failed_attempts += 1
-            except BaseException as e:
+            except Exception as e:
                 print(f"Could not get clients stats, trying again later. Exception: {secure_format_exception(e)}")
                 failed_attempts += 1
 
@@ -953,7 +953,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
                     # if attribute cannot be found, check if app is no longer running to return APIStatus.SUCCESS
                     if reply.get("details").get("message") == "App is not running":
                         return FLAdminAPIResponse(APIStatus.SUCCESS, {"message": "Waited until app not running."}, None)
-            except BaseException as e:
+            except Exception as e:
                 print(f"Could not get server stats, trying again later. Exception: {secure_format_exception(e)}")
                 failed_attempts += 1
 
