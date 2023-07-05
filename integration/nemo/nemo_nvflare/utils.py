@@ -36,7 +36,7 @@ def load_weights(model, global_weights, device="cpu"):
                 torch.reshape(weights, local_var_dict[encoder_key][local_var_name].shape)
             )
             n_loaded += 1
-        except BaseException as e:
+        except Exception as e:
             raise ValueError(f"Convert weight from {var_name} failed!") from e
     model.load_state_dict(local_var_dict)
     if n_loaded == 0:

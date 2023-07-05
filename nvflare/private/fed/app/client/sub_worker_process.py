@@ -132,7 +132,7 @@ class EventRelayer(FLComponent):
                     )
                     # update the fl_ctx from the child process return data.
                     fl_ctx.props.update(return_data.payload[CommunicationMetaData.FL_CTX].props)
-                except BaseException:
+                except Exception:
                     self.log_warning(
                         fl_ctx, f"Failed to relay the event to parent process. Event: {event_type}", fire_event=False
                     )

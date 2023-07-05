@@ -150,7 +150,7 @@ class FedAdminAgent(object):
                     else:
                         if not isinstance(reply, Message):
                             raise RuntimeError(f"processor for topic {topic} failed to produce valid reply")
-            except BaseException as e:
+            except Exception as e:
                 secure_log_traceback()
                 reply = error_reply(f"exception_occurred: {secure_format_exception(e)}")
         else:

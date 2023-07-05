@@ -72,7 +72,7 @@ class FSM(object):
     def execute(self, **kwargs) -> State:
         try:
             self.current_state = self._try_execute(**kwargs)
-        except BaseException as e:
+        except Exception as e:
             self.error = f"exception occurred in state execution: {secure_format_exception(e)}"
             self.current_state = None
         return self.current_state
