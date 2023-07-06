@@ -12,29 +12,37 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from abc import ABC, abstractmethod
 from typing import Any
 
 
-class FileAccessor:
-    def write(self, data: Any, file_path: str):
-        """Write the specified data to file(s) in the specified path
+class FileAccessor(ABC):
+    """Abstract base class for file accessors.
+
+    This class provides an interface for accessing and manipulating files. Subclasses
+    should implement the `write()` and `read()` methods to provide concrete
+    implementations for writing and reading data from files.
+
+    """
+
+    @abstractmethod
+    def write(self, data: Any, file_path: str) -> None:
+        """Writes the specified data to file(s) in the specified path.
 
         Args:
-            data: data to be written
-            file_path: where the data is to be written
-
-        Returns:
-
+            data: The data to be written.
+            file_path: The path where the data is to be written.
         """
         pass
 
+    @abstractmethod
     def read(self, file_path: str) -> Any:
-        """Read the data located at the specified file_path
+        """Reads the data located at the specified file_path.
 
         Args:
             file_path: location of the data to be read
 
-        Returns: the data object read
-
+        Returns:
+            The data object read from the file.
         """
         pass
