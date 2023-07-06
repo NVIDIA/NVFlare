@@ -23,7 +23,6 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_reply
 from nvflare.fuel.f3.cellnet.cell import Message, MessageHeaderKey
 from nvflare.fuel.f3.cellnet.cell import ReturnCode as CellReturnCode
-from nvflare.fuel.f3.cellnet.cell import new_message
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.private.defs import CellChannel
 from nvflare.security.logging import secure_format_traceback
@@ -108,7 +107,7 @@ class AuxRunner(FLComponent):
             return make_reply(ReturnCode.BAD_PEER_CONTEXT)
         try:
             reply = handler_f(topic=topic, request=request, fl_ctx=fl_ctx)
-        except BaseException:
+        except Exception:
             self.log_exception(fl_ctx, "processing error in message handling")
             return make_reply(ReturnCode.HANDLER_EXCEPTION)
 
@@ -187,7 +186,7 @@ class AuxRunner(FLComponent):
                 bulk_send=bulk_send,
                 optional=optional,
             )
-        except BaseException:
+        except Exception:
             if optional:
                 self.logger.debug(f"Failed to send aux message {topic} to targets: {targets}")
                 self.logger.debug(secure_format_traceback())
@@ -251,7 +250,7 @@ class AuxRunner(FLComponent):
         for name in target_names:
             target_fqcns.append(FQCN.join([name, job_id]))
 
-        cell_msg = new_message(payload=request)
+        cell_msg = Message(payload=request)
         if timeout > 0:
             cell_replies = cell.broadcast_request(
                 channel=channel, topic=topic, request=cell_msg, targets=target_fqcns, timeout=timeout, optional=optional

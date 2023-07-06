@@ -13,22 +13,14 @@
 # limitations under the License.
 import nvflare.fuel.utils.fobs as fobs
 from nvflare.fuel.f3.cellnet.defs import Encoding, MessageHeaderKey
-from nvflare.fuel.f3.message import Headers, Message
+from nvflare.fuel.f3.message import Message
 
 
 def make_reply(rc: str, error: str = "", body=None) -> Message:
-    headers = Headers()
-    headers[MessageHeaderKey.RETURN_CODE] = rc
+    headers = {MessageHeaderKey.RETURN_CODE: rc}
     if error:
         headers[MessageHeaderKey.ERROR] = error
     return Message(headers, payload=body)
-
-
-def new_message(headers: dict = None, payload=None):
-    msg_headers = Headers()
-    if headers:
-        msg_headers.update(headers)
-    return Message(msg_headers, payload)
 
 
 def format_log_message(fqcn: str, message: Message, log: str) -> str:
@@ -50,7 +42,7 @@ def encode_payload(message: Message):
     if not encoding:
         if message.payload is None:
             encoding = Encoding.NONE
-        elif isinstance(message.payload, bytes) or isinstance(message.payload, bytearray):
+        elif isinstance(message.payload, (bytes, bytearray, memoryview)):
             encoding = Encoding.BYTES
         else:
             encoding = Encoding.FOBS

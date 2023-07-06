@@ -77,7 +77,7 @@ class AnalyticsData:
         """
 
         data = {TrackConst.TRACK_KEY: self.tag, TrackConst.TRACK_VALUE: self.value}
-        if self.step:
+        if self.step is not None:
             data[TrackConst.GLOBAL_STEP_KEY] = self.step
         if self.path:
             data[TrackConst.PATH_KEY] = self.path
@@ -109,7 +109,10 @@ class AnalyticsData:
         data = dxo.data
         key = data[TrackConst.TRACK_KEY]
         value = data[TrackConst.TRACK_VALUE]
-        kwargs = data[TrackConst.KWARGS_KEY] if TrackConst.KWARGS_KEY in data else None
+        kwargs = data.get(TrackConst.KWARGS_KEY, {})
+        step = data.get(TrackConst.GLOBAL_STEP_KEY, None)
+        if step is not None:
+            kwargs[TrackConst.GLOBAL_STEP_KEY] = step
         data_type = dxo.get_meta_prop(TrackConst.DATA_TYPE_KEY)
         writer = dxo.get_meta_prop(TrackConst.TRACKER_KEY)
         if writer is not None and writer != receiver:
@@ -186,3 +189,6 @@ class AnalyticsData:
                 return AnalyticsDataType.SCALARS
             else:
                 return sender_data_type
+
+    def __str__(self) -> str:
+        return f"AnalyticsData(tag: {self.tag}, value: {self.value}, data_type: {self.data_type}, kwargs: {self.kwargs}, step: {self.step})"

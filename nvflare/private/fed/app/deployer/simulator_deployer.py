@@ -143,7 +143,7 @@ class SimulatorDeployer(ServerDeployer):
                 try:
                     data = json.load(file)
                     augment(to_dict=client_config, from_dict=data, from_override_to=False)
-                except BaseException as e:
+                except Exception as e:
                     raise RuntimeError(f"Error processing config file {resources}: {secure_format_exception(e)}")
 
         build_ctx = {

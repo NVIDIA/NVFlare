@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.fuel.f3.message import Headers, Message
+from nvflare.fuel.f3.message import Message
 from nvflare.fuel.hci.server.constants import ConnProps
 
 
@@ -177,7 +177,7 @@ class CellMessageHeaderKeys:
 
 
 def new_cell_message(headers: dict, payload=None):
-    msg_headers = Headers()
+    msg_headers = {}
     if headers:
         msg_headers.update(headers)
     return Message(msg_headers, payload)

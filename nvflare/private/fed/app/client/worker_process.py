@@ -82,7 +82,7 @@ def main():
 
     try:
         remove_restart_file(workspace)
-    except BaseException:
+    except Exception:
         print("Could not remove the restart.fl / shutdown.fl file.  Please check your system before starting FL.")
         sys.exit(-1)
 
@@ -140,7 +140,7 @@ def main():
         sp = _create_sp(args)
         client_app_runner.start_run(app_root, args, config_folder, federated_client, secure_train, sp)
 
-    except BaseException as e:
+    except Exception as e:
         if logger:
             logger.error(f"FL client execution exception: {secure_format_exception(e)}")
         raise e

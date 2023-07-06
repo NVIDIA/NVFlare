@@ -176,7 +176,7 @@ class Provisioner(object):
             for b in self.builders[::-1]:
                 b.finalize(ctx)
 
-        except BaseException as ex:
+        except Exception as ex:
             prod_dir = ctx.get("current_prod_dir")
             if prod_dir:
                 shutil.rmtree(prod_dir)

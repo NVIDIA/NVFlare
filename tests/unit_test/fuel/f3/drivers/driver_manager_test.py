@@ -27,7 +27,7 @@ class TestDriverManager:
     @pytest.fixture
     def manager(self):
         driver_manager = DriverManager()
-        driver_manager.register_folder(os.path.dirname(drivers.__file__), drivers.__package__)
+        driver_manager.search_folder(os.path.dirname(drivers.__file__), drivers.__package__)
         return driver_manager
 
     @pytest.mark.parametrize(
