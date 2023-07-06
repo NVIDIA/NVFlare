@@ -18,18 +18,28 @@ import pathlib
 from typing import List, Optional
 
 from nvflare.fuel.utils.config import Config, ConfigFormat, ConfigLoader
+from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.fuel.utils.json_config_loader import JsonConfigLoader
-from nvflare.fuel_opt.utils.omegaconf_loader import OmegaConfLoader
-from nvflare.fuel_opt.utils.pyhocon_loader import PyhoconLoader
 
 
 class ConfigFactory:
     logger = logging.getLogger(__qualname__)
+    OmegaConfLoader, omega_import_ok = optional_import(
+        module="nvflare.fuel_opt.utils.omegaconf_loader", name="OmegaConfLoader"
+    )
+    PyhoconLoader, pyhocon_import_ok = optional_import(
+        module="nvflare.fuel_opt.utils.pyhocon_loader", name="PyhoconLoader"
+    )
+
     _fmt2Loader = {
         ConfigFormat.JSON: JsonConfigLoader(),
-        ConfigFormat.PYHOCON: PyhoconLoader(),
-        ConfigFormat.OMEGACONF: OmegaConfLoader(),
     }
+
+    if omega_import_ok:
+        _fmt2Loader.update({ConfigFormat.OMEGACONF: OmegaConfLoader()})
+
+    if pyhocon_import_ok:
+        _fmt2Loader.update({ConfigFormat.PYHOCON: PyhoconLoader()})
 
     @staticmethod
     def search_config_format(

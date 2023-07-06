@@ -198,7 +198,7 @@ class JobMetaValidator(JobMetaValidatorSpec):
 
     @staticmethod
     def _config_exists(zip_file: ZipFile, zip_folder, init_config_path: str) -> bool:
-        def match(parent, config_path: str) -> bool:
+        def match(parent: ZipFile, config_path: str) -> bool:
             import os
 
             full_path = os.path.join(zip_folder, config_path)
