@@ -17,6 +17,7 @@ import logging
 from abc import ABC, abstractmethod
 
 from nvflare.fuel.common.excepts import ConfigError
+from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 
@@ -98,19 +99,10 @@ class JsonScanner(object):
             node.processor.process_element(node)
         except Exception as e:
             secure_log_traceback(self.logger)
-
-            if self.location:
-                raise ConfigError(
-                    "Error processing {} in JSON element {}: path: {}, exception: {}".format(
-                        self.location, node.element, node.path(), secure_format_exception(e)
-                    )
-                )
-            else:
-                raise ConfigError(
-                    "Error in JSON element: {}, path: {}, exception: {}".format(
-                        node.element, node.path(), secure_format_exception(e)
-                    )
-                )
+            config = ConfigFactory.load_config(self.location[0])
+            elmt_str = config.to_str(node.element)
+            location = config.get_location()
+            raise ConfigError(self.get_process_err_msg(e, elmt_str, location, node))
 
         element = node.element
 
@@ -127,18 +119,21 @@ class JsonScanner(object):
             try:
                 node.exit_cb(node)
             except Exception as e:
-                if self.location:
-                    raise ConfigError(
-                        "Error post-processing {} in JSON element: {}, exception: {}".format(
-                            self.location, node.path(), secure_format_exception(e)
-                        )
-                    )
-                else:
-                    raise ConfigError(
-                        "Error post-processing JSON element: {}, exception: {}".format(
-                            node.path(), secure_format_exception(e)
-                        )
-                    )
+                raise ConfigError(self.get_post_proces_err_msg(e, node))
+
+    def get_process_err_msg(self, e, elmt, location, node):
+        location_msg = f" processing '{location}' " if location else ""
+        msg = "Error{}in element '{}': path: '{}', exception: '{}'".format(
+            location_msg, elmt, node.path(), secure_format_exception(e)
+        )
+        return msg
+
+    def get_post_proces_err_msg(self, e, node):
+        location = f" {self.location} in " if self.location else ""
+        msg = "Error post-processing{}JSON element: {}, exception: {}".format(
+            location, node.path(), secure_format_exception(e)
+        )
+        return msg
 
     def scan(self, processor: JsonObjectProcessor):
         if not isinstance(processor, JsonObjectProcessor):

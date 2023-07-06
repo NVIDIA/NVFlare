@@ -22,6 +22,7 @@ from zipfile import ZipFile
 from nvflare.apis.fl_constant import JobConstants
 from nvflare.apis.job_def import ALL_SITES, SERVER_SITE_NAME, JobMetaKey
 from nvflare.apis.job_meta_validator_spec import JobMetaValidatorSpec
+from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.security.logging import secure_format_exception
 
 MAX_CLIENTS = 1000000
@@ -113,15 +114,15 @@ class JobMetaValidator(JobMetaValidatorSpec):
 
             all_sites = ALL_SITES.casefold() in (site.casefold() for site in deployments)
 
-            if (all_sites or SERVER_SITE_NAME in deployments) and not self._entry_exists(
-                zip_file, zip_folder + JobConstants.SERVER_JOB_CONFIG
+            if (all_sites or SERVER_SITE_NAME in deployments) and not self._config_exists(
+                zip_file, zip_folder, JobConstants.SERVER_JOB_CONFIG
             ):
-                raise ValueError(f"App {app} will be deployed to server but server config is missing")
+                raise ValueError(f"App '{app}' will be deployed to server but server config is missing")
 
-            if (all_sites or [site for site in deployments if site != SERVER_SITE_NAME]) and not self._entry_exists(
-                zip_file, zip_folder + JobConstants.CLIENT_JOB_CONFIG
+            if (all_sites or [site for site in deployments if site != SERVER_SITE_NAME]) and not self._config_exists(
+                zip_file, zip_folder, JobConstants.CLIENT_JOB_CONFIG
             ):
-                raise ValueError(f"App {app} will be deployed to client but client config is missing")
+                raise ValueError(f"App '{app}' will be deployed to client but client config is missing")
 
     @staticmethod
     def _convert_value_to_int(v) -> int:
@@ -194,3 +195,13 @@ class JobMetaValidator(JobMetaValidatorSpec):
             return True
         except KeyError:
             return False
+
+    @staticmethod
+    def _config_exists(zip_file: ZipFile, zip_folder, init_config_path: str) -> bool:
+        def match(parent: ZipFile, config_path: str) -> bool:
+            import os
+
+            full_path = os.path.join(zip_folder, config_path)
+            return full_path in parent.namelist()
+
+        return ConfigFactory.match_config(zip_file, init_config_path, match)
