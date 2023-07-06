@@ -739,7 +739,7 @@ class AdminAPI(AdminAPISpec):
                 ssl_ctx.load_cert_chain(certfile=self.client_cert, keyfile=self.client_key)
 
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                    with ssl_ctx.wrap_socket(sock) as ssock:
+                    with ssl_ctx.wrap_socket(sock, server_hostname=sp_host) as ssock:
                         ssock.connect((sp_host, sp_port))
                         self._send_to_sock(ssock, cmd_ctx)
             else:
