@@ -16,7 +16,7 @@ import os
 from typing import Optional
 
 from nvflare.apis.utils.decomposers import flare_decomposers
-from nvflare.app_common.decomposers import common_decomposers
+from nvflare.app_common.decomposers import common_decomposers as app_common_decomposers
 from nvflare.app_common.model_exchange.model_exchanger import ModelExchanger
 from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.pipe.file_accessor import FileAccessor
@@ -35,20 +35,31 @@ class FilePipeModelExchanger(ModelExchanger):
         heartbeat_interval: float = 5.0,
         heartbeat_timeout: float = 30.0,
     ):
-        """Initializes the ModelExchanger.
+        """Initializes the FilePipeModelExchanger.
 
         Args:
-            data_exchange_path (str): Path for data exchange.
-            file_accessor (Optional[FileAccessor]): File accessor for file operations. Defaults to None.
-            pipe_name (str): Name of the pipe. Defaults to "pipe".
-            topic (str): Topic for data exchange. Defaults to "data".
-            get_poll_interval (float): Interval for checking if the other side has sent data. Defaults to 0.5.
-            read_interval (float): Interval for reading from the pipe. Defaults to 0.1.
-            heartbeat_interval (float): Interval for sending heartbeat to the peer. Defaults to 5.0.
-            heartbeat_timeout (float): Timeout for waiting for a heartbeat from the peer. Defaults to 30.0.
+            data_exchange_path (str): The path for data exchange. This is the location where the data
+                will be read from or written to.
+            file_accessor (Optional[FileAccessor]): The file accessor for reading and writing files.
+                If not provided, the default file accessor (FobsFileAccessor) will be used.
+                Please refer to the docstring of the FileAccessor class for more information
+                on implementing a custom file accessor. Defaults to None.
+            pipe_name (str): The name of the pipe to be used for communication. This pipe will be used
+                for transmitting data between the sender and receiver. Defaults to "pipe".
+            topic (str): The topic for data exchange. This allows the sender and receiver to identify
+                the purpose or content of the data being exchanged. Defaults to "data".
+            get_poll_interval (float): The interval (in seconds) for checking if the other side has sent data.
+                This determines how often the receiver checks for incoming data. Defaults to 0.5.
+            read_interval (float): The interval (in seconds) for reading from the pipe. This determines
+                how often the receiver reads data from the pipe. Defaults to 0.1.
+            heartbeat_interval (float): The interval (in seconds) for sending heartbeat signals to the peer.
+                Heartbeat signals are used to indicate that the sender or receiver is still active. Defaults to 5.0.
+            heartbeat_timeout (float): The timeout (in seconds) for waiting for a heartbeat signal from the peer.
+                If a heartbeat is not received within this timeout period, the connection may be considered lost.
+                Defaults to 30.0.
         """
         flare_decomposers.register()
-        common_decomposers.register()
+        app_common_decomposers.register()
         data_exchange_path = os.path.abspath(data_exchange_path)
         file_pipe = FilePipe(Mode.PASSIVE, data_exchange_path)
         if file_accessor is not None:
