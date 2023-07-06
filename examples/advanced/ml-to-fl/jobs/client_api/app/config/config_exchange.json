@@ -1,0 +1,6 @@
+{
+  "exchange_path": "./",
+  "exchange_format": "pytorch",
+  "params_type": "DIFF",
+  "params_diff_func": "numerical_params_diff"
+}
