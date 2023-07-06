@@ -110,7 +110,7 @@ class JobMetaValidator(JobMetaValidatorSpec):
                 logger.debug(f"zip folder {zip_folder} missing. Files in the zip:")
                 for x in zip_file.namelist():
                     logger.debug(f"    {x}")
-                raise ValueError(f"App {app} in deploy_map doesn't exist for job {job_name}")
+                raise ValueError(f"App '{app}' in deploy_map doesn't exist for job {job_name}")
 
             all_sites = ALL_SITES.casefold() in (site.casefold() for site in deployments)
 

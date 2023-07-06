@@ -121,7 +121,7 @@ tests:
           "data": [
             {
               "type": "error",
-              "data": "ValueError: App sag2 in deploy_map doesn't exist for job missing_app"
+              "data": "ValueError: App 'sag2' in deploy_map doesn't exist for job missing_app"
             }
           ]
       - "trigger":
@@ -142,7 +142,7 @@ tests:
           "data": [
             {
               "type": "error",
-              "data": "ValueError: App sag2 will be deployed to client but client config is missing"
+              "data": "ValueError: App 'sag2' will be deployed to client but client config is missing"
             }
           ]
       - "trigger":
@@ -163,7 +163,7 @@ tests:
           "data": [
             {
               "type": "error",
-              "data": "ValueError: App sag1 will be deployed to server but server config is missing"
+              "data": "ValueError: App 'sag1' will be deployed to server but server config is missing"
             }
           ]
       - "trigger":
