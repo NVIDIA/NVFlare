@@ -14,8 +14,8 @@
 import logging
 
 from nvflare.fuel.f3.drivers.net_utils import MAX_PAYLOAD_SIZE
+from nvflare.fuel.utils.config import Config
 from nvflare.fuel.utils.config_service import ConfigService
-from nvflare.security.logging import secure_format_exception
 
 _comm_config_files = ["comm_config.json", "comm_config.json.default"]
 
@@ -38,19 +38,8 @@ class VarName:
 class CommConfigurator:
     def __init__(self):
         self.logger = logging.getLogger(self.__class__.__name__)
-        config = None
-        for file_name in _comm_config_files:
-            try:
-                config = ConfigService.load_json(file_name)
-                if config:
-                    break
-            except FileNotFoundError:
-                self.logger.debug(f"config file {file_name} not found from config path")
-                config = None
-            except Exception as ex:
-                self.logger.error(f"failed to load config file {file_name}: {secure_format_exception(ex)}")
-                config = None
-        self.config = config
+        config: Config = ConfigService.load_configuration(file_basename=_comm_config_files[0])
+        self.config = None if config is None else config.to_dict()
 
     def get_config(self):
         return self.config
