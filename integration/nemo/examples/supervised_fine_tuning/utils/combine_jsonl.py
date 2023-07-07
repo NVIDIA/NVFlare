@@ -12,18 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 import argparse
-import json
+
 import pandas as pd
 
 
 def data_args():
     parser = argparse.ArgumentParser(description="Combine a list of jsonl files")
-    parser.add_argument("--file_list", nargs='+', required=True, help="Path to input file list")
+    parser.add_argument("--file_list", nargs="+", required=True, help="Path to input file list")
     parser.add_argument("--output_path", type=str, required=True, help="Path to output file")
     args = parser.parse_args()
     return args
+
 
 def main():
     args = data_args()
@@ -37,8 +37,9 @@ def main():
     data_combined = data_combined.sample(frac=1, random_state=0).reset_index(drop=True)
     # save the combined data
     output_path = args.output_path
-    with open(output_path, 'w') as f:
-        f.write(data_combined.to_json(orient='records', lines=True))
+    with open(output_path, "w") as f:
+        f.write(data_combined.to_json(orient="records", lines=True))
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

@@ -16,10 +16,8 @@ import logging
 import os
 
 import nemo
-import numpy as np
-from pytorch_lightning import Trainer
 import torch
-
+from nemo.collections.nlp.models.language_modeling.megatron_gpt_sft_model import MegatronGPTSFTModel
 from nemo.collections.nlp.parts.nlp_overrides import (
     GradScaler,
     MegatronHalfPrecisionPlugin,
@@ -27,9 +25,9 @@ from nemo.collections.nlp.parts.nlp_overrides import (
     NLPSaveRestoreConnector,
     PipelineMixedPrecisionPlugin,
 )
-from nemo.collections.nlp.models.language_modeling.megatron_gpt_sft_model import MegatronGPTSFTModel
 from nemo.utils.exp_manager import exp_manager
 from omegaconf import OmegaConf, open_dict
+from pytorch_lightning import Trainer
 
 from nvflare.apis.dxo import DXO, DataKind, MetaKey, from_shareable
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
@@ -48,6 +46,7 @@ print("NEMO version", nemo.__version__)
 # configure logging at the root logging level
 logging.getLogger().setLevel(logging.INFO)
 
+
 def _modify_config(gpt_cfg, cfg, add_cfg_to_tree=False):
     """
     This function modifies the original gpt pre-training config (gpt_cfg) with attributes from the finetuning config (cfg).
@@ -56,7 +55,7 @@ def _modify_config(gpt_cfg, cfg, add_cfg_to_tree=False):
     OmegaConf.set_struct(gpt_cfg, True)
     OmegaConf.resolve(cfg)
     with open_dict(gpt_cfg):
-        gpt_cfg.megatron_amp_O2 = cfg.model.get('megatron_amp_O2', False)
+        gpt_cfg.megatron_amp_O2 = cfg.model.get("megatron_amp_O2", False)
         gpt_cfg.micro_batch_size = cfg.model.data.train_ds.micro_batch_size
         gpt_cfg.global_batch_size = cfg.model.data.train_ds.global_batch_size
         gpt_cfg.sequence_parallel = cfg.model.get("sequence_parallel", False)
@@ -71,8 +70,8 @@ def _modify_config(gpt_cfg, cfg, add_cfg_to_tree=False):
         gpt_cfg.resume_from_checkpoint = cfg.model.resume_from_checkpoint
         gpt_cfg.save_nemo_on_validation_end = cfg.model.save_nemo_on_validation_end
         gpt_cfg.gradient_as_bucket_view = cfg.model.gradient_as_bucket_view
-        gpt_cfg.hidden_dropout = cfg.model.get('hidden_dropout', 0.0)
-        gpt_cfg.attention_dropout = cfg.model.get('attention_dropout', 0.0)
+        gpt_cfg.hidden_dropout = cfg.model.get("hidden_dropout", 0.0)
+        gpt_cfg.attention_dropout = cfg.model.get("attention_dropout", 0.0)
         gpt_cfg.ffn_dropout = cfg.model.ffn_dropout
 
         # This is needed when modifying a hparam file directly to load `.ckpt` files.
@@ -97,19 +96,20 @@ def load_from_nemo(cls, cfg, trainer, gpt_cfg, modify_config_fn):
     )
     return model
 
+
 class SFTLearner(Learner):
     def __init__(
-            self,
-            config_path: str = None,
-            train_ds_files: str = "financial_phrase_bank_train.jsonl",
-            validation_ds_files: str = "financial_phrase_bank_val.jsonl",
-            base_model_file_path: str = "megatron_gpt_345m.nemo",
-            sft_model_file_path: str = "megatron_gpt_345m_sft.nemo",
-            aggregation_epochs: int = 1,
-            master_addr: str = "localhost",
-            master_port: int = None,
-            devices: int = 1,
-            key_metric: str = "val_loss",
+        self,
+        config_path: str = None,
+        train_ds_files: str = "financial_phrase_bank_train.jsonl",
+        validation_ds_files: str = "financial_phrase_bank_val.jsonl",
+        base_model_file_path: str = "megatron_gpt_345m.nemo",
+        sft_model_file_path: str = "megatron_gpt_345m_sft.nemo",
+        aggregation_epochs: int = 1,
+        master_addr: str = "localhost",
+        master_port: int = None,
+        devices: int = 1,
+        key_metric: str = "val_loss",
     ):
         """Support SFT (Supervised Fine-Tuning) learning with NeMo
 
@@ -241,8 +241,8 @@ class SFTLearner(Learner):
         self.config.trainer.devices = self.devices
         # self.config.trainer.max_epochs = -1  # Needed to continue fit() in next round
 
-        megatron_amp_o2 = self.config.model.get('megatron_amp_O2', False)
-        with_distributed_adam = self.config.model.optim.get('name', 'fused_adam') == 'distributed_fused_adam'
+        megatron_amp_o2 = self.config.model.get("megatron_amp_O2", False)
+        with_distributed_adam = self.config.model.optim.get("name", "fused_adam") == "distributed_fused_adam"
 
         plugins = []
         strategy = NLPDDPStrategy(
@@ -251,19 +251,25 @@ class SFTLearner(Learner):
             find_unused_parameters=False,
         )
 
-        if self.config.trainer.precision in [16, 'bf16']:
+        if self.config.trainer.precision in [16, "bf16"]:
             if self.config.trainer.precision == 16:
                 self.scaler = GradScaler(
-                    init_scale=self.config.model.get('native_amp_init_scale', 2 ** 32),
-                    growth_interval=self.config.model.get('native_amp_growth_interval', 1000),
-                    hysteresis=self.config.model.get('hysteresis', 2),
+                    init_scale=self.config.model.get("native_amp_init_scale", 2**32),
+                    growth_interval=self.config.model.get("native_amp_growth_interval", 1000),
+                    hysteresis=self.config.model.get("hysteresis", 2),
                 )
             if megatron_amp_o2 and not with_distributed_adam:
                 plugins.append(
-                    MegatronHalfPrecisionPlugin(precision=self.config.trainer.precision, device='cuda', scaler=self.scaler))
+                    MegatronHalfPrecisionPlugin(
+                        precision=self.config.trainer.precision, device="cuda", scaler=self.scaler
+                    )
+                )
             else:
                 plugins.append(
-                    PipelineMixedPrecisionPlugin(precision=self.config.trainer.precision, device='cuda', scaler=self.scaler))
+                    PipelineMixedPrecisionPlugin(
+                        precision=self.config.trainer.precision, device="cuda", scaler=self.scaler
+                    )
+                )
 
         # Add TensorBoard logger
         self.config.exp_manager.explicit_log_dir = self.app_root
@@ -285,13 +291,12 @@ class SFTLearner(Learner):
             return_config=True,
             save_restore_connector=save_restore_connector,
         )
-        self.model = load_from_nemo(MegatronGPTSFTModel, self.config, self.trainer, gpt_cfg,
-                                    modify_config_fn=_modify_config)
+        self.model = load_from_nemo(
+            MegatronGPTSFTModel, self.config, self.trainer, gpt_cfg, modify_config_fn=_modify_config
+        )
 
         self.is_configured = True
-        self.log_info(
-            fl_ctx, f"Initialized model {type(self.model)}"
-        )
+        self.log_info(fl_ctx, f"Initialized model {type(self.model)}")
 
     def finalize(self, fl_ctx: FLContext):
         # collect threads, close files here

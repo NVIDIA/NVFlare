@@ -29,9 +29,7 @@ def load_weights(model, global_weights, device="cpu"):
         weights = torch.as_tensor(global_weights[var_name], device=device)
         try:
             # update the local dict
-            local_var_dict[var_name] = torch.as_tensor(
-                torch.reshape(weights, local_var_dict[var_name].shape)
-            )
+            local_var_dict[var_name] = torch.as_tensor(torch.reshape(weights, local_var_dict[var_name].shape))
             n_loaded += 1
         except BaseException as e:
             raise ValueError(f"Convert weight from {var_name} failed!") from e

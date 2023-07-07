@@ -16,12 +16,12 @@
 import logging
 import os
 
-from pytorch_lightning import Trainer
+import torch
 from nemo.collections.nlp.models.language_modeling.megatron_gpt_sft_model import MegatronGPTSFTModel
 from nemo.collections.nlp.parts.nlp_overrides import NLPDDPStrategy, NLPSaveRestoreConnector
 from omegaconf import OmegaConf, open_dict
+from pytorch_lightning import Trainer
 
-import torch
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey
@@ -29,6 +29,7 @@ from nvflare.apis.fl_context import FLContext
 
 # configure logging at the root logging level
 logging.getLogger().setLevel(logging.INFO)
+
 
 def _modify_config(gpt_cfg, cfg, add_cfg_to_tree=False):
     """
@@ -38,7 +39,7 @@ def _modify_config(gpt_cfg, cfg, add_cfg_to_tree=False):
     OmegaConf.set_struct(gpt_cfg, True)
     OmegaConf.resolve(cfg)
     with open_dict(gpt_cfg):
-        gpt_cfg.megatron_amp_O2 = cfg.model.get('megatron_amp_O2', False)
+        gpt_cfg.megatron_amp_O2 = cfg.model.get("megatron_amp_O2", False)
         gpt_cfg.micro_batch_size = cfg.model.data.train_ds.micro_batch_size
         gpt_cfg.global_batch_size = cfg.model.data.train_ds.global_batch_size
         gpt_cfg.sequence_parallel = cfg.model.get("sequence_parallel", False)
@@ -53,8 +54,8 @@ def _modify_config(gpt_cfg, cfg, add_cfg_to_tree=False):
         gpt_cfg.resume_from_checkpoint = cfg.model.resume_from_checkpoint
         gpt_cfg.save_nemo_on_validation_end = cfg.model.save_nemo_on_validation_end
         gpt_cfg.gradient_as_bucket_view = cfg.model.gradient_as_bucket_view
-        gpt_cfg.hidden_dropout = cfg.model.get('hidden_dropout', 0.0)
-        gpt_cfg.attention_dropout = cfg.model.get('attention_dropout', 0.0)
+        gpt_cfg.hidden_dropout = cfg.model.get("hidden_dropout", 0.0)
+        gpt_cfg.attention_dropout = cfg.model.get("attention_dropout", 0.0)
         gpt_cfg.ffn_dropout = cfg.model.ffn_dropout
 
         # This is needed when modifying a hparam file directly to load `.ckpt` files.
@@ -99,7 +100,6 @@ class ServerSFTModel(torch.nn.Module, FLComponent):
         FLComponent.__init__(self)
         torch.nn.Module.__init__(self)
 
-
     def _initialize(self, fl_ctx: FLContext):
         # get app root
         app_root = fl_ctx.get_prop(FLContextKey.APP_ROOT)
@@ -110,7 +110,7 @@ class ServerSFTModel(torch.nn.Module, FLComponent):
         # Trainer initialization, global model for persistence only, does not use GPU
         strategy = NLPDDPStrategy(find_unused_parameters=False, no_ddp_communication_hook=True)
         plugins = []
-        trainer = Trainer(plugins=plugins, strategy=strategy, accelerator='cpu')
+        trainer = Trainer(plugins=plugins, strategy=strategy, accelerator="cpu")
         # Load pretrained model
         save_restore_connector = NLPSaveRestoreConnector()
         if os.path.isdir(self.base_model_file_path):
@@ -122,7 +122,7 @@ class ServerSFTModel(torch.nn.Module, FLComponent):
             save_restore_connector=save_restore_connector,
         )
         self.model = load_from_nemo(MegatronGPTSFTModel, self.config, trainer, gpt_cfg, modify_config_fn=_modify_config)
-        self.log_info(fl_ctx, f"Initialized global model")
+        self.log_info(fl_ctx, "Initialized global model")
 
     def state_dict(self):
         return self.model.state_dict()

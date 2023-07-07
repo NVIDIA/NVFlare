@@ -35,25 +35,25 @@ def main():
         type=str,
         help="Target job folder containing config files.",
     )
-    parser.add_argument(
-        "--template_folder", type=str, help="Template job folder", default="jobs/templates"
-    )
+    parser.add_argument("--template_folder", type=str, help="Template job folder", default="jobs/templates")
     parser.add_argument("--num_clients", type=int, help="Number of client app folders to generate.", default=1)
     parser.add_argument("--devices", type=int, help="Number of GPU devices per client.", default=1)
     parser.add_argument(
         "--validation_ds_files",
-        nargs='+',
+        nargs="+",
         help="Validation files, one per client.",
     )
     parser.add_argument(
         "--train_ds_files",
-        nargs='+',
+        nargs="+",
         help="Training files files, one per client.",
         default="data/FinancialPhraseBank-v1.0_split/site-",
     )
 
     args = parser.parse_args()
-    assert args.num_clients == len(args.validation_ds_files) == len(args.train_ds_files), "Number of clients should match number of validation and training files."
+    assert (
+        args.num_clients == len(args.validation_ds_files) == len(args.train_ds_files)
+    ), "Number of clients should match number of validation and training files."
 
     # create client app folders
     for i in range(args.num_clients):

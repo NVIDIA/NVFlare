@@ -12,12 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 import argparse
 import json
-import numpy as np
+import os
+
 import pandas as pd
 import pyarrow.parquet as pq
+
 
 def data_args():
     parser = argparse.ArgumentParser(description="Preprocess data to train and validation files in jsonl format")
@@ -28,6 +29,7 @@ def data_args():
     parser.add_argument("--output_dir", type=str, required=True, help="Path to output folder")
     args = parser.parse_args()
     return args
+
 
 def get_data_for_sft(data):
     data_assistant = data[(data.role == "assistant") & (data["rank"] == 0.0)].copy()
@@ -47,27 +49,28 @@ def get_data_for_sft(data):
     data_assistant = data_assistant[["instruction", "output"]]
     return data_assistant
 
+
 def split_to_jsonl(data, output_dir, validation_ratio, testing_ratio):
-    print(f"Preprocessing data to NeMo_SFT jsonl format...")
-    output_path_tra = os.path.join(output_dir,"training.jsonl")
-    output_path_val = os.path.join(output_dir,"validation.jsonl")
+    print("Preprocessing data to NeMo_SFT jsonl format...")
+    output_path_tra = os.path.join(output_dir, "training.jsonl")
+    output_path_val = os.path.join(output_dir, "validation.jsonl")
     output_path_tst = os.path.join(output_dir, "testing.jsonl")
 
     data_ct = len(data)
     val_threshold = int(data_ct * validation_ratio)
     test_threshold = int(data_ct * testing_ratio)
 
-    with open(output_path_val, 'w') as g, open(output_path_tst, 'w') as h, open(output_path_tra, 'w') as i:
+    with open(output_path_val, "w") as g, open(output_path_tst, "w") as h, open(output_path_tra, "w") as i:
         for index, item in data.iterrows():
-            input = item['instruction']
-            output = item['output']
+            input = item["instruction"]
+            output = item["output"]
             # write to jsonl file according to index
             if index < val_threshold:
-                h.write(json.dumps({'input': input, 'output': output}) + '\n')
+                h.write(json.dumps({"input": input, "output": output}) + "\n")
             elif index < val_threshold + test_threshold:
-                g.write(json.dumps({'input': input, 'output': output}) + '\n')
+                g.write(json.dumps({"input": input, "output": output}) + "\n")
             else:
-                i.write(json.dumps({'input': input, 'output': output}) + '\n')
+                i.write(json.dumps({"input": input, "output": output}) + "\n")
     print(f"{index+1} out of {data_ct} Data was successfully preprocessed and saved.")
 
 
@@ -93,5 +96,6 @@ def main():
     output_dir = args.output_dir
     split_to_jsonl(data_full, output_dir, val_ratio, test_ratio)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
