@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from nvflare.apis.dxo import DXO, DataKind
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.signal import Signal
-from nvflare.apis.dxo import DXO, DataKind
 from nvflare.app_common.launchers.subprocess_launcher import SubprocessLauncher
 
 
