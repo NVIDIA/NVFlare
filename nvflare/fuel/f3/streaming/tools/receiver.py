@@ -40,11 +40,12 @@ class Receiver:
 
 
 if __name__ == "__main__":
-    setup_log(logging.DEBUG)
+    setup_log(logging.INFO)
     url = "tcp://localhost:1234"
     receiver = Receiver(url)
     time.sleep(2)
     result = None
+    last = 0
     while True:
         if receiver.get_futures:
             for sid, fut in receiver.get_futures().items():
@@ -52,13 +53,17 @@ if __name__ == "__main__":
                     result = fut.result()
                     break
                 else:
-                    print(f"{sid} Progress: {fut.get_progress()}")
+                    progress = fut.get_progress()
+                    print(f"{sid} Progress: {progress} Delta:{progress - last}")
+                    last = progress
         time.sleep(1)
         if result:
             break
 
+    print("Recreating buffer ...")
+    start = time.time()
     buffer = make_buffer(BUF_SIZE)
-
+    print(f"Buffer done, took {time.time()-start} seconds")
     if buffer == result:
         print("Result is correct")
     else:

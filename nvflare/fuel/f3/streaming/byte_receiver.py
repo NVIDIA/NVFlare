@@ -42,7 +42,7 @@ ACK_INTERVAL = 1024 * 1024 * 4
 class RxTask:
     """Receiving task for ByteStream"""
 
-    def __init__(self, sid: str, origin: str):
+    def __init__(self, sid: int, origin: str):
         self.sid = sid
         self.origin = origin
         self.channel = None
@@ -60,9 +60,10 @@ class RxTask:
         self.offset_ack = 0
         self.eos = False
         self.waiter = threading.Event()
+        self.task_lock = threading.Lock()
 
     def __str__(self):
-        return f"[Rx{self.sid} from {self.origin} for {self.channel}/{self.topic}]"
+        return f"Rx[SID:{self.sid} from {self.origin} for {self.channel}/{self.topic}]"
 
 
 class RxStream(Stream):
@@ -72,6 +73,7 @@ class RxStream(Stream):
         super().__init__(task.size, task.headers)
         self.cell = cell
         self.task = task
+        self.read_lock = threading.Lock()
 
     def read(self, chunk_size: int) -> bytes:
         if self.closed:
@@ -85,27 +87,28 @@ class RxStream(Stream):
             self.task.waiter.clear()
             self.task.waiter.wait()
 
-        buf = self.task.buffers.popleft()
-        if 0 < chunk_size < len(buf):
-            result = buf[0:chunk_size]
-            # Put leftover to the head of the queue
-            self.task.buffers.appendleft(buf[chunk_size:])
-        else:
-            result = buf
+        with self.read_lock:
+            buf = self.task.buffers.popleft()
+            if 0 < chunk_size < len(buf):
+                result = buf[0:chunk_size]
+                # Put leftover to the head of the queue
+                self.task.buffers.appendleft(buf[chunk_size:])
+            else:
+                result = buf
 
-        self.task.offset += len(buf)
-        if self.task.offset - self.task.offset_ack > ACK_INTERVAL:
-            # Send ACK
-            message = Message()
-            message.add_headers(
-                {
-                    StreamHeaderKey.STREAM_ID: self.task.sid,
-                    StreamHeaderKey.DATA_TYPE: StreamDataType.ACK,
-                    StreamHeaderKey.OFFSET: self.task.offset,
-                }
-            )
-            self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_ACK_TOPIC, self.task.origin, message)
-            self.task.offset_ack = self.task.offset
+            self.task.offset += len(buf)
+            if self.task.offset - self.task.offset_ack > ACK_INTERVAL:
+                # Send ACK
+                message = Message()
+                message.add_headers(
+                    {
+                        StreamHeaderKey.STREAM_ID: self.task.sid,
+                        StreamHeaderKey.DATA_TYPE: StreamDataType.ACK,
+                        StreamHeaderKey.OFFSET: self.task.offset,
+                    }
+                )
+                self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_ACK_TOPIC, self.task.origin, message)
+                self.task.offset_ack = self.task.offset
 
         self.task.stream_future.set_progress(self.task.offset)
 
@@ -123,6 +126,7 @@ class ByteReceiver:
         self.cell.register_request_cb(channel=STREAM_CHANNEL, topic=STREAM_DATA_TOPIC, cb=self._data_handler)
         self.registry = Registry()
         self.rx_task_map = {}
+        self.map_lock = threading.Lock()
 
     def register_callback(self, channel: str, topic: str, stream_cb: Callable, *args, **kwargs):
         if not callable(stream_cb):
@@ -136,14 +140,16 @@ class ByteReceiver:
         origin = message.get_header(MessageHeaderKey.ORIGIN)
         seq = message.get_header(StreamHeaderKey.SEQUENCE)
         error = message.get_header(StreamHeaderKey.ERROR_MSG, None)
-        task = self.rx_task_map.get(sid, None)
-        if not task:
-            if error:
-                log.debug(f"Received error for non-existing stream: {sid} from {origin}")
-                return
 
-            task = RxTask(sid, origin)
-            self.rx_task_map[sid] = task
+        with self.map_lock:
+            task = self.rx_task_map.get(sid, None)
+            if not task:
+                if error:
+                    log.debug(f"Received error for non-existing stream: SID {sid} from {origin}")
+                    return
+
+                task = RxTask(sid, origin)
+                self.rx_task_map[sid] = task
 
         if error:
             self._stop_task(task, StreamError(f"Received error from {origin}: {error}"), notify=False)
@@ -167,28 +173,29 @@ class ByteReceiver:
 
             stream_thread_pool.submit(self._callback_wrapper, task, callback)
 
-        if seq == task.next_seq:
-            self._append(task, message.payload)
-            task.next_seq += 1
-
-            # Try to reassemble out-of-seq buffers
-            while task.next_seq in task.out_seq_buffers:
-                chunk = task.out_seq_buffers.pop(task.next_seq)
-                self._append(task, chunk)
+        with task.task_lock:
+            if seq == task.next_seq:
+                self._append(task, message.payload)
                 task.next_seq += 1
 
-        else:
-            # Out-of-seq chunk reassembly
-            if len(task.out_seq_buffers) >= MAX_OUT_SEQ_CHUNKS:
-                self._stop_task(task, StreamError(f"Too many out-of-sequence chunks: {len(task.out_seq_buffers)}"))
-                return
-            else:
-                task.out_seq_buffers[seq] = message.payload
+                # Try to reassemble out-of-seq buffers
+                while task.next_seq in task.out_seq_buffers:
+                    chunk = task.out_seq_buffers.pop(task.next_seq)
+                    self._append(task, chunk)
+                    task.next_seq += 1
 
-        data_type = message.get_header(StreamHeaderKey.DATA_TYPE)
-        if data_type == StreamDataType.FINAL:
-            # Task is not done till all buffers are read so future is not set here
-            self._stop_task(task)
+            else:
+                # Out-of-seq chunk reassembly
+                if len(task.out_seq_buffers) >= MAX_OUT_SEQ_CHUNKS:
+                    self._stop_task(task, StreamError(f"Too many out-of-sequence chunks: {len(task.out_seq_buffers)}"))
+                    return
+                else:
+                    task.out_seq_buffers[seq] = message.payload
+
+            data_type = message.get_header(StreamHeaderKey.DATA_TYPE)
+            if data_type == StreamDataType.FINAL:
+                # Task is not done till all buffers are read so future is not set here
+                self._stop_task(task)
 
     def _callback_wrapper(self, task: RxTask, callback: Callback):
         """A wrapper to catch all exceptions in the callback"""

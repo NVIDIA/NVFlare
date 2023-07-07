@@ -37,11 +37,11 @@ class ObjectTxTask:
         self.stop = False
 
     def __str__(self):
-        return f"ObjTx[{self.obj_sid}/{self.index} to {self.target} for {self.channel}/{self.topic}]"
+        return f"ObjTx[SID:{self.obj_sid}/{self.index} to {self.target} for {self.channel}/{self.topic}]"
 
 
 class ObjectRxTask:
-    def __init__(self, obj_sid: str, channel: str, topic: str, origin: str, headers: dict):
+    def __init__(self, obj_sid: int, channel: str, topic: str, origin: str, headers: dict):
         self.obj_sid = obj_sid
         self.index = 0
         self.channel = channel
@@ -51,7 +51,7 @@ class ObjectRxTask:
         self.object_future: Optional[ObjectStreamFuture] = None
 
     def __str__(self):
-        return f"ObjRx[{self.obj_sid}/{self.index} from {self.origin} for {self.channel}/{self.topic}]"
+        return f"ObjRx[SID:{self.obj_sid}/{self.index} from {self.origin} for {self.channel}/{self.topic}]"
 
 
 class ObjectHandler:
@@ -60,7 +60,7 @@ class ObjectHandler:
         self.object_cb = object_cb
         self.obj_tasks = obj_tasks
 
-    def object_done(self, future: StreamFuture, obj_sid: str, index: int, *args, **kwargs):
+    def object_done(self, future: StreamFuture, obj_sid: int, index: int, *args, **kwargs):
         blob = future.result()
         self.object_cb(obj_sid, index, Message(future.get_headers(), blob), *args, **kwargs)
 
@@ -68,7 +68,7 @@ class ObjectHandler:
         headers = future.get_headers()
         obj_sid = headers.get(StreamHeaderKey.OBJECT_STREAM_ID, None)
 
-        if not obj_sid:
+        if obj_sid is None:
             return
 
         task = self.obj_tasks.get(obj_sid, None)
