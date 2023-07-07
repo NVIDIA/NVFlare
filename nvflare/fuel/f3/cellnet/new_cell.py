@@ -35,13 +35,9 @@ class Adapter:
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def call(self, future):  # this will be called by StreamCell upon receiving the first byte of blob
-        # time.sleep(1)
         headers = future.headers
         stream_req_id = headers.get(StreamHeaderKey.STREAM_REQ_ID, "")
         origin = headers.get(MessageHeaderKey.ORIGIN, None)
-        # while not future.done():
-        #     self.logger.info(f"{future.get_progress()/1024/1024/1024:.3f} GiB")
-        #     time.sleep(1)
         result = future.result()
         request = Message(headers, result)
         channel = request.get_header(StreamHeaderKey.CHANNEL)
@@ -49,7 +45,7 @@ class Adapter:
         topic = request.get_header(StreamHeaderKey.TOPIC)
         request.set_header(MessageHeaderKey.TOPIC, topic)
         req_id = request.get_header(MessageHeaderKey.REQ_ID)
-        self.logger.info(f"=============================> Receiving: {channel}, {topic}, {len(result)} bytes.")
+        # self.logger.info(f"=============================> Receiving: {channel}, {topic}, {len(result)} bytes.")
         response = self.cb(request)
         response.add_headers(
             {
@@ -132,9 +128,6 @@ class NewCell(StreamCell):
         if req_id not in self.requests_dict:
             return False  # response coming back too late.  The req_id was popped out during timeout
         headers = future.headers
-        while not future.done():
-            self.logger.info(f"{future.get_progress()/1024/1024/1024:.3f} GiB")
-            time.sleep(1)
         response_blob = future.result()
         waiter, _ = self.requests_dict.get(req_id, [None, None])
         self.requests_dict[req_id] = [waiter, Message(headers, response_blob)]
