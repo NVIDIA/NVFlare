@@ -19,8 +19,8 @@ from nvflare.private.fed.simulator.simulator_const import SimulatorConstants
 
 
 class SimulatorParentClientEngine(ClientEngine):
-    def __init__(self, client, client_token, args, rank=0):
-        super().__init__(client, client_token, args, rank)
+    def __init__(self, client, args, rank=0):
+        super().__init__(client, args, rank)
         fl_ctx = self.new_context()
         fl_ctx.set_prop(FLContextKey.SIMULATE_MODE, True, private=True, sticky=True)
 

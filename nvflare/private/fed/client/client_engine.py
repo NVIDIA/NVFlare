@@ -48,19 +48,18 @@ def _remove_custom_path():
 class ClientEngine(ClientEngineInternalSpec):
     """ClientEngine runs in the client parent process."""
 
-    def __init__(self, client, client_name, args, rank, workers=5):
+    def __init__(self, client, args, rank, workers=5):
         """To init the ClientEngine.
 
         Args:
             client: FL client object
-            client_name: client name
             args: command args
             rank: local process rank
             workers: number of workers
         """
         super().__init__()
         self.client = client
-        self.client_name = client_name
+        self.client_name = client.client_name
         self.args = args
         self.rank = rank
         self.client_executor = ProcessExecutor(client, os.path.join(args.workspace, "startup"))
@@ -68,7 +67,7 @@ class ClientEngine(ClientEngineInternalSpec):
 
         self.fl_ctx_mgr = FLContextManager(
             engine=self,
-            identity_name=client_name,
+            identity_name=self.client_name,
             job_id="",
             public_stickers={},
             private_stickers={

@@ -149,6 +149,7 @@ class FLContextKey(object):
     JOB_PARTICIPANTS = "__job_participants"
     JOB_BLOCK_REASON = "__job_block_reason"  # why the job should be blocked from scheduling
     SSID = "__ssid__"
+    CLIENT_TOKEN = "__client_token"
 
 
 class ReservedTopic(object):

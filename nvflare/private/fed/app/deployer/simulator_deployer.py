@@ -77,7 +77,7 @@ class SimulatorDeployer(ServerDeployer):
 
         federated_client.register()
 
-        client_engine = SimulatorParentClientEngine(federated_client, federated_client.token, args)
+        client_engine = SimulatorParentClientEngine(federated_client, args)
         federated_client.set_client_engine(client_engine)
         # federated_client.start_heartbeat()
         federated_client.run_manager = None
