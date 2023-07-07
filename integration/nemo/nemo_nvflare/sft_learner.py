@@ -19,7 +19,6 @@ import nemo
 import numpy as np
 from pytorch_lightning import Trainer
 import torch
-import pickle
 
 from nemo.collections.nlp.parts.nlp_overrides import (
     GradScaler,
@@ -43,7 +42,7 @@ from nvflare.fuel.utils.network_utils import get_open_ports
 
 from .callbacks import RestoreOptimizers
 from .constants import NemoDataKind
-from .utils import compute_model_diff, load_weights
+from .utils_sft import compute_model_diff, load_weights
 
 print("NEMO version", nemo.__version__)
 # configure logging at the root logging level
@@ -301,11 +300,7 @@ class SFTLearner(Learner):
     def train(self, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         # update local model weights with received weights
         dxo = from_shareable(shareable)
-
-        # convert data link to actual data
-        self.log_info(fl_ctx, f"Converting global data link to actual data for {dxo.data}.")
-        with open(dxo.data['path'], "rb") as f:
-            global_weights = pickle.load(f)
+        global_weights = dxo.data
 
         if not self.is_configured:
             self._configure(fl_ctx)
@@ -313,11 +308,9 @@ class SFTLearner(Learner):
         # get round information
         current_round = shareable.get_header(AppConstants.CURRENT_ROUND)
 
-
-        #self.model.init_consumed_samples = self.consumed_samples
         if current_round == 0:
             self.steps_per_round = self.trainer.fit_loop.max_steps
-        if current_round > 0:           
+        if current_round > 0:
             self.trainer.num_sanity_validation_steps = 0  # Turn off sanity validation steps in 2nd round of FL
             self.trainer.fit_loop.max_epochs += self.aggregation_epochs
             self.trainer.fit_loop.max_steps += self.steps_per_round
@@ -337,12 +330,6 @@ class SFTLearner(Learner):
         self.model.log_global = False
         self.trainer.fit(self.model)
 
-        #self.consumed_samples = self.model.compute_consumed_samples(self.trainer.fit_loop.max_steps)
-        #print("-------------------------------")
-        #print(self.model.init_global_step)
-        #print(self.model.init_consumed_samples)
-        #print("-------------------------------")
-
         model_diff = compute_model_diff(self.model, global_weights)
         self.log_info(
             fl_ctx, f"Computed {len(model_diff)} weight differences for global model of length {len(global_weights)}"
@@ -352,13 +339,8 @@ class SFTLearner(Learner):
         epoch_len = len(self.model._train_dl)
         self.log_info(fl_ctx, f"Local steps per epoch: {epoch_len}")
 
-        # save model_diff to a pickle file
-        client_weight_path = os.path.join(self.app_root, "transit_temp.pickle")
-        with open(client_weight_path, "wb") as f:
-            pickle.dump(model_diff, f, protocol=pickle.HIGHEST_PROTOCOL)
-
         # build the shareable
-        dxo = DXO(data_kind=DataKind.WEIGHT_DIFF, data={"path": client_weight_path})
+        dxo = DXO(data_kind=DataKind.WEIGHT_DIFF, data=model_diff)
         dxo.set_meta_prop(MetaKey.NUM_STEPS_CURRENT_ROUND, epoch_len)
 
         self.log_info(fl_ctx, "Local epochs finished. Returning shareable")
@@ -371,11 +353,7 @@ class SFTLearner(Learner):
 
         # update local model weights with received weights
         dxo = from_shareable(shareable)
-
-        # convert data link to actual data
-        self.log_info(fl_ctx, f"Converting global data link to actual data for {dxo.data}.")
-        with open(dxo.data['path'], "rb") as f:
-            global_weights = pickle.load(f)
+        global_weights = dxo.data
 
         if not self.is_configured:
             self._configure(fl_ctx)

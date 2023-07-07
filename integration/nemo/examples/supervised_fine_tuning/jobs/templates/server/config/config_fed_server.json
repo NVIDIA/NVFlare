@@ -3,7 +3,7 @@
   "min_clients": 1,
   "num_rounds": 5,
   "config_path": "config/megatron_gpt_sft.yaml",
-  "base_model_file_path": "/model/nemo-megatron-gpt-1.3B/nemo_gpt1.3B_fp16.nemo",
+  "base_model_file_path": "/workspace/Models/nemo-megatron-gpt-1.3B/nemo_gpt1.3B_fp16.nemo",
   "server": {
     "heart_beat_timeout": 600
   },
@@ -15,7 +15,7 @@
       "name": "PTFileModelPersistor",
       "args": {
         "model": {
-          "path": "custom.server_model.ServerModelSFT",
+          "path": "nemo_nvflare.ServerSFTModel",
           "args": {
             "config_path": "{config_path}",
             "base_model_file_path": "{base_model_file_path}"
@@ -30,7 +30,7 @@
     },
     {
       "id": "aggregator",
-      "path": "custom.intime_accumulate_model_aggregator_file_path.InTimeAccumulateWeightedAggregatorFilePath",
+      "name": "InTimeAccumulateWeightedAggregator",
       "args": {}
     },
     {
@@ -44,7 +44,7 @@
   "workflows": [
     {
       "id": "share_config",
-      "path": "custom.share_config_sft.ShareConfigSFT",
+      "path": "nemo_nvflare.ShareConfigSFT",
       "args": {
         "config_path": "{config_path}",
         "task_name": "share_config",
@@ -53,7 +53,7 @@
     },
     {
       "id": "scatter_and_gather",
-      "path": "custom.scatter_and_gather_file.ScatterAndGather",
+      "name": "ScatterAndGather",
       "args": {
         "min_clients": "{min_clients}",
         "num_rounds": "{num_rounds}",

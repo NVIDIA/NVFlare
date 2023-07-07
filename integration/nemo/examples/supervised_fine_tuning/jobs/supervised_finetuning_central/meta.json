@@ -1,8 +1,0 @@
-{
-  "name": "gpt_sft",
-  "resource_spec": {},
-  "deploy_map": {
-    "server": ["server"],
-    "app1": ["site-1"]
-  }
-}

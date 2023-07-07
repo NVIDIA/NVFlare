@@ -80,7 +80,7 @@ def load_from_nemo(cls, cfg, trainer, gpt_cfg, modify_config_fn):
     return model
 
 
-class ServerModelSFT(torch.nn.Module, FLComponent):
+class ServerSFTModel(torch.nn.Module, FLComponent):
     def __init__(
         self,
         config_path: str = "config/megatron_gpt_prompt_learning_config.yaml",
