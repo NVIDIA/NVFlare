@@ -56,7 +56,7 @@ class TxTask:
         self.stop = False
 
     def __str__(self):
-        return f"Tx[{self.sid} to {self.target} for {self.channel}/{self.topic}]"
+        return f"Tx[SID:{self.sid} to {self.target} for {self.channel}/{self.topic}]"
 
 
 class ByteStreamer:
@@ -141,6 +141,7 @@ class ByteStreamer:
                 {
                     StreamHeaderKey.CHANNEL: task.channel,
                     StreamHeaderKey.TOPIC: task.topic,
+                    StreamHeaderKey.SIZE: task.stream.get_size(),
                 }
             )
 

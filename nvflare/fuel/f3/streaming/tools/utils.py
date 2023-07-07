@@ -13,7 +13,9 @@
 # limitations under the License.
 import logging
 
-BUF_SIZE = 64 * 1024 * 1024 + 1
+from nvflare.fuel.f3.streaming.stream_utils import wrap_view
+
+BUF_SIZE = 4096 * 1024 * 1024 + 1
 TEST_CHANNEL = "stream"
 TEST_TOPIC = "test"
 TX_CELL = "sender"
@@ -22,7 +24,7 @@ RX_CELL = "server"
 
 def make_buffer(size: int) -> bytearray:
 
-    buf = bytearray(size)
+    buf = wrap_view(bytearray(size))
     buf_len = 0
     n = 0
     while True:

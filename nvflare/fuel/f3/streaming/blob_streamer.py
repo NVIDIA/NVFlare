@@ -20,7 +20,7 @@ from nvflare.fuel.f3.streaming.byte_receiver import ByteReceiver
 from nvflare.fuel.f3.streaming.byte_streamer import ByteStreamer
 from nvflare.fuel.f3.streaming.stream_const import EOS
 from nvflare.fuel.f3.streaming.stream_types import Stream, StreamFuture
-from nvflare.fuel.f3.streaming.stream_utils import stream_thread_pool, wrap_view
+from nvflare.fuel.f3.streaming.stream_utils import FastBuffer, stream_thread_pool, wrap_view
 from nvflare.security.logging import secure_format_traceback
 
 log = logging.getLogger(__name__)
@@ -49,6 +49,7 @@ class BlobHandler:
         self.blob_cb = blob_cb
         self.size = 0
         self.buffer = None
+        self.pre_allocated = False
 
     def handle_blob_cb(self, future: StreamFuture, stream: Stream, resume: bool, *args, **kwargs) -> int:
 
@@ -56,11 +57,12 @@ class BlobHandler:
             log.warning("Resume is not supported, ignored")
 
         self.size = stream.get_size()
+        self.pre_allocated = self.size > 0
 
-        if self.size > 0:
-            self.buffer = bytearray(self.size)
+        if self.pre_allocated:
+            self.buffer = wrap_view(bytearray(self.size))
         else:
-            self.buffer = bytes()
+            self.buffer = FastBuffer()
 
         stream_thread_pool.submit(self._read_stream, future, stream)
 
@@ -80,17 +82,22 @@ class BlobHandler:
                     break
 
                 length = len(buf)
-                if self.size > 0:
+                if self.pre_allocated:
                     self.buffer[buf_size : buf_size + length] = buf
                 else:
-                    self.buffer += buf
+                    self.buffer.append(buf)
 
                 buf_size += length
 
-            if self.size and (self.size != buf_size):
-                log.warning(f"Stream size doesn't match: {self.size} <> {buf_size}")
+            if self.size and self.size != buf_size:
+                log.warning(f"Stream {future.get_stream_id()} size doesn't match: {self.size} <> {buf_size}")
 
-            future.set_result(self.buffer)
+            if self.pre_allocated:
+                result = self.buffer
+            else:
+                result = self.buffer.to_bytes()
+
+            future.set_result(result)
         except Exception as ex:
             log.error(f"Stream {future.get_stream_id()} read error: {ex}")
             log.debug(secure_format_traceback())
