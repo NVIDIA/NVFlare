@@ -56,7 +56,7 @@ tests:
         "result":
           "type": "admin_api_response"
           "data": {
-            "message": "Error: Authorization Error: user 'trainer@b.org' is not authorized for 'clone_job'"
+            "message": "Error: PermissionError: Authorization Error: user 'trainer@b.org' is not authorized for 'clone_job'"
           }
       - "trigger":
           "type": "server_log"

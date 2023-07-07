@@ -245,7 +245,7 @@ class Controller(Responder, ControllerSpec, ABC):
             if task.before_task_sent_cb is not None:
                 try:
                     task.before_task_sent_cb(client_task=client_task_to_send, fl_ctx=fl_ctx)
-                except BaseException as e:
+                except Exception as e:
                     self.log_exception(
                         fl_ctx,
                         "processing error in before_task_sent_cb on task {} ({}): {}".format(
@@ -271,7 +271,7 @@ class Controller(Responder, ControllerSpec, ABC):
             if task.after_task_sent_cb is not None:
                 try:
                     task.after_task_sent_cb(client_task=client_task_to_send, fl_ctx=fl_ctx)
-                except BaseException as e:
+                except Exception as e:
                     self.log_exception(
                         fl_ctx,
                         "processing error in after_task_sent_cb on task {} ({}): {}".format(
@@ -414,7 +414,7 @@ class Controller(Responder, ControllerSpec, ABC):
                 try:
                     self.log_debug(fl_ctx, "invoking result_received_cb ...")
                     task.result_received_cb(client_task=client_task, fl_ctx=fl_ctx)
-                except BaseException as e:
+                except Exception as e:
                     # this task cannot proceed anymore
                     self.log_exception(
                         fl_ctx,
@@ -911,7 +911,7 @@ class Controller(Responder, ControllerSpec, ABC):
                     if exit_task.task_done_cb is not None:
                         try:
                             exit_task.task_done_cb(task=exit_task, fl_ctx=fl_ctx)
-                        except BaseException as e:
+                        except Exception as e:
                             self.log_exception(
                                 fl_ctx,
                                 "processing error in task_done_cb error on task {}: {}".format(
