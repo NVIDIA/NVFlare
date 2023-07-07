@@ -100,7 +100,7 @@ class ObjectIterator(Iterator, ABC):
     def get_headers(self) -> Optional[dict]:
         return self.headers
 
-    def stream_id(self):
+    def stream_id(self) -> int:
         return self.sid
 
     def get_index(self) -> int:
@@ -116,7 +116,7 @@ class StreamFuture:
     Fashioned after concurrent.futures.Future
     """
 
-    def __init__(self, stream_id: str, headers: Optional[dict] = None):
+    def __init__(self, stream_id: int, headers: Optional[dict] = None):
         self.stream_id = stream_id
         self.headers = headers
         self.waiter = threading.Event()
@@ -127,7 +127,7 @@ class StreamFuture:
         self.progress = 0
         self.done_callbacks = []
 
-    def get_stream_id(self) -> str:
+    def get_stream_id(self) -> int:
         return self.stream_id
 
     def get_headers(self) -> Optional[dict]:
@@ -156,7 +156,7 @@ class StreamFuture:
             if self.error or self.result:
                 return False
 
-            self.error = StreamCancelled("Stream is cancelled")
+            self.error = StreamCancelled(f"Stream {self.stream_id} is cancelled")
 
             return True
 
@@ -199,7 +199,8 @@ class StreamFuture:
                 timeout.
         """
 
-        self.waiter.wait(timeout)
+        if not self.waiter.wait(timeout):
+            raise TimeoutError(f"Future timed out waiting result after {timeout} seconds")
 
         if self.error:
             raise self.error
@@ -224,7 +225,9 @@ class StreamFuture:
                 timeout.
         """
 
-        self.waiter.wait(timeout)
+        if not self.waiter.wait(timeout):
+            raise TimeoutError(f"Future timed out waiting exception after {timeout} seconds")
+
         return self.error
 
     def set_result(self, value: Any):
@@ -255,7 +258,7 @@ class StreamFuture:
 
 
 class ObjectStreamFuture(StreamFuture):
-    def __init__(self, stream_id: str, headers: Optional[dict] = None):
+    def __init__(self, stream_id: int, headers: Optional[dict] = None):
         super().__init__(stream_id, headers)
         self.index = 0
 

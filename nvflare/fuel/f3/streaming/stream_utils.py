@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -21,7 +22,7 @@ STREAM_THREAD_POOL_SIZE = 128
 
 stream_thread_pool = ThreadPoolExecutor(STREAM_THREAD_POOL_SIZE, "stm")
 lock = threading.Lock()
-start_time = time.time() * 1000000  # microseconds
+sid_base = int((time.time() + os.getpid()) * 1000000)  # microseconds
 stream_count = 0
 
 
@@ -34,11 +35,11 @@ def wrap_view(buffer: BytesAlike) -> memoryview:
     return view
 
 
-def gen_stream_id():
-    global lock, stream_count, start_time
+def gen_stream_id() -> int:
+    global lock, stream_count, sid_base
     with lock:
         stream_count += 1
-    return f"SID{(start_time + stream_count):16.0f}"
+    return sid_base + stream_count
 
 
 class FastBuffer:
@@ -80,7 +81,7 @@ class FastBuffer:
         if length > remaining:
             # Expanding the array as least twice the current capacity
             new_cap = max(length + self.size, 2 * self.capacity)
-            self.buffer.ljust(new_cap, b"\x00")
+            self.buffer = self.buffer.ljust(new_cap, b"\x00")
             self.capacity = new_cap
 
         self.buffer[self.size :] = buf
