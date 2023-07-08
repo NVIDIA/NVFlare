@@ -6,8 +6,8 @@ feature to showcase how to fine-tune the whole model on supervised data for lear
 Due to the large model size of the LLM, we use NVFlare's streaming feature to transfer the model in chunks.
 
 ## Dependencies
-This example running a 1.3B/5B GPT model requires considerable computational resources. For training 1.3B/5B model, SFT needs ~25/100GB GPU memory (Ampere or later GPU architecture). Hence, to run three clients in parallel, we can compute the resource needs accordingly.
-The example for 3-client 1.3B GPT model can be performed on a single A100 GPU with 80 GB, while 5B model was tested on 6xA100 GPUs with 80 GB each.
+This example running a 1.3B GPT model requires considerable computational resources. For training 1.3B model, SFT needs ~30GB GPU memory using fp16 precision. Hence, to run three clients in parallel, we can compute the resource needs accordingly.
+The example for 3-client 1.3B GPT model was performed on two A100 GPUs with 80 GB memory each.
 
 We assume you followed the instructions [here](../../README.md#requirements) 
 to install the NeMo, NVFlare, and the NeMo-NVFlare package. 
@@ -111,11 +111,25 @@ submit_job [PWD]/jobs/gpt_sft_1.3B_combined
 ```
 
 #### 2. Federated SFT
-We use the [FedAvg](https://arxiv.org/abs/1602.05629) algorithm to p-tune the model in a federated scenario. 
+We use the [FedAvg](https://arxiv.org/abs/1602.05629) algorithm to perform SFT on the model in a federated scenario with 3 clients, each uses one of the three datasets. 
+
+We create the poc workspaces:
+```
+nvflare poc --prepare -n 3
+```
+For 1.3B model experiment, we start the NVFlare system with two GPUs:
+```
+nvflare poc --start --gpu 0,1
+```
+For better usability, open a new terminal and start the [admin command prompt](https://nvflare.readthedocs.io/en/main/real_world_fl/operation.html#admin-command-prompt):
+```
+nvflare poc --start --package admin
+```
+
 First, create and modify the configuration files again. 
 Here, each client performs SFT for one local epoch before sending their local model updates to the server for aggregation. 
 ```
-python3 create_configs.py --job_folder "jobs/gpt_sft_1.3B_fedavg" --num_clients 3 --devices 1 --train_ds_files /workspace/Data/Processed/alpaca/training.jsonl /workspace/Data/Processed/dolly/training.jsonl /workspace/Data/Processed/oasst1/training.jsonl --validation_ds_files /workspace/Data/Processed/combined/validation.jsonl
+python3 utils/create_configs.py --job_folder "jobs/gpt_sft_1.3B_fedavg" --num_clients 3 --devices 1 --train_ds_files /workspace/Data/Processed/alpaca/training.jsonl /workspace/Data/Processed/dolly/training.jsonl /workspace/Data/Processed/oasst1/training.jsonl --validation_ds_files /workspace/Data/Processed/combined/validation.jsonl  /workspace/Data/Processed/combined/validation.jsonl  /workspace/Data/Processed/combined/validation.jsonl
 ```
 Next, simulate the federated p-tuning using FedAvg.
 ```
