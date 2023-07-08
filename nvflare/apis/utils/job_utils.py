@@ -52,6 +52,8 @@ def convert_legacy_zipped_app_to_job(zip_data: bytes) -> bytes:
     reader = io.BytesIO(zip_data)
     with ZipFile(reader, "r") as in_zip:
         info_list = in_zip.infolist()
+        for f in info_list:
+            print("info_list name ", f)
         folder_name = info_list[0].filename.split("/")[0]
         meta_file = os.path.join(folder_name, JobConstants.META)
         meta_json = normpath_for_zip(os.path.join(folder_name, JobConstants.META_FILE))

@@ -15,6 +15,7 @@
 import argparse
 import os
 import sys
+import traceback
 
 from nvflare.cli_exception import CLIException
 from nvflare.dashboard.cli import define_dashboard_parser, handle_dashboard
@@ -22,6 +23,7 @@ from nvflare.fuel.hci.tools.authz_preview import define_authz_preview_parser, ru
 from nvflare.lighter.poc_commands import def_poc_parser, handle_poc_cmd
 from nvflare.lighter.provision import define_provision_parser, handle_provision
 from nvflare.private.fed.app.simulator.simulator import define_simulator_parser, run_simulator
+from nvflare.tool.job.job_cli import handle_job_cli_cmd, def_job_cli_parser
 from nvflare.tool.preflight_check import check_packages, define_preflight_check_parser
 
 CMD_POC = "poc"
@@ -30,6 +32,7 @@ CMD_PREFLIGHT_CHECK = "preflight_check"
 CMD_SIMULATOR = "simulator"
 CMD_DASHBOARD = "dashboard"
 CMD_AUTHZ_PREVIEW = "authz_preview"
+CMD_JOB = "job"
 
 
 def check_python_version():
@@ -96,6 +99,7 @@ def parse_args(prog_name: str):
     sub_cmd_parsers.update(def_simulator_parser(sub_cmd))
     sub_cmd_parsers.update(def_dashboard_parser(sub_cmd))
     sub_cmd_parsers.update(def_authz_preview_parser(sub_cmd))
+    sub_cmd_parsers.update(def_job_cli_parser(sub_cmd))
 
     return _parser, _parser.parse_args(), sub_cmd_parsers
 
@@ -107,6 +111,7 @@ handlers = {
     CMD_SIMULATOR: handle_simulator_cmd,
     CMD_DASHBOARD: handle_dashboard,
     CMD_AUTHZ_PREVIEW: handle_authz_preview,
+    CMD_JOB: handle_job_cli_cmd,
 }
 
 
@@ -128,8 +133,11 @@ def run(prog_name):
         print(e)
         sys.exit(1)
     except Exception as e:
-        print(f"unable to handle command: {sub_cmd} due to: {e}, please check syntax ")
-        print_help(prog_parser, sub_cmd, sub_cmd_parsers)
+        print(f"\nUnable to handle command: {sub_cmd} due to: {e}, please check syntax \n")
+        if prog_args.debug:
+            print(traceback.format_exc())
+        else:
+            print_help(prog_parser, sub_cmd, sub_cmd_parsers)
 
 
 def print_help(prog_parser, sub_cmd, sub_cmd_parsers):
