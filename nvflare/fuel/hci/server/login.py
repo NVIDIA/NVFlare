@@ -180,7 +180,7 @@ class LoginModule(CommandModule, CommandFilter):
     def pre_command(self, conn: Connection, args: List[str]):
         if args[0] in [InternalCommands.PWD_LOGIN, InternalCommands.CERT_LOGIN, InternalCommands.CHECK_SESSION]:
             # skip login and check session commands
-            return True
+            return True, ""
 
         # validate token
         req_json = conn.request
@@ -205,7 +205,7 @@ class LoginModule(CommandModule, CommandFilter):
             conn.set_prop(ConnProps.USER_ORG, sess.user_org)
             conn.set_prop(ConnProps.USER_ROLE, sess.user_role)
             conn.set_prop(ConnProps.TOKEN, token)
-            return True
+            return True, ""
         else:
             conn.append_error("session_inactive")
             conn.append_string(
@@ -213,7 +213,7 @@ class LoginModule(CommandModule, CommandFilter):
                     self.session_mgr.idle_timeout
                 )
             )
-            return False
+            return False, "Login error"
 
     def close(self):
         self.session_mgr.shutdown()

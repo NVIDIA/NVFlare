@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """The FedAdmin to communicate with the Admin server."""
-
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.cell import Message as CellMessage
 from nvflare.fuel.hci.server.constants import ConnProps
@@ -21,6 +21,7 @@ from nvflare.fuel.sec.audit import Auditor, AuditService
 from nvflare.fuel.sec.authz import AuthorizationService, AuthzContext, Person
 from nvflare.private.admin_defs import Message, error_reply, ok_reply
 from nvflare.private.defs import CellChannel, RequestHeader, new_cell_message
+from nvflare.private.fed.server.site_security import SiteSecurityFilter
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 
@@ -139,6 +140,13 @@ class FedAdminAgent(object):
                             reply = error_reply(err)
                         elif not authorized:
                             reply = error_reply("not authorized")
+
+                        site_security_filter = SiteSecurityFilter()
+                        self._set_security_data(self.app_ctx, user)
+                        ok, messages = site_security_filter.security_check(self.app_ctx, cmd)
+                        if not ok:
+                            reply = error_reply(messages)
+
                     else:
                         reply = error_reply("requires authz but missing admin command")
 
@@ -156,3 +164,12 @@ class FedAdminAgent(object):
         else:
             reply = error_reply("invalid_request")
         return new_cell_message({}, reply)
+
+    def _set_security_data(self, engine, user):
+        security_items = {}
+        with engine.new_context() as fl_ctx:
+            security_items[FLContextKey.USER_NAME] = user.name
+            security_items[FLContextKey.USER_ORG] = user.org
+            security_items[FLContextKey.USER_ROLE] = user.role
+            fl_ctx.set_prop(FLContextKey.SECURITY_ITEMS, security_items, private=True, sticky=False)
+

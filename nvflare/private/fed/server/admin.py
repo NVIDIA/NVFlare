@@ -33,6 +33,8 @@ from nvflare.private.admin_defs import Message
 from nvflare.private.defs import ERROR_MSG_PREFIX, RequestHeader
 from nvflare.private.fed.server.message_send import ClientReply, send_requests
 
+from .site_security import SiteSecurityFilter
+
 
 def new_message(conn: Connection, topic, body, require_authz: bool) -> Message:
     msg = Message(topic=topic, body=body)
@@ -146,6 +148,9 @@ class FedAdminServer(AdminServer):
             raise TypeError("auditor must be Auditor but got {}".format(type(auditor)))
         audit_filter = CommandAudit(auditor)
         cmd_reg.add_filter(audit_filter)
+
+        site_security_filter = SiteSecurityFilter()
+        cmd_reg.add_filter(site_security_filter)
 
         self.file_upload_dir = file_upload_dir
         self.file_download_dir = file_download_dir

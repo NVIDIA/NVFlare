@@ -95,6 +95,9 @@ class ClientEngine(ClientEngineInternalSpec):
     def get_component(self, component_id: str) -> object:
         return self.client.components.get(component_id)
 
+    def get_components(self) -> dict:
+        return self.client.components
+
     def get_engine_status(self):
         running_jobs = []
         for job_id in self.get_all_job_ids():

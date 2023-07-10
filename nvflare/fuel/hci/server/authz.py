@@ -49,20 +49,20 @@ class AuthzFilter(CommandFilter):
     def pre_command(self, conn: Connection, args: List[str]):
         cmd_entry = conn.get_prop(ConnProps.CMD_ENTRY, None)
         if not cmd_entry:
-            return True
+            return True, ""
 
         assert isinstance(cmd_entry, CommandEntry)
         authz_func = cmd_entry.authz_func
         if not authz_func:
-            return True
+            return True, ""
 
         return_code = authz_func(conn, args)
 
         if return_code == PreAuthzReturnCode.OK:
-            return True
+            return True, ""
 
         if return_code == PreAuthzReturnCode.ERROR:
-            return False
+            return False, "Authorization error"
 
         # authz required - the command name is the name of the right to be checked!
         user = Person(
@@ -83,11 +83,11 @@ class AuthzFilter(CommandFilter):
         authorized, err = AuthorizationService.authorize(ctx)
         if err:
             conn.append_error(f"Authorization Error: {err}", meta=make_meta(MetaStatusValue.NOT_AUTHORIZED, err))
-            return False
+            return False, "Authorization error"
 
         if not authorized:
             conn.append_error(
                 "This action is not authorized", meta=make_meta(MetaStatusValue.NOT_AUTHORIZED, "not authorized")
             )
-            return False
-        return True
+            return False, "Authorization error"
+        return True, ""

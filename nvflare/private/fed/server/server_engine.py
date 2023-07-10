@@ -462,6 +462,9 @@ class ServerEngine(ServerEngineInternalSpec):
     def get_component(self, component_id: str) -> object:
         return self.run_manager.get_component(component_id)
 
+    def get_components(self) -> dict:
+        return self.run_manager.components
+
     def fire_event(self, event_type: str, fl_ctx: FLContext):
         self.run_manager.fire_event(event_type, fl_ctx)
 

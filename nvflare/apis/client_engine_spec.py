@@ -31,3 +31,8 @@ class ClientEngineSpec(ABC):
     @abstractmethod
     def get_component(self, component_id: str) -> object:
         pass
+
+    @abstractmethod
+    def get_components(self) -> dict:
+        """To return all the components"""
+        pass

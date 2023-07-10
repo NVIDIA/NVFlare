@@ -25,12 +25,12 @@ from .constants import ConnProps
 class CommandFilter(object):
     """Base class for filters to run before or after commands."""
 
-    def pre_command(self, conn: Connection, args: List[str]) -> bool:
+    def pre_command(self, conn: Connection, args: List[str]) -> (bool, str):
         """Code to execute before executing a command.
 
         Returns: True to continue filter chain or False to not
         """
-        return True
+        return True, ""
 
     def post_command(self, conn: Connection, args: List[str]) -> bool:
         """Code to execute after executing a command."""
@@ -89,8 +89,9 @@ class ServerCommandRegister(CommandRegister):
         # invoke pre filters
         if len(self.filters) > 0:
             for f in self.filters:
-                ok = f.pre_command(conn, args)
+                ok, message = f.pre_command(conn, args)
                 if not ok:
+                    conn.append_error(message)
                     return
 
         handler(conn, args)

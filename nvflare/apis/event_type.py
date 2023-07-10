@@ -67,3 +67,6 @@ class EventType(object):
     BEFORE_CLIENT_REGISTER = "_before_client_register"
     CLIENT_REGISTERED = "_client_registered"
     SYSTEM_BOOTSTRAP = "_system_bootstrap"
+
+    SECURITY_CHECK = "_security_check"
+

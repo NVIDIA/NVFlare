@@ -150,6 +150,17 @@ class FLContextKey(object):
     JOB_BLOCK_REASON = "__job_block_reason"  # why the job should be blocked from scheduling
     SSID = "__ssid__"
     CLIENT_TOKEN = "__client_token"
+    AUTHENTICATION_RESULT = "_authentication_result"
+    AUTHORIZATION_RESULT = "_authorization_result"
+    AUTHENTICATION_REASON = "_authentication_reason"
+    AUTHORIZATION_REASON = "_authorization_reason"
+
+    SECURITY_ITEMS = "_security_items"
+    COMMAND_NAME = "_command_name"
+    SITE_NAME = "__site_name"
+    USER_NAME = "__user_name"
+    USER_ORG = "__user_org"
+    USER_ROLE = "__user_role"
 
 
 class ReservedTopic(object):
@@ -305,6 +316,7 @@ class SystemComponents(object):
     APP_DEPLOYER = "app_deployer"
     DEFAULT_APP_DEPLOYER = "default_app_deployer"
     JOB_META_VALIDATOR = "job_meta_validator"
+    SECURITY_HANDLER = "security_handler"
 
 
 class JobConstants:
