@@ -22,7 +22,7 @@ tests:
         "admin_user_name": "admin@b.org"
         "result":
           "type": "admin_api_response"
-          "data": "Error: user 'admin@b.org' is not authorized for 'ls'"
+          "data": "Error: PermissionError: user 'admin@b.org' is not authorized for 'ls'"
       - "trigger":
           "type": "server_log"
           "data": "Server started"
