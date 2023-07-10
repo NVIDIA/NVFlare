@@ -101,6 +101,8 @@ class TestStreaming:
 
 
 def mock_add(tag: str, value, data_type: AnalyticsDataType, global_step: Optional[int] = None, **kwargs):
+    # This mock_add tests writer behavior for MLflow and WandB too,
+    # but to keep the signature of the func, we use writer=LogWriterName.TORCH_TB which shows up in expected_dxo_meta
     kwargs = kwargs if kwargs else {}
     if global_step is not None:
         if not isinstance(global_step, int):
@@ -170,6 +172,21 @@ ANALYTICS_SENDER_TEST_CASES = [
             "analytics_kwargs": {"global_step": 20},
         },
         {"analytics_data_type": AnalyticsDataType.METRIC, "tracker_key": LogWriterName.TORCH_TB},
+    ),
+    (  # for WandBWriter
+        "metrics",
+        {"train_loss": 2.4},
+        AnalyticsDataType.METRICS,
+        20,
+        {},
+        "ANALYTIC",
+        {
+            "track_key": "metrics",
+            "track_value": {"train_loss": 2.4},
+            "global_step": 20,
+            "analytics_kwargs": {"global_step": 20},
+        },
+        {"analytics_data_type": AnalyticsDataType.METRICS, "tracker_key": LogWriterName.TORCH_TB},
     ),
 ]
 
