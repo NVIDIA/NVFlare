@@ -18,6 +18,7 @@ from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import InternalCommands
+from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.hci.server.reg import CommandFilter
 
 
@@ -32,6 +33,7 @@ class SiteSecurityFilter(CommandFilter):
         engine = conn.app_ctx
         command = args[0]
 
+        self._set_security_data(conn, engine)
         filter_succeed, messages = self.security_check(engine, command)
 
         if filter_succeed:
@@ -70,3 +72,10 @@ class SiteSecurityFilter(CommandFilter):
             messages += id + ": " + reason + "; "
         return messages
 
+    def _set_security_data(self, conn: Connection, engine):
+        security_items = {}
+        with engine.new_context() as fl_ctx:
+            security_items[FLContextKey.USER_NAME] = conn.get_prop(ConnProps.USER_NAME, "")
+            security_items[FLContextKey.USER_ORG] = conn.get_prop(ConnProps.USER_ORG, "")
+            security_items[FLContextKey.USER_ROLE] = conn.get_prop(ConnProps.USER_ROLE, "")
+            fl_ctx.set_prop(FLContextKey.SECURITY_ITEMS, security_items, private=True, sticky=False)
