@@ -43,8 +43,7 @@ class Adapter:
         request.set_header(MessageHeaderKey.CHANNEL, channel)
         topic = request.get_header(StreamHeaderKey.TOPIC)
         request.set_header(MessageHeaderKey.TOPIC, topic)
-        req_id = request.get_header(MessageHeaderKey.REQ_ID)
-        # self.logger.info(f"=============================> Receiving: {channel}, {topic}, {len(result)} bytes.")
+        req_id = request.get_header(MessageHeaderKey.REQ_ID, "")
         response = self.cb(request)
         response.add_headers(
             {
@@ -109,7 +108,6 @@ class NewCell(StreamCell):
         req_id = str(uuid.uuid4())
 
         request.add_headers({StreamHeaderKey.STREAM_REQ_ID: req_id})
-        print(f"Sending: {len(request.payload)} bytes")
         future = self.send_blob(channel, topic, target, request)  # StreamCell API
 
         # this future can be used to check sending progress, but not for checking return blob
@@ -118,14 +116,14 @@ class NewCell(StreamCell):
 
         if not waiter.wait(timeout):
             self.requests_dict.pop(req_id)
-            return Message()  # or raise TimeoutError(f"request to {channel=} {topic=} timeout")
+            return Message()
         _, result = self.requests_dict.pop(req_id)
         return result
 
     def _process_reply(self, future: StreamFuture):
         req_id = future.headers.get(StreamHeaderKey.STREAM_REQ_ID, -1)
         if req_id not in self.requests_dict:
-            return False  # response coming back too late.  The req_id was popped out during timeout
+            return
         headers = future.headers
         response_blob = future.result()
         waiter, _ = self.requests_dict.get(req_id, [None, None])
@@ -152,6 +150,4 @@ class NewCell(StreamCell):
             self.core_cell.register_request_cb(channel, topic, cb, *args, **kwargs)
         else:
             adapter = Adapter(cb, self.core_cell.my_info, self)
-            self.register_blob_cb(
-                channel, topic, adapter.call, *args, **kwargs
-            )  # this cb is defined by Yuhong.  The cb expects the message, not a future.
+            self.register_blob_cb(channel, topic, adapter.call, *args, **kwargs)
