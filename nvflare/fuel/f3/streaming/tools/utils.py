@@ -15,7 +15,7 @@ import logging
 
 from nvflare.fuel.f3.streaming.stream_utils import wrap_view
 
-BUF_SIZE = 4096 * 1024 * 1024 + 1
+BUF_SIZE = 64 * 1024 * 1024 + 1
 TEST_CHANNEL = "stream"
 TEST_TOPIC = "test"
 TX_CELL = "sender"
