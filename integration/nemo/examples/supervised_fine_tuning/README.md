@@ -155,7 +155,7 @@ First, we ask the model to generate answer to an open question "Tell me an inter
 ALPACA: The first human to orbit the Earth was Neil Armstrong, who flew on the Apollo 11 mission in 1969.'
 DOLLY: The International Space Station is the largest floating structure in the universe. It is made of steel and is about the size of a small house.
 OASST: Sure! Here are a few interesting facts about space travel:\n\n1. Space travel is possible even with small amounts of fuel. The amount of
-COMBINED: The first human to set foot on the Moon was Neil Armstrong, who was born on July 20, 1969.'
+COMBINED: The first human to set foot on the Moon was Neil Armstrong.
 ```
 Note that models mostly gives plausible answers, but ALPACA-finetuned model in fact gives misinformation, since it should be Yuri Gagarin who is the first human to orbit the Earth.
 On the other hand, the model trained on the combined dataset is able to generate a more accurate answer.
