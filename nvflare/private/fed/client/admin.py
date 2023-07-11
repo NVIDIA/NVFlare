@@ -171,5 +171,5 @@ class FedAdminAgent(object):
             security_items[FLContextKey.USER_NAME] = user.name
             security_items[FLContextKey.USER_ORG] = user.org
             security_items[FLContextKey.USER_ROLE] = user.role
-            fl_ctx.set_prop(FLContextKey.SECURITY_ITEMS, security_items, private=True, sticky=False)
+            fl_ctx.set_prop(FLContextKey.SECURITY_ITEMS, security_items, private=True, sticky=True)
 

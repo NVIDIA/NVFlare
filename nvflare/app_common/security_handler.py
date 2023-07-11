@@ -13,12 +13,13 @@
 # limitations under the License.
 
 from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.security import Security
 
 
-class SecurityHandler(Security):
+class SecurityHandler(FLComponent):
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.SECURITY_CHECK:
             engine = fl_ctx.get_engine()

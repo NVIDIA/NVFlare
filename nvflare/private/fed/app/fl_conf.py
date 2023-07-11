@@ -18,8 +18,9 @@ import os
 import re
 
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import SiteType, SystemConfigs
+from nvflare.apis.fl_constant import SiteType, SystemConfigs, SystemComponents
 from nvflare.apis.workspace import Workspace
+from nvflare.app_common.security_handler import SecurityHandler
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.json_scanner import Node
@@ -169,6 +170,8 @@ class FLServerStarterConfiger(JsonConfigurator):
         custom_validators = [self.app_validator] if self.app_validator else []
         self.app_validator = FLAppValidator(site_type=SiteType.SERVER, custom_validators=custom_validators)
 
+        self.components[SystemComponents.SECURITY_HANDLER] = SecurityHandler()
+        self.handlers.append(self.components[SystemComponents.SECURITY_HANDLER])
         build_ctx = {
             "secure_train": secure_train,
             "app_validator": self.app_validator,
@@ -312,6 +315,8 @@ class FLClientStarterConfiger(JsonConfigurator):
         if self.cmd_vars.get("secure_train"):
             secure_train = self.cmd_vars["secure_train"]
 
+        self.components[SystemComponents.SECURITY_HANDLER] = SecurityHandler()
+        self.handlers.append(self.components[SystemComponents.SECURITY_HANDLER])
         build_ctx = {
             "client_name": self.cmd_vars.get("uid", ""),
             "site_org": self.cmd_vars.get("org", ""),

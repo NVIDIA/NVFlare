@@ -316,7 +316,7 @@ class SystemComponents(object):
     APP_DEPLOYER = "app_deployer"
     DEFAULT_APP_DEPLOYER = "default_app_deployer"
     JOB_META_VALIDATOR = "job_meta_validator"
-    SECURITY_HANDLER = "security_handler"
+    SECURITY_HANDLER = "__security_handler__"
 
 
 class JobConstants:

@@ -63,6 +63,8 @@ class SiteSecurityFilter(CommandFilter):
                     reasons = fl_ctx.get_prop(FLContextKey.AUTHORIZATION_REASON, {})
                     messages = self._get_messages(reasons)
                     logger.error(f"Authorization failed. Reason: {messages}")
+                    fl_ctx.remove_prop(FLContextKey.AUTHORIZATION_RESULT)
+                    fl_ctx.remove_prop(FLContextKey.AUTHORIZATION_REASON)
                     filter_succeed = False
         return filter_succeed, messages
 
@@ -78,4 +80,4 @@ class SiteSecurityFilter(CommandFilter):
             security_items[FLContextKey.USER_NAME] = conn.get_prop(ConnProps.USER_NAME, "")
             security_items[FLContextKey.USER_ORG] = conn.get_prop(ConnProps.USER_ORG, "")
             security_items[FLContextKey.USER_ROLE] = conn.get_prop(ConnProps.USER_ROLE, "")
-            fl_ctx.set_prop(FLContextKey.SECURITY_ITEMS, security_items, private=True, sticky=False)
+            fl_ctx.set_prop(FLContextKey.SECURITY_ITEMS, security_items, private=True, sticky=True)

@@ -12,11 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .fl_component import FLComponent
 from .fl_context import FLContext
 
 
-class Security(FLComponent):
+class Security:
     def authenticate(self, fl_ctx: FLContext) -> (bool, str):
         """Check the authentication of the operations.
 
