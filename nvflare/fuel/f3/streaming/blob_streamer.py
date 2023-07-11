@@ -44,18 +44,10 @@ class BlobStream(Stream):
         return buf
 
 
-class BlobHandler:
-    def __init__(self, blob_cb: Callable):
-        self.blob_cb = blob_cb
-        self.size = 0
-        self.buffer = None
-        self.pre_allocated = False
-
-    def handle_blob_cb(self, future: StreamFuture, stream: Stream, resume: bool, *args, **kwargs) -> int:
-
-        if resume:
-            log.warning("Resume is not supported, ignored")
-
+class BlobTask:
+    def __init__(self, future: StreamFuture, stream: Stream):
+        self.future = future
+        self.stream = stream
         self.size = stream.get_size()
         self.pre_allocated = self.size > 0
 
@@ -64,44 +56,60 @@ class BlobHandler:
         else:
             self.buffer = FastBuffer()
 
-        stream_thread_pool.submit(self._read_stream, future, stream)
+
+class BlobHandler:
+    def __init__(self, blob_cb: Callable):
+        self.blob_cb = blob_cb
+
+    def handle_blob_cb(self, future: StreamFuture, stream: Stream, resume: bool, *args, **kwargs) -> int:
+
+        if resume:
+            log.warning("Resume is not supported, ignored")
+
+        blob_task = BlobTask(future, stream)
+
+        stream_thread_pool.submit(self._read_stream, blob_task)
 
         self.blob_cb(future, *args, **kwargs)
 
         return 0
 
-    def _read_stream(self, future: StreamFuture, stream: Stream):
+    @staticmethod
+    def _read_stream(blob_task: BlobTask):
 
         try:
+            # It's most efficient to use the same chunk size as the stream
             chunk_size = ByteStreamer.get_chunk_size()
 
             buf_size = 0
             while True:
-                buf = stream.read(chunk_size)
+                buf = blob_task.stream.read(chunk_size)
                 if not buf:
                     break
 
                 length = len(buf)
-                if self.pre_allocated:
-                    self.buffer[buf_size : buf_size + length] = buf
+                if blob_task.pre_allocated:
+                    blob_task.buffer[buf_size : buf_size + length] = buf
                 else:
-                    self.buffer.append(buf)
+                    blob_task.buffer.append(buf)
 
                 buf_size += length
 
-            if self.size and self.size != buf_size:
-                log.warning(f"Stream {future.get_stream_id()} size doesn't match: {self.size} <> {buf_size}")
+            if blob_task.size and blob_task.size != buf_size:
+                log.warning(
+                    f"Stream {blob_task.future.get_stream_id()} size doesn't match: " f"{blob_task.size} <> {buf_size}"
+                )
 
-            if self.pre_allocated:
-                result = self.buffer
+            if blob_task.pre_allocated:
+                result = blob_task.buffer
             else:
-                result = self.buffer.to_bytes()
+                result = blob_task.buffer.to_bytes()
 
-            future.set_result(result)
+            blob_task.future.set_result(result)
         except Exception as ex:
-            log.error(f"Stream {future.get_stream_id()} read error: {ex}")
+            log.error(f"Stream {blob_task.future.get_stream_id()} read error: {ex}")
             log.debug(secure_format_traceback())
-            future.set_exception(ex)
+            blob_task.future.set_exception(ex)
 
 
 class BlobStreamer:
