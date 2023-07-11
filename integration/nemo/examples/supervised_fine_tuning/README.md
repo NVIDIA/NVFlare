@@ -141,8 +141,47 @@ During training, we can visualize the training process using TensorBoard
 ```
 tensorboard --logdir /tmp/nvflare/nemo
 ```
-In this scenario, all experiments utilize the same validation set, allowing for a direct comparison across all models. 
+In this scenario, all experiments utilize the same validation set, allowing for a direct comparison across all models. Note that we ran FL for 5 rounds, and asked NeMo to record the validation losses every few steps during local training.
+
+The validation losses for all experiments are shown below.
+![Validation losses](images/val_loss.png)
 
 ## Inference
-We use NeMo's inference mechanism for generation task with models after SFT. 
+We use NeMo's [inference script](https://github.com/NVIDIA/NeMo/blob/main/examples/nlp/language_modeling/megatron_gpt_eval.py) for generation task with models after SFT. 
 Below, we define some test examples to feed to the SFT model to see its predictions.
+
+First, we ask the model to generate answer to an open question "Tell me an interesting fact about space travel." 
+```
+ALPACA: The first human to orbit the Earth was Neil Armstrong, who flew on the Apollo 11 mission in 1969.'
+DOLLY: The International Space Station is the largest floating structure in the universe. It is made of steel and is about the size of a small house.
+OASST: Sure! Here are a few interesting facts about space travel:\n\n1. Space travel is possible even with small amounts of fuel. The amount of
+COMBINED: The first human to set foot on the Moon was Neil Armstrong, who was born on July 20, 1969.'
+```
+Note that models mostly gives plausible answers, but ALPACA-finetuned model in fact gives misinformation, since it should be Yuri Gagarin who is the first human to orbit the Earth.
+On the other hand, the model trained on the combined dataset is able to generate a more accurate answer.
+
+Next, we ask the model to answer a question according to a given context, one instance from [SQuAD dataset](https://rajpurkar.github.io/SQuAD-explorer/).
+
+Context being "Super Bowl 50 was an American football game to determine the champion of the National Football League (NFL) for the 2015 season. The American Football Conference (AFC) champion Denver Broncos defeated the National Football Conference (NFC) champion Carolina Panthers 24–10 to earn their third Super Bowl title. The game was played on February 7, 2016, at Levi\'s Stadium in the San Francisco Bay Area at Santa Clara, California. As this was the 50th Super Bowl, the league emphasized the "golden anniversary" with various gold-themed initiatives, as well as temporarily suspending the tradition of naming each Super Bowl game with Roman numerals (under which the game would have been known as "Super Bowl L"), so that the logo could prominently feature the Arabic numerals 50.", 
+
+Input being "Which NFL team represented the AFC at Super Bowl 50?" 
+
+By using a simple prompt `***CONTEXT*** + context + ***INPUT*** + question + ***OUTPUT***`, we have the following results:
+```
+ALPACA: The AFC champion Denver Broncos represented the AFC at Super Bowl 50.'
+DOLLY: The NFL team that represented the AFC at Super Bowl 50 was the Denver Broncos.'
+OASST: The Denver Broncos defeated the Carolina Panthers 24–10 to win the Super Bowl 50 championship.'
+COMBINED: The Denver Broncos'
+```
+As we can see, the key word "Denver Broncos" is correctly captured by all models. However, ALPACA answer is a bit redundant, and OASST answer is not directly "to the question".
+
+By using a more sophisticated prompt `***TASK*** Give ANSWER to the QUESTION according to the CONTEXT. ***CONTEXT*** + context + ***QUESTION*** + question + ***ANSWER***`, we have the following results:
+```
+ALPACA: The Denver Broncos.'
+DOLLY: The AFC champion Denver Broncos represented the NFL at Super Bowl 50, as they defeated the NFC Carolina Panthers 24–10.'
+OASST: The Denver Broncos represented the AFC at Super Bowl 50.'
+COMBINED: The Denver Broncos represented the AFC at Super Bowl 50.'
+```
+This time all answers make sense, only DOLLY gives redundant information irrelevant to the question.
+
+Based on the above results, we can see that the model trained on the combined dataset is able to generate more stable and accurate answers.
