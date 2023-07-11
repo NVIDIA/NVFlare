@@ -130,4 +130,4 @@ def secure_format_exception(e: Exception) -> str:
     if is_secure():
         return str(type(e))
     else:
-        return str(e)
+        return f"{type(e).__name__}: {str(e)}"
