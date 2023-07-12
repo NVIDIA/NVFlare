@@ -130,13 +130,6 @@ class JobCommandModule(CommandModule, CommandUtil):
                     confirm=ConfirmMethod.YESNO,
                 ),
                 CommandSpec(
-                    name=AdminCommandNames.ABORT_TASK,
-                    description="abort the client current task execution",
-                    usage=f"{AdminCommandNames.ABORT_TASK} job_id <client-name>",
-                    handler_func=self.abort_task,
-                    authz_func=self.authorize_abort_client_task,
-                ),
-                CommandSpec(
                     name=AdminCommandNames.CLONE_JOB,
                     description="clone a job with a new job_id",
                     usage=f"{AdminCommandNames.CLONE_JOB} job_id",
@@ -200,17 +193,6 @@ class JobCommandModule(CommandModule, CommandUtil):
                 return PreAuthzReturnCode.ERROR
 
         return PreAuthzReturnCode.REQUIRE_AUTHZ
-
-    def abort_task(self, conn, args: List[str]) -> str:
-        engine = conn.app_ctx
-        if not isinstance(engine, ServerEngineInternalSpec):
-            raise TypeError("engine must be ServerEngineInternalSpec but got {}".format(type(engine)))
-
-        job_id = conn.get_prop(self.JOB_ID)
-        message = new_message(conn, topic=TrainingTopic.ABORT_TASK, body="", require_authz=False)
-        message.set_header(RequestHeader.JOB_ID, str(job_id))
-        replies = self.send_request_to_clients(conn, message)
-        return self.process_replies_to_table(conn, replies)
 
     def _start_app_on_clients(self, conn: Connection, job_id: str) -> bool:
         engine = conn.app_ctx
