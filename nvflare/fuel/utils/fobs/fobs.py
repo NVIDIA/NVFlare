@@ -246,7 +246,7 @@ def deserialize(data: bytes, **kwargs) -> Any:
         Deserialized object
     """
     _register_decomposers()
-    return msgpack.unpackb(data, object_hook=_fobs_unpacker, **kwargs)
+    return msgpack.unpackb(data, strict_map_key=False, object_hook=_fobs_unpacker, **kwargs)
 
 
 def deserialize_stream(stream: BinaryIO, **kwargs) -> Any:
