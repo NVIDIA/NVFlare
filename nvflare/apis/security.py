@@ -11,12 +11,15 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from abc import abstractmethod
+from typing import Tuple
 
 from .fl_context import FLContext
 
 
 class Security:
-    def authenticate(self, fl_ctx: FLContext) -> (bool, str):
+    @abstractmethod
+    def authenticate(self, fl_ctx: FLContext) -> Tuple[bool, str]:
         """Check the authentication of the operations.
 
         Args:
@@ -28,7 +31,8 @@ class Security:
         """
         pass
 
-    def authorize(self, fl_ctx: FLContext) -> (bool, str):
+    @abstractmethod
+    def authorize(self, fl_ctx: FLContext) -> Tuple[bool, str]:
         """Check the authorization of the operations.
 
         Args:
