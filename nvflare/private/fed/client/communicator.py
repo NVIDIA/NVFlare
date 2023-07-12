@@ -64,7 +64,7 @@ class Communicator:
         compression=None,
         cell: Cell = None,
         client_register_interval=2,
-        timeout=3600.0,
+        timeout=5.0,
     ):
         """To init the Communicator.
 
@@ -185,7 +185,7 @@ class Communicator:
             channel=CellChannel.SERVER_COMMAND,
             topic=ServerCommandNames.GET_TASK,
             request=task_message,
-            timeout=self.timeout * 10,
+            timeout=self.timeout,
             optional=True,
         )
         end_time = time.time()
@@ -260,7 +260,7 @@ class Communicator:
             channel=CellChannel.SERVER_COMMAND,
             topic=ServerCommandNames.SUBMIT_UPDATE,
             request=task_message,
-            timeout=self.timeout * 10,
+            timeout=self.timeout,
             optional=optional,
         )
         end_time = time.time()
