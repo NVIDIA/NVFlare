@@ -20,7 +20,7 @@ from nvflare.apis.fl_constant import JobConstants, SiteType, WorkspaceConstants
 from nvflare.fuel.utils.config_factory import ConfigFactory
 
 
-def _config_exists(app_root: str, config_folder: str, site_type: str):
+def _config_exists(app_root: str, config_folder: str, site_type: str) -> str:
     if site_type == SiteType.SERVER:
         config_to_check = JobConstants.SERVER_JOB_CONFIG
     elif site_type == SiteType.CLIENT:
@@ -28,18 +28,13 @@ def _config_exists(app_root: str, config_folder: str, site_type: str):
     else:
         config_to_check = None
 
-    def match(parent: str, config_file: str) -> bool:
-        return os.path.exists(os.path.join(parent, config_file))
-
-    if config_to_check and not ConfigFactory.match_config(
-        os.path.join(app_root, config_folder), config_to_check, match
-    ):
-        return f"Missing required config {config_to_check} inside app/config folder."
+    if config_to_check and ConfigFactory.load_config(config_to_check, [os.path.join(app_root, config_folder)]) is None:
+        return f"Missing required config {config_to_check} inside {os.path.join(app_root, config_folder)} folder."
     return ""
 
 
 class DefaultAppValidator(AppValidator):
-    def __init__(self, site_type: str, config_folder="config"):
+    def __init__(self, site_type: str, config_folder: str = "config"):
         self._site_type = site_type
         self._config_folder = config_folder
 
