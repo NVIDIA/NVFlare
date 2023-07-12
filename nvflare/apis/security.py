@@ -30,7 +30,6 @@ class Security:
             reason if failed authentication
         """
         pass
-
     @abstractmethod
     def authorize(self, fl_ctx: FLContext) -> Tuple[bool, str]:
         """Check the authorization of the operations.
