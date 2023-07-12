@@ -26,11 +26,13 @@ from nvflare.fuel.hci.proto import CredentialType, ProtoKey
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandRegister, CommandSpec
 from nvflare.fuel.hci.security import hash_password, verify_password
 from nvflare.fuel.hci.table import Table
+from nvflare.fuel.common.ctx import SimpleContext
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
-from .api import AdminAPI, CommandInfo, SessionEventType
+from .api import AdminAPI, CommandInfo
 from .api_spec import ServiceFinder
 from .api_status import APIStatus
+from .event import EventType, EventHandler, EventPropKey
 
 
 class _BuiltInCmdModule(CommandModule):
@@ -50,7 +52,7 @@ class _BuiltInCmdModule(CommandModule):
         )
 
 
-class AdminClient(cmd.Cmd):
+class AdminClient(cmd.Cmd, EventHandler):
     """Admin command prompt for submitting admin commands to the server through the CLI.
 
     Args:
@@ -123,21 +125,22 @@ class AdminClient(cmd.Cmd):
             user_name=self.user_name,
             debug=self.debug,
             poc=poc,
-            session_event_cb=self.handle_session_event,
             session_timeout_interval=session_timeout_interval,
             session_status_check_interval=1800,  # check server for session status every 30 minutes
+            event_handlers=[self]
         )
         # signal.signal(signal.SIGUSR1, partial(self.session_signal_handler))
         signal.signal(signal.SIGUSR1, self.session_signal_handler)
 
-    def handle_session_event(self, event_type: str, message: str):
+    def handle_event(self, event_type: str, ctx: SimpleContext):
         if self.debug:
             print(f"DEBUG: received session event: {event_type}")
 
-        if message:
-            self.write_string(message)
+        msg = ctx.get_prop(EventPropKey.MSG)
+        if msg:
+            self.write_string(msg)
 
-        if event_type == SessionEventType.SESSION_CLOSED:
+        if event_type == EventType.SESSION_CLOSED:
             os.kill(os.getpid(), signal.SIGUSR1)
 
     def session_signal_handler(self, signum, frame):

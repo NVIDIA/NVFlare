@@ -69,6 +69,10 @@ class _MsgHandler(socketserver.BaseRequestHandler):
                         if cmd_timeout:
                             conn.set_prop(ConnProps.CMD_TIMEOUT, cmd_timeout)
 
+                        custom_props = meta.get(MetaKey.CUSTOM_PROPS)
+                        if custom_props:
+                            conn.set_prop(ConnProps.CUSTOM_PROPS, custom_props)
+
                     data = req_json[ProtoKey.DATA]
                     for item in data:
                         it = item[ProtoKey.TYPE]

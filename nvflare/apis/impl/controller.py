@@ -305,6 +305,7 @@ class Controller(Responder, ControllerSpec, ABC):
                 task.client_tasks.append(client_task_to_send)
                 self._client_task_map[client_task_to_send.id] = client_task_to_send
 
+            task_data.set_header(ReservedHeaderKey.TASK_ID, client_task_to_send.id)
             return task_name, client_task_to_send.id, make_copy(task_data)
 
     def handle_exception(self, task_id: str, fl_ctx: FLContext) -> None:
@@ -675,7 +676,7 @@ class Controller(Responder, ControllerSpec, ABC):
             for t in self._tasks:
                 t.completion_status = completion_status
 
-    def abort_task(self, task, fl_ctx: FLContext):
+    def abort_task(self, task: Task, fl_ctx: FLContext):
         """Ask all clients to abort the execution of the specified task.
 
         Args:
@@ -683,12 +684,12 @@ class Controller(Responder, ControllerSpec, ABC):
             fl_ctx (FLContext): FLContext associated with this action
         """
         self.log_info(fl_ctx, "asked all clients to abort task {}".format(task.name))
-        self._end_task([task.name], fl_ctx)
+        self._end_task([task.inst_id], fl_ctx)
 
-    def _end_task(self, task_names, fl_ctx: FLContext):
+    def _end_task(self, task_inst_ids, fl_ctx: FLContext):
         engine = self._engine
         request = Shareable()
-        request["task_names"] = task_names
+        request["task_insts"] = task_inst_ids
         engine.send_aux_request(
             targets=None, topic=ReservedTopic.ABORT_ASK, request=request, timeout=0, fl_ctx=fl_ctx, optional=True
         )

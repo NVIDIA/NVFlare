@@ -58,6 +58,7 @@ class MetaKey(object):
     SUBMIT_TIME = "submit_time"
     DURATION = "duration"
     CMD_TIMEOUT = "cmd_timeout"
+    CUSTOM_PROPS = "custom_props"
 
 
 class MetaStatusValue(object):

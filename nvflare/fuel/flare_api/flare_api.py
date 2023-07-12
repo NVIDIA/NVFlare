@@ -22,6 +22,7 @@ from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.client.api import AdminAPI, APIStatus, ResultKey
+from nvflare.fuel.hci.client.event import EventType, EventPropKey
 from nvflare.fuel.hci.client.overseer_service_finder import ServiceFinderByOverseer
 from nvflare.fuel.hci.cmd_arg_utils import (
     process_targets_into_str,
@@ -262,6 +263,7 @@ class Session(SessionSpec):
             else:
                 raise InvalidJobDefinition(f"job_definition_path '{job_definition_path}' is not a valid folder")
 
+        self.api.fire_session_event(EventType.BEFORE_SUBMIT_JOB)
         result = self._do_command(AdminCommandNames.SUBMIT_JOB + " " + job_definition_path)
         meta = result[ResultKey.META]
         job_id = meta.get(MetaKey.JOB_ID, None)

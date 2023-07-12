@@ -23,7 +23,7 @@ from nvflare.apis.signal import Signal
 
 from .client import Client
 from .fl_context import FLContext
-from .shareable import Shareable
+from .shareable import Shareable, ReservedHeaderKey
 
 
 class TaskCompletionStatus(Enum):
@@ -104,14 +104,17 @@ class Task(object):
 
         if not isinstance(data, Shareable):
             raise TypeError("data must be an instance of Shareable, but got {}.".format(type(data)))
-
         if operator and not isinstance(operator, dict):
             raise TypeError(f"operator must be a dict but got {type(operator)}")
 
         self.name = name  # name of the task
+        self.inst_id = str(uuid.uuid4())
         self.data = data  # task data to be sent to client(s)
         self.operator = operator
         self.cb_lock = threading.Lock()
+
+        data.set_header(ReservedHeaderKey.TASK_INST_ID, self.inst_id)
+        data.set_header(ReservedHeaderKey.TASK_NAME, name)
 
         if props is None:
             self.props = {}

@@ -41,6 +41,7 @@ class ReturnCode(object):
     UNSAFE_JOB = "UNSAFE_JOB"
     SERVER_NOT_READY = "SERVER_NOT_READY"
     SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"
+    CLIENT_STOPPED = "CLIENT_STOPPED"
 
 
 class MachineStatus(Enum):
@@ -155,6 +156,7 @@ class ReservedTopic(object):
 
     END_RUN = "__end_run__"
     ABORT_ASK = "__abort_task__"
+    DO_TASK = "__do_task__"
     AUX_COMMAND = "__aux_command__"
 
 
