@@ -40,6 +40,8 @@ class PTFedOptModelShareableGenerator(FullModelShareableGenerator):
         The algorithm is proposed in Reddi, Sashank, et al. "Adaptive federated optimization." arXiv preprint arXiv:2003.00295 (2020).
         This SharableGenerator will update the global model using the specified
         PyTorch optimizer and learning rate scheduler.
+        Note: This class will use FedOpt to optimize the global trainable parameters (i.e. `self.model.named_parameters()`)
+        but use FedAvg to update any other layers such as batch norm statistics.
 
         Args:
             optimizer_args: dictionary of optimizer arguments, e.g.
@@ -166,8 +168,9 @@ class PTFedOptModelShareableGenerator(FullModelShareableGenerator):
         # view it as a gradient that should be applied to the server_optimizer.
         updated_params = []
         for name, param in self.model.named_parameters():
-            param.grad = torch.tensor(-1.0 * model_diff[name]).to(self.device)
-            updated_params.append(name)
+            if name in model_diff:
+                param.grad = torch.tensor(-1.0 * model_diff[name]).to(self.device)
+                updated_params.append(name)
 
         self.optimizer.step()
         if self.lr_scheduler is not None:
