@@ -14,22 +14,26 @@
 from abc import abstractmethod
 from typing import Tuple
 
+from .event_type import EventType
+from .fl_component import FLComponent
+from .fl_constant import FLContextKey
 from .fl_context import FLContext
 
 
-class Security:
-    @abstractmethod
-    def authenticate(self, fl_ctx: FLContext) -> Tuple[bool, str]:
-        """Check the authentication of the operations.
+class SecurityHandler(FLComponent):
+    def handle_event(self, event_type: str, fl_ctx: FLContext):
+        if event_type == EventType.SECURITY_CHECK:
+            engine = fl_ctx.get_engine()
 
-        Args:
-            fl_ctx: FLContext
+            result, reason = self.authorize(fl_ctx=fl_ctx)
+            if not result:
+                for id, component in engine.get_components().items():
+                    if component == self:
+                        break
 
-        Returns:
-            boolean of the authentication result,
-            reason if failed authentication
-        """
-        pass
+                fl_ctx.set_prop(FLContextKey.AUTHORIZATION_RESULT, False, sticky=False)
+                fl_ctx.set_prop(FLContextKey.AUTHORIZATION_REASON, {id: reason}, sticky=False)
+
     @abstractmethod
     def authorize(self, fl_ctx: FLContext) -> Tuple[bool, str]:
         """Check the authorization of the operations.

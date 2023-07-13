@@ -730,6 +730,9 @@ class ServerEngine(ServerEngineInternalSpec):
                 continue
             request = Message(topic=TrainingTopic.CHECK_RESOURCE, body=fobs.dumps(resource_requirements))
             request.set_header(RequestHeader.JOB_ID, job_id)
+            request.set_header(RequestHeader.REQUIRE_AUTHZ, "true")
+            request.set_header(RequestHeader.ADMIN_COMMAND, AdminCommandNames.CHECK_RESOURCES)
+
             client = self.get_client_from_name(site_name)
             if client:
                 requests.update({client.token: request})
@@ -741,11 +744,12 @@ class ServerEngine(ServerEngineInternalSpec):
             site_name = r.client_name
             if r.reply:
                 error_code = r.reply.get_header(MsgHeader.RETURN_CODE, ReturnCode.OK)
+                message = r.reply.body
                 if error_code != ReturnCode.OK:
-                    self.logger.error(f"Client reply error: {r.reply.body}")
-                    result[site_name] = (False, "")
+                    self.logger.error(f"Client reply error: {message}")
+                    result[site_name] = (False, message)
                 else:
-                    resp = fobs.loads(r.reply.body)
+                    resp = fobs.loads(message)
                     result[site_name] = (
                         resp.get_header(ShareableHeader.IS_RESOURCE_ENOUGH, False),
                         resp.get_header(ShareableHeader.RESOURCE_RESERVE_TOKEN, ""),

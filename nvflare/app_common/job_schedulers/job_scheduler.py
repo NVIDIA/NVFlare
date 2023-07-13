@@ -175,16 +175,19 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         num_sites_ok = 0
         sites_dispatch_info = {}
         for site_name, check_result in resource_check_results.items():
-            is_resource_enough, token = check_result
+            is_resource_enough, message = check_result
             if is_resource_enough:
                 sites_dispatch_info[site_name] = DispatchInfo(
                     app_name=sites_to_app[site_name],
                     resource_requirements=resource_reqs[site_name],
-                    token=token,
+                    token=message,
                 )
                 num_sites_ok += 1
                 if site_name in required_sites:
                     required_sites_not_enough_resource.remove(site_name)
+            else:
+                if site_name in required_sites:
+                    return SCHEDULE_RESULT_NO_RESOURCE, None, site_name + ":" + message
 
         if num_sites_ok < job.min_sites:
             self.log_debug(fl_ctx, f"Job {job.job_id} can't be scheduled: not enough sites have enough resources.")

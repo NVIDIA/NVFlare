@@ -180,6 +180,7 @@ class AdminCommandNames(object):
     DELETE_JOB = "delete_job"
     CLONE_JOB = "clone_job"
     DELETE_WORKSPACE = "delete_workspace"
+    CHECK_RESOURCES = "check_resources"
     DEPLOY_APP = "deploy_app"
     START_APP = "start_app"
     CHECK_STATUS = "check_status"

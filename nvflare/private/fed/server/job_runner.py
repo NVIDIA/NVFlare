@@ -96,7 +96,7 @@ class JobRunner(FLComponent):
         message = Message(topic=TrainingTopic.DEPLOY, body=app_data)
         message.set_header(RequestHeader.REQUIRE_AUTHZ, "true")
 
-        message.set_header(RequestHeader.ADMIN_COMMAND, AdminCommandNames.SUBMIT_JOB)
+        message.set_header(RequestHeader.ADMIN_COMMAND, AdminCommandNames.DEPLOY_APP)
         message.set_header(RequestHeader.JOB_ID, job.job_id)
         message.set_header(RequestHeader.APP_NAME, app_name)
 

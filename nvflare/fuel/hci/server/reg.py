@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List
+from typing import List, Tuple
 
 from nvflare.fuel.hci.cmd_arg_utils import split_to_args
 from nvflare.fuel.hci.conn import Connection
@@ -25,7 +25,7 @@ from .constants import ConnProps
 class CommandFilter(object):
     """Base class for filters to run before or after commands."""
 
-    def pre_command(self, conn: Connection, args: List[str]) -> (bool, str):
+    def pre_command(self, conn: Connection, args: List[str]) -> Tuple[bool, str]:
         """Code to execute before executing a command.
 
         Returns: True to continue filter chain or False to not
