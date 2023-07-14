@@ -1,6 +1,5 @@
 nvflare>=2.3.0
 pandas
 scikit-learn
-cuml
 joblib
 tensorboard
