@@ -17,6 +17,7 @@ import threading
 import uuid
 from typing import Dict, List, Union
 
+from nvflare.apis.fl_constant import ServerCommandNames
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, MessageType
 from nvflare.fuel.f3.message import Message
@@ -63,47 +64,40 @@ class NewCell(StreamCell):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.register_blob_cb("*", "*", self._process_reply)  # this should be one-time registration
 
-    def start(self):
-        self.core_cell.start()
+    def __getattr__(self, func):
+        def method(*args, **kwargs):
+            if not hasattr(self.core_cell, func):
+                raise AttributeError(f"'{func}' not in core_cell.")
+            return getattr(self.core_cell, func)(*args, **kwargs)
 
-    def stop(self):
-        self.core_cell.stop()
-
-    def is_cell_connected(self, target_fqcn):
-        return self.core_cell.is_cell_connected(target_fqcn)
-
-    def broadcast_multi_requests(self, *args, **kwargs):
-        return self.core_cell.broadcast_multi_requests(*args, **kwargs)
-
-    def broadcast_request(self, *args, **kwargs):
-        return self.core_cell.broadcast_request(*args, **kwargs)
-
-    def fire_multi_requests_and_forget(self, *args, **kwargs):
-        return self.core_cell.fire_multi_requests_and_forget(*args, **kwargs)
-
-    def get_root_url_for_child(self):
-        return self.core_cell.get_root_url_for_child()
+        return method
 
     def fire_and_forget(
         self, channel: str, topic: str, targets: Union[str, List[str]], message: Message, optional=False
     ) -> Dict[str, str]:
-        return self.core_cell.fire_and_forget(
-            channel=channel, topic=topic, targets=targets, message=message, optional=optional
-        )
+        """
+        Send a message over a channel to specified destination cell(s), and do not wait for replies.
 
-    def get_fqcn(self):
-        return self.core_cell.get_fqcn()
+        Args:
+            channel: channel for the message
+            topic: topic of the message
+            targets: one or more destination cell IDs. None means all.
+            message: message to be sent
+            optional: whether the message is optional
 
-    def get_internal_listener_url(self) -> Union[None, str]:
-        """Get the cell's internal listener url.
-
-        This method should only be used for cells that need to have child cells.
-        The url returned is to be passed to child of this cell to create connection
-
-        Returns: url for child cells to connect
+        Returns: None
 
         """
-        return self.core_cell.get_internal_listener_url()
+        if channel == CellChannel.SERVER_COMMAND and topic == ServerCommandNames.HANDLE_DEAD_JOB:
+            if isinstance(targets, list):
+                for target in targets:
+                    self.send_blob(channel=channel, topic=topic, target=target, message=message)
+            else:
+                self.send_blob(channel=channel, topic=topic, target=targets, message=message)
+        else:
+            self.core_cell.fire_and_forget(
+                channel=channel, topic=topic, targets=targets, message=message, optional=optional
+            )
 
     def send_request(self, channel, target, topic, request, timeout=None, optional=False):
         if channel != CellChannel.SERVER_COMMAND:
@@ -152,8 +146,14 @@ class NewCell(StreamCell):
         """
         if not callable(cb):
             raise ValueError(f"specified request_cb {type(cb)} is not callable")
-        if channel != CellChannel.SERVER_COMMAND:
-            self.core_cell.register_request_cb(channel, topic, cb, *args, **kwargs)
-        else:
+        if channel == CellChannel.SERVER_COMMAND and topic in [
+            "*",
+            ServerCommandNames.GET_TASK,
+            ServerCommandNames.SUBMIT_UPDATE,
+        ]:
+            # self.logger.info(f"Register blob CB for {channel=}, {topic=}")
             adapter = Adapter(cb, self.core_cell.my_info, self)
             self.register_blob_cb(channel, topic, adapter.call, *args, **kwargs)
+        else:
+            # self.logger.info(f"Register regular CB for {channel=}, {topic=}")
+            self.core_cell.register_request_cb(channel, topic, cb, *args, **kwargs)
