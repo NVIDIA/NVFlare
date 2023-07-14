@@ -142,7 +142,7 @@ class FedAdminAgent(object):
                             reply = error_reply("not authorized")
 
                         site_security_filter = SiteSecurityFilter()
-                        self._set_security_data(self.app_ctx, user)
+                        self._set_security_data(self.app_ctx, req)
                         ok, messages = site_security_filter.security_check(self.app_ctx, cmd)
                         if not ok:
                             reply = error_reply(messages)
@@ -165,11 +165,17 @@ class FedAdminAgent(object):
             reply = error_reply("invalid_request")
         return new_cell_message({}, reply)
 
-    def _set_security_data(self, engine, user):
+    def _set_security_data(self, engine, req):
         security_items = {}
         with engine.new_context() as fl_ctx:
-            security_items[FLContextKey.USER_NAME] = user.name
-            security_items[FLContextKey.USER_ORG] = user.org
-            security_items[FLContextKey.USER_ROLE] = user.role
+            security_items[FLContextKey.USER_NAME] = req.get_header(RequestHeader.USER_NAME, "")
+            security_items[FLContextKey.USER_ORG] = req.get_header(RequestHeader.USER_ORG, "")
+            security_items[FLContextKey.USER_ROLE] = req.get_header(RequestHeader.USER_ROLE, "")
+            security_items[FLContextKey.SUBMITTER_NAME] = req.get_header(RequestHeader.SUBMITTER_NAME, "")
+            security_items[FLContextKey.SUBMITTER_ORG] = req.get_header(RequestHeader.SUBMITTER_ORG, "")
+            security_items[FLContextKey.SUBMITTER_ROLE] = req.get_header(RequestHeader.SUBMITTER_ROLE, "")
+
+            security_items[FLContextKey.JOB_META] = req.get_header(RequestHeader.JOB_META, {})
+
             fl_ctx.set_prop(FLContextKey.SECURITY_ITEMS, security_items, private=True, sticky=True)
 

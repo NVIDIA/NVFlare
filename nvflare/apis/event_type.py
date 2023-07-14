@@ -68,5 +68,5 @@ class EventType(object):
     CLIENT_REGISTERED = "_client_registered"
     SYSTEM_BOOTSTRAP = "_system_bootstrap"
 
-    SECURITY_CHECK = "_security_check"
+    AUTHORIZE_COMMAND_CHECK = "_authorize_command_check"
 

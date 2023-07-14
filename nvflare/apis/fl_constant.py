@@ -161,6 +161,9 @@ class FLContextKey(object):
     USER_NAME = "__user_name"
     USER_ORG = "__user_org"
     USER_ROLE = "__user_role"
+    SUBMITTER_NAME = "_submitterName"
+    SUBMITTER_ORG = "_submitterOrg"
+    SUBMITTER_ROLE = "_submitterRole"
 
 
 class ReservedTopic(object):

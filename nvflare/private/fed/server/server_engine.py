@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import copy
+import json
 import logging
 import os
 import re
@@ -42,7 +43,7 @@ from nvflare.apis.fl_constant import (
 from nvflare.apis.fl_context import FLContext, FLContextManager
 from nvflare.apis.fl_snapshot import RunSnapshot
 from nvflare.apis.impl.job_def_manager import JobDefManagerSpec
-from nvflare.apis.job_def import Job
+from nvflare.apis.job_def import Job, JobMetaKey
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.utils.fl_context_utils import get_serializable_data
 from nvflare.apis.workspace import Workspace
@@ -722,16 +723,13 @@ class ServerEngine(ServerEngineInternalSpec):
     def _send_admin_requests(self, requests, timeout_secs=10) -> List[ClientReply]:
         return self.server.admin_server.send_requests(requests, timeout_secs=timeout_secs)
 
-    def check_client_resources(self, job_id: str, resource_reqs) -> Dict[str, Tuple[bool, str]]:
+    def check_client_resources(self, job: Job, resource_reqs) -> Dict[str, Tuple[bool, str]]:
         requests = {}
         for site_name, resource_requirements in resource_reqs.items():
             # assume server resource is unlimited
             if site_name == "server":
                 continue
-            request = Message(topic=TrainingTopic.CHECK_RESOURCE, body=fobs.dumps(resource_requirements))
-            request.set_header(RequestHeader.JOB_ID, job_id)
-            request.set_header(RequestHeader.REQUIRE_AUTHZ, "true")
-            request.set_header(RequestHeader.ADMIN_COMMAND, AdminCommandNames.CHECK_RESOURCES)
+            request = self._make_check_resource_message(job, resource_requirements)
 
             client = self.get_client_from_name(site_name)
             if client:
@@ -757,6 +755,23 @@ class ServerEngine(ServerEngineInternalSpec):
             else:
                 result[site_name] = (False, "")
         return result
+
+    def _make_check_resource_message(self, job, resource_requirements):
+        request = Message(topic=TrainingTopic.CHECK_RESOURCE, body=fobs.dumps(resource_requirements))
+        request.set_header(RequestHeader.JOB_ID, job.job_id)
+        request.set_header(RequestHeader.REQUIRE_AUTHZ, "true")
+        request.set_header(RequestHeader.ADMIN_COMMAND, AdminCommandNames.CHECK_RESOURCES)
+
+        request.set_header(RequestHeader.SUBMITTER_NAME, job.meta.get(JobMetaKey.SUBMITTER_NAME))
+        request.set_header(RequestHeader.SUBMITTER_ORG, job.meta.get(JobMetaKey.SUBMITTER_ORG))
+        request.set_header(RequestHeader.SUBMITTER_ROLE, job.meta.get(JobMetaKey.SUBMITTER_ROLE))
+
+        request.set_header(RequestHeader.USER_NAME, job.meta.get(JobMetaKey.SUBMITTER_NAME))
+        request.set_header(RequestHeader.USER_ORG, job.meta.get(JobMetaKey.SUBMITTER_ORG))
+        request.set_header(RequestHeader.USER_ROLE, job.meta.get(JobMetaKey.SUBMITTER_ROLE))
+
+        request.set_header(RequestHeader.JOB_META, job.meta)
+        return request
 
     def cancel_client_resources(
         self, resource_check_results: Dict[str, Tuple[bool, str]], resource_reqs: Dict[str, dict]

@@ -56,7 +56,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         self.lock = threading.Lock()
 
     def _check_client_resources(
-        self, job_id: str, resource_reqs: Dict[str, dict], fl_ctx: FLContext
+        self, job: Job, resource_reqs: Dict[str, dict], fl_ctx: FLContext
     ) -> Dict[str, Tuple[bool, str]]:
         """Checks resources on each site.
 
@@ -73,7 +73,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         if not isinstance(engine, ServerEngineSpec):
             raise RuntimeError(f"engine inside fl_ctx should be of type ServerEngineSpec, but got {type(engine)}.")
 
-        result = engine.check_client_resources(job_id, resource_reqs)
+        result = engine.check_client_resources(job, resource_reqs)
         self.log_debug(fl_ctx, f"check client resources result: {result}")
 
         return result
@@ -155,6 +155,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
         fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job.job_id, private=True)
         fl_ctx.set_prop(FLContextKey.CLIENT_RESOURCE_SPECS, resource_reqs, private=True, sticky=False)
         fl_ctx.set_prop(FLContextKey.JOB_PARTICIPANTS, job_participants, private=True, sticky=False)
+        fl_ctx.set_prop(FLContextKey.JOB_META, job.meta, private=True)
         self.fire_event(EventType.BEFORE_CHECK_CLIENT_RESOURCES, fl_ctx)
 
         block_reason = fl_ctx.get_prop(FLContextKey.JOB_BLOCK_REASON)
@@ -164,7 +165,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
             return SCHEDULE_RESULT_NO_RESOURCE, None, block_reason
 
         resource_check_results = self._check_client_resources(
-            job_id=job.job_id, resource_reqs=resource_reqs, fl_ctx=fl_ctx
+            job=job, resource_reqs=resource_reqs, fl_ctx=fl_ctx
         )
 
         if not resource_check_results:

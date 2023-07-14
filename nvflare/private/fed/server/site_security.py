@@ -43,27 +43,20 @@ class SiteSecurityFilter(CommandFilter):
 
     def security_check(self, engine, command):
         filter_succeed = True
-        messages = ""
+        reasons = ""
         if command not in InternalCommands.commands:
             with engine.new_context() as fl_ctx:
                 fl_ctx.set_prop(FLContextKey.COMMAND_NAME, command, sticky=False)
-                engine.fire_event(EventType.SECURITY_CHECK, fl_ctx)
+                engine.fire_event(EventType.AUTHORIZE_COMMAND_CHECK, fl_ctx)
 
                 authorization_result = fl_ctx.get_prop(FLContextKey.AUTHORIZATION_RESULT, True)
                 if not authorization_result:
-                    reasons = fl_ctx.get_prop(FLContextKey.AUTHORIZATION_REASON, {})
-                    messages = self._get_messages(reasons)
-                    logger.error(f"Authorization failed. Reason: {messages}")
+                    reasons = fl_ctx.get_prop(FLContextKey.AUTHORIZATION_REASON, "")
+                    logger.error(f"Authorization failed. Reason: {reasons}")
                     fl_ctx.remove_prop(FLContextKey.AUTHORIZATION_RESULT)
                     fl_ctx.remove_prop(FLContextKey.AUTHORIZATION_REASON)
                     filter_succeed = False
-        return filter_succeed, messages
-
-    def _get_messages(self, reasons):
-        messages = ""
-        for id, reason in reasons.items():
-            messages += id + ": " + reason + "; "
-        return messages
+        return filter_succeed, reasons
 
     def _set_security_data(self, conn: Connection, engine):
         security_items = {}
@@ -71,4 +64,9 @@ class SiteSecurityFilter(CommandFilter):
             security_items[FLContextKey.USER_NAME] = conn.get_prop(ConnProps.USER_NAME, "")
             security_items[FLContextKey.USER_ORG] = conn.get_prop(ConnProps.USER_ORG, "")
             security_items[FLContextKey.USER_ROLE] = conn.get_prop(ConnProps.USER_ROLE, "")
+
+            security_items[FLContextKey.SUBMITTER_NAME] = conn.get_prop(ConnProps.SUBMITTER_NAME, "")
+            security_items[FLContextKey.SUBMITTER_ORG] = conn.get_prop(ConnProps.SUBMITTER_ORG, "")
+            security_items[FLContextKey.SUBMITTER_ROLE] = conn.get_prop(ConnProps.SUBMITTER_ROLE, "")
+
             fl_ctx.set_prop(FLContextKey.SECURITY_ITEMS, security_items, private=True, sticky=True)
