@@ -15,7 +15,7 @@
 import logging
 import os
 import pathlib
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from nvflare.fuel.utils.config import Config, ConfigFormat, ConfigLoader
 from nvflare.fuel.utils.import_utils import optional_import
@@ -44,7 +44,7 @@ class ConfigFactory:
     @staticmethod
     def search_config_format(
         init_file_path, search_dirs: Optional[List[str]] = None
-    ) -> (Optional[ConfigFormat], Optional[str]):
+    ) -> Tuple[Optional[ConfigFormat], Optional[str]]:
 
         """find the configuration format and the location (file_path) for given initial init_file_path and search directories.
             for example, the initial config file path given is config_client.json
