@@ -14,7 +14,7 @@
 
 from typing import List
 
-from nvflare.apis.job_def import JobMetaKey, is_valid_job_id
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, make_meta
