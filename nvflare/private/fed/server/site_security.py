@@ -21,7 +21,6 @@ from nvflare.fuel.hci.proto import InternalCommands
 from nvflare.fuel.hci.server.constants import ConnProps
 from nvflare.fuel.hci.server.reg import CommandFilter
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -34,14 +33,14 @@ class SiteSecurityFilter(CommandFilter):
         command = args[0]
 
         self._set_security_data(conn, engine)
-        filter_succeed, messages = self.security_check(engine, command)
+        filter_succeed, messages = self.authorization_check(engine, command)
 
         if filter_succeed:
             return True, ""
         else:
             return False, messages
 
-    def security_check(self, engine, command):
+    def authorization_check(self, engine, command):
         filter_succeed = True
         reasons = ""
         if command not in InternalCommands.commands:

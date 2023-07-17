@@ -20,13 +20,14 @@ import sys
 import time
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import JobConstants, SiteType, WorkspaceConstants, ReservedKey, FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, JobConstants, ReservedKey, SiteType, WorkspaceConstants
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.private.defs import AppFolderConstants
+from nvflare.private.event import fire_event
 from nvflare.private.fed.app.fl_conf import FLClientStarterConfiger, create_privacy_manager
 from nvflare.private.fed.client.admin import FedAdminAgent
 from nvflare.private.fed.client.client_engine import ClientEngine
@@ -35,7 +36,6 @@ from nvflare.private.fed.client.fed_client import FederatedClient
 from nvflare.private.fed.utils.fed_utils import add_logfile_handler, fobs_initialize, security_init
 from nvflare.private.privacy_manager import PrivacyService
 from nvflare.security.logging import secure_format_exception
-from nvflare.private.event import fire_event
 
 
 def main():
@@ -129,11 +129,7 @@ def main():
 
         federated_client.start_heartbeat(interval=kv_list.get("heart_beat_interval", 10.0))
 
-        admin_agent = create_admin_agent(
-            deployer.req_processors,
-            federated_client,
-            client_engine
-        )
+        admin_agent = create_admin_agent(deployer.req_processors, federated_client, client_engine)
 
         while federated_client.status != ClientStatus.STOPPED:
             time.sleep(1.0)
@@ -144,11 +140,7 @@ def main():
         print(f"ConfigError: {secure_format_exception(e)}")
 
 
-def create_admin_agent(
-    req_processors,
-    federated_client: FederatedClient,
-    client_engine: ClientEngine
-):
+def create_admin_agent(req_processors, federated_client: FederatedClient, client_engine: ClientEngine):
     """Creates an admin agent.
 
     Args:

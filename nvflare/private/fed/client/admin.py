@@ -143,7 +143,7 @@ class FedAdminAgent(object):
 
                         site_security_filter = SiteSecurityFilter()
                         self._set_security_data(self.app_ctx, req)
-                        ok, messages = site_security_filter.security_check(self.app_ctx, cmd)
+                        ok, messages = site_security_filter.authorization_check(self.app_ctx, cmd)
                         if not ok:
                             reply = error_reply(messages)
 
@@ -178,4 +178,3 @@ class FedAdminAgent(object):
             security_items[FLContextKey.JOB_META] = req.get_header(RequestHeader.JOB_META, {})
 
             fl_ctx.set_prop(FLContextKey.SECURITY_ITEMS, security_items, private=True, sticky=True)
-

@@ -69,4 +69,3 @@ class EventType(object):
     SYSTEM_BOOTSTRAP = "_system_bootstrap"
 
     AUTHORIZE_COMMAND_CHECK = "_authorize_command_check"
-

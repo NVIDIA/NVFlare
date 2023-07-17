@@ -164,9 +164,7 @@ class DefaultJobScheduler(JobSchedulerSpec, FLComponent):
             self.log_info(fl_ctx, f"Job {job.job_id} can't be scheduled: {block_reason}")
             return SCHEDULE_RESULT_NO_RESOURCE, None, block_reason
 
-        resource_check_results = self._check_client_resources(
-            job=job, resource_reqs=resource_reqs, fl_ctx=fl_ctx
-        )
+        resource_check_results = self._check_client_resources(job=job, resource_reqs=resource_reqs, fl_ctx=fl_ctx)
 
         if not resource_check_results:
             self.log_debug(fl_ctx, f"Job {job.job_id} can't be scheduled: resource check results is None or empty.")
