@@ -11,48 +11,23 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Union, List, Optional
-
-from nvflare.apis.client import Client
-from nvflare.apis.controller_spec import Task, SendOrder
 
 from nvflare.apis.executor import Executor
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.impl.controller import Controller
+from nvflare.apis.impl.client_controller import ClientController
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 
 
-class ControllerExecutor(Controller, Executor):
-    def __init__(self):
-        self.controller = None
-
-    def initialize_run(self, fl_ctx: FLContext):
-        super().initialize_run(fl_ctx)
-
-    def handle_event(self, event_type: str, fl_ctx: FLContext):
-        super().handle_event(event_type, fl_ctx)
-
-    def broadcast(self, task: Task, fl_ctx: FLContext, targets: Union[List[Client], List[str], None] = None,
-                  min_responses: int = 1, wait_time_after_min_received: int = 0):
-        return super().broadcast(task, fl_ctx, targets, min_responses, wait_time_after_min_received)
-
-    def broadcast_and_wait(self, task: Task, fl_ctx: FLContext, targets: Union[List[Client], List[str], None] = None,
-                           min_responses: int = 1, wait_time_after_min_received: int = 0,
-                           abort_signal: Optional[Signal] = None):
-        super().broadcast_and_wait(task, fl_ctx, targets, min_responses, wait_time_after_min_received, abort_signal)
-
-    def send(self, task: Task, fl_ctx: FLContext, targets: Union[List[Client], List[str], None] = None,
-             send_order: SendOrder = SendOrder.SEQUENTIAL, task_assignment_timeout: int = 0):
-        return super().send(task, fl_ctx, targets, send_order, task_assignment_timeout)
-
-    def send_and_wait(self, task: Task, fl_ctx: FLContext, targets: Union[List[Client], List[str], None] = None,
-                      send_order: SendOrder = SendOrder.SEQUENTIAL, task_assignment_timeout: int = 0,
-                      abort_signal: Signal = None):
-        super().send_and_wait(task, fl_ctx, targets, send_order, task_assignment_timeout, abort_signal)
-
-    def finalize_run(self, fl_ctx: FLContext):
-        super().finalize_run(fl_ctx)
+class ControllerExecutor(Executor):
+    def __init__(self, controller: ClientController):
+        self.controller = ClientController()
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
-        pass
+        self.controller.control_flow(abort_signal, fl_ctx)
+
+        result = fl_ctx.get_prop(FLContextKey.TASK_RESULT)
+
+        return result
+

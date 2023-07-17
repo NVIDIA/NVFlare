@@ -16,10 +16,11 @@ from typing import Union, List
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ControllerSpec, Task, SendOrder
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.impl.controller import Controller
 from nvflare.apis.signal import Signal
 
 
-class ClientController(ControllerSpec):
+class ClientController(Controller):
     def start_controller(self, fl_ctx: FLContext):
         pass
 
