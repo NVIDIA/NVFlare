@@ -103,6 +103,9 @@ class MockServerEngine(ServerEngineSpec):
     def get_component(self, component_id: str) -> object:
         pass
 
+    def get_components(self) -> dict:
+        pass
+
     def register_aux_message_handler(self, topic: str, message_handle_func):
         pass
 
