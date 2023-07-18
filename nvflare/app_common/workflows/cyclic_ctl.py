@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import gc
 import random
 
 from nvflare.apis.client import Client
@@ -204,6 +205,7 @@ class CyclicController(Controller):
                     self._engine.persist_components(fl_ctx, completed=False)
 
                 self.log_debug(fl_ctx, "Ending current round={}.".format(self._current_round))
+                gc.collect()
 
             self.log_debug(fl_ctx, "Cyclic ended.")
         except Exception as e:
