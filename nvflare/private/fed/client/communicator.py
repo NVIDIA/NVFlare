@@ -88,13 +88,13 @@ class Communicator:
 
         self.logger = logging.getLogger(self.__class__.__name__)
 
-    def client_registration(self, client_name, servers, project_name):
+    def client_registration(self, client_name, project_name, register_data: dict):
         """Client's metadata used to authenticate and communicate.
 
         Args:
             client_name: client name
-            servers: FL servers
             project_name: FL study project name
+            register_data: client register data
 
         Returns:
             The client's token
@@ -102,13 +102,13 @@ class Communicator:
         """
         local_ip = _get_client_ip()
 
-        login_message = new_cell_message(
-            {
-                CellMessageHeaderKeys.CLIENT_NAME: client_name,
-                CellMessageHeaderKeys.CLIENT_IP: local_ip,
-                CellMessageHeaderKeys.PROJECT_NAME: project_name,
-            }
-        )
+        headers = {
+            CellMessageHeaderKeys.CLIENT_NAME: client_name,
+            CellMessageHeaderKeys.CLIENT_IP: local_ip,
+            CellMessageHeaderKeys.PROJECT_NAME: project_name,
+        }
+        headers.update(register_data)
+        login_message = new_cell_message(headers)
 
         start = time.time()
         while not self.cell:

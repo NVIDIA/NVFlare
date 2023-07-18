@@ -20,8 +20,6 @@ import re
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import SiteType, SystemConfigs
 from nvflare.apis.workspace import Workspace
-
-# from nvflare.app_common.security_handler import SecurityHandler
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.json_scanner import Node

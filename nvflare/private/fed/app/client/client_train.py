@@ -20,7 +20,7 @@ import sys
 import time
 
 from nvflare.apis.event_type import EventType
-from nvflare.apis.fl_constant import JobConstants, SiteType, WorkspaceConstants
+from nvflare.apis.fl_constant import FLContextKey, JobConstants, SiteType, WorkspaceConstants
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
@@ -119,7 +119,8 @@ def main():
             client_engine.fire_event(EventType.SYSTEM_BOOTSTRAP, fl_ctx)
 
             client_engine.fire_event(EventType.BEFORE_CLIENT_REGISTER, fl_ctx)
-            federated_client.register()
+            register_data = fl_ctx.get_prop(FLContextKey.CLIENT_REGISTER_DATA, {})
+            federated_client.register(register_data)
 
         if not federated_client.token:
             print("The client could not register to server. ")
@@ -149,7 +150,6 @@ def create_admin_agent(req_processors, federated_client: FederatedClient, client
     Returns:
         A FedAdminAgent.
     """
-    # client_engine = ClientEngine(federated_client, args, rank)
     admin_agent = FedAdminAgent(
         client_name="admin_agent",
         cell=federated_client.cell,
