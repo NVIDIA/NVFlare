@@ -73,7 +73,6 @@ class RxStream(Stream):
         super().__init__(task.size, task.headers)
         self.cell = cell
         self.task = task
-        self.read_lock = threading.Lock()
 
     def read(self, chunk_size: int) -> bytes:
         if self.closed:
@@ -83,11 +82,16 @@ class RxStream(Stream):
             return EOS
 
         # Block indefinitely if buffers are empty
-        if not self.task.buffers:
+        count = 0
+        while not self.task.buffers:
+            if count > 0:
+                log.debug(f"Read block is unblocked multiple times: {count}")
+
             self.task.waiter.clear()
             self.task.waiter.wait()
+            count += 1
 
-        with self.read_lock:
+        with self.task.task_lock:
             buf = self.task.buffers.popleft()
             if 0 < chunk_size < len(buf):
                 result = buf[0:chunk_size]
@@ -96,7 +100,7 @@ class RxStream(Stream):
             else:
                 result = buf
 
-            self.task.offset += len(buf)
+            self.task.offset += len(result)
             if self.task.offset - self.task.offset_ack > ACK_INTERVAL:
                 # Send ACK
                 message = Message()
@@ -110,9 +114,9 @@ class RxStream(Stream):
                 self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_ACK_TOPIC, self.task.origin, message)
                 self.task.offset_ack = self.task.offset
 
-        self.task.stream_future.set_progress(self.task.offset)
+            self.task.stream_future.set_progress(self.task.offset)
 
-        return result
+            return result
 
     def close(self):
         if not self.task.stream_future.done():
