@@ -15,6 +15,7 @@ from typing import Union, List
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ControllerSpec, Task, SendOrder
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.signal import Signal
@@ -29,11 +30,25 @@ class ClientController(Controller):
 
     def broadcast(self, task: Task, fl_ctx: FLContext, targets: Union[List[Client], List[str], None] = None,
                   min_responses: int = 0, wait_time_after_min_received: int = 0):
-        super().broadcast(task, fl_ctx, targets, min_responses, wait_time_after_min_received)
+        # super().broadcast(task, fl_ctx, targets, min_responses, wait_time_after_min_received)
+
+        engine = fl_ctx.get_engine()
+        request = task.data
+        reply = engine.send_aux_request(
+            targets=targets, topic="client_controller_task", request=request, timeout=task.timeout, fl_ctx=fl_ctx
+        )
+
+        return reply
 
     def broadcast_and_wait(self, task: Task, fl_ctx: FLContext, targets: Union[List[Client], List[str], None] = None,
                            min_responses: int = 0, wait_time_after_min_received: int = 0, abort_signal: Signal = None):
-        super().broadcast_and_wait(task, fl_ctx, targets, min_responses, wait_time_after_min_received, abort_signal)
+        engine = fl_ctx.get_engine()
+        request = task.data
+        reply = engine.send_aux_request(
+            targets=targets, topic="client_controller_task", request=request, timeout=task.timeout, fl_ctx=fl_ctx
+        )
+
+        return reply
 
     def send(self, task: Task, fl_ctx: FLContext, targets: Union[List[Client], List[str], None] = None,
              send_order: SendOrder = SendOrder.SEQUENTIAL, task_assignment_timeout: int = 0):
