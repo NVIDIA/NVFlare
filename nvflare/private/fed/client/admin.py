@@ -14,6 +14,7 @@
 
 """The FedAdmin to communicate with the Admin server."""
 
+# from nvflare.fuel.f3.cellnet.new_cell import NewCell as Cell
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.cell import Message as CellMessage
 from nvflare.fuel.hci.server.constants import ConnProps

@@ -22,7 +22,9 @@ from nvflare.apis.filter import Filter
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
-from nvflare.fuel.f3.cellnet.new_cell import NewCell as Cell
+from nvflare.fuel.f3.cellnet.cell import Cell
+
+# from nvflare.fuel.f3.cellnet.new_cell import NewCell as Cell
 from nvflare.private.defs import SpecialTaskName
 from nvflare.private.event import fire_event
 
