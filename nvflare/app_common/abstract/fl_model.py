@@ -33,6 +33,16 @@ class FLModelConst:
     AGGREGATION = "aggregation"
 
 
+class MetaKey:
+    CONFIGS = "configs"
+    VALIDATE_TYPE = "validate_type"
+    CLIENT_WEIGHTS = "client_weights"
+    CURRENT_ROUND = "current_round"
+    TOTAL_ROUNDS = "total_rounds"
+    JOB_ID = "job_id"
+    SITE_NAME = "site_name"
+
+
 class FLModel:
     def __init__(
         self,
@@ -48,7 +58,7 @@ class FLModel:
         """
         Args:
             params_type: type of the parameters. It only describes the "params".
-                If params_type is None, params need to be None. Usually, metrics will be provided.
+                If params_type is None, params need to be None.
             params: model parameters, for example: model weights for deep learning.
             optimizer_params: optimizer parameters.
                 For many cases, the optimizer parameters don't need to be transferred during FL training.
@@ -76,10 +86,10 @@ class FLModel:
         self.client_weights = client_weights
         self.current_round = current_round
         self.total_rounds = total_rounds
-        self.meta = meta
+        self.meta = {} if meta is None else meta
 
     @staticmethod
-    def validate_params_type(params, params_type):
+    def validate_params_type(params: Any, params_type: Optional[ParamsType]) -> None:
         if params_type == ParamsType.FULL or params_type == ParamsType.DIFF:
             if params is None:
                 raise ValueError(f"params must be provided when params_type is {params_type.value}")
@@ -87,7 +97,7 @@ class FLModel:
             raise ValueError("params_type must be provided when params is not None.")
 
     @staticmethod
-    def validate_client_weights(client_weights: dict):
+    def validate_client_weights(client_weights: Dict[str, float]) -> None:
         if not isinstance(client_weights, dict):
             raise ValueError(f"client_weights need to be a dict but get {type(client_weights)}")
         acceptable_keys = [FLModelConst.AGGREGATION, FLModelConst.METRICS]
@@ -95,3 +105,10 @@ class FLModel:
         for key in client_weights.keys():
             if key not in acceptable_keys:
                 raise ValueError(f"key {key} not recognized, acceptable keys: {acceptable_keys}")
+
+    def __str__(self):
+        return (
+            f"FLModel(params:{self.params}, params_type: {self.params_type}, optimizer_params: {self.optimizer_params},"
+            f" metrics: {self.metrics}, client_weights: {self.client_weights}, current_round: {self.current_round},"
+            f" meta: {self.meta})"
+        )

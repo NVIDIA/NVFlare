@@ -83,20 +83,20 @@ class ModelExchanger:
             model (Any): The model to be submitted.
 
         Raises:
-            DataExchangeException: If there is no request ID available (global model needs to be pulled first).
+            DataExchangeException: If there is no request ID available (needs to pull model from server first).
         """
         if self._req_id is None:
-            raise DataExchangeException("need to pull global model first.")
+            raise DataExchangeException("need to pull a model first.")
         self._send_reply(data=model, req_id=self._req_id)
 
-    def receive_global_model(self, timeout: Optional[float] = None) -> Any:
-        """Receives the global model.
+    def receive_model(self, timeout: Optional[float] = None) -> Any:
+        """Receives a model.
 
         Args:
-            timeout (Optional[float]): Timeout for waiting to receive the global model. Defaults to None.
+            timeout (Optional[float]): Timeout for waiting to receive a model. Defaults to None.
 
         Returns:
-            Any: The received global model.
+            Any: The received model.
 
         Raises:
             ExchangeTimeoutException: If the data cannot be received within the specified timeout.
@@ -108,7 +108,7 @@ class ModelExchanger:
         self._req_id = req_id
         return model
 
-    def finalize(self, close_pipe: bool = True):
+    def finalize(self, close_pipe: bool = True) -> None:
         if self.pipe_handler is None:
             raise RuntimeError("PipeMonitor is not initialized.")
         self.pipe_handler.stop(close_pipe=close_pipe)

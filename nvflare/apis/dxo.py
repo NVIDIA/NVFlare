@@ -38,12 +38,6 @@ class MetaKey(object):
     INITIAL_METRICS = "initial_metrics"
     FILTER_HISTORY = "filter_history"
 
-    CONFIGS = "configs"
-    VALIDATE_TYPE = "validate_type"
-    CLIENT_WEIGHTS = "client_weights"
-    CURRENT_ROUND = "current_round"
-    TOTAL_ROUNDS = "total_rounds"
-
 
 _KEY_KIND = "kind"
 _KEY_DATA = "data"
