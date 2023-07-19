@@ -1,7 +1,7 @@
 .. _tensorboard_streaming:
 
-TensorBoard Streaming
-=====================
+FL Experiment Tracking with TensorBoard Streaming
+=================================================
 
 Introduction
 -------------

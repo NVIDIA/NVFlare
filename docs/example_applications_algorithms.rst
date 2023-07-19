@@ -18,7 +18,7 @@ NVIDIA FLARE has several tutorials and examples to help you get started with fed
    examples/federated_statistics
    Federated Site Policies (GitHub) <https://github.com/NVIDIA/NVFlare/blob/main/examples/federated-policies>
    examples/tensorboard_streaming
-   examples/fl_experiment_tracking
+   examples/fl_experiment_tracking_mlflow
 
 
 The following tutorials and quickstart guides walk you through some of these examples:
@@ -71,8 +71,8 @@ The following tutorials and quickstart guides walk you through some of these exa
 
   8. **Experiment tracking**
 
-    * :ref:`TensorBoard Streaming <tensorboard_streaming>` - Example building on Hello PyTorch with TensorBoard streaming from clients to server
-    * :ref:`FL Experiment Tracking <experiment_tracking>` - Example integrating Hello PyTorch with MLflow with streaming from clients to server
+    * :ref:`FL Experiment Tracking with TensorBoard Streaming <tensorboard_streaming>` - Example building on Hello PyTorch with TensorBoard streaming from clients to server
+    * :ref:`FL Experiment Tracking with MLflow <experiment_tracking_mlflow>` - Example integrating Hello PyTorch with MLflow with streaming from clients to server
 
   9. **NLP**
 
