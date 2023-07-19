@@ -14,7 +14,7 @@
 
 from typing import List
 
-from nvflare.apis.job_def import JobMetaKey, is_valid_job_id
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.server_engine_spec import ServerEngineSpec
 from nvflare.fuel.hci.conn import Connection
 from nvflare.fuel.hci.proto import MetaKey, MetaStatusValue, make_meta
@@ -43,31 +43,6 @@ class CommandUtil(object):
     def authorize_client_operation(self, conn: Connection, args: List[str]) -> PreAuthzReturnCode:
         auth_args = [args[0], self.TARGET_TYPE_CLIENT]
         auth_args.extend(args[1:])
-
-        err = self.validate_command_targets(conn, auth_args[1:])
-        if err:
-            conn.append_error(err)
-            return PreAuthzReturnCode.ERROR
-
-        return PreAuthzReturnCode.REQUIRE_AUTHZ
-
-    def authorize_abort_client_task(self, conn: Connection, args: List[str]) -> PreAuthzReturnCode:
-        if len(args) < 2:
-            conn.append_error(
-                "missing job_id (syntax is: abort_task job_id <client-name>)",
-                meta=make_meta(MetaStatusValue.SYNTAX_ERROR, "missing job_id"),
-            )
-            return PreAuthzReturnCode.ERROR
-
-        auth_args = [args[0], self.TARGET_TYPE_CLIENT]
-        auth_args.extend(args[2:])
-
-        job_id = args[1].lower()
-        if not is_valid_job_id(job_id):
-            conn.append_error(f"invalid job_id {job_id}", meta=make_meta(MetaStatusValue.INVALID_JOB_ID, job_id))
-            return PreAuthzReturnCode.ERROR
-
-        conn.set_prop(self.JOB_ID, job_id)
 
         err = self.validate_command_targets(conn, auth_args[1:])
         if err:
