@@ -48,7 +48,7 @@ with the appropriate path to the directory containing the "pt" directory with cu
 
   (nvflare-env) $ export PYTHONPATH=${YOUR PATH TO NVFLARE}/examples/advanced/experiment-tracking
 
-Adding MLflow Streaming to Configurations
+Adding MLflow Logging to Configurations
 ------------------------------------------------
 
 Inside the config folder there are two files, ``config_fed_client.json`` and ``config_fed_server.json``.
@@ -86,7 +86,7 @@ Notice how the accepted event type ``"fed.analytix_log_stats"`` matches the outp
 :class:`ConvertToFedEvent<nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent>` in the client config.
 
 
-Adding MLflow logging to your Code
+Adding MLflow Logging to Your Code
 -------------------------------------------
 
 In this exercise, all of the MLflow code additions will be made in ``learner_with_mlflow.py``.
