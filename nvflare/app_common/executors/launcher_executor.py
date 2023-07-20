@@ -23,7 +23,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.launcher import Launcher
-from nvflare.app_common.utils.fl_model_utils import FLModelUtils
+from nvflare.app_common.utils.fl_model_utils import FLModelUtils, ParamsConverter
 from nvflare.fuel.utils.pipe.pipe import Message, Pipe
 from nvflare.fuel.utils.pipe.pipe_handler import PipeHandler, Topic
 from nvflare.fuel.utils.validation_utils import check_object_type
@@ -44,6 +44,8 @@ class LauncherExecutor(Executor):
         heartbeat_interval: float = 5.0,
         heartbeat_timeout: float = 30.0,
         workers: int = 1,
+        from_nvflare_converter_id: Optional[str] = None,
+        to_nvflare_converter_id: Optional[str] = None,
     ) -> None:
         """Initializes the LauncherExecutor.
 
@@ -77,6 +79,11 @@ class LauncherExecutor(Executor):
         self._result_poll_interval = result_poll_interval
         self._task_read_wait_time = task_read_wait_time
 
+        self._from_nvflare_converter_id = from_nvflare_converter_id
+        self._from_nvflare_converter: Optional[ParamsConverter] = None
+        self._to_nvflare_converter_id = to_nvflare_converter_id
+        self._to_nvflare_converter: Optional[ParamsConverter] = None
+
     def initialize(self, fl_ctx: FLContext) -> None:
         engine = fl_ctx.get_engine()
         # init launcher
@@ -85,6 +92,17 @@ class LauncherExecutor(Executor):
             check_object_type(self._launcher_id, launcher, Launcher)
             launcher.initialize(fl_ctx)
             self.launcher = launcher
+
+        # init converter
+        from_nvflare_converter: ParamsConverter = engine.get_component(self._from_nvflare_converter_id)
+        if from_nvflare_converter is not None:
+            check_object_type(self._from_nvflare_converter_id, from_nvflare_converter, ParamsConverter)
+            self._from_nvflare_converter = from_nvflare_converter
+
+        to_nvflare_converter: ParamsConverter = engine.get_component(self._to_nvflare_converter_id)
+        if to_nvflare_converter is not None:
+            check_object_type(self._to_nvflare_converter_id, to_nvflare_converter, ParamsConverter)
+            self._to_nvflare_converter = to_nvflare_converter
 
         # gets pipe
         pipe: Pipe = engine.get_component(self._pipe_id)
@@ -149,7 +167,7 @@ class LauncherExecutor(Executor):
     def _exchange(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         if self.pipe_handler is None:
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
-        model = FLModelUtils.from_shareable(shareable)
+        model = FLModelUtils.from_shareable(shareable, self._from_nvflare_converter, fl_ctx)
         req = Message.new_request(topic=self._topic, data=model)
         has_been_read = self.pipe_handler.send_to_peer(req, timeout=self._task_read_wait_time)
         if self._task_read_wait_time and not has_been_read:
@@ -188,5 +206,5 @@ class LauncherExecutor(Executor):
                 self.log_warning(fl_ctx, f"ignored '{reply.req_id}' when waiting for '{req.msg_id}'")
             else:
                 self.log_info(fl_ctx, f"got result for task '{task_name}'")
-                return FLModelUtils.to_shareable(reply.data)
+                return FLModelUtils.to_shareable(reply.data, self._to_nvflare_converter)
             time.sleep(self._result_poll_interval)

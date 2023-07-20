@@ -57,7 +57,7 @@ class TestModelExchanger:
 
             recv_pipe = FilePipe(Mode.PASSIVE, root_path=root_dir)
             y_mdx = ModelExchanger(pipe=recv_pipe, pipe_name=test_pipe_name, topic=test_topic)
-            result_model = y_mdx.receive_global_model()
+            result_model = y_mdx.receive_model()
 
             for k, v in result_model.params.items():
                 np.testing.assert_array_equal(weights[k], v)

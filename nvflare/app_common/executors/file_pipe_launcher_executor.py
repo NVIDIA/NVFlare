@@ -41,11 +41,14 @@ class FilePipeLauncherExecutor(LauncherExecutor):
         heartbeat_interval: float = 5.0,
         heartbeat_timeout: float = 30.0,
         workers: int = 1,
+        from_nvflare_converter_id: Optional[str] = None,
+        to_nvflare_converter_id: Optional[str] = None,
     ) -> None:
         """Initializes the FilePipeLauncherExecutor.
 
         Args:
             data_exchange_path (Optional[str]): Path used for data exchange. If None, "app_dir" will be used.
+                If pipe_id is provided, will use the Pipe gets from pipe_id.
             pipe_id (Optional[str]): Identifier used to get the Pipe from NVFlare components.
             pipe_name (str): Name of the pipe. Defaults to "pipe".
             launcher_id (Optional[str]): Identifier used to get the Launcher from NVFlare components.
@@ -70,6 +73,8 @@ class FilePipeLauncherExecutor(LauncherExecutor):
             heartbeat_interval=heartbeat_interval,
             heartbeat_timeout=heartbeat_timeout,
             workers=workers,
+            from_nvflare_converter_id=from_nvflare_converter_id,
+            to_nvflare_converter_id=to_nvflare_converter_id,
         )
 
         self._data_exchange_path = data_exchange_path
@@ -88,13 +93,11 @@ class FilePipeLauncherExecutor(LauncherExecutor):
             pipe: FilePipe = engine.get_component(self._pipe_id)
             check_object_type(self._pipe_id, pipe, FilePipe)
         else:
-            # default value
-            pipe = FilePipe(mode=Mode.ACTIVE)
-
-        if self._data_exchange_path is None:
-            app_dir = fl_ctx.get_engine().get_workspace().get_app_dir(fl_ctx.get_job_id())
-            self._data_exchange_path = app_dir
-        pipe.set_root_path(self._data_exchange_path)
+            # gets data_exchange_path
+            if self._data_exchange_path is None:
+                app_dir = engine.get_workspace().get_app_dir(fl_ctx.get_job_id())
+                self._data_exchange_path = app_dir
+            pipe = FilePipe(mode=Mode.ACTIVE, root_path=self._data_exchange_path)
 
         # init pipe
         flare_decomposers.register()
