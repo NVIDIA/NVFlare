@@ -1,4 +1,4 @@
-.. _experiment_tracking:
+.. _experiment_tracking_mlflow:
 
 FL Experiment Tracking with MLflow
 ==================================
@@ -6,9 +6,10 @@ FL Experiment Tracking with MLflow
 Introduction
 -------------
 
-The example for experiment tracking with MLflow is built on the :ref:`tensorboard_streaming` example.
-This example is in the advanced examples folder under experiment-tracking, in the "mlflow" directory.
-This builds upon the ideas in :ref:`tensorboard_streaming` but uses MLflow as a back end for experiment tracking.
+The example for experiment tracking with MLflow has  clients streaming their statistics to the server through
+events and the server writing the statistics to MLflow. This is similar to the :ref:`tensorboard_streaming` example
+but uses MLflow as a back end for experiment tracking. This example is in the advanced examples folder under 
+xperiment-tracking, in the "mlflow" directory.
 
 The setup of this exercise consists of one **server** and two **clients**. The clients stream their statistics to
 the server as events with :class:`MLflowWriter<nvflare.app_opt.tracking.mlflow.mlflow_writer.MLflowWriter>`,
@@ -107,7 +108,7 @@ but we can also define it in the client config to be passed into the constructor
 Now that our writer is set to ``MLflowWriter``,
 we can write and stream training metrics to the server in ``local_train()``:
 
-.. literalinclude:: ../../examples/advanced/experiment-tracking/tensorboard/jobs/tensorboard-streaming/app/custom/pt_learner.py
+.. literalinclude:: ../../examples/advanced/experiment-tracking/tensorboard/pt/learner_with_mlflow.py
    :language: python
    :lines: 148-182
    :lineno-start: 148

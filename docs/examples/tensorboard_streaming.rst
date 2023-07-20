@@ -98,7 +98,7 @@ but we can also define it in the client config to be passed into the constructor
 Now that our TensorBoard writer is set to ``AnalyticsSender``,
 we can write and stream training metrics to the server in ``local_train()``:
 
-.. literalinclude:: ../../examples/advanced/experiment-tracking/tensorboard/jobs/tensorboard-streaming/app/custom/pt_learner.py
+.. literalinclude:: ../../examples/advanced/experiment-tracking/pt/learner_with_tb.py
    :language: python
    :lines: 151-181
    :lineno-start: 151
