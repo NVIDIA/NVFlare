@@ -20,9 +20,9 @@ from nvflare.app_common.model_exchange.file_pipe_model_exchanger import FilePipe
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.import_utils import optional_import
 
-from .cache import Cache
 from .config import ClientConfig
 from .constants import ModelExchangeFormat
+from .model_cache import Cache
 
 PROCESS_CACHE: Dict[int, Cache] = {}
 
@@ -32,7 +32,7 @@ PROCESS_CACHE: Dict[int, Cache] = {}
 #   - get_job_id()
 
 
-def init(config: str):
+def init(config: str = "config/config_exchange.json"):
     pid = os.getpid()
     if pid in PROCESS_CACHE:
         raise RuntimeError("Can't call init twice.")
@@ -46,7 +46,7 @@ def init(config: str):
         if ok:
             fobs.register(tensor_decomposer)
         else:
-            raise RuntimeError("Can't import TensorDecomposer")
+            raise RuntimeError(f"Can't import TensorDecomposer for format: {ModelExchangeFormat.PYTORCH}")
 
     mdx = FilePipeModelExchanger(data_exchange_path=client_config.get_exchange_path())
     PROCESS_CACHE[pid] = Cache(mdx, client_config)
