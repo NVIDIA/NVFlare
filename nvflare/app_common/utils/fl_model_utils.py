@@ -28,7 +28,6 @@ MODEL_ATTRS = [
     FLModelConst.PARAMS,
     FLModelConst.METRICS,
     FLModelConst.OPTIMIZER_PARAMS,
-    FLModelConst.CLIENT_WEIGHTS,
     FLModelConst.CURRENT_ROUND,
     FLModelConst.TOTAL_ROUNDS,
     FLModelConst.META,
@@ -83,7 +82,6 @@ class FLModelUtils:
             shareable.set_header(AppConstants.CURRENT_ROUND, fl_model.current_round)
 
         meta = fl_model.meta if fl_model.meta is not None else {}
-        meta[MetaKey.CLIENT_WEIGHTS] = fl_model.client_weights
         meta[MetaKey.CURRENT_ROUND] = fl_model.current_round
         meta[MetaKey.TOTAL_ROUNDS] = fl_model.total_rounds
 

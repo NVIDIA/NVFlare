@@ -16,7 +16,7 @@ from typing import Dict, Iterable
 
 from nvflare.app_common.abstract.fl_model import FLModel
 
-OUT_ATTRS = ("client_weights", "total_rounds")
+OUT_ATTRS = "total_rounds"
 
 
 def get_meta_from_fl_model(fl_model: FLModel, attrs: Iterable[str]) -> Dict:

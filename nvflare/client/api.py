@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 import copy
 import os
 from typing import Any, Dict, Optional, Tuple
@@ -79,7 +80,7 @@ def submit_metrics(metrics: Dict, meta: Optional[Dict] = None) -> None:
     cache = PROCESS_CACHE[pid]
     if meta is not None:
         cache.meta.update(meta)
-    cache.initial_metrics = metrics
+    cache.metrics = metrics
 
 
 def submit_model(model: Any, meta: Optional[Dict] = None) -> None:

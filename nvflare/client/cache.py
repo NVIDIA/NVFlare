@@ -45,7 +45,7 @@ class Cache:
         self.sys_meta = None
 
         self.config = config
-        self.initial_metrics = None  # get from evaluate on "global model"
+        self.metrics = None  # get from evaluate on "global model"
         self._get_model()
 
     def _get_model(self):
@@ -62,8 +62,8 @@ class Cache:
         if self.input_model is None or self.meta is None:
             raise RuntimeError("needs to get model first.")
         fl_model = FLModel(params_type=ParamsType.FULL, params=params)
-        if self.initial_metrics is not None:
-            fl_model.metrics = self.initial_metrics
+        if self.metrics is not None:
+            fl_model.metrics = self.metrics
 
         # model difference
         params_diff_func_name = self.config.get_params_diff_func()
@@ -80,4 +80,4 @@ class Cache:
         return fl_model
 
     def __str__(self):
-        return f"Cache(model_exchanger: {self.model_exchanger}, initial_metrics: {self.initial_metrics})"
+        return f"Cache(config: {self.config.get_config()}, metrics: {self.metrics})"

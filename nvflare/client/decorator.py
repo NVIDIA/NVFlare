@@ -119,7 +119,7 @@ def evaluate(
                     cache.meta.update(meta)
             else:
                 metrics = return_value
-            cache.initial_metrics = metrics
+            cache.metrics = metrics
 
             return return_value
 
