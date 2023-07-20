@@ -75,12 +75,9 @@ This changes the event ``analytix_log_stats`` into a fed event ``fed.analytix_lo
    :caption: config_fed_server.json
 
 Under the component section in the server config, we have the
-:class:`MLflowReceiver<nvflare.app_opt.tracking.mlflow.mlflow_receiver.MLflowReceiver>`
-of type :class:`AnalyticsReceiver<nvflare.app_common.widgets.streaming.AnalyticsReceiver>`.
-
-This component receives events from the clients and internally buffers them before writing
-to the MLflow tracking server. The default "buffer_flush_time" is one second, but this can be
-configured as an arg in the component config for MLflowReceiver.
+:class:`MLflowReceiver<nvflare.app_opt.tracking.mlflow.mlflow_receiver.MLflowReceiver>`. This component receives
+events from the clients and internally buffers them before writing to the MLflow tracking server. The default
+"buffer_flush_time" is one second, but this can be configured as an arg in the component config for MLflowReceiver.
 
 Notice how the accepted event type ``"fed.analytix_log_stats"`` matches the output of
 :class:`ConvertToFedEvent<nvflare.app_common.widgets.convert_to_fed_event.ConvertToFedEvent>` in the client config.
