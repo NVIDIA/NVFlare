@@ -17,3 +17,9 @@ class ConfigError(Exception):
     """Raised when configuration parsing error happens."""
 
     pass
+
+
+class ComponentNotAuthorized(Exception):
+    """Raised when component building is not authorized"""
+
+    pass

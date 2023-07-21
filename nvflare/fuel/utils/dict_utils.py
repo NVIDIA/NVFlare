@@ -50,7 +50,7 @@ def extract_first_level_primitive(d):
     return result
 
 
-def augment(to_dict: dict, from_dict: dict, from_override_to=False) -> str:
+def augment(to_dict: dict, from_dict: dict, from_override_to=False, append_list="components") -> str:
     """Augments the to_dict with the content from the from_dict.
 
         - Items in from_dict but not in to_dict are added to the to_dict
@@ -62,6 +62,7 @@ def augment(to_dict: dict, from_dict: dict, from_override_to=False) -> str:
         to_dict: the dict to be augmented
         from_dict: content to augment the to_dict
         from_override_to: content in from_dict overrides content in to_dict when conflict happens
+        append_list: str or list of str: item keys for list to be appended
 
     Returns:
         An error message if any; empty str if success.
@@ -76,6 +77,11 @@ def augment(to_dict: dict, from_dict: dict, from_override_to=False) -> str:
 
     if not isinstance(from_dict, dict):
         return f"from_dict must be dict but got {type(from_dict)}"
+
+    if isinstance(append_list, str):
+        append_list = [append_list]
+    elif not isinstance(append_list, list):
+        return f"append_list must be str or list but got {type(append_list)}"
 
     for k, fv in from_dict.items():
         if k not in to_dict:
@@ -94,6 +100,11 @@ def augment(to_dict: dict, from_dict: dict, from_override_to=False) -> str:
         if isinstance(fv, list):
             if not isinstance(tv, list):
                 return f"type conflict in element '{k}': list in from_dict but {type(tv)} in to_dict"
+
+            if k in append_list:
+                # items in "from_dict" are appended to "to_dict"
+                tv.extend(fv)
+                continue
 
             if len(fv) != len(tv):
                 return f"list length conflict in element '{k}': {len(fv)} in from_dict but {len(tv)} in to_dict"

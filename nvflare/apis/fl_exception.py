@@ -33,3 +33,9 @@ class UnsafeJobError(Exception):
     """Raised when a job is detected to be unsafe"""
 
     pass
+
+
+class UnsafeComponentError(Exception):
+    """Raised when configuration parsing error happens."""
+
+    pass

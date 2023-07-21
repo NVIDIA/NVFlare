@@ -73,9 +73,6 @@ def main():
     parent_pid = os.getppid()
     stop_event = threading.Event()
     workspace = Workspace(root_dir=args.workspace, site_name="server")
-    app_custom_folder = workspace.get_client_custom_dir()
-    if os.path.isdir(app_custom_folder):
-        sys.path.append(app_custom_folder)
 
     try:
         os.chdir(args.workspace)
@@ -108,7 +105,7 @@ def main():
             logger.critical("loglevel critical enabled")
 
         conf.configure()
-
+        event_handlers = conf.handlers
         deployer = conf.deployer
         secure_train = conf.cmd_vars.get("secure_train", False)
 
@@ -131,7 +128,9 @@ def main():
             thread = threading.Thread(target=monitor_parent_process, args=(server_app_runner, parent_pid, stop_event))
             thread.start()
 
-            server_app_runner.start_server_app(workspace, args, args.app_root, args.job_id, snapshot, logger, args.set)
+            server_app_runner.start_server_app(
+                workspace, args, args.app_root, args.job_id, snapshot, logger, args.set, event_handlers=event_handlers
+            )
         finally:
             if deployer:
                 deployer.close()
@@ -151,4 +150,4 @@ if __name__ == "__main__":
     """
     # main()
     rc = mpm.run(main_func=main)
-    exit(rc)
+    sys.exit(rc)

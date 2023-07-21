@@ -37,6 +37,10 @@ class FLComponent(StatePersistable):
         self._name = self.__class__.__name__
         self.logger = logging.getLogger(self._name)
 
+    @property
+    def name(self):
+        return self._name
+
     def _fire(self, event_type: str, fl_ctx: FLContext):
         fl_ctx.set_prop(FLContextKey.EVENT_ORIGIN, self._name, private=True, sticky=False)
         engine = fl_ctx.get_engine()
