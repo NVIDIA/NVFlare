@@ -27,7 +27,6 @@ class ConfigKey:
     EXCHANGE_FORMAT = "exchange_format"
     MODEL_CONVERTER = "model_converter"
     PARAMS_TYPE = "params_type"
-    PARAMS_DIFF_FUNC = "params_diff_func"
 
 
 class ClientConfig:
@@ -37,12 +36,8 @@ class ClientConfig:
         {
             "exchange_path": "./",
             "exchange_format": "pytorch",
-            "params_type": "DIFF",
-            "params_diff_func": "numerical_params_diff"
+            "params_type": "DIFF"
         }
-
-    Note that params_diff_func signature:
-        params_diff_func(original model, new model) -> model difference
     """
 
     def __init__(self, config_file: str):
@@ -50,10 +45,6 @@ class ClientConfig:
         ConfigService.initialize({}, ["."])
         config: Optional[Config] = ConfigService.load_configuration(file_basename=config_file)
         self.config = None if config is None else config.to_dict()
-        if self.get_params_type() == ParamsType.FULL and self.get_params_diff_func() is not None:
-            raise ValueError(
-                f"{ConfigKey.PARAMS_TYPE} is {ParamsType.FULL}, should not provide {ConfigKey.PARAMS_DIFF_FUNC}."
-            )
 
     def get_config(self):
         return self.config
@@ -66,6 +57,3 @@ class ClientConfig:
 
     def get_params_type(self, default=ParamsType.FULL) -> ParamsType:
         return ParamsType(ConfigService.get_str_var(ConfigKey.PARAMS_TYPE, self.config, default=default))
-
-    def get_params_diff_func(self, default=None):
-        return ConfigService.get_str_var(ConfigKey.PARAMS_DIFF_FUNC, self.config, default=default)

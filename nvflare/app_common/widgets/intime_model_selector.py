@@ -100,6 +100,10 @@ class IntimeModelSelector(Widget):
             self.log_debug(fl_ctx, f"validation metric not existing in {client_name}")
             return False
         else:
+            # TODO: seperate metrics aggregation and selection based on metrics logic
+            # TODO: fix this hardcode to get the first value from dict
+            if isinstance(validation_metric, dict):
+                validation_metric = next(iter(validation_metric.values()))
             self.log_info(fl_ctx, f"validation metric {validation_metric} from client {client_name}")
 
         if self.weigh_by_local_iter:

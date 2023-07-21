@@ -12,18 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional
+from typing import Callable, Optional
 
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.model_exchange.model_exchanger import ModelExchanger
 
 from .config import ClientConfig
-from .utils import copy_fl_model_attributes, get_meta_from_fl_model, numerical_params_diff, set_fl_model_with_meta
-
-IN_ATTRS = ("optimizer_params", "current_round")
-SYS_ATTRS = ("job_id", "site_name", "total_rounds")
-
-DIFF_MAP = {"numerical_params_diff": numerical_params_diff}
+from .constants import MODEL_ATTRS, SYS_ATTRS
+from .utils import copy_fl_model_attributes, get_meta_from_fl_model, set_fl_model_with_meta
 
 
 class Cache:
@@ -38,19 +34,20 @@ class Cache:
 
     """
 
-    def __init__(self, model_exchanger: ModelExchanger, config: ClientConfig):
+    def __init__(self, model_exchanger: ModelExchanger, config: ClientConfig, params_diff_func: Callable):
         self.model_exchanger = model_exchanger
         self.input_model: Optional[FLModel] = None
         self.meta = None
         self.sys_meta = None
 
         self.config = config
+        self.params_diff_func = params_diff_func
         self.metrics = None  # get from evaluate on "global model"
         self._get_model()
 
     def _get_model(self):
         self.input_model = self.model_exchanger.receive_model()
-        self.meta = get_meta_from_fl_model(self.input_model, IN_ATTRS)
+        self.meta = get_meta_from_fl_model(self.input_model, MODEL_ATTRS)
         self.sys_meta = get_meta_from_fl_model(self.input_model, SYS_ATTRS)
 
     def construct_fl_model(self, params) -> FLModel:
@@ -66,15 +63,12 @@ class Cache:
             fl_model.metrics = self.metrics
 
         # model difference
-        params_diff_func_name = self.config.get_params_diff_func()
-        if params_diff_func_name is not None:
-            if params_diff_func_name not in DIFF_MAP:
-                raise RuntimeError(f"params_diff_func {params_diff_func_name} is not pre-defined.")
-            params_diff_func = DIFF_MAP[params_diff_func_name]
-            fl_model.params = params_diff_func(self.input_model.params, fl_model.params)
+        params_type = self.config.get_params_type()
+        if params_type == ParamsType.DIFF:
+            fl_model.params = self.params_diff_func(self.input_model.params, fl_model.params)
             fl_model.params_type = ParamsType.DIFF
 
-        set_fl_model_with_meta(fl_model, self.meta, IN_ATTRS)
+        set_fl_model_with_meta(fl_model, self.meta, MODEL_ATTRS)
         copy_fl_model_attributes(self.input_model, fl_model)
         fl_model.meta = self.meta
         return fl_model

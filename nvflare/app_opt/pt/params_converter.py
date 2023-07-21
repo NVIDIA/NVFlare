@@ -12,14 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from enum import Enum
+from typing import Dict
 
-MODEL_ATTRS = ("optimizer_params", "current_round")
-SYS_ATTRS = ("job_id", "site_name", "total_rounds")
-CONST_ATTRS = ("total_rounds",)
+import torch
+
+from nvflare.app_common.utils.fl_model_utils import ParamsConverter
 
 
-class ModelExchangeFormat(str, Enum):
-    RAW = "raw"
-    PYTORCH = "pytorch"
-    NUMPY = "numpy"
+class NumpyToPTParamsConverter(ParamsConverter):
+    def convert(self, params: Dict) -> Dict:
+        return {k: torch.as_tensor(v) for k, v in params.items()}
+
+
+class PTToNumpyParamsConverter(ParamsConverter):
+    def convert(self, params: Dict) -> Dict:
+        return {k: v.cpu().numpy() for k, v in params.items()}
