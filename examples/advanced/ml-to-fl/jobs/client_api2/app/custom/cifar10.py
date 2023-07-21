@@ -76,7 +76,6 @@ for epoch in range(2):  # loop over the dataset multiple times
         if i % 2000 == 1999:  # print every 2000 mini-batches
             print(f"[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}")
             running_loss = 0.0
-            break
 
 print("Finished Training")
 
@@ -116,6 +115,6 @@ local_accuracy = evaluate(torch.load(PATH))
 # (2.2) evaluate on receive model
 accuracy = evaluate(input_model)
 # (2.3) submits evaluation metrics
-flare.submit_metrics(accuracy)
+flare.submit_metrics({"accuracy": accuracy})
 # (1.4) submits trained model back to NVFlare
 flare.submit_model(net.cpu().state_dict())

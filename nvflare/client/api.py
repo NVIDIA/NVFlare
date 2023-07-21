@@ -87,11 +87,11 @@ def receive_model() -> Tuple[Any, Dict]:
     return model, meta
 
 
-def submit_metrics(metrics: Any, meta: Optional[Dict] = None) -> None:
+def submit_metrics(metrics: Dict, meta: Optional[Dict] = None) -> None:
     """Submits metrics.
 
     Args:
-        metrics (Any): metrics to be submitted.
+        metrics (Dict): metrics to be submitted.
         meta: the metadata to be submitted along with the metrics.
     """
     pid = os.getpid()
