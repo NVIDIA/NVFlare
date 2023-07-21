@@ -333,6 +333,8 @@ def generate_test_config_yaml_for_example(
     output_yamls = []
     os.makedirs(OUTPUT_YAML_DIR, exist_ok=True)
     for job in os.listdir(example.jobs_root_dir):
+        if "base" in job:
+            continue
         output_yaml = os.path.join(OUTPUT_YAML_DIR, f"{example.name}_{job}.yml")
         job_dir = os.path.join(example.jobs_root_dir, job)
         requirements_file = os.path.join(example.root, example.requirements_file)

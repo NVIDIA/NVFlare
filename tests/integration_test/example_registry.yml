@@ -17,3 +17,7 @@ examples:
     prepare_data_script: prepare_data.sh
   - root: advanced/ml-to-fl
     prepare_data_script: prepare_data.sh
+  - root: advanced/xgboost/tree-based
+    prepare_data_script: prepare_data.sh
+  - root: advanced/xgboost/histogram-based
+    prepare_data_script: prepare_data.sh

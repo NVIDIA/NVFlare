@@ -2,7 +2,7 @@
 
 ## Run automated experiments
 Please make sure to finish the [preparation steps](../README.md) before running the following steps.
-To run this example with NVFlare, follow the steps below or this [notebook](./xgboost_histogram_higgs.ipynb).
+To run this example with NVFlare, follow the steps below or this [notebook](./xgboost_histogram_higgs.ipynb) for an interactive experience.
 
 ### Environment Preparation
 

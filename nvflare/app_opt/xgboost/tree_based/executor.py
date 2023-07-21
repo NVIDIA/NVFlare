@@ -116,7 +116,7 @@ class FedXGBTreeExecutor(Executor):
         if not isinstance(data_loader, XGBDataLoader):
             self.system_panic("data_loader should be type XGBDataLoader", fl_ctx)
         try:
-            self.train_data, self.val_data = data_loader.load_data()
+            self.train_data, self.val_data = data_loader.load_data(self.client_id)
         except Exception as e:
             self.system_panic(f"load_data failed: {secure_format_exception(e)}", fl_ctx)
         self.lr = self._get_effective_learning_rate()
@@ -135,8 +135,8 @@ class FedXGBTreeExecutor(Executor):
             lr = self.base_lr
         return lr
 
-    def _get_train_params(self):
-        param = {
+    def _get_xgb_train_params(self):
+        params = {
             "objective": self.objective,
             "eta": self.lr,
             "max_depth": self.max_depth,
@@ -146,7 +146,7 @@ class FedXGBTreeExecutor(Executor):
             "subsample": self.local_subsample,
             "tree_method": self.tree_method,
         }
-        return param
+        return params
 
     def _local_boost_bagging(self, fl_ctx: FLContext):
         eval_results = self.bst.eval_set(
@@ -205,7 +205,7 @@ class FedXGBTreeExecutor(Executor):
         model_update = dxo.data
 
         # xgboost parameters
-        param = self._get_train_params()
+        params = self._get_xgb_train_params()
 
         if not self.bst:
             # First round
@@ -215,7 +215,7 @@ class FedXGBTreeExecutor(Executor):
             )
             if not model_update:
                 bst = xgb.train(
-                    param,
+                    params,
                     self.train_data,
                     num_boost_round=self.num_local_round,
                     evals=[(self.val_data, "validate"), (self.train_data, "train")],
@@ -223,7 +223,7 @@ class FedXGBTreeExecutor(Executor):
             else:
                 loadable_model = bytearray(model_update["model_data"])
                 bst = xgb.train(
-                    param,
+                    params,
                     self.train_data,
                     num_boost_round=self.num_local_round,
                     xgb_model=loadable_model,

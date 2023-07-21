@@ -28,6 +28,7 @@ from nvflare.apis.workspace import Workspace
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
 from nvflare.app_opt.xgboost.histogram_based.constants import XGB_TRAIN_TASK, XGBShareableHeader
+from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 
@@ -47,11 +48,31 @@ class XGBoostParams:
         self.xgb_params: dict = xgb_params if xgb_params else {}
 
 
+class TensorBoardCallback(xgb.callback.TrainingCallback):
+    def __init__(self, app_dir: str, tensorboard):
+        self.train_writer = tensorboard.SummaryWriter(log_dir=os.path.join(app_dir, "train-auc/"))
+        self.val_writer = tensorboard.SummaryWriter(log_dir=os.path.join(app_dir, "val-auc/"))
+
+    def after_iteration(self, model, epoch: int, evals_log: xgb.callback.TrainingCallback.EvalsLog):
+        if not evals_log:
+            return False
+
+        for data, metric in evals_log.items():
+            for metric_name, log in metric.items():
+                score = log[-1][0] if isinstance(log[-1], tuple) else log[-1]
+                if data == "train":
+                    self.train_writer.add_scalar(metric_name, score, epoch)
+                else:
+                    self.val_writer.add_scalar(metric_name, score, epoch)
+        return False
+
+
 class FedXGBHistogramExecutor(Executor):
     """Federated XGBoost Executor Spec for histogram-base collaboration.
 
     This class implements a basic xgb_train logic, feel free to overwrite the function for custom behavior.
     """
+
     def __init__(self, num_rounds, early_stopping_round, xgboost_params: dict, data_loader_id: str, verbose_eval=False):
         """Federated XGBoost Executor for histogram-base collaboration.
 
@@ -69,6 +90,7 @@ class FedXGBHistogramExecutor(Executor):
             verbose_eval: verbose_eval in xgboost.train
         """
         super().__init__()
+        self.app_dir = None
 
         self.num_rounds = num_rounds
         self.early_stopping_round = early_stopping_round
@@ -82,7 +104,6 @@ class FedXGBHistogramExecutor(Executor):
         self._client_key_path = None
         self._client_cert_path = None
         self._server_address = "localhost"
-
         self.data_loader_id = data_loader_id
         self.train_data = None
         self.val_data = None
@@ -103,6 +124,11 @@ class FedXGBHistogramExecutor(Executor):
         # Specify validations set to watch performance
         watchlist = [(dval, "eval"), (dtrain, "train")]
 
+        callbacks = [callback.EvaluationMonitor(rank=self.rank)]
+        tensorboard, flag = optional_import(module="torch.utils.tensorboard")
+        if flag and self.app_dir:
+            callbacks.append(TensorBoardCallback(self.app_dir, tensorboard))
+
         # Run training, all the features in training API is available.
         bst = xgb.train(
             params.xgb_params,
@@ -111,7 +137,7 @@ class FedXGBHistogramExecutor(Executor):
             evals=watchlist,
             early_stopping_rounds=params.early_stopping_rounds,
             verbose_eval=params.verbose_eval,
-            callbacks=[callback.EvaluationMonitor(rank=self.rank)],
+            callbacks=callbacks,
         )
 
         return bst
@@ -126,11 +152,14 @@ class FedXGBHistogramExecutor(Executor):
             self.client_id = fl_ctx.get_identity_name()
             self.log_info(fl_ctx, f"server address is {self._server_address}")
 
+            ws = engine.get_workspace()
+            self.app_dir = ws.get_app_dir(fl_ctx.get_job_id())
+
             data_loader = engine.get_component(self.data_loader_id)
             if not isinstance(data_loader, XGBDataLoader):
                 self.system_panic("data_loader should be type XGBDataLoader", fl_ctx)
             try:
-                self.train_data, self.val_data = data_loader.load_data()
+                self.train_data, self.val_data = data_loader.load_data(self.client_id)
             except Exception as e:
                 self.system_panic(f"load_data failed: {secure_format_exception(e)}", fl_ctx)
 
@@ -209,6 +238,13 @@ class FedXGBHistogramExecutor(Executor):
             early_stopping_rounds=self.early_stopping_round,
             verbose_eval=self.verbose_eval,
         )
+
+        engine = fl_ctx.get_engine()
+        if engine.client.overseer_agent:
+            sp = engine.client.overseer_agent.get_primary_sp()
+            if sp and sp.primary is True:
+                self._server_address = sp.name
+        self.log_info(fl_ctx, f"server address is {self._server_address}")
 
         communicator_env = {
             "xgboost_communicator": "federated",
