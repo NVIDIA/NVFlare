@@ -16,7 +16,7 @@ from typing import Dict, Iterable
 
 from nvflare.app_common.abstract.fl_model import FLModel
 
-OUT_ATTRS = "total_rounds"
+from .constants import CONST_ATTRS
 
 
 def get_meta_from_fl_model(fl_model: FLModel, attrs: Iterable[str]) -> Dict:
@@ -53,8 +53,8 @@ def set_fl_model_with_meta(fl_model: FLModel, meta: Dict, attrs):
         meta.pop(attr)
 
 
-def copy_fl_model_attributes(src: FLModel, dst: FLModel, attrs=OUT_ATTRS):
-    """Copies FLModel attributes.
+def copy_fl_model_attributes(src: FLModel, dst: FLModel, attrs=CONST_ATTRS):
+    """Copies FLModel attributes from source to destination.
 
     Args:
         src: source FLModel object.

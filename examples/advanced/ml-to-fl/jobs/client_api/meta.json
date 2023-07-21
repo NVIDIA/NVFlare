@@ -1,5 +1,5 @@
 {
-  "name": "subprocess with file pipe",
+  "name": "subprocess with file pipe with pytorch",
   "resource_spec": {},
   "min_clients" : 2,
   "deploy_map": {

@@ -18,10 +18,8 @@ from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.model_exchange.model_exchanger import ModelExchanger
 
 from .config import ClientConfig
+from .constants import MODEL_ATTRS, SYS_ATTRS
 from .utils import copy_fl_model_attributes, get_meta_from_fl_model, numerical_params_diff, set_fl_model_with_meta
-
-IN_ATTRS = ("optimizer_params", "current_round")
-SYS_ATTRS = ("job_id", "site_name", "total_rounds")
 
 DIFF_MAP = {"numerical_params_diff": numerical_params_diff}
 
@@ -50,7 +48,7 @@ class Cache:
 
     def _get_model(self):
         self.input_model = self.model_exchanger.receive_model()
-        self.meta = get_meta_from_fl_model(self.input_model, IN_ATTRS)
+        self.meta = get_meta_from_fl_model(self.input_model, MODEL_ATTRS)
         self.sys_meta = get_meta_from_fl_model(self.input_model, SYS_ATTRS)
 
     def construct_fl_model(self, params) -> FLModel:
@@ -74,7 +72,7 @@ class Cache:
             fl_model.params = params_diff_func(self.input_model.params, fl_model.params)
             fl_model.params_type = ParamsType.DIFF
 
-        set_fl_model_with_meta(fl_model, self.meta, IN_ATTRS)
+        set_fl_model_with_meta(fl_model, self.meta, MODEL_ATTRS)
         copy_fl_model_attributes(self.input_model, fl_model)
         fl_model.meta = self.meta
         return fl_model

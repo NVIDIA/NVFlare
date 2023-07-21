@@ -37,7 +37,7 @@ testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle
 net = Net()
 
 # initializes NVFlare interface
-flare.init(config="config/config_exchange.json")
+flare.init()
 input_model, input_meta = flare.receive_model()
 
 # get model from NVFlare
@@ -69,7 +69,6 @@ for epoch in range(2):  # loop over the dataset multiple times
         if i % 2000 == 1999:  # print every 2000 mini-batches
             print(f"[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}")
             running_loss = 0.0
-            break
 
 print("Finished Training")
 
