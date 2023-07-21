@@ -73,6 +73,13 @@ class ServerRunnerConfig(object):
 
 
 class ServerRunner(FLComponent):
+
+    ABORT_RETURN_CODES = [
+        ReturnCode.RUN_MISMATCH,
+        ReturnCode.TASK_UNKNOWN,
+        ReturnCode.UNSAFE_JOB,
+    ]
+
     def __init__(self, config: ServerRunnerConfig, job_id: str, engine: ServerEngineSpec):
         """Server runner class.
 
@@ -404,6 +411,15 @@ class ServerRunner(FLComponent):
         if not peer_job_id or peer_job_id != self.job_id:
             # the client is on a different RUN
             self.log_info(fl_ctx, "invalid result submission: not the same job id - dropped")
+            return
+
+        rc = result.get_return_code(default=ReturnCode.OK)
+        if rc in self.ABORT_RETURN_CODES:
+            self.log_error(fl_ctx, f"aborting ServerRunner due to fatal return code {rc} from client {client.name}")
+            self.system_panic(
+                reason=f"Aborted job {self.job_id} due to fatal return code {rc} from client {client.name}",
+                fl_ctx=fl_ctx,
+            )
             return
 
         result.set_header(ReservedHeaderKey.TASK_NAME, task_name)

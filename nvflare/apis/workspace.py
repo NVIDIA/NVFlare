@@ -87,6 +87,9 @@ class Workspace:
     def get_resources_file_path(self):
         return self._fallback_path([WorkspaceConstants.RESOURCES_CONFIG, WorkspaceConstants.DEFAULT_RESOURCES_CONFIG])
 
+    def get_job_resources_file_path(self):
+        return self.get_file_path_in_site_config(WorkspaceConstants.JOB_RESOURCES_CONFIG)
+
     def get_log_config_file_path(self):
         return self._fallback_path([WorkspaceConstants.LOGGING_CONFIG, WorkspaceConstants.DEFAULT_LOGGING_CONFIG])
 

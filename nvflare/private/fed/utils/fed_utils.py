@@ -22,7 +22,10 @@ from multiprocessing.connection import Listener
 from typing import List
 
 from nvflare.apis.app_validation import AppValidator
+from nvflare.apis.event_type import EventType
+from nvflare.apis.fl_component import FLContext
 from nvflare.apis.fl_constant import FLContextKey, SiteType, WorkspaceConstants
+from nvflare.apis.fl_exception import UnsafeComponentError
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.apis.workspace import Workspace
@@ -31,6 +34,7 @@ from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.authz import AuthorizationService
 from nvflare.fuel.sec.security_content_service import LoadResult, SecurityContentService
 from nvflare.private.defs import SSLConstants
+from nvflare.private.event import fire_event
 from nvflare.private.fed.utils.decomposers import private_decomposers
 from nvflare.private.privacy_manager import PrivacyManager, PrivacyService
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
@@ -214,3 +218,22 @@ def fobs_initialize():
     flare_decomposers.register()
     common_decomposers.register()
     private_decomposers.register()
+
+
+def authorize_build_component(config_dict, config_ctx, node, fl_ctx: FLContext, event_handlers) -> str:
+    fl_ctx.set_prop(FLContextKey.COMPONENT_CONFIG, config_dict, sticky=False, private=True)
+    fl_ctx.set_prop(FLContextKey.CONFIG_CTX, config_ctx, sticky=False, private=True)
+    fl_ctx.set_prop(FLContextKey.COMPONENT_NODE, node, sticky=False, private=True)
+    fire_event(EventType.BEFORE_BUILD_COMPONENT, event_handlers, fl_ctx)
+    err = fl_ctx.get_prop(FLContextKey.COMPONENT_BUILD_ERROR)
+    if err:
+        return err
+    # check exceptions
+    exceptions = fl_ctx.get_prop(FLContextKey.EXCEPTIONS)
+    if exceptions and isinstance(exceptions, dict):
+        for handler_name, ex in exceptions.items():
+            if isinstance(ex, UnsafeComponentError):
+                err = str(ex)
+                if not err:
+                    err = f"Unsafe component detected by {handler_name}"
+    return ""

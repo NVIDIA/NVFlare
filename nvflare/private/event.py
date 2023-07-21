@@ -63,5 +63,10 @@ def fire_event(event: str, handlers: list, ctx: FLContext):
                 h.log_exception(
                     ctx, f'Exception when handling event "{event}": {secure_format_exception(e)}', fire_event=False
                 )
+                exceptions = ctx.get_prop(FLContextKey.EXCEPTIONS)
+                if not exceptions:
+                    exceptions = {}
+                    ctx.set_prop(FLContextKey.EXCEPTIONS, exceptions, sticky=False, private=True)
+                exceptions[h.name] = e
 
     ctx.set_prop(key=_KEY_EVENT_DEPTH, value=depth, private=True, sticky=False)

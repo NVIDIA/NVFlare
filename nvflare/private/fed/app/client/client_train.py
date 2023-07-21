@@ -183,4 +183,5 @@ if __name__ == "__main__":
     # multiprocessing.set_start_method('spawn')
 
     # main()
-    mpm.run(main_func=main)
+    rc = mpm.run(main_func=main)
+    sys.exit(rc)

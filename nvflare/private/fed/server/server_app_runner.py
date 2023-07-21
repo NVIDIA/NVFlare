@@ -15,12 +15,14 @@
 import os
 
 from nvflare.apis.fl_constant import FLContextKey, MachineStatus
+from nvflare.apis.fl_context import FLContext
 from nvflare.apis.workspace import Workspace
 from nvflare.private.fed.app.fl_conf import create_privacy_manager
 from nvflare.private.fed.runner import Runner
 from nvflare.private.fed.server.server_engine import ServerEngine
 from nvflare.private.fed.server.server_json_config import ServerJsonConfigurator
 from nvflare.private.fed.server.server_status import ServerStatus
+from nvflare.private.fed.utils.fed_utils import authorize_build_component
 from nvflare.private.privacy_manager import PrivacyService
 from nvflare.security.logging import secure_format_exception
 
@@ -48,12 +50,23 @@ class ServerAppRunner(Runner):
         super().__init__()
         self.server = server
 
-    def start_server_app(self, workspace: Workspace, args, app_root, job_id, snapshot, logger, kv_list=None):
-
+    def start_server_app(
+        self, workspace: Workspace, args, app_root, job_id, snapshot, logger, kv_list=None, event_handlers=None
+    ):
         try:
             server_config_file_name = os.path.join(app_root, args.server_config)
 
             conf = ServerJsonConfigurator(config_file_name=server_config_file_name, args=args, kv_list=kv_list)
+            if event_handlers:
+                fl_ctx = FLContext()
+                fl_ctx.set_prop(FLContextKey.ARGS, args, sticky=False)
+                fl_ctx.set_prop(FLContextKey.APP_ROOT, app_root, private=True, sticky=False)
+                fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True)
+                fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, job_id, private=False, sticky=False)
+                fl_ctx.set_prop(FLContextKey.CURRENT_RUN, job_id, private=False, sticky=False)
+                conf.set_component_build_authorizer(
+                    authorize_build_component, fl_ctx=fl_ctx, event_handlers=event_handlers
+                )
             conf.configure()
 
             _set_up_run_config(workspace, self.server, conf)
