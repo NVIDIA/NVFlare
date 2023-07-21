@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import asyncio
-import logging
 import threading
 import time
 from typing import Any, Dict, List
@@ -29,6 +28,7 @@ from nvflare.fuel.f3.drivers.grpc.streamer_pb2_grpc import (
     StreamerStub,
     add_StreamerServicer_to_server,
 )
+from nvflare.fuel.utils.obj_utils import get_logger
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
 from .base_driver import BaseDriver
@@ -39,6 +39,8 @@ from .net_utils import MAX_FRAME_SIZE, get_address, get_tcp_urls, ssl_required
 GRPC_DEFAULT_OPTIONS = [
     ("grpc.max_send_message_length", MAX_FRAME_SIZE),
     ("grpc.max_receive_message_length", MAX_FRAME_SIZE),
+    ("grpc.keepalive_time_ms", 120000),
+    ("grpc.http2.max_pings_without_data", 0),
 ]
 
 
@@ -56,7 +58,7 @@ class AioStreamSession(Connection):
     def __init__(self, aio_ctx: AioContext, connector: ConnectorInfo, conn_props: dict, context=None, channel=None):
         super().__init__(connector)
         self.aio_ctx = aio_ctx
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_logger(self)
 
         self.oq = asyncio.Queue(16)
         self.closing = False
@@ -85,6 +87,7 @@ class AioStreamSession(Connection):
             f = Frame(seq=seq, data=bytes(frame))
             self.aio_ctx.run_coro(self.oq.put(f))
         except Exception as ex:
+            self.logger.debug(f"exception send_frame: {self}: {secure_format_exception(ex)}")
             if not self.closing:
                 raise CommError(CommError.ERROR, f"Error sending frame on conn {self}: {secure_format_exception(ex)}")
 
@@ -134,7 +137,7 @@ class Servicer(StreamerServicer):
     def __init__(self, server, aio_ctx: AioContext):
         self.server = server
         self.aio_ctx = aio_ctx
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_logger(self)
 
     async def _write_loop(self, connection, grpc_context):
         self.logger.debug("started _write_loop")
@@ -189,7 +192,7 @@ class Servicer(StreamerServicer):
 
 class Server:
     def __init__(self, driver, connector, aio_ctx: AioContext, options, conn_ctx: _ConnCtx):
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_logger(self)
         self.driver = driver
         self.connector = connector
         self.grpc_server = grpc.aio.server(options=options)
@@ -224,7 +227,10 @@ class Server:
             raise ex
 
     async def shutdown(self):
-        await self.grpc_server.stop(grace=0.5)
+        try:
+            await self.grpc_server.stop(grace=0.5)
+        except Exception as ex:
+            self.logger.debug(f"exception shutdown server: {secure_format_exception(ex)}")
 
 
 class AioGrpcDriver(BaseDriver):
@@ -235,7 +241,7 @@ class AioGrpcDriver(BaseDriver):
         super().__init__()
         self.server = None
         self.options = GRPC_DEFAULT_OPTIONS
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = get_logger(self)
         configurator = CommConfigurator()
         config = configurator.get_config()
         if config:
@@ -273,7 +279,6 @@ class AioGrpcDriver(BaseDriver):
         conn_ctx = _ConnCtx()
         aio_ctx.run_coro(self._start_server(connector, aio_ctx, conn_ctx))
         while not conn_ctx.conn and not conn_ctx.error:
-            self.logger.debug("SERVER: waiting for server to be started")
             time.sleep(0.1)
         if conn_ctx.error:
             raise CommError(code=CommError.ERROR, message=conn_ctx.error)
@@ -300,7 +305,6 @@ class AioGrpcDriver(BaseDriver):
             async with grpc_channel as channel:
                 self.logger.debug(f"CLIENT: connected to {address}")
                 stub = StreamerStub(channel)
-                self.logger.debug("CLIENT: got stub!")
                 conn_props = {DriverParams.PEER_ADDR.value: address}
 
                 if secure:
@@ -335,10 +339,7 @@ class AioGrpcDriver(BaseDriver):
             self.logger.debug("CLIENT: RPC cancelled")
         except Exception as ex:
             conn_ctx.error = f"connection {connection} error: {type(ex)}: {secure_format_exception(ex)}"
-            if self.closing:
-                self.logger.debug(conn_ctx.error)
-            else:
-                self.logger.debug(conn_ctx.error)
+            self.logger.debug(conn_ctx.error)
             self.logger.debug(secure_format_traceback())
 
         conn_ctx.waiter.set()
@@ -350,9 +351,9 @@ class AioGrpcDriver(BaseDriver):
         aio_ctx.run_coro(self._start_connect(connector, aio_ctx, conn_ctx))
         time.sleep(0.2)
         while not conn_ctx.conn and not conn_ctx.error:
-            self.logger.debug("CLIENT: waiting for connection")
             time.sleep(0.1)
 
+        self.logger.debug("CLIENT: connect completed")
         if conn_ctx.error:
             raise CommError(CommError.ERROR, conn_ctx.error)
 
