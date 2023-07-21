@@ -72,7 +72,7 @@ class FedJsonConfigurator(JsonConfigurator):
         #     return
 
         if re.search(r"^components\.#[0-9]+$", path):
-            c = self.build_component(element)
+            c = self.authorize_and_build_component(element, config_ctx, node)
             cid = element.get("id", None)
             if not cid:
                 raise ConfigError("missing component id")
@@ -98,7 +98,7 @@ class FedJsonConfigurator(JsonConfigurator):
             return
 
         if re.search(r"^task_result_filters.#[0-9]+\.filters\.#[0-9]+$", path):
-            f = self.build_component(element)
+            f = self.authorize_and_build_component(element, config_ctx, node)
             self.current_filter_chain.filters.append(f)
             return
 
@@ -114,7 +114,7 @@ class FedJsonConfigurator(JsonConfigurator):
             return
 
         if re.search(r"^task_data_filters.#[0-9]+\.filters\.#[0-9]+$", path):
-            f = self.build_component(element)
+            f = self.authorize_and_build_component(element, config_ctx, node)
             self.current_filter_chain.filters.append(f)
             return
 

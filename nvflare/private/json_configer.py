@@ -14,7 +14,7 @@
 
 from typing import List, Union
 
-from nvflare.fuel.common.excepts import ConfigError
+from nvflare.fuel.common.excepts import ComponentNotAuthorized, ConfigError
 from nvflare.fuel.utils.class_utils import ModuleScanner, get_class
 from nvflare.fuel.utils.component_builder import ComponentBuilder
 from nvflare.fuel.utils.config_factory import ConfigFactory
@@ -83,6 +83,21 @@ class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
 
         self.config_data = config_data
         self.json_scanner = JsonScanner(config_data, config_files)
+        self.build_auth_func = None
+        self.build_auth_kwargs = None
+
+    def set_component_build_authorizer(self, func, **kwargs):
+        if not callable(func):
+            raise ValueError("authorizer func is not callable")
+        self.build_auth_func = func
+        self.build_auth_kwargs = kwargs
+
+    def authorize_and_build_component(self, config_dict, config_ctx: ConfigContext, node: Node):
+        if self.build_auth_func is not None:
+            err = self.build_auth_func(config_dict, config_ctx, node, **self.build_auth_kwargs)
+            if err:
+                raise ComponentNotAuthorized(f"component not authorized: {err}")
+        return self.build_component(config_dict)
 
     def get_module_scanner(self):
         return self.module_scanner
@@ -108,10 +123,9 @@ class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
     def configure(self):
         try:
             self._do_configure()
-        except ConfigError as e:
-            raise ConfigError(secure_format_exception(e))
         except Exception as e:
-            raise RuntimeError(f"Error processing config {secure_format_exception(e)}")
+            print("Error processing config {}: {}".format(self.config_file_names, secure_format_exception(e)))
+            raise e
 
     def process_element(self, node: Node):
         self.process_config_element(self.config_ctx, node)

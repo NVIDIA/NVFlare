@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,13 +13,15 @@
 # limitations under the License.
 
 
-class ConfigError(Exception):
-    """Raised when configuration parsing error happens."""
+class ProcessExitCode:
 
-    pass
+    EXCEPTION = 101
+    UNSAFE_COMPONENT = 102
+    CONFIG_ERROR = 103
 
 
-class ComponentNotAuthorized(Exception):
-    """Raised when component building is not authorized"""
-
-    pass
+PROCESS_EXIT_REASON = {
+    ProcessExitCode.UNSAFE_COMPONENT: "unsafe component",
+    ProcessExitCode.CONFIG_ERROR: "config error",
+    ProcessExitCode.EXCEPTION: "exception",
+}
