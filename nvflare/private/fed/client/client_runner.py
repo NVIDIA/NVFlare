@@ -114,6 +114,9 @@ class ClientRunner(FLComponent):
         engine.register_aux_message_handler(topic=ReservedTopic.END_RUN, message_handle_func=self._handle_end_run)
         engine.register_aux_message_handler(topic=ReservedTopic.ABORT_ASK, message_handle_func=self._handle_abort_task)
 
+        engine.register_aux_message_handler(topic="client_controller_task",
+                                            message_handle_func=self._handle_client_controller_task)
+
     @staticmethod
     def _reply_and_audit(reply: Shareable, ref, msg, fl_ctx: FLContext) -> Shareable:
         audit_event_id = add_job_audit_event(fl_ctx=fl_ctx, ref=ref, msg=msg)
@@ -590,4 +593,53 @@ class ClientRunner(FLComponent):
         self.log_info(fl_ctx, "received aux request from Server to abort current task")
         task_names = request.get("task_names", None)
         self.abort_task(task_names)
+        return make_reply(ReturnCode.OK)
+
+    def _handle_client_controller_task(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
+        task_names = request.get("task_names", None)
+        executor = self.task_table.get(task_names)
+
+        # first apply privacy-defined filters
+        scope_object = fl_ctx.get_prop(FLContextKey.SCOPE_OBJECT)
+        filter_list = []
+        if scope_object:
+            assert isinstance(scope_object, Scope)
+            if scope_object.task_data_filters:
+                filter_list.extend(scope_object.task_data_filters)
+
+        task_filter_list = self.task_data_filters.get(task_names)
+        if task_filter_list:
+            filter_list.extend(task_filter_list)
+
+        if filter_list:
+            task_data = request
+            for f in filter_list:
+                filter_name = f.__class__.__name__
+                try:
+                    task_data = f.process(task_data, fl_ctx)
+                except Exception as e:
+                    self.log_exception(
+                        fl_ctx, f"Processing error from Task Data Filter {filter_name}: {secure_format_exception(e)}"
+                    )
+
+        reply = executor.execute(task_names, task_data, fl_ctx, self.task_abort_signal)
+
+        filter_list = []
+        if scope_object and scope_object.task_result_filters:
+            filter_list.extend(scope_object.task_result_filters)
+
+        task_filter_list = self.task_result_filters.get(task_names)
+        if task_filter_list:
+            filter_list.extend(task_filter_list)
+
+        if filter_list:
+            for f in filter_list:
+                filter_name = f.__class__.__name__
+                try:
+                    reply = f.process(reply, fl_ctx)
+                except Exception as e:
+                    self.log_exception(
+                        fl_ctx, f"Processing error in Task Result Filter {filter_name}: {secure_format_exception(e)}"
+                    )
+
         return make_reply(ReturnCode.OK)
