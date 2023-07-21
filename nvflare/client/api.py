@@ -12,9 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import inspect
 import copy
 import os
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, Callable
 
 from nvflare.app_common.model_exchange.file_pipe_model_exchanger import FilePipeModelExchanger
 from nvflare.fuel.utils import fobs
@@ -23,6 +24,7 @@ from nvflare.fuel.utils.import_utils import optional_import
 from .config import ClientConfig
 from .constants import ModelExchangeFormat
 from .model_cache import Cache
+from .utils import numerical_params_diff
 
 PROCESS_CACHE: Dict[int, Cache] = {}
 
@@ -31,14 +33,31 @@ PROCESS_CACHE: Dict[int, Cache] = {}
 #   - get_total_rounds()
 #   - get_job_id()
 
+def _check_param_diff_func(params_diff_func: Callable):
+    num_of_args = len(inspect.getfullargspec(params_diff_func).args)
+    if num_of_args != 2:
+        raise RuntimeError("params_diff_func need to have signature `params_diff_func(original model, new model)`")
 
-def init(config: str = "config/config_exchange.json"):
+
+def init(config: str = "config/config_exchange.json", params_diff_func: Callable = numerical_params_diff):
+    """Initializes NVFlare Client API environment.
+
+    Args:
+        config (str): configuration file.
+        params_diff_func (Callable): a function to calculate the params difference if the params_type is "DIFF"
+            default is "nvflare.client.utils.numerical_params_diff"
+
+    Note that params_diff_func signature:
+        params_diff_func(original model, new model) -> model difference
+    """
     pid = os.getpid()
     if pid in PROCESS_CACHE:
         raise RuntimeError("Can't call init twice.")
 
     if not os.path.exists(config):
         raise RuntimeError(f"Missing config file {config}.")
+
+    _check_param_diff_func(params_diff_func)
 
     client_config = ClientConfig(config_file=config)
     if client_config.get_exchange_format() == ModelExchangeFormat.PYTORCH:
@@ -49,7 +68,7 @@ def init(config: str = "config/config_exchange.json"):
             raise RuntimeError(f"Can't import TensorDecomposer for format: {ModelExchangeFormat.PYTORCH}")
 
     mdx = FilePipeModelExchanger(data_exchange_path=client_config.get_exchange_path())
-    PROCESS_CACHE[pid] = Cache(mdx, client_config)
+    PROCESS_CACHE[pid] = Cache(mdx, client_config, params_diff_func)
 
 
 def receive_model() -> Tuple[Any, Dict]:
@@ -67,12 +86,12 @@ def receive_model() -> Tuple[Any, Dict]:
     return model, meta
 
 
-def submit_metrics(metrics: Dict, meta: Optional[Dict] = None) -> None:
+def submit_metrics(metrics: Any, meta: Optional[Dict] = None) -> None:
     """Submits metrics.
 
     Args:
-        metrics (Dict): metrics to be submitted.
-        meta: the metadata to be sumbmitted along with the metrics.
+        metrics (Any): metrics to be submitted.
+        meta: the metadata to be submitted along with the metrics.
     """
     pid = os.getpid()
     if pid not in PROCESS_CACHE:
@@ -88,7 +107,7 @@ def submit_model(model: Any, meta: Optional[Dict] = None) -> None:
 
     Args:
         model: model to be submitted.
-        meta: the metadata to be sumbmitted along with the model.
+        meta: the metadata to be submitted along with the model.
     """
     pid = os.getpid()
     if pid not in PROCESS_CACHE:

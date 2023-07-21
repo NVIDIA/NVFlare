@@ -19,12 +19,16 @@ import torchvision
 import torchvision.transforms as transforms
 from net import Net
 
+# (1.0) import nvflare client API
 import nvflare.client as flare
 
+# (optional) set a fix place so we don't need to download everytime
 DATASET_PATH = "/tmp/nvflare/data"
+# (optional) use GPU to speed things up
 device = "cuda:0"
 
 transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+
 batch_size = 4
 
 trainset = torchvision.datasets.CIFAR10(root=DATASET_PATH, train=True, download=True, transform=transform)
@@ -36,23 +40,26 @@ testloader = torch.utils.data.DataLoader(testset, batch_size=batch_size, shuffle
 
 net = Net()
 
-# initializes NVFlare interface
+# (1.1) initializes NVFlare client API
 flare.init()
+# (1.2) gets model from NVFlare
 input_model, input_meta = flare.receive_model()
 
-# get model from NVFlare
+# (1.3) loads model from NVFlare
 net.load_state_dict(input_model)
 
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
 
 
+# (optional) use GPU to speed things up
 net.to(device)
 for epoch in range(2):  # loop over the dataset multiple times
 
     running_loss = 0.0
     for i, data in enumerate(trainloader, 0):
         # get the inputs; data is a list of [inputs, labels]
+        # (optional) use GPU to speed things up
         inputs, labels = data[0].to(device), data[1].to(device)
 
         # zero the parameter gradients
@@ -69,6 +76,7 @@ for epoch in range(2):  # loop over the dataset multiple times
         if i % 2000 == 1999:  # print every 2000 mini-batches
             print(f"[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}")
             running_loss = 0.0
+            break
 
 print("Finished Training")
 
@@ -77,26 +85,37 @@ PATH = "./cifar_net.pth"
 torch.save(net.state_dict(), PATH)
 
 
-net = Net()
-net.load_state_dict(input_model)
-net.to(device)
+# (2.0) wraps evaluation logic into a method to re-use for
+#       evaluation on both trained and received model
+def evaluate(input_weights):
+    net = Net()
+    net.load_state_dict(input_weights)
+    # (optional) use GPU to speed things up
+    net.to(device)
+
+    correct = 0
+    total = 0
+    # since we're not training, we don't need to calculate the gradients for our outputs
+    with torch.no_grad():
+        for data in testloader:
+            # (optional) use GPU to speed things up
+            images, labels = data[0].to(device), data[1].to(device)
+            # calculate outputs by running images through the network
+            outputs = net(images)
+            # the class with the highest energy is what we choose as prediction
+            _, predicted = torch.max(outputs.data, 1)
+            total += labels.size(0)
+            correct += (predicted == labels).sum().item()
+
+    print(f"Accuracy of the network on the 10000 test images: {100 * correct // total} %")
+    return 100 * correct // total
 
 
-correct = 0
-total = 0
-# since we're not training, we don't need to calculate the gradients for our outputs
-with torch.no_grad():
-    for data in testloader:
-        images, labels = data[0].to(device), data[1].to(device)
-        # calculate outputs by running images through the network
-        outputs = net(images)
-        # the class with the highest energy is what we choose as prediction
-        _, predicted = torch.max(outputs.data, 1)
-        total += labels.size(0)
-        correct += (predicted == labels).sum().item()
-
-print(f"Accuracy of the network on the 10000 test images: {100 * correct // total} %")
-
-net.load_state_dict(torch.load(PATH))
-flare.submit_metrics({"accuracy": 100 * correct // total})
+# (2.1) evaluation on local trained model
+local_accuracy = evaluate(torch.load(PATH))
+# (2.2) evaluate on receive model
+accuracy = evaluate(input_model)
+# (2.3) submits evaluation metrics
+flare.submit_metrics(accuracy)
+# (1.4) submits trained model back to NVFlare
 flare.submit_model(net.cpu().state_dict())

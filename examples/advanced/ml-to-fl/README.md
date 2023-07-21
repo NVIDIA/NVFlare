@@ -21,4 +21,6 @@ transition from your ML code to FL with NVFlare.
 
 ## Examples
 
-- [client_api](./jobs/client_api/) Use `SubprocessLauncher`, `PTFilePipeLauncherExecutor` and NVFlare Client API to do federated learning with CIFAR10 dataset and PyTorch framework
+- [client_api1](./jobs/client_api1/): Re-write CIFAR10 PyTorch example to federated learning example using NVFlare client API
+- [client_api2](./jobs/client_api2/): Re-write CIFAR10 PyTorch example to federated learning example using NVFlare client API with model selection
+
