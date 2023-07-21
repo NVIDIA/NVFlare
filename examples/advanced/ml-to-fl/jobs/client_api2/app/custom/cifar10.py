@@ -24,9 +24,9 @@ import nvflare.client as flare
 
 # (optional) set a fix place so we don't need to download everytime
 DATASET_PATH = "/tmp/nvflare/data"
-# (optional) use GPU to speed things up
-# device = "cuda:0" # if you want to use GPU, uncomment this line
-device = "cpu" # if you want to use GPU, comment this line
+# (optional) We change to use GPU to speed things up.
+# if you want to use CPU, change device=“cpu”
+device = "cuda:0"
 
 transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 
