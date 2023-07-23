@@ -67,6 +67,7 @@ class ClientAppRunner(Runner):
         fl_ctx.set_prop(FLContextKey.WORKSPACE_OBJECT, workspace, private=True)
         fl_ctx.set_prop(FLContextKey.SECURE_MODE, secure_train, private=True, sticky=True)
         fl_ctx.set_prop(FLContextKey.CURRENT_RUN, args.job_id, private=False, sticky=True)
+        fl_ctx.set_prop(FLContextKey.CURRENT_JOB_ID, args.job_id, private=False, sticky=True)
 
     def create_client_runner(self, app_root, args, config_folder, federated_client, secure_train, event_handlers=None):
         workspace = Workspace(args.workspace, args.client_name, config_folder)
