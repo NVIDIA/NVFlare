@@ -221,10 +221,20 @@ def fobs_initialize():
 
 
 def authorize_build_component(config_dict, config_ctx, node, fl_ctx: FLContext, event_handlers) -> str:
+    workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
+    if not workspace:
+        raise RuntimeError("missing workspace object in fl_ctx")
+    job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)
+    if not job_id:
+        raise RuntimeError("missing job id in fl_ctx")
+    meta = get_job_meta_from_workspace(workspace, job_id)
+    fl_ctx.set_prop(FLContextKey.JOB_META, meta, sticky=False, private=True)
     fl_ctx.set_prop(FLContextKey.COMPONENT_CONFIG, config_dict, sticky=False, private=True)
     fl_ctx.set_prop(FLContextKey.CONFIG_CTX, config_ctx, sticky=False, private=True)
     fl_ctx.set_prop(FLContextKey.COMPONENT_NODE, node, sticky=False, private=True)
+
     fire_event(EventType.BEFORE_BUILD_COMPONENT, event_handlers, fl_ctx)
+
     err = fl_ctx.get_prop(FLContextKey.COMPONENT_BUILD_ERROR)
     if err:
         return err
@@ -236,4 +246,5 @@ def authorize_build_component(config_dict, config_ctx, node, fl_ctx: FLContext, 
                 err = str(ex)
                 if not err:
                     err = f"Unsafe component detected by {handler_name}"
+                return err
     return ""
