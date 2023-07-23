@@ -156,6 +156,7 @@ class ReservedTopic(object):
     END_RUN = "__end_run__"
     ABORT_ASK = "__abort_task__"
     AUX_COMMAND = "__aux_command__"
+    CLIENT_CONTROLLER_TASK = "__client_controller_task__"
 
 
 class AdminCommandNames(object):

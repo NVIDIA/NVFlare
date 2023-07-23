@@ -47,6 +47,8 @@ class ClientScatterAndGather(FLComponent):
                 fl_ctx,
             )
 
+        self.controller.start_controller(fl_ctx)
+
     def broadcast_tasks(
         self,
         task_name: str,

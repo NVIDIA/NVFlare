@@ -114,7 +114,7 @@ class ClientRunner(FLComponent):
         engine.register_aux_message_handler(topic=ReservedTopic.END_RUN, message_handle_func=self._handle_end_run)
         engine.register_aux_message_handler(topic=ReservedTopic.ABORT_ASK, message_handle_func=self._handle_abort_task)
 
-        engine.register_aux_message_handler(topic="client_controller_task",
+        engine.register_aux_message_handler(topic=ReservedTopic.CLIENT_CONTROLLER_TASK,
                                             message_handle_func=self._handle_client_controller_task)
 
     @staticmethod
@@ -596,7 +596,7 @@ class ClientRunner(FLComponent):
         return make_reply(ReturnCode.OK)
 
     def _handle_client_controller_task(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
-        task_names = request.get("task_names", None)
+        task_names = request.get_header(ReservedKey.TASK_NAME, None)
         executor = self.task_table.get(task_names)
 
         # first apply privacy-defined filters

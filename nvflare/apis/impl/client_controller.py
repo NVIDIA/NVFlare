@@ -17,8 +17,9 @@ from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ControllerSpec, Task, SendOrder, ClientTask, TaskCompletionStatus
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_constant import FLContextKey, ReservedTopic, ReservedKey
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.private.privacy_manager import Scope
 from nvflare.security.logging import secure_format_exception
@@ -26,12 +27,12 @@ from nvflare.security.logging import secure_format_exception
 
 class ClientController(FLComponent, ControllerSpec):
     def __init__(self,
-                 task_data_filters: dict,  # task_name => list of filters
-                 task_result_filters: dict,  # task_name => list of filters
+                 # task_data_filters: dict,  # task_name => list of filters
+                 # task_result_filters: dict,  # task_name => list of filters
                  ) -> None:
         super().__init__()
-        self.task_data_filters = task_data_filters
-        self.task_result_filters = task_result_filters
+        self.task_data_filters = None
+        self.task_result_filters = None
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
@@ -40,9 +41,15 @@ class ClientController(FLComponent, ControllerSpec):
             self.stop_controller(fl_ctx)
 
     def start_controller(self, fl_ctx: FLContext):
-        pass
+        client_runner = fl_ctx.get_prop(FLContextKey.RUNNER)
+        self.task_data_filters = client_runner.task_data_filters
+        self.task_result_filters = client_runner.task_result_filters
 
     def stop_controller(self, fl_ctx: FLContext):
+        pass
+
+    def process_result_of_unknown_task(self, client: Client, task_name: str, client_task_id: str, result: Shareable,
+                                       fl_ctx: FLContext):
         pass
 
     def broadcast(self, task: Task, fl_ctx: FLContext, targets: Union[List[Client], List[str], None] = None,
@@ -85,8 +92,9 @@ class ClientController(FLComponent, ControllerSpec):
         for client in targets:
             self._call_tasK_cb(task.before_task_sent_cb, client, task, fl_ctx)
 
+        request.set_header(ReservedKey.TASK_NAME, task.name)
         reply = engine.send_aux_request(
-            targets=targets, topic="client_controller_task", request=request, timeout=task.timeout, fl_ctx=fl_ctx
+            targets=targets, topic=ReservedTopic.CLIENT_CONTROLLER_TASK, request=request, timeout=task.timeout, fl_ctx=fl_ctx
         )
 
         for client in targets:
