@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from .nvf_test_driver import NVFTestDriver, NVFTestError
+from .nvf_test_driver_flare_api import NVFFLAREAPITestDriver
 from .oa_laucher import OALauncher
 from .poc_site_launcher import POCSiteLauncher
 from .provision_site_launcher import ProvisionSiteLauncher

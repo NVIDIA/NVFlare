@@ -23,9 +23,7 @@ tests:
     validators:
       - path: tests.integration_test.src.validators.PTModelValidator
     setup:
-      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/cifar10_data', download=True)"
-    teardown:
-      - rm -rf /tmp/nvflare/cifar10_data
+      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/cifar10_data', download=False)"
   - test_name: "run pt_use_name"
     event_sequence:
       - "trigger":
@@ -44,9 +42,7 @@ tests:
     validators:
       - path: tests.integration_test.src.validators.PTModelValidator
     setup:
-      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/cifar10_data', download=True)"
-    teardown:
-      - rm -rf /tmp/nvflare/cifar10_data
+      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/cifar10_data', download=False)"
   - test_name: "run pt_init_client"
     event_sequence:
       - "trigger":
@@ -65,9 +61,7 @@ tests:
     validators:
       - path: tests.integration_test.src.validators.PTModelValidator
     setup:
-      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/cifar10_data', download=True)"
-    teardown:
-      - rm -rf /tmp/nvflare/cifar10_data
+      - python -c "from torchvision.datasets import CIFAR10; CIFAR10(root='/tmp/nvflare/cifar10_data', download=False)"
   - test_name: "run tb_streaming"
     event_sequence:
       - "trigger":
