@@ -50,12 +50,15 @@ class ModelLearnerExecutor(Executor):
         self.learner_id = learner_id
         self.learner = None
         self.learner_name = ""
-        self.train_task = train_task
-        self.submit_model_task = submit_model_task
-        self.validate_task = validate_task
-        self.configure_task = configure_task
         self.is_initialized = False
         self.learner_exe_lock = threading.Lock()  # used ensure only one execution at a time
+
+        self.task_funcs = {
+            train_task: self.train,
+            submit_model_task: self.submit_model,
+            validate_task: self.validate,
+            configure_task: self.configure,
+        }
 
     def _abort(self, fl_ctx: FLContext):
         self.learner.fl_ctx = fl_ctx
@@ -111,14 +114,9 @@ class ModelLearnerExecutor(Executor):
             self.is_initialized = True
             self.initialize(fl_ctx)
 
-        if task_name == self.train_task:
-            return self.train(shareable, fl_ctx)
-        elif task_name == self.submit_model_task:
-            return self.submit_model(shareable, fl_ctx)
-        elif task_name == self.validate_task:
-            return self.validate(shareable, fl_ctx)
-        elif task_name == self.configure_task:
-            return self.configure(shareable, fl_ctx)
+        task_func = self.task_funcs.get(task_name)
+        if task_func is not None:
+            return task_func(shareable, fl_ctx)
         else:
             self.log_error(fl_ctx, f"Unknown task: {task_name}")
             return make_reply(ReturnCode.TASK_UNKNOWN)
