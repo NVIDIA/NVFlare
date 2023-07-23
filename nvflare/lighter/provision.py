@@ -155,7 +155,7 @@ def add_extra_clients(add_client_file_path, participants):
         extra = load_yaml(add_client_file_path)
         extra.update({"type": "client"})
         participants.append(Participant(**extra))
-    except BaseException as e:
+    except Exception as e:
         print("** Error during adding client **")
         print("The yaml file format is")
         print(adding_client_error_msg)
@@ -167,7 +167,7 @@ def add_extra_users(add_user_file_path, participants):
         extra = load_yaml(add_user_file_path)
         extra.update({"type": "admin"})
         participants.append(Participant(**extra))
-    except BaseException:
+    except Exception:
         print("** Error during adding user **")
         print("The yaml file format is")
         print(adding_user_error_msg)

@@ -39,7 +39,7 @@ from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
 from nvflare.fuel.utils.pipe.pipe import Message, Pipe
-from nvflare.fuel.utils.pipe.pipe_monitor import PipeMonitor, Topic
+from nvflare.fuel.utils.pipe.pipe_handler import PipeHandler, Topic
 from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_number, check_str
 
 
@@ -257,7 +257,7 @@ class HubController(Controller):
         self.task_wait_time = task_wait_time
         self.task_data_poll_interval = task_data_poll_interval
         self.pipe = None
-        self.pipe_monitor = None
+        self.pipe_handler = None
         self.run_ended = False
         self.task_abort_signal = None
         self.current_task_name = None
@@ -285,13 +285,13 @@ class HubController(Controller):
             job_id = fl_ctx.get_job_id()
             pipe = engine.get_component(self.pipe_id)
             check_object_type("pipe", pipe, Pipe)
-            pipe.open(name=job_id, me="y")
-            self.pipe_monitor = PipeMonitor(pipe)
+            pipe.open(name=job_id)
+            self.pipe_handler = PipeHandler(pipe)
         elif event_type == EventType.END_RUN:
             self.run_ended = True
 
     def _abort(self, reason: str, abort_signal: Signal, fl_ctx):
-        self.pipe_monitor.notify_abort(reason)
+        self.pipe_handler.notify_abort(reason)
         if reason:
             self.log_error(fl_ctx, reason)
         if abort_signal:
@@ -317,9 +317,9 @@ class HubController(Controller):
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):
         try:
-            self.pipe_monitor.start()
+            self.pipe_handler.start()
             self._control_flow(abort_signal, fl_ctx)
-            self.pipe_monitor.stop()
+            self.pipe_handler.stop()
         except Exception as ex:
             self.log_exception(fl_ctx, "control flow exception")
             self._abort(f"control_flow exception {ex}", abort_signal, fl_ctx)
@@ -339,7 +339,7 @@ class HubController(Controller):
                 self._abort(reason="", abort_signal=abort_signal, fl_ctx=fl_ctx)
                 return
 
-            msg = self.pipe_monitor.get_next()
+            msg = self.pipe_handler.get_next()
             if not msg:
                 if self.task_wait_time and time.time() - task_start > self.task_wait_time:
                     # timed out - tell T1 to end the RUN
@@ -442,7 +442,7 @@ class HubController(Controller):
                     result = make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
                 reply = Message.new_reply(topic=msg.topic, data=result, req_msg_id=msg.msg_id)
-                self.pipe_monitor.send_to_peer(reply)
+                self.pipe_handler.send_to_peer(reply)
                 task_start = time.time()
 
             time.sleep(self.task_data_poll_interval)

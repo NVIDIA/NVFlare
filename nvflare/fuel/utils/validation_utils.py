@@ -34,6 +34,13 @@ def check_positive_number(name, value):
         raise ValueError(f"{name} must > 0, but got {value}")
 
 
+def check_non_negative_number(name, value):
+    if not isinstance(value, (int, float)):
+        raise TypeError(f"{name} must be a number, but got {type(value)}.")
+    if value < 0:
+        raise ValueError(f"{name} must >= 0, but got {value}")
+
+
 def check_str(name, value):
     check_object_type(name, value, str)
 

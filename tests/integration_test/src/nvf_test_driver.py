@@ -366,7 +366,9 @@ class NVFTestDriver:
                     elif result["type"] == "admin_api_response":
                         if self.admin_api_response is None:
                             raise NVFTestError("Missing admin_api_response.")
-                        assert self.admin_api_response == result["data"]
+                        assert (
+                            self.admin_api_response == result["data"]
+                        ), f"Failed: admin_api_response: {self.admin_api_response} does not equal to result {result['data']}"
                         event_idx += 1
                     elif result["type"] == "job_submit_success":
                         if self.job_id is None or self.last_job_name is None:

@@ -1,0 +1,3 @@
+nvflare[PT]>=2.3.0
+tensorboard
+wandb

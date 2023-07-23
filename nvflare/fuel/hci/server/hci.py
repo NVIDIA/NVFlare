@@ -90,7 +90,7 @@ class _MsgHandler(socketserver.BaseRequestHandler):
 
             if not conn.ended:
                 conn.close()
-        except BaseException:
+        except Exception:
             secure_log_traceback()
 
 

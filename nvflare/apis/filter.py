@@ -19,7 +19,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 
 
-class ContentBlockedException(BaseException):
+class ContentBlockedException(Exception):
     """
     A filter should raise this exception when the content is to be blocked
     """

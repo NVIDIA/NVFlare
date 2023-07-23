@@ -14,6 +14,7 @@
 
 """The FedAdmin to communicate with the Admin server."""
 
+# from nvflare.fuel.f3.cellnet.new_cell import NewCell as Cell
 from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.cell import Message as CellMessage
 from nvflare.fuel.hci.server.constants import ConnProps
@@ -150,7 +151,7 @@ class FedAdminAgent(object):
                     else:
                         if not isinstance(reply, Message):
                             raise RuntimeError(f"processor for topic {topic} failed to produce valid reply")
-            except BaseException as e:
+            except Exception as e:
                 secure_log_traceback()
                 reply = error_reply(f"exception_occurred: {secure_format_exception(e)}")
         else:

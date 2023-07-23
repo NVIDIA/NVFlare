@@ -212,7 +212,7 @@ class FedXGBHistogramExecutor(FedXGBHistogramExecutorSpec, Executor, ABC):
                 run_dir = workspace.get_run_dir(run_number)
                 bst.save_model(os.path.join(run_dir, "test.model.json"))
                 xgb.collective.communicator_print("Finished training\n")
-        except BaseException as e:
+        except Exception as e:
             secure_log_traceback()
             self.log_error(fl_ctx, f"Exception happens when running xgb train: {secure_format_exception(e)}")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)

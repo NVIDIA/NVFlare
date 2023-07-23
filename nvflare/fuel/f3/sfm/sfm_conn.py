@@ -21,7 +21,6 @@ import msgpack
 
 from nvflare.fuel.f3.connection import BytesAlike, Connection
 from nvflare.fuel.f3.endpoint import Endpoint
-from nvflare.fuel.f3.message import Headers
 from nvflare.fuel.f3.sfm.constants import HandshakeKeys, Types
 from nvflare.fuel.f3.sfm.prefix import PREFIX_LEN, Prefix
 
@@ -88,7 +87,7 @@ class SfmConnection:
 
         self.send_dict(frame_type, 1, data)
 
-    def send_data(self, app_id: int, stream_id: int, headers: Headers, payload: BytesAlike):
+    def send_data(self, app_id: int, stream_id: int, headers: Optional[dict], payload: BytesAlike):
         """Send user data"""
 
         prefix = Prefix(0, 0, Types.DATA, 0, 0, app_id, stream_id, 0)
@@ -102,7 +101,7 @@ class SfmConnection:
         payload = msgpack.packb(data)
         self.send_frame(prefix, None, payload)
 
-    def send_frame(self, prefix: Prefix, headers: Optional[Headers], payload: Optional[BytesAlike]):
+    def send_frame(self, prefix: Prefix, headers: Optional[dict], payload: Optional[BytesAlike]):
 
         headers_bytes = self.headers_to_bytes(headers)
         header_len = len(headers_bytes) if headers_bytes else 0

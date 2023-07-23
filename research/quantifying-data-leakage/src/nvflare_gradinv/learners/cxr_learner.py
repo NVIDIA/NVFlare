@@ -213,7 +213,7 @@ class CXRLearner(Learner):
                 data_list_key=self.test_set,
                 base_dir=self.data_root,
             )
-        except BaseException as e:
+        except Exception as e:
             test_list = []
             self.log_warning(fl_ctx, f"Could not create test_list: {e}")
         self.log_info(
@@ -397,7 +397,7 @@ class CXRLearner(Learner):
                     # update the local dict
                     local_var_dict[var_name] = torch.as_tensor(global_weights[var_name])
                     n_loaded += 1
-                except BaseException as e:
+                except Exception as e:
                     raise ValueError(f"Convert weight from {var_name} failed") from e
         if n_loaded == 0:
             raise ValueError(f"No weights loaded for training! Received weight dict is {global_weights}")
@@ -489,7 +489,7 @@ class CXRLearner(Learner):
             try:
                 # load model to cpu as server might or might not have a GPU
                 model_data = torch.load(self.best_local_model_file, map_location="cpu")
-            except BaseException as e:
+            except Exception as e:
                 raise ValueError("Unable to load best model") from e
 
             # Create DXO and shareable from model data.
@@ -570,7 +570,7 @@ class CXRLearner(Learner):
                     # update the local dict
                     local_var_dict[var_name] = torch.as_tensor(torch.reshape(weights, local_var_dict[var_name].shape))
                     n_loaded += 1
-                except BaseException as e:
+                except Exception as e:
                     raise ValueError(f"Convert weight from {var_name} failed for {validate_type}") from e
         self.model.load_state_dict(local_var_dict)
         if n_loaded == 0:

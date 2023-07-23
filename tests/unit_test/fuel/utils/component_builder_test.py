@@ -77,9 +77,9 @@ class TestComponentBuilder:
 
         # the failure message changes since 3.10
         if is_python_greater_than_309():
-            msg = "Class nvflare.app_common.np.np_model_locator.NPModelLocator has parameters error: NPModelLocator.__init__() got an unexpected keyword argument 'xyz'."
+            msg = "Class nvflare.app_common.np.np_model_locator.NPModelLocator has parameters error: TypeError: NPModelLocator.__init__() got an unexpected keyword argument 'xyz'."
         else:
-            msg = "Class nvflare.app_common.np.np_model_locator.NPModelLocator has parameters error: __init__() got an unexpected keyword argument 'xyz'."
+            msg = "Class nvflare.app_common.np.np_model_locator.NPModelLocator has parameters error: TypeError: __init__() got an unexpected keyword argument 'xyz'."
 
         assert isinstance(config, dict)
         b = None
@@ -135,9 +135,9 @@ class TestComponentBuilder:
 
         # the failure message changes since 3.10
         if is_python_greater_than_309():
-            msg = "failed to instantiate class: Class nvflare.app_common.np.np_model_locator.NPModelLocator has parameters error: NPModelLocator.__init__() got an unexpected keyword argument 'abc'."
+            msg = "failed to instantiate class: ValueError: Class nvflare.app_common.np.np_model_locator.NPModelLocator has parameters error: TypeError: NPModelLocator.__init__() got an unexpected keyword argument 'abc'."
         else:
-            msg = "failed to instantiate class: Class nvflare.app_common.np.np_model_locator.NPModelLocator has parameters error: __init__() got an unexpected keyword argument 'abc'."
+            msg = "failed to instantiate class: ValueError: Class nvflare.app_common.np.np_model_locator.NPModelLocator has parameters error: TypeError: __init__() got an unexpected keyword argument 'abc'."
 
         builder = MockComponentBuilder()
         assert isinstance(config, dict)

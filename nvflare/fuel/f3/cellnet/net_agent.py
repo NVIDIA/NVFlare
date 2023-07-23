@@ -27,7 +27,7 @@ from nvflare.fuel.f3.cellnet.cell import Cell, Message
 from nvflare.fuel.f3.cellnet.connector_manager import ConnectorData
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
-from nvflare.fuel.f3.cellnet.utils import make_reply, new_message
+from nvflare.fuel.f3.cellnet.utils import make_reply
 from nvflare.fuel.f3.stats_pool import StatsPoolManager
 from nvflare.fuel.utils.config_service import ConfigService
 
@@ -277,7 +277,7 @@ class NetAgent:
                 cells_to_stop.append(member_fqcn)
         if cells_to_stop:
             return self.cell.broadcast_request(
-                channel=_CHANNEL, topic=_TOPIC_STOP_CELL, request=new_message(), targets=cells_to_stop, timeout=1.0
+                channel=_CHANNEL, topic=_TOPIC_STOP_CELL, request=Message(), targets=cells_to_stop, timeout=1.0
             )
         else:
             return None
@@ -310,7 +310,7 @@ class NetAgent:
                         channel=_CHANNEL,
                         topic=_TOPIC_HEARTBEAT,
                         targets=target,
-                        message=new_message(payload={"subnet_id": subnet_id}),
+                        message=Message(payload={"subnet_id": subnet_id}),
                     )
 
             # wait for interval time, but watch for "asked_to_stop" every 0.1 secs
@@ -363,10 +363,10 @@ class NetAgent:
 
     def _do_stop_cell(self, request: Message) -> Union[None, Message]:
         self.stop()
-        return new_message()
+        return Message()
 
     def _do_route(self, request: Message) -> Union[None, Message]:
-        return new_message(payload=dict(request.headers))
+        return Message(payload=dict(request.headers))
 
     def _do_start_route(self, request: Message) -> Union[None, Message]:
         target_fqcn = request.payload
@@ -375,14 +375,14 @@ class NetAgent:
             return make_reply(ReturnCode.PROCESS_EXCEPTION, f"bad target fqcn {err}")
         assert isinstance(target_fqcn, str)
         reply_headers, req_headers = self.get_route_info(target_fqcn)
-        return new_message(payload={"request": dict(req_headers), "reply": dict(reply_headers)})
+        return Message(payload={"request": dict(req_headers), "reply": dict(reply_headers)})
 
     def _do_peers(self, request: Message) -> Union[None, Message]:
-        return new_message(payload=list(self.cell.agents.keys()))
+        return Message(payload=list(self.cell.agents.keys()))
 
     def get_peers(self, target_fqcn: str) -> (Union[None, dict], List[str]):
         reply = self.cell.send_request(
-            channel=_CHANNEL, topic=_TOPIC_PEERS, target=target_fqcn, timeout=1.0, request=new_message()
+            channel=_CHANNEL, topic=_TOPIC_PEERS, target=target_fqcn, timeout=1.0, request=Message()
         )
 
         err = ""
@@ -425,11 +425,11 @@ class NetAgent:
         return result
 
     def _do_connectors(self, request: Message) -> Union[None, Message]:
-        return new_message(payload=self._get_connectors())
+        return Message(payload=self._get_connectors())
 
     def get_connectors(self, target_fqcn: str) -> (dict, dict):
         reply = self.cell.send_request(
-            channel=_CHANNEL, topic=_TOPIC_CONNS, target=target_fqcn, timeout=1.0, request=new_message()
+            channel=_CHANNEL, topic=_TOPIC_CONNS, target=target_fqcn, timeout=1.0, request=Message()
         )
         rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
         if rc == ReturnCode.OK:
@@ -481,7 +481,7 @@ class NetAgent:
 
     def get_url_use(self, url) -> dict:
         result = {self.cell.get_fqcn(): self._get_url_use_of_cell(url)}
-        replies = self._broadcast_to_subs(topic=_TOPIC_URL_USE, message=new_message(payload=url))
+        replies = self._broadcast_to_subs(topic=_TOPIC_URL_USE, message=Message(payload=url))
         for t, r in replies.items():
             assert isinstance(r, Message)
             rc = r.get_header(MessageHeaderKey.RETURN_CODE)
@@ -496,11 +496,11 @@ class NetAgent:
 
     def _do_url_use(self, request: Message) -> Union[None, Message]:
         results = self.get_url_use(request.payload)
-        return new_message(payload=results)
+        return Message(payload=results)
 
     def get_route_info(self, target_fqcn: str) -> (dict, dict):
         reply = self.cell.send_request(
-            channel=_CHANNEL, topic=_TOPIC_ROUTE, target=target_fqcn, timeout=1.0, request=new_message()
+            channel=_CHANNEL, topic=_TOPIC_ROUTE, target=target_fqcn, timeout=1.0, request=Message()
         )
         reply_headers = reply.headers
         rc = reply.get_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
@@ -520,7 +520,7 @@ class NetAgent:
             topic=_TOPIC_START_ROUTE,
             target=from_fqcn,
             timeout=1.0,
-            request=new_message(payload=target_fqcn),
+            request=Message(payload=target_fqcn),
         )
         rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
         if rc == ReturnCode.OK:
@@ -537,7 +537,7 @@ class NetAgent:
 
     def _do_report_cells(self, request: Message) -> Union[None, Message]:
         _, results = self.request_cells_info()
-        return new_message(payload=results)
+        return Message(payload=results)
 
     def stop(self):
         # ask all children to stop
@@ -549,7 +549,7 @@ class NetAgent:
         #     self.stop()
         #     return ReturnCode.OK
         reply = self.cell.send_request(
-            channel=_CHANNEL, topic=_TOPIC_STOP_CELL, request=new_message(), target=target, timeout=1.0
+            channel=_CHANNEL, topic=_TOPIC_STOP_CELL, request=Message(), target=target, timeout=1.0
         )
         rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
         return rc
@@ -573,7 +573,7 @@ class NetAgent:
                 channel=_CHANNEL,
                 topic=_TOPIC_ECHO,
                 target=target_fqcn,
-                request=new_message(payload=payload),
+                request=Message(payload=payload),
                 timeout=10.0,
             )
             rc = r.get_header(MessageHeaderKey.RETURN_CODE, ReturnCode.OK)
@@ -600,7 +600,7 @@ class NetAgent:
         end = time.perf_counter()
         total = end - start
         avg = total / num
-        return new_message(
+        return Message(
             payload={
                 "test": f"{size:,}KB {num} rounds between {self.cell.get_fqcn()} and {target_fqcn}",
                 "prep": payload_prep_time,
@@ -633,7 +633,7 @@ class NetAgent:
         return self._request_speed_test(to_fqcn, num, size)
 
     def _do_echo(self, request: Message) -> Union[None, Message]:
-        return new_message(payload=request.payload)
+        return Message(payload=request.payload)
 
     def _do_stress_test(self, params):
         if not isinstance(params, dict):
@@ -660,7 +660,7 @@ class NetAgent:
             h = hashlib.md5(payload)
             d1 = h.digest()
             target = targets[random.randrange(len(targets))]
-            req = new_message(payload=payload)
+            req = Message(payload=payload)
             reply = self.cell.send_request(channel=_CHANNEL, topic=_TOPIC_ECHO, target=target, request=req, timeout=1.0)
             if target not in counts:
                 counts[target] = 0
@@ -685,7 +685,7 @@ class NetAgent:
     def _do_stress(self, request: Message) -> Union[None, Message]:
         params = request.payload
         result = self._do_stress_test(params)
-        return new_message(payload=result)
+        return Message(payload=result)
 
     def start_stress_test(self, targets: list, num_rounds=10, timeout=5.0):
         self.cell.logger.info(f"{self.cell.get_fqcn()}: starting stress test on {targets}")
@@ -702,7 +702,7 @@ class NetAgent:
             channel=_CHANNEL,
             topic=_TOPIC_STRESS,
             targets=msg_targets,
-            request=new_message(payload=payload),
+            request=Message(payload=payload),
             timeout=timeout,
         )
         for t, r in replies.items():
@@ -728,7 +728,7 @@ class NetAgent:
         reply = self.cell.send_request(
             channel=_CHANNEL,
             topic=_TOPIC_SPEED,
-            request=new_message(payload={"to": to_fqcn, "num": num_tries, "size": payload_size}),
+            request=Message(payload={"to": to_fqcn, "num": num_tries, "size": payload_size}),
             target=from_fqcn,
             timeout=100.0,
         )
@@ -744,7 +744,7 @@ class NetAgent:
         return result
 
     def change_root(self, new_root_url: str):
-        self._broadcast_to_subs(topic=_TOPIC_CHANGE_ROOT, message=new_message(payload=new_root_url), timeout=0.0)
+        self._broadcast_to_subs(topic=_TOPIC_CHANGE_ROOT, message=Message(payload=new_root_url), timeout=0.0)
 
     def _do_change_root(self, request: Message) -> Union[None, Message]:
         new_root_url = request.payload
@@ -768,7 +768,7 @@ class NetAgent:
             channel=_CHANNEL,
             topic=_TOPIC_BULK_TEST,
             targets=msg_targets,
-            request=new_message(payload=size),
+            request=Message(payload=size),
             timeout=1.0,
         )
         for t, r in replies.items():
@@ -786,14 +786,14 @@ class NetAgent:
         for _ in range(size):
             num = random.randint(0, 100)
             nums.append(num)
-            msg = new_message(payload=num)
+            msg = Message(payload=num)
             self.cell.queue_message(
                 channel=_CHANNEL,
                 topic=_TOPIC_BULK_ITEM,
                 targets=FQCN.ROOT_SERVER,
                 message=msg,
             )
-        return new_message(payload=f"queued: {nums}")
+        return Message(payload=f"queued: {nums}")
 
     def _do_bulk_item(self, request: Message) -> Union[None, Message]:
         num = request.payload
@@ -805,7 +805,7 @@ class NetAgent:
         reply = self.cell.send_request(
             channel=_CHANNEL,
             topic=_TOPIC_MSG_STATS,
-            request=new_message(payload={"mode": mode}),
+            request=Message(payload={"mode": mode}),
             timeout=1.0,
             target=target,
         )
@@ -820,11 +820,11 @@ class NetAgent:
         mode = p.get("mode")
         headers, rows = self.cell.msg_stats_pool.get_table(mode)
         reply = {"headers": headers, "rows": rows}
-        return new_message(payload=reply)
+        return Message(payload=reply)
 
     def get_pool_list(self, target: str):
         reply = self.cell.send_request(
-            channel=_CHANNEL, topic=_TOPIC_LIST_POOLS, request=new_message(), timeout=1.0, target=target
+            channel=_CHANNEL, topic=_TOPIC_LIST_POOLS, request=Message(), timeout=1.0, target=target
         )
         rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
         err = reply.get_header(MessageHeaderKey.ERROR, "")
@@ -835,13 +835,13 @@ class NetAgent:
     def _do_list_pools(self, request: Message) -> Union[None, Message]:
         headers, rows = StatsPoolManager.get_table()
         reply = {"headers": headers, "rows": rows}
-        return new_message(payload=reply)
+        return Message(payload=reply)
 
     def show_pool(self, target: str, pool_name: str, mode: str):
         reply = self.cell.send_request(
             channel=_CHANNEL,
             topic=_TOPIC_SHOW_POOL,
-            request=new_message(payload={"mode": mode, "pool": pool_name}),
+            request=Message(payload={"mode": mode, "pool": pool_name}),
             timeout=1.0,
             target=target,
         )
@@ -858,7 +858,7 @@ class NetAgent:
         mode = p.get("mode", "")
         pool = StatsPoolManager.get_pool(pool_name)
         if not pool:
-            return new_message(
+            return Message(
                 headers={
                     MessageHeaderKey.RETURN_CODE: ReturnCode.INVALID_REQUEST,
                     MessageHeaderKey.ERROR: f"unknown pool '{pool_name}'",
@@ -866,11 +866,11 @@ class NetAgent:
             )
         headers, rows = pool.get_table(mode)
         reply = {"headers": headers, "rows": rows}
-        return new_message(payload=reply)
+        return Message(payload=reply)
 
     def get_comm_config(self, target: str):
         reply = self.cell.send_request(
-            channel=_CHANNEL, topic=_TOPIC_COMM_CONFIG, request=new_message(), timeout=1.0, target=target
+            channel=_CHANNEL, topic=_TOPIC_COMM_CONFIG, request=Message(), timeout=1.0, target=target
         )
         rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
         if rc != ReturnCode.OK:
@@ -880,7 +880,7 @@ class NetAgent:
 
     def get_config_vars(self, target: str):
         reply = self.cell.send_request(
-            channel=_CHANNEL, topic=_TOPIC_CONFIG_VARS, request=new_message(), timeout=1.0, target=target
+            channel=_CHANNEL, topic=_TOPIC_CONFIG_VARS, request=Message(), timeout=1.0, target=target
         )
         rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
         if rc != ReturnCode.OK:
@@ -890,7 +890,7 @@ class NetAgent:
 
     def get_process_info(self, target: str):
         reply = self.cell.send_request(
-            channel=_CHANNEL, topic=_TOPIC_PROCESS_INFO, request=new_message(), timeout=1.0, target=target
+            channel=_CHANNEL, topic=_TOPIC_PROCESS_INFO, request=Message(), timeout=1.0, target=target
         )
         rc = reply.get_header(MessageHeaderKey.RETURN_CODE)
         if rc != ReturnCode.OK:
@@ -900,11 +900,11 @@ class NetAgent:
 
     def _do_comm_config(self, request: Message) -> Union[None, Message]:
         info = self.cell.connector_manager.get_config_info()
-        return new_message(payload=info)
+        return Message(payload=info)
 
     def _do_config_vars(self, request: Message) -> Union[None, Message]:
         info = ConfigService.get_var_values()
-        return new_message(payload=info)
+        return Message(payload=info)
 
     def _do_process_info(self, request: Message) -> Union[None, Message]:
 
@@ -918,11 +918,11 @@ class NetAgent:
         for thread in threading.enumerate():
             rows.append([f"Thread:{thread.ident}", thread.name])
 
-        return new_message(payload={"headers": ["Resource", "Value"], "rows": rows})
+        return Message(payload={"headers": ["Resource", "Value"], "rows": rows})
 
     def _broadcast_to_subs(self, topic: str, message=None, timeout=1.0):
         if not message:
-            message = new_message()
+            message = Message()
 
         children, clients = self.cell.get_sub_cell_names()
         targets = []

@@ -47,7 +47,7 @@ tests:
         "result":
           "type": "admin_api_response"
           "data": {
-            "message": "Error: Authorization Error: user 'trainer@b.org' is not authorized for 'abort_job'"
+            "message": "Error: PermissionError: Authorization Error: user 'trainer@b.org' is not authorized for 'abort_job'"
           }
       - "trigger":
           "type": "run_state"
@@ -99,7 +99,7 @@ tests:
         "result":
           "type": "admin_api_response"
           "data": {
-            "message": "Error: Authorization Error: user 'admin@b.org' is not authorized for 'abort_job'"
+            "message": "Error: PermissionError: Authorization Error: user 'admin@b.org' is not authorized for 'abort_job'"
           }
       - "trigger":
           "type": "run_state"
@@ -126,7 +126,7 @@ tests:
         "result":
           "type": "admin_api_response"
           "data": {
-            "message": "Error: Authorization Error: user 'user@a.org' is not authorized for 'abort_job'"
+            "message": "Error: PermissionError: Authorization Error: user 'user@a.org' is not authorized for 'abort_job'"
           }
       - "trigger":
           "type": "run_state"

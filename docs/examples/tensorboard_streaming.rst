@@ -1,7 +1,7 @@
 .. _tensorboard_streaming:
 
-TensorBoard Streaming
-=====================
+FL Experiment Tracking with TensorBoard Streaming
+=================================================
 
 Introduction
 -------------
@@ -9,7 +9,7 @@ Introduction
 In this exercise, you will learn how to stream TensorBoard events from the clients
 to the server in order to visualize live training metrics from a central place on the server.
 
-This exercise will be working with the ``tensorboard-streaming`` example in the advanced examples folder under experiment-tracking,
+This exercise will be working with the ``tensorboard`` example in the advanced examples folder under experiment-tracking,
 which builds upon :doc:`hello_pt` by adding TensorBoard streaming.
 
 The setup of this exercise consists of one **server** and two **clients**.
@@ -30,11 +30,11 @@ Let's get started. Make sure you have an environment with NVIDIA FLARE installed
   $ git clone https://github.com/NVIDIA/NVFlare.git
 
 Now remember to activate your NVIDIA FLARE Python virtual environment from the installation guide.
-And install the required dependencies.
+And install the required dependencies in the example folder (NVFlare/examples/advanced/experiment-tracking/tensorboard).
 
 .. code-block:: shell
 
-  (nvflare-env) $ python3 -m pip install -r
+  (nvflare-env) $ python3 -m pip install -r requirements.txt
 
 
 Adding TensorBoard Streaming to Configurations
@@ -49,9 +49,9 @@ Inside the config folder there are two files, ``config_fed_client.json`` and ``c
 
 Take a look at the components section of the client config at line 24.
 The first component is the ``pt_learner`` which contains the initialization, training, and validation logic.
-``pt_learner.py`` is where we will add our TensorBoard streaming changes.
+``learner_with_tb.py`` (under NVFlare/examples/advanced/experiment-tracking/pt) is where we will add our TensorBoard streaming changes.
 
-Next we have the :class:`AnalyticsSender<nvflare.app_common.widgets.streaming.AnalyticsSender>`,
+Next we have the :class:`TBWriter<nvflare.app_opt.tracking.tb.tb_writer.TBWriter>`,
 which implements some common methods that follow the signatures from the PyTorch SummaryWriter.
 This makes it easy for the ``pt_learner`` to log metrics and send events.
 
@@ -83,10 +83,10 @@ In this exercise, all of the TensorBoard code additions will be made in ``pt_lea
 
 First we must initialize our TensorBoard writer to the ``AnalyticsSender`` we defined in the client config:
 
-.. literalinclude:: ../../examples/advanced/experiment-tracking/tensorboard/jobs/tensorboard-streaming/app/custom/pt_learner.py
+.. literalinclude:: ../../examples/advanced/experiment-tracking/pt/learner_with_tb.py
    :language: python
-   :lines: 103-106
-   :lineno-start: 103
+   :lines: 110-113
+   :lineno-start: 110
    :linenos:
 
 The ``LearnerExecutor`` passes in the component dictionary into the ``parts`` parameter of ``initialize()``.
@@ -98,13 +98,13 @@ but we can also define it in the client config to be passed into the constructor
 Now that our TensorBoard writer is set to ``AnalyticsSender``,
 we can write and stream training metrics to the server in ``local_train()``:
 
-.. literalinclude:: ../../examples/advanced/experiment-tracking/tensorboard/jobs/tensorboard-streaming/app/custom/pt_learner.py
+.. literalinclude:: ../../examples/advanced/experiment-tracking/pt/learner_with_tb.py
    :language: python
-   :lines: 144-174
-   :lineno-start: 144
+   :lines: 151-181
+   :lineno-start: 151
    :linenos:
 
-We use ``add_scalar(tag, scalar, global_step)`` on line 170 to send training loss metrics,
+We use ``add_scalar(tag, scalar, global_step)`` on line 181 to send training loss metrics,
 while on line 174 we send the validation accuracy at the end of each epoch.
 
 You can learn more about other supported writer methods in
@@ -161,3 +161,8 @@ Now you will be able to see the live training metrics of each client from a cent
 
 The full source code for this exercise can be found in
 `examples/advanced/experiment-tracking/tensorboard <https://github.com/NVIDIA/NVFlare/tree/main/examples/advanced/experiment-tracking/tensorboard>`_.
+
+Previous Versions of TensorBoard Streaming
+------------------------------------------
+
+   - `tensorboard-streaming for 2.3 <https://github.com/NVIDIA/NVFlare/tree/2.3/examples/advanced/experiment-tracking/tensorboard-streaming>`_

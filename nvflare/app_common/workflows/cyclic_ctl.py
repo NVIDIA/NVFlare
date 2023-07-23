@@ -208,7 +208,7 @@ class CyclicController(Controller):
                 self.log_info(fl_ctx, "Ending current round={}.".format(self._current_round))
 
             self.log_debug(fl_ctx, "Cyclic ended.")
-        except BaseException as e:
+        except Exception as e:
             error_msg = f"Cyclic control_flow exception: {secure_format_exception(e)}"
             self.log_error(fl_ctx, error_msg)
             self.system_panic(error_msg, fl_ctx)
