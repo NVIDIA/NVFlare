@@ -22,7 +22,7 @@
       "id": "launcher",
       "name": "SubprocessLauncher",
       "args": {
-        "script": "python custom/cifar10.py --epochs 1"
+        "script": "python custom/cifar10.py"
       }
     }
   ]
