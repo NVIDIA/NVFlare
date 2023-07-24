@@ -83,7 +83,6 @@ class FLModel:
             meta = {}
         self.meta = meta
 
-
     @staticmethod
     def validate_params_type(params: Any, params_type: Optional[ParamsType]) -> None:
         if params_type == ParamsType.FULL or params_type == ParamsType.DIFF:

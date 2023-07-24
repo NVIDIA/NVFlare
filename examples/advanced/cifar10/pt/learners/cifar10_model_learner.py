@@ -104,10 +104,6 @@ class CIFAR10ModelLearner(ModelLearner):  # does not support CIFAR10ScaffoldLear
         """
 
         # when the run starts, this is where the actual settings get initialized for trainer
-
-        # TODO: make self.app_root be client app folder and remove this line
-        self.app_root = os.path.join(self.app_root, f"app_{self.site_name}")
-
         self.info(
             f"Client {self.site_name} initialized at \n {self.app_root} \n with args: {self.args}",
         )

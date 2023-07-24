@@ -33,6 +33,8 @@ class ModelLearner(FLComponent):
         self.site_name = None
         self.job_id = None
         self.app_root = None
+        self.job_root = None
+        self.workspace_root = None
         self.abort_signal = None
         self.current_round = 0
         self.total_rounds = 0

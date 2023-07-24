@@ -138,7 +138,9 @@ class ModelLearnerExecutor(Executor):
         if not learner.engine:
             learner.engine = fl_ctx.get_engine()
             learner.workspace = learner.engine.get_workspace()
-            learner.app_root = learner.workspace.get_run_dir(learner.job_id)
+            learner.workspace_root = learner.workspace.get_root_dir()
+            learner.job_root = learner.workspace.get_run_dir(learner.job_id)
+            learner.app_root = learner.workspace.get_app_dir(learner.job_id)
 
         if shareable:
             learner.current_round = shareable.get_header(AppConstants.CURRENT_ROUND)
