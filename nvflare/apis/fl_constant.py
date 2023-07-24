@@ -102,6 +102,7 @@ class ReservedKey(object):
     JOB_DEPLOY_DETAIL = "__job_deploy_detail__"
     FATAL_SYSTEM_ERROR = "__fatal_system_error__"
     JOB_IS_UNSAFE = "__job_is_unsafe__"
+    CUSTOM_PROPS = "__custom_props__"
 
 
 class FLContextKey(object):

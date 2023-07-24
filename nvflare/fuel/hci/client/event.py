@@ -39,6 +39,22 @@ class EventPropKey:
     CUSTOM_PROPS = "custom_props"
 
 
+class EventContext(SimpleContext):
+
+    def get_custom_prop(self, key: str, default):
+        props = self.get_prop(EventPropKey.CUSTOM_PROPS)
+        if not props:
+            return default
+        return props.get(key, default)
+
+    def set_custom_prop(self, key: str, value):
+        props = self.get_prop(EventPropKey.CUSTOM_PROPS)
+        if not props:
+            props = {}
+            self.set_prop(EventPropKey.CUSTOM_PROPS, props)
+        props[key] = value
+
+
 class EventHandler(ABC):
 
     @abstractmethod

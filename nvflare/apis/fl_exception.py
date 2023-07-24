@@ -33,3 +33,7 @@ class UnsafeJobError(Exception):
     """Raised when a job is detected to be unsafe"""
 
     pass
+
+
+class NotAuthorized(Exception):
+    pass

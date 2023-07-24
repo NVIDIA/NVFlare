@@ -26,13 +26,12 @@ from nvflare.fuel.hci.proto import CredentialType, ProtoKey
 from nvflare.fuel.hci.reg import CommandModule, CommandModuleSpec, CommandRegister, CommandSpec
 from nvflare.fuel.hci.security import hash_password, verify_password
 from nvflare.fuel.hci.table import Table
-from nvflare.fuel.common.ctx import SimpleContext
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .api import AdminAPI, CommandInfo
 from .api_spec import ServiceFinder
 from .api_status import APIStatus
-from .event import EventType, EventHandler, EventPropKey
+from .event import EventType, EventHandler, EventPropKey, EventContext
 
 
 class _BuiltInCmdModule(CommandModule):
@@ -80,6 +79,7 @@ class AdminClient(cmd.Cmd, EventHandler):
         session_timeout_interval=900,  # close the client after 15 minutes of inactivity
         debug: bool = False,
         username: str = "",
+        handlers=None,
     ):
         super().__init__()
         self.intro = "Type help or ? to list commands.\n"
@@ -114,6 +114,10 @@ class AdminClient(cmd.Cmd, EventHandler):
 
         self._get_login_creds()
 
+        event_handlers = [self]
+        if handlers:
+            event_handlers.extend(handlers)
+
         self.api = AdminAPI(
             ca_cert=ca_cert,
             client_cert=client_cert,
@@ -127,12 +131,12 @@ class AdminClient(cmd.Cmd, EventHandler):
             poc=poc,
             session_timeout_interval=session_timeout_interval,
             session_status_check_interval=1800,  # check server for session status every 30 minutes
-            event_handlers=[self]
+            event_handlers=event_handlers,
         )
         # signal.signal(signal.SIGUSR1, partial(self.session_signal_handler))
         signal.signal(signal.SIGUSR1, self.session_signal_handler)
 
-    def handle_event(self, event_type: str, ctx: SimpleContext):
+    def handle_event(self, event_type: str, ctx: EventContext):
         if self.debug:
             print(f"DEBUG: received session event: {event_type}")
 

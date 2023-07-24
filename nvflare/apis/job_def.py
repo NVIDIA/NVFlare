@@ -209,3 +209,14 @@ def is_valid_job_id(jid: str) -> bool:
     # If the jid string is a valid hex code, but an invalid uuid4,the UUID.__init__ will convert it to a
     # valid uuid4. This is bad for validation purposes.
     return val.hex == jid.replace("-", "")
+
+
+def get_custom_prop(meta: dict, prop_key: str, default=None):
+    props = meta.get(JobMetaKey.CUSTOM_PROPS)
+    if not props:
+        return default
+    return props.get(prop_key, default)
+
+
+def get_custom_props(meta: dict, default=None):
+    return meta.get(JobMetaKey.CUSTOM_PROPS, default)
