@@ -14,8 +14,9 @@
 
 import copy
 import inspect
+import json
 import os
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple, Union
 
 from nvflare.app_common.model_exchange.file_pipe_model_exchanger import FilePipeModelExchanger
 from nvflare.fuel.utils import fobs
@@ -40,11 +41,14 @@ def _check_param_diff_func(params_diff_func: Callable):
         raise RuntimeError("params_diff_func need to have signature `params_diff_func(original model, new model)`")
 
 
-def init(config: str = "config/config_exchange.json", params_diff_func: Callable = numerical_params_diff):
+def init(
+    config: Union[str, Dict] = "config/config_exchange.json",
+    params_diff_func: Optional[Callable] = numerical_params_diff,
+):
     """Initializes NVFlare Client API environment.
 
     Args:
-        config (str): configuration file.
+        config (str or dict): configuration file or config dictionary.
         params_diff_func (Callable): a function to calculate the params difference if the params_type is "DIFF"
             default is "nvflare.client.utils.numerical_params_diff"
 
@@ -55,12 +59,21 @@ def init(config: str = "config/config_exchange.json", params_diff_func: Callable
     if pid in PROCESS_CACHE:
         raise RuntimeError("Can't call init twice.")
 
-    if not os.path.exists(config):
-        raise RuntimeError(f"Missing config file {config}.")
+    if isinstance(config, str):
+        if not os.path.exists(config):
+            raise RuntimeError(f"Missing config file {config}.")
 
-    _check_param_diff_func(params_diff_func)
+        with open(config, "r") as f:
+            config_dict = json.load(f)
+    elif isinstance(config, dict):
+        config_dict = config
+    else:
+        raise ValueError("config should be either a string or dictionary.")
 
-    client_config = ClientConfig(config_file=config)
+    if params_diff_func is not None:
+        _check_param_diff_func(params_diff_func)
+
+    client_config = ClientConfig(config=config_dict)
     if client_config.get_exchange_format() == ModelExchangeFormat.PYTORCH:
         tensor_decomposer, ok = optional_import(module="nvflare.app_opt.pt.decomposers", name="TensorDecomposer")
         if ok:

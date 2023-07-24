@@ -22,7 +22,7 @@
       "id": "launcher",
       "name": "SubprocessLauncher",
       "args": {
-        "script": "python custom/train.py"
+        "script": "python custom/autoencoder.py"
       }
     }
   ]

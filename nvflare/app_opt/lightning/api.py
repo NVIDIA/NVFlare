@@ -18,6 +18,9 @@ import json
 import pytorch_lightning as pl
 
 import nvflare.client as flare
+from nvflare.app_common.abstract.fl_model import ParamsType
+from nvflare.client.config import ConfigKey
+from nvflare.client.constants import ModelExchangeFormat
 
 
 def init():
@@ -25,7 +28,14 @@ def init():
     config = {"exchange_path": "./", "exchange_format": "pytorch", "params_type": "FULL"}
     with open(config_file, "w") as f:
         json.dump(config, f)
-    flare.init(config=config_file)
+    flare.init(
+        config={
+            ConfigKey.EXCHANGE_PATH: "./",
+            ConfigKey.EXCHANGE_FORMAT: ModelExchangeFormat.PYTORCH,
+            ConfigKey.PARAMS_TYPE: ParamsType.FULL,
+        },
+        params_diff_func=None,
+    )
 
 
 def patch(cls: pl.LightningModule) -> None:
@@ -42,7 +52,7 @@ def patch(cls: pl.LightningModule) -> None:
     else:
         cls.on_train_end = _fl_train_end
 
-    cls.get_fl_model = get_fl_model
+    cls.get_fl_module = get_fl_module
 
 
 def _fl_train_start(self):
@@ -58,7 +68,7 @@ def _fl_train_end(self):
     flare.submit_model(weights)
 
 
-def get_fl_model(self):
+def get_fl_module(self):
     # make new copy of self, and then load fl_model
     new_module = copy.copy(self)
     if self.fl_model is not None:

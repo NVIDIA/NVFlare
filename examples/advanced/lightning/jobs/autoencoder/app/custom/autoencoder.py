@@ -190,7 +190,7 @@ def cli_main():
     )
     cli.trainer.fit(cli.model, datamodule=cli.datamodule)
     cli.trainer.test(ckpt_path="best", datamodule=cli.datamodule)
-    cli.trainer.test(cli.model.get_fl_model(), datamodule=cli.datamodule)
+    cli.trainer.test(cli.model.get_fl_module(), datamodule=cli.datamodule)
     predictions = cli.trainer.predict(ckpt_path="best", datamodule=cli.datamodule)
     print(predictions[0])
 
