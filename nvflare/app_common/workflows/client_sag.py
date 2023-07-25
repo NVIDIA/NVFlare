@@ -69,7 +69,7 @@ class ClientScatterAndGather(FLComponent):
         return self._aggregate_results(results, fl_ctx)
 
     def _aggregate_results(self, results, fl_ctx):
-        for result in results:
+        for _, result in results.items():
             self.aggregator.accept(result, fl_ctx)
         final_result = self.aggregator.aggregate(fl_ctx)
         return final_result

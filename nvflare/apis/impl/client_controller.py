@@ -93,7 +93,7 @@ class ClientController(FLComponent, ControllerSpec):
             self._call_tasK_cb(task.before_task_sent_cb, client, task, fl_ctx)
 
         request.set_header(ReservedKey.TASK_NAME, task.name)
-        reply = engine.send_aux_request(
+        replies = engine.send_aux_request(
             targets=targets, topic=ReservedTopic.CLIENT_CONTROLLER_TASK, request=request, timeout=task.timeout, fl_ctx=fl_ctx
         )
 
@@ -115,20 +115,21 @@ class ClientController(FLComponent, ControllerSpec):
         if task_filter_list:
             filter_list.extend(task_filter_list)
 
-        if filter_list:
-            for f in filter_list:
-                filter_name = f.__class__.__name__
-                try:
-                    reply = f.process(reply, fl_ctx)
-                except Exception as e:
-                    self.log_exception(
-                        fl_ctx, f"Processing error in Task Result Filter {filter_name}: {secure_format_exception(e)}"
-                    )
+        for _, reply in replies.items():
+            if filter_list:
+                for f in filter_list:
+                    filter_name = f.__class__.__name__
+                    try:
+                        reply = f.process(reply, fl_ctx)
+                    except Exception as e:
+                        self.log_exception(
+                            fl_ctx, f"Processing error in Task Result Filter {filter_name}: {secure_format_exception(e)}"
+                        )
 
         for client in targets:
             self._call_tasK_cb(task.task_done_cb, client, task, fl_ctx)
 
-        return reply
+        return replies
 
     def _call_tasK_cb(self, task_cb, client, task, fl_ctx):
         with task.cb_lock:

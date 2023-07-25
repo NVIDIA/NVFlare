@@ -20,7 +20,7 @@ from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReservedTopic, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.fl_exception import UnsafeJobError
-from nvflare.apis.shareable import Shareable, make_reply
+from nvflare.apis.shareable import Shareable, make_reply, ReservedHeaderKey
 from nvflare.apis.signal import Signal
 from nvflare.apis.utils.fl_context_utils import add_job_audit_event
 from nvflare.private.defs import SpecialTaskName, TaskConstant
@@ -642,4 +642,5 @@ class ClientRunner(FLComponent):
                         fl_ctx, f"Processing error in Task Result Filter {filter_name}: {secure_format_exception(e)}"
                     )
 
-        return make_reply(ReturnCode.OK)
+        reply.set_header(ReservedHeaderKey.RC, ReturnCode.OK)
+        return reply
