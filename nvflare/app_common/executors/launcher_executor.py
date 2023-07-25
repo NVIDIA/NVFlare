@@ -38,7 +38,7 @@ class LauncherExecutor(Executor):
         launcher_id: Optional[str] = None,
         launch_timeout: Optional[float] = None,
         task_wait_time: Optional[float] = None,
-        task_read_wait_time: Optional[float] = 30.0,
+        task_read_wait_time: Optional[float] = None,
         result_poll_interval: float = 0.1,
         read_interval: float = 0.1,
         heartbeat_interval: float = 5.0,
@@ -53,14 +53,18 @@ class LauncherExecutor(Executor):
             pipe_id (str): Identifier used to get the Pipe from NVFlare components.
             pipe_name (str): Name of the pipe. Defaults to "pipe".
             launcher_id (Optional[str]): Identifier used to get the Launcher from NVFlare components.
-            launch_timeout (Optional[float]): Timeout for the "launch" method to end. None means forever.
-            task_wait_time (Optional[float]): Time to wait for tasks to complete before exiting the executor.
-            task_read_wait_time (Optional[float]): Time to wait for task results from the pipe. Defaults to 30.0.
+            launch_timeout (Optional[float]): Timeout for the "launch" method to end. None means never timeout.
+            task_wait_time (Optional[float]): Time to wait for tasks to complete before exiting the executor. None means never timeout.
+            task_read_wait_time (Optional[float]): Time to wait for task results from the pipe. None means no wait.
             result_poll_interval (float): Interval for polling task results from the pipe. Defaults to 0.1.
             read_interval (float): Interval for reading from the pipe. Defaults to 0.1.
             heartbeat_interval (float): Interval for sending heartbeat to the peer. Defaults to 5.0.
             heartbeat_timeout (float): Timeout for waiting for a heartbeat from the peer. Defaults to 30.0.
             workers (int): Number of worker threads needed.
+            from_nvflare_converter_id (Optional[str]): Identifier used to get the ParamsConverter from NVFlare components.
+                This converter will be called when model is get from nvflare controller side to executor side.
+            to_nvflare_converter_id (Optional[str]): Identifier used to get the ParamsConverter from NVFlare components.
+                This converter will be called when model is get from nvflare executor side to controller side.
         """
         super().__init__()
         self._launcher_id = launcher_id
@@ -85,26 +89,11 @@ class LauncherExecutor(Executor):
         self._to_nvflare_converter: Optional[ParamsConverter] = None
 
     def initialize(self, fl_ctx: FLContext) -> None:
-        engine = fl_ctx.get_engine()
-        # init launcher
-        launcher: Launcher = engine.get_component(self._launcher_id)
-        if launcher is not None:
-            check_object_type(self._launcher_id, launcher, Launcher)
-            launcher.initialize(fl_ctx)
-            self.launcher = launcher
-
-        # init converter
-        from_nvflare_converter: ParamsConverter = engine.get_component(self._from_nvflare_converter_id)
-        if from_nvflare_converter is not None:
-            check_object_type(self._from_nvflare_converter_id, from_nvflare_converter, ParamsConverter)
-            self._from_nvflare_converter = from_nvflare_converter
-
-        to_nvflare_converter: ParamsConverter = engine.get_component(self._to_nvflare_converter_id)
-        if to_nvflare_converter is not None:
-            check_object_type(self._to_nvflare_converter_id, to_nvflare_converter, ParamsConverter)
-            self._to_nvflare_converter = to_nvflare_converter
+        self._init_launcher(fl_ctx)
+        self._init_converter(fl_ctx)
 
         # gets pipe
+        engine = fl_ctx.get_engine()
         pipe: Pipe = engine.get_component(self._pipe_id)
         check_object_type(self._pipe_id, pipe, Pipe)
 
@@ -147,6 +136,26 @@ class LauncherExecutor(Executor):
             self._stop_launcher(task_name, fl_ctx)
 
         return result
+
+    def _init_launcher(self, fl_ctx: FLContext):
+        engine = fl_ctx.get_engine()
+        launcher: Launcher = engine.get_component(self._launcher_id)
+        if launcher is not None:
+            check_object_type(self._launcher_id, launcher, Launcher)
+            launcher.initialize(fl_ctx)
+            self.launcher = launcher
+
+    def _init_converter(self, fl_ctx: FLContext):
+        engine = fl_ctx.get_engine()
+        from_nvflare_converter: ParamsConverter = engine.get_component(self._from_nvflare_converter_id)
+        if from_nvflare_converter is not None:
+            check_object_type(self._from_nvflare_converter_id, from_nvflare_converter, ParamsConverter)
+            self._from_nvflare_converter = from_nvflare_converter
+
+        to_nvflare_converter: ParamsConverter = engine.get_component(self._to_nvflare_converter_id)
+        if to_nvflare_converter is not None:
+            check_object_type(self._to_nvflare_converter_id, to_nvflare_converter, ParamsConverter)
+            self._to_nvflare_converter = to_nvflare_converter
 
     def _launch(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> bool:
         if self.launcher:

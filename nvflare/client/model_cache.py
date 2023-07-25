@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Callable, Optional
+from typing import Any, Callable, Dict, Optional
 
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.model_exchange.model_exchanger import ModelExchanger
@@ -37,12 +37,13 @@ class Cache:
     def __init__(self, model_exchanger: ModelExchanger, config: ClientConfig, params_diff_func: Callable):
         self.model_exchanger = model_exchanger
         self.input_model: Optional[FLModel] = None
+        self.output_params: Any = None
         self.meta = None
         self.sys_meta = None
 
         self.config = config
         self.params_diff_func = params_diff_func
-        self.metrics = None  # get from evaluate on "global model"
+        self.metrics: Optional[Dict] = None  # get from evaluate on "global model"
         self._get_model()
 
     def _get_model(self):

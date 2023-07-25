@@ -23,7 +23,7 @@ from nvflare.apis.shareable import Shareable
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.aggregator import Aggregator
 from nvflare.app_common.abstract.learnable_persistor import LearnablePersistor
-from nvflare.app_common.abstract.model import ModelLearnable
+from nvflare.app_common.abstract.model import ModelLearnable, make_model_learnable
 from nvflare.app_common.abstract.shareable_generator import ShareableGenerator
 from nvflare.app_common.app_constant import AppConstants
 from nvflare.app_common.app_event_type import AppEventType
@@ -47,7 +47,7 @@ class ScatterAndGather(Controller):
         start_round: int = 0,
         wait_time_after_min_received: int = 10,
         aggregator_id=AppConstants.DEFAULT_AGGREGATOR_ID,
-        persistor_id=AppConstants.DEFAULT_PERSISTOR_ID,
+        persistor_id="",
         shareable_generator_id=AppConstants.DEFAULT_SHAREABLE_GENERATOR_ID,
         train_task_name=AppConstants.TASK_TRAIN,
         train_timeout: int = 0,
@@ -143,7 +143,7 @@ class ScatterAndGather(Controller):
 
         # workflow phases: init, train, validate
         self._phase = AppConstants.PHASE_INIT
-        self._global_weights = None
+        self._global_weights = make_model_learnable({}, {})
         self._current_round = None
 
     def start_controller(self, fl_ctx: FLContext) -> None:
@@ -167,40 +167,42 @@ class ScatterAndGather(Controller):
             )
             return
 
-        self.persistor = self._engine.get_component(self.persistor_id)
-        if not isinstance(self.persistor, LearnablePersistor):
-            self.system_panic(
-                f"Model Persistor {self.persistor_id} must be a LearnablePersistor type object, "
-                f"but got {type(self.persistor)}",
-                fl_ctx,
-            )
-            return
+        if self.persistor_id:
+            self.persistor = self._engine.get_component(self.persistor_id)
+            if not isinstance(self.persistor, LearnablePersistor):
+                self.system_panic(
+                    f"Model Persistor {self.persistor_id} must be a LearnablePersistor type object, "
+                    f"but got {type(self.persistor)}",
+                    fl_ctx,
+                )
+                return
 
         # initialize global model
         fl_ctx.set_prop(AppConstants.START_ROUND, self._start_round, private=True, sticky=True)
         fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self._num_rounds, private=True, sticky=False)
-        self._global_weights = self.persistor.load(fl_ctx)
+        if self.persistor:
+            self._global_weights = self.persistor.load(fl_ctx)
 
-        if not isinstance(self._global_weights, ModelLearnable):
-            self.system_panic(
-                reason=f"Expected global weights to be of type `ModelLearnable` but received {type(self._global_weights)}",
-                fl_ctx=fl_ctx,
-            )
-            return
+            if not isinstance(self._global_weights, ModelLearnable):
+                self.system_panic(
+                    reason=f"Expected global weights to be of type `ModelLearnable` but received {type(self._global_weights)}",
+                    fl_ctx=fl_ctx,
+                )
+                return
 
-        if self._global_weights.is_empty():
-            if not self.allow_empty_global_weights:
-                # if empty not allowed, further check whether it is available from fl_ctx
-                self._global_weights = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
-                if not isinstance(self._global_weights, ModelLearnable):
-                    self.system_panic(
-                        reason=f"Expected global weights to be of type `ModelLearnable` but received {type(self._global_weights)}",
-                        fl_ctx=fl_ctx,
-                    )
-                    return
+            if self._global_weights.is_empty():
+                if not self.allow_empty_global_weights:
+                    # if empty not allowed, further check whether it is available from fl_ctx
+                    self._global_weights = fl_ctx.get_prop(AppConstants.GLOBAL_MODEL)
+                    if not isinstance(self._global_weights, ModelLearnable):
+                        self.system_panic(
+                            reason=f"Expected global weights to be of type `ModelLearnable` but received {type(self._global_weights)}",
+                            fl_ctx=fl_ctx,
+                        )
+                        return
 
-        fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._global_weights, private=True, sticky=True)
-        self.fire_event(AppEventType.INITIAL_MODEL_LOADED, fl_ctx)
+            fl_ctx.set_prop(AppConstants.GLOBAL_MODEL, self._global_weights, private=True, sticky=True)
+            self.fire_event(AppEventType.INITIAL_MODEL_LOADED, fl_ctx)
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext) -> None:
         try:
@@ -277,14 +279,16 @@ class ScatterAndGather(Controller):
                 if self._check_abort_signal(fl_ctx, abort_signal):
                     return
 
-                if (
-                    self._persist_every_n_rounds != 0 and (self._current_round + 1) % self._persist_every_n_rounds == 0
-                ) or self._current_round == self._start_round + self._num_rounds - 1:
-                    self.log_info(fl_ctx, "Start persist model on server.")
-                    self.fire_event(AppEventType.BEFORE_LEARNABLE_PERSIST, fl_ctx)
-                    self.persistor.save(self._global_weights, fl_ctx)
-                    self.fire_event(AppEventType.AFTER_LEARNABLE_PERSIST, fl_ctx)
-                    self.log_info(fl_ctx, "End persist model on server.")
+                if self.persistor:
+                    if (
+                        self._persist_every_n_rounds != 0
+                        and (self._current_round + 1) % self._persist_every_n_rounds == 0
+                    ) or self._current_round == self._start_round + self._num_rounds - 1:
+                        self.log_info(fl_ctx, "Start persist model on server.")
+                        self.fire_event(AppEventType.BEFORE_LEARNABLE_PERSIST, fl_ctx)
+                        self.persistor.save(self._global_weights, fl_ctx)
+                        self.fire_event(AppEventType.AFTER_LEARNABLE_PERSIST, fl_ctx)
+                        self.log_info(fl_ctx, "End persist model on server.")
 
                 self.fire_event(AppEventType.ROUND_DONE, fl_ctx)
                 self.log_info(fl_ctx, f"Round {self._current_round} finished.")

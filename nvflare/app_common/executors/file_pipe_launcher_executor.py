@@ -17,7 +17,6 @@ from typing import Optional
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.utils.decomposers import flare_decomposers
-from nvflare.app_common.abstract.launcher import Launcher
 from nvflare.app_common.decomposers import common_decomposers
 from nvflare.app_common.executors.launcher_executor import LauncherExecutor
 from nvflare.fuel.utils.constants import Mode
@@ -35,7 +34,7 @@ class FilePipeLauncherExecutor(LauncherExecutor):
         launcher_id: Optional[str] = None,
         launch_timeout: Optional[float] = None,
         task_wait_time: Optional[float] = None,
-        task_read_wait_time: Optional[float] = 30.0,
+        task_read_wait_time: Optional[float] = None,
         result_poll_interval: float = 0.1,
         read_interval: float = 0.1,
         heartbeat_interval: float = 5.0,
@@ -52,14 +51,18 @@ class FilePipeLauncherExecutor(LauncherExecutor):
             pipe_id (Optional[str]): Identifier used to get the Pipe from NVFlare components.
             pipe_name (str): Name of the pipe. Defaults to "pipe".
             launcher_id (Optional[str]): Identifier used to get the Launcher from NVFlare components.
-            launch_timeout (Optional[float]): Timeout for the "launch" method to end. None means forever.
-            task_wait_time (Optional[float]): Time to wait for tasks to complete before exiting the executor.
-            task_read_wait_time (Optional[float]): Time to wait for task results from the pipe. Defaults to 30.0.
+            launch_timeout (Optional[float]): Timeout for the "launch" method to end. None means never timeout.
+            task_wait_time (Optional[float]): Time to wait for tasks to complete before exiting the executor. None means never timeout.
+            task_read_wait_time (Optional[float]): Time to wait for task results from the pipe. None means no wait.
             result_poll_interval (float): Interval for polling task results from the pipe. Defaults to 0.1.
             read_interval (float): Interval for reading from the pipe. Defaults to 0.1.
             heartbeat_interval (float): Interval for sending heartbeat to the peer. Defaults to 5.0.
             heartbeat_timeout (float): Timeout for waiting for a heartbeat from the peer. Defaults to 30.0.
             workers (int): Number of worker threads needed.
+            from_nvflare_converter_id (Optional[str]): Identifier used to get the ParamsConverter from NVFlare components.
+                This converter will be called when model is get from nvflare controller side to executor side.
+            to_nvflare_converter_id (Optional[str]): Identifier used to get the ParamsConverter from NVFlare components.
+                This converter will be called when model is get from nvflare executor side to controller side.
         """
         super().__init__(
             pipe_id=pipe_id,
@@ -80,13 +83,10 @@ class FilePipeLauncherExecutor(LauncherExecutor):
         self._data_exchange_path = data_exchange_path
 
     def initialize(self, fl_ctx: FLContext) -> None:
+        self._init_launcher(fl_ctx)
+        self._init_converter(fl_ctx)
+
         engine = fl_ctx.get_engine()
-        # init launcher
-        launcher: Launcher = engine.get_component(self._launcher_id)
-        if launcher is not None:
-            check_object_type(self._launcher_id, launcher, Launcher)
-            launcher.initialize(fl_ctx)
-            self.launcher = launcher
 
         # gets pipe
         if self._pipe_id:

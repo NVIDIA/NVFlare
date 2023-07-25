@@ -117,5 +117,7 @@ local_accuracy = evaluate(torch.load(PATH))
 accuracy = evaluate(input_model)
 # (2.3) submits evaluation metrics
 flare.submit_metrics({"accuracy": accuracy})
-# (1.4) submits trained model back to NVFlare
+# (1.4) submits trained model
 flare.submit_model(net.cpu().state_dict())
+# (1.5) send model back to NVFlare
+flare.send_model()
