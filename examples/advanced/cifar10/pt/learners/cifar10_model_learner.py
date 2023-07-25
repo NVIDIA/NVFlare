@@ -25,8 +25,7 @@ from pt.utils.cifar10_dataset import CIFAR10_Idx
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import datasets, transforms
 
-from nvflare.apis.fl_constant import ReturnCode
-from nvflare.app_common import MetaKey
+from nvflare.apis.fl_constant import FLMetaKey, ReturnCode
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.abstract.model_learner import ModelLearner
 from nvflare.app_common.app_constant import AppConstants, ModelName, ValidateType
@@ -302,7 +301,7 @@ class CIFAR10ModelLearner(ModelLearner):  # does not support CIFAR10ScaffoldLear
         # return an FLModel containing the model differences
         fl_model = FLModel(params_type=ParamsType.DIFF, params=model_diff)
 
-        FLModelUtils.set_meta_prop(fl_model, MetaKey.NUM_STEPS_CURRENT_ROUND, epoch_len)
+        FLModelUtils.set_meta_prop(fl_model, FLMetaKey.NUM_STEPS_CURRENT_ROUND, epoch_len)
         self.info("Local epochs finished. Returning FLModel")
         return fl_model
 
@@ -373,7 +372,7 @@ class CIFAR10ModelLearner(ModelLearner):  # does not support CIFAR10ScaffoldLear
 
         # get validation meta info
         validate_type = FLModelUtils.get_meta_prop(
-            model, MetaKey.VALIDATE_TYPE, ValidateType.MODEL_VALIDATE
+            model, FLMetaKey.VALIDATE_TYPE, ValidateType.MODEL_VALIDATE
         )  # TODO: enable model.get_meta_prop(...)
         model_owner = self.get_shareable_header(AppConstants.MODEL_OWNER)
 
