@@ -15,8 +15,10 @@
 
 # https://github.com/microsoft/pylance-release/issues/856
 
+from .api import get_sys_meta as get_sys_meta
 from .api import init as init
 from .api import receive_model as receive_model
+from .api import send_model as send_model
 from .api import submit_metrics as submit_metrics
 from .api import submit_model as submit_model
 from .decorator import evaluate as evaluate

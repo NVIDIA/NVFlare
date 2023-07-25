@@ -130,8 +130,19 @@ def submit_model(model: Any, meta: Optional[Dict] = None) -> None:
     if meta is not None:
         cache.meta.update(meta)
 
-    fl_model = cache.construct_fl_model(params=model)
+    cache.output_params = model
 
+
+def send_model() -> None:
+    """Sends the model to NVFlare side."""
+    pid = os.getpid()
+    if pid not in PROCESS_CACHE:
+        raise RuntimeError("needs to call init method first")
+    cache = PROCESS_CACHE[pid]
+    if cache.output_params is None:
+        raise RuntimeError("no model to send to NVFlare side.")
+
+    fl_model = cache.construct_fl_model(params=cache.output_params)
     cache.model_exchanger.submit_model(model=fl_model)
     cache.model_exchanger.finalize(close_pipe=False)
     PROCESS_CACHE.pop(pid)

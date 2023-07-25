@@ -18,6 +18,11 @@
       "args": {
         "expected_data_kind": "WEIGHTS"
       }
+    },
+    {
+      "id": "model_selector",
+      "name": "IntimeModelSelector",
+      "args": {}
     }
   ],
   "workflows": [

@@ -71,7 +71,7 @@ def _fl_train_end(self):
 def get_fl_module(self):
     # make new copy of self, and then load fl_model
     new_module = copy.copy(self)
-    if self.fl_model is not None:
+    if hasattr(self, "fl_model") and self.fl_model is not None:
         new_module.load_state_dict(self.fl_model)
     return new_module
 

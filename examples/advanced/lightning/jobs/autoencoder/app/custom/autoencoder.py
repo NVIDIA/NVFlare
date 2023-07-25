@@ -51,6 +51,7 @@ if _TORCHVISION_AVAILABLE:
     from torchvision import transforms
     from torchvision.utils import save_image
 
+# (optional) set a fix place so we don't need to download everytime
 DATASETS_PATH = "/tmp/nvflare/mnist"
 
 
@@ -204,7 +205,11 @@ def cli_main():
     )
     cli.trainer.fit(cli.model, datamodule=cli.datamodule)
     cli.trainer.test(ckpt_path="best", datamodule=cli.datamodule)
-    cli.trainer.test(cli.model.get_fl_module(), datamodule=cli.datamodule)
+    metrics = cli.trainer.test(cli.model.get_fl_module(), datamodule=cli.datamodule)
+    # (3) submit the metrics
+    flare.submit_metrics(metrics[0])
+    # (4) send the model to NVFlare
+    flare.send_model()
     predictions = cli.trainer.predict(ckpt_path="best", datamodule=cli.datamodule)
     print(predictions[0])
 
