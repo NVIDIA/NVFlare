@@ -16,9 +16,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional
 
-from nvflare.apis.dxo import DXO, DataKind
-from nvflare.apis.dxo import MetaKey as DXOMetaKey
-from nvflare.apis.dxo import from_shareable
+from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.fl_model import FLModel, FLModelConst, MetaKey, ParamsType
@@ -75,7 +73,7 @@ class FLModelUtils:
                 dxo = DXO(data_kind, data=fl_model.params, meta={})
             else:
                 # if both params and metrics are presented, will be treated as initial evaluation on the global model
-                dxo = DXO(data_kind, data=fl_model.params, meta={DXOMetaKey.INITIAL_METRICS: fl_model.metrics})
+                dxo = DXO(data_kind, data=fl_model.params, meta={MetaKey.INITIAL_METRICS: fl_model.metrics})
         else:
             dxo = DXO(DataKind.METRICS, data=fl_model.metrics, meta={})
 

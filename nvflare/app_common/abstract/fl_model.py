@@ -15,6 +15,7 @@
 from enum import Enum
 from typing import Any, Dict, Optional
 
+from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.fuel.utils.validation_utils import check_object_type
 
 
@@ -34,13 +35,8 @@ class FLModelConst:
     AGGREGATION = "aggregation"
 
 
-class MetaKey:
-    CONFIGS = "configs"
-    VALIDATE_TYPE = "validate_type"
-    CURRENT_ROUND = "current_round"
-    TOTAL_ROUNDS = "total_rounds"
-    JOB_ID = "job_id"
-    SITE_NAME = "site_name"
+class MetaKey(FLMetaKey):
+    pass
 
 
 class FLModel:
