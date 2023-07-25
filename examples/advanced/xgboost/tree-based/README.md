@@ -52,6 +52,10 @@ We provide a script for plotting the tensorboard records, running
 ```
 python3 ./utils/plot_tensorboard_events.py
 ```
+
+> **_NOTE:_** You need to install [./plot-requirements.txt](./plot-requirements.txt) to plot.
+
+
 The resulting validation AUC curves (no smoothing) are shown below:
 
 ![5 clients validation curve](./figs/5_client.png)

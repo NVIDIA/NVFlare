@@ -113,6 +113,9 @@ the global models for different settings. In this example, all clients compute t
 same CIFAR-10 test set. The plotting script used for the below graphs is in 
 [./figs/plot_tensorboard_events.py](./figs/plot_tensorboard_events.py)
 
+> **_NOTE:_** You need to install [./plot-requirements.txt](./plot-requirements.txt) to plot.
+
+
 ### 4.1 Central vs. FedAvg
 With a data split using `alpha=1.0`, i.e. a non-heterogeneous split, we achieve the following final validation scores.
 One can see that FedAvg can achieve similar performance to central training.
