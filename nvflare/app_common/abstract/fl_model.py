@@ -15,6 +15,9 @@
 from enum import Enum
 from typing import Any, Dict, Optional
 
+from nvflare.apis.fl_constant import FLMetaKey
+from nvflare.fuel.utils.validation_utils import check_object_type
+
 
 class ParamsType(str, Enum):
     FULL = "FULL"
@@ -32,13 +35,8 @@ class FLModelConst:
     AGGREGATION = "aggregation"
 
 
-class MetaKey:
-    CONFIGS = "configs"
-    VALIDATE_TYPE = "validate_type"
-    CURRENT_ROUND = "current_round"
-    TOTAL_ROUNDS = "total_rounds"
-    JOB_ID = "job_id"
-    SITE_NAME = "site_name"
+class MetaKey(FLMetaKey):
+    pass
 
 
 class FLModel:
@@ -74,7 +72,12 @@ class FLModel:
         self.metrics = metrics
         self.current_round = current_round
         self.total_rounds = total_rounds
-        self.meta = {} if meta is None else meta
+
+        if meta is not None:
+            check_object_type("meta", meta, dict)
+        else:
+            meta = {}
+        self.meta = meta
 
     @staticmethod
     def validate_params_type(params: Any, params_type: Optional[ParamsType]) -> None:

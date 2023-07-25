@@ -26,14 +26,21 @@ from nvflare.widgets.widget import Widget
 
 class IntimeModelSelector(Widget):
     def __init__(
-        self, weigh_by_local_iter=False, aggregation_weights=None, validation_metric_name=MetaKey.INITIAL_METRICS
+        self,
+        weigh_by_local_iter=False,
+        aggregation_weights=None,
+        validation_metric_name=MetaKey.INITIAL_METRICS,
+        key_metric: str = "val_accuracy",
     ):
         """Handler to determine if the model is globally best.
 
         Args:
             weigh_by_local_iter (bool, optional): whether the metrics should be weighted by trainer's iteration number.
             aggregation_weights (dict, optional): a mapping of client name to float for aggregation. Defaults to None.
-            validation_metric_name (str, optional): key used to save initial validation metric in the DXO meta properties (defaults to MetaKey.INITIAL_METRICS).
+            validation_metric_name (str, optional): key used to save initial validation metric in the
+                DXO meta properties (defaults to MetaKey.INITIAL_METRICS).
+            key_metric: if metrics are a `dict`, `key_metric` can select the metric used for global model selection.
+                Defaults to "val_accuracy".
         """
         super().__init__()
 
@@ -41,6 +48,7 @@ class IntimeModelSelector(Widget):
         self.weigh_by_local_iter = weigh_by_local_iter
         self.validation_metric_name = validation_metric_name
         self.aggregation_weights = aggregation_weights or {}
+        self.key_metric = key_metric
 
         self.logger.info(f"model selection weights control: {aggregation_weights}")
         self._reset_stats()
@@ -67,9 +75,10 @@ class IntimeModelSelector(Widget):
         shareable: Shareable = peer_ctx.get_prop(FLContextKey.SHAREABLE)
         try:
             dxo = from_shareable(shareable)
-        except:
-            self.log_exception(fl_ctx, "shareable data is not a valid DXO")
-            return False
+        except Exception as e:
+            self.log_exception(
+                fl_ctx, "shareable data is not a valid DXO. " "Received Exception: {secure_format_exception(e)}"
+            )
 
         if dxo.data_kind not in (DataKind.WEIGHT_DIFF, DataKind.WEIGHTS, DataKind.COLLECTION):
             self.log_debug(fl_ctx, "cannot handle {}".format(dxo.data_kind))
@@ -97,14 +106,21 @@ class IntimeModelSelector(Widget):
 
         validation_metric = dxo.get_meta_prop(self.validation_metric_name)
         if validation_metric is None:
-            self.log_debug(fl_ctx, f"validation metric not existing in {client_name}")
+            self.log_warning(fl_ctx, f"validation metric not existing in {client_name}")
             return False
-        else:
-            # TODO: seperate metrics aggregation and selection based on metrics logic
-            # TODO: fix this hardcode to get the first value from dict
-            if isinstance(validation_metric, dict):
-                validation_metric = next(iter(validation_metric.values()))
-            self.log_info(fl_ctx, f"validation metric {validation_metric} from client {client_name}")
+
+        # select key metric if dictionary of metrics is provided
+        if isinstance(validation_metric, dict):
+            if self.key_metric in validation_metric:
+                validation_metric = validation_metric[self.key_metric]
+            else:
+                self.log_warning(
+                    fl_ctx,
+                    f"validation metric `{self.key_metric}` not in metrics from {client_name}: {list(validation_metric.keys())}",
+                )
+                return False
+
+        self.log_info(fl_ctx, f"validation metric {validation_metric} from client {client_name}")
 
         if self.weigh_by_local_iter:
             n_iter = dxo.get_meta_prop(MetaKey.NUM_STEPS_CURRENT_ROUND, 1.0)

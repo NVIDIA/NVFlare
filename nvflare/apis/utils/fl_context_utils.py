@@ -39,6 +39,9 @@ def get_serializable_data(fl_ctx: FLContext):
 
 
 def generate_log_message(fl_ctx: FLContext, msg: str):
+    if not fl_ctx:
+        return msg
+
     _identity_ = "identity"
     _my_run = "run"
     _peer_run = "peer_run"

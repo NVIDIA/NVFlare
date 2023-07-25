@@ -63,7 +63,7 @@ You can visualize the training progress by running `tensorboard --logdir=${RESUL
 
 FedAvg (8 clients). Here we run for 50 rounds, with 4 local epochs. Corresponding roughly 
 to the same number of iterations across clients as in the central baseline above (50*4 divided by 8 clients is 25):
-Each job will take about 35 minutes, depending on your system. 
+Each job will take about 40 minutes, depending on your system.
 
 You can copy the whole block into the terminal, and it will execute each experiment one after the other.
 ```
@@ -77,7 +77,7 @@ You can copy the whole block into the terminal, and it will execute each experim
 
 Next, let's try some different FL algorithms on a more heterogeneous split:
 
-[FedProx](https://arxiv.org/abs/1812.06127) adds a regularizer to the loss used in `CIFAR10Learner` (`fedproxloss_mu`)`:
+[FedProx](https://arxiv.org/abs/1812.06127) adds a regularizer to the loss used in `CIFAR10ModelLearner` (`fedproxloss_mu`)`:
 ```
 ./run_simulator.sh cifar10_fedprox 0.1 8 8
 ```
