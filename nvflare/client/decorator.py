@@ -77,11 +77,7 @@ def train(
             else:
                 model = return_value
 
-            fl_model = cache.construct_fl_model(params=model)
-
-            cache.model_exchanger.submit_model(fl_model)
-            cache.model_exchanger.finalize(close_pipe=False)
-            PROCESS_CACHE.pop(pid)
+            cache.output_params = model
 
             return return_value
 

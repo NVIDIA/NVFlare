@@ -22,7 +22,7 @@
       "id": "launcher",
       "name": "SubprocessLauncher",
       "args": {
-        "script": "python custom/cifar10.py"
+        "script": "python custom/autoencoder.py"
       }
     }
   ]

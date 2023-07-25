@@ -107,5 +107,7 @@ with torch.no_grad():
 
 print(f"Accuracy of the network on the 10000 test images: {100 * correct // total} %")
 
-# (1.4) submits trained model back to NVFlare
+# (1.4) submits trained model
 flare.submit_model(net.cpu().state_dict())
+# (1.5) send model back to NVFlare
+flare.send_model()
