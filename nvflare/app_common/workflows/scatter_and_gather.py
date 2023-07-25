@@ -180,7 +180,7 @@ class ScatterAndGather(Controller):
         # initialize global model
         fl_ctx.set_prop(AppConstants.START_ROUND, self._start_round, private=True, sticky=True)
         fl_ctx.set_prop(AppConstants.NUM_ROUNDS, self._num_rounds, private=True, sticky=False)
-        if self.persistor_id:
+        if self.persistor:
             self._global_weights = self.persistor.load(fl_ctx)
 
             if not isinstance(self._global_weights, ModelLearnable):
@@ -279,7 +279,7 @@ class ScatterAndGather(Controller):
                 if self._check_abort_signal(fl_ctx, abort_signal):
                     return
 
-                if self.persistor_id:
+                if self.persistor:
                     if (
                         self._persist_every_n_rounds != 0
                         and (self._current_round + 1) % self._persist_every_n_rounds == 0

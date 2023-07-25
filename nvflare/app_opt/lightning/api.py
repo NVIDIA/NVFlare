@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import copy
-import json
 
 import pytorch_lightning as pl
 
@@ -24,10 +23,6 @@ from nvflare.client.constants import ModelExchangeFormat
 
 
 def init():
-    config_file = "nvf_lightning.json"
-    config = {"exchange_path": "./", "exchange_format": "pytorch", "params_type": "FULL"}
-    with open(config_file, "w") as f:
-        json.dump(config, f)
     flare.init(
         config={
             ConfigKey.EXCHANGE_PATH: "./",
