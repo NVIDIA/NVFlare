@@ -15,11 +15,12 @@
 
 # https://github.com/microsoft/pylance-release/issues/856
 
+from nvflare.app_common.abstract.fl_model import FLModel as FLModel
+from nvflare.app_common.abstract.fl_model import ParamsType as ParamsType
+
 from .api import get_sys_meta as get_sys_meta
 from .api import init as init
 from .api import receive_model as receive_model
 from .api import send_model as send_model
-from .api import submit_metrics as submit_metrics
-from .api import submit_model as submit_model
 from .decorator import evaluate as evaluate
 from .decorator import train as train

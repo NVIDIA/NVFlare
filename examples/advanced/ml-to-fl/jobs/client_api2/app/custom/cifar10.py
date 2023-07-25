@@ -43,11 +43,11 @@ net = Net()
 
 # (1.1) initializes NVFlare client API
 flare.init()
-# (1.2) gets model from NVFlare
-input_model, input_meta = flare.receive_model()
+# (1.2) gets FLModel from NVFlare
+input_model = flare.receive_model()
 
 # (1.3) loads model from NVFlare
-net.load_state_dict(input_model)
+net.load_state_dict(input_model.params)
 
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
@@ -114,10 +114,13 @@ def evaluate(input_weights):
 # (2.1) evaluation on local trained model
 local_accuracy = evaluate(torch.load(PATH))
 # (2.2) evaluate on receive model
-accuracy = evaluate(input_model)
-# (2.3) submits evaluation metrics
-flare.submit_metrics({"accuracy": accuracy})
-# (1.4) submits trained model
-flare.submit_model(net.cpu().state_dict())
+accuracy = evaluate(input_model.params)
+# (1.4) construct trained FL model
+output_model = flare.FLModel(
+    params=net.cpu().state_dict(),
+    params_type=flare.ParamsType.FULL,
+    metrics={"accuracy": accuracy},
+    meta=input_model.meta,
+)
 # (1.5) send model back to NVFlare
-flare.send_model()
+flare.send_model(output_model)

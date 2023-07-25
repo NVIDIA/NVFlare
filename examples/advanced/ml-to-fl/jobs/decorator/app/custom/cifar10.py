@@ -45,9 +45,8 @@ flare.init()
 
 # (1.2) wraps training logic into a method
 @flare.train
-def train(weights=None, total_epochs=2, lr=0.001, device="cuda:0"):
-    if weights is not None:
-        net.load_state_dict(weights)
+def train(input_model=None, total_epochs=2, lr=0.001, device="cuda:0"):
+    net.load_state_dict(input_model.params)
 
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(net.parameters(), lr=lr, momentum=0.9)
@@ -80,14 +79,17 @@ def train(weights=None, total_epochs=2, lr=0.001, device="cuda:0"):
     print("Finished Training")
     torch.save(net.state_dict(), PATH)
 
-    return net.cpu().state_dict()
+    # (1.3) construct trained FL model
+    output_model = flare.FLModel(
+        params=net.cpu().state_dict(), params_type=flare.ParamsType.FULL, meta=input_model.meta
+    )
+    return output_model
 
 
-# (1.3) wraps evaluate logic into a method
+# (1.4) wraps evaluate logic into a method
 @flare.evaluate
-def evaluate(input_weights=None, device="cuda:0"):
-    if input_weights is not None:
-        net.load_state_dict(input_weights)
+def evaluate(input_model=None, device="cuda:0"):
+    net.load_state_dict(input_model.params)
     # (optional) use GPU to speed things up
     net.to(device)
 
@@ -106,12 +108,11 @@ def evaluate(input_weights=None, device="cuda:0"):
             correct += (predicted == labels).sum().item()
 
     print(f"Accuracy of the network on the 10000 test images: {100 * correct // total} %")
+    # (1.5) return evaluation metrics
     return 100 * correct // total
 
 
-# (1.4) call evaluate method
+# (1.6) call evaluate method
 evaluate()
-# (1.5) call train method
+# (1.7) call train method
 train(total_epochs=2, lr=0.001)
-# (1.6) send model back to NVFlare
-flare.send_model()

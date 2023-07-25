@@ -43,11 +43,11 @@ net = Net()
 
 # (1.1) initializes NVFlare client API
 flare.init()
-# (1.2) gets model from NVFlare
-input_model, input_meta = flare.receive_model()
+# (1.2) gets FLModel from NVFlare
+input_model = flare.receive_model()
 
 # (1.3) loads model from NVFlare
-net.load_state_dict(input_model)
+net.load_state_dict(input_model.params)
 
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
@@ -107,7 +107,12 @@ with torch.no_grad():
 
 print(f"Accuracy of the network on the 10000 test images: {100 * correct // total} %")
 
-# (1.4) submits trained model
-flare.submit_model(net.cpu().state_dict())
+# (1.4) construct trained FL model
+output_model = flare.FLModel(
+    params=net.cpu().state_dict(),
+    params_type=flare.ParamsType.FULL,
+    metrics={"accuracy": 100 * correct // total},
+    meta=input_model.meta,
+)
 # (1.5) send model back to NVFlare
-flare.send_model()
+flare.send_model(output_model)
