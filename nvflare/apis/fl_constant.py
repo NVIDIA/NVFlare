@@ -367,3 +367,17 @@ class SecureTrainConst:
     SSL_ROOT_CERT = "ssl_root_cert"
     SSL_CERT = "ssl_cert"
     PRIVATE_KEY = "ssl_private_key"
+
+
+class FLMetaKey:
+    NUM_STEPS_CURRENT_ROUND = "NUM_STEPS_CURRENT_ROUND"
+    PROCESSED_ALGORITHM = "PROCESSED_ALGORITHM"
+    PROCESSED_KEYS = "PROCESSED_KEYS"
+    INITIAL_METRICS = "initial_metrics"
+    FILTER_HISTORY = "filter_history"
+    CONFIGS = "configs"
+    VALIDATE_TYPE = "validate_type"
+    CURRENT_ROUND = "current_round"
+    TOTAL_ROUNDS = "total_rounds"
+    JOB_ID = "job_id"
+    SITE_NAME = "site_name"

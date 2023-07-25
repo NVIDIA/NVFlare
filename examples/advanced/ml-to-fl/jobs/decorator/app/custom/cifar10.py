@@ -113,3 +113,5 @@ def evaluate(input_weights=None, device="cuda:0"):
 evaluate()
 # (1.5) call train method
 train(total_epochs=2, lr=0.001)
+# (1.6) send model back to NVFlare
+flare.send_model()

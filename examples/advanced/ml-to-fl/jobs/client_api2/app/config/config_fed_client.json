@@ -7,7 +7,8 @@
       "executor": {
         "name": "PTFilePipeLauncherExecutor",
         "args": {
-          "launcher_id": "launcher"
+          "launcher_id": "launcher",
+          "heartbeat_timeout": 60
         }
       }
     }
@@ -21,7 +22,7 @@
       "id": "launcher",
       "name": "SubprocessLauncher",
       "args": {
-        "script": "python custom/cifar10.py --epochs 1"
+        "script": "python custom/cifar10.py"
       }
     }
   ]

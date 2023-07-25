@@ -12,16 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from abc import ABC, abstractmethod
-from typing import Dict, Optional
 
-from nvflare.apis.dxo import DXO, DataKind
-from nvflare.apis.dxo import MetaKey as DXOMetaKey
-from nvflare.apis.dxo import from_shareable
+from abc import ABC, abstractmethod
+from typing import Any, Dict, Optional
+
+from nvflare.apis.dxo import DXO, DataKind, from_shareable
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.app_common.abstract.fl_model import FLModel, FLModelConst, MetaKey, ParamsType
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.fuel.utils.validation_utils import check_object_type
 
 MODEL_ATTRS = [
     FLModelConst.PARAMS_TYPE,
@@ -73,7 +73,7 @@ class FLModelUtils:
                 dxo = DXO(data_kind, data=fl_model.params, meta={})
             else:
                 # if both params and metrics are presented, will be treated as initial evaluation on the global model
-                dxo = DXO(data_kind, data=fl_model.params, meta={DXOMetaKey.INITIAL_METRICS: fl_model.metrics})
+                dxo = DXO(data_kind, data=fl_model.params, meta={MetaKey.INITIAL_METRICS: fl_model.metrics})
         else:
             dxo = DXO(DataKind.METRICS, data=fl_model.metrics, meta={})
 
@@ -162,3 +162,20 @@ class FLModelUtils:
             if value is not None:
                 kwargs[attr] = value
         return FLModel(**kwargs)
+
+    @staticmethod
+    def get_meta_prop(model: FLModel, key: str, default=None):
+        check_object_type("model", model, FLModel)
+        if not model.meta:
+            return default
+        else:
+            return model.meta.get(key, default)
+
+    @staticmethod
+    def set_meta_prop(model: FLModel, key: str, value: Any):
+        check_object_type("model", model, FLModel)
+        model.meta[key] = value
+
+    @staticmethod
+    def get_configs(model: FLModel) -> Optional[dict]:
+        return FLModelUtils.get_meta_prop(model, MetaKey.CONFIGS)
