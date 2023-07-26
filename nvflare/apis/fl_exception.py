@@ -36,6 +36,6 @@ class UnsafeJobError(Exception):
 
 
 class UnsafeComponentError(Exception):
-    """Raised when configuration parsing error happens."""
+    """Raised when a component in the configuration is detected to be unsafe"""
 
     pass
