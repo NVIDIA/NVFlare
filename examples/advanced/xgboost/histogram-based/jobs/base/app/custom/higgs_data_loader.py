@@ -51,12 +51,12 @@ class HIGGSDataLoader(XGBDataLoader):
         # check if site_id and "valid" in the mapping dict
         if client_id not in data_index.keys():
             raise ValueError(
-                f"Dict of data_index does not contain Client {client_id} split",
+                f"Data does not contain Client {client_id} split",
             )
 
         if "valid" not in data_index.keys():
             raise ValueError(
-                "Dict of data_index does not contain Validation split",
+                "Data does not contain Validation split",
             )
 
         site_index = data_index[client_id]
