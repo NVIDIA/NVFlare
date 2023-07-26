@@ -31,7 +31,7 @@ from nvflare.security.logging import secure_format_exception, secure_log_traceba
 from .api import AdminAPI, CommandInfo
 from .api_spec import ServiceFinder
 from .api_status import APIStatus
-from .event import EventType, EventHandler, EventPropKey, EventContext
+from .event import EventContext, EventHandler, EventPropKey, EventType
 
 
 class _BuiltInCmdModule(CommandModule):

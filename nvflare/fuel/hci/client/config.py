@@ -20,6 +20,7 @@ from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.utils.json_scanner import Node
 from nvflare.fuel.utils.wfconf import ConfigContext
 from nvflare.private.json_configer import JsonConfigurator
+
 from .event import EventHandler
 
 FL_PACKAGES = ["nvflare"]

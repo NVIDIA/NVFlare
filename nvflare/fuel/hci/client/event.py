@@ -36,11 +36,11 @@ class EventPropKey:
     MSG = "msg"
     USER_NAME = "user_name"
     CMD_NAME = "cmd_name"
+    CMD_CTX = "cmd_ctx"
     CUSTOM_PROPS = "custom_props"
 
 
 class EventContext(SimpleContext):
-
     def get_custom_prop(self, key: str, default):
         props = self.get_prop(EventPropKey.CUSTOM_PROPS)
         if not props:
@@ -56,7 +56,6 @@ class EventContext(SimpleContext):
 
 
 class EventHandler(ABC):
-
     @abstractmethod
     def handle_event(self, event_type: str, ctx: SimpleContext):
         pass

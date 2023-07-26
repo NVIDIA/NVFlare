@@ -21,6 +21,8 @@ import time
 from datetime import datetime
 from typing import List, Optional
 
+from nvflare.fuel.common.ctx import SimpleContext
+from nvflare.fuel.hci.client.event import EventContext, EventHandler, EventPropKey, EventType
 from nvflare.fuel.hci.cmd_arg_utils import split_to_args
 from nvflare.fuel.hci.conn import Connection, receive_and_process
 from nvflare.fuel.hci.proto import ConfirmMethod, InternalCommands, MetaKey, ProtoKey, make_error
@@ -28,9 +30,6 @@ from nvflare.fuel.hci.reg import CommandEntry, CommandModule, CommandRegister
 from nvflare.fuel.hci.table import Table
 from nvflare.fuel.utils.fsm import FSM, State
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
-from nvflare.fuel.common.ctx import SimpleContext
-from nvflare.fuel.hci.client.event import EventType, EventHandler, EventPropKey
-
 
 from .api_spec import (
     AdminAPISpec,
@@ -337,6 +336,7 @@ class AdminAPI(AdminAPISpec):
         super().__init__()
         if cmd_modules is None:
             from .file_transfer import FileTransferModule
+
             cmd_modules = [FileTransferModule(upload_dir=upload_dir, download_dir=download_dir)]
         elif not isinstance(cmd_modules, list):
             raise TypeError("cmd_modules must be a list, but got {}".format(type(cmd_modules)))
@@ -359,6 +359,7 @@ class AdminAPI(AdminAPISpec):
             for h in event_handlers:
                 if not isinstance(h, EventHandler):
                     raise TypeError(f"item in event_handlers must be EventHandler but got {type(h)}")
+
         self.event_handlers = event_handlers
 
         self.service_finder = service_finder
@@ -436,6 +437,8 @@ class AdminAPI(AdminAPISpec):
         self._start_session_monitor()
 
     def fire_event(self, event_type: str, ctx: SimpleContext):
+        if self.debug:
+            print(f"DEBUG: firing event {event_type}")
         if self.event_handlers:
             for h in self.event_handlers:
                 h.handle_event(event_type, ctx)
@@ -453,7 +456,7 @@ class AdminAPI(AdminAPISpec):
         self.cmd_timeout = None
 
     def _new_event_context(self):
-        ctx = SimpleContext()
+        ctx = EventContext()
         ctx.set_prop(EventPropKey.USER_NAME, self.user_name)
         return ctx
 
@@ -477,7 +480,14 @@ class AdminAPI(AdminAPISpec):
     def _try_auto_login(self):
         resp = None
         for i in range(self.auto_login_max_tries):
-            self.fire_session_event(EventType.TRYING_LOGIN, "Trying to login, please wait ...")
+            try:
+                self.fire_session_event(EventType.TRYING_LOGIN, "Trying to login, please wait ...")
+            except Exception as ex:
+                print(f"exception handling event {EventType.TRYING_LOGIN}: {secure_format_exception(ex)}")
+                return {
+                    ResultKey.STATUS: APIStatus.ERROR_RUNTIME,
+                    ResultKey.DETAILS: f"exception handling event {EventType.TRYING_LOGIN}",
+                }
 
             if self.poc:
                 resp = self.login_with_poc(username=self.user_name, poc_key=self.poc_key)
@@ -570,7 +580,12 @@ class AdminAPI(AdminAPISpec):
             msg = f"exception occurred: {secure_format_exception(e)}"
 
         self.server_sess_active = False
-        self.fire_session_event(EventType.SESSION_CLOSED, msg)
+        try:
+            self.fire_session_event(EventType.SESSION_CLOSED, msg)
+        except Exception as ex:
+            if self.debug:
+                print(f"exception occurred handling event {EventType.SESSION_CLOSED}: {secure_format_exception(ex)}")
+            pass
 
         # this is in the session_monitor thread - do not close the monitor, or we'll run into
         # "cannot join current thread" error!
@@ -711,18 +726,27 @@ class AdminAPI(AdminAPISpec):
         if self.debug:
             print(f"DEBUG: sending command '{cmd_ctx.get_command()}'")
 
+        json_processor = _ServerReplyJsonProcessor(cmd_ctx)
+        process_json_func = json_processor.process_server_reply
+        cmd_ctx.set_json_processor(json_processor)
+
         event_ctx = self._new_event_context()
-        event_ctx.set_prop(EventPropKey.CMD_NAME, cmd_ctx.get_command())
-        self.fire_event(EventType.BEFORE_EXECUTE_CMD, event_ctx)
+        event_ctx.set_prop(EventPropKey.CMD_NAME, cmd_ctx.get_command_name())
+        event_ctx.set_prop(EventPropKey.CMD_CTX, cmd_ctx)
+
+        try:
+            self.fire_event(EventType.BEFORE_EXECUTE_CMD, event_ctx)
+        except Exception as ex:
+            secure_log_traceback()
+            process_json_func(
+                make_error(f"exception handling event {EventType.BEFORE_EXECUTE_CMD}: {secure_format_exception(ex)}")
+            )
+            return
 
         # see whether any event handler has set "custom_props"
         custom_props = event_ctx.get_prop(EventPropKey.CUSTOM_PROPS)
         if custom_props:
             cmd_ctx.set_custom_props(custom_props)
-
-        json_processor = _ServerReplyJsonProcessor(cmd_ctx)
-        process_json_func = json_processor.process_server_reply
-        cmd_ctx.set_json_processor(json_processor)
 
         with self.addr_lock:
             sp_host = self.host

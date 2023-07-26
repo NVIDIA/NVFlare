@@ -23,7 +23,7 @@ from nvflare.apis.signal import Signal
 
 from .client import Client
 from .fl_context import FLContext
-from .shareable import Shareable, ReservedHeaderKey
+from .shareable import ReservedHeaderKey, Shareable
 
 
 class TaskCompletionStatus(Enum):
