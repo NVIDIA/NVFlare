@@ -1,0 +1,4 @@
+{
+  "exchange_path": "./",
+  "exchange_format": "pytorch"
+}

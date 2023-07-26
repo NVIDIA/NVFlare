@@ -65,7 +65,7 @@ def copy_fl_model_attributes(src: FLModel, dst: FLModel, attrs=CONST_ATTRS):
         setattr(dst, attr, getattr(src, attr))
 
 
-def numerical_params_diff(original: Dict, new: Dict):
+def numerical_params_diff(original: Dict, new: Dict) -> Dict:
     """Calculates the numerical parameter difference.
 
     Args:

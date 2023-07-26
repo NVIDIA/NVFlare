@@ -24,9 +24,7 @@ import nvflare.client as flare
 
 # (optional) set a fix place so we don't need to download everytime
 DATASET_PATH = "/tmp/nvflare/data"
-# (optional) We change to use GPU to speed things up.
-# if you want to use CPU, change device=“cpu”
-device = "cuda:0"
+PATH = "./cifar_net.pth"
 
 transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 
@@ -43,53 +41,53 @@ net = Net()
 
 # (1.1) initializes NVFlare client API
 flare.init()
-# (1.2) gets model from NVFlare
-input_model, input_meta = flare.receive_model()
-
-# (1.3) loads model from NVFlare
-net.load_state_dict(input_model)
-
-criterion = nn.CrossEntropyLoss()
-optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
 
 
-# (optional) use GPU to speed things up
-net.to(device)
-for epoch in range(2):  # loop over the dataset multiple times
+# (1.2) wraps training logic into a method
+@flare.train
+def train(input_model=None, total_epochs=2, lr=0.001, device="cuda:0"):
+    net.load_state_dict(input_model.params)
 
-    running_loss = 0.0
-    for i, data in enumerate(trainloader, 0):
-        # get the inputs; data is a list of [inputs, labels]
-        # (optional) use GPU to speed things up
-        inputs, labels = data[0].to(device), data[1].to(device)
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.SGD(net.parameters(), lr=lr, momentum=0.9)
 
-        # zero the parameter gradients
-        optimizer.zero_grad()
+    # (optional) use GPU to speed things up
+    net.to(device)
+    for epoch in range(total_epochs):  # loop over the dataset multiple times
 
-        # forward + backward + optimize
-        outputs = net(inputs)
-        loss = criterion(outputs, labels)
-        loss.backward()
-        optimizer.step()
+        running_loss = 0.0
+        for i, data in enumerate(trainloader, 0):
+            # get the inputs; data is a list of [inputs, labels]
+            # (optional) use GPU to speed things up
+            inputs, labels = data[0].to(device), data[1].to(device)
 
-        # print statistics
-        running_loss += loss.item()
-        if i % 2000 == 1999:  # print every 2000 mini-batches
-            print(f"[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}")
-            running_loss = 0.0
+            # zero the parameter gradients
+            optimizer.zero_grad()
 
-print("Finished Training")
+            # forward + backward + optimize
+            outputs = net(inputs)
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
+
+            # print statistics
+            running_loss += loss.item()
+            if i % 2000 == 1999:  # print every 2000 mini-batches
+                print(f"[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}")
+                running_loss = 0.0
+
+    print("Finished Training")
+    torch.save(net.state_dict(), PATH)
+
+    # (1.3) construct trained FL model
+    output_model = flare.FLModel(params=net.cpu().state_dict(), meta=input_model.meta)
+    return output_model
 
 
-PATH = "./cifar_net.pth"
-torch.save(net.state_dict(), PATH)
-
-
-# (2.0) wraps evaluation logic into a method to re-use for
-#       evaluation on both trained and received model
-def evaluate(input_weights):
-    net = Net()
-    net.load_state_dict(input_weights)
+# (1.4) wraps evaluate logic into a method
+@flare.evaluate
+def evaluate(input_model=None, device="cuda:0"):
+    net.load_state_dict(input_model.params)
     # (optional) use GPU to speed things up
     net.to(device)
 
@@ -108,16 +106,11 @@ def evaluate(input_weights):
             correct += (predicted == labels).sum().item()
 
     print(f"Accuracy of the network on the 10000 test images: {100 * correct // total} %")
+    # (1.5) return evaluation metrics
     return 100 * correct // total
 
 
-# (2.1) evaluation on local trained model
-local_accuracy = evaluate(torch.load(PATH))
-# (2.2) evaluate on receive model
-accuracy = evaluate(input_model)
-# (2.3) submits evaluation metrics
-flare.submit_metrics({"accuracy": accuracy})
-# (1.4) submits trained model
-flare.submit_model(net.cpu().state_dict())
-# (1.5) send model back to NVFlare
-flare.send_model()
+# (1.6) call evaluate method
+evaluate()
+# (1.7) call train method
+train(total_epochs=2, lr=0.001)

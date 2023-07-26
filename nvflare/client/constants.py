@@ -14,7 +14,6 @@
 
 from enum import Enum
 
-MODEL_ATTRS = ("optimizer_params", "current_round")
 SYS_ATTRS = ("job_id", "site_name", "total_rounds")
 CONST_ATTRS = ("total_rounds",)
 

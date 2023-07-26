@@ -19,10 +19,12 @@ from nvflare.fuel.utils.import_utils import optional_import
 pytorch_lightning, ok = optional_import(module="pytorch_lightning")
 
 if ok:
+    from nvflare.app_common.abstract.fl_model import FLModel as FLModel
+    from nvflare.app_common.abstract.fl_model import ParamsType as ParamsType
     from nvflare.app_opt.lightning import init as init
     from nvflare.app_opt.lightning import patch as patch
     from nvflare.client import get_sys_meta as get_sys_meta
-    from nvflare.client import send_model as send_model
-    from nvflare.client import submit_metrics as submit_metrics
+    from nvflare.client import params_diff as params_diff
+    from nvflare.client import send as send
 else:
     warnings.warn("pytorch_lightning is not installed, nvflare.client.lightning will not work.")

@@ -1,5 +1,0 @@
-{
-  "exchange_path": "./",
-  "exchange_format": "pytorch",
-  "params_type": "DIFF"
-}

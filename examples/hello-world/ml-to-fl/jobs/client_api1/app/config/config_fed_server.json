@@ -25,13 +25,8 @@
       "id": "aggregator",
       "path": "nvflare.app_common.aggregators.intime_accumulate_model_aggregator.InTimeAccumulateWeightedAggregator",
       "args": {
-        "expected_data_kind": "WEIGHT_DIFF"
+        "expected_data_kind": "WEIGHTS"
       }
-    },
-    {
-      "id": "model_selector",
-      "name": "IntimeModelSelector",
-      "args": {}
     }
   ],
   "workflows": [
@@ -40,7 +35,7 @@
         "name": "ScatterAndGather",
         "args": {
             "min_clients" : 2,
-            "num_rounds" : 3,
+            "num_rounds" : 2,
             "start_round": 0,
             "wait_time_after_min_received": 0,
             "aggregator_id": "aggregator",
