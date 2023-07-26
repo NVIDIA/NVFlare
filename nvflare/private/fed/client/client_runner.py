@@ -77,7 +77,6 @@ class ClientRunnerConfig(object):
 
 
 class TaskInfo:
-
     def __init__(self, task_name, task_id, inst_id, abort_signal):
         self.name = task_name
         self.id = task_id
@@ -109,9 +108,8 @@ class ClientRunner(FLComponent):
         self.job_id = job_id
         self.engine = engine
         self.run_abort_signal = Signal()
-        self.stopped = False
         self.task_lock = threading.Lock()
-        self.running_tasks = {}   # task_inst_id => TaskInfo
+        self.running_tasks = {}  # task_inst_id => TaskInfo
         self.end_run_fired = False
         self.end_run_lock = threading.Lock()
         self._register_aux_message_handler(engine)
@@ -128,9 +126,7 @@ class ClientRunner(FLComponent):
         return reply
 
     def _process_task(self, task: TaskAssignment, fl_ctx: FLContext) -> Shareable:
-        if self.stopped:
-            return make_reply(ReturnCode.CLIENT_STOPPED)
-        elif fl_ctx.is_job_unsafe():
+        if fl_ctx.is_job_unsafe():
             return make_reply(ReturnCode.UNSAFE_JOB)
 
         task_inst_id = task.data.get_header(ReservedHeaderKey.TASK_INST_ID)
@@ -155,16 +151,12 @@ class ClientRunner(FLComponent):
 
     def _do_process_task(self, task: TaskAssignment, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         if not isinstance(task.data, Shareable):
-            self.log_error(
-                fl_ctx, f"got invalid task data in assignment: expect Shareable, but got {type(task.data)}"
-            )
+            self.log_error(fl_ctx, f"got invalid task data in assignment: expect Shareable, but got {type(task.data)}")
             return make_reply(ReturnCode.BAD_TASK_DATA)
 
         task_inst_id = task.data.get_header(ReservedHeaderKey.TASK_INST_ID)
         if not task_inst_id:
-            self.log_error(
-                fl_ctx, "got invalid task data in assignment: missing task_inst_id"
-            )
+            self.log_error(fl_ctx, "got invalid task data in assignment: missing task_inst_id")
             return make_reply(ReturnCode.BAD_TASK_DATA)
 
         fl_ctx.set_prop(FLContextKey.TASK_DATA, value=task.data, private=True, sticky=False)
@@ -248,7 +240,7 @@ class ClientRunner(FLComponent):
                     self.log_exception(fl_ctx, f"UnsafeJobError from Task Data Filter {filter_name}")
                     executor.unsafe = True
                     fl_ctx.set_job_is_unsafe()
-                    self.stopped = True
+                    self.run_abort_signal.trigger(True)
                     return self._reply_and_audit(
                         reply=make_reply(ReturnCode.UNSAFE_JOB),
                         ref=server_audit_event_id,
@@ -551,7 +543,7 @@ class ClientRunner(FLComponent):
         elif event_type == EventType.FATAL_SYSTEM_ERROR:
             reason = fl_ctx.get_prop(key=FLContextKey.EVENT_DATA, default="")
             self.log_error(fl_ctx, "Stopped ClientRunner due to FATAL_SYSTEM_ERROR received: {}".format(reason))
-            self.stopped = True
+            self.run_abort_signal.trigger(True)
 
     def _handle_end_run(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         self.log_info(fl_ctx, "received aux request from Server to end current RUN")
