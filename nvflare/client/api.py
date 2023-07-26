@@ -25,9 +25,10 @@ from nvflare.fuel.utils.import_utils import optional_import
 from .config import ClientConfig
 from .constants import ModelExchangeFormat
 from .model_cache import Cache
+from .utils import numerical_params_diff
 
 PROCESS_CACHE: Dict[int, Cache] = {}
-
+DIFF_FUNCS = {ModelExchangeFormat.PYTORCH: numerical_params_diff, ModelExchangeFormat.NUMPY: numerical_params_diff}
 
 # TODO: some other helper methods:
 #   - get_total_rounds()
@@ -104,3 +105,14 @@ def get_sys_meta() -> Dict:
         raise RuntimeError("needs to call init method first")
     cache = PROCESS_CACHE[pid]
     return cache.sys_meta
+
+
+def params_diff(original: Dict, new: Dict) -> Dict:
+    pid = os.getpid()
+    if pid not in PROCESS_CACHE:
+        raise RuntimeError("needs to call init method first")
+    cache = PROCESS_CACHE[pid]
+    diff_func = DIFF_FUNCS.get(cache.config.get_exchange_format(), None)
+    if diff_func is None:
+        raise RuntimeError("no default params diff function")
+    return diff_func(original, new)

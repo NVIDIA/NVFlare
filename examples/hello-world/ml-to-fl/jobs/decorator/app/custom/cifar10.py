@@ -80,9 +80,7 @@ def train(input_model=None, total_epochs=2, lr=0.001, device="cuda:0"):
     torch.save(net.state_dict(), PATH)
 
     # (1.3) construct trained FL model
-    output_model = flare.FLModel(
-        params=net.cpu().state_dict(), params_type=flare.ParamsType.FULL, meta=input_model.meta
-    )
+    output_model = flare.FLModel(params=net.cpu().state_dict(), meta=input_model.meta)
     return output_model
 
 

@@ -85,33 +85,41 @@ PATH = "./cifar_net.pth"
 torch.save(net.state_dict(), PATH)
 
 
-net = Net()
-net.load_state_dict(torch.load(PATH))
-# (optional) use GPU to speed things up
-net.to(device)
+# (2.0) wraps evaluation logic into a method to re-use for
+#       evaluation on both trained and received model
+def evaluate(input_weights):
+    net = Net()
+    net.load_state_dict(input_weights)
+    # (optional) use GPU to speed things up
+    net.to(device)
+
+    correct = 0
+    total = 0
+    # since we're not training, we don't need to calculate the gradients for our outputs
+    with torch.no_grad():
+        for data in testloader:
+            # (optional) use GPU to speed things up
+            images, labels = data[0].to(device), data[1].to(device)
+            # calculate outputs by running images through the network
+            outputs = net(images)
+            # the class with the highest energy is what we choose as prediction
+            _, predicted = torch.max(outputs.data, 1)
+            total += labels.size(0)
+            correct += (predicted == labels).sum().item()
+
+    print(f"Accuracy of the network on the 10000 test images: {100 * correct // total} %")
+    return 100 * correct // total
 
 
-correct = 0
-total = 0
-# since we're not training, we don't need to calculate the gradients for our outputs
-with torch.no_grad():
-    for data in testloader:
-        # (optional) use GPU to speed things up
-        images, labels = data[0].to(device), data[1].to(device)
-        # calculate outputs by running images through the network
-        outputs = net(images)
-        # the class with the highest energy is what we choose as prediction
-        _, predicted = torch.max(outputs.data, 1)
-        total += labels.size(0)
-        correct += (predicted == labels).sum().item()
-
-print(f"Accuracy of the network on the 10000 test images: {100 * correct // total} %")
-
-# (1.4) construct trained FL model
+# (2.1) evaluation on local trained model
+local_accuracy = evaluate(torch.load(PATH))
+# (2.2) evaluate on received model
+accuracy = evaluate(input_model.params)
+# (2.3) construct trained FL model difference
 output_model = flare.FLModel(
-    params=net.cpu().state_dict(),
-    params_type=flare.ParamsType.FULL,
-    metrics={"accuracy": 100 * correct // total},
+    params=flare.params_diff(net.cpu().state_dict(), input_model.params),
+    params_type=flare.ParamsType.DIFF,
+    metrics={"accuracy": accuracy},
     meta=input_model.meta,
 )
 # (1.5) send model back to NVFlare

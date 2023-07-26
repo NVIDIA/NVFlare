@@ -24,6 +24,7 @@ if ok:
     from nvflare.app_opt.lightning import init as init
     from nvflare.app_opt.lightning import patch as patch
     from nvflare.client import get_sys_meta as get_sys_meta
+    from nvflare.client import params_diff as params_diff
     from nvflare.client import send_model as send_model
 else:
     warnings.warn("pytorch_lightning is not installed, nvflare.client.lightning will not work.")
