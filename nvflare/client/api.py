@@ -78,7 +78,7 @@ def receive() -> FLModel:
     if pid not in PROCESS_CACHE:
         raise RuntimeError("needs to call init method first")
     cache = PROCESS_CACHE[pid]
-    cache.receive_model()
+    cache.receive()
     return cache.input_model
 
 

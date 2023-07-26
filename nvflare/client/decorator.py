@@ -39,7 +39,7 @@ def train(
                 raise RuntimeError("needs to call init method first")
             cache = PROCESS_CACHE[pid]
             if cache.input_model is None:
-                cache.receive_model()
+                cache.receive()
 
             # Replace func arguments
             _replace_func_args(train_fn, kwargs, cache.input_model)
@@ -79,7 +79,7 @@ def evaluate(
                 raise RuntimeError("needs to call init method first")
             cache = PROCESS_CACHE[pid]
             if cache.input_model is None:
-                cache.receive_model()
+                cache.receive()
 
             _replace_func_args(eval_fn, kwargs, cache.input_model)
             return_value = eval_fn(**kwargs)

@@ -43,7 +43,7 @@ class Cache:
         self.sys_meta = None
         self.output_meta = {}
 
-    def receive_model(self):
+    def receive(self):
         self.input_model = self.model_exchanger.receive_model()
         self.sys_meta = get_meta_from_fl_model(self.input_model, SYS_ATTRS)
 
