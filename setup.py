@@ -14,19 +14,12 @@
 
 import datetime
 import os
-import shutil
 
 from setuptools import find_packages, setup
 
 import versioneer
 
 # read the contents of your README file
-this_directory = os.path.abspath(os.path.dirname(__file__))
-
-if os.path.exists(os.path.join(this_directory, "nvflare", "poc.zip")):
-    os.remove(os.path.join(this_directory, "nvflare", "poc.zip"))
-shutil.make_archive(base_name="poc", format="zip", root_dir=os.path.join(this_directory, "nvflare"), base_dir="poc")
-shutil.move("poc.zip", os.path.join(this_directory, "nvflare", "poc.zip"))
 
 versions = versioneer.get_versions()
 if versions["error"]:
@@ -58,5 +51,3 @@ setup(
     ),
     package_data={"": ["*.yml", "*.html", "poc.zip", "*.config"]},
 )
-
-os.remove(os.path.join(this_directory, "nvflare", "poc.zip"))
