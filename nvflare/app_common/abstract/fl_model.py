@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.fuel.utils.validation_utils import check_object_type
@@ -42,7 +42,7 @@ class MetaKey(FLMetaKey):
 class FLModel:
     def __init__(
         self,
-        params_type: Optional[ParamsType] = None,
+        params_type: Union[None, str, ParamsType] = ParamsType.FULL,
         params: Any = None,
         optimizer_params: Any = None,
         metrics: Optional[Dict] = None,
@@ -65,8 +65,8 @@ class FLModel:
             meta: metadata dictionary used to contain any key-value pairs to facilitate the process.
         """
         FLModel.validate_params_type(params, params_type)
-
-        self.params_type = params_type
+        if params_type:
+            self.params_type = ParamsType(params_type)
         self.params = params
         self.optimizer_params = optimizer_params
         self.metrics = metrics
@@ -80,7 +80,7 @@ class FLModel:
         self.meta = meta
 
     @staticmethod
-    def validate_params_type(params: Any, params_type: Optional[ParamsType]) -> None:
+    def validate_params_type(params: Any, params_type: Union[None, str, ParamsType]) -> None:
         if params_type == ParamsType.FULL or params_type == ParamsType.DIFF:
             if params is None:
                 raise ValueError(f"params must be provided when params_type is {params_type.value}")

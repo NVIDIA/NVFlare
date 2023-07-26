@@ -14,39 +14,17 @@
 
 import functools
 import os
-from inspect import Parameter, signature
+from inspect import signature
 
 from nvflare.app_common.abstract.fl_model import FLModel
 
 from .api import PROCESS_CACHE
 
 
-def _get_attr_from_fl_model(model: FLModel, query_string: str):
-    if hasattr(model, query_string):
-        return getattr(model, query_string)
-    segments = query_string.split(".")  # meta.current_round
-    if len(segments) != 2:
-        raise RuntimeError(f"Invalid string: {query_string}")
-    elif segments[0] != "meta":
-        raise RuntimeError(f"Invalid string: {query_string}")
-    elif segments[1] not in model.meta:
-        raise RuntimeError(f"Can't get {segments[1]} from meta.")
-    return model.meta[segments[1]]
-
-
-def _replace_func_args(func, kwargs, model: FLModel, key_mapping: dict):
-    # Replace the first argument
+def _replace_func_args(func, kwargs, model: FLModel):
+    # Replace only the first argument
     first_params = next(iter(signature(func).parameters.values()))
-    kwargs[first_params.name] = model.params
-
-    for key in key_mapping:
-        # replace kwargs
-        if key in kwargs:
-            kwargs[key] = _get_attr_from_fl_model(model, key_mapping[key])
-        # replace default kwargs
-        defaults = {p.name: p.default for p in signature(func).parameters.values() if p.default is not Parameter.empty}
-        if key in defaults:
-            kwargs[key] = _get_attr_from_fl_model(model, key_mapping[key])
+    kwargs[first_params.name] = model
 
 
 def train(
@@ -60,24 +38,24 @@ def train(
             if pid not in PROCESS_CACHE:
                 raise RuntimeError("needs to call init method first")
             cache = PROCESS_CACHE[pid]
-
-            key_mapping = dict()
-            key_mapping.update(root_kwargs)
+            if cache.input_model is None:
+                cache.receive()
 
             # Replace func arguments
-            _replace_func_args(train_fn, kwargs, cache.input_model, key_mapping)
+            _replace_func_args(train_fn, kwargs, cache.input_model)
             return_value = train_fn(**kwargs)
 
             if return_value is None:
                 raise RuntimeError("return value is None!")
-            elif isinstance(return_value, tuple) and len(return_value) == 2:
-                model, meta = return_value
-                if meta is not None:
-                    cache.meta.update(meta)
-            else:
-                model = return_value
+            elif not isinstance(return_value, FLModel):
+                raise RuntimeError("return value needs to be an FLModel.")
 
-            cache.output_params = model
+            if cache.metrics is not None:
+                return_value.metrics = cache.metrics
+
+            cache.model_exchanger.submit_model(model=return_value)
+            cache.model_exchanger.finalize(close_pipe=False)
+            PROCESS_CACHE.pop(pid)
 
             return return_value
 
@@ -100,22 +78,16 @@ def evaluate(
             if pid not in PROCESS_CACHE:
                 raise RuntimeError("needs to call init method first")
             cache = PROCESS_CACHE[pid]
+            if cache.input_model is None:
+                cache.receive()
 
-            key_mapping = dict()
-            key_mapping.update(root_kwargs)
-
-            _replace_func_args(eval_fn, kwargs, cache.input_model, key_mapping)
+            _replace_func_args(eval_fn, kwargs, cache.input_model)
             return_value = eval_fn(**kwargs)
 
             if return_value is None:
                 raise RuntimeError("return value is None!")
-            elif isinstance(return_value, tuple) and len(return_value) == 2:
-                metrics, meta = return_value
-                if meta is not None:
-                    cache.meta.update(meta)
-            else:
-                metrics = return_value
-            cache.metrics = metrics
+
+            cache.metrics = return_value
 
             return return_value
 

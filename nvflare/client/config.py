@@ -14,8 +14,6 @@
 
 from typing import Dict
 
-from nvflare.app_common.abstract.fl_model import ParamsType
-
 from .constants import ModelExchangeFormat
 
 
@@ -23,7 +21,6 @@ class ConfigKey:
     EXCHANGE_PATH = "exchange_path"
     EXCHANGE_FORMAT = "exchange_format"
     MODEL_CONVERTER = "model_converter"
-    PARAMS_TYPE = "params_type"
 
 
 class ClientConfig:
@@ -32,17 +29,15 @@ class ClientConfig:
     Example:
         {
             "exchange_path": "./",
-            "exchange_format": "pytorch",
-            "params_type": "DIFF"
+            "exchange_format": "pytorch"
         }
     """
 
     def __init__(self, config: Dict):
-        for required_key in (ConfigKey.EXCHANGE_PATH, ConfigKey.EXCHANGE_FORMAT, ConfigKey.PARAMS_TYPE):
+        for required_key in (ConfigKey.EXCHANGE_PATH, ConfigKey.EXCHANGE_FORMAT):
             if required_key not in config:
                 raise RuntimeError(f"Missing required_key: {required_key} in config.")
 
-        config[ConfigKey.PARAMS_TYPE] = ParamsType(config[ConfigKey.PARAMS_TYPE])
         config[ConfigKey.EXCHANGE_FORMAT] = ModelExchangeFormat(config[ConfigKey.EXCHANGE_FORMAT])
         self.config = config
 
@@ -54,6 +49,3 @@ class ClientConfig:
 
     def get_exchange_format(self) -> ModelExchangeFormat:
         return self.config[ConfigKey.EXCHANGE_FORMAT]
-
-    def get_params_type(self, default=ParamsType.FULL) -> ParamsType:
-        return self.config[ConfigKey.PARAMS_TYPE]
