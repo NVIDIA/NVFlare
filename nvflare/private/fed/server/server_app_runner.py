@@ -63,7 +63,7 @@ class ServerAppRunner(Runner):
             self.sync_up_parents_process(args)
 
             self.server.start_run(job_id, app_root, conf, args, snapshot)
-        except BaseException as e:
+        except Exception as e:
             with self.server.engine.new_context() as fl_ctx:
                 fl_ctx.set_prop(key=FLContextKey.FATAL_SYSTEM_ERROR, value=True, private=True, sticky=True)
             logger.exception(f"FL server execution exception: {secure_format_exception(e)}")

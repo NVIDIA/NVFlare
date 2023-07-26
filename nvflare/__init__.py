@@ -16,4 +16,6 @@ from . import _version
 
 __version__ = _version.get_versions()["version"]
 
-from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner
+# https://github.com/microsoft/pylance-release/issues/856
+
+from nvflare.private.fed.app.simulator.simulator_runner import SimulatorRunner as SimulatorRunner

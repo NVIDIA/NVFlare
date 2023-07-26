@@ -236,7 +236,7 @@ def create_stats_pool_files_for_job(workspace: Workspace, job_id: str, prefix=No
     summary_file = workspace.get_stats_pool_summary_path(job_id, prefix)
     try:
         StatsPoolManager.dump_summary(summary_file)
-    except BaseException as e:
+    except Exception as e:
         err = f"Failed to create stats pool summary file {summary_file}: {secure_format_exception(e)}"
     StatsPoolManager.close()
     return err

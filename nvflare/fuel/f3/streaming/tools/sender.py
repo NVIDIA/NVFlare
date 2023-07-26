@@ -47,7 +47,21 @@ if __name__ == "__main__":
     sender = Sender(connect_url)
     time.sleep(2)
 
+    print("Creating buffer ...")
+    start = time.time()
     buffer = make_buffer(BUF_SIZE)
+    print(f"Buffer done, took {time.time()-start} seconds")
+
+    start = time.time()
     fut = sender.send(buffer)
+    last = 0
+    while not fut.done():
+        progress = fut.get_progress()
+        print(f"{fut.get_stream_id()} Progress: {progress} Delta:{progress - last}")
+        last = progress
+        time.sleep(1)
+
     n = fut.result()
+    print(f"Time to send {time.time()-start} seconds")
+
     print(f"Bytes sent: {n}")

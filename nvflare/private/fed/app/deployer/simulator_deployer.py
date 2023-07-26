@@ -18,6 +18,8 @@ import shutil
 import tempfile
 
 from nvflare.fuel.f3.cellnet.cell import Cell
+
+# from nvflare.fuel.f3.cellnet.new_cell import NewCell as Cell
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils.dict_utils import augment
 from nvflare.fuel.utils.network_utils import get_open_ports
@@ -143,7 +145,7 @@ class SimulatorDeployer(ServerDeployer):
                 try:
                     data = json.load(file)
                     augment(to_dict=client_config, from_dict=data, from_override_to=False)
-                except BaseException as e:
+                except Exception as e:
                     raise RuntimeError(f"Error processing config file {resources}: {secure_format_exception(e)}")
 
         build_ctx = {

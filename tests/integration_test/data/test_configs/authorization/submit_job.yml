@@ -53,7 +53,7 @@ tests:
         "result":
           "type": "admin_api_response"
           "data": {
-            "message": "Error: Authorization Error: user 'admin@a.org' is not authorized for 'submit_job'"
+            "message": "Error: PermissionError: Authorization Error: user 'admin@a.org' is not authorized for 'submit_job'"
           }
       - "trigger":
           "type": "server_log"
@@ -63,7 +63,7 @@ tests:
         "result":
           "type": "admin_api_response"
           "data": {
-            "message": "Error: Authorization Error: user 'admin@b.org' is not authorized for 'submit_job'"
+            "message": "Error: PermissionError: Authorization Error: user 'admin@b.org' is not authorized for 'submit_job'"
           }
       - "trigger":
           "type": "server_log"
@@ -82,7 +82,7 @@ tests:
         "result":
           "type": "admin_api_response"
           "data": {
-            "message": "Error: Authorization Error: user 'user@a.org' is not authorized for 'submit_job'"
+            "message": "Error: PermissionError: Authorization Error: user 'user@a.org' is not authorized for 'submit_job'"
           }
       - "trigger":
           "type": "server_log"
@@ -92,7 +92,7 @@ tests:
         "result":
           "type": "admin_api_response"
           "data": {
-            "message": "Error: Authorization Error: user 'user@b.org' is not authorized for 'submit_job'"
+            "message": "Error: PermissionError: Authorization Error: user 'user@b.org' is not authorized for 'submit_job'"
           }
       - "trigger":
           "type": "server_log"

@@ -66,7 +66,7 @@ class NPTrainer(Executor):
         # First we extract DXO from the shareable.
         try:
             incoming_dxo = from_shareable(shareable)
-        except BaseException as e:
+        except Exception as e:
             self.system_panic(
                 f"Unable to convert shareable to model definition. Exception {secure_format_exception(e)}", fl_ctx
             )

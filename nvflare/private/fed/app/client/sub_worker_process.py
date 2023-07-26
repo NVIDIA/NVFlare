@@ -42,6 +42,8 @@ from nvflare.fuel.f3.cellnet.cell import MessageHeaderKey, make_reply
 from nvflare.fuel.f3.cellnet.defs import ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
+
+# from nvflare.fuel.f3.cellnet.new_cell import NewCell as Cell
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.sec.audit import AuditService
 from nvflare.fuel.sec.security_content_service import SecurityContentService
@@ -132,7 +134,7 @@ class EventRelayer(FLComponent):
                     )
                     # update the fl_ctx from the child process return data.
                     fl_ctx.props.update(return_data.payload[CommunicationMetaData.FL_CTX].props)
-                except BaseException:
+                except Exception:
                     self.log_warning(
                         fl_ctx, f"Failed to relay the event to parent process. Event: {event_type}", fire_event=False
                     )

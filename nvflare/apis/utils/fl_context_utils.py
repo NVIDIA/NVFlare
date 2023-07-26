@@ -31,7 +31,7 @@ def get_serializable_data(fl_ctx: FLContext):
             try:
                 fobs.dumps(v)
                 new_fl_ctx.props[k] = v
-            except BaseException as e:
+            except Exception as e:
                 msg = f"Object in FLContext with key {k} and type {type(v)} is not serializable (discarded): {secure_format_exception(e)}"
                 logger.warning(generate_log_message(fl_ctx, msg))
 
@@ -39,6 +39,9 @@ def get_serializable_data(fl_ctx: FLContext):
 
 
 def generate_log_message(fl_ctx: FLContext, msg: str):
+    if not fl_ctx:
+        return msg
+
     _identity_ = "identity"
     _my_run = "run"
     _peer_run = "peer_run"

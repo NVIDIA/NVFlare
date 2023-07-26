@@ -151,6 +151,6 @@ class InfoCollectorCommandModule(JobCommandModule, CommandUtil):
             try:
                 body = json.loads(r.reply.body)
                 result[client_name] = body
-            except BaseException:
+            except Exception:
                 result[client_name] = "invalid_reply"
                 return

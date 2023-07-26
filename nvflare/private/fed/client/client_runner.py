@@ -247,7 +247,7 @@ class ClientRunner(FLComponent):
                         fl_ctx=fl_ctx,
                         msg=f"submit result: {ReturnCode.UNSAFE_JOB}",
                     )
-                except BaseException as e:
+                except Exception as e:
                     self.log_exception(
                         fl_ctx, f"Processing error from Task Data Filter {filter_name}: {secure_format_exception(e)}"
                     )
@@ -324,7 +324,7 @@ class ClientRunner(FLComponent):
                 fl_ctx=fl_ctx,
                 msg=f"submit result: {ReturnCode.UNSAFE_JOB}",
             )
-        except BaseException as e:
+        except Exception as e:
             self.log_exception(fl_ctx, f"Processing error from executor {executor_name}: {secure_format_exception(e)}")
             return self._reply_and_audit(
                 reply=make_reply(ReturnCode.EXECUTION_EXCEPTION),
@@ -364,7 +364,7 @@ class ClientRunner(FLComponent):
                         fl_ctx=fl_ctx,
                         msg=f"submit result: {ReturnCode.UNSAFE_JOB}",
                     )
-                except BaseException as e:
+                except Exception as e:
                     self.log_exception(
                         fl_ctx, f"Processing error in Task Result Filter {filter_name}: {secure_format_exception(e)}"
                     )
@@ -465,7 +465,7 @@ class ClientRunner(FLComponent):
 
         try:
             self._try_run()
-        except BaseException as e:
+        except Exception as e:
             with self.engine.new_context() as fl_ctx:
                 self.log_exception(fl_ctx, f"processing error in RUN execution: {secure_format_exception(e)}")
         finally:

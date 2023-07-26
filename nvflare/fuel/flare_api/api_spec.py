@@ -25,55 +25,55 @@ class MonitorReturnCode(int, enum.Enum):
     ENDED_BY_CB = 2
 
 
-class NoConnection(BaseException):
+class NoConnection(Exception):
     pass
 
 
-class SessionClosed(BaseException):
+class SessionClosed(Exception):
     pass
 
 
-class InvalidArgumentError(BaseException):
+class InvalidArgumentError(Exception):
     pass
 
 
-class InvalidJobDefinition(BaseException):
+class InvalidJobDefinition(Exception):
     pass
 
 
-class JobNotFound(BaseException):
+class JobNotFound(Exception):
     pass
 
 
-class JobNotRunning(BaseException):
+class JobNotRunning(Exception):
     pass
 
 
-class JobNotDone(BaseException):
+class JobNotDone(Exception):
     pass
 
 
-class InternalError(BaseException):
+class InternalError(Exception):
     pass
 
 
-class AuthenticationError(BaseException):
+class AuthenticationError(Exception):
     pass
 
 
-class AuthorizationError(BaseException):
+class AuthorizationError(Exception):
     pass
 
 
-class NoClientsAvailable(BaseException):
+class NoClientsAvailable(Exception):
     pass
 
 
-class ClientsStillRunning(BaseException):
+class ClientsStillRunning(Exception):
     pass
 
 
-class InvalidTarget(BaseException):
+class InvalidTarget(Exception):
     pass
 
 

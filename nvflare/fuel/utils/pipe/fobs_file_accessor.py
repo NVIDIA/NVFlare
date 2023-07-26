@@ -32,7 +32,7 @@ class FobsFileAccessor(FileAccessor):
             data = file.read()
         return fobs.loads(data)
 
-    def write(self, data: Any, file_path):
+    def write(self, data: Any, file_path) -> None:
         """Write the data as binary file.
 
         Args:

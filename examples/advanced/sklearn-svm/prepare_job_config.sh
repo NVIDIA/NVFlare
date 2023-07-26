@@ -14,7 +14,7 @@ for site_num in 3;
 do
     for split_mode in uniform;
     do
-        for backend in sklearn cuml;
+        for backend in sklearn;
         do
           python3 utils/prepare_job_config.py \
           --task_name "${task_name}" \

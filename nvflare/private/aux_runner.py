@@ -107,7 +107,7 @@ class AuxRunner(FLComponent):
             return make_reply(ReturnCode.BAD_PEER_CONTEXT)
         try:
             reply = handler_f(topic=topic, request=request, fl_ctx=fl_ctx)
-        except BaseException:
+        except Exception:
             self.log_exception(fl_ctx, "processing error in message handling")
             return make_reply(ReturnCode.HANDLER_EXCEPTION)
 
@@ -186,7 +186,7 @@ class AuxRunner(FLComponent):
                 bulk_send=bulk_send,
                 optional=optional,
             )
-        except BaseException:
+        except Exception:
             if optional:
                 self.logger.debug(f"Failed to send aux message {topic} to targets: {targets}")
                 self.logger.debug(secure_format_traceback())
