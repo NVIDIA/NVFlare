@@ -208,7 +208,7 @@ def cli_main():
     # (3) construct trained FL model
     output_model = flare.FLModel(params=cli.model.cpu().state_dict())
     # (4) send the model to NVFlare
-    flare.send_model(output_model)
+    flare.send(output_model)
     predictions = cli.trainer.predict(ckpt_path="best", datamodule=cli.datamodule)
     print(predictions[0])
 

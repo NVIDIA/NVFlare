@@ -68,7 +68,7 @@ def init(config: Union[str, Dict] = "config/config_exchange.json"):
     PROCESS_CACHE[pid] = Cache(mdx, client_config)
 
 
-def receive_model() -> FLModel:
+def receive() -> FLModel:
     """Receives model from NVFlare side.
 
     Returns:
@@ -82,7 +82,7 @@ def receive_model() -> FLModel:
     return cache.input_model
 
 
-def send_model(fl_model: FLModel) -> None:
+def send(fl_model: FLModel) -> None:
     """Sends the model to NVFlare side."""
     pid = os.getpid()
     if pid not in PROCESS_CACHE:

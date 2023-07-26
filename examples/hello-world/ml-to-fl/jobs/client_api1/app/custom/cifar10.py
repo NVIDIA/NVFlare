@@ -44,7 +44,7 @@ net = Net()
 # (1.1) initializes NVFlare client API
 flare.init()
 # (1.2) gets FLModel from NVFlare
-input_model = flare.receive_model()
+input_model = flare.receive()
 
 # (1.3) loads model from NVFlare
 net.load_state_dict(input_model.params)
@@ -114,4 +114,4 @@ output_model = flare.FLModel(
     meta=input_model.meta,
 )
 # (1.5) send model back to NVFlare
-flare.send_model(output_model)
+flare.send(output_model)

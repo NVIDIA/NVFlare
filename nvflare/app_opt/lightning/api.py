@@ -43,7 +43,7 @@ def patch(cls: pl.LightningModule) -> None:
 
 
 def _fl_train_start(self):
-    model = flare.receive_model()
+    model = flare.receive()
     if model:
         weights = model.params
         self.fl_model = model
