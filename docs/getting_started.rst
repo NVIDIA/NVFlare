@@ -206,7 +206,7 @@ FL Simulator is lightweight and uses threads to simulate different clients.
 The code used for the simulator can be directly used in production mode.
 
 POC mode is a quick way to get set up to run locally on one machine. The FL server and each client
-run on different processes.
+run on different processes or dockers.
 
 Production mode is secure with TLS certificates - depending the choice the deployment, you can further choose:
 
