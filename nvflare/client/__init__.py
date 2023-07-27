@@ -18,10 +18,10 @@
 from nvflare.app_common.abstract.fl_model import FLModel as FLModel
 from nvflare.app_common.abstract.fl_model import ParamsType as ParamsType
 
-from .api import get_sys_meta as get_sys_meta
 from .api import init as init
 from .api import params_diff as params_diff
 from .api import receive as receive
 from .api import send as send
+from .api import system_info as system_info
 from .decorator import evaluate as evaluate
 from .decorator import train as train
