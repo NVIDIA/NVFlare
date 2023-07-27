@@ -21,7 +21,7 @@ transition from your ML code to FL with NVFlare.
 
 ## Examples
 
-- [client_api1](./jobs/client_api1/): Re-write CIFAR10 PyTorch example to federated learning example using NVFlare client API
-- [client_api2](./jobs/client_api2/): Re-write CIFAR10 PyTorch example to federated learning example using NVFlare client API with model selection
-- [decorator](./jobs/decorator/): Re-write CIFAR10 PyTorch example to federated learning example using NVFlare client API decorator
-
+- [client_api1](./jobs/client_api1/): Re-write CIFAR10 PyTorch example to federated learning job using NVFlare client API
+- [client_api2](./jobs/client_api2/): Re-write CIFAR10 PyTorch example to federated learning job using NVFlare client API with model selection
+- [decorator](./jobs/decorator/): Re-write CIFAR10 PyTorch example to federated learning job using NVFlare client API decorator
+- [lightning_client_api](./jobs/lightning_client_api/): Re-write PyTorch Lightning auto-encoder example to federeated learning job using NVFlare lightning client API

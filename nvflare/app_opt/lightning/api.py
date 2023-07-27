@@ -21,16 +21,15 @@ from nvflare.client.config import ConfigKey
 from nvflare.client.constants import ModelExchangeFormat
 
 
-def init():
+def patch(cls: pl.LightningModule) -> None:
     flare.init(
         config={
             ConfigKey.EXCHANGE_PATH: "./",
             ConfigKey.EXCHANGE_FORMAT: ModelExchangeFormat.PYTORCH,
+            ConfigKey.TRANSFER_TYPE: "FULL",
         }
     )
 
-
-def patch(cls: pl.LightningModule) -> None:
     if not issubclass(cls, pl.LightningModule):
         raise RuntimeError("only support LightningModule")
 

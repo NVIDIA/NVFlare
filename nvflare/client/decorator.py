@@ -53,7 +53,7 @@ def train(
             if cache.metrics is not None:
                 return_value.metrics = cache.metrics
 
-            cache.model_exchanger.submit_model(model=return_value)
+            cache.send(model=return_value)
             cache.model_exchanger.finalize(close_pipe=False)
             PROCESS_CACHE.pop(pid)
 

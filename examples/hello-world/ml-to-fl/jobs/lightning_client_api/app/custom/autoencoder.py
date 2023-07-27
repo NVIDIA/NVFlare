@@ -191,9 +191,7 @@ class MyDataModule(LightningDataModule):
 
 
 def cli_main():
-    # (1) init nvflare environment
-    flare.init()
-    # (2) patch the LightningModule
+    # (1) patch the LightningModule
     flare.patch(LitAutoEncoder)
     cli = LightningCLI(
         LitAutoEncoder,
@@ -205,9 +203,9 @@ def cli_main():
     )
     cli.trainer.fit(cli.model, datamodule=cli.datamodule)
     cli.trainer.test(ckpt_path="best", datamodule=cli.datamodule)
-    # (3) construct trained FL model
+    # (2) contruct trained FLModel
     output_model = flare.FLModel(params=cli.model.cpu().state_dict())
-    # (4) send the model to NVFlare
+    # (3) send the model to NVFlare
     flare.send(output_model)
     predictions = cli.trainer.predict(ckpt_path="best", datamodule=cli.datamodule)
     print(predictions[0])
