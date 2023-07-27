@@ -320,7 +320,8 @@ def load_predefined_config():
 
 def prepare_meta_config(cmd_args):
     app_dir = dst_app_path(cmd_args)
-    dst_path = os.path.join(app_dir, "meta.json")
+    job_folder = cmd_args.job_folder
+    dst_path = os.path.join(job_folder, "meta.json")
     if os.path.isfile(dst_path) and not cmd_args.force:
         return
     dst_config = load_src_config_template("meta.conf")
