@@ -36,6 +36,14 @@ class Signal(object):
         self._trigger_time = time.time()
         self._triggered = True
 
+    @property
+    def value(self):
+        return self._value
+
+    @property
+    def trigger_time(self):
+        return self._trigger_time
+
     def reset(self, value=None):
         """Reset the Signal.
 
