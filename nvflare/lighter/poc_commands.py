@@ -425,7 +425,7 @@ def prepare_poc_provision(
     # update storage
     if workspace != DEFAULT_WORKSPACE:
         update_storage_locations(
-            local_dir=f"{workspace}/example_project/prod_00/{server_name}/local", default_resource_name="resources.json", workspace=workspace
+            local_dir=f"{workspace}/example_project/prod_00/{server_name}/local", workspace=workspace
         )
     examples_dir = get_examples_dir(examples_dir)
     if examples_dir is not None:

@@ -113,7 +113,7 @@ def setup_and_teardown_system(request):
             n_clients = int(test_config["n_clients"])
             site_launcher = POCSiteLauncher(n_servers=n_servers, n_clients=n_clients)
             poc = True
-            super_user_name = "admin@nvida.com"
+            super_user_name = "admin@nvidia.com"
 
         workspace_root = site_launcher.prepare_workspace()
         print(f"Workspace root is {workspace_root}")
