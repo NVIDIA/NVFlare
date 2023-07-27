@@ -23,7 +23,6 @@ from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.client.api import AdminAPI, APIStatus, ResultKey
 from nvflare.fuel.hci.client.config import FLAdminClientStarterConfigurator
-from nvflare.fuel.hci.client.event import EventType
 from nvflare.fuel.hci.client.overseer_service_finder import ServiceFinderByOverseer
 from nvflare.fuel.hci.cmd_arg_utils import (
     process_targets_into_str,
