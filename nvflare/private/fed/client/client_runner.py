@@ -621,8 +621,15 @@ class ClientRunner(FLComponent):
                     self.log_exception(
                         fl_ctx, f"Processing error from Task Data Filter {filter_name}: {secure_format_exception(e)}"
                     )
+                    return make_reply(ReturnCode.TASK_DATA_FILTER_ERROR)
 
-        reply = executor.execute(task_names, task_data, fl_ctx, self.task_abort_signal)
+        try:
+            reply = executor.execute(task_names, task_data, fl_ctx, self.task_abort_signal)
+        except Exception as e:
+            self.log_exception(
+                fl_ctx, f"Handle client controller task error {task_names}: {secure_format_exception(e)}"
+            )
+            return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
         filter_list = []
         if scope_object and scope_object.task_result_filters:
@@ -641,6 +648,7 @@ class ClientRunner(FLComponent):
                     self.log_exception(
                         fl_ctx, f"Processing error in Task Result Filter {filter_name}: {secure_format_exception(e)}"
                     )
+                    return make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR)
 
         reply.set_header(ReservedHeaderKey.RC, ReturnCode.OK)
         return reply

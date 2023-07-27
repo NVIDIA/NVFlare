@@ -17,9 +17,9 @@ from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ControllerSpec, Task, SendOrder, ClientTask, TaskCompletionStatus
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, ReservedTopic, ReservedKey
+from nvflare.apis.fl_constant import FLContextKey, ReservedTopic, ReservedKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
-from nvflare.apis.shareable import Shareable
+from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.private.privacy_manager import Scope
 from nvflare.security.logging import secure_format_exception
@@ -84,6 +84,7 @@ class ClientController(FLComponent, ControllerSpec):
                     self.log_exception(
                         fl_ctx, f"Processing error from Task Data Filter {filter_name}: {secure_format_exception(e)}"
                     )
+                    return make_reply(ReturnCode.TASK_DATA_FILTER_ERROR)
 
         for client in targets:
             self._call_tasK_cb(task.before_task_sent_cb, client, task, fl_ctx)
@@ -122,6 +123,7 @@ class ClientController(FLComponent, ControllerSpec):
                         self.log_exception(
                             fl_ctx, f"Processing error in Task Result Filter {filter_name}: {secure_format_exception(e)}"
                         )
+                        return make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR)
 
         for client in targets:
             self._call_tasK_cb(task.task_done_cb, client, task, fl_ctx)
