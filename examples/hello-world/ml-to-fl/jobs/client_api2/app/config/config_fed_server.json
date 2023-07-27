@@ -31,7 +31,9 @@
     {
       "id": "model_selector",
       "name": "IntimeModelSelector",
-      "args": {}
+      "args": {
+        "key_metric": "accuracy"
+      }
     }
   ],
   "workflows": [

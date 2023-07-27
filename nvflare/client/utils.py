@@ -16,7 +16,7 @@ from typing import Dict, Iterable
 
 from nvflare.app_common.abstract.fl_model import FLModel
 
-from .constants import CONST_ATTRS
+from .constants import CONST_ATTRS, ModelExchangeFormat
 
 
 def get_meta_from_fl_model(fl_model: FLModel, attrs: Iterable[str]) -> Dict:
@@ -82,3 +82,6 @@ def numerical_params_diff(original: Dict, new: Dict) -> Dict:
             continue
         diff_dict[k] = new[k] - original[k]
     return diff_dict
+
+
+DIFF_FUNCS = {ModelExchangeFormat.PYTORCH: numerical_params_diff, ModelExchangeFormat.NUMPY: numerical_params_diff}
