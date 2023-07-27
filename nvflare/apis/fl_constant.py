@@ -41,7 +41,6 @@ class ReturnCode(object):
     UNSAFE_JOB = "UNSAFE_JOB"
     SERVER_NOT_READY = "SERVER_NOT_READY"
     SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"
-    CLIENT_STOPPED = "CLIENT_STOPPED"
 
 
 class MachineStatus(Enum):
