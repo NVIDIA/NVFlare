@@ -115,10 +115,9 @@ def evaluate(input_weights):
 local_accuracy = evaluate(torch.load(PATH))
 # (2.2) evaluate on received model
 accuracy = evaluate(input_model.params)
-# (2.3) construct trained FL model difference
+# (2.3) construct trained FL model
 output_model = flare.FLModel(
-    params=flare.params_diff(input_model.params, net.cpu().state_dict()),
-    params_type=flare.ParamsType.DIFF,
+    params=net.cpu().state_dict(),
     metrics={"accuracy": accuracy},
     meta=input_model.meta,
 )
