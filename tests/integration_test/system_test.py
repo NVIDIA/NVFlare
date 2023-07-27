@@ -109,7 +109,7 @@ def setup_and_teardown_system(request):
         else:
             n_servers = int(test_config["n_servers"])
             if n_servers != 1:
-                raise NVFTestError(f"POC mode can only use one server. For more servers, use HA with provisioned mode.")
+                raise NVFTestError("POC mode can only use one server. For more servers, use HA with provisioned mode.")
             n_clients = int(test_config["n_clients"])
             site_launcher = POCSiteLauncher(n_servers=n_servers, n_clients=n_clients)
             poc = True
