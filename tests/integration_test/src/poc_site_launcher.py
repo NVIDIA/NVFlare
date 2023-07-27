@@ -37,7 +37,7 @@ class POCSiteLauncher(SiteLauncher):
         self.poc_temp_dir = tempfile.mkdtemp()
         if os.path.exists(self.poc_temp_dir):
             shutil.rmtree(self.poc_temp_dir)
-        prepare_poc(number_of_clients=n_clients, workspace=self.poc_temp_dir)
+        prepare_poc(clients=None, number_of_clients=n_clients, workspace=self.poc_temp_dir)
         self.poc_dir = os.path.join(self.poc_temp_dir, "example_project", "prod_00")
         print(f"Using POC at dir: {self.poc_dir}")
         self.n_servers = n_servers
