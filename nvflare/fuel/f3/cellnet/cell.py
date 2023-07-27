@@ -978,6 +978,9 @@ class Cell(MessageReceiver, EndpointMonitor):
         # cannot find path to the target
         # try the server root
         # we assume that all client roots connect to the server root.
+        if FQCN.ROOT_SERVER in self.ALL_CELLS:
+            return Endpoint(FQCN.ROOT_SERVER)
+
         root_agent = self.agents.get(FQCN.ROOT_SERVER)
         if root_agent:
             return root_agent.endpoint
