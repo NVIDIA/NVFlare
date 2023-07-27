@@ -20,7 +20,7 @@ from .constants import ModelExchangeFormat
 class ConfigKey:
     EXCHANGE_PATH = "exchange_path"
     EXCHANGE_FORMAT = "exchange_format"
-    MODEL_CONVERTER = "model_converter"
+    TRANSFER_TYPE = "transfer_type"
 
 
 class ClientConfig:
@@ -29,7 +29,8 @@ class ClientConfig:
     Example:
         {
             "exchange_path": "./",
-            "exchange_format": "pytorch"
+            "exchange_format": "pytorch",
+            "transfer_type": "FULL"
         }
     """
 
@@ -49,3 +50,6 @@ class ClientConfig:
 
     def get_exchange_format(self) -> ModelExchangeFormat:
         return self.config[ConfigKey.EXCHANGE_FORMAT]
+
+    def get_transfer_type(self):
+        return self.config[ConfigKey.TRANSFER_TYPE]
