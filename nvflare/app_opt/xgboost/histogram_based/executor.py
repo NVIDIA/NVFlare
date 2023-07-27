@@ -144,14 +144,11 @@ class FedXGBHistogramExecutor(Executor):
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
-            engine = fl_ctx.get_engine()
-            if engine.client.overseer_agent:
-                sp = engine.client.overseer_agent.get_primary_sp()
-                if sp and sp.primary is True:
-                    self._server_address = sp.name
             self.client_id = fl_ctx.get_identity_name()
+            self._server_address = self._get_server_address(fl_ctx)
             self.log_info(fl_ctx, f"server address is {self._server_address}")
 
+            engine = fl_ctx.get_engine()
             ws = engine.get_workspace()
             self.app_dir = ws.get_app_dir(fl_ctx.get_job_id())
 
@@ -162,6 +159,15 @@ class FedXGBHistogramExecutor(Executor):
                 self.train_data, self.val_data = data_loader.load_data(self.client_id)
             except Exception as e:
                 self.system_panic(f"load_data failed: {secure_format_exception(e)}", fl_ctx)
+
+    def _get_server_address(self, fl_ctx: FLContext):
+        engine = fl_ctx.get_engine()
+        if engine.client.overseer_agent:
+            sp = engine.client.overseer_agent.get_primary_sp()
+            if sp and sp.primary is True:
+                return sp.name
+        self.log_info(fl_ctx, "Unable to get primary sp from overseer. Using previously known server address")
+        return self._server_address
 
     def _get_certificates(self, fl_ctx: FLContext):
         workspace: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
@@ -239,11 +245,7 @@ class FedXGBHistogramExecutor(Executor):
             verbose_eval=self.verbose_eval,
         )
 
-        engine = fl_ctx.get_engine()
-        if engine.client.overseer_agent:
-            sp = engine.client.overseer_agent.get_primary_sp()
-            if sp and sp.primary is True:
-                self._server_address = sp.name
+        self._server_address = self._get_server_address(fl_ctx)
         self.log_info(fl_ctx, f"server address is {self._server_address}")
 
         communicator_env = {
