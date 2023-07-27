@@ -16,6 +16,7 @@ import argparse
 import csv
 import os
 import shutil
+import requests
 
 
 def parse_args(prog_name: str):
@@ -61,7 +62,6 @@ def prepare_data(data_root_dir: str):
 
         print(f"\ndownload to {dest}")
         url = client_data_urls[client]
-        import requests
 
         with open(dest, "w") as f:
             writer = csv.writer(f)
