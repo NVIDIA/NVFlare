@@ -95,9 +95,6 @@ class ClientController(FLComponent, ControllerSpec):
             timeout=task.timeout, fl_ctx=fl_ctx
         )
 
-        for client in targets:
-            self._call_tasK_cb(task.result_received_cb, client, task, fl_ctx)
-
         # apply result filters
         self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_EXECUTION")
         self.fire_event(EventType.AFTER_TASK_EXECUTION, fl_ctx)
@@ -125,6 +122,10 @@ class ClientController(FLComponent, ControllerSpec):
                         )
                         return make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR)
 
+        task.set_result(replies)
+        for client in targets:
+            self._call_tasK_cb(task.result_received_cb, client, task, fl_ctx)
+
         for client in targets:
             self._call_tasK_cb(task.task_done_cb, client, task, fl_ctx)
 
@@ -132,8 +133,9 @@ class ClientController(FLComponent, ControllerSpec):
 
     def _call_tasK_cb(self, task_cb, client, task, fl_ctx):
         with task.cb_lock:
-            client_task = ClientTask(task=task, client=client)
-            if task.before_task_sent_cb is not None:
+            # client_task = ClientTask(task=task, client=client)
+            client_task = task.get_client_task(client)
+            if task_cb is not None:
                 try:
                     task_cb(client_task=client_task, fl_ctx=fl_ctx)
                 except Exception as e:
