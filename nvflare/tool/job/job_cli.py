@@ -34,7 +34,10 @@ CMD_CREATE_JOB = "create"
 CMD_SUBMIT_JOB = "submit"
 
 
-def get_startup_kit_dir() -> str:
+def get_startup_kit_dir(startup_kit_dir: Optional[str] = None) -> str:
+    if startup_kit_dir:
+        return startup_kit_dir
+
     # load from config file:
     startup_kit_dir = find_startup_kit_location()
     if startup_kit_dir is None:
@@ -174,6 +177,11 @@ def define_create_job_parser(job_subparser):
                                nargs="?",
                                default=1,
                                help="number of total rounds, default to 1'")
+    create_parser.add_argument("-s", "--script",
+                               type=str,
+                               nargs="?",
+                               help="""code script such as train.py""")
+
     create_parser.add_argument("-d", "--startup_kit_dir",
                                type=str,
                                nargs="?",
@@ -271,7 +279,7 @@ def create_job_info_config(cmd_args, nvflare_config: ConfigTree) -> ConfigTree:
     Returns:
         ConfigTree: The merged configuration tree.
     """
-    startup_kit_dir = cmd_args.startup_kit_dir
+    startup_kit_dir = get_startup_kit_dir(cmd_args.startup_kit_dir)
     if not startup_kit_dir or not os.path.isdir(startup_kit_dir):
         raise ValueError(f"startup_kit_dir '{startup_kit_dir}' must be a valid and non-empty path")
 
@@ -492,3 +500,6 @@ def prepare_job_folder(cmd_args):
     dirs = [app_dir, app_config_dir, app_custom_dir]
     for d in dirs:
         os.makedirs(d, exist_ok=True)
+
+    if cmd_args.script and len(cmd_args.script.strip()) > 0 and os.path.exists(cmd_args.script):
+        shutil.copy(cmd_args.script, app_custom_dir)
