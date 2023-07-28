@@ -8,9 +8,9 @@
       ],
       "executor": {
         "id": "Executor",
-        "path": "higgs_executor.FedXGBTreeHiggsExecutor",
+        "name": "FedXGBTreeExecutor",
         "args": {
-          "data_split_filename": "data_split.json",
+          "data_loader_id": "dataloader",
           "training_mode": "bagging",
           "num_client_bagging": 5,
           "num_local_parallel_tree": 1,
@@ -30,5 +30,13 @@
   ],
   "task_result_filters": [],
   "task_data_filters": [],
-  "components": []
+  "components": [
+    {
+      "id": "dataloader",
+      "path": "higgs_data_loader.HIGGSDataLoader",
+      "args": {
+        "data_split_filename": "data_split.json"
+      }
+    }
+  ]
 }
