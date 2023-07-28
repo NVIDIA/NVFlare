@@ -18,7 +18,9 @@ import pathlib
 import shutil
 import sys
 import textwrap
+from tempfile import mkdtemp
 from typing import List, Optional, Dict, Tuple, Any
+from distutils.dir_util import copy_tree
 
 from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree
@@ -76,36 +78,35 @@ def submit_job(cmd_args):
     """
     print("********submit job************ cmd_args = ", cmd_args)
     # todo: should we keep the origin file extension ?
-    # todo: how to tell user there many config keys you can use.
-    # todo: submit_job with zip folder?
     # todo: where overwrite app configs such as porych-lightning.
     # todo: we need to find a tmep job folder symlink + configure overwrite ?, if we do that , what to do with
     #       PYTHONPATH user set. what if there are shared files in common directory but in file path.
-    # import tempfile
-    #
-    # with tempfile.TemporaryDirectory() as tmpdirname:
-    #     print('created temporary directory', tmpdirname)
+    temp_job_dir = None
+    try:
+        temp_job_dir = mkdtemp()
+        print('created temporary directory', temp_job_dir)
+        # shutil.copytree(cmd_args.job_folder, temp_job_dir)
+        copy_tree(cmd_args.job_folder, temp_job_dir)
 
-    # todo: where do I find login user..
-    prepare_submit_job_config(cmd_args)
-    # todo: replace this hard-coded info later
-    username = "admin@nvidia.com"
-    internal_submit_job(cmd_args, username)
+        prepare_submit_job_config(cmd_args, temp_job_dir)
+        # todo: replace this hard-coded info later
+        username = "admin@nvidia.com"
+        internal_submit_job(cmd_args, username, temp_job_dir)
+    finally:
+        if temp_job_dir:
+            shutil.rmtree(temp_job_dir)
 
 
-def internal_submit_job(cmd_args, username):
-    from nvflare.fuel.flare_api.flare_api import new_secure_session
+def internal_submit_job(cmd_args, username, temp_job_dir):
     startup_kit_dir = get_startup_kit_dir()
-    print("cmd_args.job_folder = ", cmd_args.job_folder)
-    job_dir = cmd_args.job_folder
-    prepare_transfer(job_dir, startup_kit_dir)
+    prepare_transfer(temp_job_dir, startup_kit_dir)
     admin_user_dir = os.path.join(startup_kit_dir, username)
     print("admin_user_dir=", admin_user_dir)
     sess = new_secure_session(username=username, startup_kit_location=admin_user_dir)
     print(sess.get_system_info())
 
-    print("job_dir=", job_dir)
-    job_id = sess.submit_job(job_dir)
+    print("job_dir=", temp_job_dir)
+    job_id = sess.submit_job(temp_job_dir)
     print(job_id + " was submitted")
 
 
@@ -182,11 +183,6 @@ def define_create_job_parser(job_subparser):
                                nargs="?",
                                help="""code script such as train.py""")
 
-    create_parser.add_argument("-d", "--startup_kit_dir",
-                               type=str,
-                               nargs="?",
-                               help="""specify startup kit directory path,
-                                       alternatively set export NVFLARE_STARTUP_KIT_DIR=<path to startup kit dir>""")
     create_parser.add_argument("-debug", "--debug", action='store_true', help="debug is on")
     create_parser.add_argument("-force", "--force",
                                action='store_true',
@@ -195,13 +191,13 @@ def define_create_job_parser(job_subparser):
 
 
 # ====================================================================
-def prepare_submit_job_config(cmd_args):
+def prepare_submit_job_config(cmd_args, tmp_job_dir):
     merged_conf = merge_configs_from_cli(cmd_args)
     for file, file_configs in merged_conf.items():
-        config_dir = pathlib.Path(cmd_args.job_folder) / "app" / "config"
+        config_dir = pathlib.Path(tmp_job_dir) / "app" / "config"
         base_filename = os.path.basename(file)
         if base_filename.startswith("meta."):
-            config_dir = cmd_args.job_folder
+            config_dir = tmp_job_dir
         base_filename = os.path.splitext(base_filename)[0]
         dst_path = config_dir / f"{base_filename}.json"
         save_config(file_configs, dst_path)
@@ -256,11 +252,16 @@ def prepare_transfer(job_folder: str, prod_dir: str):
     admin_user_name = "admin@nvidia.com"
     startup_dir = os.path.join(prod_dir, admin_user_name, FlareServiceConstants.STARTUP)
     dst = os.path.join(prod_dir, admin_user_name, get_upload_dir(startup_dir))
-    if not is_dir_empty(dst):
-        if os.path.islink(dst):
-            os.unlink(dst)
-        elif os.path.isdir(dst):
-            shutil.rmtree(dst, ignore_errors=True)
+    print("**** src=", src , "dst=", dst)
+    shutil.rmtree(dst, ignore_errors=True)
+    try:
+        if not is_dir_empty(dst):
+            if os.path.islink(dst):
+                os.unlink(dst)
+            elif os.path.isdir(dst):
+                shutil.rmtree(dst, ignore_errors=True)
+    except FileNotFoundError as e:
+        shutil.rmtree(dst, ignore_errors=True)
 
     print(f"link job folder from '{src}' to '{dst}'")
     os.symlink(src, dst)
@@ -279,7 +280,7 @@ def create_job_info_config(cmd_args, nvflare_config: ConfigTree) -> ConfigTree:
     Returns:
         ConfigTree: The merged configuration tree.
     """
-    startup_kit_dir = get_startup_kit_dir(cmd_args.startup_kit_dir)
+    startup_kit_dir = get_startup_kit_dir()
     if not startup_kit_dir or not os.path.isdir(startup_kit_dir):
         raise ValueError(f"startup_kit_dir '{startup_kit_dir}' must be a valid and non-empty path")
 
@@ -327,13 +328,13 @@ def load_predefined_config():
 
 
 def prepare_meta_config(cmd_args):
-    app_dir = dst_app_path(cmd_args)
     job_folder = cmd_args.job_folder
+    app_name = os.path.basename(job_folder)
     dst_path = os.path.join(job_folder, "meta.json")
     if os.path.isfile(dst_path) and not cmd_args.force:
         return
     dst_config = load_src_config_template("meta.conf")
-    dst_config.put("name", "app")
+    dst_config.put("name", app_name)
     dst_config.put(JobMetaKey.MIN_CLIENTS, cmd_args.min_clients)
     save_config(dst_config, dst_path)
 
@@ -463,6 +464,8 @@ def prepare_workflows(cmd_args, predefined) -> Tuple[ConfigTree, ConfigTree]:
                 target_exec = target_exec_list[0]
 
         if target_exec:
+            target_exec.put("script", f"custom/{os.path.basename(cmd_args.script)}")
+            print("target_exec = ", target_exec)
             executors.append(target_exec.get("executor"))
             if target_exec.get("task_data_filters", None):
                 for name, data_filter in target_exec.get("task_data_filters").items():

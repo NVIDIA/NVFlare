@@ -23,7 +23,7 @@ def build_reverse_order_index(config_file_path: str) -> (Dict[str, List[str]], D
     print("config=", config)
     config_dict: Dict[str, Any] = config.to_dict()
     indices: Dict[str, List[str]] = build_dict_reverse_order_index(config_dict)
-    indices: Dict[str, List[str]] = expand_indices(indices)
+    # indices: Dict[str, List[str]] = expand_indices(indices)
     return indices, config_dict
 
 

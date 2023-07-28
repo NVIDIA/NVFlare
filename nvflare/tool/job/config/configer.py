@@ -146,7 +146,8 @@ def build_config_file_indexers(cmd_args) -> Dict[str, dict]:
                          and values are their corresponding reverse order indexers.
     """
     job_folder = cmd_args.job_folder
-    config_dir = os.path.join(job_folder, "app")
+    app_name = os.path.basename(job_folder)
+    config_dir = os.path.join(job_folder, app_name)
     config_extensions = ConfigFormat.extensions()
 
     config_file_index = {
