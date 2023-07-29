@@ -53,6 +53,8 @@ def train(input_model=None, total_epochs=2, lr=0.001, device="cuda:0"):
 
     # (optional) use GPU to speed things up
     net.to(device)
+    # (optional) calculate total steps
+    steps = 2 * len(trainloader)
     for epoch in range(total_epochs):  # loop over the dataset multiple times
 
         running_loss = 0.0
@@ -80,7 +82,7 @@ def train(input_model=None, total_epochs=2, lr=0.001, device="cuda:0"):
     torch.save(net.state_dict(), PATH)
 
     # (1.3) construct trained FL model
-    output_model = flare.FLModel(params=net.cpu().state_dict(), meta=input_model.meta)
+    output_model = flare.FLModel(params=net.cpu().state_dict(), meta={"NUM_STEPS_CURRENT_ROUND": steps})
     return output_model
 
 
