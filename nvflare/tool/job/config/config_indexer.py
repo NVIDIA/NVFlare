@@ -18,9 +18,7 @@ from nvflare.fuel.utils.config_factory import ConfigFactory
 
 
 def build_reverse_order_index(config_file_path: str) -> (Dict[str, List[str]], Dict[str, Any]):
-    print("config_file_path=", config_file_path)
     config: Config = ConfigFactory.load_config(config_file_path)
-    print("config=", config)
     config_dict: Dict[str, Any] = config.to_dict()
     indices: Dict[str, List[str]] = build_dict_reverse_order_index(config_dict)
     # indices: Dict[str, List[str]] = expand_indices(indices)

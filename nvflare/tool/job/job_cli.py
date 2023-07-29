@@ -11,16 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import argparse
 import json
 import os
 import pathlib
 import shutil
-import sys
-import textwrap
-from tempfile import mkdtemp
-from typing import List, Optional, Dict, Tuple, Any
 from distutils.dir_util import copy_tree
+from tempfile import mkdtemp
+from typing import List, Optional, Tuple
 
 from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree
@@ -89,7 +86,7 @@ def submit_job(cmd_args):
         copy_tree(cmd_args.job_folder, temp_job_dir)
 
         prepare_submit_job_config(cmd_args, temp_job_dir)
-        # todo: replace this hard-coded info later
+        # # todo: replace this hard-coded info later
         username = "admin@nvidia.com"
         internal_submit_job(cmd_args, username, temp_job_dir)
     finally:
@@ -99,7 +96,7 @@ def submit_job(cmd_args):
 
 def internal_submit_job(cmd_args, username, temp_job_dir):
     startup_kit_dir = get_startup_kit_dir()
-    prepare_transfer(temp_job_dir, startup_kit_dir)
+    # prepare_transfer(temp_job_dir, startup_kit_dir)
     admin_user_dir = os.path.join(startup_kit_dir, username)
     print("admin_user_dir=", admin_user_dir)
     sess = new_secure_session(username=username, startup_kit_location=admin_user_dir)
@@ -139,11 +136,6 @@ def define_submit_job_parser(job_subparser):
                                nargs="?",
                                default=get_curr_dir(),
                                help="job_folder path, default to current directory")
-    submit_parser.add_argument("-s", "--script",
-                               type=str,
-                               nargs="?",
-                               help="""local training script """)
-
     submit_parser.add_argument("-f", "--config_file",
                                type=str,
                                action='append',
@@ -182,6 +174,12 @@ def define_create_job_parser(job_subparser):
                                type=str,
                                nargs="?",
                                help="""code script such as train.py""")
+    create_parser.add_argument("-sd", "--script_dir",
+                               type=str,
+                               nargs="?",
+                               help="""script directory contains additional related files. 
+                                       All files or directories under this directory will be copied over 
+                                       to the custom directory.""")
 
     create_parser.add_argument("-debug", "--debug", action='store_true', help="debug is on")
     create_parser.add_argument("-force", "--force",
@@ -252,7 +250,6 @@ def prepare_transfer(job_folder: str, prod_dir: str):
     admin_user_name = "admin@nvidia.com"
     startup_dir = os.path.join(prod_dir, admin_user_name, FlareServiceConstants.STARTUP)
     dst = os.path.join(prod_dir, admin_user_name, get_upload_dir(startup_dir))
-    print("**** src=", src , "dst=", dst)
     shutil.rmtree(dst, ignore_errors=True)
     try:
         if not is_dir_empty(dst):
@@ -465,7 +462,6 @@ def prepare_workflows(cmd_args, predefined) -> Tuple[ConfigTree, ConfigTree]:
 
         if target_exec:
             target_exec.put("script", f"custom/{os.path.basename(cmd_args.script)}")
-            print("target_exec = ", target_exec)
             executors.append(target_exec.get("executor"))
             if target_exec.get("task_data_filters", None):
                 for name, data_filter in target_exec.get("task_data_filters").items():
@@ -481,6 +477,9 @@ def prepare_workflows(cmd_args, predefined) -> Tuple[ConfigTree, ConfigTree]:
     server_config.put("task_data_filters", wf_task_task_data_filters)
     server_config.put("task_result_filters", wf_task_result_filters)
 
+    if cmd_args.script:
+        script = os.path.basename(cmd_args.script.split(' ')[0])
+        client_config.put("script", f"custom/{script}")
     client_config.put("executors", executors)
     client_config.put("components", exec_components)
     client_config.put("task_data_filters", exec_task_data_filters)
@@ -504,5 +503,15 @@ def prepare_job_folder(cmd_args):
     for d in dirs:
         os.makedirs(d, exist_ok=True)
 
-    if cmd_args.script and len(cmd_args.script.strip()) > 0 and os.path.exists(cmd_args.script):
-        shutil.copy(cmd_args.script, app_custom_dir)
+    if cmd_args.script and len(cmd_args.script.strip()) > 0:
+        if os.path.exists(cmd_args.script):
+            shutil.copy(cmd_args.script, app_custom_dir)
+        else:
+            raise ValueError(f"{cmd_args.script} doesn't exists")
+
+    if cmd_args.script_dir and len(cmd_args.script_dir.strip()) > 0:
+        if os.path.exists(cmd_args.script_dir):
+            copy_tree(cmd_args.script_dir, app_custom_dir)
+        else:
+            raise ValueError(f"{cmd_args.script_dir} doesn't exists")
+
