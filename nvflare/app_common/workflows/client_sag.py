@@ -17,6 +17,7 @@ from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import Task
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
+from nvflare.apis.fl_constant import ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.client_controller import ClientController
 from nvflare.apis.shareable import Shareable
@@ -37,6 +38,8 @@ class ClientScatterAndGather(FLComponent):
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.SYSTEM_START:
             self.initialize(fl_ctx)
+        elif event_type == EventType.END_RUN:
+            self.finalize(fl_ctx)
 
     def initialize(self, fl_ctx: FLContext):
         engine = fl_ctx.get_engine()
@@ -48,6 +51,9 @@ class ClientScatterAndGather(FLComponent):
             )
 
         self.controller.start_controller(fl_ctx)
+
+    def finalize(self, fl_ctx: FLContext):
+        self.controller.stop_controller(fl_ctx)
 
     def broadcast_tasks(
         self,
@@ -70,6 +76,7 @@ class ClientScatterAndGather(FLComponent):
 
     def _aggregate_results(self, results, fl_ctx):
         for _, result in results.items():
-            self.aggregator.accept(result, fl_ctx)
+            if result.get_return_code() == ReturnCode.OK:
+                self.aggregator.accept(result, fl_ctx)
         final_result = self.aggregator.aggregate(fl_ctx)
         return final_result

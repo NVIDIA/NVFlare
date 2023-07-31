@@ -68,14 +68,18 @@ class ClientController(FLComponent, ControllerSpec):
         filter_error, task_data = self.apply_data_filters(task_filter_list, request, fl_ctx)
 
         if filter_error:
-            return make_reply(ReturnCode.TASK_DATA_FILTER_ERROR)
+            replies = self._make_error_reply(ReturnCode.TASK_DATA_FILTER_ERROR, targets)
+            return replies
 
+        # set up ClientTask for each client
         for target in targets:
             client: Client = self._get_client(target, engine)
             client_task = ClientTask(task=task, client=client)
             task.client_tasks.append(client_task)
             task.last_client_task_map[client_task.id] = client_task
-            self._call_task_cb(task.before_task_sent_cb, client, task, fl_ctx)
+            task_cb_error = self._call_task_cb(task.before_task_sent_cb, client, task, fl_ctx)
+            if task_cb_error:
+                return self._make_error_reply(ReturnCode.ERROR, targets)
 
         request.set_header(ReservedKey.TASK_NAME, task.name)
         replies = engine.send_aux_request(
@@ -94,15 +98,19 @@ class ClientController(FLComponent, ControllerSpec):
         for _, reply in replies.items():
             filter_error, result = self.apply_result_filters(task_filter_list, reply, fl_ctx)
             if filter_error:
-                return make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR)
+                return self._make_error_reply(ReturnCode.TASK_RESULT_FILTER_ERROR, targets)
 
+        # assign replies to client task, prepare for the task cb
         for client_task in task.client_tasks:
             client_task.result = replies.get(client_task.client.name, None)
 
         for target in targets:
             client: Client = self._get_client(target, engine)
-            self._call_task_cb(task.result_received_cb, client, task, fl_ctx)
+            task_cb_error = self._call_task_cb(task.result_received_cb, client, task, fl_ctx)
+            if task_cb_error:
+                return self._make_error_reply(ReturnCode.ERROR, targets)
 
+        # apply task_done_cb
         if task.task_done_cb is not None:
             try:
                 task.task_done_cb(task=task, fl_ctx=fl_ctx)
@@ -113,7 +121,18 @@ class ClientController(FLComponent, ControllerSpec):
                     ),
                 task.completion_status = TaskCompletionStatus.ERROR
                 task.exception = e
+                return self._make_error_reply(ReturnCode.ERROR, targets)
 
+        replies = {}
+        for client_task in task.client_tasks:
+            replies[client_task.client.name] = client_task.result
+        return replies
+
+    def _make_error_reply(self, error_type, targets):
+        error_reply = make_reply(error_type)
+        replies = {}
+        for target in targets:
+            replies[target] = error_reply
         return replies
 
     def _get_client(self, client, engine) -> Client:
@@ -127,6 +146,7 @@ class ClientController(FLComponent, ControllerSpec):
         return client_obj
 
     def _call_task_cb(self, task_cb, client, task, fl_ctx):
+        task_cb_error = False
         with task.cb_lock:
             client_task = self._get_client_task(client, task)
 
@@ -142,9 +162,11 @@ class ClientController(FLComponent, ControllerSpec):
                     # this task cannot proceed anymore
                     task.completion_status = TaskCompletionStatus.ERROR
                     task.exception = e
+                    task_cb_error = True
 
             self.logger.debug(f"{task_cb} done on client_task: {client_task}")
             self.logger.debug(f"task completion status is {task.completion_status}")
+        return task_cb_error
 
     def _get_client_task(self, client, task):
         client_task = None
