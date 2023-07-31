@@ -63,28 +63,12 @@ class ClientController(FLComponent, ControllerSpec):
         self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_DATA_FILTER")
         self.fire_event(EventType.BEFORE_TASK_DATA_FILTER, fl_ctx)
 
-        # first apply privacy-defined filters
-        scope_object = fl_ctx.get_prop(FLContextKey.SCOPE_OBJECT)
-        filter_list = []
-        if scope_object:
-            assert isinstance(scope_object, Scope)
-            if scope_object.task_data_filters:
-                filter_list.extend(scope_object.task_data_filters)
-
+        # # first apply privacy-defined filters
         task_filter_list = self.task_data_filters.get(task.name)
-        if task_filter_list:
-            filter_list.extend(task_filter_list)
+        filter_error, task_data = self.apply_data_filters(task_filter_list, request, fl_ctx)
 
-        if filter_list:
-            for f in filter_list:
-                filter_name = f.__class__.__name__
-                try:
-                    request = f.process(request, fl_ctx)
-                except Exception as e:
-                    self.log_exception(
-                        fl_ctx, f"Processing error from Task Data Filter {filter_name}: {secure_format_exception(e)}"
-                    )
-                    return make_reply(ReturnCode.TASK_DATA_FILTER_ERROR)
+        if filter_error:
+            return make_reply(ReturnCode.TASK_DATA_FILTER_ERROR)
 
         for target in targets:
             client: Client = self._get_client(target, engine)
@@ -99,32 +83,18 @@ class ClientController(FLComponent, ControllerSpec):
             timeout=task.timeout, fl_ctx=fl_ctx
         )
 
-        # apply result filters
         self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_EXECUTION")
         self.fire_event(EventType.AFTER_TASK_EXECUTION, fl_ctx)
 
         self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_RESULT_FILTER")
         self.fire_event(EventType.BEFORE_TASK_RESULT_FILTER, fl_ctx)
 
-        filter_list = []
-        if scope_object and scope_object.task_result_filters:
-            filter_list.extend(scope_object.task_result_filters)
-
+        # apply result filters
         task_filter_list = self.task_result_filters.get(task.name)
-        if task_filter_list:
-            filter_list.extend(task_filter_list)
-
         for _, reply in replies.items():
-            if filter_list:
-                for f in filter_list:
-                    filter_name = f.__class__.__name__
-                    try:
-                        reply = f.process(reply, fl_ctx)
-                    except Exception as e:
-                        self.log_exception(
-                            fl_ctx, f"Processing error in Task Result Filter {filter_name}: {secure_format_exception(e)}"
-                        )
-                        return make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR)
+            filter_error, result = self.apply_result_filters(task_filter_list, reply, fl_ctx)
+            if filter_error:
+                return make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR)
 
         for client_task in task.client_tasks:
             client_task.result = replies.get(client_task.client.name, None)

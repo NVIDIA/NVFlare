@@ -600,28 +600,11 @@ class ClientRunner(FLComponent):
         executor = self.task_table.get(task_names)
 
         # first apply privacy-defined filters
-        scope_object = fl_ctx.get_prop(FLContextKey.SCOPE_OBJECT)
-        filter_list = []
-        if scope_object:
-            assert isinstance(scope_object, Scope)
-            if scope_object.task_data_filters:
-                filter_list.extend(scope_object.task_data_filters)
-
         task_filter_list = self.task_data_filters.get(task_names)
-        if task_filter_list:
-            filter_list.extend(task_filter_list)
+        filter_error, task_data = self.apply_data_filters(task_filter_list, request, fl_ctx)
 
-        if filter_list:
-            task_data = request
-            for f in filter_list:
-                filter_name = f.__class__.__name__
-                try:
-                    task_data = f.process(task_data, fl_ctx)
-                except Exception as e:
-                    self.log_exception(
-                        fl_ctx, f"Processing error from Task Data Filter {filter_name}: {secure_format_exception(e)}"
-                    )
-                    return make_reply(ReturnCode.TASK_DATA_FILTER_ERROR)
+        if filter_error:
+            return make_reply(ReturnCode.TASK_DATA_FILTER_ERROR)
 
         try:
             reply = executor.execute(task_names, task_data, fl_ctx, self.task_abort_signal)
@@ -631,24 +614,11 @@ class ClientRunner(FLComponent):
             )
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
-        filter_list = []
-        if scope_object and scope_object.task_result_filters:
-            filter_list.extend(scope_object.task_result_filters)
-
+        # apply result filters
         task_filter_list = self.task_result_filters.get(task_names)
-        if task_filter_list:
-            filter_list.extend(task_filter_list)
-
-        if filter_list:
-            for f in filter_list:
-                filter_name = f.__class__.__name__
-                try:
-                    reply = f.process(reply, fl_ctx)
-                except Exception as e:
-                    self.log_exception(
-                        fl_ctx, f"Processing error in Task Result Filter {filter_name}: {secure_format_exception(e)}"
-                    )
-                    return make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR)
+        filter_error, result = self.apply_result_filters(task_filter_list, reply, fl_ctx)
+        if filter_error:
+            return make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR)
 
         reply.set_header(ReservedHeaderKey.RC, ReturnCode.OK)
         return reply

@@ -261,33 +261,14 @@ class ServerRunner(FLComponent):
             self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_DATA_FILTER")
             self.fire_event(EventType.BEFORE_TASK_DATA_FILTER, fl_ctx)
 
-            # apply scope filters first
-            scope_object = fl_ctx.get_prop(FLContextKey.SCOPE_OBJECT)
-            filter_list = []
-            if scope_object:
-                assert isinstance(scope_object, Scope)
-                if scope_object.task_data_filters:
-                    filter_list.extend(scope_object.task_data_filters)
-
             task_filter_list = self.config.task_data_filters.get(task_name)
-            if task_filter_list:
-                filter_list.extend(task_filter_list)
+            filter_error, task_data = self.apply_data_filters(task_filter_list, task_data, fl_ctx)
 
-            if filter_list:
-                for f in filter_list:
-                    try:
-                        task_data = f.process(task_data, fl_ctx)
-                    except Exception as e:
-                        self.log_exception(
-                            fl_ctx,
-                            "processing error in task data filter {}: {}; "
-                            "asked client to try again later".format(type(f), secure_format_exception(e)),
-                        )
-
-                        with self.wf_lock:
-                            if self.current_wf:
-                                self.current_wf.responder.handle_exception(task_id, fl_ctx)
-                        return self._task_try_again()
+            if filter_error:
+                with self.wf_lock:
+                    if self.current_wf:
+                        self.current_wf.responder.handle_exception(task_id, fl_ctx)
+                return self._task_try_again()
 
             self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_DATA_FILTER")
             self.fire_event(EventType.AFTER_TASK_DATA_FILTER, fl_ctx)
@@ -430,29 +411,11 @@ class ServerRunner(FLComponent):
                 self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_RESULT_FILTER")
                 self.fire_event(EventType.BEFORE_TASK_RESULT_FILTER, fl_ctx)
 
-                filter_list = []
-                scope_object = fl_ctx.get_prop(FLContextKey.SCOPE_OBJECT)
-                if scope_object and scope_object.task_result_filters:
-                    filter_list.extend(scope_object.task_result_filters)
-
                 task_filter_list = self.config.task_result_filters.get(task_name)
-                if task_filter_list:
-                    filter_list.extend(task_filter_list)
+                filter_error, result = self.apply_result_filters(task_filter_list, result, fl_ctx)
 
-                if filter_list:
-                    for f in filter_list:
-                        try:
-                            result = f.process(result, fl_ctx)
-                        except Exception as e:
-                            self.log_exception(
-                                fl_ctx,
-                                "Error processing in task result filter {}: {}".format(
-                                    type(f), secure_format_exception(e)
-                                ),
-                            )
-
-                            result = make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR)
-                            break
+                if filter_error:
+                    result = make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR)
 
                 self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_RESULT_FILTER")
                 self.fire_event(EventType.AFTER_TASK_RESULT_FILTER, fl_ctx)
