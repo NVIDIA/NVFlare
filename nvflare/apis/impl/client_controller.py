@@ -65,7 +65,7 @@ class ClientController(FLComponent, ControllerSpec):
 
         # # first apply privacy-defined filters
         task_filter_list = self.task_data_filters.get(task.name)
-        filter_error, task_data = self.apply_data_filters(task_filter_list, request, fl_ctx)
+        filter_error, task.data = self.apply_data_filters(task_filter_list, request, fl_ctx)
 
         if filter_error:
             replies = self._make_error_reply(ReturnCode.TASK_DATA_FILTER_ERROR, targets)
@@ -77,9 +77,10 @@ class ClientController(FLComponent, ControllerSpec):
             client_task = ClientTask(task=task, client=client)
             task.client_tasks.append(client_task)
             task.last_client_task_map[client_task.id] = client_task
-            task_cb_error = self._call_task_cb(task.before_task_sent_cb, client, task, fl_ctx)
-            if task_cb_error:
-                return self._make_error_reply(ReturnCode.ERROR, targets)
+
+            # task_cb_error = self._call_task_cb(task.before_task_sent_cb, client, task, fl_ctx)
+            # if task_cb_error:
+            #     return self._make_error_reply(ReturnCode.ERROR, targets)
 
         request.set_header(ReservedKey.TASK_NAME, task.name)
         replies = engine.send_aux_request(
@@ -93,22 +94,28 @@ class ClientController(FLComponent, ControllerSpec):
         self.log_debug(fl_ctx, "firing event EventType.BEFORE_TASK_RESULT_FILTER")
         self.fire_event(EventType.BEFORE_TASK_RESULT_FILTER, fl_ctx)
 
-        # apply result filters
         task_filter_list = self.task_result_filters.get(task.name)
-        for _, reply in replies.items():
-            filter_error, result = self.apply_result_filters(task_filter_list, reply, fl_ctx)
-            if filter_error:
-                return self._make_error_reply(ReturnCode.TASK_RESULT_FILTER_ERROR, targets)
+        for target, reply in replies.items():
+            # get the client task for the target
+            for client_task in task.client_tasks:
+                if client_task.client.name == target:
+                    # apply result filters
+                    filter_error, result = self.apply_result_filters(task_filter_list, reply, fl_ctx)
+                    if filter_error:
+                        error_reply = make_reply(ReturnCode.TASK_RESULT_FILTER_ERROR)
+                        client_task.result = error_reply
+                        break
 
-        # assign replies to client task, prepare for the task cb
-        for client_task in task.client_tasks:
-            client_task.result = replies.get(client_task.client.name, None)
+                    # assign replies to client task, prepare for the result_received_cb
+                    client_task.result = reply
 
-        for target in targets:
-            client: Client = self._get_client(target, engine)
-            task_cb_error = self._call_task_cb(task.result_received_cb, client, task, fl_ctx)
-            if task_cb_error:
-                return self._make_error_reply(ReturnCode.ERROR, targets)
+                    client: Client = self._get_client(target, engine)
+                    task_cb_error = self._call_task_cb(task.result_received_cb, client, task, fl_ctx)
+                    if task_cb_error:
+                        client_task.result = make_reply(ReturnCode.ERROR)
+                        break
+
+                    break
 
         # apply task_done_cb
         if task.task_done_cb is not None:

@@ -36,7 +36,7 @@ class ClientScatterAndGather(FLComponent):
         self.controller = ClientController()
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
-        if event_type == EventType.SYSTEM_START:
+        if event_type == EventType.START_RUN:
             self.initialize(fl_ctx)
         elif event_type == EventType.END_RUN:
             self.finalize(fl_ctx)
