@@ -25,6 +25,7 @@ from pt.utils.cifar10_dataset import CIFAR10_Idx
 from torch.utils.tensorboard import SummaryWriter
 from torchvision import datasets, transforms
 
+from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.apis.fl_constant import FLMetaKey, ReturnCode
 from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.abstract.model_learner import ModelLearner
@@ -114,8 +115,6 @@ class CIFAR10ModelLearner(ModelLearner):  # does not support CIFAR10ScaffoldLear
         self.writer = self.get_component(
             self.analytic_sender_id
         )  # user configured config_fed_client.json for streaming
-        if not self.writer:  # use local TensorBoard writer only
-            self.writer = SummaryWriter(self.app_root)
 
         # set the training-related parameters
         # can be replaced by a config-style block
@@ -218,7 +217,13 @@ class CIFAR10ModelLearner(ModelLearner):  # does not support CIFAR10ScaffoldLear
                 self.optimizer.step()
                 current_step = epoch_len * self.epoch_global + i
                 avg_loss += loss.item()
-            self.writer.add_scalar("train_loss", avg_loss / len(train_loader), current_step)
+            if self.writer:
+                self.writer.log(
+                    "train_loss",
+                    avg_loss / len(train_loader),
+                    data_type=AnalyticsDataType.SCALAR,
+                    global_step=current_step,
+                )
             if val_freq > 0 and epoch % val_freq == 0:
                 acc = self.local_valid(self.valid_loader, tb_id="val_acc_local_model")
                 if acc > self.best_acc:
@@ -341,7 +346,7 @@ class CIFAR10ModelLearner(ModelLearner):  # does not support CIFAR10ScaffoldLear
                 correct += (pred_label == labels.data).sum().item()
             metric = correct / float(total)
             if tb_id:
-                self.writer.add_scalar(tb_id, metric, self.epoch_global)
+                self.writer.log(tb_id, metric, data_type=AnalyticsDataType.SCALAR, global_step=self.epoch_global)
         return metric
 
     def validate(self, model: FLModel) -> Union[str, FLModel]:

@@ -1,6 +1,6 @@
 {
     "format_version": 2,
-    "TRAIN_SPLIT_ROOT": "/tmp/cifar10_splits",
+    "TRAIN_SPLIT_ROOT": "/tmp/cifar10_splits/cifar10_fedavg_alpha0.1_6ea159a0-631d-4655-8925-1260f2f82cb4",
     "AGGREGATION_EPOCHS": 4,
     "executors": [
         {
@@ -27,7 +27,34 @@
             "args": {
                 "train_idx_root": "{TRAIN_SPLIT_ROOT}",
                 "aggregation_epochs": "{AGGREGATION_EPOCHS}",
-                "lr": 0.01
+                "lr": 0.01,
+                "analytic_sender_id": "analytic_sender"
+            }
+        },
+        {
+            "id": "metric_handler",
+            "path": "nvflare.app_common.metric_exchange.metric_handler.MetricHandler",
+            "args": {
+                "metric_exchanger_id": "analytic_sender"
+            }
+        },
+        {
+            "id": "tb_analytics_receive",
+            "name": "TBAnalyticsReceiver",
+            "args": {
+                "events": [
+                    "analytix_log_stats"
+                ]
+            }
+        },
+        {
+            "id": "event_to_fed",
+            "name": "ConvertToFedEvent",
+            "args": {
+                "events_to_convert": [
+                    "analytix_log_stats"
+                ],
+                "fed_event_prefix": "fed."
             }
         }
     ]
