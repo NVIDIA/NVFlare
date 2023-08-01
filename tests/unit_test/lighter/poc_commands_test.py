@@ -16,7 +16,10 @@ import collections
 import pytest
 
 from nvflare.cli_exception import CLIException
-from nvflare.lighter.poc_commands import (
+from nvflare.lighter.service_constants import FlareServiceConstants as SC
+from nvflare.lighter.spec import Participant
+from nvflare.lighter.utils import update_project_server_name_config
+from nvflare.tool.poc.poc_commands import (
     client_gpu_assignments,
     get_gpu_ids,
     get_service_command,
@@ -24,9 +27,6 @@ from nvflare.lighter.poc_commands import (
     prepare_builders,
     update_clients,
 )
-from nvflare.lighter.service_constants import FlareServiceConstants as SC
-from nvflare.lighter.spec import Participant
-from nvflare.lighter.utils import update_project_server_name_config
 
 
 class TestPOCCommands:
