@@ -47,9 +47,6 @@ class JobMetaValidator(JobMetaValidatorSpec):
         meta = {}
         try:
             with ZipFile(BytesIO(job_data), "r") as zf:
-                for name in zf.namelist():
-                    print("zip filename=", name)
-
                 meta = self._validate_meta(job_name, zf)
                 site_list = self._validate_deploy_map(job_name, meta)
                 self._validate_app(job_name, meta, zf)
