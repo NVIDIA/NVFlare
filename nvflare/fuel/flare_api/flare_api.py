@@ -157,6 +157,7 @@ class Session(SessionSpec):
         result = self.api.do_command(command)
         if not isinstance(result, dict):
             raise InternalError(f"result from server must be dict but got {type(result)}")
+
         # check meta status first
         meta = result.get(ResultKey.META, None)
         if enforce_meta and not meta:
