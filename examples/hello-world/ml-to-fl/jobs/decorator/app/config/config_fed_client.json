@@ -1,10 +1,9 @@
 {
   "format_version": 2,
+
   "executors": [
     {
-      "tasks": [
-        "train"
-      ],
+      "tasks": ["train"],
       "executor": {
         "name": "PTFilePipeLauncherExecutor",
         "args": {
@@ -14,8 +13,10 @@
       }
     }
   ],
-  "task_result_filters": [],
-  "task_data_filters": [],
+  "task_result_filters": [
+  ],
+  "task_data_filters": [
+  ],
   "components": [
     {
       "id": "launcher",
