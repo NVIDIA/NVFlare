@@ -28,3 +28,15 @@ class TestConfigFormat:
     def test_config_exts2(self):
         exts2fmt_map = ConfigFormat.config_ext_formats()
         assert "|".join(exts2fmt_map.keys()) == ".json|.conf|.yml|.json.default|.conf.default|.yml.default"
+
+    def test_config_exts3(self):
+        exts = ConfigFormat.extensions()
+        assert "|".join(exts) == ".json|.conf|.yml|.json.default|.conf.default|.yml.default"
+
+    def test_config_exts4(self):
+        exts = ConfigFormat.extensions(target_fmt=ConfigFormat.JSON)
+        assert "|".join(exts) == ".json|.json.default"
+        exts = ConfigFormat.extensions(target_fmt=ConfigFormat.OMEGACONF)
+        assert "|".join(exts) == ".yml|.yml.default"
+        exts = ConfigFormat.extensions(target_fmt=ConfigFormat.PYHOCON)
+        assert "|".join(exts) == ".conf|.conf.default"
