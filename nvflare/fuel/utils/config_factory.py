@@ -42,9 +42,9 @@ class ConfigFactory:
         _fmt2Loader.update({ConfigFormat.PYHOCON: PyhoconLoader()})
 
     @staticmethod
-    def search_config_format(init_file_path: str,
-                             search_dirs: Optional[List[str]] = None,
-                             target_fmt: Optional[ConfigFormat] = None) -> (Optional[ConfigFormat], Optional[str]):
+    def search_config_format(
+        init_file_path: str, search_dirs: Optional[List[str]] = None, target_fmt: Optional[ConfigFormat] = None
+    ) -> (Optional[ConfigFormat], Optional[str]):
 
         """find the configuration format and the location (file_path) for given initial init_file_path and search directories.
             for example, the initial config file path given is config_client.json
@@ -93,9 +93,9 @@ class ConfigFactory:
         return file_basename
 
     @staticmethod
-    def load_config(file_path: str,
-                    search_dirs: Optional[List[str]] = None,
-                    target_fmt: Optional[ConfigFormat] = None) -> Optional[Config]:
+    def load_config(
+        file_path: str, search_dirs: Optional[List[str]] = None, target_fmt: Optional[ConfigFormat] = None
+    ) -> Optional[Config]:
 
         """Find the configuration for given initial init_file_path and search directories.
             for example, the initial config file path given is config_client.json

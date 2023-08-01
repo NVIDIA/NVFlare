@@ -15,7 +15,7 @@
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from enum import Enum
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, List, Optional
 
 
 class ConfigFormat(Enum):
@@ -37,7 +37,7 @@ class ConfigFormat(Enum):
         )
 
     @classmethod
-    def extensions(cls, target_fmt = None) -> List[str]:
+    def extensions(cls, target_fmt=None) -> List[str]:
         if target_fmt is None:
             return [ext for ext, fmt in cls.config_ext_formats().items()]
         else:
