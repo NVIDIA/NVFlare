@@ -13,6 +13,7 @@
 # limitations under the License.
 import json
 import os
+import pathlib
 import random
 import shutil
 import socket
@@ -21,7 +22,6 @@ import sys
 import time
 from typing import Dict, List, Optional, OrderedDict, Tuple
 
-import pathlib
 import yaml
 
 from nvflare.cli_exception import CLIException
@@ -238,12 +238,12 @@ def prepare_builders(project_dict: OrderedDict) -> List:
 
 
 def local_provision(
-        clients: List[str],
-        number_of_clients: int,
-        workspace: str,
-        docker_image: str,
-        use_he: bool = False,
-        project_conf_path: str = "",
+    clients: List[str],
+    number_of_clients: int,
+    workspace: str,
+    docker_image: str,
+    use_he: bool = False,
+    project_conf_path: str = "",
 ) -> Tuple:
     user_provided_project_config = False
     if project_conf_path:
@@ -377,13 +377,13 @@ def save_startup_kit_dir_config(workspace):
 
 
 def prepare_poc(
-        clients: List[str],
-        number_of_clients: int,
-        workspace: str,
-        docker_image: str = None,
-        use_he: bool = False,
-        project_conf_path: str = "",
-        examples_dir: Optional[str] = None,
+    clients: List[str],
+    number_of_clients: int,
+    workspace: str,
+    docker_image: str = None,
+    use_he: bool = False,
+    project_conf_path: str = "",
+    examples_dir: Optional[str] = None,
 ) -> bool:
     if clients:
         number_of_clients = len(clients)
@@ -426,6 +426,7 @@ def prepare_poc(
 
 def get_home_dir():
     from pathlib import Path
+
     return Path.home()
 
 
@@ -449,13 +450,13 @@ def get_hidden_nvflare_config_path() -> str:
 
 
 def prepare_poc_provision(
-        clients: List[str],
-        number_of_clients: int,
-        workspace: str,
-        docker_image: str,
-        use_he: bool = False,
-        project_conf_path: str = "",
-        examples_dir: Optional[str] = None,
+    clients: List[str],
+    number_of_clients: int,
+    workspace: str,
+    docker_image: str,
+    use_he: bool = False,
+    project_conf_path: str = "",
+    examples_dir: Optional[str] = None,
 ):
     os.makedirs(workspace, exist_ok=True)
     os.makedirs(os.path.join(workspace, "data"), exist_ok=True)
@@ -464,9 +465,7 @@ def prepare_poc_provision(
     # update storage
     if workspace != DEFAULT_WORKSPACE:
         prod_dir = get_prod_dir(workspace)
-        update_storage_locations(
-            local_dir=f"{prod_dir}/{server_name}/local", workspace=workspace
-        )
+        update_storage_locations(local_dir=f"{prod_dir}/{server_name}/local", workspace=workspace)
     examples_dir = get_examples_dir(examples_dir)
     if examples_dir is not None:
         prepare_examples(examples_dir, workspace, None)
@@ -606,7 +605,7 @@ def _get_clients(service_commands: list, service_config) -> List[str]:
         service_dir_name
         for service_dir_name, _ in service_commands
         if service_dir_name != service_config[SC.FLARE_PROJ_ADMIN]
-           and service_dir_name != service_config[SC.FLARE_SERVER]
+        and service_dir_name != service_config[SC.FLARE_SERVER]
     ]
     return clients
 
@@ -627,9 +626,9 @@ def _build_commands(cmd_type: str, poc_workspace: str, service_config, excluded:
 
     def is_fl_service_dir(p_dir_name: str) -> bool:
         fl_service = (
-                p_dir_name == service_config[SC.FLARE_PROJ_ADMIN]
-                or p_dir_name == service_config[SC.FLARE_SERVER]
-                or p_dir_name in service_config[SC.FLARE_CLIENTS]
+            p_dir_name == service_config[SC.FLARE_PROJ_ADMIN]
+            or p_dir_name == service_config[SC.FLARE_SERVER]
+            or p_dir_name in service_config[SC.FLARE_CLIENTS]
         )
         return fl_service
 
@@ -684,7 +683,7 @@ def sync_process(service_name, cmd_path):
 
 
 def _run_poc(
-        cmd_type: str, poc_workspace: str, gpu_ids: List[int], service_config: Dict, excluded: list, services_list=None
+    cmd_type: str, poc_workspace: str, gpu_ids: List[int], service_config: Dict, excluded: list, services_list=None
 ):
     if services_list is None:
         services_list = []
@@ -778,7 +777,7 @@ def def_poc_parser(sub_cmd):
         nargs="?",
         default="",
         help="project.yaml file path, it should be used with '--prepare' command. If specified, "
-             + "'number_of_clients','clients' and 'docker' specific options will be ignored.",
+        + "'number_of_clients','clients' and 'docker' specific options will be ignored.",
     )
     poc_parser.add_argument(
         "-d",
@@ -787,7 +786,7 @@ def def_poc_parser(sub_cmd):
         default=None,
         const="nvflare/nvflare",
         help="generate docker.sh based on the docker_image, used in '--prepare' command. and generate docker.sh "
-             + " '--start/stop' commands will start with docker.sh ",
+        + " '--start/stop' commands will start with docker.sh ",
     )
     poc_parser.add_argument(
         "--prepare",
@@ -815,11 +814,11 @@ def def_poc_parser(sub_cmd):
 
 def is_poc(cmd_args) -> bool:
     return (
-            hasattr(cmd_args, "start_poc")
-            or hasattr(cmd_args, "prepare_poc")
-            or hasattr(cmd_args, "stop_poc")
-            or hasattr(cmd_args, "clean_poc")
-            or hasattr(cmd_args, "prepare_examples")
+        hasattr(cmd_args, "start_poc")
+        or hasattr(cmd_args, "prepare_poc")
+        or hasattr(cmd_args, "stop_poc")
+        or hasattr(cmd_args, "clean_poc")
+        or hasattr(cmd_args, "prepare_examples")
     )
 
 
