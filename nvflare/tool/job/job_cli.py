@@ -26,6 +26,7 @@ from pyhocon.converter import HOCONConverter
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.cli_exception import CLIException
 from nvflare.fuel.flare_api.flare_api import new_secure_session
+from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.lighter.service_constants import FlareServiceConstants
 from nvflare.tool.job.config.configer import merge_configs_from_cli
 
@@ -63,48 +64,42 @@ def create_job(cmd_args):
     prepare_fed_config(cmd_args, predefined)
     prepare_meta_config(cmd_args)
     prepare_model_exchange_config(cmd_args, predefined)
-    save_job_info(cmd_args)
 
 
 def submit_job(cmd_args):
-    """
-    Submit a job using the given command-line arguments.
-
-    Args:
-        cmd_args: Command-line arguments containing job information.
-    """
-    print("********submit job************ cmd_args = ", cmd_args)
-    # todo: should we keep the origin file extension ?
-    # todo: where overwrite app configs such as porych-lightning.
-    # todo: we need to find a tmep job folder symlink + configure overwrite ?, if we do that , what to do with
-    #       PYTHONPATH user set. what if there are shared files in common directory but in file path.
     temp_job_dir = None
     try:
         temp_job_dir = mkdtemp()
-        print('created temporary directory', temp_job_dir)
-        # shutil.copytree(cmd_args.job_folder, temp_job_dir)
         copy_tree(cmd_args.job_folder, temp_job_dir)
 
         prepare_submit_job_config(cmd_args, temp_job_dir)
-        # # todo: replace this hard-coded info later
-        username = "admin@nvidia.com"
-        internal_submit_job(cmd_args, username, temp_job_dir)
+        admin_username, admin_user_dir = find_admin_user_and_dir()
+        internal_submit_job(admin_user_dir, admin_username, temp_job_dir)
     finally:
         if temp_job_dir:
-            shutil.rmtree(temp_job_dir)
+            if cmd_args.debug:
+                print(f"in debug mode, job configurations can be examined in temp job directory '{temp_job_dir}'")
+            else:
+                shutil.rmtree(temp_job_dir)
 
 
-def internal_submit_job(cmd_args, username, temp_job_dir):
+def find_admin_user_and_dir() -> Tuple[str, str]:
     startup_kit_dir = get_startup_kit_dir()
-    # prepare_transfer(temp_job_dir, startup_kit_dir)
-    admin_user_dir = os.path.join(startup_kit_dir, username)
-    print("admin_user_dir=", admin_user_dir)
-    sess = new_secure_session(username=username, startup_kit_location=admin_user_dir)
-    print(sess.get_system_info())
+    fed_admin_config = ConfigFactory.load_config("fed_admin.json", [startup_kit_dir])
+    admin_user_dir = None
+    admin_username = None
+    if fed_admin_config:
+        admin_user_dir = os.path.dirname(os.path.dirname(fed_admin_config.file_path))
+        config_dict = fed_admin_config.to_dict()
+        admin_username = config_dict["admin"].get("username", None)
 
-    print("job_dir=", temp_job_dir)
+    return admin_username, admin_user_dir
+
+
+def internal_submit_job(admin_user_dir, username, temp_job_dir):
+    sess = new_secure_session(username=username, startup_kit_location=admin_user_dir)
     job_id = sess.submit_job(temp_job_dir)
-    print(job_id + " was submitted")
+    print(f"job: '{job_id} was submitted")
 
 
 job_sub_cmd_handlers = {
@@ -143,6 +138,11 @@ def define_submit_job_parser(job_subparser):
                                help="""Training config file with corresponding optional key=value pairs. 
                                        If key presents in the preceding config file, the value in the config
                                        file will be overwritten by the new value """)
+    submit_parser.add_argument("-a", "--app_config",
+                               type=str,
+                               nargs="*",
+                               help="""key=value options will be passed directly to script argument """)
+
     submit_parser.add_argument("-debug", "--debug", action='store_true', help="debug is on")
 
 
@@ -180,7 +180,7 @@ def define_create_job_parser(job_subparser):
                                help="""script directory contains additional related files. 
                                        All files or directories under this directory will be copied over 
                                        to the custom directory.""")
-
+    create_parser.add_argument("-ep", "--enable_persistor", action='store_true', help="enable persistor is true")
     create_parser.add_argument("-debug", "--debug", action='store_true', help="debug is on")
     create_parser.add_argument("-force", "--force",
                                action='store_true',
@@ -190,7 +190,21 @@ def define_create_job_parser(job_subparser):
 
 # ====================================================================
 def prepare_submit_job_config(cmd_args, tmp_job_dir):
+    update_client_app_script(cmd_args)
     merged_conf = merge_configs_from_cli(cmd_args)
+    save_merged_configs(merged_conf, tmp_job_dir)
+
+
+def update_client_app_script(cmd_args):
+    if cmd_args.app_config:
+        script_args = " ".join([f"--{k}" for k in cmd_args.app_config])
+        config = ConfigFactory.load_config("config_fed_client.xxx")
+        client_config = CF.from_dict(config.to_dict())
+        client_config.put("app_script", script_args)
+        save_config(client_config, config.file_path)
+
+
+def save_merged_configs(merged_conf, tmp_job_dir):
     for file, file_configs in merged_conf.items():
         config_dir = pathlib.Path(tmp_job_dir) / "app" / "config"
         base_filename = os.path.basename(file)
@@ -232,38 +246,6 @@ def is_dir_empty(path: str):
     return len(targe_dir) == 0
 
 
-def prepare_transfer(job_folder: str, prod_dir: str):
-    if os.path.isabs(job_folder):
-        src = job_folder
-    elif os.path.abspath(job_folder) == os.getcwd():
-        src = os.path.abspath(job_folder)
-    else:
-        job_dir = job_folder[:-1] if job_folder.endswith(os.path.sep) else job_folder
-        js = job_dir.split(os.path.sep)
-        parents = os.path.sep.join(js[:-1])
-        src = os.path.dirname(os.path.abspath(parents[0])) if parents else os.path.dirname(os.path.abspath(job_dir))
-
-    if not os.path.isdir(src):
-        raise CLIException(f"job folder '{job_folder}' is not valid directory")
-
-    # hard-code for now, need to change similar to POC
-    admin_user_name = "admin@nvidia.com"
-    startup_dir = os.path.join(prod_dir, admin_user_name, FlareServiceConstants.STARTUP)
-    dst = os.path.join(prod_dir, admin_user_name, get_upload_dir(startup_dir))
-    shutil.rmtree(dst, ignore_errors=True)
-    try:
-        if not is_dir_empty(dst):
-            if os.path.islink(dst):
-                os.unlink(dst)
-            elif os.path.isdir(dst):
-                shutil.rmtree(dst, ignore_errors=True)
-    except FileNotFoundError as e:
-        shutil.rmtree(dst, ignore_errors=True)
-
-    print(f"link job folder from '{src}' to '{dst}'")
-    os.symlink(src, dst)
-
-
 def load_job_info_config(hidden_nvflare_config_file) -> ConfigTree:
     return CF.parse_file(hidden_nvflare_config_file)
 
@@ -279,7 +261,9 @@ def create_job_info_config(cmd_args, nvflare_config: ConfigTree) -> ConfigTree:
     """
     startup_kit_dir = get_startup_kit_dir()
     if not startup_kit_dir or not os.path.isdir(startup_kit_dir):
-        raise ValueError(f"startup_kit_dir '{startup_kit_dir}' must be a valid and non-empty path")
+        raise ValueError(f"startup_kit_dir '{startup_kit_dir}' must be a valid and non-empty path. "
+                         f"use 'nvflare poc' command to 'prepare' if you are using POC mode. Or use"
+                         f" 'nvflare config' to setup startup_kit_dir location if you are in production")
 
     conf_str = f"""
         startup_kit {{
@@ -444,7 +428,15 @@ def prepare_workflows(cmd_args, predefined) -> Tuple[ConfigTree, ConfigTree]:
                 wf_task_result_filters.append(result_filter)
 
         for name, comp in predefined_wf_components.items():
-            wf_components.append(comp)
+            if name == "persistor":
+                if cmd_args.enable_persistor:
+                    wf_components.append(comp)
+                    target_wf_conf.put("args.persistor_id", comp.get_string("id"))
+            elif name == "model_selector":
+                if cmd_args.enable_persistor:
+                    wf_components.append(comp)
+            else:
+                wf_components.append(comp)
 
         predefined_executors = workflows_conf.get_config(f"{wf_name}.executors")
         item_lens = len(predefined_executors.items())
@@ -461,7 +453,7 @@ def prepare_workflows(cmd_args, predefined) -> Tuple[ConfigTree, ConfigTree]:
                 target_exec = target_exec_list[0]
 
         if target_exec:
-            target_exec.put("script", f"custom/{os.path.basename(cmd_args.script)}")
+            # target_exec.put("script", f"{os.path.basename(cmd_args.script)}")
             executors.append(target_exec.get("executor"))
             if target_exec.get("task_data_filters", None):
                 for name, data_filter in target_exec.get("task_data_filters").items():
@@ -477,9 +469,13 @@ def prepare_workflows(cmd_args, predefined) -> Tuple[ConfigTree, ConfigTree]:
     server_config.put("task_data_filters", wf_task_task_data_filters)
     server_config.put("task_result_filters", wf_task_result_filters)
 
+    client_config.put("script", "")
+    client_config.put("app_config", f" ")
+
     if cmd_args.script:
         script = os.path.basename(cmd_args.script.split(' ')[0])
-        client_config.put("script", f"custom/{script}")
+        client_config.put("script", f"{script}")
+
     client_config.put("executors", executors)
     client_config.put("components", exec_components)
     client_config.put("task_data_filters", exec_task_data_filters)
@@ -514,4 +510,3 @@ def prepare_job_folder(cmd_args):
             copy_tree(cmd_args.script_dir, app_custom_dir)
         else:
             raise ValueError(f"{cmd_args.script_dir} doesn't exists")
-

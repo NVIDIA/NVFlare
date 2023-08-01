@@ -133,7 +133,7 @@ def run(prog_name):
         print(e)
         sys.exit(1)
     except Exception as e:
-        print(f"\nUnable to handle command: {sub_cmd} due to: {e}, please check syntax \n")
+        print(f"\nUnable to handle command: {sub_cmd} due to: {e} \n")
         if prog_args.debug:
             print(traceback.format_exc())
         else:

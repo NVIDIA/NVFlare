@@ -11,9 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import copy
 import os
-from typing import Dict, Any
+import shutil
+from typing import Dict, Any, List
 
 from pyhocon import ConfigFactory as CF, ConfigTree
 
@@ -23,9 +24,21 @@ from nvflare.tool.job.config.config_indexer import build_reverse_order_index
 
 
 def merge_configs_from_cli(cmd_args) -> Dict[str, ConfigTree]:
-    indices: Dict[str, (Dict, Dict)] = build_config_file_indexers(cmd_args)
     cli_config_dict: Dict[str, Dict[str, str]] = get_cli_config(cmd_args)
+    copy_app_config_file(cli_config_dict, cmd_args)
+
+    indices: Dict[str, (Dict, Dict)] = build_config_file_indexers(cmd_args)
     return merge_configs(indices, cli_config_dict)
+
+
+def copy_app_config_file(cli_config_dict, cmd_args):
+    config_dir = os.path.join(cmd_args.job_folder, "app/config")
+    for cli_config_file in cli_config_dict:
+        print("cli_config_file =", cli_config_file)
+        base_config_filename = os.path.basename(cli_config_file)
+        target_file = os.path.join(config_dir, base_config_filename)
+        if not os.path.exists(target_file):
+            shutil.copyfile(cli_config_file, target_file)
 
 
 def extract_string_with_index(input_string):
@@ -57,7 +70,8 @@ def extract_string_with_index(input_string):
     return result
 
 
-def merge_configs(indices_configs: Dict[str, tuple], cli_file_configs: Dict[str, Dict]) -> Dict[str, ConfigTree]:
+def merge_configs(indices_configs: Dict[str, tuple],
+                  cli_file_configs: Dict[str, Dict]) -> Dict[str, ConfigTree]:
     """
     Merge configurations from indices_configs and cli_file_configs.
 
@@ -117,6 +131,24 @@ def get_cli_config(cmd_args: Any) -> Dict[str, Dict[str, str]]:
     cli_config_dict = {}
     if cmd_args.config_file:
         cli_configs = cmd_args.config_file
+        return parse_cli_config(cli_configs)
+    return cli_config_dict
+
+
+def parse_cli_config(cli_configs: List[str]) -> Dict[str, Dict[str, str]]:
+    """
+    Extract configurations from command-line arguments and return them in a dictionary.
+
+    Args:
+        cli_configs: Array of CLI config option in the format of
+           filename  key1=v1 key2=v2
+        separated by space
+    Returns:
+        A dictionary containing the configurations extracted from the command-line arguments.
+    """
+
+    cli_config_dict = {}
+    if cli_configs:
         for arr in cli_configs:
             config_file = os.path.basename(arr[0])
             config_data = arr[1:]
