@@ -26,9 +26,12 @@ if [[ "${target}" == -* ]] ;then
     target=""
 fi
 
-
 function install_deps {
-    python3 -m pip install -e .[dev]
+    if [[ $(uname) == "Darwin" ]]; then
+      python3 -m pip install -e .[dev_mac]
+    else
+      python3 -m pip install -e .[dev]
+    fi;
     echo "dependencies installed"
 }
 
