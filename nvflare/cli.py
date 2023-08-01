@@ -25,6 +25,7 @@ from nvflare.lighter.provision import define_provision_parser, handle_provision
 from nvflare.private.fed.app.simulator.simulator import define_simulator_parser, run_simulator
 from nvflare.tool.job.job_cli import handle_job_cli_cmd, def_job_cli_parser
 from nvflare.tool.preflight_check import check_packages, define_preflight_check_parser
+from nvflare.utils.cli_utils import save_startup_kit_config
 
 CMD_POC = "poc"
 CMD_PROVISION = "provision"
@@ -33,6 +34,7 @@ CMD_SIMULATOR = "simulator"
 CMD_DASHBOARD = "dashboard"
 CMD_AUTHZ_PREVIEW = "authz_preview"
 CMD_JOB = "job"
+CMD_CONFIG = "config"
 
 
 def check_python_version():
@@ -88,6 +90,22 @@ def handle_authz_preview(args):
     run_command(args)
 
 
+def def_config_parser(sub_cmd):
+    cmd = "config"
+    config_parser = sub_cmd.add_parser(cmd)
+    config_parser.add_argument(
+        "-d", "--startup_kit_dir", type=str, nargs="?", default=None, help="startup kit location"
+    )
+    config_parser.add_argument("-debug", "--debug", action='store_true', help="debug is on")
+    return {cmd: config_parser}
+
+
+def handle_config_cmd(args):
+    if not args.startup_kit_dir or not os.path.isdir(args.startup_kit_dir):
+        raise ValueError(f"invalid startup kit location '{args.startup_kit_dir}'")
+    save_startup_kit_config(args.startup_kit_dir)
+
+
 def parse_args(prog_name: str):
     _parser = argparse.ArgumentParser(description=prog_name)
     _parser.add_argument("--version", "-V", action="store_true", help="print nvflare version")
@@ -100,6 +118,7 @@ def parse_args(prog_name: str):
     sub_cmd_parsers.update(def_dashboard_parser(sub_cmd))
     sub_cmd_parsers.update(def_authz_preview_parser(sub_cmd))
     sub_cmd_parsers.update(def_job_cli_parser(sub_cmd))
+    sub_cmd_parsers.update(def_config_parser(sub_cmd))
 
     return _parser, _parser.parse_args(), sub_cmd_parsers
 
@@ -112,6 +131,7 @@ handlers = {
     CMD_DASHBOARD: handle_dashboard,
     CMD_AUTHZ_PREVIEW: handle_authz_preview,
     CMD_JOB: handle_job_cli_cmd,
+    CMD_CONFIG: handle_config_cmd
 }
 
 

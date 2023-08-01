@@ -21,41 +21,16 @@ from typing import List, Optional, Tuple
 
 from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree
-from pyhocon.converter import HOCONConverter
 
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.cli_exception import CLIException
 from nvflare.fuel.flare_api.flare_api import new_secure_session
 from nvflare.fuel.utils.config_factory import ConfigFactory
-from nvflare.lighter.service_constants import FlareServiceConstants
 from nvflare.tool.job.config.configer import merge_configs_from_cli
+from nvflare.utils.cli_utils import get_startup_kit_dir, get_curr_dir, save_config, append_if_not_in_list
 
 CMD_CREATE_JOB = "create"
 CMD_SUBMIT_JOB = "submit"
-
-
-def get_startup_kit_dir(startup_kit_dir: Optional[str] = None) -> str:
-    if startup_kit_dir:
-        return startup_kit_dir
-
-    # load from config file:
-    startup_kit_dir = find_startup_kit_location()
-    if startup_kit_dir is None:
-        startup_kit_dir = os.getenv("NVFLARE_STARTUP_KIT_DIR")
-
-    if startup_kit_dir is None or len(startup_kit_dir.strip()) == 0:
-        raise ValueError("startup kit directory is not specified")
-    else:
-        return startup_kit_dir
-
-
-def get_curr_dir():
-    return os.path.curdir
-
-
-def get_home_dir():
-    from pathlib import Path
-    return Path.home()
 
 
 def create_job(cmd_args):
@@ -180,7 +155,6 @@ def define_create_job_parser(job_subparser):
                                help="""script directory contains additional related files. 
                                        All files or directories under this directory will be copied over 
                                        to the custom directory.""")
-    create_parser.add_argument("-ep", "--enable_persistor", action='store_true', help="enable persistor is true")
     create_parser.add_argument("-debug", "--debug", action='store_true', help="debug is on")
     create_parser.add_argument("-force", "--force",
                                action='store_true',
@@ -215,19 +189,6 @@ def save_merged_configs(merged_conf, tmp_job_dir):
         save_config(file_configs, dst_path)
 
 
-def find_startup_kit_location():
-    hidden_nvflare_config_file = get_hidden_nvflare_config_path()
-    job_info_conf = load_job_info_config(hidden_nvflare_config_file)
-    return job_info_conf.get_string("startup_kit.path", None)
-
-
-def save_job_info(cmd_args):
-    hidden_nvflare_config_file = get_hidden_nvflare_config_path()
-    nvflare_config = CF.parse_string("{}")
-    nvflare_config = create_job_info_config(cmd_args, nvflare_config)
-    save_config(nvflare_config, hidden_nvflare_config_file, to_json=False)
-
-
 def get_upload_dir(startup_dir) -> str:
     console_config_path = os.path.join(startup_dir, "fed_admin.json")
     try:
@@ -239,59 +200,6 @@ def get_upload_dir(startup_dir) -> str:
     except json.decoder.JSONDecodeError as e:
         raise CLIException(f"failed to load {console_config_path}, please double check the configuration {e}")
     return upload_dir
-
-
-def is_dir_empty(path: str):
-    targe_dir = os.listdir(path)
-    return len(targe_dir) == 0
-
-
-def load_job_info_config(hidden_nvflare_config_file) -> ConfigTree:
-    return CF.parse_file(hidden_nvflare_config_file)
-
-
-def create_job_info_config(cmd_args, nvflare_config: ConfigTree) -> ConfigTree:
-    """
-    Args:
-        cmd_args: Command-line arguments containing the startup directory path.
-        nvflare_config (ConfigTree): The existing nvflare configuration.
-
-    Returns:
-        ConfigTree: The merged configuration tree.
-    """
-    startup_kit_dir = get_startup_kit_dir()
-    if not startup_kit_dir or not os.path.isdir(startup_kit_dir):
-        raise ValueError(f"startup_kit_dir '{startup_kit_dir}' must be a valid and non-empty path. "
-                         f"use 'nvflare poc' command to 'prepare' if you are using POC mode. Or use"
-                         f" 'nvflare config' to setup startup_kit_dir location if you are in production")
-
-    conf_str = f"""
-        startup_kit {{
-            path = {startup_kit_dir}
-        }}
-    """
-    conf: ConfigTree = CF.parse_string(conf_str)
-
-    return conf.with_fallback(nvflare_config)
-
-
-def get_hidden_nvflare_config_path() -> str:
-    """
-    Get the path for the hidden nvflare configuration file.
-
-    Returns:
-        str: The path to the hidden nvflare configuration file.
-    """
-    home_dir = get_home_dir()
-    hidden_nvflare_dir = pathlib.Path(home_dir) / ".nvflare"
-
-    try:
-        hidden_nvflare_dir.mkdir(exist_ok=True)
-    except OSError as e:
-        raise RuntimeError(f"Error creating the hidden nvflare directory: {e}")
-
-    hidden_nvflare_config_file = hidden_nvflare_dir / "config.conf"
-    return str(hidden_nvflare_config_file)
 
 
 def prepare_model_exchange_config(cmd_args, predefined):
@@ -318,13 +226,6 @@ def prepare_meta_config(cmd_args):
     dst_config.put("name", app_name)
     dst_config.put(JobMetaKey.MIN_CLIENTS, cmd_args.min_clients)
     save_config(dst_config, dst_path)
-
-
-def save_config(dst_config, dst_path, to_json=True):
-    config_str = HOCONConverter.to_json(dst_config) if to_json else HOCONConverter.to_hocon(dst_config)
-
-    with open(dst_path, "w") as outfile:
-        outfile.write(f"{config_str}\n")
 
 
 def load_src_config_template(config_file_name: str):
@@ -414,55 +315,51 @@ def prepare_workflows(cmd_args, predefined) -> Tuple[ConfigTree, ConfigTree]:
         if cmd_args.num_rounds and target_wf_conf.get("args.num_rounds", None) is not None:
             target_wf_conf.put("args.num_rounds", cmd_args.num_rounds)
 
-        workflows.append(target_wf_conf)
-        predefined_wf_components = workflows_conf.get(f"{wf_name}.components")
+        append_if_not_in_list(workflows, target_wf_conf)
+        predefined_wf_components = workflows_conf.get(f"{wf_name}.components", None)
         predefined_wf_task_data_filters = workflows_conf.get(f"{wf_name}.task_data_filters", None)
         predefined_wf_task_result_filters = workflows_conf.get(f"{wf_name}.task_result_filters", None)
 
         if predefined_wf_task_data_filters:
             for name, data_filter in predefined_wf_task_data_filters.items():
-                wf_task_task_data_filters.append(data_filter)
+                append_if_not_in_list(wf_task_task_data_filters, data_filter)
 
         if predefined_wf_task_result_filters:
             for name, result_filter in predefined_wf_task_result_filters.items():
-                wf_task_result_filters.append(result_filter)
+                append_if_not_in_list(wf_task_result_filters, result_filter)
 
-        for name, comp in predefined_wf_components.items():
-            if name == "persistor":
-                if cmd_args.enable_persistor:
-                    wf_components.append(comp)
-                    target_wf_conf.put("args.persistor_id", comp.get_string("id"))
-            elif name == "model_selector":
-                if cmd_args.enable_persistor:
-                    wf_components.append(comp)
-            else:
-                wf_components.append(comp)
 
-        predefined_executors = workflows_conf.get_config(f"{wf_name}.executors")
-        item_lens = len(predefined_executors.items())
-        target_exec = None
-        if item_lens == 0:
+        if predefined_wf_components:
+            for name, comp in predefined_wf_components.items():
+                append_if_not_in_list(wf_components, comp)
+
+        predefined_executors = workflows_conf.get(f"{wf_name}.executors", None)
+        if predefined_executors:
+            item_lens = len(predefined_executors.items())
             target_exec = None
-        elif item_lens == 1:
-            name = next(iter(predefined_executors))
-            target_exec = predefined_executors.get(name)
-        else:  # > 1
-            target_exec_list = [exec_conf for name, exec_conf in predefined_executors.items() if
-                                exec_conf.get("default", False) is True]
-            if target_exec_list:
-                target_exec = target_exec_list[0]
+            if item_lens == 0:
+                target_exec = None
+            elif item_lens == 1:
+                name = next(iter(predefined_executors))
+                target_exec = predefined_executors.get(name)
+            else:  # > 1
+                target_exec_list = [exec_conf for name, exec_conf in predefined_executors.items() if
+                                    exec_conf.get("default", False) is True]
+                if target_exec_list:
+                    target_exec = target_exec_list[0]
 
-        if target_exec:
-            # target_exec.put("script", f"{os.path.basename(cmd_args.script)}")
-            executors.append(target_exec.get("executor"))
-            if target_exec.get("task_data_filters", None):
-                for name, data_filter in target_exec.get("task_data_filters").items():
-                    exec_task_data_filters.append(data_filter)
-            if target_exec.get("task_result_filters", None):
-                for name, result_filter in target_exec.get("task_result_filters").items():
-                    exec_task_result_filters.append(result_filter)
-            for name, comp in target_exec.get("components").items():
-                exec_components.append(comp)
+            if target_exec:
+                # target_exec.put("script", f"{os.path.basename(cmd_args.script)}")
+                append_if_not_in_list(executors, target_exec.get("executor"))
+
+                if target_exec.get("task_data_filters", None):
+                    for name, data_filter in target_exec.get("task_data_filters").items():
+                        append_if_not_in_list(exec_task_data_filters, data_filter)
+                if target_exec.get("task_result_filters", None):
+                    for name, result_filter in target_exec.get("task_result_filters").items():
+                        append_if_not_in_list(exec_task_result_filters, result_filter)
+                for name, comp in target_exec.get("components").items():
+                    append_if_not_in_list(exec_components, comp)
 
     server_config.put("workflows", workflows)
     server_config.put("components", wf_components)
