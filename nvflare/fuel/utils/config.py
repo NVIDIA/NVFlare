@@ -58,7 +58,7 @@ class Config(ABC):
         return self.format
 
     def get_exts(self) -> List[str]:
-        return self.format.extensions(self.format)
+        return ConfigFormat.extensions(self.format)
 
     def get_native_conf(self):
         """Return the original underline config object representation if you prefer to use it directly
