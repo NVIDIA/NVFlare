@@ -43,7 +43,7 @@ class ConfigFactory:
 
     @staticmethod
     def search_config_format(
-        init_file_path, search_dirs: Optional[List[str]] = None
+        init_file_path: str, search_dirs: Optional[List[str]] = None, target_fmt: Optional[ConfigFormat] = None
     ) -> Tuple[Optional[ConfigFormat], Optional[str]]:
 
         """find the configuration format and the location (file_path) for given initial init_file_path and search directories.
@@ -55,6 +55,7 @@ class ConfigFactory:
         Args:
             init_file_path: initial file_path for the configuration
             search_dirs: search directory. If none, the parent directory of init_file_path will be used as search dir
+            target_fmt: (ConfigFormat) if specified, only this format searched, ignore all other formats.
 
         Returns:
             Tuple of None,None or ConfigFormat and real configuration file path
@@ -65,12 +66,17 @@ class ConfigFactory:
             parent_dir = pathlib.Path(init_file_path).parent
             search_dirs = [str(parent_dir)]
 
+        target_exts = None
+        if target_fmt:
+            target_exts = ConfigFormat.extensions(target_fmt)
+
         # we ignore the original extension
         file_basename = ConfigFactory.get_file_basename(init_file_path)
         ext2fmt_map = ConfigFormat.config_ext_formats()
+        extensions = target_exts if target_fmt else ext2fmt_map.keys()
         for search_dir in search_dirs:
             logger.debug(f"search file basename:'{file_basename}', search dirs = {search_dirs}")
-            for ext in ext2fmt_map:
+            for ext in extensions:
                 fmt = ext2fmt_map[ext]
                 filename = f"{file_basename}{ext}"
                 for root, dirs, files in os.walk(search_dir):
@@ -87,7 +93,9 @@ class ConfigFactory:
         return file_basename
 
     @staticmethod
-    def load_config(file_path: str, search_dirs: Optional[List[str]] = None) -> Optional[Config]:
+    def load_config(
+        file_path: str, search_dirs: Optional[List[str]] = None, target_fmt: Optional[ConfigFormat] = None
+    ) -> Optional[Config]:
 
         """Find the configuration for given initial init_file_path and search directories.
             for example, the initial config file path given is config_client.json
@@ -97,12 +105,13 @@ class ConfigFactory:
         Args:
             file_path: initial file path
             search_dirs: search directory. If none, the parent directory of init_file_path will be used as search dir
+            target_fmt: (ConfigFormat) if specified, only this format searched, ignore all other formats.
 
         Returns:
             None if not found, or Config
 
         """
-        config_format, real_config_file_path = ConfigFactory.search_config_format(file_path, search_dirs)
+        config_format, real_config_file_path = ConfigFactory.search_config_format(file_path, search_dirs, target_fmt)
         if config_format is not None and real_config_file_path is not None:
             config_loader = ConfigFactory.get_config_loader(config_format)
             if config_loader:
