@@ -15,14 +15,18 @@
 from typing import Any
 
 from nvflare.apis.analytix import AnalyticsDataType
+from nvflare.fuel.utils.pipe.pipe import Message
+from nvflare.fuel.utils.pipe.pipe_handler import PipeHandler
 
 
 class MetricsExchanger:
     def __init__(
         self,
-        queue,
+        pipe_handler: PipeHandler,
+        topic: str = "metrics",
     ):
-        self._queue = queue
+        self._pipe_handler = pipe_handler
+        self._topic = topic
 
     def log(self, key: str, value: Any, data_type: AnalyticsDataType, **kwargs):
         kwargs = {} if kwargs is None else kwargs
@@ -30,4 +34,5 @@ class MetricsExchanger:
         kwargs["value"] = value
         kwargs["data_type"] = data_type
         print(f"MetricsExchanger putting things {kwargs} into queue")
-        self._queue.put(kwargs)
+        req = Message.new_request(topic=self._topic, data=kwargs)
+        self._pipe_handler.send_to_peer(req)
