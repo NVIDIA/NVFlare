@@ -14,12 +14,12 @@
 
 from typing import Optional
 
-from nvflare.app_common.abstract.fl_model import FLModel
+from nvflare.app_common.abstract.fl_model import FLModel, ParamsType
 from nvflare.app_common.model_exchange.model_exchanger import ModelExchanger
 
 from .config import ClientConfig
 from .constants import SYS_ATTRS
-from .utils import get_meta_from_fl_model
+from .utils import DIFF_FUNCS, get_meta_from_fl_model
 
 
 class Cache:
@@ -40,12 +40,27 @@ class Cache:
 
         self.input_model: Optional[FLModel] = None
         self.metrics = None
-        self.sys_meta = None
+        self.sys_info = None
         self.output_meta = {}
 
     def receive(self):
         self.input_model = self.model_exchanger.receive_model()
-        self.sys_meta = get_meta_from_fl_model(self.input_model, SYS_ATTRS)
+        self.sys_info = get_meta_from_fl_model(self.input_model, SYS_ATTRS)
+
+    def send(self, model: FLModel) -> None:
+        if self.config.get_transfer_type() == "DIFF":
+            exchange_format = self.config.get_exchange_format()
+            diff_func = DIFF_FUNCS.get(exchange_format, None)
+            if diff_func is None:
+                raise RuntimeError(f"no default params diff function for {exchange_format}")
+            elif self.input_model is None:
+                raise RuntimeError("no received model")
+            try:
+                model.params = diff_func(original=self.input_model.params, new=model.params)
+                model.params_type = ParamsType.DIFF
+            except Exception as e:
+                raise RuntimeError(f"params diff function failed: {e}")
+        self.model_exchanger.submit_model(model=model)
 
     def __str__(self):
         return f"Cache(config: {self.config.get_config()})"

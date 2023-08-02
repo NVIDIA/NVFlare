@@ -29,15 +29,7 @@ from nvflare.fuel.hci.table import Table
 from nvflare.fuel.utils.fsm import FSM, State
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
-from .api_spec import (
-    AdminAPISpec,
-    ApiPocValue,
-    CommandContext,
-    CommandCtxKey,
-    CommandInfo,
-    ReplyProcessor,
-    ServiceFinder,
-)
+from .api_spec import AdminAPISpec, CommandContext, CommandCtxKey, CommandInfo, ReplyProcessor, ServiceFinder
 from .api_status import APIStatus
 
 _CMD_TYPE_UNKNOWN = 0
@@ -351,7 +343,7 @@ class AdminAPI(AdminAPISpec):
             cmd_modules: command modules to load and register. Note that FileTransferModule is initialized here with upload_dir and download_dir if cmd_modules is None.
             service_finder: used to obtain the primary service provider to set the host and port of the active server
             user_name: Username to authenticate with FL server
-            poc: Whether to enable poc mode for using the proof of concept example without secure communication.
+            poc: Obsolete arg for using the proof of concept example without secure communication before version 2.4.
             debug: Whether to print debug messages, which can help with diagnosing problems. False by default.
             session_event_cb: the session event callback
             session_timeout_interval: if specified, automatically close the session after inactive for this long, unit is second
@@ -389,24 +381,19 @@ class AdminAPI(AdminAPISpec):
         self.new_ssid = None
         self.new_addr_lock = threading.Lock()
 
-        self.poc_key = None
-        self.poc = poc
-        if self.poc:
-            self.poc_key = ApiPocValue.ADMIN
-        else:
-            if len(ca_cert) <= 0:
-                raise Exception("missing CA Cert file name")
-            self.ca_cert = ca_cert
-            if len(client_cert) <= 0:
-                raise Exception("missing Client Cert file name")
-            self.client_cert = client_cert
-            if len(client_key) <= 0:
-                raise Exception("missing Client Key file name")
-            self.client_key = client_key
+        if len(ca_cert) <= 0:
+            raise Exception("missing CA Cert file name")
+        self.ca_cert = ca_cert
+        if len(client_cert) <= 0:
+            raise Exception("missing Client Cert file name")
+        self.client_cert = client_cert
+        if len(client_key) <= 0:
+            raise Exception("missing Client Key file name")
+        self.client_key = client_key
 
-            self.service_finder.set_secure_context(
-                ca_cert_path=self.ca_cert, cert_path=self.client_cert, private_key_path=self.client_key
-            )
+        self.service_finder.set_secure_context(
+            ca_cert_path=self.ca_cert, cert_path=self.client_cert, private_key_path=self.client_key
+        )
         self.debug = debug
         self.cmd_timeout = None
 
@@ -487,11 +474,7 @@ class AdminAPI(AdminAPISpec):
         resp = None
         for i in range(self.auto_login_max_tries):
             self.fire_session_event(SessionEventType.TRYING_LOGIN, "Trying to login, please wait ...")
-
-            if self.poc:
-                resp = self.login_with_poc(username=self.user_name, poc_key=self.poc_key)
-            else:
-                resp = self.login(username=self.user_name)
+            resp = self.login(username=self.user_name)
             if resp[ResultKey.STATUS] in [APIStatus.SUCCESS, APIStatus.ERROR_AUTHENTICATION, APIStatus.ERROR_CERT]:
                 return resp
             time.sleep(AUTO_LOGIN_INTERVAL)
@@ -662,30 +645,6 @@ class AdminAPI(AdminAPISpec):
 
         return self._login()
 
-    def login_with_poc(self, username: str, poc_key: str):
-        """Login using key for proof of concept example.
-
-        Args:
-            username: Username
-            poc_key: key used for proof of concept admin login
-
-        Returns:
-            A dict of login status and details
-        """
-        self.login_result = None
-        self.server_execute(f"{InternalCommands.PWD_LOGIN} {username} {poc_key}", _LoginReplyProcessor())
-        if self.login_result is None:
-            return {
-                ResultKey.STATUS: APIStatus.ERROR_RUNTIME,
-                ResultKey.DETAILS: "Communication Error - please try later",
-            }
-        elif self.login_result == "REJECT":
-            return {
-                ResultKey.STATUS: APIStatus.ERROR_AUTHENTICATION,
-                ResultKey.DETAILS: "Incorrect user name or password",
-            }
-        return self._login()
-
     def _send_to_sock(self, sock, ctx: CommandContext):
         command = ctx.get_command()
         json_processor = ctx.get_json_processor()
@@ -728,25 +687,19 @@ class AdminAPI(AdminAPISpec):
             print(f"DEBUG: use server address {sp_host}:{sp_port}")
 
         try:
-            if not self.poc:
-                # SSL communication
-                ssl_ctx = ssl.create_default_context()
-                ssl_ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-                ssl_ctx.verify_mode = ssl.CERT_REQUIRED
-                ssl_ctx.check_hostname = False
+            # SSL communication
+            ssl_ctx = ssl.create_default_context()
+            ssl_ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+            ssl_ctx.verify_mode = ssl.CERT_REQUIRED
+            ssl_ctx.check_hostname = False
 
-                ssl_ctx.load_verify_locations(self.ca_cert)
-                ssl_ctx.load_cert_chain(certfile=self.client_cert, keyfile=self.client_key)
+            ssl_ctx.load_verify_locations(self.ca_cert)
+            ssl_ctx.load_cert_chain(certfile=self.client_cert, keyfile=self.client_key)
 
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                    with ssl_ctx.wrap_socket(sock, server_hostname=sp_host) as ssock:
-                        ssock.connect((sp_host, sp_port))
-                        self._send_to_sock(ssock, cmd_ctx)
-            else:
-                # poc without certs
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                    sock.connect((sp_host, sp_port))
-                    self._send_to_sock(sock, cmd_ctx)
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                with ssl_ctx.wrap_socket(sock, server_hostname=sp_host) as ssock:
+                    ssock.connect((sp_host, sp_port))
+                    self._send_to_sock(ssock, cmd_ctx)
         except Exception as e:
             if self.debug:
                 secure_log_traceback()

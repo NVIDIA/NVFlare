@@ -55,6 +55,8 @@ optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
 
 # (optional) use GPU to speed things up
 net.to(device)
+# (optional) calculate total steps
+steps = 2 * len(trainloader)
 for epoch in range(2):  # loop over the dataset multiple times
 
     running_loss = 0.0
@@ -115,12 +117,11 @@ def evaluate(input_weights):
 local_accuracy = evaluate(torch.load(PATH))
 # (2.2) evaluate on received model
 accuracy = evaluate(input_model.params)
-# (2.3) construct trained FL model difference
+# (2.3) construct trained FL model
 output_model = flare.FLModel(
-    params=flare.params_diff(input_model.params, net.cpu().state_dict()),
-    params_type=flare.ParamsType.DIFF,
+    params=net.cpu().state_dict(),
     metrics={"accuracy": accuracy},
-    meta=input_model.meta,
+    meta={"NUM_STEPS_CURRENT_ROUND": steps},
 )
 # (1.5) send model back to NVFlare
 flare.send(output_model)

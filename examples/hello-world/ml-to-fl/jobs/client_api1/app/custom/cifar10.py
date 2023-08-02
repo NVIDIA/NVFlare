@@ -55,6 +55,8 @@ optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
 
 # (optional) use GPU to speed things up
 net.to(device)
+# (optional) calculate total steps
+steps = 2 * len(trainloader)
 for epoch in range(2):  # loop over the dataset multiple times
 
     running_loss = 0.0
@@ -111,7 +113,7 @@ print(f"Accuracy of the network on the 10000 test images: {100 * correct // tota
 output_model = flare.FLModel(
     params=net.cpu().state_dict(),
     metrics={"accuracy": 100 * correct // total},
-    meta=input_model.meta,
+    meta={"NUM_STEPS_CURRENT_ROUND": steps},
 )
 # (1.5) send model back to NVFlare
 flare.send(output_model)

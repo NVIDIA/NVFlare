@@ -16,7 +16,7 @@ In addition to basic uniform shrinkage setting where all clients have the same l
 
 ## Run automated experiments
 Please make sure to finish the [preparation steps](../README.md) before running the following steps.
-To run this example with NVFlare, follow the steps below or this [notebook](./xgboost_tree_higgs.ipynb).
+To run all of the experiments in this example with NVFlare, follow the steps below. To try out a single experiment, follow this [notebook](./xgboost_tree_higgs.ipynb).
 
 ### Environment Preparation
 
@@ -26,13 +26,13 @@ python3 -m pip install -r requirements.txt
 ```
 
 ### Run federated experiments with simulator locally
-Next, we will use the NVFlare simulator to run FL training.
+Next, we will use the NVFlare simulator to run FL training for all the different experiment configurations.
 ```
 bash run_experiment_simulator.sh
 ```
 
 ### Run centralized experiments
-For comparison, we train baseline models in a centralized manner with same round of training
+For comparison, we train baseline models in a centralized manner with same round of training.
 ```
 bash run_experiment_centralized.sh
 ```
@@ -88,6 +88,12 @@ inside the `/tmp/nvflare/xgboost_higgs_dataset` folder,
 since each site might save the HIGGS dataset in different places.
 
 Then you can use admin client to submit the job via `submit_job` command.
+
+## Customization
+
+To use other dataset, can inherit the base class `XGBDataLoader` and
+implement that `load_data()` method.
+
 
 ## Reference
 [1] Zhao, L. et al., "InPrivate Digging: Enabling Tree-based Distributed Data Mining with Differential Privacy," IEEE INFOCOM 2018 - IEEE Conference on Computer Communications, 2018, pp. 2087-2095

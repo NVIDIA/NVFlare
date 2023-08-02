@@ -1558,7 +1558,7 @@ adm_notebook: |
     "source": [
       "#### 1. Connect to the FL System with the FLARE API\n",
       "\n",
-      "Use `new_secure_session()` to initiate a session connecting to the FL Server with the FLARE API. The necessary arguments are the username of the admin user you are using and the corresponding startup kit location (if you are using POC mode, you will need to use `new_insecure_session()` with the startup kit location as the only argument).\n",
+      "Use `new_secure_session()` to initiate a session connecting to the FL Server with the FLARE API. The necessary arguments are the username of the admin user you are using and the corresponding startup kit location.\n",
       "\n",
       "In the code example below, we get the `admin_user_dir` by concatenating the workspace root with the default directories that are created if you provision a project with a given project name. You can change the values to what applies to your system if needed.\n",
       "\n",

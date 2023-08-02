@@ -1,4 +1,4 @@
-# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,11 +13,18 @@
 # limitations under the License.
 
 
-def main():
-    print("*****************************************************************")
-    print("** poc command is deprecated, please use 'nvflare poc' instead **")
-    print("*****************************************************************")
+from abc import ABC, abstractmethod
+from typing import Tuple
+
+import xgboost as xgb
 
 
-if __name__ == "__main__":
-    main()
+class XGBDataLoader(ABC):
+    @abstractmethod
+    def load_data(self, client_id) -> Tuple[xgb.core.DMatrix, xgb.core.DMatrix]:
+        """Loads data for xgboost.
+
+        Returns:
+            A tuple of train_data, validation_data
+        """
+        pass

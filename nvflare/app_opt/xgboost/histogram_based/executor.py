@@ -14,8 +14,6 @@
 
 
 import os
-from abc import ABC, abstractmethod
-from typing import Tuple
 
 import xgboost as xgb
 from xgboost import callback
@@ -28,23 +26,57 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.apis.workspace import Workspace
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
+from nvflare.app_opt.xgboost.histogram_based.constants import XGB_TRAIN_TASK, XGBShareableHeader
+from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
-from .constants import XGB_TRAIN_TASK, XGBShareableHeader
-from .executor_spec import FedXGBHistogramExecutorSpec, XGBoostParams
+
+class XGBoostParams:
+    def __init__(self, xgb_params: dict, num_rounds=10, early_stopping_rounds=2, verbose_eval=False):
+        """Container for all XGBoost parameters.
+
+        Args:
+            xgb_params: This dict is passed to `xgboost.train()` as the first argument `params`.
+                It contains all the Booster parameters.
+                Please refer to XGBoost documentation for details:
+                https://xgboost.readthedocs.io/en/stable/python/python_api.html#module-xgboost.training
+        """
+        self.num_rounds = num_rounds
+        self.early_stopping_rounds = early_stopping_rounds
+        self.verbose_eval = verbose_eval
+        self.xgb_params: dict = xgb_params if xgb_params else {}
 
 
-class FedXGBHistogramExecutor(FedXGBHistogramExecutorSpec, Executor, ABC):
+class TensorBoardCallback(xgb.callback.TrainingCallback):
+    def __init__(self, app_dir: str, tensorboard):
+        self.train_writer = tensorboard.SummaryWriter(log_dir=os.path.join(app_dir, "train-auc/"))
+        self.val_writer = tensorboard.SummaryWriter(log_dir=os.path.join(app_dir, "val-auc/"))
+
+    def after_iteration(self, model, epoch: int, evals_log: xgb.callback.TrainingCallback.EvalsLog):
+        if not evals_log:
+            return False
+
+        for data, metric in evals_log.items():
+            for metric_name, log in metric.items():
+                score = log[-1][0] if isinstance(log[-1], tuple) else log[-1]
+                if data == "train":
+                    self.train_writer.add_scalar(metric_name, score, epoch)
+                else:
+                    self.val_writer.add_scalar(metric_name, score, epoch)
+        return False
+
+
+class FedXGBHistogramExecutor(Executor):
     """Federated XGBoost Executor Spec for histogram-base collaboration.
 
-    This class implements the basic xgb_train logic, the subclass must implement load_data.
+    This class implements a basic xgb_train logic, feel free to overwrite the function for custom behavior.
     """
 
-    def __init__(self, num_rounds, early_stopping_round, xgboost_params: dict, verbose_eval=False):
+    def __init__(self, num_rounds, early_stopping_round, xgboost_params: dict, data_loader_id: str, verbose_eval=False):
         """Federated XGBoost Executor for histogram-base collaboration.
 
         This class sets up the training environment for Federated XGBoost.
-        This is an abstract class, load_data method must be implemented by a subclass.
         This is the executor running on each NVFlare client, which starts XGBoost training.
 
         Args:
@@ -54,9 +86,11 @@ class FedXGBHistogramExecutor(FedXGBHistogramExecutorSpec, Executor, ABC):
                 It contains all the Booster parameters.
                 Please refer to XGBoost documentation for details:
                 https://xgboost.readthedocs.io/en/stable/python/python_api.html#module-xgboost.training
+            data_loader_id: the ID points to XGBDataLoader.
             verbose_eval: verbose_eval in xgboost.train
         """
         super().__init__()
+        self.app_dir = None
 
         self.num_rounds = num_rounds
         self.early_stopping_round = early_stopping_round
@@ -70,21 +104,30 @@ class FedXGBHistogramExecutor(FedXGBHistogramExecutorSpec, Executor, ABC):
         self._client_key_path = None
         self._client_cert_path = None
         self._server_address = "localhost"
-
-        self.dmat_train = None
-        self.dmat_valid = None
-
-    @abstractmethod
-    def load_data(self) -> Tuple[xgb.core.DMatrix, xgb.core.DMatrix]:
-        raise NotImplementedError
+        self.data_loader_id = data_loader_id
+        self.train_data = None
+        self.val_data = None
 
     def xgb_train(self, params: XGBoostParams) -> xgb.core.Booster:
+        """XGBoost training logic.
+
+        Args:
+            params (XGBoostParams): xgboost parameters.
+
+        Returns:
+            A xgboost booster.
+        """
         # Load file, file will not be sharded in federated mode.
-        dtrain = self.dmat_train
-        dval = self.dmat_valid
+        dtrain = self.train_data
+        dval = self.val_data
 
         # Specify validations set to watch performance
         watchlist = [(dval, "eval"), (dtrain, "train")]
+
+        callbacks = [callback.EvaluationMonitor(rank=self.rank)]
+        tensorboard, flag = optional_import(module="torch.utils.tensorboard")
+        if flag and self.app_dir:
+            callbacks.append(TensorBoardCallback(self.app_dir, tensorboard))
 
         # Run training, all the features in training API is available.
         bst = xgb.train(
@@ -94,20 +137,37 @@ class FedXGBHistogramExecutor(FedXGBHistogramExecutorSpec, Executor, ABC):
             evals=watchlist,
             early_stopping_rounds=params.early_stopping_rounds,
             verbose_eval=params.verbose_eval,
-            callbacks=[callback.EvaluationMonitor(rank=self.rank)],
+            callbacks=callbacks,
         )
 
         return bst
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == EventType.START_RUN:
-            engine = fl_ctx.get_engine()
-            if engine.client.overseer_agent:
-                sp = engine.client.overseer_agent.get_primary_sp()
-                if sp and sp.primary is True:
-                    self._server_address = sp.name
             self.client_id = fl_ctx.get_identity_name()
+            self._server_address = self._get_server_address(fl_ctx)
             self.log_info(fl_ctx, f"server address is {self._server_address}")
+
+            engine = fl_ctx.get_engine()
+            ws = engine.get_workspace()
+            self.app_dir = ws.get_app_dir(fl_ctx.get_job_id())
+
+            data_loader = engine.get_component(self.data_loader_id)
+            if not isinstance(data_loader, XGBDataLoader):
+                self.system_panic("data_loader should be type XGBDataLoader", fl_ctx)
+            try:
+                self.train_data, self.val_data = data_loader.load_data(self.client_id)
+            except Exception as e:
+                self.system_panic(f"load_data failed: {secure_format_exception(e)}", fl_ctx)
+
+    def _get_server_address(self, fl_ctx: FLContext):
+        engine = fl_ctx.get_engine()
+        if engine.client.overseer_agent:
+            sp = engine.client.overseer_agent.get_primary_sp()
+            if sp and sp.primary is True:
+                return sp.name
+        self.log_info(fl_ctx, "Unable to get primary sp from overseer. Using previously known server address")
+        return self._server_address
 
     def _get_certificates(self, fl_ctx: FLContext):
         workspace: Workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)
@@ -148,9 +208,6 @@ class FedXGBHistogramExecutor(FedXGBHistogramExecutorSpec, Executor, ABC):
         if abort_signal.triggered:
             return make_reply(ReturnCode.TASK_ABORTED)
 
-        if self.dmat_train is None:
-            self.dmat_train, self.dmat_valid = self.load_data()
-
         # Print round information
         current_round = shareable.get_header(AppConstants.CURRENT_ROUND)
         total_rounds = shareable.get_header(AppConstants.NUM_ROUNDS)
@@ -187,6 +244,9 @@ class FedXGBHistogramExecutor(FedXGBHistogramExecutorSpec, Executor, ABC):
             early_stopping_rounds=self.early_stopping_round,
             verbose_eval=self.verbose_eval,
         )
+
+        self._server_address = self._get_server_address(fl_ctx)
+        self.log_info(fl_ctx, f"server address is {self._server_address}")
 
         communicator_env = {
             "xgboost_communicator": "federated",

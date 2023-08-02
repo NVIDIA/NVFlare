@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import warnings
-
 from nvflare.fuel.utils.import_utils import optional_import
 
 pytorch_lightning, ok = optional_import(module="pytorch_lightning")
@@ -21,10 +19,7 @@ pytorch_lightning, ok = optional_import(module="pytorch_lightning")
 if ok:
     from nvflare.app_common.abstract.fl_model import FLModel as FLModel
     from nvflare.app_common.abstract.fl_model import ParamsType as ParamsType
-    from nvflare.app_opt.lightning import init as init
     from nvflare.app_opt.lightning import patch as patch
-    from nvflare.client import get_sys_meta as get_sys_meta
     from nvflare.client import params_diff as params_diff
     from nvflare.client import send as send
-else:
-    warnings.warn("pytorch_lightning is not installed, nvflare.client.lightning will not work.")
+    from nvflare.client import system_info as system_info

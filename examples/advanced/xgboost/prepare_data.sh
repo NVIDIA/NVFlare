@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 DATASET_PATH="$HOME/dataset/HIGGS.csv"
 OUTPUT_PATH="/tmp/nvflare/xgboost_higgs_dataset"
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 if [ ! -f "${DATASET_PATH}" ]
 then
@@ -12,7 +13,7 @@ for site_num in 2 5 20;
 do
     for split_mode in uniform exponential square;
     do
-        python3 utils/prepare_data_split.py \
+        python3 ${SCRIPT_DIR}/utils/prepare_data_split.py \
         --data_path "${DATASET_PATH}" \
         --site_num ${site_num} \
         --size_total 11000000 \
