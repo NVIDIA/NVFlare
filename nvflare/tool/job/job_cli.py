@@ -1,4 +1,4 @@
-# Copyright (c) 2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -292,9 +292,8 @@ def prepare_workflows(cmd_args, predefined) -> Tuple[ConfigTree, ConfigTree]:
     if invalid_names:
         raise ValueError(f"Unknown workflow names: {invalid_names}")
 
-    file_dir = os.path.dirname(__file__)
-    server_config = CF.parse_file(os.path.join(file_dir, "config/server_config.conf"))
-    client_config = CF.parse_file(os.path.join(file_dir, "config/client_config.conf"))
+    server_config = CF.parse_string("""{ format_version = 2 }""")
+    client_config = CF.parse_string("""{ format_version = 2 }""")
 
     workflows = []
     wf_components = []
