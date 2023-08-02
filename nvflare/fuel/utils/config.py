@@ -15,7 +15,7 @@
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 
 class ConfigFormat(Enum):
@@ -36,6 +36,13 @@ class ConfigFormat(Enum):
             }
         )
 
+    @classmethod
+    def extensions(cls, target_fmt=None) -> List[str]:
+        if target_fmt is None:
+            return [ext for ext, fmt in cls.config_ext_formats().items()]
+        else:
+            return [ext for ext, fmt in cls.config_ext_formats().items() if fmt == target_fmt]
+
 
 class Config(ABC):
     def __init__(self, conf: Any, fmt: ConfigFormat, file_path: Optional[str] = None):
@@ -49,6 +56,9 @@ class Config(ABC):
             return ConfigFormat
         """
         return self.format
+
+    def get_exts(self) -> List[str]:
+        return ConfigFormat.extensions(self.format)
 
     def get_native_conf(self):
         """Return the original underline config object representation if you prefer to use it directly
