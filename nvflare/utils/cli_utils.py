@@ -13,33 +13,43 @@
 # limitations under the License.
 import os
 import pathlib
+from pathlib import Path
 from typing import Optional, List
 
 from pyhocon import ConfigTree, ConfigFactory as CF, HOCONConverter
 
 
-def get_home_dir():
-    from pathlib import Path
+def get_home_dir() -> Path:
     return Path.home()
 
 
-def get_hidden_nvflare_config_path() -> str:
+def get_hidden_nvflare_config_path(hidden_nvflare_dir: str) -> str:
     """
     Get the path for the hidden nvflare configuration file.
-
+    Args:
+        hidden_nvflare_dir: ~/.nvflare directory
     Returns:
         str: The path to the hidden nvflare configuration file.
     """
+    hidden_nvflare_config_file = os.path.join(hidden_nvflare_dir, "config.conf")
+    return str(hidden_nvflare_config_file)
+
+
+def create_hidden_nvflare_dir():
+    hidden_nvflare_dir = get_hidden_nvflare_dir()
+    if not hidden_nvflare_dir.exists():
+        try:
+            hidden_nvflare_dir.mkdir(exist_ok=True)
+        except OSError as e:
+            raise RuntimeError(f"Error creating the hidden nvflare directory: {e}")
+
+    return hidden_nvflare_dir
+
+
+def get_hidden_nvflare_dir() -> pathlib.Path:
     home_dir = get_home_dir()
     hidden_nvflare_dir = pathlib.Path(home_dir) / ".nvflare"
-
-    try:
-        hidden_nvflare_dir.mkdir(exist_ok=True)
-    except OSError as e:
-        raise RuntimeError(f"Error creating the hidden nvflare directory: {e}")
-
-    hidden_nvflare_config_file = hidden_nvflare_dir / "config.conf"
-    return str(hidden_nvflare_config_file)
+    return hidden_nvflare_dir
 
 
 def load_config(config_file_path) -> Optional[ConfigTree]:
@@ -49,10 +59,16 @@ def load_config(config_file_path) -> Optional[ConfigTree]:
         return None
 
 
-def find_startup_kit_location():
-    hidden_nvflare_config_file = get_hidden_nvflare_config_path()
-    nvflare_config = load_config(hidden_nvflare_config_file)
+def find_startup_kit_location() -> str:
+    nvflare_config = load_hidden_config()
     return nvflare_config.get_string("startup_kit.path", None) if nvflare_config else None
+
+
+def load_hidden_config() -> ConfigTree:
+    hidden_dir = create_hidden_nvflare_dir()
+    hidden_nvflare_config_file = get_hidden_nvflare_config_path(str(hidden_dir))
+    nvflare_config = load_config(hidden_nvflare_config_file)
+    return nvflare_config
 
 
 def create_startup_kit_config(nvflare_config: ConfigTree, startup_kit_dir: Optional[str] = None) -> ConfigTree:
@@ -111,8 +127,8 @@ def save_config(dst_config, dst_path, to_json=True):
 
 
 def save_startup_kit_config(startup_kit_dir: Optional[str] = None):
-    hidden_nvflare_config_file = get_hidden_nvflare_config_path()
-    conf = load_config(hidden_nvflare_config_file)
+    hidden_nvflare_config_file = get_hidden_nvflare_config_path(str(create_hidden_nvflare_dir()))
+    conf = load_hidden_config()
     nvflare_config = CF.parse_string("{}") if not conf else conf
     nvflare_config = create_startup_kit_config(nvflare_config, startup_kit_dir)
     save_config(nvflare_config, hidden_nvflare_config_file, to_json=False)
