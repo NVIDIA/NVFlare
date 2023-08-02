@@ -1,0 +1,30 @@
+{
+  "format_version": 2,
+  "servers": [
+    {
+      "name": "example_project",
+      "service": {
+        "target": "localhost:8002",
+        "options": [
+          [
+            "grpc.max_send_message_length",
+            2147483647
+          ],
+          [
+            "grpc.max_receive_message_length",
+            2147483647
+          ]
+        ]
+      },
+      "admin_host": "localhost",
+      "admin_port": 8003
+    }
+  ],
+  "overseer_agent": {
+    "path": "nvflare.ha.dummy_overseer_agent.DummyOverseerAgent",
+    "args": {
+      "sp_end_point": "localhost:8002:8003",
+      "heartbeat_interval": 6
+    }
+  }
+}
