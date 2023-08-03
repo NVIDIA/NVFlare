@@ -203,6 +203,8 @@ def update_storage_locations(
     job_storage_name: str = "jobs-storage",
     snapshot_storage_name: str = "snapshot-storage",
 ):
+    """Creates resources.json with snapshot-storage and jobs-storage set as folders directly under the workspace
+    for the provided local_dir."""
     default_resource = f"{local_dir}/{default_resource_name}"
     target_resource = f"{local_dir}/resources.json"
     job_storage = f"{workspace}/{job_storage_name}"

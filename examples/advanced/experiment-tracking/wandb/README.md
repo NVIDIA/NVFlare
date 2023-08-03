@@ -44,7 +44,7 @@ nvflare simulator -w /tmp/nvflare/ -n 2 -t 2 ./jobs/hello-pt-wandb
 By default, Weights and Biases will create a directory named "wandb" in the server workspace. With "mode": "online" in the WandBReceiver, the
 files will be synced with the Weights and Biases server. You can visit https://wandb.ai/ and log in to see your run data.
 
-### 4. MLflow Streaming
+### 4. Weights and Biases tracking
 
 For the job `hello-pt-wandb`, on the client side, the client code in `PTLearner` uses the syntax for Weights and Biases:
 

@@ -205,8 +205,8 @@ NVFLARE can currently support running with the FL Simulator, POC mode, or Produc
 FL Simulator is lightweight and uses threads to simulate different clients.
 The code used for the simulator can be directly used in production mode.
 
-POC mode is an insecure deployment run locally on one machine without worry about TLS certificates. Each client 
-and Server are running on different processes
+POC mode is a quick way to get set up to run locally on one machine. The FL server and each client
+run on different processes or dockers.
 
 Production mode is secure with TLS certificates - depending the choice the deployment, you can further choose:
 
@@ -348,12 +348,6 @@ section.
 Setting Up the Application Environment in POC Mode
 ==================================================
 
-.. warning::
-
-    POC mode is not intended to be secure and should not be run in any type of production environment or any environment
-    where the server's ports are exposed. For actual deployment and even development, it is recommended to use a
-    :ref:`secure provisioned setup <provisioned_setup>` or :ref:`starting_fl_simulator`.
-
 To get started with a proof of concept (POC) setup after :ref:`installation`, run this command to generate a poc folder
 with an overseer, server, two clients, and one admin client:
 
@@ -382,8 +376,3 @@ To start the server and client systems without an admin console:
   nvflare poc --start -ex admin
 
 For more details, see :ref:`poc_command`.
-
-.. tip::
-
-   For anything more than the most basic proof of concept examples, it is recommended that you use a
-   :ref:`secure provisioned setup <provisioned_setup>`.
