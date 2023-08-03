@@ -17,7 +17,7 @@ from nvflare.fuel.utils.config_service import ConfigService
 
 class NetConfig:
     def __init__(self, config_file_name="net_config.json"):
-        self.config = ConfigService.load_json(config_file_name)
+        self.config = ConfigService.load_config_dict(config_file_name)
         if not self.config:
             raise RuntimeError(f"cannot load {config_file_name}")
 
