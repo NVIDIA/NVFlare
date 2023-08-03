@@ -138,8 +138,7 @@ def main():
         thread.start()
 
         sp = _create_sp(args)
-        client_app_runner.start_run(app_root, args, config_folder, federated_client, secure_train, sp)
-
+        client_app_runner.start_run(app_root, args, config_folder, federated_client, secure_train, sp, conf.handlers)
     except Exception as e:
         if logger:
             logger.error(f"FL client execution exception: {secure_format_exception(e)}")
@@ -191,4 +190,5 @@ if __name__ == "__main__":
     """
 
     # main()
-    mpm.run(main_func=main)
+    rc = mpm.run(main_func=main)
+    sys.exit(rc)

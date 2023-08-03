@@ -17,6 +17,8 @@ import signal
 import threading
 import time
 
+from nvflare.fuel.common.excepts import ComponentNotAuthorized, ConfigError
+from nvflare.fuel.common.exit_codes import ProcessExitCode
 from nvflare.fuel.f3.drivers.aio_context import AioContext
 from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
@@ -142,9 +144,16 @@ class MainProcessMonitor:
         logger.debug(f"=========== {cls.name}: started to run forever")
         try:
             rc = main_func()
+        except ConfigError as ex:
+            # already handled
+            rc = ProcessExitCode.CONFIG_ERROR
+            logger.error(secure_format_traceback())
+        except ComponentNotAuthorized as ex:
+            rc = ProcessExitCode.UNSAFE_COMPONENT
+            logger.error(secure_format_traceback())
         except Exception as ex:
-            rc = -1
-            logger.error(f"main_func execute exception: {secure_format_exception(ex)}")
+            rc = ProcessExitCode.EXCEPTION
+            logger.error(f"Execute exception: {secure_format_exception(ex)}")
             logger.error(secure_format_traceback())
 
         # start shutdown process

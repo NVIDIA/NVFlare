@@ -63,3 +63,5 @@ class EventType(object):
 
     # event types for job scheduling - client side
     BEFORE_CHECK_RESOURCE_MANAGER = "_before_check_resource_manager"
+
+    BEFORE_BUILD_COMPONENT = "_before_build_component"

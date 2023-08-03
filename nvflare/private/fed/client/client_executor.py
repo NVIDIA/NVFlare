@@ -23,10 +23,11 @@ from abc import ABC, abstractmethod
 
 from nvflare.apis.fl_constant import AdminCommandNames, RunProcessKey
 from nvflare.apis.resource_manager_spec import ResourceManagerSpec
+from nvflare.fuel.common.exit_codes import PROCESS_EXIT_REASON, ProcessExitCode
 from nvflare.fuel.f3.cellnet.cell import FQCN
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey, ReturnCode
 from nvflare.fuel.utils import fobs
-from nvflare.private.defs import CellChannel, new_cell_message
+from nvflare.private.defs import CellChannel, CellChannelTopic, JobFailureMsgKey, new_cell_message
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
 from .client_status import ClientStatus, get_status_message
@@ -414,7 +415,7 @@ class ProcessExecutor(ClientExecutor):
                 data = {"command": AdminCommandNames.ABORT_TASK, "data": {}}
                 fqcn = FQCN.join([self.client.client_name, job_id])
                 request = new_cell_message({}, fobs.dumps(data))
-                return_data = self.client.cell.fire_and_forget(
+                self.client.cell.fire_and_forget(
                     targets=fqcn,
                     channel=CellChannel.CLIENT_COMMAND,
                     topic=AdminCommandNames.ABORT_TASK,
@@ -429,8 +430,25 @@ class ProcessExecutor(ClientExecutor):
             child_process = self.run_processes.get(job_id, {}).get(RunProcessKey.CHILD_PROCESS)
         if child_process:
             child_process.wait()
-            # return_code = child_process.returncode
-            self.logger.info(f"run ({job_id}): child worker process finished.")
+            return_code = child_process.returncode
+            self.logger.info(f"run ({job_id}): child worker process finished with RC {return_code}")
+            if return_code in [ProcessExitCode.UNSAFE_COMPONENT, ProcessExitCode.CONFIG_ERROR]:
+                request = new_cell_message(
+                    headers={},
+                    payload={
+                        JobFailureMsgKey.JOB_ID: job_id,
+                        JobFailureMsgKey.CODE: return_code,
+                        JobFailureMsgKey.REASON: PROCESS_EXIT_REASON[return_code],
+                    },
+                )
+                self.client.cell.fire_and_forget(
+                    targets=[FQCN.ROOT_SERVER],
+                    channel=CellChannel.SERVER_MAIN,
+                    topic=CellChannelTopic.REPORT_JOB_FAILURE,
+                    message=request,
+                    optional=True,
+                )
+                self.logger.info(f"reported failure of job {job_id} to server!")
 
         if allocated_resource:
             resource_manager.free_resources(

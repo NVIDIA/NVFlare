@@ -101,6 +101,7 @@ class ReservedKey(object):
     JOB_DEPLOY_DETAIL = "__job_deploy_detail__"
     FATAL_SYSTEM_ERROR = "__fatal_system_error__"
     JOB_IS_UNSAFE = "__job_is_unsafe__"
+    EXCEPTIONS = "__exceptions__"
 
 
 class FLContextKey(object):
@@ -114,6 +115,7 @@ class FLContextKey(object):
     EVENT_ORIGIN_SITE = ReservedKey.EVENT_ORIGIN_SITE
     EVENT_DATA = ReservedKey.EVENT_DATA
     EVENT_SCOPE = ReservedKey.EVENT_SCOPE
+    EXCEPTIONS = ReservedKey.EXCEPTIONS
     CLIENT_NAME = ReservedKey.CLIENT_NAME
     WORKSPACE_ROOT = ReservedKey.WORKSPACE_ROOT
     CURRENT_RUN = ReservedKey.RUN_NUM
@@ -149,6 +151,10 @@ class FLContextKey(object):
     JOB_PARTICIPANTS = "__job_participants"
     JOB_BLOCK_REASON = "__job_block_reason"  # why the job should be blocked from scheduling
     SSID = "__ssid__"
+    COMPONENT_BUILD_ERROR = "__component_build_error__"
+    COMPONENT_CONFIG = "__component_config__"
+    COMPONENT_NODE = "__component_node__"
+    CONFIG_CTX = "__config_ctx__"
 
 
 class ReservedTopic(object):
@@ -347,6 +353,7 @@ class WorkspaceConstants:
     DEFAULT_RESOURCES_CONFIG = RESOURCES_CONFIG + ".default"
     PRIVACY_CONFIG = "privacy.json"
     SAMPLE_PRIVACY_CONFIG = PRIVACY_CONFIG + ".sample"
+    JOB_RESOURCES_CONFIG = "job_resources.json"
 
     ADMIN_STARTUP_CONFIG = "fed_admin.json"
 
