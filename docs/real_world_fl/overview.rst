@@ -131,10 +131,7 @@ Local host deployment
 
 Production mode, non-HA, secure, local
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-You can use the CLI provision command to generate a local production mode, where the server is either named “localhost” or the user needs
-to modify ``/etc/hosts`` and add the server name to the localhost alias. 
-
-Check out the files in the tutorials folder under examples: example/tutorials/tu_pres_start.sh and tu_post_start.sh to see how this is done.
+You can use the CLI provision command to generate a local production mode.
 
 Docker mode
 ^^^^^^^^^^^

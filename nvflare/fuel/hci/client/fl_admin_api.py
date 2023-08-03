@@ -126,7 +126,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
             cmd_modules: command modules to load and register. Note that FileTransferModule is initialized here with upload_dir and download_dir if cmd_modules is None.
             overseer_agent: initialized OverseerAgent to obtain the primary service provider to set the host and port of the active server
             user_name: Username to authenticate with FL server
-            poc: Whether to enable poc mode for using the proof of concept example without secure communication.
+            poc: Obsolete arg for whether to enable poc mode for using the proof of concept example without secure communication, used before version 2.4.
             debug: Whether to print debug messages. False by default.
             session_event_cb: the session event callback
             session_timeout_interval: if specified, automatically close the session after inactive for this long

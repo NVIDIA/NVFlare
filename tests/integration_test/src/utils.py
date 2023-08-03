@@ -398,13 +398,9 @@ def create_admin_api(workspace_root_dir, upload_root_dir, download_root_dir, adm
         init_params=admin_json["admin"]["overseer_agent"]["args"],
     )
 
-    ca_cert = ""
-    client_key = ""
-    client_cert = ""
-    if not poc:
-        ca_cert = os.path.join(admin_startup_folder, admin_json["admin"]["ca_cert"])
-        client_key = os.path.join(admin_startup_folder, admin_json["admin"]["client_key"])
-        client_cert = os.path.join(admin_startup_folder, admin_json["admin"]["client_cert"])
+    ca_cert = os.path.join(admin_startup_folder, admin_json["admin"]["ca_cert"])
+    client_key = os.path.join(admin_startup_folder, admin_json["admin"]["client_key"])
+    client_cert = os.path.join(admin_startup_folder, admin_json["admin"]["client_cert"])
 
     admin_api = FLAdminAPI(
         upload_dir=upload_root_dir,
