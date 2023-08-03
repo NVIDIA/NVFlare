@@ -20,7 +20,7 @@ from typing import Optional
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.metric_exchange.metric_exchanger import MetricsExchanger
+from nvflare.app_common.metric_exchange.metric_exchanger import MetricData, MetricExchanger
 from nvflare.app_common.tracking.tracker_types import LogWriterName
 from nvflare.app_common.widgets.streaming import ANALYTIC_EVENT_TYPE, AnalyticsSender
 from nvflare.fuel.utils.constants import Mode
@@ -29,7 +29,7 @@ from nvflare.fuel.utils.pipe.pipe import Message
 from nvflare.fuel.utils.pipe.pipe_handler import PipeHandler, Topic
 
 
-class MetricHandler(FLComponent):
+class MetricRetriever(FLComponent):
     def __init__(
         self,
         metric_exchanger_id: str,
@@ -41,7 +41,7 @@ class MetricHandler(FLComponent):
         heartbeat_interval: float = 5.0,
         heartbeat_timeout: float = 30.0,
     ):
-        """Metric Handler.
+        """Metric retriever.
 
         Args:
             event_type (str): event type to fire (defaults to "analytix_log_stats").
@@ -81,7 +81,7 @@ class MetricHandler(FLComponent):
             self.analytic_sender.handle_event(event_type, fl_ctx)
             # inserts MetricsExchanger into engine components
             pipe_handler = self._create_pipe_handler(mode=Mode.ACTIVE)
-            metrics_exchanger = MetricsExchanger(pipe_handler=pipe_handler)
+            metrics_exchanger = MetricExchanger(pipe_handler=pipe_handler)
             all_components = engine.get_all_components()
             all_components[self.metric_exchanger_id] = metrics_exchanger
             self.fl_ctx = fl_ctx
@@ -102,6 +102,9 @@ class MetricHandler(FLComponent):
                 elif msg.topic != self._topic:
                     self.task_panic(f"ignored '{msg.topic}' when waiting for '{self._topic}'", self.fl_ctx)
                 else:
-                    print(f"MetricHandler getting msg {msg} from queue")
-                    self.analytic_sender.add(**msg.data)
+                    data: MetricData = msg.data
+                    # TODO: unpack the format and pass it into "add"
+                    self.analytic_sender.add(
+                        tag=data.key, value=data.value, data_type=data.data_type, **data.additional_args
+                    )
             time.sleep(self._get_poll_interval)

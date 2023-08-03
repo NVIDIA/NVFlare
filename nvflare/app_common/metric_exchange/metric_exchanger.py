@@ -19,7 +19,15 @@ from nvflare.fuel.utils.pipe.pipe import Message
 from nvflare.fuel.utils.pipe.pipe_handler import PipeHandler
 
 
-class MetricsExchanger:
+class MetricData:
+    def __init__(self, key, value, data_type: AnalyticsDataType, additional_args=None):
+        self.key = key
+        self.value = value
+        self.data_type = data_type
+        self.additional_args = {} if additional_args is None else additional_args
+
+
+class MetricExchanger:
     def __init__(
         self,
         pipe_handler: PipeHandler,
@@ -29,10 +37,6 @@ class MetricsExchanger:
         self._topic = topic
 
     def log(self, key: str, value: Any, data_type: AnalyticsDataType, **kwargs):
-        kwargs = {} if kwargs is None else kwargs
-        kwargs["tag"] = key
-        kwargs["value"] = value
-        kwargs["data_type"] = data_type
-        print(f"MetricsExchanger putting things {kwargs} into queue")
-        req = Message.new_request(topic=self._topic, data=kwargs)
+        data = MetricData(key=key, value=value, data_type=data_type, additional_args=kwargs)
+        req = Message.new_request(topic=self._topic, data=data)
         self._pipe_handler.send_to_peer(req)
