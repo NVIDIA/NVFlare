@@ -14,9 +14,12 @@
 import os
 import pathlib
 from pathlib import Path
-from typing import Optional, List
+from typing import List, Optional
 
-from pyhocon import ConfigTree, ConfigFactory as CF, HOCONConverter
+from pyhocon import ConfigFactory as CF
+from pyhocon import ConfigTree, HOCONConverter
+
+from nvflare.fuel.utils.config import ConfigFormat
 
 
 def get_home_dir() -> Path:
@@ -82,9 +85,11 @@ def create_startup_kit_config(nvflare_config: ConfigTree, startup_kit_dir: Optio
     """
     startup_kit_dir = get_startup_kit_dir(startup_kit_dir)
     if not startup_kit_dir or not os.path.isdir(startup_kit_dir):
-        raise ValueError(f"startup_kit_dir '{startup_kit_dir}' must be a valid and non-empty path. "
-                         f"use 'nvflare poc' command to 'prepare' if you are using POC mode. Or use"
-                         f" 'nvflare config' to setup startup_kit_dir location if you are in production")
+        raise ValueError(
+            f"startup_kit_dir '{startup_kit_dir}' must be a valid and non-empty path. "
+            f"use 'nvflare poc' command to 'prepare' if you are using POC mode. Or use"
+            f" 'nvflare config' to setup startup_kit_dir location if you are in production"
+        )
 
     conf_str = f"""
         startup_kit {{
@@ -120,9 +125,16 @@ def is_dir_empty(path: str):
     return len(targe_dir) == 0
 
 
-def save_config(dst_config, dst_path, to_json=True):
+def save_config(dst_config, dst_path, to_json=False):
+    fmt = ConfigFormat.JSON if to_json else ConfigFormat.PYHOCON
+    ext = ConfigFormat.extensions(fmt)[0]
+    if dst_path.endswith(ext):
+        dst_config_path = dst_path
+    else:
+        dst_config_path = f"{dst_path.split('.')[0]}{ext}"
+
     config_str = HOCONConverter.to_json(dst_config) if to_json else HOCONConverter.to_hocon(dst_config)
-    with open(dst_path, "w") as outfile:
+    with open(dst_config_path, "w") as outfile:
         outfile.write(f"{config_str}\n")
 
 
@@ -157,10 +169,3 @@ def append_if_not_in_list(arr: List, item) -> List:
         arr.append(item)
 
     return arr
-
-
-
-
-
-
-

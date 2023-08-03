@@ -25,9 +25,10 @@ from pyhocon import ConfigTree
 from nvflare.apis.job_def import JobMetaKey
 from nvflare.cli_exception import CLIException
 from nvflare.fuel.flare_api.flare_api import new_secure_session
+from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.tool.job.config.configer import merge_configs_from_cli
-from nvflare.utils.cli_utils import get_startup_kit_dir, get_curr_dir, save_config, append_if_not_in_list
+from nvflare.utils.cli_utils import append_if_not_in_list, get_curr_dir, get_startup_kit_dir, save_config
 
 CMD_CREATE_JOB = "create"
 CMD_SUBMIT_JOB = "submit"
@@ -77,10 +78,7 @@ def internal_submit_job(admin_user_dir, username, temp_job_dir):
     print(f"job: '{job_id} was submitted")
 
 
-job_sub_cmd_handlers = {
-    CMD_CREATE_JOB: create_job,
-    CMD_SUBMIT_JOB: submit_job
-}
+job_sub_cmd_handlers = {CMD_CREATE_JOB: create_job, CMD_SUBMIT_JOB: submit_job}
 
 
 def handle_job_cli_cmd(cmd_args):
@@ -99,67 +97,78 @@ def def_job_cli_parser(sub_cmd):
 
 
 def define_submit_job_parser(job_subparser):
-    submit_parser = job_subparser.add_parser("submit",
-                                             help="submit job")
-    submit_parser.add_argument("-j", "--job_folder",
-                               type=str,
-                               nargs="?",
-                               default=get_curr_dir(),
-                               help="job_folder path, default to current directory")
-    submit_parser.add_argument("-f", "--config_file",
-                               type=str,
-                               action='append',
-                               nargs="*",
-                               help="""Training config file with corresponding optional key=value pairs. 
+    submit_parser = job_subparser.add_parser("submit", help="submit job")
+    submit_parser.add_argument(
+        "-j",
+        "--job_folder",
+        type=str,
+        nargs="?",
+        default=get_curr_dir(),
+        help="job_folder path, default to current directory",
+    )
+    submit_parser.add_argument(
+        "-f",
+        "--config_file",
+        type=str,
+        action="append",
+        nargs="*",
+        help="""Training config file with corresponding optional key=value pairs. 
                                        If key presents in the preceding config file, the value in the config
-                                       file will be overwritten by the new value """)
-    submit_parser.add_argument("-a", "--app_config",
-                               type=str,
-                               nargs="*",
-                               help="""key=value options will be passed directly to script argument """)
+                                       file will be overwritten by the new value """,
+    )
+    submit_parser.add_argument(
+        "-a",
+        "--app_config",
+        type=str,
+        nargs="*",
+        help="""key=value options will be passed directly to script argument """,
+    )
 
-    submit_parser.add_argument("-debug", "--debug", action='store_true', help="debug is on")
+    submit_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
 
 
 def define_create_job_parser(job_subparser):
     create_parser = job_subparser.add_parser("create", help="create job")
-    create_parser.add_argument("-j", "--job_folder",
-                               type=str,
-                               nargs="?",
-                               default=get_curr_dir(),
-                               help="job_folder path, default to current directory")
-    create_parser.add_argument("-w", "--workflows",
-                               type=str,
-                               nargs="*",
-                               default=["SAG"],
-                               help="""Workflows available works are
+    create_parser.add_argument(
+        "-j",
+        "--job_folder",
+        type=str,
+        nargs="?",
+        default=get_curr_dir(),
+        help="job_folder path, default to current directory",
+    )
+    create_parser.add_argument(
+        "-w",
+        "--workflows",
+        type=str,
+        nargs="*",
+        default=["SAG"],
+        help="""Workflows available works are
                                        SAG for ScatterAndGather,
                                        CROSS for CrossSiteModelEval or
-                                       CYCLIC for CyclicController """)
-    create_parser.add_argument("-m", "--min_clients",
-                               type=int, nargs="?",
-                               default=1,
-                               help="min clients default to 1")
-    create_parser.add_argument("-n", "--num_rounds",
-                               type=int,
-                               nargs="?",
-                               default=1,
-                               help="number of total rounds, default to 1'")
-    create_parser.add_argument("-s", "--script",
-                               type=str,
-                               nargs="?",
-                               help="""code script such as train.py""")
-    create_parser.add_argument("-sd", "--script_dir",
-                               type=str,
-                               nargs="?",
-                               help="""script directory contains additional related files. 
+                                       CYCLIC for CyclicController """,
+    )
+    create_parser.add_argument("-m", "--min_clients", type=int, nargs="?", default=1, help="min clients default to 1")
+    create_parser.add_argument(
+        "-n", "--num_rounds", type=int, nargs="?", default=1, help="number of total rounds, default to 1'"
+    )
+    create_parser.add_argument("-s", "--script", type=str, nargs="?", help="""code script such as train.py""")
+    create_parser.add_argument(
+        "-sd",
+        "--script_dir",
+        type=str,
+        nargs="?",
+        help="""script directory contains additional related files. 
                                        All files or directories under this directory will be copied over 
-                                       to the custom directory.""")
-    create_parser.add_argument("-debug", "--debug", action='store_true', help="debug is on")
-    create_parser.add_argument("-force", "--force",
-                               action='store_true',
-                               help="force create is on, if -force, "
-                                    "overwrite existing configuration with newly created configurations")
+                                       to the custom directory.""",
+    )
+    create_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
+    create_parser.add_argument(
+        "-force",
+        "--force",
+        action="store_true",
+        help="force create is on, if -force, " "overwrite existing configuration with newly created configurations",
+    )
 
 
 # ====================================================================
@@ -171,11 +180,20 @@ def prepare_submit_job_config(cmd_args, tmp_job_dir):
 
 def update_client_app_script(cmd_args):
     if cmd_args.app_config:
-        script_args = " ".join([f"--{k}" for k in cmd_args.app_config])
-        config = ConfigFactory.load_config("config_fed_client.xxx")
+        client_config, config_path = _update_client_app_config_script(cmd_args.app_config)
+        save_config(client_config, config_path)
+
+
+def _update_client_app_config_script(app_config: str) -> Tuple[ConfigTree, str]:
+    script_args = " ".join([f"--{k}" for k in app_config])
+    config = ConfigFactory.load_config("config_fed_client.xxx")
+    if config.format == ConfigFormat.JSON or config.format == ConfigFormat.OMEGACONF:
         client_config = CF.from_dict(config.to_dict())
-        client_config.put("app_script", script_args)
-        save_config(client_config, config.file_path)
+    else:
+        client_config = config
+    client_config.put("app_script", script_args)
+
+    return client_config, config.file_path
 
 
 def save_merged_configs(merged_conf, tmp_job_dir):
@@ -239,10 +257,12 @@ def prepare_fed_config(cmd_args, predefined):
     client_dst_path = dst_config_path(cmd_args, "config_fed_client.json")
 
     if (os.path.isfile(server_dst_path) or os.path.isfile(client_dst_path)) and not cmd_args.force:
-        print(f"""warning: configuration files:
+        print(
+            f"""warning: configuration files:
                 {server_dst_path} 
                 {client_dst_path} 
-                already exists. Not generating the config files. If you would like to overwrite, use -force option""")
+                already exists. Not generating the config files. If you would like to overwrite, use -force option"""
+        )
         return
 
     server_config, client_config = prepare_workflows(cmd_args, predefined)
@@ -277,7 +297,7 @@ def convert_args_list_to_dict(kvs: Optional[List[str]] = None) -> dict:
         for kv in kvs:
             try:
                 key, value = kv.split("=")
-                kv_dict[key] = value
+                kv_dict[key.strip()] = value.strip()
             except ValueError:
                 raise ValueError(f"Invalid key-value pair: '{kv}'")
 
@@ -285,8 +305,16 @@ def convert_args_list_to_dict(kvs: Optional[List[str]] = None) -> dict:
 
 
 def prepare_workflows(cmd_args, predefined) -> Tuple[ConfigTree, ConfigTree]:
-    workflow_names: List[str] = cmd_args.workflows
+    return _prepare_workflow(cmd_args.workflows, predefined, cmd_args.min_clients, cmd_args.num_rounds, cmd_args.script)
 
+
+def _prepare_workflow(
+    workflow_names: List[str],
+    predefined: ConfigTree,
+    min_clients: Optional[int] = None,
+    num_rounds: Optional[int] = None,
+    script: Optional[str] = None,
+) -> Tuple[ConfigTree, ConfigTree]:
     workflows_conf = predefined.get_config("workflows")
     invalid_names = [name for name in workflow_names if workflows_conf.get(name, None) is None]
     if invalid_names:
@@ -309,10 +337,10 @@ def prepare_workflows(cmd_args, predefined) -> Tuple[ConfigTree, ConfigTree]:
         target_wf_conf = workflows_conf.get(f"{wf_name}.workflow")
 
         # special case
-        if cmd_args.min_clients and target_wf_conf.get("args.min_clients", None) is not None:
-            target_wf_conf.put("args.min_clients", cmd_args.min_clients)
-        if cmd_args.num_rounds and target_wf_conf.get("args.num_rounds", None) is not None:
-            target_wf_conf.put("args.num_rounds", cmd_args.num_rounds)
+        if min_clients and target_wf_conf.get("args.min_clients", None) is not None:
+            target_wf_conf.put("args.min_clients", min_clients)
+        if num_rounds and target_wf_conf.get("args.num_rounds", None) is not None:
+            target_wf_conf.put("args.num_rounds", num_rounds)
 
         append_if_not_in_list(workflows, target_wf_conf)
         predefined_wf_components = workflows_conf.get(f"{wf_name}.components", None)
@@ -327,38 +355,14 @@ def prepare_workflows(cmd_args, predefined) -> Tuple[ConfigTree, ConfigTree]:
             for name, result_filter in predefined_wf_task_result_filters.items():
                 append_if_not_in_list(wf_task_result_filters, result_filter)
 
-
         if predefined_wf_components:
             for name, comp in predefined_wf_components.items():
                 append_if_not_in_list(wf_components, comp)
 
         predefined_executors = workflows_conf.get(f"{wf_name}.executors", None)
-        if predefined_executors:
-            item_lens = len(predefined_executors.items())
-            target_exec = None
-            if item_lens == 0:
-                target_exec = None
-            elif item_lens == 1:
-                name = next(iter(predefined_executors))
-                target_exec = predefined_executors.get(name)
-            else:  # > 1
-                target_exec_list = [exec_conf for name, exec_conf in predefined_executors.items() if
-                                    exec_conf.get("default", False) is True]
-                if target_exec_list:
-                    target_exec = target_exec_list[0]
-
-            if target_exec:
-                # target_exec.put("script", f"{os.path.basename(cmd_args.script)}")
-                append_if_not_in_list(executors, target_exec.get("executor"))
-
-                if target_exec.get("task_data_filters", None):
-                    for name, data_filter in target_exec.get("task_data_filters").items():
-                        append_if_not_in_list(exec_task_data_filters, data_filter)
-                if target_exec.get("task_result_filters", None):
-                    for name, result_filter in target_exec.get("task_result_filters").items():
-                        append_if_not_in_list(exec_task_result_filters, result_filter)
-                for name, comp in target_exec.get("components").items():
-                    append_if_not_in_list(exec_components, comp)
+        prepare_wf_executor(
+            exec_components, exec_task_data_filters, exec_task_result_filters, executors, predefined_executors
+        )
 
     server_config.put("workflows", workflows)
     server_config.put("components", wf_components)
@@ -366,10 +370,10 @@ def prepare_workflows(cmd_args, predefined) -> Tuple[ConfigTree, ConfigTree]:
     server_config.put("task_result_filters", wf_task_result_filters)
 
     client_config.put("script", "")
-    client_config.put("app_config", f" ")
+    client_config.put("app_config", " ")
 
-    if cmd_args.script:
-        script = os.path.basename(cmd_args.script.split(' ')[0])
+    if script:
+        script = os.path.basename(script.split(" ")[0])
         client_config.put("script", f"{script}")
 
     client_config.put("executors", executors)
@@ -378,6 +382,38 @@ def prepare_workflows(cmd_args, predefined) -> Tuple[ConfigTree, ConfigTree]:
     client_config.put("task_result_filters", exec_task_result_filters)
 
     return server_config, client_config
+
+
+def prepare_wf_executor(
+    exec_components, exec_task_data_filters, exec_task_result_filters, executors, predefined_executors
+):
+    if predefined_executors:
+        item_lens = len(predefined_executors.items())
+        target_exec = None
+        if item_lens == 0:
+            target_exec = None
+        elif item_lens == 1:
+            name = next(iter(predefined_executors))
+            target_exec = predefined_executors.get(name)
+        else:  # > 1
+            target_exec_list = [
+                exec_conf for name, exec_conf in predefined_executors.items() if exec_conf.get("default", False) is True
+            ]
+            if target_exec_list:
+                target_exec = target_exec_list[0]
+
+        if target_exec:
+            # target_exec.put("script", f"{os.path.basename(cmd_args.script)}")
+            append_if_not_in_list(executors, target_exec.get("executor"))
+
+            if target_exec.get("task_data_filters", None):
+                for name, data_filter in target_exec.get("task_data_filters").items():
+                    append_if_not_in_list(exec_task_data_filters, data_filter)
+            if target_exec.get("task_result_filters", None):
+                for name, result_filter in target_exec.get("task_result_filters").items():
+                    append_if_not_in_list(exec_task_result_filters, result_filter)
+            for name, comp in target_exec.get("components").items():
+                append_if_not_in_list(exec_components, comp)
 
 
 def prepare_job_folder(cmd_args):

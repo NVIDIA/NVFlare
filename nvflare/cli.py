@@ -23,7 +23,7 @@ from nvflare.fuel.hci.tools.authz_preview import define_authz_preview_parser, ru
 from nvflare.lighter.poc_commands import def_poc_parser, handle_poc_cmd
 from nvflare.lighter.provision import define_provision_parser, handle_provision
 from nvflare.private.fed.app.simulator.simulator import define_simulator_parser, run_simulator
-from nvflare.tool.job.job_cli import handle_job_cli_cmd, def_job_cli_parser
+from nvflare.tool.job.job_cli import def_job_cli_parser, handle_job_cli_cmd
 from nvflare.tool.preflight_check import check_packages, define_preflight_check_parser
 from nvflare.utils.cli_utils import save_startup_kit_config
 
@@ -96,7 +96,7 @@ def def_config_parser(sub_cmd):
     config_parser.add_argument(
         "-d", "--startup_kit_dir", type=str, nargs="?", default=None, help="startup kit location"
     )
-    config_parser.add_argument("-debug", "--debug", action='store_true', help="debug is on")
+    config_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
     return {cmd: config_parser}
 
 
@@ -131,7 +131,7 @@ handlers = {
     CMD_DASHBOARD: handle_dashboard,
     CMD_AUTHZ_PREVIEW: handle_authz_preview,
     CMD_JOB: handle_job_cli_cmd,
-    CMD_CONFIG: handle_config_cmd
+    CMD_CONFIG: handle_config_cmd,
 }
 
 

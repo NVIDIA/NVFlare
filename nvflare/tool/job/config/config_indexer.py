@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Dict, List, Any
+from typing import Any, Dict, List
 
 from nvflare.fuel.utils.config import Config
 from nvflare.fuel.utils.config_factory import ConfigFactory
@@ -50,7 +50,7 @@ def expand_indices(indices: Dict[str, List[str]]) -> Dict[str, List[str]]:
     return {**indices, **new_key_paths}
 
 
-from typing import Dict, List, Optional, Callable, Type
+from typing import Callable, Dict, List, Optional, Type
 
 
 def build_list_reverse_order_index(config_list: List, key_path_dict: Dict, key: str, root_path: str) -> Dict:
@@ -73,8 +73,9 @@ def build_list_reverse_order_index(config_list: List, key_path_dict: Dict, key: 
     return key_path_dict
 
 
-def build_dict_reverse_order_index(config_dict: Dict, key_path_dict: Optional[Dict] = None,
-                                   root_path: str = "") -> Dict[str, List[str]]:
+def build_dict_reverse_order_index(
+    config_dict: Dict, key_path_dict: Optional[Dict] = None, root_path: str = ""
+) -> Dict[str, List[str]]:
     """
     Recursively build a reverse order index for a dictionary.
     """

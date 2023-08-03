@@ -11,15 +11,14 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import copy
 import os
 import shutil
-from typing import Dict, Any, List
+from typing import Any, Dict, List
 
-from pyhocon import ConfigFactory as CF, ConfigTree
+from pyhocon import ConfigFactory as CF
+from pyhocon import ConfigTree
 
 from nvflare.fuel.utils.config import ConfigFormat
-from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.tool.job.config.config_indexer import build_reverse_order_index
 
 
@@ -53,25 +52,24 @@ def extract_string_with_index(input_string):
     """
     result = []
     while True:
-        opening_bracket_index = input_string.find('[')
-        closing_bracket_index = input_string.find(']')
+        opening_bracket_index = input_string.find("[")
+        closing_bracket_index = input_string.find("]")
 
         if opening_bracket_index == -1 or closing_bracket_index == -1:
             break
 
         string_before = input_string[:opening_bracket_index]
-        index = int(input_string[opening_bracket_index + 1:closing_bracket_index])
-        string_after = input_string[closing_bracket_index + 1:]
+        index = int(input_string[opening_bracket_index + 1 : closing_bracket_index])
+        string_after = input_string[closing_bracket_index + 1 :]
 
-        result.append((string_before.strip('.'), index, string_after.strip('.')))
+        result.append((string_before.strip("."), index, string_after.strip(".")))
         input_string = f"{string_before}{string_after}"
 
     result = [elm for elm in result if len(elm) > 0]
     return result
 
 
-def merge_configs(indices_configs: Dict[str, tuple],
-                  cli_file_configs: Dict[str, Dict]) -> Dict[str, ConfigTree]:
+def merge_configs(indices_configs: Dict[str, tuple], cli_file_configs: Dict[str, Dict]) -> Dict[str, ConfigTree]:
     """
     Merge configurations from indices_configs and cli_file_configs.
 
@@ -95,8 +93,10 @@ def merge_configs(indices_configs: Dict[str, tuple],
 
                     key_path_list = indices_dict[key]
                     if len(key_path_list) > 1:
-                        raise ValueError(f"Ambiguity config key: '{key}' for file '{basename}', "
-                                         f"more than one key paths with such key: {key_path_list}")
+                        raise ValueError(
+                            f"Ambiguity config key: '{key}' for file '{basename}', "
+                            f"more than one key paths with such key: {key_path_list}"
+                        )
 
                     key_path = key_path_list[0]
                     results = extract_string_with_index(key_path)

@@ -13,29 +13,59 @@
 # limitations under the License.
 from pathlib import Path
 from unittest.mock import patch
+
+import pytest
 from pyhocon import ConfigFactory as CF
 
-from nvflare.utils.cli_utils import get_hidden_nvflare_dir, get_home_dir, get_hidden_nvflare_config_path, \
-    find_startup_kit_location
+from nvflare.utils.cli_utils import (
+    append_if_not_in_list,
+    create_startup_kit_config,
+    find_startup_kit_location,
+    get_hidden_nvflare_config_path,
+    get_hidden_nvflare_dir,
+)
 
 
 class TestCLIUtils:
-
     def test_get_hidden_nvflare_dir(self):
         hidden_dir = get_hidden_nvflare_dir()
         assert str(hidden_dir) == str(Path.home() / ".nvflare")
 
     def test_get_hidden_nvflare_config_path(self):
-        assert get_hidden_nvflare_config_path(str(get_hidden_nvflare_dir())) == \
-               str(Path.home() / ".nvflare/config.conf")
+        assert get_hidden_nvflare_config_path(str(get_hidden_nvflare_dir())) == str(
+            Path.home() / ".nvflare/config.conf"
+        )
 
     def test_find_startup_kit_location(self):
         with patch("nvflare.utils.cli_utils.load_config") as mock2:
-            conf = CF.parse_string(f"""
+            conf = CF.parse_string(
+                """
                 startup_kit {{
                     path = "/tmp/nvflare/poc/example_project/prod_00"
                 }}
-            """)
+            """
+            )
             mock2.return_value = conf
-            assert '/tmp/nvflare/poc/example_project/prod_00' == find_startup_kit_location()
+            assert "/tmp/nvflare/poc/example_project/prod_00" == find_startup_kit_location()
 
+    def test_create_startup_kit_config(self):
+        prev_conf = CF.parse_string(
+            """
+                poc_workspace {{
+                    path = "/tmp/nvflare/poc"
+                }}
+            """
+        )
+        config = create_startup_kit_config(
+            nvflare_config=prev_conf, startup_kit_dir="/tmp/nvflare/poc/example_project/prod_00"
+        )
+
+        assert "/tmp/nvflare/poc" == config.get("poc_workspace.path")
+        assert "/tmp/nvflare/poc/example_project/prod_00" == config.get("startup_kit.path")
+
+    @pytest.mark.parametrize(
+        "inputs, result", [(([], "a"), ["a"]), ((["a"], "a"), ["a"]), ((["a", "b"], "b"), ["a", "b"])]
+    )
+    def test_append_if_not_in_list(self, inputs, result):
+        arr, item = inputs
+        assert result == append_if_not_in_list(arr, item)
