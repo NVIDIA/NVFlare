@@ -16,7 +16,7 @@ import argparse
 import logging
 
 from nvflare.fuel.f3.mpm import MainProcessMonitor
-from nvflare.fuel.f3.qat2.server import Server
+from nvflare.fuel.f3.qat.server import Server
 from nvflare.fuel.utils.config_service import ConfigService
 
 
