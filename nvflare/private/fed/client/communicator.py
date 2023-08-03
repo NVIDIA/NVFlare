@@ -106,8 +106,8 @@ class Communicator:
             CellMessageHeaderKeys.CLIENT_NAME: client_name,
             CellMessageHeaderKeys.CLIENT_IP: local_ip,
             CellMessageHeaderKeys.PROJECT_NAME: project_name,
+            CellMessageHeaderKeys.CLIENT_REGISTER_DATA: register_data
         }
-        headers.update(register_data)
         login_message = new_cell_message(headers)
 
         start = time.time()

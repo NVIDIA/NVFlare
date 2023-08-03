@@ -174,6 +174,7 @@ class CellMessageHeaderKeys:
     JOB_IDS = "job_ids"
     MESSAGE = "message"
     ABORT_JOBS = "abort_jobs"
+    CLIENT_REGISTER_DATA = "client_register_data"
 
 
 def new_cell_message(headers: dict, payload=None):

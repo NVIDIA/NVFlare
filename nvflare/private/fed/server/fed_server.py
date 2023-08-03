@@ -459,7 +459,13 @@ class FederatedServer(BaseServer):
             if error is not None:
                 return make_cellnet_reply(rc=F3ReturnCode.COMM_ERROR, error=error)
 
+            client_register_data = request.get_header(CellMessageHeaderKeys.CLIENT_REGISTER_DATA, {})
+            fl_ctx.set_prop(FLContextKey.CLIENT_REGISTER_DATA, client_register_data)
             self.engine.fire_event(EventType.CLIENT_REGISTERED, fl_ctx=fl_ctx)
+
+            unauthenticated = fl_ctx.get_prop(FLContextKey.UNAUTHENTICATED)
+            if unauthenticated:
+                return make_cellnet_reply(rc=F3ReturnCode.UNAUTHENTICATED, error=unauthenticated)
 
             client = self.client_manager.authenticate(request, fl_ctx)
             if client and client.token:
