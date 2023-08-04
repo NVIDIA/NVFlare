@@ -112,7 +112,7 @@ def setup_and_teardown_system(request):
                 raise NVFTestError("POC mode can only use one server. For more servers, use HA with provisioned mode.")
             n_clients = int(test_config["n_clients"])
             site_launcher = POCSiteLauncher(n_servers=n_servers, n_clients=n_clients)
-            poc = True
+            poc = False  # POC now uses SSL as well so this needs to be False
             super_user_name = "admin@nvidia.com"
 
         workspace_root = site_launcher.prepare_workspace()

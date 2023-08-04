@@ -30,7 +30,7 @@ from nvflare.fuel.utils.zip_utils import split_path, unzip_all_from_bytes, zip_d
 from nvflare.lighter.utils import load_private_key_file, sign_folders
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
-from .api_spec import CommandContext, ReplyProcessor
+from .api_spec import ApiPocValue, CommandContext, ReplyProcessor
 from .api_status import APIStatus
 
 
@@ -325,9 +325,11 @@ class FileTransferModule(CommandModule):
 
         # sign folders and files
         api = ctx.get_api()
-        client_key_file_path = api.client_key
-        private_key = load_private_key_file(client_key_file_path)
-        sign_folders(full_path, private_key, api.client_cert)
+        if api.poc_key != ApiPocValue.ADMIN:
+            # we are not in POC mode
+            client_key_file_path = api.client_key
+            private_key = load_private_key_file(client_key_file_path)
+            sign_folders(full_path, private_key, api.client_cert)
 
         # zip the data
         data = zip_directory_to_bytes(self.upload_dir, folder_name)

@@ -127,7 +127,7 @@ class Session(SessionSpec):
             download_dir=download_dir,
             service_finder=service_finder,
             user_name=username,
-            poc=(not self.secure_mode),
+            insecure=(not self.secure_mode),
             debug=debug,
         )
         self.upload_dir = upload_dir
@@ -887,8 +887,6 @@ def new_secure_session(username: str, startup_kit_location: str, debug: bool = F
 
 def new_insecure_session(startup_kit_location: str, debug: bool = False, timeout: float = 10.0) -> Session:
     """Create a new insecure FLARE API session with the NVFLARE system.
-
-    With the updates to POC mode to use a local secure system, this should no longer be used by anything.
 
     Args:
         startup_kit_location (str): path to the provisioned startup folder
