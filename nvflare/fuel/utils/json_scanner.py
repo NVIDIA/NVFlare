@@ -16,7 +16,7 @@ import copy
 import logging
 from abc import ABC, abstractmethod
 
-from nvflare.fuel.common.excepts import ConfigError
+from nvflare.fuel.common.excepts import ComponentNotAuthorized, ConfigError
 from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
@@ -97,6 +97,22 @@ class JsonScanner(object):
     def _do_scan(self, node: Node):
         try:
             node.processor.process_element(node)
+        except ComponentNotAuthorized as e:
+            secure_log_traceback(self.logger)
+
+            if self.location:
+                raise ComponentNotAuthorized(
+                    "Error processing {} in JSON element {}: path: {}, exception: {}".format(
+                        self.location, node.element, node.path(), secure_format_exception(e)
+                    )
+                )
+            else:
+                raise ComponentNotAuthorized(
+                    "Error in JSON element: {}, path: {}, exception: {}".format(
+                        node.element, node.path(), secure_format_exception(e)
+                    )
+                )
+
         except Exception as e:
             secure_log_traceback(self.logger)
             config = ConfigFactory.load_config(self.location[0])

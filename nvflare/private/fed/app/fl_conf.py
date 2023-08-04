@@ -16,6 +16,7 @@
 
 import os
 import re
+import sys
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_constant import SiteType, SystemConfigs
@@ -47,6 +48,10 @@ class FLServerStarterConfiger(JsonConfigurator):
             workspace: the workspace object
             kv_list: key value pair list
         """
+        site_custom_folder = workspace.get_site_custom_dir()
+        if os.path.isdir(site_custom_folder):
+            sys.path.append(site_custom_folder)
+
         self.args = args
 
         base_pkgs = FL_PACKAGES
@@ -62,10 +67,16 @@ class FLServerStarterConfiger(JsonConfigurator):
 
         server_startup_file_path = workspace.get_server_startup_file_path()
         resource_config_path = workspace.get_resources_file_path()
+        config_files = [server_startup_file_path, resource_config_path]
+        if args.job_id:
+            # this is for job process
+            job_resources_file_path = workspace.get_job_resources_file_path()
+            if os.path.exists(job_resources_file_path):
+                config_files.append(job_resources_file_path)
 
         JsonConfigurator.__init__(
             self,
-            config_file_name=[server_startup_file_path, resource_config_path],
+            config_file_name=config_files,
             base_pkgs=base_pkgs,
             module_names=module_names,
             exclude_libs=True,
@@ -75,7 +86,7 @@ class FLServerStarterConfiger(JsonConfigurator):
         self.handlers = []
 
         self.workspace = workspace
-        self.server_config_file_names = [server_startup_file_path, resource_config_path]
+        self.server_config_file_names = config_files
 
         self.deployer = None
         self.app_validator = None
@@ -207,6 +218,10 @@ class FLClientStarterConfiger(JsonConfigurator):
             workspace: the workspace object
             kv_list: key value pair list
         """
+        site_custom_folder = workspace.get_site_custom_dir()
+        if os.path.isdir(site_custom_folder):
+            sys.path.append(site_custom_folder)
+
         self.args = args
 
         base_pkgs = FL_PACKAGES
@@ -222,10 +237,17 @@ class FLClientStarterConfiger(JsonConfigurator):
 
         client_startup_file_path = workspace.get_client_startup_file_path()
         resources_file_path = workspace.get_resources_file_path()
+        config_files = [client_startup_file_path, resources_file_path]
+
+        if args.job_id:
+            # this is for job process
+            job_resources_file_path = workspace.get_job_resources_file_path()
+            if os.path.exists(job_resources_file_path):
+                config_files.append(job_resources_file_path)
 
         JsonConfigurator.__init__(
             self,
-            config_file_name=[client_startup_file_path, resources_file_path],
+            config_file_name=config_files,
             base_pkgs=base_pkgs,
             module_names=module_names,
             exclude_libs=True,
@@ -235,7 +257,7 @@ class FLClientStarterConfiger(JsonConfigurator):
         self.handlers = []
 
         self.workspace = workspace
-        self.client_config_file_names = [client_startup_file_path, resources_file_path]
+        self.client_config_file_names = config_files
         self.base_deployer = None
         self.overseer_agent = None
         self.site_org = ""
