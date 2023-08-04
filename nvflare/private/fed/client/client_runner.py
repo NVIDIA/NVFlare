@@ -606,6 +606,10 @@ class ClientRunner(FLComponent):
         if filter_error:
             return make_reply(ReturnCode.TASK_DATA_FILTER_ERROR)
 
+        with self.task_lock:
+            self.task_abort_signal = Signal()
+            self.current_executor = executor
+
         try:
             reply = executor.execute(task_names, task_data, fl_ctx, self.task_abort_signal)
         except Exception as e:

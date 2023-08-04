@@ -101,6 +101,7 @@ class AppConstants(object):
     CROSS_VAL_SERVER_MODEL = "_cross_val_server_model_"
     CROSS_VAL_CLIENT_MODEL = "_cross_val_client_model_"
     PARTICIPATING_CLIENTS = "_particpating_clients_"
+    CONTRIBUTIONS = "_client_contributions_"
 
     MODEL_OWNER = "_model_owner_"
 

@@ -17,7 +17,7 @@ from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ControllerSpec, Task, SendOrder, ClientTask, TaskCompletionStatus
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, ReservedTopic, ReservedKey, ReturnCode
+from nvflare.apis.fl_constant import FLContextKey, ReservedTopic, ReservedKey, ReturnCode, SiteType
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
@@ -145,6 +145,9 @@ class ClientController(FLComponent, ControllerSpec):
     def _get_client(self, client, engine) -> Client:
         if isinstance(client, Client):
             return client
+
+        if client == SiteType.SERVER:
+            return Client(SiteType.SERVER, None)
 
         client_obj = None
         for _, c in engine.all_clients.items():
