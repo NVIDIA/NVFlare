@@ -127,7 +127,7 @@ class Session(SessionSpec):
             download_dir=download_dir,
             service_finder=service_finder,
             user_name=username,
-            poc=(not self.secure_mode),
+            insecure=(not self.secure_mode),
             debug=debug,
         )
         self.upload_dir = upload_dir

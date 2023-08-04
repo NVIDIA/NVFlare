@@ -333,7 +333,7 @@ class AdminAPI(AdminAPISpec):
         upload_dir: str = "",
         download_dir: str = "",
         cmd_modules: Optional[List] = None,
-        poc: bool = False,
+        insecure: bool = False,
         debug: bool = False,
         session_event_cb=None,
         session_timeout_interval=None,
@@ -351,7 +351,7 @@ class AdminAPI(AdminAPISpec):
             cmd_modules: command modules to load and register. Note that FileTransferModule is initialized here with upload_dir and download_dir if cmd_modules is None.
             service_finder: used to obtain the primary service provider to set the host and port of the active server
             user_name: Username to authenticate with FL server
-            poc: Whether to enable poc mode for using the proof of concept example without secure communication.
+            insecure: Whether to enable secure mode with secure communication.
             debug: Whether to print debug messages, which can help with diagnosing problems. False by default.
             session_event_cb: the session event callback
             session_timeout_interval: if specified, automatically close the session after inactive for this long, unit is second
@@ -390,8 +390,8 @@ class AdminAPI(AdminAPISpec):
         self.new_addr_lock = threading.Lock()
 
         self.poc_key = None
-        self.poc = poc
-        if self.poc:
+        self.insecure = insecure
+        if self.insecure:
             self.poc_key = ApiPocValue.ADMIN
         else:
             if len(ca_cert) <= 0:
@@ -488,8 +488,8 @@ class AdminAPI(AdminAPISpec):
         for i in range(self.auto_login_max_tries):
             self.fire_session_event(SessionEventType.TRYING_LOGIN, "Trying to login, please wait ...")
 
-            if self.poc:
-                resp = self.login_with_poc(username=self.user_name, poc_key=self.poc_key)
+            if self.insecure:
+                resp = self.login_with_insecure(username=self.user_name, poc_key=self.poc_key)
             else:
                 resp = self.login(username=self.user_name)
             if resp[ResultKey.STATUS] in [APIStatus.SUCCESS, APIStatus.ERROR_AUTHENTICATION, APIStatus.ERROR_CERT]:
@@ -662,12 +662,12 @@ class AdminAPI(AdminAPISpec):
 
         return self._login()
 
-    def login_with_poc(self, username: str, poc_key: str):
+    def login_with_insecure(self, username: str, poc_key: str):
         """Login using key without certificates (POC has been updated so this should not be used for POC anymore).
 
         Args:
             username: Username
-            poc_key: key used for proof of concept admin login
+            poc_key: key used for insecure admin login
 
         Returns:
             A dict of login status and details
@@ -728,7 +728,7 @@ class AdminAPI(AdminAPISpec):
             print(f"DEBUG: use server address {sp_host}:{sp_port}")
 
         try:
-            if not self.poc:
+            if not self.insecure:
                 # SSL communication
                 ssl_ctx = ssl.create_default_context()
                 ssl_ctx.minimum_version = ssl.TLSVersion.TLSv1_2
