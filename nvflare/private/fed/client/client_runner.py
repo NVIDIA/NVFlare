@@ -472,13 +472,13 @@ class ClientRunner(FLComponent):
 
     def end_run_events_sequence(self):
         with self.engine.new_context() as fl_ctx:
-            self.log_info(fl_ctx, f"started end-run events sequence")
+            self.log_info(fl_ctx, "started end-run events sequence")
 
             with self.task_lock:
                 num_running_tasks = len(self.running_tasks)
             if num_running_tasks > 0:
                 self.fire_event(EventType.ABORT_TASK, fl_ctx)
-                self.log_info(fl_ctx, f"fired ABORT_TASK event to abort all running tasks")
+                self.log_info(fl_ctx, "fired ABORT_TASK event to abort all running tasks")
 
             self.fire_event(EventType.ABOUT_TO_END_RUN, fl_ctx)
             self.log_info(fl_ctx, "ABOUT_TO_END_RUN fired")

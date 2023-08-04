@@ -19,7 +19,7 @@ from typing import List, Optional, Tuple, Union
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, ControllerSpec, SendOrder, Task, TaskCompletionStatus
-from nvflare.apis.fl_constant import FLContextKey, ReservedTopic
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.job_def import job_from_meta
 from nvflare.apis.responder import Responder
