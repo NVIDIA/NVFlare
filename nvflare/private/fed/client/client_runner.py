@@ -102,10 +102,9 @@ class ClientRunner(FLComponent):
         self.run_abort_signal = Signal()
         self.task_lock = threading.Lock()
         self.running_tasks = {}  # task_id => TaskAssignment
-        self.asked_to_stop = False
-        self._register_aux_message_handler(engine)
+        self._register_aux_message_handlers(engine)
 
-    def _register_aux_message_handler(self, engine):
+    def _register_aux_message_handlers(self, engine):
         engine.register_aux_message_handler(topic=ReservedTopic.END_RUN, message_handle_func=self._handle_end_run)
         engine.register_aux_message_handler(topic=ReservedTopic.DO_TASK, message_handle_func=self._handle_do_task)
 
@@ -125,7 +124,8 @@ class ClientRunner(FLComponent):
         abort_signal = Signal(parent=self.run_abort_signal)
         try:
             reply = self._do_process_task(task, fl_ctx, abort_signal)
-        except:
+        except Exception as ex:
+            self.log_exception(fl_ctx, secure_format_exception(ex))
             reply = make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
         with self.task_lock:
@@ -393,7 +393,7 @@ class ClientRunner(FLComponent):
         return self._reply_and_audit(reply=reply, ref=server_audit_event_id, fl_ctx=fl_ctx, msg="submit result OK")
 
     def _try_run(self):
-        while not self.asked_to_stop:
+        while not self.run_abort_signal.triggered:
             with self.engine.new_context() as fl_ctx:
                 task_fetch_interval, _ = self.fetch_and_run_one_task(fl_ctx)
             time.sleep(task_fetch_interval)
@@ -457,6 +457,8 @@ class ClientRunner(FLComponent):
                 self.log_exception(fl_ctx, f"processing error in RUN execution: {secure_format_exception(e)}")
         finally:
             self.end_run_events_sequence()
+            with self.task_lock:
+                self.running_tasks = {}
 
     def init_run(self, app_root, args):
         with self.engine.new_context() as fl_ctx:
@@ -469,14 +471,18 @@ class ClientRunner(FLComponent):
             self.log_info(fl_ctx, "client runner started")
 
     def end_run_events_sequence(self):
-        self.run_abort_signal.trigger(True)
         with self.engine.new_context() as fl_ctx:
-            self.log_info(fl_ctx, f"started end run events sequence")
-            self.fire_event(EventType.ABORT_TASK, fl_ctx)
-            self.log_info(fl_ctx, f"fired ABORT_TASK event to abort all tasks")
+            self.log_info(fl_ctx, f"started end-run events sequence")
+
+            with self.task_lock:
+                num_running_tasks = len(self.running_tasks)
+            if num_running_tasks > 0:
+                self.fire_event(EventType.ABORT_TASK, fl_ctx)
+                self.log_info(fl_ctx, f"fired ABORT_TASK event to abort all running tasks")
 
             self.fire_event(EventType.ABOUT_TO_END_RUN, fl_ctx)
             self.log_info(fl_ctx, "ABOUT_TO_END_RUN fired")
+
             self.fire_event(EventType.END_RUN, fl_ctx)
             self.log_info(fl_ctx, "END_RUN fired")
 
@@ -486,9 +492,10 @@ class ClientRunner(FLComponent):
         Returns: N/A
 
         """
+        # This is caused by the abort_job command.
         with self.engine.new_context() as fl_ctx:
             self.log_info(fl_ctx, "ABORT (RUN) command received")
-        self.asked_to_stop = True
+        self.run_abort_signal.trigger(True)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         if event_type == InfoCollector.EVENT_TYPE_GET_STATS:
@@ -506,13 +513,16 @@ class ClientRunner(FLComponent):
                     info={"job_id": self.job_id, "current_tasks": current_tasks},
                 )
         elif event_type == EventType.FATAL_SYSTEM_ERROR:
+            # This happens when a task calls system_panic().
             reason = fl_ctx.get_prop(key=FLContextKey.EVENT_DATA, default="")
-            self.log_error(fl_ctx, "Stopped ClientRunner due to FATAL_SYSTEM_ERROR received: {}".format(reason))
+            self.log_error(fl_ctx, "Stopped ClientRunner due to FATAL_SYSTEM_ERROR: {}".format(reason))
             self.run_abort_signal.trigger(True)
 
     def _handle_end_run(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
-        self.log_info(fl_ctx, "received aux request from Server to end current RUN")
-        self.abort()
+        # This happens when the controller on server asks the client to end the job.
+        # Usually at the end of the workflow.
+        self.log_info(fl_ctx, "received request from Server to end current RUN")
+        self.run_abort_signal.trigger(True)
         return make_reply(ReturnCode.OK)
 
     def _handle_do_task(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
