@@ -121,7 +121,7 @@ class FLAdminAPIRunner:
             download_dir=download_dir,
             overseer_agent=conf.overseer_agent,
             user_name=username,
-            poc=self.poc,
+            insecure=self.poc,
             debug=debug,
         )
 

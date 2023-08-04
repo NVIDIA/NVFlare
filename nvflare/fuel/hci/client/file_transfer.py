@@ -325,7 +325,7 @@ class FileTransferModule(CommandModule):
 
         # sign folders and files
         api = ctx.get_api()
-        if not api.poc:
+        if not api.insecure:
             # we are not in POC mode
             client_key_file_path = api.client_key
             private_key = load_private_key_file(client_key_file_path)
