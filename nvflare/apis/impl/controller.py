@@ -678,36 +678,6 @@ class Controller(Responder, ControllerSpec, ABC):
             for t in self._tasks:
                 t.completion_status = completion_status
 
-    def abort_task(self, task: Task, fl_ctx: FLContext):
-        """Ask all clients to abort the execution of the specified task.
-
-        Args:
-            task (Task): the task to be aborted
-            fl_ctx (FLContext): FLContext associated with this action
-        """
-        self.log_info(fl_ctx, "asked all clients to abort task {}".format(task.name))
-        self._end_task([task.inst_id], fl_ctx)
-
-    def _end_task(self, task_inst_ids, fl_ctx: FLContext):
-        engine = self._engine
-        request = Shareable()
-        request["task_insts"] = task_inst_ids
-        engine.send_aux_request(
-            targets=None, topic=ReservedTopic.ABORT_ASK, request=request, timeout=0, fl_ctx=fl_ctx, optional=True
-        )
-
-    def abort_all_tasks(self, fl_ctx: FLContext):
-        """Ask clients to abort the execution of all tasks.
-
-        .. note::
-
-            The server should send a notification to all clients, regardless of whether the server has any standing tasks.
-
-        Args:
-            fl_ctx (FLContext): FLContext associated with this action
-        """
-        self._end_task([], fl_ctx)
-
     def finalize_run(self, fl_ctx: FLContext):
         """Do cleanup of the coordinator implementation.
 

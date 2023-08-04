@@ -21,7 +21,6 @@ import time
 from datetime import datetime
 from typing import List, Optional
 
-from nvflare.fuel.common.ctx import SimpleContext
 from nvflare.fuel.hci.client.event import EventContext, EventHandler, EventPropKey, EventType
 from nvflare.fuel.hci.cmd_arg_utils import split_to_args
 from nvflare.fuel.hci.conn import Connection, receive_and_process
@@ -423,7 +422,7 @@ class AdminAPI(AdminAPISpec):
         self.service_finder.start(self._handle_sp_address_change)
         self._start_session_monitor()
 
-    def fire_event(self, event_type: str, ctx: SimpleContext):
+    def fire_event(self, event_type: str, ctx: EventContext):
         if self.debug:
             print(f"DEBUG: firing event {event_type}")
         if self.event_handlers:

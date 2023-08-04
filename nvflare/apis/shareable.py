@@ -27,7 +27,6 @@ class ReservedHeaderKey(object):
     REPLY_IS_LATE = "__reply_is_late__"
     TASK_NAME = ReservedKey.TASK_NAME
     TASK_ID = ReservedKey.TASK_ID
-    TASK_INST_ID = "__task_inst_id__"
     WORKFLOW = ReservedKey.WORKFLOW
     AUDIT_EVENT_ID = ReservedKey.AUDIT_EVENT_ID
     CONTENT_TYPE = "__content_type__"

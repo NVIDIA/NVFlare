@@ -108,12 +108,10 @@ class Task(object):
             raise TypeError(f"operator must be a dict but got {type(operator)}")
 
         self.name = name  # name of the task
-        self.inst_id = str(uuid.uuid4())
         self.data = data  # task data to be sent to client(s)
         self.operator = operator
         self.cb_lock = threading.Lock()
 
-        data.set_header(ReservedHeaderKey.TASK_INST_ID, self.inst_id)
         data.set_header(ReservedHeaderKey.TASK_NAME, name)
 
         if props is None:
@@ -527,27 +525,5 @@ class ControllerSpec(ABC):
         Args:
             completion_status: the TaskCompletionStatus of the task
             fl_ctx: the FL context
-        """
-        pass
-
-    def abort_task(self, task: Task, fl_ctx: FLContext):
-        """Asks all clients to abort the execution of the specified task.
-
-        Args:
-            task: the task to be aborted
-            fl_ctx: the FL context
-
-        """
-        pass
-
-    def abort_all_tasks(self, fl_ctx: FLContext):
-        """Asks clients to abort the execution of all tasks.
-
-        NOTE: the server should send a notification to all clients, regardless of whether the server
-        has any standing tasks.
-
-        Args:
-            fl_ctx: the FL context
-
         """
         pass
