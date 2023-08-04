@@ -37,7 +37,7 @@ def main():
     parser.add_argument("--admin_dir", type=str, default="./admin/", help="Path to admin directory.")
     parser.add_argument("--username", type=str, default="admin@nvidia.com", help="Admin username.")
     parser.add_argument("--job", type=str, default="cifar10_fedavg", help="Path to job")
-    parser.add_argument("--poc", action="store_true", help="Whether admin uses POC mode.")
+    parser.add_argument("--poc", action="store_true", help="Whether admin does not use SSL.")
     parser.add_argument("--central", action="store_true", help="Whether we assume all data is centralized.")
     parser.add_argument(
         "--train_split_root", type=str, default="/tmp/cifar10_splits", help="Location where to save data splits."

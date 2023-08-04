@@ -31,7 +31,6 @@ def main():
     runner = FLAdminAPIRunner(
         username=args.username,
         admin_dir=args.admin_dir,
-        poc=True,
         debug=False,
     )
 

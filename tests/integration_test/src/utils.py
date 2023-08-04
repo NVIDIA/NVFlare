@@ -406,7 +406,7 @@ def create_admin_api(workspace_root_dir, upload_root_dir, download_root_dir, adm
         upload_dir=upload_root_dir,
         download_dir=download_root_dir,
         overseer_agent=overseer_agent,
-        poc=poc,
+        insecure=poc,
         user_name=admin_user_name,
         ca_cert=ca_cert,
         client_key=client_key,
