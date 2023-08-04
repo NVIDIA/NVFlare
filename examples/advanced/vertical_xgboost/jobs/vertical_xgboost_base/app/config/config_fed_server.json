@@ -1,0 +1,25 @@
+{
+  "format_version": 2,
+  "server": {
+    "heart_beat_timeout": 600
+  },
+  "task_data_filters": [],
+  "task_result_filters": [],
+  "workflows": [
+    {
+      "id": "controller",
+      "name": "DhPSIController",
+      "args": {
+      }
+    },
+    {
+      "id": "server_workflow",
+      "path": "controller.XGBoostController",
+      "args": {
+        "port": 9091,
+        "world_size": 2
+      }
+    }
+  ],
+  "components": []
+}
