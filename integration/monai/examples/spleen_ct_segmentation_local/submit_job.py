@@ -36,7 +36,7 @@ def main():
     parser.add_argument("--admin_dir", type=str, default="./admin/", help="Path to admin directory.")
     parser.add_argument("--username", type=str, default="admin@nvidia.com", help="Admin username.")
     parser.add_argument("--job", type=str, default="cifar10_fedavg", help="Path to job config.")
-    parser.add_argument("--poc", action="store_true", help="Whether admin uses POC mode.")
+    parser.add_argument("--poc", action="store_true", help="Whether admin does not use SSL.")
     args = parser.parse_args()
 
     assert os.path.isdir(args.admin_dir), f"admin directory does not exist at {args.admin_dir}"

@@ -84,6 +84,10 @@ class CommandContext(SimpleContext):
         return self.get_prop(CommandCtxKey.META)
 
 
+class ApiPocValue(object):
+    ADMIN = "admin"
+
+
 class CommandInfo(enum.Enum):
 
     OK = 0

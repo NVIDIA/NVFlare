@@ -105,7 +105,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         download_dir: str = "",
         cmd_modules: Optional[List] = None,
         user_name: str = None,
-        poc=False,
+        insecure=False,
         debug=False,
         session_event_cb=None,
         session_timeout_interval=None,
@@ -126,7 +126,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
             cmd_modules: command modules to load and register. Note that FileTransferModule is initialized here with upload_dir and download_dir if cmd_modules is None.
             overseer_agent: initialized OverseerAgent to obtain the primary service provider to set the host and port of the active server
             user_name: Username to authenticate with FL server
-            poc: Obsolete arg for whether to enable poc mode for using the proof of concept example without secure communication, used before version 2.4.
+            insecure: Whether or not to use secure communication, poc was the name of this arg before version 2.4.
             debug: Whether to print debug messages. False by default.
             session_event_cb: the session event callback
             session_timeout_interval: if specified, automatically close the session after inactive for this long
@@ -145,7 +145,7 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
             cmd_modules=cmd_modules,
             service_finder=service_finder,
             user_name=user_name,
-            poc=poc,
+            insecure=insecure,
             debug=debug,
             session_event_cb=session_event_cb,
             session_timeout_interval=session_timeout_interval,
