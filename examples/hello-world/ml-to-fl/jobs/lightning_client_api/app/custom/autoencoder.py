@@ -168,7 +168,7 @@ class LitAutoEncoder(LightningModule):
         loss = F.mse_loss(x, self(x))
         self.log(f"{stage}_loss", loss, on_step=True)
         # (optional) use negative loss as metric
-        self.log(f"{stage}_neg_loss", -1.0 * loss, on_step=True)
+        # self.log(f"{stage}_neg_loss", -1.0 * loss, on_step=True)
         return loss
 
 
@@ -216,6 +216,7 @@ def cli_main():
     print("--- test new model ---")
     cli.trainer.test(ckpt_path="best", datamodule=cli.datamodule)
 
+    print("--- prediction with new best model ---")
     predictions = cli.trainer.predict(ckpt_path="best", datamodule=cli.datamodule)
     print(predictions[0])
 

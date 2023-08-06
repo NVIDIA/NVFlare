@@ -1,3 +1,4 @@
+import traceback
 from enum import IntEnum
 
 import pytorch_lightning as pl
@@ -28,10 +29,12 @@ class FLCallback(pl.callbacks.Callback):
         self.send_mode = send_trigger
         self.input_fl_model = None
         self.output_fl_model = None
-        self.model_delivered = False
+        self.metrics_captured = False
+        self.prev_loop_run = None
 
     def setup(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", stage: str) -> None:
         loop = trainer.test_loop
+        self.prev_loop_run = loop.run
         loop.run = test_loop_run_decorator(loop, self)
 
     def on_fit_start(self, trainer, pl_module):
@@ -47,8 +50,12 @@ class FLCallback(pl.callbacks.Callback):
         if pl_module:
             self._receive_update_model(pl_module)
 
-    def teardown(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", stage: str) -> None:
+    def on_test_end(self, trainer, pl_module):
         self._check_and_send()
+
+    def teardown(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", stage: str) -> None:
+        if self.prev_loop_run:
+            trainer.test_loop.run = self.prev_loop_run
 
     def _receive_update_model(self, pl_module):
         if not self.input_fl_model:
@@ -66,34 +73,48 @@ class FLCallback(pl.callbacks.Callback):
         if self.output_fl_model:
             if self.send_mode == SendTrigger.AFTER_TRAIN_AND_TEST:
                 if self.output_fl_model.metrics and self.output_fl_model.params:
-                    self.delivery()
+                    self.send()
             elif self.send_mode == SendTrigger.AFTER_TRAIN and self.output_fl_model.params:
-                self.delivery()
+                self.send()
             elif self.send_mode == SendTrigger.AFTER_TEST and self.output_fl_model.metrics:
-                self.delivery()
+                self.send()
 
-    def delivery(self):
-        if not self.model_delivered:
-            try:
-                flare.send(self.output_fl_model)
-                self.model_delivered = True
-            except Exception as e:
-                self.model_delivered = False
+    def send(self):
+        try:
+            flare.send(self.output_fl_model)
+            pass
+        except Exception as e:
+            raise RuntimeError("failed to send FL model", e)
 
 
 def test_loop_run_decorator(loop, cb):
     func = loop.run
 
     def wrapper(*args, **kwargs):
-        if cb.model_delivered:
-            return func(*args, **kwargs)
+        if cb.metrics_captured:
+            try:
+                return func(*args, **kwargs)
+            except BaseException as e:
+                print(traceback.format_exc())
+                raise e
         else:
             metrics = func(*args, **kwargs)
-            if loop.trainer.state.fn == TrainerFn.TESTING and metrics:
-                if cb.output_fl_model is None:
-                    cb.output_fl_model = flare.FLModel(metrics=metrics[0])
-                elif not cb.output_fl_model.metrics:
-                    cb.output_fl_model.metrics = metrics[0]
+            _capture_metrics(metrics)
+            cb.metrics_captured = True
             return metrics
+
+    def _capture_metrics(metrics):
+        result_metrics = _extract_metrics_from_tensor(metrics[0])
+        if loop.trainer.state.fn == TrainerFn.TESTING and metrics:
+            if cb.output_fl_model is None:
+                cb.output_fl_model = flare.FLModel(metrics=result_metrics)
+            elif not cb.output_fl_model.metrics:
+                cb.output_fl_model.metrics = result_metrics
+
+    def _extract_metrics_from_tensor(metrics):
+        result_metrics = {}
+        for key, t in metrics.items():
+            result_metrics[key] = t.item()
+        return result_metrics
 
     return wrapper
