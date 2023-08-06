@@ -46,6 +46,7 @@ from torch.utils.data import DataLoader, random_split
 # (0) import nvflare client lightning API
 import nvflare.client.lightning as flare
 
+
 if _TORCHVISION_AVAILABLE:
     import torchvision
     from torchvision import transforms
@@ -57,14 +58,14 @@ DATASETS_PATH = "/tmp/nvflare/mnist"
 
 class ImageSampler(callbacks.Callback):
     def __init__(
-        self,
-        num_samples: int = 3,
-        nrow: int = 8,
-        padding: int = 2,
-        normalize: bool = True,
-        norm_range: Optional[Tuple[int, int]] = None,
-        scale_each: bool = False,
-        pad_value: int = 0,
+            self,
+            num_samples: int = 3,
+            nrow: int = 8,
+            padding: int = 2,
+            normalize: bool = True,
+            norm_range: Optional[Tuple[int, int]] = None,
+            scale_each: bool = False,
+            pad_value: int = 0,
     ) -> None:
         """
         Args:
@@ -194,23 +195,27 @@ class MyDataModule(LightningDataModule):
 
 def cli_main():
     # (1) patch the LightningModule
-    flare.patch(LitAutoEncoder)
     cli = LightningCLI(
         LitAutoEncoder,
         MyDataModule,
         seed_everything_default=1234,
         run=False,  # used to de-activate automatic fitting.
-        trainer_defaults={"callbacks": ImageSampler(), "max_epochs": 1},
+        trainer_defaults={"callbacks": [
+            ImageSampler(),
+            flare.Callback(send_trigger=flare.SendTrigger.AFTER_TRAIN_AND_TEST)
+        ], "max_epochs": 1},
         save_config_kwargs={"overwrite": True},
+
     )
+    print("--- test global model ---")
+    cli.trainer.test(cli.model, datamodule=cli.datamodule)
+
+    print("--- train new model ---")
     cli.trainer.fit(cli.model, datamodule=cli.datamodule)
+
+    print("--- test new model ---")
     cli.trainer.test(ckpt_path="best", datamodule=cli.datamodule)
-    # (optional) test on received model
-    test_result = cli.trainer.test(cli.model.get_fl_module(), datamodule=cli.datamodule)
-    # (2) construct trained FLModel
-    output_model = flare.FLModel(params=cli.model.cpu().state_dict(), metrics=test_result[0])
-    # (3) send the model to NVFlare
-    flare.send(output_model)
+
     predictions = cli.trainer.predict(ckpt_path="best", datamodule=cli.datamodule)
     print(predictions[0])
 

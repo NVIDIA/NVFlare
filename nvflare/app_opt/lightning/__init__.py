@@ -13,3 +13,5 @@
 # limitations under the License.
 
 from .api import patch as patch
+from .fl_callbacks import FLCallback as FLCallback
+from .fl_callbacks import SendTrigger as SendTrigger
