@@ -194,7 +194,7 @@ class MyDataModule(LightningDataModule):
 
 
 def cli_main():
-    # (1) patch the LightningModule
+
     cli = LightningCLI(
         LitAutoEncoder,
         MyDataModule,
