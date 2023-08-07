@@ -15,7 +15,7 @@
 
 import traceback
 from enum import Enum
-from typing import List, Dict
+from typing import Dict, List
 
 import pytorch_lightning as pl
 from pytorch_lightning.trainer.states import TrainerFn
