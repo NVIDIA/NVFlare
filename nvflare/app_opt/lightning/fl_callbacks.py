@@ -1,5 +1,5 @@
 import traceback
-from enum import IntEnum, Enum
+from enum import Enum
 
 import pytorch_lightning as pl
 from pytorch_lightning.trainer.states import TrainerFn

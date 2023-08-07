@@ -46,7 +46,6 @@ from torch.utils.data import DataLoader, random_split
 # (0) import nvflare client lightning API
 import nvflare.client.lightning as flare
 
-
 if _TORCHVISION_AVAILABLE:
     import torchvision
     from torchvision import transforms
@@ -58,14 +57,14 @@ DATASETS_PATH = "/tmp/nvflare/mnist"
 
 class ImageSampler(callbacks.Callback):
     def __init__(
-            self,
-            num_samples: int = 3,
-            nrow: int = 8,
-            padding: int = 2,
-            normalize: bool = True,
-            norm_range: Optional[Tuple[int, int]] = None,
-            scale_each: bool = False,
-            pad_value: int = 0,
+        self,
+        num_samples: int = 3,
+        nrow: int = 8,
+        padding: int = 2,
+        normalize: bool = True,
+        norm_range: Optional[Tuple[int, int]] = None,
+        scale_each: bool = False,
+        pad_value: int = 0,
     ) -> None:
         """
         Args:
@@ -200,12 +199,11 @@ def cli_main():
         MyDataModule,
         seed_everything_default=1234,
         run=False,  # used to de-activate automatic fitting.
-        trainer_defaults={"callbacks": [
-            ImageSampler(),
-            flare.Callback(send_trigger=flare.SendTrigger.AFTER_TRAIN_AND_TEST)
-        ], "max_epochs": 1},
+        trainer_defaults={
+            "callbacks": [ImageSampler(), flare.Callback(send_trigger=flare.SendTrigger.AFTER_TRAIN_AND_TEST)],
+            "max_epochs": 1,
+        },
         save_config_kwargs={"overwrite": True},
-
     )
     print("--- test global model ---")
     cli.trainer.test(cli.model, datamodule=cli.datamodule)
