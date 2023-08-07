@@ -1,0 +1,20 @@
+{
+    "format_version": 2,
+
+    "task_result_filters": [
+    ],
+    "task_data_filters": [
+    ],
+    "components": [
+    ],
+    "workflows": [
+      {
+        "id": "server_controller",
+        "path": "server_controller.ServerCyclicController",
+        "args": {
+          "num_rounds": 5,
+          "task_name": "train"
+        }
+      }
+    ]
+}
