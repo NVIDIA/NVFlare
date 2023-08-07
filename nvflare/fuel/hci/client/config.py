@@ -44,8 +44,10 @@ class FLAdminClientStarterConfigurator(JsonConfigurator):
             sys.path.append(custom_dir)
 
         admin_config_file_path = workspace.get_admin_startup_file_path()
+        config_files = [admin_config_file_path]
         resources_file_path = workspace.get_resources_file_path()
-        config_files = [admin_config_file_path, resources_file_path]
+        if resources_file_path:
+            config_files.append(resources_file_path)
 
         JsonConfigurator.__init__(
             self,
