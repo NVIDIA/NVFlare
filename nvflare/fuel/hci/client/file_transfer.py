@@ -30,7 +30,7 @@ from nvflare.fuel.utils.zip_utils import split_path, unzip_all_from_bytes, zip_d
 from nvflare.lighter.utils import load_private_key_file, sign_folders
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
-from .api_spec import ApiPocValue, CommandContext, ReplyProcessor
+from .api_spec import CommandContext, ReplyProcessor
 from .api_status import APIStatus
 
 
