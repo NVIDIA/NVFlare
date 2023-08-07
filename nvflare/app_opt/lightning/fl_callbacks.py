@@ -45,12 +45,24 @@ class FLCallback(pl.callbacks.Callback):
         self.input_fl_model = None
         self.output_fl_model = None
         self.metrics_captured = False
+        self.model_sent = False
+        self.prev_loop_run = None
+
+    def reset_state(self):
+        # If the next round of federated training needs to reuse the same callback
+        # instance, the reset_state() needs to be called first
+
+        self.input_fl_model = None
+        self.output_fl_model = None
+        self.metrics_captured = False
+        self.model_sent = False
         self.prev_loop_run = None
 
     def setup(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", stage: str) -> None:
-        loop = trainer.test_loop
-        self.prev_loop_run = loop.run
-        loop.run = test_loop_run_decorator(loop, self)
+        if not self.metrics_captured and self.send_mode in [SendTrigger.AFTER_TRAIN_AND_TEST, SendTrigger.AFTER_TEST]:
+            loop = trainer.test_loop
+            self.prev_loop_run = loop.run
+            loop.run = test_loop_run_decorator(loop, self)
 
     def on_fit_start(self, trainer, pl_module):
         # receive the global model and update the local model with global model
@@ -62,6 +74,7 @@ class FLCallback(pl.callbacks.Callback):
             self.output_fl_model.params = pl_module.cpu().state_dict()
         else:
             self.output_fl_model = flare.FLModel(params=pl_module.cpu().state_dict())
+        self._check_and_send()
 
     def on_test_start(self, trainer, pl_module):
         # receive the global model and update the local model with global model
@@ -103,17 +116,19 @@ class FLCallback(pl.callbacks.Callback):
                 self.send()
 
     def send(self):
-        try:
-            flare.send(self.output_fl_model)
-        except Exception as e:
-            raise RuntimeError("failed to send FL model", e)
+        if not self.model_sent:
+            try:
+                flare.send(self.output_fl_model)
+                self.model_sent = True
+            except Exception as e:
+                raise RuntimeError("failed to send FL model", e)
 
 
 def test_loop_run_decorator(loop, cb):
     func = loop.run
 
     def wrapper(*args, **kwargs):
-        if cb.metrics_captured:
+        if cb.metrics_captured or cb.send_mode == SendTrigger.AFTER_TRAIN:
             try:
                 return func(*args, **kwargs)
             except BaseException as e:
