@@ -129,4 +129,4 @@ class ClientAppRunner(Runner):
 
     def stop(self):
         if self.client_runner:
-            self.client_runner.asked_to_stop = True
+            self.client_runner.abort()

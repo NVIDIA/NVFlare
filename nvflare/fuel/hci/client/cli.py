@@ -28,9 +28,10 @@ from nvflare.fuel.hci.security import hash_password, verify_password
 from nvflare.fuel.hci.table import Table
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
-from .api import AdminAPI, CommandInfo, SessionEventType
+from .api import AdminAPI, CommandInfo
 from .api_spec import ServiceFinder
 from .api_status import APIStatus
+from .event import EventContext, EventHandler, EventPropKey, EventType
 
 
 class _BuiltInCmdModule(CommandModule):
@@ -50,7 +51,7 @@ class _BuiltInCmdModule(CommandModule):
         )
 
 
-class AdminClient(cmd.Cmd):
+class AdminClient(cmd.Cmd, EventHandler):
     """Admin command prompt for submitting admin commands to the server through the CLI.
 
     Args:
@@ -78,6 +79,7 @@ class AdminClient(cmd.Cmd):
         session_timeout_interval=900,  # close the client after 15 minutes of inactivity
         debug: bool = False,
         username: str = "",
+        handlers=None,
     ):
         super().__init__()
         self.intro = "Type help or ? to list commands.\n"
@@ -112,6 +114,10 @@ class AdminClient(cmd.Cmd):
 
         self._get_login_creds()
 
+        event_handlers = [self]
+        if handlers:
+            event_handlers.extend(handlers)
+
         self.api = AdminAPI(
             ca_cert=ca_cert,
             client_cert=client_cert,
@@ -123,21 +129,22 @@ class AdminClient(cmd.Cmd):
             user_name=self.user_name,
             debug=self.debug,
             insecure=insecure,
-            session_event_cb=self.handle_session_event,
             session_timeout_interval=session_timeout_interval,
             session_status_check_interval=1800,  # check server for session status every 30 minutes
+            event_handlers=event_handlers,
         )
         # signal.signal(signal.SIGUSR1, partial(self.session_signal_handler))
         signal.signal(signal.SIGUSR1, self.session_signal_handler)
 
-    def handle_session_event(self, event_type: str, message: str):
+    def handle_event(self, event_type: str, ctx: EventContext):
         if self.debug:
             print(f"DEBUG: received session event: {event_type}")
 
-        if message:
-            self.write_string(message)
+        msg = ctx.get_prop(EventPropKey.MSG)
+        if msg:
+            self.write_string(msg)
 
-        if event_type == SessionEventType.SESSION_CLOSED:
+        if event_type == EventType.SESSION_CLOSED:
             os.kill(os.getpid(), signal.SIGUSR1)
 
     def session_signal_handler(self, signum, frame):

@@ -16,6 +16,7 @@ from typing import Any, Union
 
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.fl_exception import TaskExecutionError
 from nvflare.app_common.abstract.fl_model import FLModel
 
 
@@ -167,7 +168,8 @@ class ModelLearner(FLComponent):
         Returns:
 
         """
-        self.task_panic(reason, self.fl_ctx)
+        self.log_error(self.fl_ctx, f"Task stopped: {reason}")
+        raise TaskExecutionError(reason)
 
     def initialize(self):
         """Called by the framework to initialize the Learner object.

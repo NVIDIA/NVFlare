@@ -229,7 +229,8 @@ class ServerEngine(ServerEngineInternalSpec):
                 if return_code and return_code != 0:
                     self.logger.info(f"Job: {job_id} child process exit with return code {return_code}")
                     run_process_info[RunProcessKey.PROCESS_RETURN_CODE] = return_code
-                    self.exception_run_processes[job_id] = run_process_info
+                    if job_id not in self.exception_run_processes:
+                        self.exception_run_processes[job_id] = run_process_info
                 self.run_processes.pop(job_id, None)
         self.engine_info.status = MachineStatus.STOPPED
 
