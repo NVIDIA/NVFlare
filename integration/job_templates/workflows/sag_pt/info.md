@@ -1,8 +1,8 @@
 # Job Workflow Information Card
 
 ## sag_pt
-    description = ""Scatter and Gather Workflow using pytorch, 
-    class_name  =  ScatterAndGather"
+    description = "Scatter and Gather Workflow using pytorch" 
+    class_name  =  "ScatterAndGather"
     controller_type = "server"
     executor_type = "launcher_executor"
     contributor = "NVIDIA"
