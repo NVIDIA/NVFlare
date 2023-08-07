@@ -14,7 +14,6 @@
 
 import logging
 import threading
-import time
 import uuid
 from typing import Dict, List, Union
 
@@ -29,14 +28,13 @@ from nvflare.fuel.f3.streaming.stream_types import StreamFuture
 from nvflare.private.defs import CellChannel
 
 
-class SimpleWaiter(threading.Event):
-    def __init__(self, req_id, timeout, result):
+class SimpleWaiter:
+    def __init__(self, req_id, result):
         super().__init__()
         self.req_id = req_id
-        self.timeout = timeout
         self.result = result
-        self.sending_complete = False
-        self.in_receiving = False
+        self.receiving_futre = None
+        self.in_receiving = threading.Event()
 
 
 class Adapter:
@@ -115,8 +113,19 @@ class NewCell(StreamCell):
         waiter = self.requests_dict.pop(req_id)
         return waiter.result
 
-    def send_request(self, channel, target, topic, request, timeout, optional=False):
-        self.logger.debug(f"send_request: {channel=}, {target=}, {topic=}, {timeout=}")
+    def _future_wait(self, future, timeout):
+        last_progress = 0
+        while not future.waiter.wait(timeout):
+            current_progress = future.get_progress()
+            if last_progress == current_progress:
+                return False
+            else:
+                self.logger.debug(f"{current_progress=}")
+                last_progress = current_progress
+        return True
+
+    def send_request(self, channel, target, topic, request, timeout=10.0, optional=False):
+        self.logger.info(f"send_request: {channel=}, {topic=}, {target=}, {timeout=}")
         if channel != CellChannel.SERVER_COMMAND:
             return self.core_cell.send_request(
                 channel=channel, target=target, topic=topic, request=request, timeout=timeout, optional=optional
@@ -128,77 +137,35 @@ class NewCell(StreamCell):
         # this future can be used to check sending progress, but not for checking return blob
         future = self.send_blob(channel, topic, target, request)
 
-        waiter = SimpleWaiter(req_id=req_id, timeout=timeout, result=make_reply(ReturnCode.TIMEOUT))
+        waiter = SimpleWaiter(req_id=req_id, result=make_reply(ReturnCode.TIMEOUT))
         self.requests_dict[req_id] = waiter
-        """
-        when inside the while loop, following things could happen
-        1. future is done
-           we should exit this loop and start wait for reply
 
-        2. waiter is set
-           reply is ready and we can exit this loop
+        # Three stages, sending, waiting for receiving first byte, receiving
 
-        3. future is making progress
-           stay in the loop, reset timer
+        # sending with progress timeout
+        self.logger.debug(f"{req_id=}: entering sending wait {timeout=}")
+        sending_complete = self._future_wait(future, timeout)
+        if not sending_complete:
+            self.logger.debug(f"{req_id=}: sending timeout")
+            return self._get_result(req_id)
+        self.logger.debug(f"{req_id=}: sending complete")
 
-        4. no progress, not timeout yet
-           stay in the loop
-
-        5. no progress, timeout
-           exit
-
-        """
-        self.logger.debug(f"{req_id=}: entering sending loop {timeout=}")
-        last_progress = 0
-        last_update_time = time.time()
-        while True:
-            if future.done():
-                self.logger.debug(f"{req_id=}: sending complete")
-                waiter.sending_complete = True
-                break
-            if waiter.is_set():
-                self.logger.debug(f"{req_id=}: reply ready")
-                return self._get_result(req_id)
-            time.sleep(1.0)
-            current_time = time.time()
-            current_progress = future.get_progress()
-            if current_progress == last_progress:
-                if current_time - last_update_time > timeout:
-                    self.logger.debug(f"{req_id=}: sending timeout")
-                    future.cancel()
-                    return self._get_result(req_id)
-                else:
-                    self.logger.debug(f"{req_id=}: no sending progress before timeout")
-            else:
-                self.logger.debug(f"{req_id=}: sending progress {current_progress=}")
-                last_progress = current_progress
-                last_update_time = current_time
-
-        if not waiter.sending_complete:
-            # should not be here
-            self.logger.error(f"{req_id=}: unknown waiter state")
-            return make_reply(ReturnCode.COMM_ERROR)
-
-        # Now enter the remote process wait loop
+        # waiting for receiving first byte
         self.logger.debug(f"{req_id=}: entering remote process wait {timeout=}")
-        while True:
-            if waiter.is_set():
-                self.logger.debug(f"{req_id=}: reply ready")
-                return self._get_result(req_id)
-            time.sleep(1.0)
-            if waiter.in_receiving:  # roughly 1 second grace period
-                self.logger.debug(f"{req_id=}: in receiving")
-                break
-            if time.time() - last_update_time > timeout:
-                self.logger.debug(f"{req_id=}: remote processing timeout")
-                return self._get_result(req_id)
+        if not waiter.in_receiving.wait(timeout):
+            self.logger.debug(f"{req_id=}: remote processing timeout")
+            return self._get_result(req_id)
+        self.logger.debug(f"{req_id=}: in receiving")
 
-        # Reaching here only because the in_receiving is True (thus inside receiving call back)
-        # Wait here until the wait is set (only done by receiving call back)
-        self.logger.debug(f"{req_id=}: entering preocessing reply wait")
-        # the following may wait forever
-        _ = waiter.wait()
-        self.logger.debug(f"{req_id=}: waiter set by processing reply")
+        # receiving with progress timeout
+        r_future = waiter.receiving_future
+        self.logger.debug(f"{req_id=}: entering receiving wait {timeout=}")
+        receiving_complete = self._future_wait(r_future, timeout)
+        if not receiving_complete:
+            self.logger.debug(f"{req_id=}: receiving timeout")
+            return self._get_result(req_id)
+        self.logger.debug(f"{req_id=}: receiving complete")
+        waiter.result = Message(r_future.headers, r_future.result())
         return self._get_result(req_id)
 
     def _process_reply(self, future: StreamFuture):
@@ -209,33 +176,8 @@ class NewCell(StreamCell):
         except KeyError as e:
             self.logger.warning(f"Receiving unknown {req_id=}, discarded")
             return
-        waiter.in_receiving = True
-        last_progress = 0
-        last_update_time = time.time()
-        timeout = waiter.timeout
-        self.logger.debug(f"{req_id=}: entering receiving loop {timeout=}")
-        while True:
-            if future.done():
-                self.logger.debug(f"{req_id=}: receiving complete")
-                waiter.result = Message(headers, future.result())
-                waiter.set()
-                break
-            time.sleep(1.0)
-            current_time = time.time()
-            current_progress = future.get_progress()
-            if current_progress == last_progress:
-                if current_time - last_update_time > timeout:
-                    self.logger.debug(f"{req_id=}: receiving timeout")
-                    future.cancel()
-                    waiter.receiving_timeout = True
-                    waiter.set()
-                    break
-                else:
-                    self.logger.debug(f"{req_id=}: no receiving progress before timeout")
-            else:
-                self.logger.debug(f"{req_id=}: receiving progress {current_progress=}")
-                last_progress = current_progress
-                last_update_time = current_time
+        waiter.receiving_future = future
+        waiter.in_receiving.set()
 
     def register_request_cb(self, channel: str, topic: str, cb, *args, **kwargs):
         """
