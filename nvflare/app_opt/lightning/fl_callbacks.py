@@ -15,9 +15,11 @@
 
 import traceback
 from enum import Enum
+from typing import List, Dict
 
 import pytorch_lightning as pl
 from pytorch_lightning.trainer.states import TrainerFn
+from torch import Tensor
 
 import nvflare.client as flare
 from nvflare.app_common.abstract.fl_model import FLModel
@@ -128,27 +130,27 @@ def test_loop_run_decorator(loop, cb):
     func = loop.run
 
     def wrapper(*args, **kwargs):
-        if cb.metrics_captured or cb.send_mode == SendTrigger.AFTER_TRAIN:
-            try:
+        try:
+            if cb.metrics_captured or cb.send_mode == SendTrigger.AFTER_TRAIN:
                 return func(*args, **kwargs)
-            except BaseException as e:
-                print(traceback.format_exc())
-                raise e
-        else:
-            metrics = func(*args, **kwargs)
-            _capture_metrics(metrics)
-            cb.metrics_captured = True
-            return metrics
+            else:
+                metrics = func(*args, **kwargs)
+                _capture_metrics(metrics)
+                cb.metrics_captured = True
+                return metrics
+        except BaseException as e:
+            print(traceback.format_exc())
+            raise e
 
-    def _capture_metrics(metrics):
-        result_metrics = _extract_metrics_from_tensor(metrics[0])
+    def _capture_metrics(metrics: List[Dict[str, Tensor]]):
         if loop.trainer.state.fn == TrainerFn.TESTING and metrics:
+            result_metrics = _extract_metrics_from_tensor(metrics[0])
             if cb.output_fl_model is None:
                 cb.output_fl_model = flare.FLModel(metrics=result_metrics)
             elif not cb.output_fl_model.metrics:
                 cb.output_fl_model.metrics = result_metrics
 
-    def _extract_metrics_from_tensor(metrics):
+    def _extract_metrics_from_tensor(metrics: Dict[str, Tensor]):
         result_metrics = {}
         for key, t in metrics.items():
             result_metrics[key] = t.item()
