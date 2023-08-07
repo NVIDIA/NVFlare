@@ -105,7 +105,6 @@ class FLCallback(pl.callbacks.Callback):
     def send(self):
         try:
             flare.send(self.output_fl_model)
-            pass
         except Exception as e:
             raise RuntimeError("failed to send FL model", e)
 
