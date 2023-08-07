@@ -66,7 +66,7 @@ class FLCallback(pl.callbacks.Callback):
     def on_test_start(self, trainer, pl_module):
         # receive the global model and update the local model with global model
         # the 1st time test() or train() is called.
-        # expect the validate the global model first (i.e. test()), once that's done.
+        # expect user will validate the global model first (i.e. test()), once that's done.
         # the metrics_captured will be set to True.
         # The subsequence test() calls will not trigger the receive update model.
         # Hence the test() will be validating the local model.
