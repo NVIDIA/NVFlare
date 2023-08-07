@@ -101,10 +101,6 @@ class ApiPocValue(object):
     ADMIN = "admin"
 
 
-class ApiPocValue(object):
-    ADMIN = "admin"
-
-
 class CommandInfo(enum.Enum):
 
     OK = 0
