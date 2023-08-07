@@ -166,6 +166,8 @@ class LitAutoEncoder(LightningModule):
         x = self._prepare_batch(batch)
         loss = F.mse_loss(x, self(x))
         self.log(f"{stage}_loss", loss, on_step=True)
+        # (optional) use negative loss as metric
+        self.log(f"{stage}_neg_loss", -1.0 * loss, on_step=True)
         return loss
 
 
@@ -203,8 +205,10 @@ def cli_main():
     )
     cli.trainer.fit(cli.model, datamodule=cli.datamodule)
     cli.trainer.test(ckpt_path="best", datamodule=cli.datamodule)
-    # (2) contruct trained FLModel
-    output_model = flare.FLModel(params=cli.model.cpu().state_dict())
+    # (optional) test on received model
+    test_result = cli.trainer.test(cli.model.get_fl_module(), datamodule=cli.datamodule)
+    # (2) construct trained FLModel
+    output_model = flare.FLModel(params=cli.model.cpu().state_dict(), metrics=test_result[0])
     # (3) send the model to NVFlare
     flare.send(output_model)
     predictions = cli.trainer.predict(ckpt_path="best", datamodule=cli.datamodule)

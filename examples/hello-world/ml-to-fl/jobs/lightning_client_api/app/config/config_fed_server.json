@@ -18,6 +18,13 @@
       "args": {
         "expected_data_kind": "WEIGHTS"
       }
+    },
+    {
+      "id": "model_selector",
+      "name": "IntimeModelSelector",
+      "args": {
+        "key_metric": "test_neg_loss_epoch"
+      }
     }
   ],
   "workflows": [
