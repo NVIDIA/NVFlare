@@ -1,5 +1,5 @@
 import traceback
-from enum import IntEnum
+from enum import IntEnum, Enum
 
 import pytorch_lightning as pl
 from pytorch_lightning.trainer.states import TrainerFn
@@ -10,7 +10,7 @@ from nvflare.client.config import ConfigKey
 from nvflare.client.constants import ModelExchangeFormat
 
 
-class SendTrigger(IntEnum):
+class SendTrigger(Enum):
     AFTER_TRAIN_AND_TEST = 1
     AFTER_TRAIN = 2
     AFTER_TEST = 3
@@ -38,6 +38,8 @@ class FLCallback(pl.callbacks.Callback):
         loop.run = test_loop_run_decorator(loop, self)
 
     def on_fit_start(self, trainer, pl_module):
+        # receive the global model and update the local model with global model
+        # the 1st time test() or fit() is called.
         self._receive_update_model(pl_module)
 
     def on_train_end(self, trainer, pl_module):
@@ -47,7 +49,13 @@ class FLCallback(pl.callbacks.Callback):
             self.output_fl_model = flare.FLModel(params=pl_module.cpu().state_dict())
 
     def on_test_start(self, trainer, pl_module):
-        if pl_module:
+        # receive the global model and update the local model with global model
+        # the 1st time test() or train() is called.
+        # expect the validate the global model first (i.e. test()), once that's done.
+        # the metrics_captured will be set to True.
+        # The subsequence test() calls will not trigger the receive update model.
+        # Hence the test() will be validating the local model.
+        if pl_module and not self.metrics_captured:
             self._receive_update_model(pl_module)
 
     def on_test_end(self, trainer, pl_module):
