@@ -107,7 +107,6 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
         user_name: str = None,
         insecure=False,
         debug=False,
-        session_event_cb=None,
         session_timeout_interval=None,
         session_status_check_interval=None,
         auto_login_max_tries: int = 5,
@@ -128,7 +127,6 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
             user_name: Username to authenticate with FL server
             insecure: Whether or not to use secure communication, poc was the name of this arg before version 2.4.
             debug: Whether to print debug messages. False by default.
-            session_event_cb: the session event callback
             session_timeout_interval: if specified, automatically close the session after inactive for this long
             session_status_check_interval: how often to check session status with server
             auto_login_max_tries: maximum number of tries to auto-login.
@@ -147,7 +145,6 @@ class FLAdminAPI(AdminAPI, FLAdminAPISpec):
             user_name=user_name,
             insecure=insecure,
             debug=debug,
-            session_event_cb=session_event_cb,
             session_timeout_interval=session_timeout_interval,
             session_status_check_interval=session_status_check_interval,
             auto_login_max_tries=auto_login_max_tries,
