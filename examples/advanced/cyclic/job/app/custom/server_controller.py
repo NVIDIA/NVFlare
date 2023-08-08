@@ -39,7 +39,7 @@ class ServerCyclicController(Controller):
         super().start_controller(fl_ctx)
 
         engine = fl_ctx.get_engine()
-        engine.register_aux_message_handler(topic=ReservedTopic.CLIENT_CONTROLLER_TASK,
+        engine.register_aux_message_handler(topic=ReservedTopic.DO_TASK,
                                             message_handle_func=self._handle_aux_message)
 
     def _handle_aux_message(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:

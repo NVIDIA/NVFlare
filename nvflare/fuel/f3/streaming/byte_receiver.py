@@ -92,13 +92,15 @@ class RxStream(Stream):
             count += 1
 
         with self.task.task_lock:
-            buf = self.task.buffers.popleft()
+            last_chunk, buf = self.task.buffers.popleft()
             if 0 < chunk_size < len(buf):
                 result = buf[0:chunk_size]
                 # Put leftover to the head of the queue
-                self.task.buffers.appendleft(buf[chunk_size:])
+                self.task.buffers.appendleft((last_chunk, buf[chunk_size:]))
             else:
                 result = buf
+                if last_chunk:
+                    self.task.eos = True
 
             self.task.offset += len(result)
             if self.task.offset - self.task.offset_ack > ACK_INTERVAL:
@@ -178,8 +180,11 @@ class ByteReceiver:
             stream_thread_pool.submit(self._callback_wrapper, task, callback)
 
         with task.task_lock:
+            data_type = message.get_header(StreamHeaderKey.DATA_TYPE)
+            last_chunk = data_type == StreamDataType.FINAL
+
             if seq == task.next_seq:
-                self._append(task, message.payload)
+                self._append(task, (last_chunk, message.payload))
                 task.next_seq += 1
 
                 # Try to reassemble out-of-seq buffers
@@ -194,12 +199,7 @@ class ByteReceiver:
                     self._stop_task(task, StreamError(f"Too many out-of-sequence chunks: {len(task.out_seq_buffers)}"))
                     return
                 else:
-                    task.out_seq_buffers[seq] = message.payload
-
-            data_type = message.get_header(StreamHeaderKey.DATA_TYPE)
-            if data_type == StreamDataType.FINAL:
-                # Task is not done till all buffers are read so future is not set here
-                self._stop_task(task)
+                    task.out_seq_buffers[seq] = last_chunk, message.payload
 
     def _callback_wrapper(self, task: RxTask, callback: Callback):
         """A wrapper to catch all exceptions in the callback"""

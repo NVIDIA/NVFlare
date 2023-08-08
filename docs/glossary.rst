@@ -114,6 +114,11 @@ Overseer
 The overseer is a subsystem that monitors the FL servers in :ref:`HA mode <high_availability>` and tells clients which FL
 server to connect to. This is only applicable in HA mode.
 
+Peer Context
+============
+The :ref:`Peer Context <peer_context>` is the contextual information of the message sender that is sent in addtion to the
+regular payload of the message when the FL parties communicate with each other.
+
 Persistor
 =========
 A component for saving the state of something. :class:`LearnablePersistor<nvflare.app_common.abstract.learnable_persistor.LearnablePersistor>`

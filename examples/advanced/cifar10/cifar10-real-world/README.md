@@ -230,6 +230,8 @@ same CIFAR-10 test set. The plotting script used for the below graphs is in
 To use it, download all job results using the `download_job` admin command and specify the `download_dir` in 
 [./figs/plot_tensorboard_events.py](./figs/plot_tensorboard_events.py). 
 
+> **_NOTE:_** You need to install [./plot-requirements.txt](./plot-requirements.txt) to plot.
+
 ### 5.1 FedAvg vs. FedAvg with HE
 With a data split using `alpha=1.0`, i.e. a non-heterogeneous split, we achieve the following final validation scores.
 One can see that FedAvg can achieve similar performance to central training and 

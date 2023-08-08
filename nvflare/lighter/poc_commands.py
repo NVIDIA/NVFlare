@@ -367,8 +367,8 @@ def prepare_poc(
     clients: List[str],
     number_of_clients: int,
     workspace: str,
-    docker_image: str,
-    use_he: bool,
+    docker_image: str = None,
+    use_he: bool = False,
     project_conf_path: str = "",
     examples_dir: Optional[str] = None,
 ) -> bool:
@@ -425,7 +425,7 @@ def prepare_poc_provision(
     # update storage
     if workspace != DEFAULT_WORKSPACE:
         update_storage_locations(
-            local_dir=f"{workspace}/{server_name}/local", default_resource_name="resources.json", workspace=workspace
+            local_dir=f"{workspace}/example_project/prod_00/{server_name}/local", workspace=workspace
         )
     examples_dir = get_examples_dir(examples_dir)
     if examples_dir is not None:
@@ -500,21 +500,21 @@ def get_gpu_ids(user_input_gpu_ids, host_gpu_ids) -> List[int]:
     return gpu_ids
 
 
-def start_poc(poc_workspace: str, gpu_ids: List[int], excluded=None, white_list=None):
+def start_poc(poc_workspace: str, gpu_ids: List[int], excluded=None, services_list=None):
     project_config, service_config = setup_service_config(poc_workspace)
-    if white_list is None:
-        white_list = []
+    if services_list is None:
+        services_list = []
     if excluded is None:
         excluded = []
-    print(f"start_poc at {poc_workspace}, gpu_ids={gpu_ids}, excluded = {excluded}, white_list={white_list}")
-    validate_services(project_config, white_list, excluded)
+    print(f"start_poc at {poc_workspace}, gpu_ids={gpu_ids}, excluded = {excluded}, services_list={services_list}")
+    validate_services(project_config, services_list, excluded)
     validate_poc_workspace(poc_workspace, service_config)
-    _run_poc(SC.CMD_START, poc_workspace, gpu_ids, service_config, excluded=excluded, white_list=white_list)
+    _run_poc(SC.CMD_START, poc_workspace, gpu_ids, service_config, excluded=excluded, services_list=services_list)
 
 
-def validate_services(project_config, white_list: List, excluded: List):
+def validate_services(project_config, services_list: List, excluded: List):
     participant_names = [p["name"] for p in project_config["participants"]]
-    validate_participants(participant_names, white_list)
+    validate_participants(participant_names, services_list)
     validate_participants(participant_names, excluded)
 
 
@@ -535,30 +535,30 @@ def setup_service_config(poc_workspace) -> Tuple:
         raise CLIException(f"{project_file} is missing, make sure you have first run 'nvflare poc --prepare'")
 
 
-def stop_poc(poc_workspace: str, excluded=None, white_list=None):
+def stop_poc(poc_workspace: str, excluded=None, services_list=None):
     project_config, service_config = setup_service_config(poc_workspace)
 
-    if white_list is None:
-        white_list = []
+    if services_list is None:
+        services_list = []
     if excluded is None:
         excluded = [service_config[SC.FLARE_PROJ_ADMIN]]
     else:
         excluded.append(service_config[SC.FLARE_PROJ_ADMIN])
 
-    validate_services(project_config, white_list, excluded)
+    validate_services(project_config, services_list, excluded)
 
     validate_poc_workspace(poc_workspace, service_config)
     gpu_ids: List[int] = []
     prod_dir = get_prod_dir(poc_workspace)
 
-    p_size = len(white_list)
-    if p_size == 0 or service_config[SC.FLARE_SERVER] in white_list:
+    p_size = len(services_list)
+    if p_size == 0 or service_config[SC.FLARE_SERVER] in services_list:
         print("start shutdown NVFLARE")
         shutdown_system(prod_dir, username=service_config[SC.FLARE_PROJ_ADMIN])
     else:
-        print(f"start shutdown {white_list}")
+        print(f"start shutdown {services_list}")
 
-    _run_poc(SC.CMD_STOP, poc_workspace, gpu_ids, service_config, excluded=excluded, white_list=white_list)
+    _run_poc(SC.CMD_STOP, poc_workspace, gpu_ids, service_config, excluded=excluded, services_list=services_list)
 
 
 def _get_clients(service_commands: list, service_config) -> List[str]:
@@ -571,14 +571,18 @@ def _get_clients(service_commands: list, service_config) -> List[str]:
     return clients
 
 
-def _build_commands(cmd_type: str, poc_workspace: str, service_config, excluded: list, white_list=None) -> list:
-    """
-    :param cmd_type: start/stop
-    :param poc_workspace:  poc workspace directory path
-    :param service_config:  service_config
-    :param excluded: excluded service/participants name
-    :param white_list: whitelist, service name. If empty, include every service/participants
-    :return:
+def _build_commands(cmd_type: str, poc_workspace: str, service_config, excluded: list, services_list=None) -> list:
+    """Builds commands.
+
+    Args:
+        cmd_type (str): start/stop
+        poc_workspace (str): poc workspace directory path
+        service_config (_type_): service_config
+        excluded (list): excluded service/participants name
+        services_list (_type_, optional): Service names. If empty, include every service/participants
+
+    Returns:
+        list: built commands
     """
 
     def is_fl_service_dir(p_dir_name: str) -> bool:
@@ -591,15 +595,15 @@ def _build_commands(cmd_type: str, poc_workspace: str, service_config, excluded:
 
     prod_dir = get_prod_dir(poc_workspace)
 
-    if white_list is None:
-        white_list = []
+    if services_list is None:
+        services_list = []
     service_commands = []
     for root, dirs, files in os.walk(prod_dir):
         if root == prod_dir:
             fl_dirs = [d for d in dirs if is_fl_service_dir(d)]
             for service_dir_name in fl_dirs:
                 if service_dir_name not in excluded:
-                    if len(white_list) == 0 or service_dir_name in white_list:
+                    if len(services_list) == 0 or service_dir_name in services_list:
                         cmd = get_service_command(cmd_type, prod_dir, service_dir_name, service_config)
                         if cmd:
                             service_commands.append((service_dir_name, cmd))
@@ -640,11 +644,11 @@ def sync_process(service_name, cmd_path):
 
 
 def _run_poc(
-    cmd_type: str, poc_workspace: str, gpu_ids: List[int], service_config: Dict, excluded: list, white_list=None
+    cmd_type: str, poc_workspace: str, gpu_ids: List[int], service_config: Dict, excluded: list, services_list=None
 ):
-    if white_list is None:
-        white_list = []
-    service_commands = _build_commands(cmd_type, poc_workspace, service_config, excluded, white_list)
+    if services_list is None:
+        services_list = []
+    service_commands = _build_commands(cmd_type, poc_workspace, service_config, excluded, services_list)
     clients = _get_clients(service_commands, service_config)
     gpu_assignments: Dict[str, List[int]] = client_gpu_assignments(clients, gpu_ids)
     for service_name, cmd_path in service_commands:
@@ -764,7 +768,7 @@ def def_poc_parser(sub_cmd):
     poc_parser.add_argument("--start", dest="start_poc", action="store_const", const=start_poc, help="start local")
     poc_parser.add_argument("--stop", dest="stop_poc", action="store_const", const=stop_poc, help="stop local")
     poc_parser.add_argument(
-        "--clean", dest="clean_poc", action="store_const", const=clean_poc, help="cleanup local workspace"
+        "--clean", dest="clean_poc", action="store_const", const=clean_poc, help="clean up local workspace"
     )
     return {cmd: poc_parser}
 
@@ -788,9 +792,9 @@ def get_local_host_gpu_ids():
 
 def handle_poc_cmd(cmd_args):
     if cmd_args.service != "all":
-        white_list = [cmd_args.service]
+        services_list = [cmd_args.service]
     else:
-        white_list = []
+        services_list = []
 
     excluded = None
     if cmd_args.exclude != "":
@@ -808,7 +812,7 @@ def handle_poc_cmd(cmd_args):
             gpu_ids = get_gpu_ids(cmd_args.gpu, get_local_host_gpu_ids())
         else:
             gpu_ids = []
-        start_poc(poc_workspace, gpu_ids, excluded, white_list)
+        start_poc(poc_workspace, gpu_ids, excluded, services_list)
     elif cmd_args.prepare_poc:
         project_conf_path = ""
         if cmd_args.project_input:
@@ -825,7 +829,7 @@ def handle_poc_cmd(cmd_args):
     elif cmd_args.prepare_examples:
         prepare_examples(cmd_args.examples, poc_workspace)
     elif cmd_args.stop_poc:
-        stop_poc(poc_workspace, excluded, white_list)
+        stop_poc(poc_workspace, excluded, services_list)
     elif cmd_args.clean_poc:
         clean_poc(poc_workspace)
     else:

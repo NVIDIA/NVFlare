@@ -99,14 +99,13 @@ class ClientJsonConfigurator(FedJsonConfigurator):
             return
 
         if re.search(r"^executors\.#[0-9]+\.executor$", path):
-            self.current_exe.executor = self.build_component(element)
+            self.current_exe.executor = self.authorize_and_build_component(element, config_ctx, node)
             return
 
-    def build_component(self, config_dict):
-        t = super().build_component(config_dict)
+    def authorize_and_build_component(self, config_dict, config_ctx, node):
+        t = super().authorize_and_build_component(config_dict, config_ctx, node)
         if isinstance(t, FLComponent):
-            if type(t).__name__ not in [type(h).__name__ for h in self.handlers]:
-                self.handlers.append(t)
+            self.handlers.append(t)
         return t
 
     def _process_executor_def(self, node: Node):

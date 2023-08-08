@@ -2,7 +2,7 @@
 
 ## Run automated experiments
 Please make sure to finish the [preparation steps](../README.md) before running the following steps.
-To run this example with NVFlare, follow the steps below or this [notebook](./xgboost_histogram_higgs.ipynb).
+To run this example with NVFlare, follow the steps below or this [notebook](./xgboost_histogram_higgs.ipynb) for an interactive experience.
 
 ### Environment Preparation
 
@@ -47,5 +47,8 @@ provided in `xgboost_params` argument.
 If the parameter change alone is not sufficient and code changes are required,
 a custom executor can be implemented to make calls to xgboost library directly.
 
-The custom executor can inherit the base class `FedXGBHistogramExecutorSpec` and
-implement the `xgb_train()` and `load_data()` method.
+The custom executor can inherit the base class `FedXGBHistogramExecutor` and
+overwrite the `xgb_train()` method.
+
+To use other dataset, can inherit the base class `XGBDataLoader` and
+implement that `load_data()` method.

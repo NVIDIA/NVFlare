@@ -22,6 +22,7 @@ from nvflare.apis.job_def import JobMetaKey
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.client.api import AdminAPI, APIStatus, ResultKey
+from nvflare.fuel.hci.client.config import FLAdminClientStarterConfigurator
 from nvflare.fuel.hci.client.overseer_service_finder import ServiceFinderByOverseer
 from nvflare.fuel.hci.cmd_arg_utils import (
     process_targets_into_str,
@@ -55,7 +56,6 @@ from .api_spec import (
     SystemInfo,
     TargetType,
 )
-from .config import FLAdminClientStarterConfigurator
 
 _VALID_TARGET_TYPES = [TargetType.ALL, TargetType.SERVER, TargetType.CLIENT]
 
@@ -127,8 +127,9 @@ class Session(SessionSpec):
             download_dir=download_dir,
             service_finder=service_finder,
             user_name=username,
-            poc=(not self.secure_mode),
+            insecure=(not self.secure_mode),
             debug=debug,
+            event_handlers=conf.handlers,
         )
         self.upload_dir = upload_dir
         self.download_dir = download_dir

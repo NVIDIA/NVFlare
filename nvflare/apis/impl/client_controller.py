@@ -84,7 +84,7 @@ class ClientController(FLComponent, ControllerSpec):
 
         request.set_header(ReservedKey.TASK_NAME, task.name)
         replies = engine.send_aux_request(
-            targets=targets, topic=ReservedTopic.CLIENT_CONTROLLER_TASK, request=request,
+            targets=targets, topic=ReservedTopic.DO_TASK, request=request,
             timeout=task.timeout, fl_ctx=fl_ctx
         )
 

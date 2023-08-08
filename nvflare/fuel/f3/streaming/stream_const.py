@@ -48,3 +48,4 @@ class StreamHeaderKey:
     TOPIC = STREAM_PREFIX + "tp"
     OBJECT_STREAM_ID = STREAM_PREFIX + "os"
     OBJECT_INDEX = STREAM_PREFIX + "oi"
+    STREAM_REQ_ID = STREAM_PREFIX + "ri"

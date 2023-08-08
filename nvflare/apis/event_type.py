@@ -28,7 +28,6 @@ class EventType(object):
     END_WORKFLOW = "_end_workflow"
     ABORT_TASK = "_abort_task"
     FATAL_SYSTEM_ERROR = "_fatal_system_error"
-    FATAL_TASK_ERROR = "_fatal_task_error"
     JOB_DEPLOYED = "_job_deployed"
     JOB_STARTED = "_job_started"
     JOB_COMPLETED = "_job_completed"
@@ -63,3 +62,5 @@ class EventType(object):
 
     # event types for job scheduling - client side
     BEFORE_CHECK_RESOURCE_MANAGER = "_before_check_resource_manager"
+
+    BEFORE_BUILD_COMPONENT = "_before_build_component"

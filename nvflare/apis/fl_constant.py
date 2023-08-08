@@ -101,6 +101,8 @@ class ReservedKey(object):
     JOB_DEPLOY_DETAIL = "__job_deploy_detail__"
     FATAL_SYSTEM_ERROR = "__fatal_system_error__"
     JOB_IS_UNSAFE = "__job_is_unsafe__"
+    CUSTOM_PROPS = "__custom_props__"
+    EXCEPTIONS = "__exceptions__"
 
 
 class FLContextKey(object):
@@ -114,6 +116,7 @@ class FLContextKey(object):
     EVENT_ORIGIN_SITE = ReservedKey.EVENT_ORIGIN_SITE
     EVENT_DATA = ReservedKey.EVENT_DATA
     EVENT_SCOPE = ReservedKey.EVENT_SCOPE
+    EXCEPTIONS = ReservedKey.EXCEPTIONS
     CLIENT_NAME = ReservedKey.CLIENT_NAME
     WORKSPACE_ROOT = ReservedKey.WORKSPACE_ROOT
     CURRENT_RUN = ReservedKey.RUN_NUM
@@ -149,14 +152,18 @@ class FLContextKey(object):
     JOB_PARTICIPANTS = "__job_participants"
     JOB_BLOCK_REASON = "__job_block_reason"  # why the job should be blocked from scheduling
     SSID = "__ssid__"
+    COMPONENT_BUILD_ERROR = "__component_build_error__"
+    COMPONENT_CONFIG = "__component_config__"
+    COMPONENT_NODE = "__component_node__"
+    CONFIG_CTX = "__config_ctx__"
 
 
 class ReservedTopic(object):
 
     END_RUN = "__end_run__"
     ABORT_ASK = "__abort_task__"
+    DO_TASK = "__do_task__"
     AUX_COMMAND = "__aux_command__"
-    CLIENT_CONTROLLER_TASK = "__client_controller_task__"
 
 
 class AdminCommandNames(object):
@@ -288,6 +295,7 @@ class RunProcessKey(object):
     JOB_ID = "_job_id"
     PARTICIPANTS = "_participants"
     PROCESS_FINISHED = "_process_finished"
+    PROCESS_EXE_ERROR = "_process_exe_error"
     PROCESS_RETURN_CODE = "_process_return_code"
 
 
@@ -348,6 +356,7 @@ class WorkspaceConstants:
     DEFAULT_RESOURCES_CONFIG = RESOURCES_CONFIG + ".default"
     PRIVACY_CONFIG = "privacy.json"
     SAMPLE_PRIVACY_CONFIG = PRIVACY_CONFIG + ".sample"
+    JOB_RESOURCES_CONFIG = "job_resources.json"
 
     ADMIN_STARTUP_CONFIG = "fed_admin.json"
 
@@ -368,3 +377,17 @@ class SecureTrainConst:
     SSL_ROOT_CERT = "ssl_root_cert"
     SSL_CERT = "ssl_cert"
     PRIVATE_KEY = "ssl_private_key"
+
+
+class FLMetaKey:
+    NUM_STEPS_CURRENT_ROUND = "NUM_STEPS_CURRENT_ROUND"
+    PROCESSED_ALGORITHM = "PROCESSED_ALGORITHM"
+    PROCESSED_KEYS = "PROCESSED_KEYS"
+    INITIAL_METRICS = "initial_metrics"
+    FILTER_HISTORY = "filter_history"
+    CONFIGS = "configs"
+    VALIDATE_TYPE = "validate_type"
+    CURRENT_ROUND = "current_round"
+    TOTAL_ROUNDS = "total_rounds"
+    JOB_ID = "job_id"
+    SITE_NAME = "site_name"

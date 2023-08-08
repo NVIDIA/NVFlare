@@ -294,6 +294,15 @@ class NVFTestDriver:
             self.logger.info(f"{k}: {v}")
         self.logger.info("-" * length + "\n")
 
+    def _get_run_state(self, run_state):
+        if self.job_id and self.super_admin_api:
+            job_meta = get_job_meta(self.super_admin_api, job_id=self.job_id)
+            job_run_status = job_meta.get("status")
+            stats = self._get_stats(target=TargetType.SERVER, job_id=self.job_id)
+            # update run_state
+            changed, run_state = _update_run_state(stats=stats, run_state=run_state, job_run_status=job_run_status)
+        return run_state
+
     def reset_test_info(self, reset_job_info=False):
         self.test_done = False
         self.admin_api_response = None
@@ -311,12 +320,7 @@ class NVFTestDriver:
         self.test_done = False
         while not self.test_done:
 
-            if self.job_id:
-                job_meta = get_job_meta(self.super_admin_api, job_id=self.job_id)
-                job_run_status = job_meta.get("status")
-                stats = self._get_stats(target=TargetType.SERVER, job_id=self.job_id)
-                # update run_state
-                changed, run_state = _update_run_state(stats=stats, run_state=run_state, job_run_status=job_run_status)
+            run_state = self._get_run_state(run_state)
 
             if event_idx < len(event_sequence):
                 if not event_triggered[event_idx]:
@@ -360,6 +364,7 @@ class NVFTestDriver:
                     if result["type"] == "run_state":
                         # check result state only when server is up and running
                         if self.server_status() is not None:
+                            run_state = self._get_run_state(run_state)
                             # compare run_state to expected result data from the test case
                             _check_run_state(state=run_state, expected_state=result["data"])
                             event_idx += 1
