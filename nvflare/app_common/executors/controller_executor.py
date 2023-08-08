@@ -52,4 +52,3 @@ class ControllerExecutor(Executor):
             return result
         except:
             return make_reply(ReturnCode.EMPTY_RESULT)
-

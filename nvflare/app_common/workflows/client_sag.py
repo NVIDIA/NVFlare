@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Union, List, Optional, Dict
+from typing import Dict, List, Optional, Union
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import Task
@@ -26,10 +26,7 @@ from nvflare.app_common.app_constant import AppConstants
 
 
 class ClientScatterAndGather(FLComponent):
-
-    def __init__(self,
-                 aggregator_id=AppConstants.DEFAULT_AGGREGATOR_ID
-                 ):
+    def __init__(self, aggregator_id=AppConstants.DEFAULT_AGGREGATOR_ID):
         self.aggregator_id = aggregator_id
 
         self.aggregator = None
@@ -62,8 +59,8 @@ class ClientScatterAndGather(FLComponent):
         fl_ctx: FLContext,
         targets: Union[List[Client], List[str], None] = None,
         task_props: Optional[Dict] = None,
-        timeout=0
-        ) -> Shareable:
+        timeout=0,
+    ) -> Shareable:
 
         task = Task(name=task_name, data=task_input, props=task_props, timeout=timeout)
         results = self.controller.broadcast_and_wait(

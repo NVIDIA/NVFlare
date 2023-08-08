@@ -15,7 +15,7 @@
 import logging
 
 from nvflare.apis.utils.fl_context_utils import generate_log_message
-from nvflare.security.logging import secure_format_traceback, secure_format_exception
+from nvflare.security.logging import secure_format_exception, secure_format_traceback
 
 from .analytix import AnalyticsData, AnalyticsDataType
 from .event_type import EventType
@@ -268,9 +268,7 @@ class FLComponent(StatePersistable):
                 except Exception as e:
                     self.log_exception(
                         fl_ctx,
-                        "Error processing in task result filter {}: {}".format(
-                            type(f), secure_format_exception(e)
-                        ),
+                        "Error processing in task result filter {}: {}".format(type(f), secure_format_exception(e)),
                     )
                     filter_error = True
                     break

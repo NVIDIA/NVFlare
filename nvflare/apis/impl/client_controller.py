@@ -11,13 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Union, List
+from typing import List, Union
 
 from nvflare.apis.client import Client
-from nvflare.apis.controller_spec import ControllerSpec, Task, SendOrder, ClientTask, TaskCompletionStatus
+from nvflare.apis.controller_spec import ClientTask, ControllerSpec, SendOrder, Task, TaskCompletionStatus
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
-from nvflare.apis.fl_constant import FLContextKey, ReservedTopic, ReservedKey, ReturnCode, SiteType
+from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReservedTopic, ReturnCode, SiteType
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
@@ -26,8 +26,9 @@ from nvflare.security.logging import secure_format_exception
 
 
 class ClientController(FLComponent, ControllerSpec):
-    def __init__(self,
-                 ) -> None:
+    def __init__(
+        self,
+    ) -> None:
         super().__init__()
         self.task_data_filters = None
         self.task_result_filters = None
@@ -46,17 +47,31 @@ class ClientController(FLComponent, ControllerSpec):
     def stop_controller(self, fl_ctx: FLContext):
         pass
 
-    def process_result_of_unknown_task(self, client: Client, task_name: str, client_task_id: str, result: Shareable,
-                                       fl_ctx: FLContext):
+    def process_result_of_unknown_task(
+        self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
+    ):
         pass
 
-    def broadcast(self, task: Task, fl_ctx: FLContext, targets: Union[List[Client], List[str], None] = None,
-                  min_responses: int = 0, wait_time_after_min_received: int = 0):
+    def broadcast(
+        self,
+        task: Task,
+        fl_ctx: FLContext,
+        targets: Union[List[Client], List[str], None] = None,
+        min_responses: int = 0,
+        wait_time_after_min_received: int = 0,
+    ):
 
         return self.broadcast_and_wait(task, fl_ctx, targets, min_responses, wait_time_after_min_received)
 
-    def broadcast_and_wait(self, task: Task, fl_ctx: FLContext, targets: Union[List[Client], List[str], None] = None,
-                           min_responses: int = 0, wait_time_after_min_received: int = 0, abort_signal: Signal = None):
+    def broadcast_and_wait(
+        self,
+        task: Task,
+        fl_ctx: FLContext,
+        targets: Union[List[Client], List[str], None] = None,
+        min_responses: int = 0,
+        wait_time_after_min_received: int = 0,
+        abort_signal: Signal = None,
+    ):
         engine = fl_ctx.get_engine()
         request = task.data
         # apply task filters
@@ -84,8 +99,7 @@ class ClientController(FLComponent, ControllerSpec):
 
         request.set_header(ReservedKey.TASK_NAME, task.name)
         replies = engine.send_aux_request(
-            targets=targets, topic=ReservedTopic.DO_TASK, request=request,
-            timeout=task.timeout, fl_ctx=fl_ctx
+            targets=targets, topic=ReservedTopic.DO_TASK, request=request, timeout=task.timeout, fl_ctx=fl_ctx
         )
 
         self.log_debug(fl_ctx, "firing event EventType.AFTER_TASK_EXECUTION")
@@ -123,9 +137,8 @@ class ClientController(FLComponent, ControllerSpec):
                 task.task_done_cb(task=task, fl_ctx=fl_ctx)
             except Exception as e:
                 self.log_exception(
-                    fl_ctx,
-                    f"processing error in task_done_cb error on task {task.name}: {secure_format_exception(e)}"
-                    ),
+                    fl_ctx, f"processing error in task_done_cb error on task {task.name}: {secure_format_exception(e)}"
+                ),
                 task.completion_status = TaskCompletionStatus.ERROR
                 task.exception = e
                 return self._make_error_reply(ReturnCode.ERROR, targets)
@@ -167,8 +180,8 @@ class ClientController(FLComponent, ControllerSpec):
                     self.log_exception(
                         fl_ctx,
                         f"processing error in {task_cb} on task {client_task.task.name} "
-                        f"({client_task.id}): {secure_format_exception(e)}"
-                        )
+                        f"({client_task.id}): {secure_format_exception(e)}",
+                    )
                     # this task cannot proceed anymore
                     task.completion_status = TaskCompletionStatus.ERROR
                     task.exception = e
@@ -185,13 +198,25 @@ class ClientController(FLComponent, ControllerSpec):
                 client_task = t
         return client_task
 
-    def send(self, task: Task, fl_ctx: FLContext, targets: Union[List[Client], List[str], None] = None,
-             send_order: SendOrder = SendOrder.SEQUENTIAL, task_assignment_timeout: int = 0):
+    def send(
+        self,
+        task: Task,
+        fl_ctx: FLContext,
+        targets: Union[List[Client], List[str], None] = None,
+        send_order: SendOrder = SendOrder.SEQUENTIAL,
+        task_assignment_timeout: int = 0,
+    ):
         return self.send_and_wait(task, fl_ctx, targets, send_order, task_assignment_timeout)
 
-    def send_and_wait(self, task: Task, fl_ctx: FLContext, targets: Union[List[Client], List[str], None] = None,
-                      send_order: SendOrder = SendOrder.SEQUENTIAL, task_assignment_timeout: int = 0,
-                      abort_signal: Signal = None):
+    def send_and_wait(
+        self,
+        task: Task,
+        fl_ctx: FLContext,
+        targets: Union[List[Client], List[str], None] = None,
+        send_order: SendOrder = SendOrder.SEQUENTIAL,
+        task_assignment_timeout: int = 0,
+        abort_signal: Signal = None,
+    ):
         replies = {}
         for target in targets:
             reply = self.broadcast_and_wait(task, fl_ctx, [target], abort_signal=abort_signal)
