@@ -177,7 +177,7 @@ Congratulations!
 You've successfully run your numpy federated learning system with cross site validation.
 
 The full source code for this exercise can be found in
-`examples/hello-numpy-cross-val <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-numpy-cross-val/>`_.
+`examples/hello-numpy-cross-val <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-numpy-cross-val/>`_.
 
 Previous Versions of Hello Cross-Site Validation
 ------------------------------------------------
@@ -185,3 +185,4 @@ Previous Versions of Hello Cross-Site Validation
   - `hello-numpy-cross-val for 2.0 <https://github.com/NVIDIA/NVFlare/tree/2.0/examples/hello-numpy-cross-val>`_
   - `hello-numpy-cross-val for 2.1 <https://github.com/NVIDIA/NVFlare/tree/2.1/examples/hello-numpy-cross-val>`_
   - `hello-numpy-cross-val for 2.2 <https://github.com/NVIDIA/NVFlare/tree/2.2/examples/hello-numpy-cross-val>`_
+  - `hello-numpy-cross-val for 2.3 <https://github.com/NVIDIA/NVFlare/tree/2.3/examples/hello-world/hello-numpy-cross-val/>`_

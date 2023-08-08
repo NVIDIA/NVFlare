@@ -27,9 +27,7 @@ Clone NVFLARE repo to get examples, switch main branch (latest stable branch)
 
 Note on branches:
 
-* The `dev <https://github.com/NVIDIA/NVFlare/tree/dev>`_ branch is the default (unstable) development branch
-
-* The `main <https://github.com/NVIDIA/NVFlare/tree/main>`_ branch is the stable branch, reflecting the latest release
+* The `main <https://github.com/NVIDIA/NVFlare/tree/main>`_ branch is the default (unstable) development branch
 
 * The 2.0, 2.1, 2.2, and 2.3 etc. branches are the branches for each major release and minor patches
 
