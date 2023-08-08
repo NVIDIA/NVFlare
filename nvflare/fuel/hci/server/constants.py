@@ -35,3 +35,4 @@ class ConnProps(object):
     JOB_DATA = "_jobData"
     JOB_META = "_jobMeta"
     CMD_TIMEOUT = "_cmdTimeout"
+    CUSTOM_PROPS = "_customProps"

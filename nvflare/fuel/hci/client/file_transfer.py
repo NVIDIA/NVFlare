@@ -30,7 +30,7 @@ from nvflare.fuel.utils.zip_utils import split_path, unzip_all_from_bytes, zip_d
 from nvflare.lighter.utils import load_private_key_file, sign_folders
 from nvflare.security.logging import secure_format_exception, secure_log_traceback
 
-from .api_spec import ApiPocValue, CommandContext, ReplyProcessor
+from .api_spec import CommandContext, ReplyProcessor
 from .api_status import APIStatus
 
 
@@ -325,7 +325,7 @@ class FileTransferModule(CommandModule):
 
         # sign folders and files
         api = ctx.get_api()
-        if api.poc_key != ApiPocValue.ADMIN:
+        if not api.insecure:
             # we are not in POC mode
             client_key_file_path = api.client_key
             private_key = load_private_key_file(client_key_file_path)

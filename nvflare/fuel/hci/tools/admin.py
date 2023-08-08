@@ -18,9 +18,9 @@ import os
 from nvflare.apis.workspace import Workspace
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.hci.client.cli import AdminClient, CredentialType
+from nvflare.fuel.hci.client.config import FLAdminClientStarterConfigurator
 from nvflare.fuel.hci.client.file_transfer import FileTransferModule
 from nvflare.fuel.hci.client.overseer_service_finder import ServiceFinderByOverseer
-from nvflare.private.fed.app.fl_conf import FLAdminClientStarterConfigurator
 from nvflare.security.logging import secure_format_exception
 
 
@@ -106,6 +106,7 @@ def main():
         debug=args.with_debug,
         service_finder=service_finder,
         username=admin_config.get("username", ""),
+        handlers=conf.handlers
         # cli_history_size=args.cli_history_size,
     )
 

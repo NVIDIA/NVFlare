@@ -11,11 +11,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import os
+import re
+import sys
 
 from nvflare.apis.workspace import Workspace
+from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.utils.json_scanner import Node
 from nvflare.fuel.utils.wfconf import ConfigContext
 from nvflare.private.json_configer import JsonConfigurator
+
+from .event import EventHandler
 
 FL_PACKAGES = ["nvflare"]
 FL_MODULES = ["ha"]
@@ -33,19 +39,26 @@ class FLAdminClientStarterConfigurator(JsonConfigurator):
         base_pkgs = FL_PACKAGES
         module_names = FL_MODULES
 
+        custom_dir = workspace.get_client_custom_dir()
+        if os.path.isdir(custom_dir):
+            sys.path.append(custom_dir)
+
         admin_config_file_path = workspace.get_admin_startup_file_path()
+        resources_file_path = workspace.get_resources_file_path()
+        config_files = [admin_config_file_path, resources_file_path]
 
         JsonConfigurator.__init__(
             self,
-            config_file_name=admin_config_file_path,
+            config_file_name=config_files,
             base_pkgs=base_pkgs,
             module_names=module_names,
             exclude_libs=True,
         )
 
         self.workspace = workspace
-        self.admin_config_file_path = admin_config_file_path
+        self.admin_config_file_path = config_files
         self.overseer_agent = None
+        self.handlers = []
 
     def process_config_element(self, config_ctx: ConfigContext, node: Node):
         """Process config element.
@@ -59,6 +72,13 @@ class FLAdminClientStarterConfigurator(JsonConfigurator):
 
         if path == "admin.overseer_agent":
             self.overseer_agent = self.build_component(element)
+            return
+
+        if re.search(r"^handlers\.#[0-9]+$", path):
+            c = self.build_component(element)
+            if not isinstance(c, EventHandler):
+                raise ConfigError(f"component must be EventHandler but got {type(c)}")
+            self.handlers.append(c)
             return
 
     def start_config(self, config_ctx: ConfigContext):

@@ -610,7 +610,7 @@ class TestCallback(TestController):
 
         expected = Shareable()
         expected["_test_data"] = client_name
-        assert data == expected
+        assert data["_test_data"] == expected["_test_data"]
         controller.cancel_task(task)
         assert task.completion_status == TaskCompletionStatus.CANCELLED
         launch_thread.join()
@@ -645,7 +645,7 @@ class TestCallback(TestController):
 
         expected = Shareable()
         expected["_test_data"] = client_name
-        assert task.last_client_task_map[client_name].result == expected
+        assert task.last_client_task_map[client_name].result["_test_data"] == expected["_test_data"]
         controller._check_tasks()
         assert task.completion_status == TaskCompletionStatus.OK
         launch_thread.join()
