@@ -15,14 +15,18 @@ from typing import Any, Dict, List
 
 from nvflare.fuel.utils.config import Config
 from nvflare.fuel.utils.config_factory import ConfigFactory
+from pyhocon import ConfigFactory as CF, ConfigTree
 
 
 def build_reverse_order_index(config_file_path: str) -> (Dict[str, List[str]], Dict[str, Any]):
-    config: Config = ConfigFactory.load_config(config_file_path)
-    config_dict: Dict[str, Any] = config.to_dict()
-    indices: Dict[str, List[str]] = build_dict_reverse_order_index(config_dict)
-    # indices: Dict[str, List[str]] = expand_indices(indices)
-    return indices, config_dict
+    # config: Config = ConfigFactory.load_config(config_file_path)
+    config: ConfigTree = CF.parse_file(config_file_path)
+    components: list = config.get("components", None)
+    component_ids = [comp.get("id") for comp in components] if components else []
+
+    # config_dict: Dict[str, Any] = config.to_dict()
+    indices: Dict[str, List[str]] = build_dict_reverse_order_index(config, excluded_keys = component_ids)
+    return indices, config
 
 
 def expand_indices(indices: Dict[str, List[str]]) -> Dict[str, List[str]]:
@@ -53,18 +57,24 @@ def expand_indices(indices: Dict[str, List[str]]) -> Dict[str, List[str]]:
 from typing import Callable, Dict, List, Optional, Type
 
 
-def build_list_reverse_order_index(config_list: List, key_path_dict: Dict, key: str, root_path: str) -> Dict:
+def build_list_reverse_order_index(config_list: List,
+                                   key_path_dict: Dict,
+                                   key: str,
+                                   root_path: str,
+                                   excluded_keys: Optional[List[str]] = None) -> Dict:
     """
     Recursively build a reverse order index for a list.
     """
+    if excluded_keys is None:
+        excluded_keys = []
     result = key_path_dict.get(root_path, [])
     for index, value in enumerate(config_list):
         key_path = f"{root_path}[{index}]"
         key_with_index = f"{key}[{index}]"
         if isinstance(value, list):
-            build_list_reverse_order_index(value, key_path_dict, key_with_index, root_path=key_path)
+            build_list_reverse_order_index(value, key_path_dict, key_with_index, root_path=key_path, excluded_keys = excluded_keys)
         elif isinstance(value, dict):
-            build_dict_reverse_order_index(value, key_path_dict, root_path=key_path)
+            build_dict_reverse_order_index(value, key_path_dict, root_path=key_path, excluded_keys = excluded_keys)
         elif isinstance(value, (int, float, str, bool, Callable, Type)):
             result.append(key_path)
             key_path_dict[key_with_index] = result
@@ -74,21 +84,30 @@ def build_list_reverse_order_index(config_list: List, key_path_dict: Dict, key: 
 
 
 def build_dict_reverse_order_index(
-    config_dict: Dict, key_path_dict: Optional[Dict] = None, root_path: str = ""
-) -> Dict[str, List[str]]:
+        config_dict: Dict,
+        key_path_dict: Optional[Dict] = None,
+        root_path: str = "",
+        excluded_keys : List[str] = None
+    ) -> Dict[str, List[str]]:
     """
     Recursively build a reverse order index for a dictionary.
     """
+    if excluded_keys is None:
+        excluded_keys = []
+
     if key_path_dict is None:
         key_path_dict = {}
 
     for key, value in config_dict.items():
+        if key in excluded_keys:
+            continue
+
         key_path = f"{root_path}.{key}" if root_path else key
         result = key_path_dict.get(key, [])
         if isinstance(value, list):
-            key_path_dict = build_list_reverse_order_index(value, key_path_dict, key, root_path=key_path)
+            key_path_dict = build_list_reverse_order_index(value, key_path_dict, key, root_path=key_path, excluded_keys = excluded_keys)
         elif isinstance(value, dict):
-            key_path_dict = build_dict_reverse_order_index(value, key_path_dict, root_path=key_path)
+            key_path_dict = build_dict_reverse_order_index(value, key_path_dict, root_path=key_path, excluded_keys = excluded_keys)
         elif isinstance(value, (int, float, str, bool, Callable, Type)):
             result.append(key_path)
             key_path_dict[key] = result

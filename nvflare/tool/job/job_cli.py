@@ -17,7 +17,8 @@ import pathlib
 import shutil
 from distutils.dir_util import copy_tree
 from tempfile import mkdtemp
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any
+import re
 
 from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree
@@ -27,7 +28,7 @@ from nvflare.cli_exception import CLIException
 from nvflare.fuel.flare_api.flare_api import new_secure_session
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
-from nvflare.tool.job.config.configer import merge_configs_from_cli
+from nvflare.tool.job.config.configer import merge_configs_from_cli, build_config_file_indexers
 from nvflare.utils.cli_utils import append_if_not_in_list, get_curr_dir, get_startup_kit_dir, save_config, \
     find_job_template_location, get_hidden_nvflare_dir
 
@@ -115,10 +116,9 @@ def create_job(cmd_args):
     job_template_location = find_job_template_location()
     wf_index_conf = build_workflow_indices(job_template_location)
     job_folder = cmd_args.job_folder
-    server_dst_path = dst_config_path(job_folder, "config_fed_server.conf")
-    client_dst_path = dst_config_path(job_folder, "config_fed_client.conf")
+    config_dir = get_config_dir(job_folder)
 
-    fmt, real_config_path = ConfigFactory.search_config_format("config_fed_server", [get_config_dir(job_folder)])
+    fmt, real_config_path = ConfigFactory.search_config_format("config_fed_server", [config_dir])
     if real_config_path and not cmd_args.force:
         print(
             f"""warning: configuration files:
@@ -126,6 +126,7 @@ def create_job(cmd_args):
                     already exists. Not generating the config files. If you would like to overwrite, use -force option"""
         )
         return
+
     target_wf_name = cmd_args.workflow
     target_wf_config = wf_index_conf.get(f"workflows.{target_wf_name}", None)
     if not target_wf_config:
@@ -135,11 +136,20 @@ def create_job(cmd_args):
         )
     job_template_dir = find_job_template_location()
     src = os.path.join(job_template_dir, "workflows", target_wf_name)
-    copy_tree(src = src, dst = get_config_dir(job_folder))
+    copy_tree(src=src, dst=config_dir)
 
-#   todo: build reverse index for the target workflow. save location
+    template_variables = CF.parse_string("{}")
+    excluded = ["template_variables.conf", "info.md", "info.info"]
+    file_indices: Dict[str, (Dict[str, List[str]], Dict[str, Any])] = build_config_file_indexers(config_dir, excluded)
+    for file, (indices, _) in file_indices.items():
+        file_name = os.path.basename(file).split(".")[0]
+        for index, index_paths in indices.items():
+            index = re.sub("\\[+", "_", index)
+            index = re.sub("]+", "_", index)
+            template_variables.put(f"{file_name}.{index}", index_paths)
 
-
+    dst_path = os.path.join(config_dir, "template_variables")
+    save_config(template_variables, dst_path)
 
 
 def show_workflows(cmd_args):
@@ -160,7 +170,8 @@ def show_workflows(cmd_args):
 
     print(" " * 5, name, description, controller_type, client_category)
     print("-" * 120)
-    for name, job_wf_conf in wf_conf.items():
+    for name in sorted(wf_conf.keys()):
+        job_wf_conf = wf_conf.get(name)
         name = fix_length_format(name, name_fix_length)
         description = fix_length_format(job_wf_conf.get("description"), description_fix_length)
         client_category = fix_length_format(job_wf_conf.get("client_category"), client_category_fix_length)

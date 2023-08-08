@@ -13,7 +13,7 @@
 # limitations under the License.
 import os
 import shutil
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree
@@ -25,8 +25,8 @@ from nvflare.tool.job.config.config_indexer import build_reverse_order_index
 def merge_configs_from_cli(cmd_args) -> Dict[str, ConfigTree]:
     cli_config_dict: Dict[str, Dict[str, str]] = get_cli_config(cmd_args)
     copy_app_config_file(cli_config_dict, cmd_args)
-
-    indices: Dict[str, (Dict, Dict)] = build_config_file_indexers(cmd_args)
+    config_dir = os.path.join(cmd_args.job_folder, "app", "config")
+    indices: Dict[str, (Dict, Dict)] = build_config_file_indexers(config_dir)
     return merge_configs(indices, cli_config_dict)
 
 
@@ -59,8 +59,8 @@ def extract_string_with_index(input_string):
             break
 
         string_before = input_string[:opening_bracket_index]
-        index = int(input_string[opening_bracket_index + 1 : closing_bracket_index])
-        string_after = input_string[closing_bracket_index + 1 :]
+        index = int(input_string[opening_bracket_index + 1: closing_bracket_index])
+        string_after = input_string[closing_bracket_index + 1:]
 
         result.append((string_before.strip("."), index, string_after.strip(".")))
         input_string = f"{string_before}{string_after}"
@@ -165,24 +165,26 @@ def parse_cli_config(cli_configs: List[str]) -> Dict[str, Dict[str, str]]:
     return cli_config_dict
 
 
-def build_config_file_indexers(cmd_args) -> Dict[str, dict]:
+def build_config_file_indexers(config_dir: str, excluded: Optional[List[str]] = None) -> Dict[str, dict]:
     """
     Build a dictionary of config file indexers for the given job folder.
 
     Args:
-        cmd_args: Command-line arguments.
+        excluded: if not None, we will excluded from the file list
+        config_dir:  Job config directory
 
     Returns:
         Dict[str, dict]: A dictionary where keys are absolute paths of config files
                          and values are their corresponding reverse order indexers.
     """
-    job_folder = cmd_args.job_folder
-    config_dir = os.path.join(job_folder, "app")
     config_extensions = ConfigFormat.extensions()
 
     config_file_index = {}
     for root, _, files in os.walk(config_dir):
         config_files = [f for f in files if os.path.splitext(f)[1] in config_extensions and not f.startswith("._")]
+        if excluded:
+            config_files = [f for f in config_files if f not in excluded]
+
         for f in config_files:
             f = str(os.path.abspath(os.path.join(root, f)))
             config_file_index[f] = build_reverse_order_index(f)
