@@ -84,8 +84,8 @@ class ClientExecutor(Executor, ClientController):
             if targets[index] == client_name:
                 break
 
-        if index != len(targets)-1:
-            next_target = targets[index+1]
+        if index != len(targets) - 1:
+            next_target = targets[index + 1]
         else:
             current_round = request.get_header(AppConstants.CURRENT_ROUND, 0)
             current_round += 1
@@ -96,4 +96,3 @@ class ClientExecutor(Executor, ClientController):
             else:
                 next_target = targets[0]
         return next_target
-

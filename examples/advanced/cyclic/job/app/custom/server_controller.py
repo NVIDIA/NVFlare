@@ -15,8 +15,8 @@
 import threading
 
 from nvflare.apis.client import Client
-from nvflare.apis.controller_spec import Task, ClientTask
-from nvflare.apis.fl_constant import ReturnCode, ReservedTopic
+from nvflare.apis.controller_spec import ClientTask, Task
+from nvflare.apis.fl_constant import ReservedTopic, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.impl.controller import Controller
 from nvflare.apis.shareable import Shareable, make_reply
@@ -26,8 +26,7 @@ from nvflare.app_common.app_event_type import AppEventType
 
 
 class ServerCyclicController(Controller):
-    def __init__(self, num_rounds: int = 5,
-                 task_name="train"):
+    def __init__(self, num_rounds: int = 5, task_name="train"):
         super().__init__()
 
         self.num_rounds = num_rounds
@@ -39,8 +38,7 @@ class ServerCyclicController(Controller):
         super().start_controller(fl_ctx)
 
         engine = fl_ctx.get_engine()
-        engine.register_aux_message_handler(topic=ReservedTopic.DO_TASK,
-                                            message_handle_func=self._handle_aux_message)
+        engine.register_aux_message_handler(topic=ReservedTopic.DO_TASK, message_handle_func=self._handle_aux_message)
 
     def _handle_aux_message(self, topic: str, request: Shareable, fl_ctx: FLContext) -> Shareable:
         final_rounds = request.get_header(AppConstants.CURRENT_ROUND)
@@ -75,8 +73,9 @@ class ServerCyclicController(Controller):
         )
 
         self.send(task=task, fl_ctx=fl_ctx, targets=[start_client])
-        self.logger.info(f"Task {task.name} has been sent to client {start_client}, "
-                         f"wait for the cyclic controller to finish ...")
+        self.logger.info(
+            f"Task {task.name} has been sent to client {start_client}, " f"wait for the cyclic controller to finish ..."
+        )
 
         self.waiter.wait()
         self.logger.info("The cyclic controller completed.")
@@ -85,8 +84,9 @@ class ServerCyclicController(Controller):
         # super()._process_result(client_task, fl_ctx)
         pass
 
-    def process_result_of_unknown_task(self, client: Client, task_name: str, client_task_id: str, result: Shareable,
-                                       fl_ctx: FLContext):
+    def process_result_of_unknown_task(
+        self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
+    ):
         pass
 
     def stop_controller(self, fl_ctx: FLContext):
@@ -94,4 +94,3 @@ class ServerCyclicController(Controller):
 
     def _persist_result(self, request, fl_ctx):
         self.logger.info(f"Persist the cyclic final result: {request}")
-
