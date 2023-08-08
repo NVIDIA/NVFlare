@@ -40,4 +40,4 @@ For a list of talks, blogs, and publications related to NVIDIA FLARE, see [here]
 
 ## License
 
-NVIDIA FLARE has Apache 2.0 license, as found in [LICENSE](https://github.com/NVIDIA/NVFlare/blob/dev/LICENSE) file. 
+NVIDIA FLARE has Apache 2.0 license, as found in [LICENSE](https://github.com/NVIDIA/NVFlare/blob/main/LICENSE) file. 
