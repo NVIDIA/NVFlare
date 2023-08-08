@@ -37,11 +37,12 @@ CMD_SUBMIT_JOB = "submit"
 
 
 def create_job2(cmd_args):
+    job_folder = cmd_args.job_folder
     prepare_job_folder(cmd_args)
     predefined = load_predefined_config()
     prepare_fed_config(cmd_args, predefined)
     prepare_meta_config(cmd_args)
-    prepare_model_exchange_config(cmd_args, predefined)
+    prepare_model_exchange_config(job_folder, cmd_args.force, predefined)
 
 
 def find_filename_basename(f: str):
@@ -52,31 +53,55 @@ def find_filename_basename(f: str):
         return basename
 
 
-def build_workflow_indices(job_template_dir) -> ConfigTree:
+def build_workflow_indices(job_template_dir: str) -> ConfigTree:
+    # premature optimization ?
+    from checksumdir import dirhash
+    md5hash = dirhash(job_template_dir, 'md5')
+    wf_registry_path = get_workflow_registry_file_path()
+    if os.path.isfile(wf_registry_path):
+        conf = CF.parse_file(wf_registry_path)
+        local_hash = conf.get("md5hash", None)
+        if local_hash == md5hash:
+            print("return loaded workflows")
+            return conf
+
+    conf = _build_wf_index(job_template_dir, md5hash)
+    return conf
+
+
+def _build_wf_index(job_template_dir, md5hash):
     workflows_dir = os.path.join(job_template_dir, "workflows")
     conf = CF.parse_string("{ workflows = {} }")
     config_file_base_names = ["config_fed_client", "config_fed_server", "config_exchange", "meta"]
     workflow_conf = conf.get("workflows")
-
+    keys = ["description", "controller_type", "client_category"]
     for root, dirs, files in os.walk(workflows_dir):
         config_files = [f for f in files if find_filename_basename(f) in config_file_base_names]
         if len(config_files) > 0:
             workflow_name = find_filename_basename(root)
             info_conf = get_wf_info_config(root)
-            print("info=", info_conf)
-            workflow_conf.put(f"{workflow_name}.description", get_wf_description(info_conf))
-            workflow_conf.put(f"{workflow_name}.client_category", get_wf_client_category(info_conf))
-
+            for key in keys:
+                value = info_conf.get(key, "NA") if info_conf else "NA"
+                workflow_conf.put(f"{workflow_name}.{key}", value)
     # save the index file for debugging purpose
+    conf.put("md5hash", md5hash)
     save_workflow_index_file(conf)
+
+    # todo: save the job_template_dir is not saved already
+
     return conf
 
 
 def save_workflow_index_file(conf):
-    dst_filename = "workflow_registry.conf"
-    hidden_nvflare_dir = get_hidden_nvflare_dir()
-    dst_path = os.path.join(hidden_nvflare_dir, dst_filename)
+    dst_path = get_workflow_registry_file_path()
     save_config(conf, dst_path)
+
+
+def get_workflow_registry_file_path():
+    filename = "workflow_registry.conf"
+    hidden_nvflare_dir = get_hidden_nvflare_dir()
+    file_path = os.path.join(hidden_nvflare_dir, filename)
+    return file_path
 
 
 def get_wf_info_config(workflow_dir):
@@ -85,18 +110,36 @@ def get_wf_info_config(workflow_dir):
     return CF.parse_file(info_conf_path) if os.path.isfile(info_conf_path) else None
 
 
-def get_wf_description(info_conf):
-    return info_conf.get("description", "NA") if info_conf else "NA"
-
-
-def get_wf_client_category(info_conf):
-    return info_conf.get("client_category", "NA") if info_conf else "NA"
-
-
 def create_job(cmd_args):
     prepare_job_folder(cmd_args)
     job_template_location = find_job_template_location()
     wf_index_conf = build_workflow_indices(job_template_location)
+    job_folder = cmd_args.job_folder
+    server_dst_path = dst_config_path(job_folder, "config_fed_server.conf")
+    client_dst_path = dst_config_path(job_folder, "config_fed_client.conf")
+
+    fmt, real_config_path = ConfigFactory.search_config_format("config_fed_server", [get_config_dir(job_folder)])
+    if real_config_path and not cmd_args.force:
+        print(
+            f"""warning: configuration files:
+                    {"config_fed_server.[json|conf|yml]"}
+                    already exists. Not generating the config files. If you would like to overwrite, use -force option"""
+        )
+        return
+    target_wf_name = cmd_args.workflow
+    target_wf_config = wf_index_conf.get(f"workflows.{target_wf_name}", None)
+    if not target_wf_config:
+        raise ValueError(
+            f"Invalid workflow name {target_wf_name}, "
+            f"please check the available workflows using nvflare job show_workflows"
+        )
+    job_template_dir = find_job_template_location()
+    src = os.path.join(job_template_dir, "workflows", target_wf_name)
+    copy_tree(src = src, dst = get_config_dir(job_folder))
+
+#   todo: build reverse index for the target workflow. save location
+
+
 
 
 def show_workflows(cmd_args):
@@ -106,19 +149,28 @@ def show_workflows(cmd_args):
     print("\nThe following workflow templates are available: \n")
     wf_conf = wf_index_conf.get("workflows")
     print("-" * 120)
-    print(" " * 5, "name", " " * 15, "description", " " * 58, "client category")
-    print("-" * 120)
     name_fix_length = 20
-    description_fix_length = 70
+    description_fix_length = 55
+    controller_type_fix_length = 20
     client_category_fix_length = 20
-    for name, job_wf_conf in wf_conf.items():
-        name = f"{name[:name_fix_length]:{name_fix_length}}"
-        description = job_wf_conf.get(f"description")
-        description = f"{description[:description_fix_length]:{description_fix_length}}"
-        client_category = job_wf_conf.get(f"client_category")
-        client_category = f"{client_category[:client_category_fix_length]:{client_category_fix_length}}"
-        print(" " * 5, name, description, client_category)
+    name = fix_length_format("name", name_fix_length)
+    description = fix_length_format("description", description_fix_length)
+    client_category = fix_length_format("client category", client_category_fix_length)
+    controller_type = fix_length_format("controller type", controller_type_fix_length)
+
+    print(" " * 5, name, description, controller_type, client_category)
     print("-" * 120)
+    for name, job_wf_conf in wf_conf.items():
+        name = fix_length_format(name, name_fix_length)
+        description = fix_length_format(job_wf_conf.get("description"), description_fix_length)
+        client_category = fix_length_format(job_wf_conf.get("client_category"), client_category_fix_length)
+        controller_type = fix_length_format(job_wf_conf.get("controller_type"), controller_type_fix_length)
+        print(" " * 5, name, description, controller_type, client_category)
+    print("-" * 120)
+
+
+def fix_length_format(name: str, name_fix_length: int):
+    return f"{name[:name_fix_length]:{name_fix_length}}"
 
 
 def submit_job(cmd_args):
@@ -235,18 +287,11 @@ def define_create_job_parser(job_subparser):
     )
     create_parser.add_argument(
         "-w",
-        "--workflows",
+        "--workflow",
         type=str,
-        nargs="*",
-        default=["SAG"],
-        help="""Workflows available works are
-                                       SAG for ScatterAndGather,
-                                       CROSS for CrossSiteModelEval or
-                                       CYCLIC for CyclicController """,
-    )
-    create_parser.add_argument("-m", "--min_clients", type=int, nargs="?", default=1, help="min clients default to 1")
-    create_parser.add_argument(
-        "-n", "--num_rounds", type=int, nargs="?", default=1, help="number of total rounds, default to 1'"
+        nargs="?",
+        default="sag_pt",
+        help="""workflow name, use show_workflows to see available workflows from job templates """,
     )
     create_parser.add_argument("-s", "--script", type=str, nargs="?", help="""code script such as train.py""")
     create_parser.add_argument(
@@ -316,9 +361,9 @@ def get_upload_dir(startup_dir) -> str:
     return upload_dir
 
 
-def prepare_model_exchange_config(cmd_args, predefined):
-    dst_path = dst_config_path(cmd_args, "config_exchange.json")
-    if os.path.isfile(dst_path) and not cmd_args.force:
+def prepare_model_exchange_config(job_folder: str, force: bool, predefined):
+    dst_path = dst_config_path(job_folder, "config_exchange.json")
+    if os.path.isfile(dst_path) and not force:
         return
 
     dst_config = load_src_config_template("config_exchange.conf")
@@ -366,16 +411,20 @@ def prepare_fed_config(cmd_args, predefined):
     save_config(client_config, client_dst_path)
 
 
-def dst_app_path(cmd_args):
-    job_folder = cmd_args.job_folder
+def dst_app_path(job_folder: str):
     return os.path.join(job_folder, "app")
 
 
-def dst_config_path(cmd_args, config_filename):
-    app_dir = dst_app_path(cmd_args)
-    config_dir = os.path.join(app_dir, "config")
+def dst_config_path(job_folder, config_filename):
+    config_dir = get_config_dir(job_folder)
     dst_path = os.path.join(config_dir, config_filename)
     return dst_path
+
+
+def get_config_dir(job_folder):
+    app_dir = dst_app_path(job_folder)
+    config_dir = os.path.join(app_dir, "config")
+    return config_dir
 
 
 def convert_args_list_to_dict(kvs: Optional[List[str]] = None) -> dict:
