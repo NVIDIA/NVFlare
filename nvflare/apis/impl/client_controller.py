@@ -21,7 +21,6 @@ from nvflare.apis.fl_constant import FLContextKey, ReservedKey, ReservedTopic, R
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
-from nvflare.private.privacy_manager import Scope
 from nvflare.security.logging import secure_format_exception
 
 
