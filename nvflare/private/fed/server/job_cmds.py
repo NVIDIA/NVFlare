@@ -582,6 +582,10 @@ class JobCommandModule(CommandModule, CommandUtil):
                 meta[JobMetaKey.SUBMITTER_ORG.value] = conn.get_prop(ConnProps.USER_ORG, "")
                 meta[JobMetaKey.SUBMITTER_ROLE.value] = conn.get_prop(ConnProps.USER_ROLE, "")
 
+                custom_props = conn.get_prop(ConnProps.CUSTOM_PROPS)
+                if custom_props:
+                    meta[JobMetaKey.CUSTOM_PROPS.value] = custom_props
+
                 meta = job_def_manager.create(meta, data_bytes, fl_ctx)
                 job_id = meta.get(JobMetaKey.JOB_ID)
                 conn.append_string(f"Submitted job: {job_id}")

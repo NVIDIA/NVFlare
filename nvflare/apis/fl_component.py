@@ -103,16 +103,6 @@ class FLComponent(StatePersistable):
         fl_ctx.set_prop(FLContextKey.EVENT_DATA, reason, private=True, sticky=False)
         self.fire_event(EventType.FATAL_SYSTEM_ERROR, fl_ctx)
 
-    def task_panic(self, reason: str, fl_ctx: FLContext):
-        """Signals a fatal condition that could cause the current task (on Client) to end.
-
-        Args:
-            reason (str): The reason for panic.
-            fl_ctx (FLContext): FLContext information.
-        """
-        fl_ctx.set_prop(FLContextKey.EVENT_DATA, reason, private=True, sticky=False)
-        self.fire_event(EventType.FATAL_TASK_ERROR, fl_ctx)
-
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         """Handles events.
 
