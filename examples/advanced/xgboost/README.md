@@ -12,8 +12,10 @@ They use [XGBoost](https://github.com/dmlc/xgboost),
 which is an optimized distributed gradient boosting library.
 
 ### HIGGS
-The examples illustrate a binary classification task based on [HIGGS dataset](https://archive.ics.uci.edu/ml/datasets/HIGGS).
+The examples illustrate a binary classification task based on [HIGGS dataset](https://archive.ics.uci.edu/dataset/280/higgs).
 This dataset contains 11 million instances, each with 28 attributes.
+
+Please note that the UCI's website may experience occasional downtime.
 
 ## Federated Training of XGBoost
 Several mechanisms have been proposed for training an XGBoost model in a federated learning setting.
@@ -57,7 +59,7 @@ To run the examples, we first download the dataset from the HIGGS link above, wh
 By default, we assume the dataset is downloaded, uncompressed, and stored in `~/dataset/HIGGS.csv`.
 
 > **_NOTE:_** If the dataset is downloaded in another place,
-> make sure to modify the corresponding `DATASET_PATH` inside `data_split_gen.sh`.
+> make sure to modify the corresponding `DATASET_PATH` inside `prepare_data.sh`.
 
 ### Data Split
 Since HIGGS dataset is already randomly recorded,
@@ -79,7 +81,7 @@ If the number of clients is large (e.g. 20), exponential split will be too aggre
 
 Data splits used in this example can be generated with
 ```
-bash data_split_gen.sh
+bash prepare_data.sh
 ```
 
 This will generate data splits for three client sizes: 2, 5 and 20, and 3 split conditions: uniform, square, and exponential.
@@ -95,7 +97,7 @@ Please follow the [Installation](https://nvflare.readthedocs.io/en/main/quicksta
 
 We then prepare the NVFlare job configs for different settings by running
 ```
-bash job_config_gen.sh
+bash prepare_job_config.sh
 ```
 
 This script modifies settings from base job configuration
@@ -126,7 +128,7 @@ The script will also generate 2 configs in `histogram-based/jobs` for histogram-
 - histogram-based training with uniform data split for 5 clients
 
 ## Run experiments for tree-based and histogram-based settings
-After you run the two scripts `data_split_gen.sh` and `job_config_gen.sh`,
+After you run the two scripts `prepare_data.sh` and `prepare_job_config.sh`,
 please go to sub-folder [tree-based](tree-based) for running tree-based algorithms,
 and sub-folder [histogram-based](histogram-based) for running histogram-based algorithms.
 
@@ -150,8 +152,8 @@ For example,
                 "nthread": 16
               }
 
-For GPU based training, edit `job_config_gen.sh` to change `TREE_METHOD="hist"` to `TREE_METHOD="gpu_hist"`.
-Then run the `job_config_gen.sh` again to generates new job configs for GPU-based training.
+For GPU based training, edit `prepare_job_config.sh` to change `TREE_METHOD="hist"` to `TREE_METHOD="gpu_hist"`.
+Then run the `prepare_job_config.sh` again to generates new job configs for GPU-based training.
 
 ### Multi GPU support
 

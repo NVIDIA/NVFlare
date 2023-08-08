@@ -1,14 +1,14 @@
 # NVFlare hello-world examples
 
-We introduce hello-world examples in this folder.
+This folder contains hello-world examples for NVFlare.
 
-Please make sure you set up virtual environment and Jupyterlab follows [example root readme](../README.md)
+Please make sure you set up a virtual environment and install JupyterLab following the [example root readme](../README.md).
 
 Please also install "./requirements.txt" in each example folder.
 
 ## Hello World Notebook
 ### Prerequisites
-  Before you run the notebook, the following preparation work must be done:
+Before you run the notebook, the following preparation work must be done:
 
   1. Install a virtual environment following the instructions in [example root readme](../README.md)
   2. Install Jupyter Lab and install a new kernel for the virtualenv called `nvflare_example`
@@ -31,5 +31,3 @@ Please also install "./requirements.txt" in each example folder.
   * Example using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) an image classifier using ([FedAvg](https://arxiv.org/abs/1602.05629)) and [PyTorch](https://pytorch.org/) as the deep learning training framework.
 * [Hello TensorFlow](./hello-tf2/README.md)
   * Example of using [NVIDIA FLARE](https://nvflare.readthedocs.io/en/main/index.html) an image classifier using ([FedAvg](https://arxiv.org/abs/1602.05629)) and [TensorFlow](https://tensorflow.org/) as the deep learning training framework.
-
-

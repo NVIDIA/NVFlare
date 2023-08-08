@@ -177,7 +177,7 @@ class FileTransferModule(CommandModule, CommandUtil):
                 conn.append_error("logic error: unzip failed to create folder {}".format(tmp_folder_path))
                 return False, None
             return True, None
-        except BaseException as e:
+        except Exception as e:
             secure_log_traceback()
             conn.append_error(f"exception occurred: {secure_format_exception(e)}")
             return False, None

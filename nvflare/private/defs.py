@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from nvflare.fuel.f3.message import Headers, Message
+from nvflare.fuel.f3.message import Message
 from nvflare.fuel.hci.server.constants import ConnProps
 
 
@@ -155,6 +155,7 @@ class CellChannelTopic:
     HEART_BEAT = "heart_beat"
     EXECUTE_RESULT = "execute_result"
     FIRE_EVENT = "fire_event"
+    REPORT_JOB_FAILURE = "report_job_failure"
 
     SIMULATOR_WORKER_INIT = "simulator_worker_init"
 
@@ -176,8 +177,15 @@ class CellMessageHeaderKeys:
     ABORT_JOBS = "abort_jobs"
 
 
+class JobFailureMsgKey:
+
+    JOB_ID = "job_id"
+    CODE = "code"
+    REASON = "reason"
+
+
 def new_cell_message(headers: dict, payload=None):
-    msg_headers = Headers()
+    msg_headers = {}
     if headers:
         msg_headers.update(headers)
     return Message(msg_headers, payload)

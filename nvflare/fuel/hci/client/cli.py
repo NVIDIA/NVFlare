@@ -108,7 +108,7 @@ class AdminClient(cmd.Cmd):
                     raise TypeError("cmd_modules must be a list of CommandModule")
                 modules.append(m)
 
-        poc = True if self.credential_type == CredentialType.PASSWORD else False
+        insecure = True if self.credential_type == CredentialType.PASSWORD else False
 
         self._get_login_creds()
 
@@ -122,7 +122,7 @@ class AdminClient(cmd.Cmd):
             service_finder=self.service_finder,
             user_name=self.user_name,
             debug=self.debug,
-            poc=poc,
+            insecure=insecure,
             session_event_cb=self.handle_session_event,
             session_timeout_interval=session_timeout_interval,
             session_status_check_interval=1800,  # check server for session status every 30 minutes
@@ -271,7 +271,7 @@ class AdminClient(cmd.Cmd):
             return self._do_default(line)
         except KeyboardInterrupt:
             self.write_stdout("\n")
-        except BaseException as e:
+        except Exception as e:
             if self.debug:
                 secure_log_traceback()
             self.write_stdout(f"exception occurred: {secure_format_exception(e)}")
@@ -310,7 +310,7 @@ class AdminClient(cmd.Cmd):
             line = join_args(args)
             try:
                 out_file = open(out_file_name, "w")
-            except BaseException as e:
+            except Exception as e:
                 self.write_error(f"cannot open file {out_file_name}: {secure_format_exception(e)}")
                 return
 

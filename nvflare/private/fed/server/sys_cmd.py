@@ -38,7 +38,7 @@ def _parse_replies(conn, replies):
             else:
                 try:
                     resources = json.loads(r.reply.body)
-                except BaseException as e:
+                except Exception as e:
                     resources = f"Bad replies: {secure_format_exception(e)}"
         else:
             resources = "No replies"
@@ -124,7 +124,7 @@ class SystemCommandModule(CommandModule, CommandUtil):
                                 "%.1f" % (psutil.virtual_memory().available * 100 / psutil.virtual_memory().total),
                             ]
                         )
-                    except BaseException:
+                    except Exception:
                         conn.append_string(": Bad replies")
             else:
                 conn.append_string(": No replies")

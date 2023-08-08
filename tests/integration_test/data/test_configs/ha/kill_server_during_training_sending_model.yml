@@ -22,6 +22,7 @@ tests:
           "kill server",
           "sleep 10",
           "start server",
+          "sleep 1"
         ]
         "result":
           "type": "run_state"

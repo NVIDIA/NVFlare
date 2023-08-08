@@ -62,7 +62,7 @@ class ArgValidator(argparse.ArgumentParser):
         try:
             result = self.parse_args(args)
             return self.err, result
-        except BaseException:
+        except Exception:
             return 'argument error; try "? cmdName to show supported usage for a command"', None
 
     def get_usage(self) -> str:

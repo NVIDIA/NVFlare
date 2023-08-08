@@ -67,7 +67,7 @@ class DFStatistics(Statistics):
             self.log_info(fl_ctx, f"load data done for client {client_name}")
             return {"train": train, "test": test}
 
-        except BaseException as e:
+        except Exception as e:
             raise Exception(f"Load data for client {client_name} failed! {e}")
 
     def initialize(self, fl_ctx: FLContext):

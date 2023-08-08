@@ -15,8 +15,7 @@
 from typing import Any
 
 from nvflare.fuel.utils import fobs
-
-from .file_accessor import FileAccessor
+from nvflare.fuel.utils.pipe.file_accessor import FileAccessor
 
 
 class FobsFileAccessor(FileAccessor):
@@ -33,7 +32,7 @@ class FobsFileAccessor(FileAccessor):
             data = file.read()
         return fobs.loads(data)
 
-    def write(self, data: Any, file_path):
+    def write(self, data: Any, file_path) -> None:
         """Write the data as binary file.
 
         Args:

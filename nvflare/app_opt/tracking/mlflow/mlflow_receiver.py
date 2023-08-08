@@ -148,7 +148,7 @@ class MLflowReceiver(AnalyticsReceiver):
     def get_run_name(self, kwargs: dict, default_name: str, site_name: str, run_group_id: str):
         run_name = kwargs.get(TrackConst.RUN_NAME, default_name)
         job_id_tag = self.get_job_id_tag(group_id=run_group_id)
-        return f"{site_name}-{job_id_tag}-{run_name}"
+        return f"{site_name}-{job_id_tag[:6]}-{run_name}"
 
     def get_run_tags(self, kwargs, run_group_id, run_name: str):
         run_tags = self._get_tags(TrackConst.RUN_TAGS, kwargs=kwargs)
@@ -219,8 +219,12 @@ class MLflowReceiver(AnalyticsReceiver):
             return
 
         if data.data_type == AnalyticsDataType.TEXT:
-            # not currently supported
-            pass
+            mlflow_client = self.get_mlflow_client(record_origin)
+            if not mlflow_client:
+                raise RuntimeError(f"mlflow client is None for site {record_origin}.")
+            run_id = self.get_run_id(record_origin)
+            if data.kwargs.get("path", None):
+                mlflow_client.log_text(run_id=run_id, text=data.value, artifact_file=data.kwargs.get("path"))
         elif data.data_type == AnalyticsDataType.MODEL:
             # not currently supported
             pass
@@ -280,7 +284,7 @@ class MLflowReceiver(AnalyticsReceiver):
         """
         mlflow_client = self.get_mlflow_client(record_origin)
         if not mlflow_client:
-            raise RuntimeError(f"mlflow client is None for site {record_origin}")
+            raise RuntimeError(f"mlflow client is None for site {record_origin}.")
 
         run_id = self.get_run_id(record_origin)
 

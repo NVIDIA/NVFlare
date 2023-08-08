@@ -66,7 +66,7 @@ def main():
             f = workspace.get_file_path_in_root(name)
             if os.path.exists(f):
                 os.remove(f)
-        except BaseException:
+        except Exception:
             print("Could not remove the {} file.  Please check your system before starting FL.".format(name))
             sys.exit(-1)
 
@@ -183,4 +183,5 @@ if __name__ == "__main__":
     # multiprocessing.set_start_method('spawn')
 
     # main()
-    mpm.run(main_func=main)
+    rc = mpm.run(main_func=main)
+    sys.exit(rc)

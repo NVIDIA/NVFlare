@@ -13,10 +13,9 @@
 # limitations under the License.
 
 import argparse
+import csv
 import os
 import shutil
-
-import wget
 
 
 def parse_args(prog_name: str):
@@ -60,9 +59,15 @@ def prepare_data(data_root_dir: str):
             print(f"\nremove existing data at {dest}")
             shutil.rmtree(dest, ignore_errors=True)
 
-        print(f"\nwget download to {dest}")
+        print(f"\ndownload to {dest}")
         url = client_data_urls[client]
-        response = wget.download(url, dest)
+        import requests
+
+        with open(dest, "w") as f:
+            writer = csv.writer(f)
+            r = requests.get(url, allow_redirects=True)
+            for line in r.iter_lines():
+                writer.writerow(line.decode("utf-8").split(","))
     print("\ndone with prepare data")
 
 

@@ -8,12 +8,18 @@ This example also highlights the TensorBoard streaming capability from the clien
 
 > **_NOTE:_** This example uses the [CIFAR-10](https://www.cs.toronto.edu/~kriz/cifar.html) dataset and will load its data within the trainer code.
 
-### 1. Install requirements
+### 1. Install requirements and configure PYTHONPATH
 
 Install additional requirements:
 
 ```
 python -m pip install -r requirements.txt
+```
+
+Set `PYTHONPATH` to include custom files of this example:
+
+```
+export PYTHONPATH=${PWD}/..
 ```
 
 ### 2. Run the experiment

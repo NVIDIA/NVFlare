@@ -15,12 +15,13 @@
 import copy
 from typing import List, Union
 
+from nvflare.apis.fl_constant import FLMetaKey
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable
 from nvflare.fuel.utils import fobs
 
 
 class DataKind(object):
-    MODEL = "MODEL"
+    FL_MODEL = "FL_MODEL"
     WEIGHTS = "WEIGHTS"
     WEIGHT_DIFF = "WEIGHT_DIFF"
     XGB_MODEL = "XGB_MODEL"
@@ -31,12 +32,8 @@ class DataKind(object):
     PSI = "PSI"
 
 
-class MetaKey(object):
-    NUM_STEPS_CURRENT_ROUND = "NUM_STEPS_CURRENT_ROUND"
-    PROCESSED_ALGORITHM = "PROCESSED_ALGORITHM"
-    PROCESSED_KEYS = "PROCESSED_KEYS"
-    INITIAL_METRICS = "initial_metrics"
-    FILTER_HISTORY = "filter_history"
+class MetaKey(FLMetaKey):
+    pass
 
 
 _KEY_KIND = "kind"

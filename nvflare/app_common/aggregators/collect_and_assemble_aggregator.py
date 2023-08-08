@@ -66,7 +66,7 @@ class CollectAndAssembleAggregator(Aggregator):
         contributor_name = shareable.get_peer_prop(key=ReservedKey.IDENTITY_NAME, default="?")
         try:
             dxo = from_shareable(shareable)
-        except BaseException:
+        except Exception:
             self.log_exception(fl_ctx, "shareable data is not a valid DXO")
             return None
 

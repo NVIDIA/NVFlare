@@ -59,6 +59,7 @@ def main():
     args.config_folder = config_folder
     logger = logging.getLogger()
     args.log_config = None
+    args.job_id = None
 
     workspace = Workspace(root_dir=args.workspace, site_name="server")
     for name in [WorkspaceConstants.RESTART_FILE, WorkspaceConstants.SHUTDOWN_FILE]:
@@ -66,7 +67,7 @@ def main():
             f = workspace.get_file_path_in_root(name)
             if os.path.exists(f):
                 os.remove(f)
-        except BaseException:
+        except Exception:
             print(f"Could not remove file '{name}'.  Please check your system before starting FL.")
             sys.exit(-1)
 
@@ -154,4 +155,5 @@ if __name__ == "__main__":
     This is the main program when starting the NVIDIA FLARE server process.
     """
 
-    mpm.run(main_func=main)
+    rc = mpm.run(main_func=main)
+    sys.exit(rc)

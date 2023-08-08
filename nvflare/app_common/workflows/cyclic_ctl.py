@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import gc
 import random
 
 from nvflare.apis.client import Client
@@ -205,10 +206,11 @@ class CyclicController(Controller):
                     # Call the self._engine to persist the snapshot of all the FLComponents
                     self._engine.persist_components(fl_ctx, completed=False)
 
-                self.log_info(fl_ctx, "Ending current round={}.".format(self._current_round))
+                self.log_debug(fl_ctx, "Ending current round={}.".format(self._current_round))
+                gc.collect()
 
             self.log_debug(fl_ctx, "Cyclic ended.")
-        except BaseException as e:
+        except Exception as e:
             error_msg = f"Cyclic control_flow exception: {secure_format_exception(e)}"
             self.log_error(fl_ctx, error_msg)
             self.system_panic(error_msg, fl_ctx)

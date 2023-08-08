@@ -82,7 +82,7 @@ class TBAnalyticsReceiver(AnalyticsReceiver):
         # do different things depending on the type in dxo
         self.log_debug(
             fl_ctx,
-            f"save tag {analytic_data.tag} and value {analytic_data.value} with type {analytic_data.data_type} from {record_origin}",
+            f"save data {analytic_data} from {record_origin}",
             fire_event=False,
         )
         func_name = FUNCTION_MAPPING.get(analytic_data.data_type, None)

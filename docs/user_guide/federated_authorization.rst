@@ -146,7 +146,6 @@ Appendix One - Command Categories
     
     COMMAND_CATEGORIES = {
         AC.ABORT: CommandCategory.MANAGE_JOB,
-        AC.ABORT_TASK: CommandCategory.MANAGE_JOB,
         AC.ABORT_JOB: CommandCategory.MANAGE_JOB,
         AC.START_APP: CommandCategory.MANAGE_JOB,
         AC.DELETE_JOB: CommandCategory.MANAGE_JOB,

@@ -14,8 +14,6 @@
 
 import json
 import os
-from abc import ABC, abstractmethod
-from typing import Tuple
 
 import xgboost as xgb
 
@@ -27,17 +25,18 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.app_constant import AppConstants
+from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
+from nvflare.app_opt.xgboost.tree_based.shareable_generator import update_model
 from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.security.logging import secure_format_exception
 
-from .shareable_generator import update_model
 
-
-class FedXGBTreeExecutor(Executor, ABC):
+class FedXGBTreeExecutor(Executor):
     def __init__(
         self,
         training_mode,
         lr_scale,
+        data_loader_id: str,
         num_client_bagging: int = 1,
         lr_mode: str = "uniform",
         local_model_path: str = "model.json",
@@ -79,24 +78,13 @@ class FedXGBTreeExecutor(Executor, ABC):
         self.config = None
         self.local_model = None
 
-        self.dmat_train = None
-        self.dmat_valid = None
+        self.data_loader_id = data_loader_id
+        self.train_data = None
+        self.val_data = None
 
         # use dynamic shrinkage - adjusted by personalized scaling factor
         if lr_mode not in ["uniform", "scaled"]:
             raise ValueError(f"Only support [uniform] or [scaled] mode, but got {lr_mode}")
-
-    @abstractmethod
-    def load_data(self) -> Tuple[xgb.core.DMatrix, xgb.core.DMatrix]:
-        """Loads data customized to individual tasks.
-
-        This can be specified / loaded in any ways
-        as long as they are made available for training and validation
-
-        Return:
-            A tuple of (dmat_train, dmat_valid)
-        """
-        raise NotImplementedError
 
     def initialize(self, fl_ctx: FLContext):
         # set the paths according to fl_ctx
@@ -124,7 +112,13 @@ class FedXGBTreeExecutor(Executor, ABC):
             return
 
         # load data and lr_scale, this is task/site-specific
-        self.dmat_train, self.dmat_valid = self.load_data()
+        data_loader = engine.get_component(self.data_loader_id)
+        if not isinstance(data_loader, XGBDataLoader):
+            self.system_panic("data_loader should be type XGBDataLoader", fl_ctx)
+        try:
+            self.train_data, self.val_data = data_loader.load_data(self.client_id)
+        except Exception as e:
+            self.system_panic(f"load_data failed: {secure_format_exception(e)}", fl_ctx)
         self.lr = self._get_effective_learning_rate()
 
     def _get_effective_learning_rate(self):
@@ -141,8 +135,8 @@ class FedXGBTreeExecutor(Executor, ABC):
             lr = self.base_lr
         return lr
 
-    def _get_train_params(self):
-        param = {
+    def _get_xgb_train_params(self):
+        params = {
             "objective": self.objective,
             "eta": self.lr,
             "max_depth": self.max_depth,
@@ -152,16 +146,16 @@ class FedXGBTreeExecutor(Executor, ABC):
             "subsample": self.local_subsample,
             "tree_method": self.tree_method,
         }
-        return param
+        return params
 
     def _local_boost_bagging(self, fl_ctx: FLContext):
         eval_results = self.bst.eval_set(
-            evals=[(self.dmat_train, "train"), (self.dmat_valid, "valid")], iteration=self.bst.num_boosted_rounds() - 1
+            evals=[(self.train_data, "train"), (self.val_data, "valid")], iteration=self.bst.num_boosted_rounds() - 1
         )
         self.log_info(fl_ctx, eval_results)
         auc = float(eval_results.split("\t")[2].split(":")[1])
         for i in range(self.num_local_round):
-            self.bst.update(self.dmat_train, self.bst.num_boosted_rounds())
+            self.bst.update(self.train_data, self.bst.num_boosted_rounds())
 
         # extract newly added self.num_local_round using xgboost slicing api
         bst = self.bst[self.bst.num_boosted_rounds() - self.num_local_round : self.bst.num_boosted_rounds()]
@@ -181,9 +175,9 @@ class FedXGBTreeExecutor(Executor, ABC):
         # Cyclic mode
         # starting from global model
         # return the whole boosting tree series
-        self.bst.update(self.dmat_train, self.bst.num_boosted_rounds())
+        self.bst.update(self.train_data, self.bst.num_boosted_rounds())
         eval_results = self.bst.eval_set(
-            evals=[(self.dmat_train, "train"), (self.dmat_valid, "valid")], iteration=self.bst.num_boosted_rounds() - 1
+            evals=[(self.train_data, "train"), (self.val_data, "valid")], iteration=self.bst.num_boosted_rounds() - 1
         )
         self.log_info(fl_ctx, eval_results)
         auc = float(eval_results.split("\t")[2].split(":")[1])
@@ -211,7 +205,7 @@ class FedXGBTreeExecutor(Executor, ABC):
         model_update = dxo.data
 
         # xgboost parameters
-        param = self._get_train_params()
+        params = self._get_xgb_train_params()
 
         if not self.bst:
             # First round
@@ -221,19 +215,19 @@ class FedXGBTreeExecutor(Executor, ABC):
             )
             if not model_update:
                 bst = xgb.train(
-                    param,
-                    self.dmat_train,
+                    params,
+                    self.train_data,
                     num_boost_round=self.num_local_round,
-                    evals=[(self.dmat_valid, "validate"), (self.dmat_train, "train")],
+                    evals=[(self.val_data, "validate"), (self.train_data, "train")],
                 )
             else:
                 loadable_model = bytearray(model_update["model_data"])
                 bst = xgb.train(
-                    param,
-                    self.dmat_train,
+                    params,
+                    self.train_data,
                     num_boost_round=self.num_local_round,
                     xgb_model=loadable_model,
-                    evals=[(self.dmat_valid, "validate"), (self.dmat_train, "train")],
+                    evals=[(self.val_data, "validate"), (self.train_data, "train")],
                 )
             self.config = bst.save_config()
             self.bst = bst
@@ -284,8 +278,8 @@ class FedXGBTreeExecutor(Executor, ABC):
     def finalize(self, fl_ctx: FLContext):
         # freeing resources in finalize avoids seg fault during shutdown of gpu mode
         del self.bst
-        del self.dmat_train
-        del self.dmat_valid
+        del self.train_data
+        del self.val_data
         self.log_info(fl_ctx, "Freed training resources")
 
     def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
