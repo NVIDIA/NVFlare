@@ -186,6 +186,8 @@ def build_config_file_indexers(config_dir: str,
     config_file_index = {}
     for root, _, files in os.walk(config_dir):
         config_files = [f for f in files if os.path.splitext(f)[1] in config_extensions and not f.startswith("._")]
+        if included:
+            config_files = [f for f in config_files if f in included]
         if excluded:
             config_files = [f for f in config_files if f not in excluded]
         for f in config_files:
