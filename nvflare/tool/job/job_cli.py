@@ -123,6 +123,7 @@ def create_job(cmd_args):
     included = ["config_fed_client.conf",
                 "config_fed_sever.conf",
                 "config_exchange.conf",
+                "meta.conf"
                 ]
 
     file_indices = build_config_file_indexers(job_folder, included, excluded)
@@ -418,8 +419,6 @@ def prepare_meta_config(cmd_args):
         return
     dst_config = load_src_config_template("meta.conf")
     dst_config.put("name", app_name)
-    print(dst_config)
-    print(dst_path)
     save_config(dst_config, dst_path)
 
 

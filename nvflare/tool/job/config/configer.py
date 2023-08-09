@@ -174,7 +174,7 @@ def build_config_file_indexers(config_dir: str,
 
     Args:
         included: if not None, we will only include the specified file list.
-        excluded: if not None, we will excluded from the file list
+        excluded: if not None, we will exclude from the file list
         config_dir:  Job config directory
 
     Returns:

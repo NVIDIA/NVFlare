@@ -160,7 +160,7 @@ def is_dir_empty(path: str):
     return len(targe_dir) == 0
 
 
-def save_config(dst_config, dst_path, to_json=True):
+def save_config(dst_config, dst_path, to_json=False):
     fmt = ConfigFormat.JSON if to_json else ConfigFormat.PYHOCON
     ext = ConfigFormat.extensions(fmt)[0]
     if dst_path.endswith(ext):
@@ -169,7 +169,6 @@ def save_config(dst_config, dst_path, to_json=True):
         filename = f"{os.path.basename(dst_path).split('.')[0]}{ext}"
         dst_config_path = os.path.join(os.path.dirname(dst_path), filename)
 
-    print("dst_config_path = ", dst_config_path)
     config_str = HOCONConverter.to_json(dst_config) if to_json else HOCONConverter.to_hocon(dst_config)
     with open(dst_config_path, "w") as outfile:
         outfile.write(f"{config_str}\n")
