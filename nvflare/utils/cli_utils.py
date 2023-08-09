@@ -132,9 +132,7 @@ def find_job_template_location(job_template_dir: Optional[str] = None):
 
     nvflare_config = load_hidden_config()
     job_template_dir = nvflare_config.get_string("job_template.path", None) if nvflare_config else None
-    print("job_template_dir1=", job_template_dir)
     job_template_dir = check_job_template_dir(job_template_dir)
-    print("job_template_dir2=", job_template_dir)
 
     nvflare_home = os.environ.get("NVFLARE_HOME", None)
     if nvflare_home:

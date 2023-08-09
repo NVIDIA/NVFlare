@@ -55,22 +55,11 @@ def find_filename_basename(f: str):
 
 
 def build_workflow_indices(job_template_dir: str) -> ConfigTree:
-    # premature optimization ?
-    from checksumdir import dirhash
-    md5hash = dirhash(job_template_dir, 'md5')
-    wf_registry_path = get_workflow_registry_file_path()
-    if os.path.isfile(wf_registry_path):
-        conf = CF.parse_file(wf_registry_path)
-        local_hash = conf.get("md5hash", None)
-        if local_hash == md5hash:
-            print("return loaded workflows")
-            return conf
-
-    conf = _build_wf_index(job_template_dir, md5hash)
+    conf = _build_wf_index(job_template_dir)
     return conf
 
 
-def _build_wf_index(job_template_dir, md5hash):
+def _build_wf_index(job_template_dir):
     workflows_dir = os.path.join(job_template_dir, "workflows")
     conf = CF.parse_string("{ workflows = {} }")
     config_file_base_names = ["config_fed_client", "config_fed_server", "config_exchange", "meta"]
@@ -85,11 +74,7 @@ def _build_wf_index(job_template_dir, md5hash):
                 value = info_conf.get(key, "NA") if info_conf else "NA"
                 workflow_conf.put(f"{workflow_name}.{key}", value)
     # save the index file for debugging purpose
-    conf.put("md5hash", md5hash)
     save_workflow_index_file(conf)
-
-    # todo: save the job_template_dir is not saved already
-
     return conf
 
 
@@ -107,7 +92,6 @@ def get_workflow_registry_file_path():
 
 def get_wf_info_config(workflow_dir):
     info_conf_path = os.path.join(workflow_dir, "info.conf")
-    print(info_conf_path)
     return CF.parse_file(info_conf_path) if os.path.isfile(info_conf_path) else None
 
 
@@ -138,24 +122,49 @@ def create_job(cmd_args):
     src = os.path.join(job_template_dir, "workflows", target_wf_name)
     copy_tree(src=src, dst=config_dir)
 
-    template_variables = CF.parse_string("{}")
-    excluded = ["template_variables.conf", "info.md", "info.info"]
+    excluded = ["info.md", "info.conf"]
     file_indices: Dict[str, (Dict[str, List[str]], Dict[str, Any])] = build_config_file_indexers(config_dir, excluded)
-    for file, (indices, _) in file_indices.items():
-        file_name = os.path.basename(file).split(".")[0]
-        for index, index_paths in indices.items():
-            index = re.sub("\\[+", "_", index)
-            index = re.sub("]+", "_", index)
-            template_variables.put(f"{file_name}.{index}", index_paths)
+    display_workflow_variables(file_indices)
 
-    dst_path = os.path.join(config_dir, "template_variables")
-    save_config(template_variables, dst_path)
+
+def display_workflow_variables(file_indices):
+    print("\nThe following are the variables you can change in the workflow\n")
+    print("-" * 120)
+    file_name_fix_length = 35
+    var_name_fix_length = 35
+    file_name = fix_length_format("file_name", file_name_fix_length)
+    var_name = fix_length_format("var_name", var_name_fix_length)
+    print(" " * 5, file_name, var_name)
+    print("-" * 120)
+    for file in sorted(file_indices.keys()):
+        indices, _ = file_indices.get(file)
+        file_name = os.path.basename(file)
+        file_name = fix_length_format(file_name, file_name_fix_length)
+        for index in sorted(indices.keys()):
+            var_name = fix_length_format(index, var_name_fix_length)
+            print(" " * 5, file_name, var_name)
+        print("")
+    print("-" * 120)
 
 
 def show_workflows(cmd_args):
     job_template_dir = find_job_template_location(cmd_args.job_template_dir)
     wf_index_conf = build_workflow_indices(job_template_dir)
+    display_available_workflows(wf_index_conf)
 
+    if cmd_args.job_template_dir:
+        update_job_template_dir(cmd_args.job_template_dir)
+
+
+def update_job_template_dir(job_template_dir:str):
+    hidden_nvflare_dir = get_hidden_nvflare_dir()
+    file_path = os.path.join(hidden_nvflare_dir, "config.conf")
+    config = CF.parse_file(file_path)
+    config.put("job_template", job_template_dir)
+    save_config(config, file_path)
+
+
+def display_available_workflows(wf_index_conf):
     print("\nThe following workflow templates are available: \n")
     wf_conf = wf_index_conf.get("workflows")
     print("-" * 120)
@@ -167,7 +176,6 @@ def show_workflows(cmd_args):
     description = fix_length_format("description", description_fix_length)
     client_category = fix_length_format("client category", client_category_fix_length)
     controller_type = fix_length_format("controller type", controller_type_fix_length)
-
     print(" " * 5, name, description, controller_type, client_category)
     print("-" * 120)
     for name in sorted(wf_conf.keys()):
