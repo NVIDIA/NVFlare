@@ -15,6 +15,7 @@
 import os
 import shutil
 import tempfile
+import time
 
 import yaml
 
@@ -101,6 +102,7 @@ class ProvisionSiteLauncher(SiteLauncher):
     def start_servers(self):
         for k in self.server_properties:
             self.start_server(k)
+            time.sleep(3.0)  # makes the first one always primary
 
     def start_clients(self):
         for k in self.client_properties:
