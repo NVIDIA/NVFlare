@@ -165,11 +165,15 @@ def parse_cli_config(cli_configs: List[str]) -> Dict[str, Dict[str, str]]:
     return cli_config_dict
 
 
-def build_config_file_indexers(config_dir: str, excluded: Optional[List[str]] = None) -> Dict[str, dict]:
+def build_config_file_indexers(config_dir: str,
+                               included: Optional[List[str]] = None,
+                               excluded: Optional[List[str]] = None
+                               ) -> Dict[str, dict]:
     """
     Build a dictionary of config file indexers for the given job folder.
 
     Args:
+        included: if not None, we will only include the specified file list.
         excluded: if not None, we will excluded from the file list
         config_dir:  Job config directory
 
@@ -182,9 +186,11 @@ def build_config_file_indexers(config_dir: str, excluded: Optional[List[str]] = 
     config_file_index = {}
     for root, _, files in os.walk(config_dir):
         config_files = [f for f in files if os.path.splitext(f)[1] in config_extensions and not f.startswith("._")]
+        if included:
+            config_files = [f for f in config_files if f in included]
         if excluded:
             config_files = [f for f in config_files if f not in excluded]
-
+        print(root, config_files)
         for f in config_files:
             f = str(os.path.abspath(os.path.join(root, f)))
             config_file_index[f] = build_reverse_order_index(f)

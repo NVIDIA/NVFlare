@@ -101,19 +101,24 @@ def create_startup_kit_config(nvflare_config: ConfigTree, startup_kit_dir: Optio
     return conf.with_fallback(nvflare_config)
 
 
+def check_dir(dir_path:str):
+    if not os.path.isdir(dir_path):
+        raise ValueError(f"directory {dir_path} doesn't exists")
+
+
 def get_startup_kit_dir(startup_kit_dir: Optional[str] = None) -> str:
-    if startup_kit_dir:
-        return startup_kit_dir
 
-    # load from config file:
-    startup_kit_dir = find_startup_kit_location()
-    if startup_kit_dir is None:
-        startup_kit_dir = os.getenv("NVFLARE_STARTUP_KIT_DIR")
+    if not startup_kit_dir:
+        # load from config file:
+        startup_kit_dir = find_startup_kit_location()
+        if startup_kit_dir is None:
+            startup_kit_dir = os.getenv("NVFLARE_STARTUP_KIT_DIR")
 
-    if startup_kit_dir is None or len(startup_kit_dir.strip()) == 0:
-        raise ValueError("startup kit directory is not specified")
-    else:
-        return startup_kit_dir
+        if startup_kit_dir is None or len(startup_kit_dir.strip()) == 0:
+            raise ValueError("startup kit directory is not specified")
+
+    check_dir(startup_kit_dir)
+    return startup_kit_dir
 
 
 def find_job_template_location(job_template_dir: Optional[str] = None):
@@ -155,14 +160,16 @@ def is_dir_empty(path: str):
     return len(targe_dir) == 0
 
 
-def save_config(dst_config, dst_path, to_json=False):
+def save_config(dst_config, dst_path, to_json=True):
     fmt = ConfigFormat.JSON if to_json else ConfigFormat.PYHOCON
     ext = ConfigFormat.extensions(fmt)[0]
     if dst_path.endswith(ext):
         dst_config_path = dst_path
     else:
-        dst_config_path = f"{dst_path.split('.')[0]}{ext}"
+        filename = f"{os.path.basename(dst_path).split('.')[0]}{ext}"
+        dst_config_path = os.path.join(os.path.dirname(dst_path), filename)
 
+    print("dst_config_path = ", dst_config_path)
     config_str = HOCONConverter.to_json(dst_config) if to_json else HOCONConverter.to_hocon(dst_config)
     with open(dst_config_path, "w") as outfile:
         outfile.write(f"{config_str}\n")

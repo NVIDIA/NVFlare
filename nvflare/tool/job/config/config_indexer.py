@@ -18,11 +18,16 @@ from pyhocon import ConfigFactory as CF, ConfigTree
 
 
 def build_reverse_order_index(config_file_path: str) -> (Dict[str, List[str]], Dict[str, Any]):
-    config: ConfigTree = CF.parse_file(config_file_path)
+    try:
+        config: ConfigTree = CF.parse_file(config_file_path)
+    except Exception as e:
+        raise RuntimeError(f"filed to parse file {config_file_path}:", e)
+
     components: list = config.get("components", None)
     excluded_list = [comp.get("id") for comp in components] if components else []
     excluded_list.extend(
-        ["name", "id", "format_version", "tasks", "task_name", "train_task_name", "app", "task_data_filters", "task_result_filters"]
+        ["name", "id", "format_version", "tasks", "task_name", "train_task_name", "app",
+         "task_data_filters", "task_result_filters", "exchange_path"]
     )
     indices: Dict[str, List[str]] = build_dict_reverse_order_index(config, excluded_keys=excluded_list)
     return indices, config

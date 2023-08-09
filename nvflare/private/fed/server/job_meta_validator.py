@@ -110,11 +110,16 @@ class JobMetaValidator(JobMetaValidatorSpec):
         for app, deployments in deploy_map.items():
 
             zip_folder = job_name + "/" + app + "/config/"
+
+            for x in zip_file.namelist():
+                print(f"    {x}")
+
             if not self._entry_exists(zip_file, zip_folder):
                 logger.debug(f"zip folder {zip_folder} missing. Files in the zip:")
                 for x in zip_file.namelist():
                     logger.debug(f"    {x}")
-                raise ValueError(f"App '{app}' in deploy_map doesn't exist for job {job_name}")
+                    print(f"    {x}")
+                raise ValueError(f"App '{job_name}/{app}/config/' in deploy_map doesn't exist for job '{job_name}'")
 
             all_sites = ALL_SITES.casefold() in (site.casefold() for site in deployments)
 

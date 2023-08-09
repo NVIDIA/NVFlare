@@ -17,13 +17,11 @@ import pathlib
 import shutil
 from distutils.dir_util import copy_tree
 from tempfile import mkdtemp
-from typing import List, Optional, Tuple, Dict, Any
-import re
+from typing import List, Optional, Tuple
 
 from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree
 
-from nvflare.apis.job_def import JobMetaKey
 from nvflare.cli_exception import CLIException
 from nvflare.fuel.flare_api.flare_api import new_secure_session
 from nvflare.fuel.utils.config import ConfigFormat
@@ -43,7 +41,7 @@ def create_job2(cmd_args):
     predefined = load_predefined_config()
     prepare_fed_config(cmd_args, predefined)
     prepare_meta_config(cmd_args)
-    prepare_model_exchange_config(job_folder, cmd_args.force, predefined)
+    prepare_model_exchange_config(job_folder, cmd_args.force)
 
 
 def find_filename_basename(f: str):
@@ -102,40 +100,53 @@ def create_job(cmd_args):
     job_folder = cmd_args.job_folder
     config_dir = get_config_dir(job_folder)
 
-    fmt, real_config_path = ConfigFactory.search_config_format("config_fed_server", [config_dir])
+    fmt, real_config_path = ConfigFactory.search_config_format("config_fed_server.conf", [config_dir])
     if real_config_path and not cmd_args.force:
         print(
-            f"""warning: configuration files:
-                    {"config_fed_server.[json|conf|yml]"}
-                    already exists. Not generating the config files. If you would like to overwrite, use -force option"""
+            f"""\nwarning: configuration files:\n
+                {"config_fed_server.[json|conf|yml]"} already exists.
+            \nNot generating the config files. If you would like to overwrite, use -force option"""
         )
         return
 
+    prepare_meta_config(cmd_args)
+
     target_wf_name = cmd_args.workflow
+
+    check_config_exists(target_wf_name, wf_index_conf)
+
+    job_template_dir = find_job_template_location()
+    src = os.path.join(job_template_dir, "workflows", target_wf_name)
+    copy_tree(src=src, dst=config_dir)
+
+    excluded = ["info.md", "info.conf"]
+    included = ["config_fed_client.conf",
+                "config_fed_sever.conf",
+                "config_exchange.conf",
+                ]
+
+    file_indices = build_config_file_indexers(job_folder, included, excluded)
+    display_workflow_variables(file_indices)
+
+
+def check_config_exists(target_wf_name, wf_index_conf):
     target_wf_config = wf_index_conf.get(f"workflows.{target_wf_name}", None)
     if not target_wf_config:
         raise ValueError(
             f"Invalid workflow name {target_wf_name}, "
             f"please check the available workflows using nvflare job show_workflows"
         )
-    job_template_dir = find_job_template_location()
-    src = os.path.join(job_template_dir, "workflows", target_wf_name)
-    copy_tree(src=src, dst=config_dir)
-
-    excluded = ["info.md", "info.conf"]
-    file_indices: Dict[str, (Dict[str, List[str]], Dict[str, Any])] = build_config_file_indexers(config_dir, excluded)
-    display_workflow_variables(file_indices)
 
 
 def display_workflow_variables(file_indices):
     print("\nThe following are the variables you can change in the workflow\n")
-    print("-" * 120)
+    print("-" * 100)
     file_name_fix_length = 35
     var_name_fix_length = 35
     file_name = fix_length_format("file_name", file_name_fix_length)
     var_name = fix_length_format("var_name", var_name_fix_length)
     print(" " * 5, file_name, var_name)
-    print("-" * 120)
+    print("-" * 100)
     for file in sorted(file_indices.keys()):
         indices, _ = file_indices.get(file)
         file_name = os.path.basename(file)
@@ -144,7 +155,7 @@ def display_workflow_variables(file_indices):
             var_name = fix_length_format(index, var_name_fix_length)
             print(" " * 5, file_name, var_name)
         print("")
-    print("-" * 120)
+    print("-" * 100)
 
 
 def show_workflows(cmd_args):
@@ -212,12 +223,15 @@ def submit_job(cmd_args):
 def find_admin_user_and_dir() -> Tuple[str, str]:
     startup_kit_dir = get_startup_kit_dir()
     fed_admin_config = ConfigFactory.load_config("fed_admin.json", [startup_kit_dir])
+
     admin_user_dir = None
     admin_username = None
     if fed_admin_config:
         admin_user_dir = os.path.dirname(os.path.dirname(fed_admin_config.file_path))
         config_dict = fed_admin_config.to_dict()
         admin_username = config_dict["admin"].get("username", None)
+    else:
+        raise ValueError(f"Unable to locate fed_admin configuration from startup kid location {startup_kit_dir}")
 
     return admin_username, admin_user_dir
 
@@ -256,7 +270,7 @@ def define_submit_job_parser(job_subparser):
         "--job_folder",
         type=str,
         nargs="?",
-        default=get_curr_dir(),
+        default=os.path.join(get_curr_dir(), "current_job"),
         help="job_folder path, default to current directory",
     )
     submit_parser.add_argument(
@@ -301,7 +315,7 @@ def define_create_job_parser(job_subparser):
         "--job_folder",
         type=str,
         nargs="?",
-        default=get_curr_dir(),
+        default=os.path.join(get_curr_dir(), "current_job"),
         help="job_folder path, default to current directory",
     )
     create_parser.add_argument(
@@ -380,8 +394,8 @@ def get_upload_dir(startup_dir) -> str:
     return upload_dir
 
 
-def prepare_model_exchange_config(job_folder: str, force: bool, predefined):
-    dst_path = dst_config_path(job_folder, "config_exchange.json")
+def prepare_model_exchange_config(job_folder: str, force: bool):
+    dst_path = dst_config_path(job_folder, "config_exchange.conf")
     if os.path.isfile(dst_path) and not force:
         return
 
@@ -397,12 +411,15 @@ def load_predefined_config():
 def prepare_meta_config(cmd_args):
     job_folder = cmd_args.job_folder
     app_name = os.path.basename(job_folder)
-    dst_path = os.path.join(job_folder, "meta.json")
+    dst_path = os.path.join(job_folder, "meta.conf")
+    print(f"{dst_path=}")
     if os.path.isfile(dst_path) and not cmd_args.force:
+        print("returning")
         return
     dst_config = load_src_config_template("meta.conf")
     dst_config.put("name", app_name)
-    dst_config.put(JobMetaKey.MIN_CLIENTS, cmd_args.min_clients)
+    print(dst_config)
+    print(dst_path)
     save_config(dst_config, dst_path)
 
 
