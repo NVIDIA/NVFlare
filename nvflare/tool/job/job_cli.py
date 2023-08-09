@@ -121,7 +121,7 @@ def create_job(cmd_args):
 
     excluded = ["info.md", "info.conf"]
     included = ["config_fed_client.conf",
-                "config_fed_sever.conf",
+                "config_fed_server.conf",
                 "config_exchange.conf",
                 "meta.conf"
                 ]
