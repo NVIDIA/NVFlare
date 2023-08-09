@@ -239,8 +239,6 @@ def run_admin_api_tests(admin_api: FLAdminAPI):
     print("\n" + "=" * 40)
     print("\nRunning through tests of admin commands:")
     print("\n" + "=" * 40)
-    print("\nCommand: set_timeout")
-    print(admin_api.set_timeout(11).get("details").get("message"))
     print("\nActive SP:")
     print(admin_api.get_active_sp().get("details"))
     print("\nList SP:")
