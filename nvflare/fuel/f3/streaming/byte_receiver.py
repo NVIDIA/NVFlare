@@ -62,6 +62,7 @@ class RxTask:
         self.eos = False
         self.waiter = threading.Event()
         self.task_lock = threading.Lock()
+        self.last_chunk_received = False
 
     def __str__(self):
         return f"Rx[SID:{self.sid} from {self.origin} for {self.channel}/{self.topic}]"
@@ -107,7 +108,7 @@ class RxStream(Stream):
                     self.task.eos = True
 
             self.task.offset += len(result)
-            if self.task.offset - self.task.offset_ack > ACK_INTERVAL:
+            if not self.task.last_chunk_received and (self.task.offset - self.task.offset_ack > ACK_INTERVAL):
                 # Send ACK
                 message = Message()
                 message.add_headers(
@@ -206,6 +207,8 @@ class ByteReceiver:
         with task.task_lock:
             data_type = message.get_header(StreamHeaderKey.DATA_TYPE)
             last_chunk = data_type == StreamDataType.FINAL
+            if last_chunk:
+                task.last_chunk_received = True
 
             if seq == task.next_seq:
                 self._append(task, (last_chunk, message.payload))

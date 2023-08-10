@@ -191,16 +191,18 @@ class ByteStreamer:
     def _ack_handler(self, message: Message):
         origin = message.get_header(MessageHeaderKey.ORIGIN)
         sid = message.get_header(StreamHeaderKey.STREAM_ID)
+        offset = message.get_header(StreamHeaderKey.OFFSET, None)
         task = self.tx_task_map.get(sid, None)
         if not task:
-            raise StreamError(f"Unknown stream ID {sid} received from {origin}")
+            # Last few ACKs are not needed so this is normal
+            log.debug(f"ACK for stream {sid} received late from {origin} with offset {offset}")
+            return
 
         error = message.get_header(StreamHeaderKey.ERROR_MSG, None)
         if error:
             self._stop_task(task, StreamError(f"Received error from {origin}: {error}"), notify=False)
             return
 
-        offset = message.get_header(StreamHeaderKey.OFFSET, None)
         if offset > task.offset_ack:
             task.offset_ack = offset
 
