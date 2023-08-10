@@ -121,6 +121,8 @@ def main():
             client_engine.fire_event(EventType.BEFORE_CLIENT_REGISTER, fl_ctx)
             register_data = fl_ctx.get_prop(FLContextKey.CLIENT_REGISTER_DATA, {})
             federated_client.register(register_data)
+            fl_ctx.set_prop(FLContextKey.CLIENT_TOKEN, federated_client.token)
+            client_engine.fire_event(EventType.AFTER_CLIENT_REGISTER, fl_ctx)
 
         if not federated_client.token:
             print("The client could not register to server. ")

@@ -64,6 +64,7 @@ class EventType(object):
     BEFORE_CHECK_RESOURCE_MANAGER = "_before_check_resource_manager"
 
     BEFORE_CLIENT_REGISTER = "_before_client_register"
+    AFTER_CLIENT_REGISTER = "_after_client_register"
     CLIENT_REGISTERED = "_client_registered"
     SYSTEM_BOOTSTRAP = "_system_bootstrap"
 

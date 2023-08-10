@@ -726,7 +726,7 @@ class ServerEngine(ServerEngineInternalSpec):
             # assume server resource is unlimited
             if site_name == "server":
                 continue
-            request = self._make_check_resource_message(job, resource_requirements)
+            request = self._make_message_for_check_resource(job, resource_requirements)
 
             client = self.get_client_from_name(site_name)
             if client:
@@ -753,7 +753,7 @@ class ServerEngine(ServerEngineInternalSpec):
                 result[site_name] = (False, "")
         return result
 
-    def _make_check_resource_message(self, job, resource_requirements):
+    def _make_message_for_check_resource(self, job, resource_requirements):
         request = Message(topic=TrainingTopic.CHECK_RESOURCE, body=fobs.dumps(resource_requirements))
         request.set_header(RequestHeader.JOB_ID, job.job_id)
         request.set_header(RequestHeader.REQUIRE_AUTHZ, "true")
