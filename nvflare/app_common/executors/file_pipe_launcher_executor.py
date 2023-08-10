@@ -12,13 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
+import os
 from typing import Optional
 
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.app_common.decomposers import common_decomposers
 from nvflare.app_common.executors.launcher_executor import LauncherExecutor
+from nvflare.client.config import ClientConfig, ConfigKey, from_json
+from nvflare.client.constants import CONFIG_EXCHANGE
 from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.pipe.file_pipe import FilePipe
 from nvflare.fuel.utils.pipe.pipe_handler import PipeHandler
@@ -40,6 +42,7 @@ class FilePipeLauncherExecutor(LauncherExecutor):
         heartbeat_interval: float = 5.0,
         heartbeat_timeout: float = 30.0,
         workers: int = 1,
+        global_evaluation: bool = True,
         from_nvflare_converter_id: Optional[str] = None,
         to_nvflare_converter_id: Optional[str] = None,
     ) -> None:
@@ -59,10 +62,11 @@ class FilePipeLauncherExecutor(LauncherExecutor):
             heartbeat_interval (float): Interval for sending heartbeat to the peer. Defaults to 5.0.
             heartbeat_timeout (float): Timeout for waiting for a heartbeat from the peer. Defaults to 30.0.
             workers (int): Number of worker threads needed.
+            global_evaluation (bool): Whether to run evaluation on global model. Defaults to True.
             from_nvflare_converter_id (Optional[str]): Identifier used to get the ParamsConverter from NVFlare components.
-                This converter will be called when model is get from nvflare controller side to executor side.
+                This converter will be called when model is sent from nvflare controller side to executor side.
             to_nvflare_converter_id (Optional[str]): Identifier used to get the ParamsConverter from NVFlare components.
-                This converter will be called when model is get from nvflare executor side to controller side.
+                This converter will be called when model is sent from nvflare executor side to controller side.
         """
         super().__init__(
             pipe_id=pipe_id,
@@ -76,6 +80,7 @@ class FilePipeLauncherExecutor(LauncherExecutor):
             heartbeat_interval=heartbeat_interval,
             heartbeat_timeout=heartbeat_timeout,
             workers=workers,
+            global_evaluation=global_evaluation,
             from_nvflare_converter_id=from_nvflare_converter_id,
             to_nvflare_converter_id=to_nvflare_converter_id,
         )
@@ -92,6 +97,7 @@ class FilePipeLauncherExecutor(LauncherExecutor):
         if self._pipe_id:
             pipe: FilePipe = engine.get_component(self._pipe_id)
             check_object_type(self._pipe_id, pipe, FilePipe)
+            self._data_exchange_path = pipe.root_path
         else:
             # gets data_exchange_path
             if self._data_exchange_path is None:
@@ -110,3 +116,16 @@ class FilePipeLauncherExecutor(LauncherExecutor):
             heartbeat_timeout=self._heartbeat_timeout,
         )
         self.pipe_handler.start()
+        self._update_config_exchange(fl_ctx)
+
+    def _update_config_exchange(self, fl_ctx: FLContext):
+        workspace = fl_ctx.get_engine().get_workspace()
+        app_dir = workspace.get_app_dir(fl_ctx.get_job_id())
+        config_file = os.path.join(app_dir, workspace.config_folder, CONFIG_EXCHANGE)
+        if os.path.exists(config_file):
+            client_config = from_json(config_file=config_file)
+        else:
+            client_config = ClientConfig({})
+        client_config.config[ConfigKey.GLOBAL_EVAL] = self._global_evaluation
+        client_config.config[ConfigKey.EXCHANGE_PATH] = os.path.abspath(self._data_exchange_path)
+        client_config.to_json(config_file)

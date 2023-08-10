@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
+import os
 from typing import Dict
 
 from .constants import ModelExchangeFormat
@@ -21,6 +23,7 @@ class ConfigKey:
     EXCHANGE_PATH = "exchange_path"
     EXCHANGE_FORMAT = "exchange_format"
     TRANSFER_TYPE = "transfer_type"
+    GLOBAL_EVAL = "global_eval"
 
 
 class ClientConfig:
@@ -35,11 +38,8 @@ class ClientConfig:
     """
 
     def __init__(self, config: Dict):
-        for required_key in (ConfigKey.EXCHANGE_PATH, ConfigKey.EXCHANGE_FORMAT):
-            if required_key not in config:
-                raise RuntimeError(f"Missing required_key: {required_key} in config.")
-
-        config[ConfigKey.EXCHANGE_FORMAT] = ModelExchangeFormat(config[ConfigKey.EXCHANGE_FORMAT])
+        if ConfigKey.EXCHANGE_FORMAT in config:
+            config[ConfigKey.EXCHANGE_FORMAT] = ModelExchangeFormat(config[ConfigKey.EXCHANGE_FORMAT])
         self.config = config
 
     def get_config(self):
@@ -52,4 +52,18 @@ class ClientConfig:
         return self.config[ConfigKey.EXCHANGE_FORMAT]
 
     def get_transfer_type(self):
-        return self.config[ConfigKey.TRANSFER_TYPE]
+        return self.config.get(ConfigKey.TRANSFER_TYPE, "FULL")
+
+    def to_json(self, config_file: str):
+        with open(config_file, "w") as f:
+            json.dump(self.config, f)
+
+
+def from_json(config_file: str):
+    if not os.path.exists(config_file):
+        raise RuntimeError(f"Missing config file {config_file}.")
+
+    with open(config_file, "r") as f:
+        config_dict = json.load(f)
+
+    return ClientConfig(config=config_dict)

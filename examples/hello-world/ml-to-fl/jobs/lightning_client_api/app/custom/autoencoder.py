@@ -200,11 +200,14 @@ def cli_main():
         seed_everything_default=1234,
         run=False,  # used to de-activate automatic fitting.
         trainer_defaults={
-            "callbacks": [ImageSampler(), flare.Callback(send_trigger=flare.SendTrigger.AFTER_TRAIN_AND_TEST)],
+            "callbacks": [ImageSampler()],
             "max_epochs": 1,
         },
         save_config_kwargs={"overwrite": True},
     )
+    # (1) patch the lightning trainer
+    flare.patch(cli.trainer)
+
     print("--- test global model ---")
     cli.trainer.test(cli.model, datamodule=cli.datamodule)
 

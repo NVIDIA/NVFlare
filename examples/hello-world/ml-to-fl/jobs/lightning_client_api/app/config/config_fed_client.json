@@ -8,7 +8,8 @@
         "name": "PTFilePipeLauncherExecutor",
         "args": {
           "launcher_id": "launcher",
-          "heartbeat_timeout": 60
+          "heartbeat_timeout": 60,
+          "global_evaluation": true
         }
       }
     }

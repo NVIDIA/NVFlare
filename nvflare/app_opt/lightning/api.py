@@ -12,57 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import copy
-
 import pytorch_lightning as pl
+from pytorch_lightning.callbacks import Callback
 
-import nvflare.client as flare
-from nvflare.client.config import ConfigKey
-from nvflare.client.constants import ModelExchangeFormat
+from nvflare.app_opt.lightning.fl_callbacks import FLCallback
 
 
-def patch(cls: pl.LightningModule) -> None:
-    flare.init(
-        config={
-            ConfigKey.EXCHANGE_PATH: "./",
-            ConfigKey.EXCHANGE_FORMAT: ModelExchangeFormat.PYTORCH,
-            ConfigKey.TRANSFER_TYPE: "FULL",
-        }
-    )
-
-    if not issubclass(cls, pl.LightningModule):
-        raise RuntimeError("only support LightningModule")
-
-    if hasattr(cls, "on_train_start"):
-        cls.on_train_start = train_start(cls.on_train_start)
+def patch(trainer: pl.Trainer):
+    fl_callback = FLCallback()
+    callbacks = trainer.callbacks
+    if isinstance(callbacks, list):
+        callbacks.append(fl_callback)
+    elif isinstance(callbacks, Callback):
+        callbacks = [callbacks, fl_callback]
     else:
-        cls.on_train_start = _fl_train_start
-
-    cls.get_fl_module = get_fl_module
-
-
-def _fl_train_start(self):
-    model = flare.receive()
-    if model:
-        weights = model.params
-        self.fl_model = model
-        if weights:
-            self.load_state_dict(weights)
-
-
-def get_fl_module(self):
-    # make new copy of self, and then load fl_model
-    new_module = copy.copy(self)
-    if hasattr(self, "fl_model") and self.fl_model is not None and self.fl_model.params:
-        new_module.load_state_dict(self.fl_model.params)
-    return new_module
-
-
-def train_start(func):
-    """Decorator factory."""
-
-    def wrapper(self, *args, **kwargs):
-        _fl_train_start(self)
-        return func(self, *args, **kwargs)
-
-    return wrapper
+        callbacks = [fl_callback]
+    trainer.callbacks = callbacks

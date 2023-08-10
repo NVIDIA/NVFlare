@@ -53,6 +53,11 @@ class SubprocessLauncher(Launcher):
             return True
         return False
 
+    def wait_task(self, task_name: str, fl_ctx: FLContext, timeout=None) -> None:
+        if self._process:
+            self._process.wait(timeout)
+            self.stop_task(task_name, fl_ctx)
+
     def stop_task(self, task_name: str, fl_ctx: FLContext) -> None:
         if self._process:
             self._process.terminate()
