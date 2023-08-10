@@ -16,6 +16,23 @@ from typing import Callable, Dict, List, Optional, Type
 
 from pyhocon import ConfigFactory as CF, ConfigTree
 
+from nvflare.fuel.common.excepts import ConfigError
+from nvflare.fuel.utils.class_utils import ModuleScanner
+
+
+def convert_class_names_to_paths(class_names: List[str]):
+    result = []
+    module_scanner = ModuleScanner(["nvflare"], [])
+    for clazz in class_names:
+        module_name = module_scanner.get_module_name(clazz)
+        if module_name is None:
+            raise ConfigError('Cannot find component class "{}"'.format(clazz))
+        class_path = f"{module_name}.{clazz}"
+        result.append(class_path)
+        print(clazz, class_path)
+
+    return result
+
 
 def build_reverse_order_index(config_file_path: str) -> (Dict[str, List[str]], Dict[str, Any]):
     try:

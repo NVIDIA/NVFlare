@@ -13,29 +13,32 @@
 # limitations under the License.
 import os
 import shutil
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Tuple
 
 from pyhocon import ConfigFactory as CF
-from pyhocon import ConfigTree
 
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.tool.job.config.config_indexer import build_reverse_order_index
 
 
-def merge_configs_from_cli(cmd_args) -> Dict[str, ConfigTree]:
+def merge_configs_from_cli(cmd_args) -> Dict[str, tuple]:
     cli_config_dict: Dict[str, Dict[str, str]] = get_cli_config(cmd_args)
     copy_app_config_file(cli_config_dict, cmd_args)
-    config_dir = os.path.join(cmd_args.job_folder, "app", "config")
-    indices: Dict[str, (Dict, Dict)] = build_config_file_indexers(config_dir)
+    indices: Dict[str, (Dict, Dict)] = build_config_file_indexers(cmd_args.job_folder)
     return merge_configs(indices, cli_config_dict)
 
 
 def copy_app_config_file(cli_config_dict, cmd_args):
     config_dir = os.path.join(cmd_args.job_folder, "app/config")
+    target_dir = config_dir
     for cli_config_file in cli_config_dict:
-        print("cli_config_file =", cli_config_file)
         base_config_filename = os.path.basename(cli_config_file)
-        target_file = os.path.join(config_dir, base_config_filename)
+        if base_config_filename.startswith("meta."):
+            target_dir = cmd_args.job_folder
+        else:
+            target_dir = config_dir
+
+        target_file = os.path.join(target_dir, base_config_filename)
         if not os.path.exists(target_file):
             shutil.copyfile(cli_config_file, target_file)
 
@@ -54,22 +57,49 @@ def extract_string_with_index(input_string):
     while True:
         opening_bracket_index = input_string.find("[")
         closing_bracket_index = input_string.find("]")
-
         if opening_bracket_index == -1 or closing_bracket_index == -1:
             break
-
         string_before = input_string[:opening_bracket_index]
         index = int(input_string[opening_bracket_index + 1: closing_bracket_index])
         string_after = input_string[closing_bracket_index + 1:]
 
         result.append((string_before.strip("."), index, string_after.strip(".")))
         input_string = f"{string_before}{string_after}"
-
     result = [elm for elm in result if len(elm) > 0]
     return result
 
 
-def merge_configs(indices_configs: Dict[str, tuple], cli_file_configs: Dict[str, Dict]) -> Dict[str, ConfigTree]:
+def extract_value_from_index(indices_configs: Dict[str, Tuple]) -> Dict[str, Dict[str, Any]]:
+    result = {}
+    for file, (indices_dict, configs_dict) in indices_configs.items():
+        basename = os.path.basename(file)
+        conf = CF.from_dict(configs_dict)
+        result[file] = {}
+        if len(indices_dict) > 0:
+            for key, key_path_list in indices_dict.items():
+                if len(key_path_list) > 1:
+                    print(f"Warning: Ambiguity config key: '{key}' for file '{basename}', "
+                          f"more than one key paths with such key: {key_path_list}, first one will be used")
+
+                key_path = key_path_list[0]
+                results = extract_string_with_index(key_path)
+                if len(results) > 0:
+                    target_conf = conf
+                    for idx, (before, index, after) in enumerate(results):
+                        before_configs = target_conf.get_list(before)
+                        after_config = before_configs[index]
+                        if idx == len(results) - 1:
+                            value = after_config.get(after)
+                            result[file][key] = value
+                        else:
+                            target_conf = after_config
+                else:
+                    print(f"{key_path =}")
+                    result[file][key] = conf.get(key_path)
+    return result
+
+
+def merge_configs(indices_configs: Dict[str, tuple], cli_file_configs: Dict[str, Dict]) -> Dict[str, tuple]:
     """
     Merge configurations from indices_configs and cli_file_configs.
 
@@ -83,10 +113,10 @@ def merge_configs(indices_configs: Dict[str, tuple], cli_file_configs: Dict[str,
     merged = {}
     for file, (indices_dict, configs_dict) in indices_configs.items():
         basename = os.path.basename(file)
-        cli_configs = cli_file_configs.get(basename, None)
-        if cli_configs:
-            conf = CF.from_dict(configs_dict)
-            if len(indices_dict) > 0:
+        conf = CF.from_dict(configs_dict)
+        if len(indices_dict) > 0:
+            cli_configs = cli_file_configs.get(basename, None)
+            if cli_configs:
                 for key, value in cli_configs.items():
                     if key not in indices_dict:
                         raise ValueError(f"Invalid config key: '{key}' for file '{basename}'")
@@ -113,7 +143,7 @@ def merge_configs(indices_configs: Dict[str, tuple], cli_file_configs: Dict[str,
                     else:
                         conf.put(key_path, value)
 
-            merged[basename] = conf
+        merged[basename] = (indices_dict, conf)
 
     return merged
 
@@ -165,22 +195,24 @@ def parse_cli_config(cli_configs: List[str]) -> Dict[str, Dict[str, str]]:
     return cli_config_dict
 
 
-def build_config_file_indexers(config_dir: str,
-                               included: Optional[List[str]] = None,
-                               excluded: Optional[List[str]] = None
-                               ) -> Dict[str, dict]:
+def build_config_file_indexers(config_dir: str) -> Dict[str, dict]:
     """
     Build a dictionary of config file indexers for the given job folder.
 
     Args:
-        included: if not None, we will only include the specified file list.
-        excluded: if not None, we will exclude from the file list
         config_dir:  Job config directory
 
     Returns:
         Dict[str, dict]: A dictionary where keys are absolute paths of config files
                          and values are their corresponding reverse order indexers.
     """
+
+    excluded = ["info.md", "info.conf"]
+    included = ["config_fed_client.conf",
+                "config_fed_server.conf",
+                "config_exchange.conf",
+                "meta.conf"
+                ]
     config_extensions = ConfigFormat.extensions()
 
     config_file_index = {}

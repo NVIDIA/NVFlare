@@ -17,7 +17,7 @@ import pathlib
 import shutil
 from distutils.dir_util import copy_tree
 from tempfile import mkdtemp
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict
 
 from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree
@@ -26,7 +26,7 @@ from nvflare.cli_exception import CLIException
 from nvflare.fuel.flare_api.flare_api import new_secure_session
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
-from nvflare.tool.job.config.configer import merge_configs_from_cli, build_config_file_indexers
+from nvflare.tool.job.config.configer import merge_configs_from_cli, extract_value_from_index
 from nvflare.utils.cli_utils import append_if_not_in_list, get_curr_dir, get_startup_kit_dir, save_config, \
     find_job_template_location, get_hidden_nvflare_dir
 
@@ -110,24 +110,15 @@ def create_job(cmd_args):
         return
 
     prepare_meta_config(cmd_args)
-
     target_wf_name = cmd_args.workflow
-
     check_config_exists(target_wf_name, wf_index_conf)
 
     job_template_dir = find_job_template_location()
     src = os.path.join(job_template_dir, "workflows", target_wf_name)
     copy_tree(src=src, dst=config_dir)
 
-    excluded = ["info.md", "info.conf"]
-    included = ["config_fed_client.conf",
-                "config_fed_server.conf",
-                "config_exchange.conf",
-                "meta.conf"
-                ]
-
-    file_indices = build_config_file_indexers(job_folder, included, excluded)
-    display_workflow_variables(file_indices)
+    variable_values = prepare_submit_job_config(cmd_args)
+    display_workflow_variables(variable_values)
 
 
 def check_config_exists(target_wf_name, wf_index_conf):
@@ -139,22 +130,25 @@ def check_config_exists(target_wf_name, wf_index_conf):
         )
 
 
-def display_workflow_variables(file_indices):
+def display_workflow_variables(variable_values: Dict[str, Dict]):
     print("\nThe following are the variables you can change in the workflow\n")
     print("-" * 100)
     file_name_fix_length = 35
-    var_name_fix_length = 35
+    var_name_fix_length = 25
+    var_value_fix_length = 25
     file_name = fix_length_format("file_name", file_name_fix_length)
     var_name = fix_length_format("var_name", var_name_fix_length)
-    print(" " * 5, file_name, var_name)
+    var_value = fix_length_format("value", var_value_fix_length)
+    print(" " * 3, file_name, var_name, var_value)
     print("-" * 100)
-    for file in sorted(file_indices.keys()):
-        indices, _ = file_indices.get(file)
+    for file in sorted(variable_values.keys()):
+        indices = variable_values.get(file)
         file_name = os.path.basename(file)
         file_name = fix_length_format(file_name, file_name_fix_length)
         for index in sorted(indices.keys()):
             var_name = fix_length_format(index, var_name_fix_length)
-            print(" " * 5, file_name, var_name)
+            var_value = indices[index]
+            print(" " * 3, file_name, var_name, var_value)
         print("")
     print("-" * 100)
 
@@ -337,6 +331,23 @@ def define_create_job_parser(job_subparser):
                                        All files or directories under this directory will be copied over 
                                        to the custom directory.""",
     )
+    create_parser.add_argument(
+        "-f",
+        "--config_file",
+        type=str,
+        action="append",
+        nargs="*",
+        help="""Training config file with corresponding optional key=value pairs. 
+                                       If key presents in the preceding config file, the value in the config
+                                       file will be overwritten by the new value """,
+    )
+    create_parser.add_argument(
+        "-a",
+        "--app_config",
+        type=str,
+        nargs="*",
+        help="""key=value options will be passed directly to script argument """,
+    )
     create_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
     create_parser.add_argument(
         "-force",
@@ -347,10 +358,15 @@ def define_create_job_parser(job_subparser):
 
 
 # ====================================================================
-def prepare_submit_job_config(cmd_args, tmp_job_dir):
+def prepare_submit_job_config(cmd_args, tmp_job_dir: Optional[str] = None):
     update_client_app_script(cmd_args)
     merged_conf = merge_configs_from_cli(cmd_args)
+    if tmp_job_dir is None:
+        tmp_job_dir = cmd_args.job_folder
     save_merged_configs(merged_conf, tmp_job_dir)
+    variable_values = extract_value_from_index(merged_conf)
+
+    return variable_values
 
 
 def update_client_app_script(cmd_args):
@@ -372,13 +388,13 @@ def _update_client_app_config_script(app_config: str) -> Tuple[ConfigTree, str]:
 
 
 def save_merged_configs(merged_conf, tmp_job_dir):
-    for file, file_configs in merged_conf.items():
+    for file, (file_indices, file_configs) in merged_conf.items():
         config_dir = pathlib.Path(tmp_job_dir) / "app" / "config"
         base_filename = os.path.basename(file)
         if base_filename.startswith("meta."):
             config_dir = tmp_job_dir
         base_filename = os.path.splitext(base_filename)[0]
-        dst_path = config_dir / f"{base_filename}.json"
+        dst_path = os.path.join(config_dir, f"{base_filename}.json")
         save_config(file_configs, dst_path)
 
 
