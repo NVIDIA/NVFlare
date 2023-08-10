@@ -125,8 +125,7 @@ def find_job_template_location(job_template_dir: Optional[str] = None):
 
     def check_job_template_dir(job_temp_dir: str):
         if job_temp_dir:
-            wf_dir = os.path.join(job_temp_dir, "workflows")
-            if os.path.isdir(wf_dir):
+            if os.path.isdir(job_temp_dir):
                 return job_temp_dir
             else:
                 raise ValueError(f"Invalid job template directory {job_temp_dir}")

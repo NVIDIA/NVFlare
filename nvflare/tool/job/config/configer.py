@@ -15,7 +15,7 @@ import os
 import shutil
 from typing import Any, Dict, List, Tuple
 
-from pyhocon import ConfigFactory as CF
+from pyhocon import ConfigFactory as CF, ConfigTree
 
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.tool.job.config.config_indexer import build_reverse_order_index
@@ -89,12 +89,15 @@ def extract_value_from_index(indices_configs: Dict[str, Tuple]) -> Dict[str, Dic
                         before_configs = target_conf.get_list(before)
                         after_config = before_configs[index]
                         if idx == len(results) - 1:
-                            value = after_config.get(after)
+                            if after and isinstance(after_config, ConfigTree):
+                                value = after_config.get(after)
+                            else:
+                                value = after_config
+
                             result[file][key] = value
                         else:
                             target_conf = after_config
                 else:
-                    print(f"{key_path =}")
                     result[file][key] = conf.get(key_path)
     return result
 
@@ -115,7 +118,11 @@ def merge_configs(indices_configs: Dict[str, tuple], cli_file_configs: Dict[str,
         basename = os.path.basename(file)
         conf = CF.from_dict(configs_dict)
         if len(indices_dict) > 0:
-            cli_configs = cli_file_configs.get(basename, None)
+            # CLI could be use absolute path as well, try that first, not found, then use base name
+            cli_configs = cli_file_configs.get(file, None)
+            if not cli_configs:
+                cli_configs = cli_file_configs.get(basename, None)
+
             if cli_configs:
                 for key, value in cli_configs.items():
                     if key not in indices_dict:

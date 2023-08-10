@@ -26,22 +26,15 @@ from nvflare.cli_exception import CLIException
 from nvflare.fuel.flare_api.flare_api import new_secure_session
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
-from nvflare.tool.job.config.configer import merge_configs_from_cli, extract_value_from_index
+from nvflare.tool.job.config.configer import merge_configs_from_cli, extract_value_from_index, \
+    build_config_file_indexers
 from nvflare.utils.cli_utils import append_if_not_in_list, get_curr_dir, get_startup_kit_dir, save_config, \
     find_job_template_location, get_hidden_nvflare_dir
 
-CMD_SHOW_WORKFLOWS = "show_workflows"
+CMD_LIST_TEMPLATES = "list_templates"
+CMD_SHOW_VARIABLES = "show_variables"
 CMD_CREATE_JOB = "create"
 CMD_SUBMIT_JOB = "submit"
-
-
-def create_job2(cmd_args):
-    job_folder = cmd_args.job_folder
-    prepare_job_folder(cmd_args)
-    predefined = load_predefined_config()
-    prepare_fed_config(cmd_args, predefined)
-    prepare_meta_config(cmd_args)
-    prepare_model_exchange_config(job_folder, cmd_args.force)
 
 
 def find_filename_basename(f: str):
@@ -52,51 +45,46 @@ def find_filename_basename(f: str):
         return basename
 
 
-def build_workflow_indices(job_template_dir: str) -> ConfigTree:
-    conf = _build_wf_index(job_template_dir)
-    return conf
-
-
-def _build_wf_index(job_template_dir):
-    workflows_dir = os.path.join(job_template_dir, "workflows")
-    conf = CF.parse_string("{ workflows = {} }")
+def build_job_template_indices(job_template_dir: str) -> ConfigTree:
+    conf = CF.parse_string("{ templates = {} }")
     config_file_base_names = ["config_fed_client", "config_fed_server", "config_exchange", "meta"]
-    workflow_conf = conf.get("workflows")
+    template_conf = conf.get("templates")
     keys = ["description", "controller_type", "client_category"]
-    for root, dirs, files in os.walk(workflows_dir):
+    for root, dirs, files in os.walk(job_template_dir):
         config_files = [f for f in files if find_filename_basename(f) in config_file_base_names]
         if len(config_files) > 0:
-            workflow_name = find_filename_basename(root)
-            info_conf = get_wf_info_config(root)
+            job_temp_name = find_filename_basename(root)
+            info_conf = get_template_info_config(root)
             for key in keys:
                 value = info_conf.get(key, "NA") if info_conf else "NA"
-                workflow_conf.put(f"{workflow_name}.{key}", value)
+                template_conf.put(f"{root}.{key}", value)
+
     # save the index file for debugging purpose
-    save_workflow_index_file(conf)
+    save_job_template_index_file(conf)
     return conf
 
 
-def save_workflow_index_file(conf):
-    dst_path = get_workflow_registry_file_path()
+def save_job_template_index_file(conf):
+    dst_path = get_template_registry_file_path()
     save_config(conf, dst_path)
 
 
-def get_workflow_registry_file_path():
-    filename = "workflow_registry.conf"
+def get_template_registry_file_path():
+    filename = "job_templates.conf"
     hidden_nvflare_dir = get_hidden_nvflare_dir()
     file_path = os.path.join(hidden_nvflare_dir, filename)
     return file_path
 
 
-def get_wf_info_config(workflow_dir):
-    info_conf_path = os.path.join(workflow_dir, "info.conf")
+def get_template_info_config(template_dir):
+    info_conf_path = os.path.join(template_dir, "info.conf")
     return CF.parse_file(info_conf_path) if os.path.isfile(info_conf_path) else None
 
 
 def create_job(cmd_args):
     prepare_job_folder(cmd_args)
     job_template_location = find_job_template_location()
-    wf_index_conf = build_workflow_indices(job_template_location)
+    template_index_conf = build_job_template_indices(job_template_location)
     job_folder = cmd_args.job_folder
     config_dir = get_config_dir(job_folder)
 
@@ -109,29 +97,38 @@ def create_job(cmd_args):
         )
         return
 
-    prepare_meta_config(cmd_args)
-    target_wf_name = cmd_args.workflow
-    check_config_exists(target_wf_name, wf_index_conf)
+    target_template_name = cmd_args.template
+    check_config_exists(target_template_name, template_index_conf)
 
     job_template_dir = find_job_template_location()
-    src = os.path.join(job_template_dir, "workflows", target_wf_name)
+    src = os.path.join(job_template_dir, target_template_name)
     copy_tree(src=src, dst=config_dir)
+    prepare_meta_config(cmd_args)
 
-    variable_values = prepare_submit_job_config(cmd_args)
-    display_workflow_variables(variable_values)
+    variable_values = prepare_job_config(cmd_args)
+    display_template_variables(variable_values)
 
 
-def check_config_exists(target_wf_name, wf_index_conf):
-    target_wf_config = wf_index_conf.get(f"workflows.{target_wf_name}", None)
-    if not target_wf_config:
+def show_variables(cmd_args):
+    indices: Dict[str, (Dict, Dict)] = build_config_file_indexers(cmd_args.job_folder)
+    variable_values = extract_value_from_index(indices_configs=indices)
+    display_template_variables(variable_values)
+
+
+def check_config_exists(target_temp_name, template_index_conf):
+
+    targets = [os.path.basename(key) for key in template_index_conf.get("templates").keys()]
+    found = target_temp_name in targets
+
+    if not found:
         raise ValueError(
-            f"Invalid workflow name {target_wf_name}, "
-            f"please check the available workflows using nvflare job show_workflows"
+            f"Invalid template name {target_temp_name}, "
+            f"please check the available templates using nvflare job list_templates"
         )
 
 
-def display_workflow_variables(variable_values: Dict[str, Dict]):
-    print("\nThe following are the variables you can change in the workflow\n")
+def display_template_variables(variable_values: Dict[str, Dict]):
+    print("\nThe following are the variables you can change in the template\n")
     print("-" * 100)
     file_name_fix_length = 35
     var_name_fix_length = 25
@@ -153,16 +150,16 @@ def display_workflow_variables(variable_values: Dict[str, Dict]):
     print("-" * 100)
 
 
-def show_workflows(cmd_args):
+def list_templates(cmd_args):
     job_template_dir = find_job_template_location(cmd_args.job_template_dir)
-    wf_index_conf = build_workflow_indices(job_template_dir)
-    display_available_workflows(wf_index_conf)
+    template_index_conf = build_job_template_indices(job_template_dir)
+    display_available_templates(template_index_conf)
 
     if cmd_args.job_template_dir:
         update_job_template_dir(cmd_args.job_template_dir)
 
 
-def update_job_template_dir(job_template_dir:str):
+def update_job_template_dir(job_template_dir: str):
     hidden_nvflare_dir = get_hidden_nvflare_dir()
     file_path = os.path.join(hidden_nvflare_dir, "config.conf")
     config = CF.parse_file(file_path)
@@ -170,27 +167,31 @@ def update_job_template_dir(job_template_dir:str):
     save_config(config, file_path)
 
 
-def display_available_workflows(wf_index_conf):
-    print("\nThe following workflow templates are available: \n")
-    wf_conf = wf_index_conf.get("workflows")
+def display_available_templates(template_index_conf):
+    print("\nThe following job templates are available: \n")
+    template_registry = template_index_conf.get("templates")
     print("-" * 120)
-    name_fix_length = 20
-    description_fix_length = 55
+    name_fix_length = 15
+    description_fix_length = 60
     controller_type_fix_length = 20
     client_category_fix_length = 20
     name = fix_length_format("name", name_fix_length)
     description = fix_length_format("description", description_fix_length)
     client_category = fix_length_format("client category", client_category_fix_length)
     controller_type = fix_length_format("controller type", controller_type_fix_length)
-    print(" " * 5, name, description, controller_type, client_category)
+    print(" " * 2, name, description, controller_type, client_category)
     print("-" * 120)
-    for name in sorted(wf_conf.keys()):
-        job_wf_conf = wf_conf.get(name)
+    for file_path in sorted(template_registry.keys()):
+        name = os.path.basename(file_path)
+        # print(f"{name=}", f"{file_path=}", f"{template_registry=}")
+        template_info = template_registry.get(file_path, None)
+        if not template_info:
+            template_info = template_registry.get(name)
         name = fix_length_format(name, name_fix_length)
-        description = fix_length_format(job_wf_conf.get("description"), description_fix_length)
-        client_category = fix_length_format(job_wf_conf.get("client_category"), client_category_fix_length)
-        controller_type = fix_length_format(job_wf_conf.get("controller_type"), controller_type_fix_length)
-        print(" " * 5, name, description, controller_type, client_category)
+        description = fix_length_format(template_info.get("description"), description_fix_length)
+        client_category = fix_length_format(template_info.get("client_category"), client_category_fix_length)
+        controller_type = fix_length_format(template_info.get("controller_type"), controller_type_fix_length)
+        print(" " * 2, name, description, controller_type, client_category)
     print("-" * 120)
 
 
@@ -204,7 +205,7 @@ def submit_job(cmd_args):
         temp_job_dir = mkdtemp()
         copy_tree(cmd_args.job_folder, temp_job_dir)
 
-        prepare_submit_job_config(cmd_args, temp_job_dir)
+        prepare_job_config(cmd_args, temp_job_dir)
         admin_username, admin_user_dir = find_admin_user_and_dir()
         internal_submit_job(admin_user_dir, admin_username, temp_job_dir)
     finally:
@@ -239,7 +240,8 @@ def internal_submit_job(admin_user_dir, username, temp_job_dir):
 
 job_sub_cmd_handlers = {CMD_CREATE_JOB: create_job,
                         CMD_SUBMIT_JOB: submit_job,
-                        CMD_SHOW_WORKFLOWS: show_workflows}
+                        CMD_LIST_TEMPLATES: list_templates,
+                        CMD_SHOW_VARIABLES: show_variables}
 
 
 def handle_job_cli_cmd(cmd_args):
@@ -251,9 +253,10 @@ def def_job_cli_parser(sub_cmd):
     cmd = "job"
     parser = sub_cmd.add_parser(cmd)
     job_subparser = parser.add_subparsers(title="job", dest="job_sub_cmd", help="job subcommand")
-    define_show_wfs_parser(job_subparser)
+    define_list_templates_parser(job_subparser)
     define_create_job_parser(job_subparser)
     define_submit_job_parser(job_subparser)
+    define_variables_parser(job_subparser)
 
     return {cmd: parser}
 
@@ -289,8 +292,8 @@ def define_submit_job_parser(job_subparser):
     submit_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
 
 
-def define_show_wfs_parser(job_subparser):
-    show_jobs_parser = job_subparser.add_parser("show_workflows", help="show available job template workflows")
+def define_list_templates_parser(job_subparser):
+    show_jobs_parser = job_subparser.add_parser("list_templates", help="show available job templates")
     show_jobs_parser.add_argument(
         "-d",
         "--job_template_dir",
@@ -301,6 +304,20 @@ def define_show_wfs_parser(job_subparser):
              "will search from ./nvflare/config.conf and NVFLARE_HOME env. variables",
     )
     show_jobs_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
+
+
+def define_variables_parser(job_subparser):
+    show_variables_parser = job_subparser.add_parser("show_variables",
+                                                     help="show template variable values in configuration")
+    show_variables_parser.add_argument(
+        "-j",
+        "--job_folder",
+        type=str,
+        nargs="?",
+        default=os.path.join(get_curr_dir(), "current_job"),
+        help="job_folder path, default to current directory",
+    )
+    show_variables_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
 
 
 def define_create_job_parser(job_subparser):
@@ -315,11 +332,11 @@ def define_create_job_parser(job_subparser):
     )
     create_parser.add_argument(
         "-w",
-        "--workflow",
+        "--template",
         type=str,
         nargs="?",
         default="sag_pt",
-        help="""workflow name, use show_workflows to see available workflows from job templates """,
+        help="""template name, use liste_templates to see available jobs from job templates """,
     )
     create_parser.add_argument("-s", "--script", type=str, nargs="?", help="""code script such as train.py""")
     create_parser.add_argument(
@@ -358,7 +375,7 @@ def define_create_job_parser(job_subparser):
 
 
 # ====================================================================
-def prepare_submit_job_config(cmd_args, tmp_job_dir: Optional[str] = None):
+def prepare_job_config(cmd_args, tmp_job_dir: Optional[str] = None):
     update_client_app_script(cmd_args)
     merged_conf = merge_configs_from_cli(cmd_args)
     if tmp_job_dir is None:
@@ -429,37 +446,18 @@ def prepare_meta_config(cmd_args):
     job_folder = cmd_args.job_folder
     app_name = os.path.basename(job_folder)
     dst_path = os.path.join(job_folder, "meta.conf")
-    print(f"{dst_path=}")
-    if os.path.isfile(dst_path) and not cmd_args.force:
-        print("returning")
-        return
-    dst_config = load_src_config_template("meta.conf")
-    dst_config.put("name", app_name)
-    save_config(dst_config, dst_path)
+
+    # Use existing meta.conf if user already defined it.
+    if not os.path.isfile(dst_path):
+        dst_config = load_src_config_template("meta.conf")
+        dst_config.put("name", app_name)
+        save_config(dst_config, dst_path)
 
 
 def load_src_config_template(config_file_name: str):
     file_dir = os.path.dirname(__file__)
     config_template = CF.parse_file(os.path.join(file_dir, f"config/{config_file_name}"))
     return config_template
-
-
-def prepare_fed_config(cmd_args, predefined):
-    server_dst_path = dst_config_path(cmd_args, "config_fed_server.json")
-    client_dst_path = dst_config_path(cmd_args, "config_fed_client.json")
-
-    if (os.path.isfile(server_dst_path) or os.path.isfile(client_dst_path)) and not cmd_args.force:
-        print(
-            f"""warning: configuration files:
-                {server_dst_path} 
-                {client_dst_path} 
-                already exists. Not generating the config files. If you would like to overwrite, use -force option"""
-        )
-        return
-
-    server_config, client_config = prepare_workflows(cmd_args, predefined)
-    save_config(server_config, server_dst_path)
-    save_config(client_config, client_dst_path)
 
 
 def dst_app_path(job_folder: str):
@@ -498,118 +496,6 @@ def convert_args_list_to_dict(kvs: Optional[List[str]] = None) -> dict:
                 raise ValueError(f"Invalid key-value pair: '{kv}'")
 
     return kv_dict
-
-
-def prepare_workflows(cmd_args, predefined) -> Tuple[ConfigTree, ConfigTree]:
-    return _prepare_workflow(cmd_args.workflows, predefined, cmd_args.min_clients, cmd_args.num_rounds, cmd_args.script)
-
-
-def _prepare_workflow(
-        workflow_names: List[str],
-        predefined: ConfigTree,
-        min_clients: Optional[int] = None,
-        num_rounds: Optional[int] = None,
-        script: Optional[str] = None,
-) -> Tuple[ConfigTree, ConfigTree]:
-    workflows_conf = predefined.get_config("workflows")
-    invalid_names = [name for name in workflow_names if workflows_conf.get(name, None) is None]
-    if invalid_names:
-        raise ValueError(f"Unknown workflow names: {invalid_names}")
-
-    server_config = CF.parse_string("""{ format_version = 2 }""")
-    client_config = CF.parse_string("""{ format_version = 2 }""")
-
-    workflows = []
-    wf_components = []
-    wf_task_result_filters = []
-    wf_task_task_data_filters = []
-
-    executors = []
-    exec_components = []
-    exec_task_result_filters = []
-    exec_task_data_filters = []
-
-    for wf_name in workflow_names:
-        target_wf_conf = workflows_conf.get(f"{wf_name}.workflow")
-
-        # special case
-        if min_clients and target_wf_conf.get("args.min_clients", None) is not None:
-            target_wf_conf.put("args.min_clients", min_clients)
-        if num_rounds and target_wf_conf.get("args.num_rounds", None) is not None:
-            target_wf_conf.put("args.num_rounds", num_rounds)
-
-        append_if_not_in_list(workflows, target_wf_conf)
-        predefined_wf_components = workflows_conf.get(f"{wf_name}.components", None)
-        predefined_wf_task_data_filters = workflows_conf.get(f"{wf_name}.task_data_filters", None)
-        predefined_wf_task_result_filters = workflows_conf.get(f"{wf_name}.task_result_filters", None)
-
-        if predefined_wf_task_data_filters:
-            for name, data_filter in predefined_wf_task_data_filters.items():
-                append_if_not_in_list(wf_task_task_data_filters, data_filter)
-
-        if predefined_wf_task_result_filters:
-            for name, result_filter in predefined_wf_task_result_filters.items():
-                append_if_not_in_list(wf_task_result_filters, result_filter)
-
-        if predefined_wf_components:
-            for name, comp in predefined_wf_components.items():
-                append_if_not_in_list(wf_components, comp)
-
-        predefined_executors = workflows_conf.get(f"{wf_name}.executors", None)
-        prepare_wf_executor(
-            exec_components, exec_task_data_filters, exec_task_result_filters, executors, predefined_executors
-        )
-
-    server_config.put("workflows", workflows)
-    server_config.put("components", wf_components)
-    server_config.put("task_data_filters", wf_task_task_data_filters)
-    server_config.put("task_result_filters", wf_task_result_filters)
-
-    client_config.put("script", "")
-    client_config.put("app_config", " ")
-
-    if script:
-        script = os.path.basename(script.split(" ")[0])
-        client_config.put("script", f"{script}")
-
-    client_config.put("executors", executors)
-    client_config.put("components", exec_components)
-    client_config.put("task_data_filters", exec_task_data_filters)
-    client_config.put("task_result_filters", exec_task_result_filters)
-
-    return server_config, client_config
-
-
-def prepare_wf_executor(
-        exec_components, exec_task_data_filters, exec_task_result_filters, executors, predefined_executors
-):
-    if predefined_executors:
-        item_lens = len(predefined_executors.items())
-        target_exec = None
-        if item_lens == 0:
-            target_exec = None
-        elif item_lens == 1:
-            name = next(iter(predefined_executors))
-            target_exec = predefined_executors.get(name)
-        else:  # > 1
-            target_exec_list = [
-                exec_conf for name, exec_conf in predefined_executors.items() if exec_conf.get("default", False) is True
-            ]
-            if target_exec_list:
-                target_exec = target_exec_list[0]
-
-        if target_exec:
-            # target_exec.put("script", f"{os.path.basename(cmd_args.script)}")
-            append_if_not_in_list(executors, target_exec.get("executor"))
-
-            if target_exec.get("task_data_filters", None):
-                for name, data_filter in target_exec.get("task_data_filters").items():
-                    append_if_not_in_list(exec_task_data_filters, data_filter)
-            if target_exec.get("task_result_filters", None):
-                for name, result_filter in target_exec.get("task_result_filters").items():
-                    append_if_not_in_list(exec_task_result_filters, result_filter)
-            for name, comp in target_exec.get("components").items():
-                append_if_not_in_list(exec_components, comp)
 
 
 def prepare_job_folder(cmd_args):
