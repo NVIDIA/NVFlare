@@ -43,7 +43,7 @@ class SiteSecurityFilter(CommandFilter):
     def authorization_check(self, engine, command):
         filter_succeed = True
         reasons = ""
-        if command not in InternalCommands.commands:
+        if not InternalCommands.contains_commmand(command):
             with engine.new_context() as fl_ctx:
                 fl_ctx.set_prop(FLContextKey.COMMAND_NAME, command, sticky=False)
                 engine.fire_event(EventType.AUTHORIZE_COMMAND_CHECK, fl_ctx)

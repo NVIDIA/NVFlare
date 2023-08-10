@@ -106,7 +106,7 @@ class Communicator:
             CellMessageHeaderKeys.CLIENT_NAME: client_name,
             CellMessageHeaderKeys.CLIENT_IP: local_ip,
             CellMessageHeaderKeys.PROJECT_NAME: project_name,
-            CellMessageHeaderKeys.CLIENT_REGISTER_DATA: register_data
+            CellMessageHeaderKeys.CLIENT_REGISTER_DATA: register_data,
         }
         login_message = new_cell_message(headers)
 
