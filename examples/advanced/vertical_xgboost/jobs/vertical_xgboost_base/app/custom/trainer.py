@@ -14,16 +14,15 @@
 
 import os
 
+import xgboost as xgb
+
 from nvflare.apis.executor import Executor
 from nvflare.apis.fl_constant import FLContextKey, ReturnCode
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
-from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
 from nvflare.app_opt.xgboost.histogram_based.executor import TensorBoardCallback
 from nvflare.fuel.utils.import_utils import optional_import
-
-import xgboost as xgb
 
 
 class SupportedTasks(object):
@@ -31,8 +30,18 @@ class SupportedTasks(object):
 
 
 class XGBoostTrainer(Executor):
-    def __init__(self, server_address: str, world_size: int, data_loader_id: str, num_rounds: int, early_stopping_rounds: int, xgb_params: dict, server_cert_path: str = None,
-                 client_key_path: str = None, client_cert_path: str = None):
+    def __init__(
+        self,
+        server_address: str,
+        world_size: int,
+        data_loader_id: str,
+        num_rounds: int,
+        early_stopping_rounds: int,
+        xgb_params: dict,
+        server_cert_path: str = None,
+        client_key_path: str = None,
+        client_cert_path: str = None,
+    ):
         """Trainer for federated XGBoost.
 
         Args:
@@ -62,10 +71,9 @@ class XGBoostTrainer(Executor):
         self.data_loader = engine.get_component(self.data_loader_id)
         self.app_dir = engine.get_workspace().get_app_dir(fl_ctx.get_job_id())
         self.client_id = fl_ctx.get_identity_name()
-        self.rank = int(self.client_id.split('-')[1]) - 1
+        self.rank = int(self.client_id.split("-")[1]) - 1
 
-    def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext,
-                abort_signal: Signal) -> Shareable:
+    def execute(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> Shareable:
         self.log_info(fl_ctx, f"Executing {task_name}")
         try:
             if task_name == SupportedTasks.TRAIN:
@@ -76,17 +84,16 @@ class XGBoostTrainer(Executor):
                 self.log_error(fl_ctx, f"{task_name} is not a supported task.")
                 return make_reply(ReturnCode.TASK_UNKNOWN)
         except BaseException as e:
-            self.log_exception(fl_ctx,
-                               f"Task {task_name} failed. Exception: {e.__str__()}")
+            self.log_exception(fl_ctx, f"Task {task_name} failed. Exception: {e.__str__()}")
             return make_reply(ReturnCode.EXECUTION_EXCEPTION)
 
     def train(self, fl_ctx: FLContext):
         # using the xgboost federated learning plugin
         communicator_env = {
-            'xgboost_communicator': 'federated',
-            'federated_server_address': self.server_address,
-            'federated_world_size': self.world_size,
-            'federated_rank': self.rank
+            "xgboost_communicator": "federated",
+            "federated_server_address": self.server_address,
+            "federated_world_size": self.world_size,
+            "federated_rank": self.rank,
         }
 
         # if using ssl
@@ -98,13 +105,13 @@ class XGBoostTrainer(Executor):
         with xgb.collective.CommunicatorContext(**communicator_env):
             # only one site holds the labels
             if self.rank == 0:
-                label = '&label_column=0'
+                label = "&label_column=0"
             else:
-                label = ''
+                label = ""
 
             train_path, test_path = self.data_loader.load_data(fl_ctx)
-            dtrain = xgb.DMatrix(train_path+f"?format=csv{label}", data_split_mode=1)
-            dtest = xgb.DMatrix(test_path+f"?format=csv{label}", data_split_mode=1)
+            dtrain = xgb.DMatrix(train_path + f"?format=csv{label}", data_split_mode=1)
+            dtest = xgb.DMatrix(test_path + f"?format=csv{label}", data_split_mode=1)
 
             # specify validations set to watch performance
             watchlist = [(dtest, "eval"), (dtrain, "train")]
@@ -115,7 +122,14 @@ class XGBoostTrainer(Executor):
                 callbacks.append(TensorBoardCallback(self.app_dir, tensorboard))
 
             # train with booster params from config
-            bst = xgb.train(self.xgb_params, dtrain, self.num_rounds, evals=watchlist, early_stopping_rounds=self.early_stopping_rounds, callbacks=callbacks)
+            bst = xgb.train(
+                self.xgb_params,
+                dtrain,
+                self.num_rounds,
+                evals=watchlist,
+                early_stopping_rounds=self.early_stopping_rounds,
+                callbacks=callbacks,
+            )
 
             # save the model
             workspace = fl_ctx.get_prop(FLContextKey.WORKSPACE_OBJECT)

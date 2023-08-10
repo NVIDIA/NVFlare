@@ -13,23 +13,26 @@
 # limitations under the License.
 
 import multiprocessing
-import os
-
-from nvflare.apis.client import Client
-from nvflare.apis.fl_constant import FLContextKey, ReturnCode
-from nvflare.apis.fl_context import FLContext
-from nvflare.apis.impl.controller import Controller, Task
-from nvflare.apis.shareable import Shareable, make_reply
-from nvflare.apis.signal import Signal
-from nvflare.apis.workspace import Workspace
-from trainer import SupportedTasks
 
 import xgboost.federated
+from trainer import SupportedTasks
+
+from nvflare.apis.client import Client
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.impl.controller import Controller, Task
+from nvflare.apis.shareable import Shareable
+from nvflare.apis.signal import Signal
 
 
 class XGBoostController(Controller):
-    def __init__(self, port: int, world_size: int, server_key_path: str = None,
-                 server_cert_path: str = None, client_cert_path: str = None):
+    def __init__(
+        self,
+        port: int,
+        world_size: int,
+        server_key_path: str = None,
+        server_cert_path: str = None,
+        client_cert_path: str = None,
+    ):
         """Controller for federated XGBoost.
 
         Args:
@@ -50,17 +53,17 @@ class XGBoostController(Controller):
     def start_controller(self, fl_ctx: FLContext):
         self._server = multiprocessing.Process(
             target=xgboost.federated.run_federated_server,
-            args=(self._port, self._world_size, self._server_key_path,
-                  self._server_cert_path, self._client_cert_path))
+            args=(self._port, self._world_size, self._server_key_path, self._server_cert_path, self._client_cert_path),
+        )
         self._server.start()
 
     def stop_controller(self, fl_ctx: FLContext):
         if self._server:
             self._server.terminate()
 
-    def process_result_of_unknown_task(self, client: Client, task_name: str,
-                                       client_task_id: str, result: Shareable,
-                                       fl_ctx: FLContext):
+    def process_result_of_unknown_task(
+        self, client: Client, task_name: str, client_task_id: str, result: Shareable, fl_ctx: FLContext
+    ):
         self.log_warning(fl_ctx, f"Unknown task: {task_name} from client {client.name}.")
 
     def control_flow(self, abort_signal: Signal, fl_ctx: FLContext):

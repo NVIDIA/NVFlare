@@ -12,16 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import os
-import time
 
 import pandas as pd
-import xgboost as xgb
 
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
+
 
 def _get_data_intersection(df, intersection_path):
     # Note: the order of the intersection must be maintained
@@ -29,12 +27,13 @@ def _get_data_intersection(df, intersection_path):
     with open(intersection_path) as intersection_file:
         intersection = intersection_file.read().splitlines()
 
-    intersection_df =  df[df["uid"].isin(intersection)].copy()
+    intersection_df = df[df["uid"].isin(intersection)].copy()
     intersection_df["sort"] = pd.Categorical(intersection_df["uid"], categories=intersection, ordered=True)
     intersection_df = intersection_df.sort_values("sort")
     intersection_df = intersection_df.drop(["uid", "sort"], axis=1)
 
     return intersection_df
+
 
 def _split_train_val(df, train_proportion):
     num_train = int(df.shape[0] * train_proportion)
@@ -42,6 +41,7 @@ def _split_train_val(df, train_proportion):
     valid_df = df.iloc[num_train:].copy()
 
     return train_df, valid_df
+
 
 class HIGGSDataLoader(XGBDataLoader):
     def __init__(self, data_split_dir, train_proportion):

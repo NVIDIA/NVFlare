@@ -22,6 +22,7 @@ from nvflare.apis.fl_constant import JobConstants
 
 JOB_CONFIGS_ROOT = "jobs"
 
+
 def job_config_args_parser():
     parser = argparse.ArgumentParser(description="generate train configs for HIGGS dataset")
     parser.add_argument(
@@ -50,10 +51,7 @@ def _write_json(data, filename):
 
 
 def _get_job_name(args) -> str:
-    return (
-        "vertical_xgboost_"
-        + str(args.site_num)
-    )
+    return "vertical_xgboost_" + str(args.site_num)
 
 
 def _get_data_split_name(args, site_name: str) -> str:

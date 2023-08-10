@@ -13,11 +13,11 @@
 # limitations under the License.
 
 import argparse
-import json
-import numpy as np
 import os
-import pandas as pd
 import shutil
+
+import numpy as np
+import pandas as pd
 
 
 def data_split_args_parser():
@@ -59,7 +59,7 @@ def main():
     print(f"non-overlap row splits: {site_row_size}")
 
     df = pd.read_csv(args.data_path, header=None)
-    df["uid"] = df.index.to_series().map(lambda x: "uid_"+str(x))
+    df["uid"] = df.index.to_series().map(lambda x: "uid_" + str(x))
 
     if os.path.exists(args.out_path):
         shutil.rmtree(args.out_path)
@@ -73,9 +73,18 @@ def main():
         row_start = sum(site_row_size[:site])
         row_end = sum(site_row_size[: site + 1])
 
-        df_split = pd.concat([df.iloc[row_start:row_end, np.r_[col_start:col_end, args.cols_total]],
-                              df.iloc[args.rows_total - args.rows_overlap_size:args.rows_total, np.r_[col_start:col_end, args.cols_total]]])
-        print(f"site-{site+1} split rows ({row_start}:{row_end}),({args.rows_total - args.rows_overlap_size}:{args.rows_total})")
+        df_split = pd.concat(
+            [
+                df.iloc[row_start:row_end, np.r_[col_start:col_end, args.cols_total]],
+                df.iloc[
+                    args.rows_total - args.rows_overlap_size : args.rows_total,
+                    np.r_[col_start:col_end, args.cols_total],
+                ],
+            ]
+        )
+        print(
+            f"site-{site+1} split rows ({row_start}:{row_end}),({args.rows_total - args.rows_overlap_size}:{args.rows_total})"
+        )
         print(f"site-{site+1} split cols ({col_start}:{col_end})")
 
         data_path = os.path.join(args.out_path, f"{args.site_name_prefix}{site + 1}")
@@ -83,6 +92,7 @@ def main():
             os.makedirs(data_path, exist_ok=True)
 
         df_split.to_csv(path_or_buf=os.path.join(data_path, "higgs.data.csv"), index=False)
+
 
 if __name__ == "__main__":
     main()
