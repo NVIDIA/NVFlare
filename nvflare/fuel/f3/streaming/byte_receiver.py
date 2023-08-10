@@ -229,7 +229,7 @@ class ByteReceiver:
                     task.out_seq_buffers[seq] = last_chunk, message.payload
 
             # If all chunks are lined up, the task can be deleted
-            if not task.out_seq_buffers:
+            if not task.out_seq_buffers and task.buffers:
                 last_chunk, _ = task.buffers[-1]
                 if last_chunk:
                     self.stop_task(task)
