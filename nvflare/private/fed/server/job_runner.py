@@ -349,7 +349,7 @@ class JobRunner(FLComponent):
     def _update_job_status(self, engine, job, job_manager, fl_ctx):
         exception_run_processes = engine.exception_run_processes
         if job.job_id in exception_run_processes:
-            self.log_info(fl_ctx, f"Try to abort run ({job.job_id}) on clients.")
+            self.log_info(fl_ctx, f"Try to abort job ({job.job_id}) on clients ...")
             run_process = exception_run_processes[job.job_id]
 
             # stop client run
@@ -359,13 +359,24 @@ class JobRunner(FLComponent):
             )
             self.abort_client_run(job.job_id, active_client_sites_names, fl_ctx)
 
-            process_return_code = run_process.get(RunProcessKey.PROCESS_RETURN_CODE)
-            if process_return_code == -9:
-                job_manager.set_status(job.job_id, RunStatus.FINISHED_ABNORMAL, fl_ctx)
+            finished = run_process.get(RunProcessKey.PROCESS_FINISHED, False)
+            if finished:
+                # job status is already reported from the Job cell!
+                exe_err = run_process.get(RunProcessKey.PROCESS_EXE_ERROR, False)
+                if exe_err:
+                    status = RunStatus.FINISHED_EXECUTION_EXCEPTION
+                else:
+                    status = RunStatus.FINISHED_COMPLETED
             else:
-                job_manager.set_status(job.job_id, RunStatus.FINISHED_EXECUTION_EXCEPTION, fl_ctx)
+                # never got job status report from job cell
+                process_return_code = run_process.get(RunProcessKey.PROCESS_RETURN_CODE)
+                if process_return_code == -9:
+                    status = RunStatus.FINISHED_ABNORMAL
+                else:
+                    status = RunStatus.FINISHED_EXECUTION_EXCEPTION
         else:
-            job_manager.set_status(job.job_id, RunStatus.FINISHED_COMPLETED, fl_ctx)
+            status = RunStatus.FINISHED_COMPLETED
+        job_manager.set_status(job.job_id, status, fl_ctx)
 
     def _save_workspace(self, fl_ctx: FLContext):
         job_id = fl_ctx.get_prop(FLContextKey.CURRENT_JOB_ID)

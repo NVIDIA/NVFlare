@@ -12,9 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import argparse
-import json
+import logging
 import os
-from typing import Dict, List, Union
+from typing import Dict, List, Optional, Union
+
+from nvflare.fuel.utils.config import Config, ConfigFormat
+from nvflare.fuel.utils.config_factory import ConfigFactory
 
 ENV_VAR_PREFIX = "NVFLARE_"
 
@@ -63,6 +66,7 @@ class ConfigService:
     Only JSON file loading is supported.
     """
 
+    logger = logging.getLogger(__name__)
     _sections = {}
     _config_path = []
     _cmd_args = None
@@ -81,7 +85,7 @@ class ConfigService:
         Args:
             section_files: dict: section name => config file
             config_path: list of config directories
-            process_start_cmd_args: command args for starting the program
+            parsed_args: command args for starting the program
             var_dict: dict for additional vars
 
         Returns:
@@ -112,7 +116,7 @@ class ConfigService:
         cls._config_path = config_path
 
         for section, file_basename in section_files.items():
-            cls._sections[section] = cls.load_json(file_basename)
+            cls._sections[section] = cls.load_config_dict(file_basename, cls._config_path)
 
         cls._var_dict = var_dict
         if parsed_args:
@@ -146,20 +150,45 @@ class ConfigService:
             cls._sections[section_name] = data
 
     @classmethod
-    def load_json(cls, file_basename: str) -> dict:
-        """
-        Load a specified JSON config file
+    def load_configuration(cls, file_basename: str) -> Optional[Config]:
+        return ConfigFactory.load_config(file_basename, cls._config_path)
 
+    @classmethod
+    def load_config_dict(
+        cls, file_basename: str, search_dirs: Optional[List] = None, raise_exception: bool = True
+    ) -> Optional[Dict]:
+        """
+        Load a specified config file ( ignore extension)
         Args:
-            file_basename: base name of the config file to be loaded
+            raise_exception: if True raise exception when error occurs
+            file_basename: base name of the config file to be loaded.
+            for example: file_basename = config_fed_server.json
+            what the function does is to search for config file that matches
+            config_fed_server.[json|json.default|conf|conf.default|yml|yml.default]
+            in given search directories: cls._config_path
+            if json or json.default is not found;
+            then switch to Pyhoncon [.conf] or corresponding default file; if still not found; then we switch
+            to YAML files. We use OmegaConf to load YAML
+            search_dirs: which directories to search.
 
-        Returns:
-
+        Returns: Dictionary from the configuration
+                if not found, exception will be raised.
         """
-        file_path = cls.find_file(file_basename)
-        if not file_path:
-            raise FileNotFoundError(f"cannot find file '{file_basename}' from search path '{cls._config_path}'")
-        return json.load(open(file_path, "rt"))
+        conf = ConfigFactory.load_config(file_basename, search_dirs)
+        if conf:
+            return conf.to_dict()
+        else:
+            if raise_exception:
+                raise FileNotFoundError(cls.config_not_found_msg(file_basename, search_dirs))
+            return None
+
+    @classmethod
+    def config_not_found_msg(cls, file_basename, search_dirs):
+        basename = os.path.splitext(file_basename)[0]
+        conf_exts = "|".join(ConfigFormat.config_ext_formats().keys())
+        msg = f"cannot find file '{basename}[{conf_exts}]'"
+        msg = f"{msg} from search paths: '{search_dirs}'" if search_dirs else msg
+        return msg
 
     @classmethod
     def find_file(cls, file_basename: str) -> Union[None, str]:
@@ -208,8 +237,8 @@ class ConfigService:
             return default
         try:
             return int(v)
-        except:
-            raise ValueError(f"var {name}'s value '{v}' cannot be converted to int")
+        except Exception as e:
+            raise ValueError(f"var {name}'s value '{v}' cannot be converted to int: {e}")
 
     @classmethod
     def _any_var(cls, func, name, conf, default):

@@ -14,21 +14,20 @@
 
 from typing import Dict, Optional
 
-from pyhocon import ConfigFactory as CF
-from pyhocon import ConfigTree
-from pyhocon.converter import HOCONConverter
-
 from nvflare.fuel.utils.config import Config, ConfigFormat, ConfigLoader
 
 
 class PyhoconConfig(Config):
-    def __init__(self, conf: ConfigTree, file_path: Optional[str] = None):
+    def __init__(self, conf, file_path: Optional[str] = None):
         super(PyhoconConfig, self).__init__(conf, ConfigFormat.PYHOCON, file_path)
 
     def to_dict(self, resolve: Optional[bool] = True) -> Dict:
         return self._convert_conf_item(self.conf)
 
     def to_str(self, element: Optional[Dict] = None) -> str:
+        from pyhocon import ConfigFactory as CF
+        from pyhocon.converter import HOCONConverter
+
         if element is None:
             return HOCONConverter.to_hocon(self.conf)
         else:
@@ -36,6 +35,8 @@ class PyhoconConfig(Config):
             return HOCONConverter.to_hocon(config)
 
     def _convert_conf_item(self, conf_item):
+        from pyhocon import ConfigTree
+
         result = {}
         if isinstance(conf_item, ConfigTree):
             if len(conf_item) > 0:
@@ -63,16 +64,24 @@ class PyhoconLoader(ConfigLoader):
         super(PyhoconLoader, self).__init__(ConfigFormat.PYHOCON)
 
     def load_config(self, file_path: str) -> Config:
+        from pyhocon import ConfigTree
+
         conf: ConfigTree = self._from_file(file_path)
         return PyhoconConfig(conf, file_path)
 
     def load_config_from_str(self, config_str: str) -> Config:
+        from pyhocon import ConfigFactory as CF
+
         conf = CF.parse_string(config_str)
         return PyhoconConfig(conf)
 
     def load_config_from_dict(self, config_dict: dict) -> Config:
+        from pyhocon import ConfigFactory as CF
+
         conf = CF.from_dict(config_dict)
         return PyhoconConfig(conf)
 
     def _from_file(self, file_path):
+        from pyhocon import ConfigFactory as CF
+
         return CF.parse_file(file_path)

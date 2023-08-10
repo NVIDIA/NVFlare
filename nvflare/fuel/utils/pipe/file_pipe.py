@@ -16,10 +16,11 @@ import os
 import shutil
 import time
 
+from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.pipe.file_accessor import FileAccessor
 from nvflare.fuel.utils.pipe.file_name_utils import file_name_to_message, message_to_file_name
 from nvflare.fuel.utils.pipe.fobs_file_accessor import FobsFileAccessor
-from nvflare.fuel.utils.pipe.pipe import Message, Mode, Pipe
+from nvflare.fuel.utils.pipe.pipe import Message, Pipe
 from nvflare.fuel.utils.validation_utils import check_object_type, check_positive_number, check_str
 
 

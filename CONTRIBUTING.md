@@ -142,7 +142,7 @@ By making a contribution to this project, I certify that:
 ```
 
 ### Submitting pull requests
-All code changes to the dev branch must be done via [pull requests](https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/proposing-changes-to-your-work-with-pull-requests).
+All code changes to the main branch must be done via [pull requests](https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/proposing-changes-to-your-work-with-pull-requests).
 1. Create a new ticket or take a known ticket from [the issue list][NVIDIA FLARE issue list].
 2. Check if there's already a branch dedicated to the task.
 3. If the task has not been taken, [create a new branch in your fork](https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/creating-a-pull-request-from-a-fork)
@@ -150,7 +150,7 @@ of the codebase.
 Ideally, the new branch should be based on the latest `main` branch.
 4. Make changes to the branch ([use detailed commit messages if possible](https://chris.beams.io/posts/git-commit/)).
 5. Make sure that new tests cover the changes and the changed codebase [passes all tests locally](#unit-testing).
-6. [Create a new pull request](https://help.github.com/en/desktop/contributing-to-projects/creating-a-pull-request) from the task branch to the dev branch, with detailed descriptions of the purpose of this pull request.
+6. [Create a new pull request](https://help.github.com/en/desktop/contributing-to-projects/creating-a-pull-request) from the task branch to the main branch, with detailed descriptions of the purpose of this pull request.
 7. Check [the CI/CD status of the pull request][github ci], make sure all CI/CD tests passed.
 8. Assign 2 reviewers. One of the reviewers must be a code owner for this section of code.
 9. Wait for reviews; if there are reviews, make point-to-point responses, make further code changes if needed.

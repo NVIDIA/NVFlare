@@ -239,8 +239,6 @@ def run_admin_api_tests(admin_api: FLAdminAPI):
     print("\n" + "=" * 40)
     print("\nRunning through tests of admin commands:")
     print("\n" + "=" * 40)
-    print("\nCommand: set_timeout")
-    print(admin_api.set_timeout(11).get("details").get("message"))
     print("\nActive SP:")
     print(admin_api.get_active_sp().get("details"))
     print("\nList SP:")
@@ -398,19 +396,15 @@ def create_admin_api(workspace_root_dir, upload_root_dir, download_root_dir, adm
         init_params=admin_json["admin"]["overseer_agent"]["args"],
     )
 
-    ca_cert = ""
-    client_key = ""
-    client_cert = ""
-    if not poc:
-        ca_cert = os.path.join(admin_startup_folder, admin_json["admin"]["ca_cert"])
-        client_key = os.path.join(admin_startup_folder, admin_json["admin"]["client_key"])
-        client_cert = os.path.join(admin_startup_folder, admin_json["admin"]["client_cert"])
+    ca_cert = os.path.join(admin_startup_folder, admin_json["admin"]["ca_cert"])
+    client_key = os.path.join(admin_startup_folder, admin_json["admin"]["client_key"])
+    client_cert = os.path.join(admin_startup_folder, admin_json["admin"]["client_cert"])
 
     admin_api = FLAdminAPI(
         upload_dir=upload_root_dir,
         download_dir=download_root_dir,
         overseer_agent=overseer_agent,
-        poc=poc,
+        insecure=poc,
         user_name=admin_user_name,
         ca_cert=ca_cert,
         client_key=client_key,

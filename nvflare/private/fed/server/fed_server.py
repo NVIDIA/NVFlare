@@ -37,19 +37,29 @@ from nvflare.apis.fl_constant import (
 from nvflare.apis.fl_context import FLContext
 from nvflare.apis.shareable import Shareable
 from nvflare.apis.workspace import Workspace
-from nvflare.fuel.f3.cellnet.cell import Cell, Message
+from nvflare.fuel.common.exit_codes import ProcessExitCode
+
+# from nvflare.fuel.f3.cellnet.cell import Cell, Message
+from nvflare.fuel.f3.cellnet.cell import Message
 from nvflare.fuel.f3.cellnet.cell import make_reply as make_cellnet_reply
 from nvflare.fuel.f3.cellnet.defs import MessageHeaderKey
 from nvflare.fuel.f3.cellnet.defs import ReturnCode as F3ReturnCode
 from nvflare.fuel.f3.cellnet.fqcn import FQCN
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
+from nvflare.fuel.f3.cellnet.new_cell import NewCell as Cell
 from nvflare.fuel.f3.drivers.driver_params import DriverParams
 from nvflare.fuel.f3.mpm import MainProcessMonitor as mpm
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.argument_utils import parse_vars
 from nvflare.fuel.utils.zip_utils import unzip_all_from_bytes
 from nvflare.ha.overseer_agent import HttpOverseerAgent
-from nvflare.private.defs import CellChannel, CellChannelTopic, CellMessageHeaderKeys, new_cell_message
+from nvflare.private.defs import (
+    CellChannel,
+    CellChannelTopic,
+    CellMessageHeaderKeys,
+    JobFailureMsgKey,
+    new_cell_message,
+)
 from nvflare.private.fed.server.server_command_agent import ServerCommandAgent
 from nvflare.private.fed.server.server_runner import ServerRunner
 from nvflare.security.logging import secure_format_exception
@@ -322,6 +332,12 @@ class FederatedServer(BaseServer):
         )
 
         self.cell.register_request_cb(
+            channel=CellChannel.SERVER_MAIN,
+            topic=CellChannelTopic.REPORT_JOB_FAILURE,
+            cb=self.process_job_failure,
+        )
+
+        self.cell.register_request_cb(
             channel=CellChannel.SERVER_PARENT_LISTENER,
             topic="*",
             cb=self._listen_command,
@@ -346,6 +362,7 @@ class FederatedServer(BaseServer):
                 run_process_info = self.engine.run_processes.get(job_id)
                 if run_process_info is not None:
                     if execution_error:
+                        run_process_info[RunProcessKey.PROCESS_EXE_ERROR] = True
                         self.engine.exception_run_processes[job_id] = run_process_info
                     run_process_info[RunProcessKey.PROCESS_FINISHED] = True
                 reply = make_cellnet_reply(F3ReturnCode.OK, "", None)
@@ -504,6 +521,26 @@ class FederatedServer(BaseServer):
 
             headers = {CellMessageHeaderKeys.MESSAGE: "Removed client"}
             return self._generate_reply(headers=headers, payload=None, fl_ctx=fl_ctx)
+
+    def process_job_failure(self, request: Message):
+        payload = request.payload
+        client = request.get_header(key=MessageHeaderKey.ORIGIN)
+        if not isinstance(payload, dict):
+            self.logger.error(
+                f"dropped bad Job Failure report from {client}: expect payload to be dict but got {type(payload)}"
+            )
+            return
+        job_id = payload.get(JobFailureMsgKey.JOB_ID)
+        if not job_id:
+            self.logger.error(f"dropped bad Job Failure report from {client}: no job_id")
+            return
+
+        code = payload.get(JobFailureMsgKey.CODE)
+        reason = payload.get(JobFailureMsgKey.REASON, "?")
+        if code == ProcessExitCode.UNSAFE_COMPONENT:
+            with self.engine.new_context() as fl_ctx:
+                self.logger.info(f"Aborting job {job_id} due to reported failure from {client}: {reason}")
+                self.engine.job_runner.stop_run(job_id, fl_ctx)
 
     def client_heartbeat(self, request: Message) -> Message:
 

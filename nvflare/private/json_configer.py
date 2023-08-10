@@ -12,13 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
-import os
 from typing import List, Union
 
-from nvflare.fuel.common.excepts import ConfigError
+from nvflare.fuel.common.excepts import ComponentNotAuthorized, ConfigError
 from nvflare.fuel.utils.class_utils import ModuleScanner, get_class
 from nvflare.fuel.utils.component_builder import ComponentBuilder
+from nvflare.fuel.utils.config_factory import ConfigFactory
+from nvflare.fuel.utils.config_service import ConfigService
 from nvflare.fuel.utils.dict_utils import augment, extract_first_level_primitive
 from nvflare.fuel.utils.json_scanner import JsonObjectProcessor, JsonScanner, Node
 from nvflare.fuel.utils.wfconf import _EnvUpdater
@@ -62,31 +62,42 @@ class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
         elif isinstance(config_file_name, list):
             config_files = config_file_name
         else:
-            raise TypeError(f"config_file_name must be str or list of strs but got {type(config_file_name)}")
+            raise TypeError(f"config_file_names must be str or list of strs but got {type(config_file_name)}")
 
         for f in config_files:
-            if not os.path.exists(f):
-                raise FileNotFoundError(f"config_file_name {f} does not exist")
-            if not os.path.isfile(f):
-                raise FileNotFoundError(f"config_file_name {f} is not a valid file")
+            if not ConfigFactory.has_config(f):
+                raise FileNotFoundError(f"config_file_names {f} does not exist or not a file")
 
-        self.config_file_name = config_files
+        self.config_file_names = config_files
         self.num_passes = num_passes
         self.module_scanner = ModuleScanner(base_pkgs, module_names, exclude_libs)
         self.config_ctx = None
 
         config_data = {}
         for f in config_files:
-            with open(f) as file:
-                try:
-                    data = json.load(file)
-                    augment(to_dict=config_data, from_dict=data, from_override_to=False)
-                except Exception as e:
-                    print("Error processing config file {}: {}".format(file, secure_format_exception(e)))
-                    raise e
+            data = ConfigService.load_config_dict(f)
+            try:
+                augment(to_dict=config_data, from_dict=data, from_override_to=False)
+            except Exception as e:
+                raise RuntimeError("Error processing config file {}: {}".format(f, secure_format_exception(e)))
 
         self.config_data = config_data
         self.json_scanner = JsonScanner(config_data, config_files)
+        self.build_auth_func = None
+        self.build_auth_kwargs = None
+
+    def set_component_build_authorizer(self, func, **kwargs):
+        if not callable(func):
+            raise ValueError("authorizer func is not callable")
+        self.build_auth_func = func
+        self.build_auth_kwargs = kwargs
+
+    def authorize_and_build_component(self, config_dict, config_ctx: ConfigContext, node: Node):
+        if self.build_auth_func is not None:
+            err = self.build_auth_func(config_dict, config_ctx, node, **self.build_auth_kwargs)
+            if err:
+                raise ComponentNotAuthorized(f"component not authorized: {err}")
+        return self.build_component(config_dict)
 
     def get_module_scanner(self):
         return self.module_scanner
@@ -112,10 +123,8 @@ class JsonConfigurator(JsonObjectProcessor, ComponentBuilder):
     def configure(self):
         try:
             self._do_configure()
-        except ConfigError as e:
-            raise ConfigError("Config error in {}: {}".format(self.config_file_name, secure_format_exception(e)))
         except Exception as e:
-            print("Error processing config {}: {}".format(self.config_file_name, secure_format_exception(e)))
+            print("Error processing config {}: {}".format(self.config_file_names, secure_format_exception(e)))
             raise e
 
     def process_element(self, node: Node):

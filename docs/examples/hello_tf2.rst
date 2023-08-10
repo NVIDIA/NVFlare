@@ -250,7 +250,7 @@ Congratulations!
 You've successfully built and run a federated learning system using TensorFlow 2.
 
 The full source code for this exercise can be found in
-`examples/hello-tf2 <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-tf2>`_.
+`examples/hello-tf2 <https://github.com/NVIDIA/NVFlare/tree/main/examples/hello-world/hello-tf2>`_.
 
 Previous Versions of Hello TensorFlow 2
 ---------------------------------------
@@ -258,3 +258,4 @@ Previous Versions of Hello TensorFlow 2
    - `hello-tf2 for 2.0 <https://github.com/NVIDIA/NVFlare/tree/2.0/examples/hello-tf2>`_
    - `hello-tf2 for 2.1 <https://github.com/NVIDIA/NVFlare/tree/2.1/examples/hello-tf2>`_
    - `hello-tf2 for 2.2 <https://github.com/NVIDIA/NVFlare/tree/2.2/examples/hello-tf2>`_
+   - `hello-tf2 for 2.3 <https://github.com/NVIDIA/NVFlare/tree/2.3/examples/hello-world/hello-tf2>`_

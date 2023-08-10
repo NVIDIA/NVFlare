@@ -155,6 +155,7 @@ class CellChannelTopic:
     HEART_BEAT = "heart_beat"
     EXECUTE_RESULT = "execute_result"
     FIRE_EVENT = "fire_event"
+    REPORT_JOB_FAILURE = "report_job_failure"
 
     SIMULATOR_WORKER_INIT = "simulator_worker_init"
 
@@ -175,6 +176,13 @@ class CellMessageHeaderKeys:
     MESSAGE = "message"
     ABORT_JOBS = "abort_jobs"
     CLIENT_REGISTER_DATA = "client_register_data"
+
+
+class JobFailureMsgKey:
+
+    JOB_ID = "job_id"
+    CODE = "code"
+    REASON = "reason"
 
 
 def new_cell_message(headers: dict, payload=None):

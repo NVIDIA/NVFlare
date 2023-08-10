@@ -148,7 +148,7 @@ class MLflowReceiver(AnalyticsReceiver):
     def get_run_name(self, kwargs: dict, default_name: str, site_name: str, run_group_id: str):
         run_name = kwargs.get(TrackConst.RUN_NAME, default_name)
         job_id_tag = self.get_job_id_tag(group_id=run_group_id)
-        return f"{site_name}-{job_id_tag}-{run_name}"
+        return f"{site_name}-{job_id_tag[:6]}-{run_name}"
 
     def get_run_tags(self, kwargs, run_group_id, run_name: str):
         run_tags = self._get_tags(TrackConst.RUN_TAGS, kwargs=kwargs)

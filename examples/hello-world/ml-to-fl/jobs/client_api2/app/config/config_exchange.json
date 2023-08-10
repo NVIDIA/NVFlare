@@ -1,0 +1,5 @@
+{
+  "exchange_path": "./",
+  "exchange_format": "pytorch",
+  "transfer_type": "DIFF"
+}

@@ -28,7 +28,6 @@ class EventType(object):
     END_WORKFLOW = "_end_workflow"
     ABORT_TASK = "_abort_task"
     FATAL_SYSTEM_ERROR = "_fatal_system_error"
-    FATAL_TASK_ERROR = "_fatal_task_error"
     JOB_DEPLOYED = "_job_deployed"
     JOB_STARTED = "_job_started"
     JOB_COMPLETED = "_job_completed"
@@ -69,3 +68,4 @@ class EventType(object):
     SYSTEM_BOOTSTRAP = "_system_bootstrap"
 
     AUTHORIZE_COMMAND_CHECK = "_authorize_command_check"
+    BEFORE_BUILD_COMPONENT = "_before_build_component"

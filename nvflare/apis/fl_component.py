@@ -37,6 +37,10 @@ class FLComponent(StatePersistable):
         self._name = self.__class__.__name__
         self.logger = logging.getLogger(self._name)
 
+    @property
+    def name(self):
+        return self._name
+
     def _fire(self, event_type: str, fl_ctx: FLContext):
         fl_ctx.set_prop(FLContextKey.EVENT_ORIGIN, self._name, private=True, sticky=False)
         engine = fl_ctx.get_engine()
@@ -98,16 +102,6 @@ class FLComponent(StatePersistable):
         """
         fl_ctx.set_prop(FLContextKey.EVENT_DATA, reason, private=True, sticky=False)
         self.fire_event(EventType.FATAL_SYSTEM_ERROR, fl_ctx)
-
-    def task_panic(self, reason: str, fl_ctx: FLContext):
-        """Signals a fatal condition that could cause the current task (on Client) to end.
-
-        Args:
-            reason (str): The reason for panic.
-            fl_ctx (FLContext): FLContext information.
-        """
-        fl_ctx.set_prop(FLContextKey.EVENT_DATA, reason, private=True, sticky=False)
-        self.fire_event(EventType.FATAL_TASK_ERROR, fl_ctx)
 
     def handle_event(self, event_type: str, fl_ctx: FLContext):
         """Handles events.
@@ -227,6 +221,9 @@ class FLComponent(StatePersistable):
             )
 
     def _fire_log_event(self, event_type: str, log_tag: str, log_msg: str, fl_ctx: FLContext):
+        if not fl_ctx:
+            return
+
         event_data = AnalyticsData(key=log_tag, value=log_msg, data_type=AnalyticsDataType.TEXT, kwargs=None)
         dxo = event_data.to_dxo()
         fl_ctx.set_prop(key=FLContextKey.EVENT_DATA, value=dxo.to_shareable(), private=True, sticky=False)
