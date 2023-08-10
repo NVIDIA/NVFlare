@@ -53,7 +53,6 @@ class TxTask:
         self.seq = 0
         self.offset = 0
         self.offset_ack = 0
-        self.stop = False
 
     def __str__(self):
         return f"Tx[SID:{self.sid} to {self.target} for {self.channel}/{self.topic}]"
@@ -82,7 +81,7 @@ class ByteStreamer:
 
     def _transmit_task(self, task: TxTask):
 
-        while not task.stop:
+        while True:
             buf = task.stream.read(STREAM_CHUNK_SIZE)
             if not buf:
                 # End of Stream
@@ -96,12 +95,8 @@ class ByteStreamer:
             while window > STREAM_WINDOW_SIZE:
                 log.debug(f"{task} window size {window} exceeds limit: {STREAM_WINDOW_SIZE}")
                 task.ack_waiter.clear()
-                result = task.ack_waiter.wait(timeout=STREAM_ACK_WAIT)
-                if not result:
+                if not task.ack_waiter.wait(timeout=STREAM_ACK_WAIT):
                     self._stop_task(task, StreamError(f"{task} ACK timeouts after {STREAM_ACK_WAIT} seconds"))
-                    return
-
-                if task.stop:
                     return
 
                 window = task.offset - task.offset_ack
@@ -190,7 +185,8 @@ class ByteStreamer:
         else:
             # Result is the number of bytes streamed
             task.stream_future.set_result(task.offset)
-        task.stop = True
+
+        self.tx_task_map.pop(task.sid)
 
     def _ack_handler(self, message: Message):
         origin = message.get_header(MessageHeaderKey.ORIGIN)
