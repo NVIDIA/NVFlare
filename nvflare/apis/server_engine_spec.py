@@ -63,11 +63,6 @@ class ServerEngineSpec(EngineSpec, ABC):
         pass
 
     @abstractmethod
-    def get_components(self) -> dict:
-        """To return all the components"""
-        pass
-
-    @abstractmethod
     def register_aux_message_handler(self, topic: str, message_handle_func):
         """Register aux message handling function with specified topics.
 

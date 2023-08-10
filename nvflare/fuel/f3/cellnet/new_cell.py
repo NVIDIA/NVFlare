@@ -125,7 +125,7 @@ class NewCell(StreamCell):
         return True
 
     def send_request(self, channel, target, topic, request, timeout=10.0, optional=False):
-        self.logger.info(f"send_request: {channel=}, {topic=}, {target=}, {timeout=}")
+        self.logger.debug(f"send_request: {channel=}, {topic=}, {target=}, {timeout=}")
         if channel != CellChannel.SERVER_COMMAND:
             return self.core_cell.send_request(
                 channel=channel, target=target, topic=topic, request=request, timeout=timeout, optional=optional
