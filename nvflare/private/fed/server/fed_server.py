@@ -476,6 +476,10 @@ class FederatedServer(BaseServer):
             if error is not None:
                 return make_cellnet_reply(rc=F3ReturnCode.COMM_ERROR, error=error)
 
+            data = fobs.loads(request.payload)
+            shared_fl_ctx = data.get_header(ServerCommandKey.PEER_FL_CONTEXT)
+            fl_ctx.set_peer_context(shared_fl_ctx)
+
             client_register_data = request.get_header(CellMessageHeaderKeys.CLIENT_REGISTER_DATA, {})
             fl_ctx.set_prop(FLContextKey.CLIENT_REGISTER_DATA, client_register_data)
             self.engine.fire_event(EventType.CLIENT_REGISTERED, fl_ctx=fl_ctx)
