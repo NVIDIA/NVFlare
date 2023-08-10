@@ -23,6 +23,7 @@ from nvflare.tool.job.config.config_indexer import build_reverse_order_index
 
 def merge_configs_from_cli(cmd_args) -> Dict[str, tuple]:
     cli_config_dict: Dict[str, Dict[str, str]] = get_cli_config(cmd_args)
+    print(f"{cli_config_dict.keys()=}")
     copy_app_config_file(cli_config_dict, cmd_args)
     indices: Dict[str, (Dict, Dict)] = build_config_file_indexers(cmd_args.job_folder)
     return merge_configs(indices, cli_config_dict)
@@ -37,8 +38,10 @@ def copy_app_config_file(cli_config_dict, cmd_args):
             target_dir = cmd_args.job_folder
         else:
             target_dir = config_dir
+        print(f"{target_dir=}")
 
         target_file = os.path.join(target_dir, base_config_filename)
+        print(f"{target_file=}")
         if not os.path.exists(target_file):
             shutil.copyfile(cli_config_file, target_file)
 

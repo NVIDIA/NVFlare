@@ -112,6 +112,7 @@ def create_job(cmd_args):
 def show_variables(cmd_args):
     indices: Dict[str, (Dict, Dict)] = build_config_file_indexers(cmd_args.job_folder)
     variable_values = extract_value_from_index(indices_configs=indices)
+    variable_values = extract_value_from_index(indices_configs=indices)
     display_template_variables(variable_values)
 
 
@@ -388,19 +389,23 @@ def prepare_job_config(cmd_args, tmp_job_dir: Optional[str] = None):
 
 def update_client_app_script(cmd_args):
     if cmd_args.app_config:
-        client_config, config_path = _update_client_app_config_script(cmd_args.app_config)
+        client_config, config_path = _update_client_app_config_script(cmd_args.job_folder, cmd_args.app_config)
+
+        print(f"2. {client_config=}", config_path)
+        client_config.put("hello", "chester")
         save_config(client_config, config_path)
 
 
-def _update_client_app_config_script(app_config: str) -> Tuple[ConfigTree, str]:
-    script_args = " ".join([f"--{k}" for k in app_config])
-    config = ConfigFactory.load_config("config_fed_client.xxx")
+def _update_client_app_config_script(job_folder, app_config: str) -> Tuple[ConfigTree, str]:
+    config_args = " ".join([f"--{k}" for k in app_config])
+    config_dir = get_config_dir(job_folder)
+    config = ConfigFactory.load_config( os.path.join(config_dir, "config_fed_client.xxx"))
     if config.format == ConfigFormat.JSON or config.format == ConfigFormat.OMEGACONF:
         client_config = CF.from_dict(config.to_dict())
     else:
-        client_config = config
-    client_config.put("app_script", script_args)
+        client_config = config.conf
 
+    client_config.put("app_config", config_args)
     return client_config, config.file_path
 
 
