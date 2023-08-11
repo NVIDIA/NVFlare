@@ -63,6 +63,7 @@ class ByteStreamer:
         self.cell = cell
         self.cell.register_request_cb(channel=STREAM_CHANNEL, topic=STREAM_ACK_TOPIC, cb=self._ack_handler)
         self.tx_task_map = {}
+        self.map_lock = threading.Lock()
 
     @staticmethod
     def get_chunk_size():
@@ -70,7 +71,8 @@ class ByteStreamer:
 
     def send(self, channel: str, topic: str, target: str, headers: dict, stream: Stream) -> StreamFuture:
         tx_task = TxTask(channel, topic, target, headers, stream)
-        self.tx_task_map[tx_task.sid] = tx_task
+        with self.map_lock:
+            self.tx_task_map[tx_task.sid] = tx_task
 
         future = StreamFuture(tx_task.sid)
         future.set_size(stream.get_size())
@@ -167,6 +169,9 @@ class ByteStreamer:
         task.stream_future.set_progress(task.offset)
 
     def _stop_task(self, task: TxTask, error: StreamError = None, notify=True):
+        with self.map_lock:
+            self.tx_task_map.pop(task.sid, None)
+
         if error:
             log.debug(f"Stream error: {error}")
             task.stream_future.set_exception(error)
@@ -186,15 +191,16 @@ class ByteStreamer:
             # Result is the number of bytes streamed
             task.stream_future.set_result(task.offset)
 
-        self.tx_task_map.pop(task.sid)
-
     def _ack_handler(self, message: Message):
         origin = message.get_header(MessageHeaderKey.ORIGIN)
         sid = message.get_header(StreamHeaderKey.STREAM_ID)
         offset = message.get_header(StreamHeaderKey.OFFSET, None)
-        task = self.tx_task_map.get(sid, None)
+
+        with self.map_lock:
+            task = self.tx_task_map.get(sid, None)
+
         if not task:
-            # Last few ACKs are not needed so this is normal
+            # Last few ACKs always arrive late so this is normal
             log.debug(f"ACK for stream {sid} received late from {origin} with offset {offset}")
             return
 

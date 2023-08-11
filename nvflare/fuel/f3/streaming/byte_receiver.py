@@ -91,9 +91,10 @@ class RxStream(Stream):
 
             self.task.waiter.clear()
             if not self.task.waiter.wait(READ_TIMEOUT):
-                msg = f"{self.task} read timed out after {READ_TIMEOUT} seconds"
-                log.error(msg)
-                self.byte_receiver.stop_task(self.task, StreamError(msg))
+                error = StreamError(f"{self.task} read timed out after {READ_TIMEOUT} seconds")
+                self.byte_receiver.stop_task(self.task, error)
+                raise error
+
             count += 1
 
         with self.task.task_lock:
@@ -146,6 +147,10 @@ class ByteReceiver:
         self.registry.set(channel, topic, Callback(stream_cb, args, kwargs))
 
     def stop_task(self, task: RxTask, error: StreamError = None, notify=True):
+
+        with self.map_lock:
+            self.rx_task_map.pop(task.sid, None)
+
         if error:
             log.error(f"Stream error: {error}")
             task.stream_future.set_exception(error)
@@ -163,7 +168,6 @@ class ByteReceiver:
                 self.cell.fire_and_forget(STREAM_CHANNEL, STREAM_ACK_TOPIC, task.origin, message)
 
         task.eos = True
-        self.rx_task_map.pop(task.sid)
 
     def _data_handler(self, message: Message):
 
