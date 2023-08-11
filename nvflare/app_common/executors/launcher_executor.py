@@ -186,6 +186,7 @@ class LauncherExecutor(Executor):
 
     def _update_config_exchange_dict(self, config: dict):
         config[ConfigKey.GLOBAL_EVAL] = self._global_evaluation
+        config[ConfigKey.TRAINING] = self._training
 
     def _launch(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> bool:
         if self.launcher:

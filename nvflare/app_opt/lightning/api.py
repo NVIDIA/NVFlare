@@ -40,6 +40,7 @@ class FLCallback(Callback):
         super(FLCallback, self).__init__()
         init()
         self.has_global_eval = get_config().get(ConfigKey.GLOBAL_EVAL, False)
+        self.has_training = get_config().get(ConfigKey.TRAINING, False)
         self.input_fl_model = None
         self.metrics = None
         self.model_sent = False
@@ -60,7 +61,8 @@ class FLCallback(Callback):
         self._receive_update_model(pl_module)
 
     def on_train_end(self, trainer, pl_module):
-        self._send_model(FLModel(params=pl_module.cpu().state_dict()))
+        if self.has_training:
+            self._send_model(FLModel(params=pl_module.cpu().state_dict()))
 
     def on_test_start(self, trainer, pl_module):
         # receive the global model and update the local model with global model

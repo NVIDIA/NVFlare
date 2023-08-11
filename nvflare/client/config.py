@@ -24,6 +24,7 @@ class ConfigKey:
     EXCHANGE_FORMAT = "exchange_format"
     TRANSFER_TYPE = "transfer_type"
     GLOBAL_EVAL = "global_eval"
+    TRAINING = "training"
 
 
 class ClientConfig:
