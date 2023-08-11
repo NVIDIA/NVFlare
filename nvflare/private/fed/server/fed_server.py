@@ -362,6 +362,7 @@ class FederatedServer(BaseServer):
                 run_process_info = self.engine.run_processes.get(job_id)
                 if run_process_info is not None:
                     if execution_error:
+                        run_process_info[RunProcessKey.PROCESS_EXE_ERROR] = True
                         self.engine.exception_run_processes[job_id] = run_process_info
                     run_process_info[RunProcessKey.PROCESS_FINISHED] = True
                 reply = make_cellnet_reply(F3ReturnCode.OK, "", None)

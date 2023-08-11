@@ -32,6 +32,7 @@ class CommandCtxKey(object):
     RESULT = "result"
     JSON_PROCESSOR = "json_processor"
     META = "meta"
+    CUSTOM_PROPS = "custom_props"
 
 
 class CommandContext(SimpleContext):
@@ -52,6 +53,12 @@ class CommandContext(SimpleContext):
 
     def get_command(self):
         return self.get_prop(CommandCtxKey.CMD)
+
+    def get_command_name(self):
+        args = self.get_command_args()
+        full_name = args[0]
+        parts = full_name.split(".")
+        return parts[-1]
 
     def set_command_args(self, cmd_args):
         self.set_prop(CommandCtxKey.CMD_ARGS, cmd_args)
@@ -82,6 +89,12 @@ class CommandContext(SimpleContext):
 
     def get_meta(self):
         return self.get_prop(CommandCtxKey.META)
+
+    def set_custom_props(self, value):
+        self.set_prop(CommandCtxKey.CUSTOM_PROPS, value)
+
+    def get_custom_props(self):
+        return self.get_prop(CommandCtxKey.CUSTOM_PROPS)
 
 
 class ApiPocValue(object):

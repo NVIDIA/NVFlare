@@ -35,7 +35,19 @@ class UnsafeJobError(Exception):
     pass
 
 
+class NotAuthorized(Exception):
+    """Raised when a job is not authorized"""
+
+    pass
+
+
 class UnsafeComponentError(Exception):
     """Raised when a component in the configuration is detected to be unsafe"""
+
+    pass
+
+
+class TaskExecutionError(Exception):
+    """Raised when a task execution failed"""
 
     pass

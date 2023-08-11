@@ -19,8 +19,9 @@ from typing import List, Optional, Tuple, Union
 
 from nvflare.apis.client import Client
 from nvflare.apis.controller_spec import ClientTask, ControllerSpec, SendOrder, Task, TaskCompletionStatus
-from nvflare.apis.fl_constant import FLContextKey, ReservedTopic
+from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
+from nvflare.apis.job_def import job_from_meta
 from nvflare.apis.responder import Responder
 from nvflare.apis.shareable import ReservedHeaderKey, Shareable, make_copy
 from nvflare.apis.signal import Signal
@@ -111,6 +112,7 @@ class Controller(Responder, ControllerSpec, ABC):
         if not engine:
             self.system_panic(f"Engine not found. {self.__class__.__name__} exiting.", fl_ctx)
             return
+
         self._engine = engine
         self.start_controller(fl_ctx)
         self._task_monitor.start()
@@ -305,6 +307,7 @@ class Controller(Responder, ControllerSpec, ABC):
                 task.client_tasks.append(client_task_to_send)
                 self._client_task_map[client_task_to_send.id] = client_task_to_send
 
+            task_data.set_header(ReservedHeaderKey.TASK_ID, client_task_to_send.id)
             return task_name, client_task_to_send.id, make_copy(task_data)
 
     def handle_exception(self, task_id: str, fl_ctx: FLContext) -> None:
@@ -653,7 +656,7 @@ class Controller(Responder, ControllerSpec, ABC):
 
         Change the task completion_status, which will inform task monitor to clean up this task
 
-        .. note::
+        note::
 
             We only mark the task as completed and leave it to the task monitor to clean up. This is to avoid potential deadlock of task_lock.
 
@@ -674,36 +677,6 @@ class Controller(Responder, ControllerSpec, ABC):
         with self._task_lock:
             for t in self._tasks:
                 t.completion_status = completion_status
-
-    def abort_task(self, task, fl_ctx: FLContext):
-        """Ask all clients to abort the execution of the specified task.
-
-        Args:
-            task (Task): the task to be aborted
-            fl_ctx (FLContext): FLContext associated with this action
-        """
-        self.log_info(fl_ctx, "asked all clients to abort task {}".format(task.name))
-        self._end_task([task.name], fl_ctx)
-
-    def _end_task(self, task_names, fl_ctx: FLContext):
-        engine = self._engine
-        request = Shareable()
-        request["task_names"] = task_names
-        engine.send_aux_request(
-            targets=None, topic=ReservedTopic.ABORT_ASK, request=request, timeout=0, fl_ctx=fl_ctx, optional=True
-        )
-
-    def abort_all_tasks(self, fl_ctx: FLContext):
-        """Ask clients to abort the execution of all tasks.
-
-        .. note::
-
-            The server should send a notification to all clients, regardless of whether the server has any standing tasks.
-
-        Args:
-            fl_ctx (FLContext): FLContext associated with this action
-        """
-        self._end_task([], fl_ctx)
 
     def finalize_run(self, fl_ctx: FLContext):
         """Do cleanup of the coordinator implementation.
@@ -841,9 +814,13 @@ class Controller(Responder, ControllerSpec, ABC):
 
     def _monitor_tasks(self):
         while not self._all_done:
-            clients_all_dead = self._check_dead_clients()
-            if not clients_all_dead:
+            should_abort_job = self._job_policy_violated()
+            if not should_abort_job:
                 self._check_tasks()
+            else:
+                with self._engine.new_context() as fl_ctx:
+                    self.system_panic("Aborting job due to deployment policy violation", fl_ctx)
+                return
             time.sleep(self._task_check_period)
 
     def _check_tasks(self):
@@ -977,19 +954,42 @@ class Controller(Responder, ControllerSpec, ABC):
                 break
             time.sleep(self._task_check_period)
 
-    def _check_dead_clients(self):
-        if self._engine:
+    def _job_policy_violated(self):
+        if not self._engine:
+            return False
+
+        with self._engine.new_context() as fl_ctx:
             clients = self._engine.get_clients()
             with self._dead_clients_lock:
+                alive_clients = []
+                dead_clients = []
+
                 for client in clients:
                     if self._client_still_alive(client.name):
-                        return False
+                        alive_clients.append(client.name)
+                    else:
+                        dead_clients.append(client.name)
 
-                # All the clients are dead, abort the job run.
-                with self._engine.new_context() as fl_ctx:
-                    self.system_panic("All clients are dead", fl_ctx)
-            return True
-        return False
+                if not dead_clients:
+                    return False
+
+                if not alive_clients:
+                    self.log_error(fl_ctx, f"All clients are dead: {dead_clients}")
+                    return True
+
+                job_meta = fl_ctx.get_prop(FLContextKey.JOB_META)
+                job = job_from_meta(job_meta)
+                if len(alive_clients) < job.min_sites:
+                    self.log_error(fl_ctx, f"Alive clients {len(alive_clients)} < required min {job.min_sites}")
+                    return True
+
+                # check required clients:
+                if dead_clients and job.required_sites:
+                    dead_required_clients = [c for c in dead_clients if c in job.required_sites]
+                    if dead_required_clients:
+                        self.log_error(fl_ctx, f"Required client(s) dead: {dead_required_clients}")
+                        return True
+            return False
 
     def _client_still_alive(self, client_name):
         now = time.time()

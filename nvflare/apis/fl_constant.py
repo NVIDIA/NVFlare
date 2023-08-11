@@ -101,6 +101,7 @@ class ReservedKey(object):
     JOB_DEPLOY_DETAIL = "__job_deploy_detail__"
     FATAL_SYSTEM_ERROR = "__fatal_system_error__"
     JOB_IS_UNSAFE = "__job_is_unsafe__"
+    CUSTOM_PROPS = "__custom_props__"
     EXCEPTIONS = "__exceptions__"
 
 
@@ -161,6 +162,7 @@ class ReservedTopic(object):
 
     END_RUN = "__end_run__"
     ABORT_ASK = "__abort_task__"
+    DO_TASK = "__do_task__"
     AUX_COMMAND = "__aux_command__"
 
 
@@ -293,6 +295,7 @@ class RunProcessKey(object):
     JOB_ID = "_job_id"
     PARTICIPANTS = "_participants"
     PROCESS_FINISHED = "_process_finished"
+    PROCESS_EXE_ERROR = "_process_exe_error"
     PROCESS_RETURN_CODE = "_process_return_code"
 
 
