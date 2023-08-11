@@ -11,10 +11,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Any
-from typing import Callable, Dict, List, Optional, Type
+from typing import Any, Callable, Dict, List, Optional, Type
 
-from pyhocon import ConfigFactory as CF, ConfigTree
+from pyhocon import ConfigFactory as CF
+from pyhocon import ConfigTree
 
 from nvflare.fuel.common.excepts import ConfigError
 from nvflare.fuel.utils.class_utils import ModuleScanner
@@ -43,18 +43,26 @@ def build_reverse_order_index(config_file_path: str) -> (Dict[str, List[str]], D
     components: list = config.get("components", None)
     excluded_list = [comp.get("id") for comp in components] if components else []
     excluded_list.extend(
-        ["name", "id", "format_version", "tasks", "task_name", "train_task_name",
-         "task_data_filters", "task_result_filters", "exchange_path", "job_folder_name"]
+        [
+            "name",
+            "id",
+            "format_version",
+            "tasks",
+            "task_name",
+            "train_task_name",
+            "task_data_filters",
+            "task_result_filters",
+            "exchange_path",
+            "job_folder_name",
+        ]
     )
     indices: Dict[str, List[str]] = build_dict_reverse_order_index(config, excluded_keys=excluded_list)
     return indices, config
 
 
-def build_list_reverse_order_index(config_list: List,
-                                   key_path_dict: Dict,
-                                   key: str,
-                                   root_path: str,
-                                   excluded_keys: Optional[List[str]] = None) -> Dict:
+def build_list_reverse_order_index(
+    config_list: List, key_path_dict: Dict, key: str, root_path: str, excluded_keys: Optional[List[str]] = None
+) -> Dict:
     """
     Recursively build a reverse order index for a list.
     """
@@ -66,8 +74,9 @@ def build_list_reverse_order_index(config_list: List,
         key_with_index = f"{key}[{index}]"
         if isinstance(value, list):
             if len(value) > 0:
-                build_list_reverse_order_index(value, key_path_dict, key_with_index, root_path=key_path,
-                                               excluded_keys=excluded_keys)
+                build_list_reverse_order_index(
+                    value, key_path_dict, key_with_index, root_path=key_path, excluded_keys=excluded_keys
+                )
             else:
                 result.append(key_path)
                 key_path_dict[key_with_index] = result
@@ -83,10 +92,7 @@ def build_list_reverse_order_index(config_list: List,
 
 
 def build_dict_reverse_order_index(
-        config_dict: Dict,
-        key_path_dict: Optional[Dict] = None,
-        root_path: str = "",
-        excluded_keys: List[str] = None
+    config_dict: Dict, key_path_dict: Optional[Dict] = None, root_path: str = "", excluded_keys: List[str] = None
 ) -> Dict[str, List[str]]:
     """
     Recursively build a reverse order index for a dictionary.
@@ -107,15 +113,17 @@ def build_dict_reverse_order_index(
         result = key_path_dict.get(key, [])
         if isinstance(value, list):
             if len(value) > 0:
-                key_path_dict = build_list_reverse_order_index(value, key_path_dict, key, root_path=key_path,
-                                                               excluded_keys=excluded_keys)
+                key_path_dict = build_list_reverse_order_index(
+                    value, key_path_dict, key, root_path=key_path, excluded_keys=excluded_keys
+                )
             else:
                 result.append(key_path)
                 key_path_dict[key] = result
 
         elif isinstance(value, dict):
-            key_path_dict = build_dict_reverse_order_index(value, key_path_dict, root_path=key_path,
-                                                           excluded_keys=excluded_keys)
+            key_path_dict = build_dict_reverse_order_index(
+                value, key_path_dict, root_path=key_path, excluded_keys=excluded_keys
+            )
         elif isinstance(value, (int, float, str, bool, Callable, Type)):
             if not (key == "path" and key_path.startswith("components")):
                 result.append(key_path)

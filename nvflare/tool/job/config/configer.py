@@ -15,7 +15,8 @@ import os
 import shutil
 from typing import Any, Dict, List, Tuple
 
-from pyhocon import ConfigFactory as CF, ConfigTree
+from pyhocon import ConfigFactory as CF
+from pyhocon import ConfigTree
 
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.tool.job.config.config_indexer import build_reverse_order_index
@@ -63,8 +64,8 @@ def extract_string_with_index(input_string):
         if opening_bracket_index == -1 or closing_bracket_index == -1:
             break
         string_before = input_string[:opening_bracket_index]
-        index = int(input_string[opening_bracket_index + 1: closing_bracket_index])
-        string_after = input_string[closing_bracket_index + 1:]
+        index = int(input_string[opening_bracket_index + 1 : closing_bracket_index])
+        string_after = input_string[closing_bracket_index + 1 :]
 
         result.append((string_before.strip("."), index, string_after.strip(".")))
         input_string = f"{string_before}{string_after}"
@@ -81,8 +82,10 @@ def extract_value_from_index(indices_configs: Dict[str, Tuple]) -> Dict[str, Dic
         if len(indices_dict) > 0:
             for key, key_path_list in indices_dict.items():
                 if len(key_path_list) > 1:
-                    print(f"Warning: Ambiguity config key: '{key}' for file '{basename}', "
-                          f"more than one key paths with such key: {key_path_list}, first one will be used")
+                    print(
+                        f"Warning: Ambiguity config key: '{key}' for file '{basename}', "
+                        f"more than one key paths with such key: {key_path_list}, first one will be used"
+                    )
 
                 key_path = key_path_list[0]
                 results = extract_string_with_index(key_path)
@@ -218,11 +221,7 @@ def build_config_file_indexers(config_dir: str) -> Dict[str, dict]:
     """
 
     excluded = ["info.md", "info.conf"]
-    included = ["config_fed_client.conf",
-                "config_fed_server.conf",
-                "config_exchange.conf",
-                "meta.conf"
-                ]
+    included = ["config_fed_client.conf", "config_fed_server.conf", "config_exchange.conf", "meta.conf"]
     config_extensions = ConfigFormat.extensions()
 
     config_file_index = {}

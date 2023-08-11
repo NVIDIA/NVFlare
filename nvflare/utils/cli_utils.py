@@ -101,7 +101,7 @@ def create_startup_kit_config(nvflare_config: ConfigTree, startup_kit_dir: Optio
     return conf.with_fallback(nvflare_config)
 
 
-def check_dir(dir_path:str):
+def check_dir(dir_path: str):
     if not os.path.isdir(dir_path):
         raise ValueError(f"directory {dir_path} doesn't exists")
 
@@ -122,7 +122,6 @@ def get_startup_kit_dir(startup_kit_dir: Optional[str] = None) -> str:
 
 
 def find_job_template_location(job_template_dir: Optional[str] = None):
-
     def check_job_template_dir(job_temp_dir: str):
         if job_temp_dir:
             if os.path.isdir(job_temp_dir):

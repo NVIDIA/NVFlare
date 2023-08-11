@@ -40,9 +40,9 @@ class TestCLIUtils:
         with patch("nvflare.utils.cli_utils.load_config") as mock2:
             conf = CF.parse_string(
                 """
-                startup_kit {{
+                startup_kit {
                     path = "/tmp/nvflare/poc/example_project/prod_00"
-                }}
+                }
             """
             )
             mock2.return_value = conf
@@ -51,9 +51,9 @@ class TestCLIUtils:
     def test_create_startup_kit_config(self):
         prev_conf = CF.parse_string(
             """
-                poc_workspace {{
+                poc_workspace {
                     path = "/tmp/nvflare/poc"
-                }}
+                }
             """
         )
         config = create_startup_kit_config(

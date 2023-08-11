@@ -11,26 +11,32 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import json
 import os
 import pathlib
 import shutil
 from distutils.dir_util import copy_tree
 from tempfile import mkdtemp
-from typing import List, Optional, Tuple, Dict
+from typing import Dict, List, Optional, Tuple
 
 from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree
 
 from nvflare.apis.job_def import JobMetaKey
-from nvflare.cli_exception import CLIException
 from nvflare.fuel.flare_api.flare_api import new_secure_session
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
-from nvflare.tool.job.config.configer import merge_configs_from_cli, extract_value_from_index, \
-    build_config_file_indexers
-from nvflare.utils.cli_utils import append_if_not_in_list, get_curr_dir, get_startup_kit_dir, save_config, \
-    find_job_template_location, get_hidden_nvflare_dir
+from nvflare.tool.job.config.configer import (
+    build_config_file_indexers,
+    extract_value_from_index,
+    merge_configs_from_cli,
+)
+from nvflare.utils.cli_utils import (
+    find_job_template_location,
+    get_curr_dir,
+    get_hidden_nvflare_dir,
+    get_startup_kit_dir,
+    save_config,
+)
 
 CMD_LIST_TEMPLATES = "list_templates"
 CMD_SHOW_VARIABLES = "show_variables"
@@ -239,10 +245,12 @@ def internal_submit_job(admin_user_dir, username, temp_job_dir):
     print(f"job: '{job_id} was submitted")
 
 
-job_sub_cmd_handlers = {CMD_CREATE_JOB: create_job,
-                        CMD_SUBMIT_JOB: submit_job,
-                        CMD_LIST_TEMPLATES: list_templates,
-                        CMD_SHOW_VARIABLES: show_variables}
+job_sub_cmd_handlers = {
+    CMD_CREATE_JOB: create_job,
+    CMD_SUBMIT_JOB: submit_job,
+    CMD_LIST_TEMPLATES: list_templates,
+    CMD_SHOW_VARIABLES: show_variables,
+}
 
 
 def handle_job_cli_cmd(cmd_args):
@@ -302,14 +310,15 @@ def define_list_templates_parser(job_subparser):
         nargs="?",
         default=None,
         help="Job template directory, if not specified, "
-             "will search from ./nvflare/config.conf and NVFLARE_HOME env. variables",
+        "will search from ./nvflare/config.conf and NVFLARE_HOME env. variables",
     )
     show_jobs_parser.add_argument("-debug", "--debug", action="store_true", help="debug is on")
 
 
 def define_variables_parser(job_subparser):
-    show_variables_parser = job_subparser.add_parser("show_variables",
-                                                     help="show template variable values in configuration")
+    show_variables_parser = job_subparser.add_parser(
+        "show_variables", help="show template variable values in configuration"
+    )
     show_variables_parser.add_argument(
         "-j",
         "--job_folder",
@@ -399,7 +408,7 @@ def update_client_app_script(cmd_args):
 def _update_client_app_config_script(job_folder, app_config: str) -> Tuple[ConfigTree, str]:
     config_args = " ".join([f"--{k}" for k in app_config])
     config_dir = get_config_dir(job_folder)
-    config = ConfigFactory.load_config( os.path.join(config_dir, "config_fed_client.xxx"))
+    config = ConfigFactory.load_config(os.path.join(config_dir, "config_fed_client.xxx"))
     if config.format == ConfigFormat.JSON or config.format == ConfigFormat.OMEGACONF:
         client_config = CF.from_dict(config.to_dict())
     else:
@@ -418,6 +427,7 @@ def save_merged_configs(merged_conf, tmp_job_dir):
         base_filename = os.path.splitext(base_filename)[0]
         dst_path = os.path.join(config_dir, f"{base_filename}.json")
         save_config(file_configs, dst_path)
+
 
 #
 # def get_upload_dir(startup_dir) -> str:
