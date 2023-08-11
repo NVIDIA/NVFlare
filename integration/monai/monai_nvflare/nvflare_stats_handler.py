@@ -17,11 +17,13 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
-from nvflare.app_common.widgets.streaming import AnalyticsSender
 from nvflare.apis.analytix import AnalyticsDataType
 
 from monai.config import IgniteInfo
 from monai.utils import is_scalar, min_version, optional_import
+
+from nvflare.app_common.tracking.log_writer import LogWriter
+from nvflare.app_common.tracking.tracker_types import LogWriterName
 
 Events, _ = optional_import("ignite.engine", IgniteInfo.OPT_IMPORT_VERSION, min_version, "Events")
 
@@ -37,7 +39,7 @@ ANALYTIC_EVENT_TYPE = "analytix_log_stats"
 DEFAULT_TAG = "Loss"
 
 
-class NVFlareStatsHandler(AnalyticsSender):
+class NVFlareStatsHandler(LogWriter):
     """
     NVFlareStatsHandler defines a set of Ignite Event-handlers for all the NVFlare ``AnalyticsSender`` logics.
     It can be used for any Ignite Engine(trainer, validator and evaluator).
@@ -61,7 +63,7 @@ class NVFlareStatsHandler(AnalyticsSender):
         state_attributes: Sequence[str] | None = None,
         state_attributes_type: AnalyticsDataType | None = None,
         tag_name: str = DEFAULT_TAG,
-        event_type: str = ANALYTIC_EVENT_TYPE,
+        metrics_exchanger_id: str = None,
     ) -> None:
         """
         Args:
@@ -89,9 +91,10 @@ class NVFlareStatsHandler(AnalyticsSender):
             state_attributes_type: the type of the expected attributes from `engine.state`.
                 Only required when `state_attributes` is not None.
             tag_name: when iteration output is a scalar, tag_name is used to plot, defaults to ``'Loss'``.
+            metrics_exchanger_id (str): provided for LogWriter to get MetricsExchanger
         """
 
-        super().__init__(event_type=event_type)
+        super().__init__(metrics_exchanger_id=metrics_exchanger_id)
         self.iteration_log = iteration_log
         self.epoch_log = epoch_log
         self.output_transform = output_transform
@@ -155,7 +158,7 @@ class NVFlareStatsHandler(AnalyticsSender):
             step: index of current step.
 
         """
-        self._add(tag, value, data_type, step)
+        self.log(key=tag, value=value, data_type=data_type, global_step=step)
 
     def _default_epoch_sender(self, engine: Engine) -> None:
         """
@@ -178,7 +181,6 @@ class NVFlareStatsHandler(AnalyticsSender):
                 self._send_stats(
                     engine, attr, getattr(engine.state, attr, None), self.state_attributes_type, current_epoch
                 )
-        self.flush()
 
     def _default_iteration_sender(self, engine: Engine) -> None:
         """
@@ -227,4 +229,7 @@ class NVFlareStatsHandler(AnalyticsSender):
                 " a scalar or a dictionary of key and scalar pairs to avoid this warning."
                 " {}".format(type(loss))
             )
-        self.flush()
+
+    def get_writer_name(self) -> LogWriterName:
+        """Not used, just for abstractmethod"""
+        return LogWriterName.MLFLOW
