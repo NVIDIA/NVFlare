@@ -13,8 +13,9 @@
 # limitations under the License.
 
 import json
-import os
 from typing import Dict
+
+from nvflare.fuel.utils.config_service import ConfigService
 
 from .constants import ModelExchangeFormat
 
@@ -39,9 +40,9 @@ class ClientConfig:
     """
 
     def __init__(self, config: Dict):
-        if ConfigKey.EXCHANGE_FORMAT in config:
-            config[ConfigKey.EXCHANGE_FORMAT] = ModelExchangeFormat(config[ConfigKey.EXCHANGE_FORMAT])
         self.config = config
+        if ConfigKey.EXCHANGE_FORMAT in self.config:
+            self.config[ConfigKey.EXCHANGE_FORMAT] = ModelExchangeFormat(self.config[ConfigKey.EXCHANGE_FORMAT])
 
     def get_config(self):
         return self.config
@@ -60,11 +61,9 @@ class ClientConfig:
             json.dump(self.config, f)
 
 
-def from_json(config_file: str):
-    if not os.path.exists(config_file):
-        raise RuntimeError(f"Missing config file {config_file}.")
+def from_file(config_file: str):
+    config = ConfigService.load_configuration(config_file)
+    if config is None:
+        raise RuntimeError(f"Load config file {config} failed.")
 
-    with open(config_file, "r") as f:
-        config_dict = json.load(f)
-
-    return ClientConfig(config=config_dict)
+    return ClientConfig(config=config.to_dict())

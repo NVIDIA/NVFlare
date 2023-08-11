@@ -25,7 +25,7 @@ from nvflare.apis.shareable import Shareable, make_reply
 from nvflare.apis.signal import Signal
 from nvflare.app_common.abstract.launcher import Launcher
 from nvflare.app_common.utils.fl_model_utils import FLModelUtils, ParamsConverter
-from nvflare.client.config import ClientConfig, ConfigKey, from_json
+from nvflare.client.config import ClientConfig, ConfigKey, from_file
 from nvflare.client.constants import CONFIG_EXCHANGE
 from nvflare.fuel.utils.pipe.pipe import Message, Pipe
 from nvflare.fuel.utils.pipe.pipe_handler import PipeHandler, Topic
@@ -178,7 +178,7 @@ class LauncherExecutor(Executor):
         app_dir = workspace.get_app_dir(fl_ctx.get_job_id())
         config_file = os.path.join(app_dir, workspace.config_folder, CONFIG_EXCHANGE)
         if os.path.exists(config_file):
-            client_config = from_json(config_file=config_file)
+            client_config = from_file(config_file=config_file)
         else:
             client_config = ClientConfig({})
         self._update_config_exchange_dict(client_config.config)

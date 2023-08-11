@@ -20,7 +20,7 @@ from nvflare.app_common.model_exchange.file_pipe_model_exchanger import FilePipe
 from nvflare.fuel.utils import fobs
 from nvflare.fuel.utils.import_utils import optional_import
 
-from .config import ClientConfig, from_json
+from .config import ClientConfig, from_file
 from .constants import CONFIG_EXCHANGE, ModelExchangeFormat
 from .model_cache import Cache
 from .utils import DIFF_FUNCS
@@ -43,7 +43,7 @@ def init(config: Union[str, Dict] = f"config/{CONFIG_EXCHANGE}"):
         raise RuntimeError("Can't call init twice.")
 
     if isinstance(config, str):
-        client_config = from_json(config_file=config)
+        client_config = from_file(config_file=config)
     elif isinstance(config, dict):
         client_config = ClientConfig(config=config)
     else:
