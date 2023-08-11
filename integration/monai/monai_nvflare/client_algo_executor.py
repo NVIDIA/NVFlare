@@ -99,7 +99,7 @@ class ClientAlgoExecutor(Executor):
                 extra={
                     ExtraItems.CLIENT_NAME: fl_ctx.get_identity_name(),
                     ExtraItems.APP_ROOT: fl_ctx.get_prop(FLContextKey.APP_ROOT),
-                    ExtraItems.STATS_SENDER: stats_sender
+                    ExtraItems.STATS_SENDER: stats_sender,
                 }
             )
         except Exception as e:
@@ -111,6 +111,7 @@ class ClientAlgoExecutor(Executor):
         try:
             self.log_warning(fl_ctx, f"EXECUTING task: {task_name}")
             import resource
+
             rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
             resource.setrlimit(resource.RLIMIT_NOFILE, (4096, rlimit[1]))
             if task_name == self.train_task:

@@ -1,8 +1,11 @@
-# Copyright (c) MONAI Consortium
+# Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
+#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
+#
 #     http://www.apache.org/licenses/LICENSE-2.0
+#
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -16,12 +19,10 @@ from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any
 
 import torch
-
-from nvflare.apis.analytix import AnalyticsDataType
-
 from monai.config import IgniteInfo
 from monai.utils import is_scalar, min_version, optional_import
 
+from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.app_common.tracking.log_writer import LogWriter
 from nvflare.app_common.tracking.tracker_types import LogWriterName
 
@@ -144,9 +145,7 @@ class NVFlareStatsHandler(LogWriter):
         """
         self._default_iteration_sender(engine)
 
-    def _send_stats(
-        self, _engine: Engine, tag: str, value: Any, data_type: AnalyticsDataType, step: int
-    ) -> None:
+    def _send_stats(self, _engine: Engine, tag: str, value: Any, data_type: AnalyticsDataType, step: int) -> None:
         """
         Write scale value into TensorBoard.
         Default to call `AnalyticsSender._add()`.
@@ -173,7 +172,7 @@ class NVFlareStatsHandler(LogWriter):
         current_epoch = self.global_epoch_transform(engine.state.epoch)
         summary_dict = engine.state.metrics
         for name, value in summary_dict.items():
-            print(f'\n\t{name}', type(value), value)
+            print(f"\n\t{name}", type(value), value)
             self._send_stats(engine, name, value, AnalyticsDataType.SCALAR, current_epoch)
 
         if self.state_attributes is not None:
