@@ -15,7 +15,7 @@
 import json
 from typing import Dict
 
-from nvflare.fuel.utils.config_service import ConfigService
+from nvflare.fuel.utils.config_factory import ConfigFactory
 
 from .constants import ModelExchangeFormat
 
@@ -62,7 +62,7 @@ class ClientConfig:
 
 
 def from_file(config_file: str):
-    config = ConfigService.load_configuration(config_file)
+    config = ConfigFactory.load_config(config_file)
     if config is None:
         raise RuntimeError(f"Load config file {config} failed.")
 
