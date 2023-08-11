@@ -71,7 +71,7 @@ class PyhoconLoader(ConfigLoader):
 
     def load_config_from_str(self, config_str: str) -> Config:
         from pyhocon import ConfigFactory as CF
-
+        print(f"pyhocon: {config_str=}")
         conf = CF.parse_string(config_str)
         return PyhoconConfig(conf)
 
