@@ -47,6 +47,7 @@ class LauncherExecutor(Executor):
         heartbeat_interval: float = 5.0,
         heartbeat_timeout: float = 30.0,
         workers: int = 1,
+        training: bool = True,
         global_evaluation: bool = True,
         from_nvflare_converter_id: Optional[str] = None,
         to_nvflare_converter_id: Optional[str] = None,
@@ -65,6 +66,7 @@ class LauncherExecutor(Executor):
             heartbeat_interval (float): Interval for sending heartbeat to the peer. Defaults to 5.0.
             heartbeat_timeout (float): Timeout for waiting for a heartbeat from the peer. Defaults to 30.0.
             workers (int): Number of worker threads needed.
+            training (bool): Whether to run training using global model. Defaults to True.
             global_evaluation (bool): Whether to run evaluation on global model. Defaults to True.
             from_nvflare_converter_id (Optional[str]): Identifier used to get the ParamsConverter from NVFlare components.
                 This converter will be called when model is sent from nvflare controller side to executor side.
@@ -88,7 +90,13 @@ class LauncherExecutor(Executor):
         self._result_poll_interval = result_poll_interval
         self._task_read_wait_time = task_read_wait_time
 
+        # flags to indicate whether the launcher side will send back trained model and/or metrics
+        self._training = training
         self._global_evaluation = global_evaluation
+        if self._training is False and self._global_evaluation is False:
+            raise RuntimeError("training and global_evaluation can't be both False.")
+        self._result_fl_model = None
+        self._result_metrics = None
 
         self._from_nvflare_converter_id = from_nvflare_converter_id
         self._from_nvflare_converter: Optional[ParamsConverter] = None
@@ -173,8 +181,11 @@ class LauncherExecutor(Executor):
             client_config = from_json(config_file=config_file)
         else:
             client_config = ClientConfig({})
-        client_config.config[ConfigKey.GLOBAL_EVAL] = self._global_evaluation
+        self._update_config_exchange_dict(client_config.config)
         client_config.to_json(config_file)
+
+    def _update_config_exchange_dict(self, config: dict):
+        config[ConfigKey.GLOBAL_EVAL] = self._global_evaluation
 
     def _launch(self, task_name: str, shareable: Shareable, fl_ctx: FLContext, abort_signal: Signal) -> bool:
         if self.launcher:
@@ -213,8 +224,6 @@ class LauncherExecutor(Executor):
             return make_reply(ReturnCode.SERVICE_UNAVAILABLE)
 
         # wait for result
-        result_fl_model = None
-        result_metrics = None
         start = time.time()
         while True:
             if abort_signal.triggered:
@@ -249,16 +258,37 @@ class LauncherExecutor(Executor):
             else:
                 self.log_info(fl_ctx, f"got result for task '{task_name}'")
                 if reply.data.params is not None:
-                    result_fl_model = reply.data
+                    self._result_fl_model = reply.data
                 if reply.data.metrics is not None:
-                    result_metrics = reply.data.metrics
+                    self._result_metrics = reply.data
 
-                if result_fl_model is not None:
-                    if self._global_evaluation and result_metrics is not None:
-                        break
-                    elif not self._global_evaluation:
-                        break
+                if self._check_exchange_exit():
+                    break
+
             time.sleep(self._result_poll_interval)
-        if result_metrics is not None:
-            result_fl_model.metrics = result_metrics
+        result_fl_model = self._create_result_fl_model()
+        self._clear()
         return FLModelUtils.to_shareable(result_fl_model, self._to_nvflare_converter)
+
+    def _check_exchange_exit(self):
+        if self._training and self._result_fl_model is None:
+            return False
+
+        if self._global_evaluation and self._result_metrics is None:
+            return False
+
+        return True
+
+    def _create_result_fl_model(self):
+        if self._result_fl_model is not None:
+            if self._result_metrics is not None:
+                self._result_fl_model.metrics = self._result_metrics.metrics
+            return self._result_fl_model
+        elif self._result_metrics is not None:
+            return self._result_metrics
+        else:
+            raise RuntimeError("Missing result fl model and result metrics")
+
+    def _clear(self):
+        self._result_fl_model = None
+        self._result_metrics = None

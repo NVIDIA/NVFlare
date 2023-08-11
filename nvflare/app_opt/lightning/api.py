@@ -73,9 +73,8 @@ class FLCallback(Callback):
             self._receive_update_model(pl_module)
 
     def on_test_end(self, trainer, pl_module):
-        print("YYYYYYYY calling on test end")
-        if pl_module and self.has_global_eval:
-            self.metrics = _extract_metrics(trainer.logged_metrics)
+        if pl_module and self.has_global_eval and self.metrics is None:
+            self.metrics = _extract_metrics(trainer.callback_metrics)
             self._send_model(FLModel(metrics=self.metrics))
 
     def _receive_update_model(self, pl_module):

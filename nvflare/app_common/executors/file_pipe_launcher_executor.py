@@ -19,8 +19,7 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.apis.utils.decomposers import flare_decomposers
 from nvflare.app_common.decomposers import common_decomposers
 from nvflare.app_common.executors.launcher_executor import LauncherExecutor
-from nvflare.client.config import ClientConfig, ConfigKey, from_json
-from nvflare.client.constants import CONFIG_EXCHANGE
+from nvflare.client.config import ConfigKey
 from nvflare.fuel.utils.constants import Mode
 from nvflare.fuel.utils.pipe.file_pipe import FilePipe
 from nvflare.fuel.utils.pipe.pipe_handler import PipeHandler
@@ -118,14 +117,6 @@ class FilePipeLauncherExecutor(LauncherExecutor):
         self.pipe_handler.start()
         self._update_config_exchange(fl_ctx)
 
-    def _update_config_exchange(self, fl_ctx: FLContext):
-        workspace = fl_ctx.get_engine().get_workspace()
-        app_dir = workspace.get_app_dir(fl_ctx.get_job_id())
-        config_file = os.path.join(app_dir, workspace.config_folder, CONFIG_EXCHANGE)
-        if os.path.exists(config_file):
-            client_config = from_json(config_file=config_file)
-        else:
-            client_config = ClientConfig({})
-        client_config.config[ConfigKey.GLOBAL_EVAL] = self._global_evaluation
-        client_config.config[ConfigKey.EXCHANGE_PATH] = os.path.abspath(self._data_exchange_path)
-        client_config.to_json(config_file)
+    def _update_config_exchange_dict(self, config: dict):
+        config[ConfigKey.GLOBAL_EVAL] = self._global_evaluation
+        config[ConfigKey.EXCHANGE_PATH] = os.path.abspath(self._data_exchange_path)

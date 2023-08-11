@@ -19,8 +19,8 @@ from nvflare.apis.fl_context import FLContext
 from nvflare.app_common.executors.file_pipe_launcher_executor import FilePipeLauncherExecutor
 from nvflare.app_opt.pt.decomposers import TensorDecomposer
 from nvflare.app_opt.pt.params_converter import NumpyToPTParamsConverter, PTToNumpyParamsConverter
-from nvflare.client.config import ClientConfig, ConfigKey, from_json
-from nvflare.client.constants import CONFIG_EXCHANGE, ModelExchangeFormat
+from nvflare.client.config import ConfigKey
+from nvflare.client.constants import ModelExchangeFormat
 from nvflare.fuel.utils import fobs
 
 
@@ -90,15 +90,7 @@ class PTFilePipeLauncherExecutor(FilePipeLauncherExecutor):
         if self._to_nvflare_converter is None:
             self._to_nvflare_converter = PTToNumpyParamsConverter()
 
-    def _update_config_exchange(self, fl_ctx: FLContext):
-        workspace = fl_ctx.get_engine().get_workspace()
-        app_dir = workspace.get_app_dir(fl_ctx.get_job_id())
-        config_file = os.path.join(app_dir, workspace.config_folder, CONFIG_EXCHANGE)
-        if os.path.exists(config_file):
-            client_config = from_json(config_file=config_file)
-        else:
-            client_config = ClientConfig({})
-        client_config.config[ConfigKey.GLOBAL_EVAL] = self._global_evaluation
-        client_config.config[ConfigKey.EXCHANGE_PATH] = os.path.abspath(self._data_exchange_path)
-        client_config.config[ConfigKey.EXCHANGE_FORMAT] = ModelExchangeFormat.PYTORCH
-        client_config.to_json(config_file)
+    def _update_config_exchange_dict(self, config: dict):
+        config[ConfigKey.GLOBAL_EVAL] = self._global_evaluation
+        config[ConfigKey.EXCHANGE_PATH] = os.path.abspath(self._data_exchange_path)
+        config[ConfigKey.EXCHANGE_FORMAT] = ModelExchangeFormat.PYTORCH
