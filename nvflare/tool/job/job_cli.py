@@ -22,6 +22,7 @@ from typing import List, Optional, Tuple, Dict
 from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree
 
+from nvflare.apis.job_def import JobMetaKey
 from nvflare.cli_exception import CLIException
 from nvflare.fuel.flare_api.flare_api import new_secure_session
 from nvflare.fuel.utils.config import ConfigFormat
@@ -453,10 +454,15 @@ def prepare_meta_config(cmd_args):
     dst_path = os.path.join(job_folder, "meta.conf")
 
     # Use existing meta.conf if user already defined it.
+    folder_name_key = JobMetaKey.JOB_FOLDER_NAME.value
     if not os.path.isfile(dst_path):
         dst_config = load_src_config_template("meta.conf")
         dst_config.put("name", app_name)
-        save_config(dst_config, dst_path)
+    else:
+        dst_config = CF.from_dict(ConfigFactory.load_config(dst_path).to_dict())
+
+    dst_config.put(folder_name_key, os.path.basename(job_folder))
+    save_config(dst_config, dst_path)
 
 
 def load_src_config_template(config_file_name: str):
