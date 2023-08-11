@@ -21,19 +21,18 @@ from nvflare.app_common.psi.psi_spec import PSI
 
 
 class LocalPSI(PSI):
-    def __init__(self, psi_writer_id: str, data_root_dir: str = "/tmp/nvflare/vertical_xgboost/data"):
+    def __init__(self, psi_writer_id: str, data_split_path: str):
         super().__init__(psi_writer_id)
-        self.data_root_dir = data_root_dir
+        self.data_split_path = data_split_path
         self.data = {}
 
     def load_items(self) -> List[str]:
         site = self.fl_ctx.get_identity_name()
 
-        data_path = os.path.join(self.data_root_dir, site, "higgs.data.csv")
-        if os.path.isfile(data_path):
-            df = pd.read_csv(data_path, header=0)
+        if os.path.isfile(self.data_split_path):
+            df = pd.read_csv(self.data_split_path, header=0)
         else:
-            raise RuntimeError(f"invalid data path {train_data_path}")
+            raise RuntimeError(f"invalid data path {self.data_split_path}")
 
         # Note: the PSI algorithm requires the items are unique
         items = list(df["uid"])

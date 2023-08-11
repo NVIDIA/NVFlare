@@ -13,11 +13,10 @@
       }
     },
     {
-      "id": "server_workflow",
-      "path": "controller.XGBoostController",
+      "id": "xgb_controller",
+      "path": "nvflare.app_opt.xgboost.histogram_based.controller.XGBFedController",
       "args": {
-        "port": 9091,
-        "world_size": 2
+        "train_timeout": 30000
       }
     }
   ],

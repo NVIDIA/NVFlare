@@ -7,6 +7,8 @@ Before starting please make sure you set up a [virtual environment](../../../REA
 python3 -m pip install -r requirements.txt
 ```
 
+> **_NOTE:_** If the vertical federated learning plugin is not available in the XGBoost PyPI release yet, reinstall XGBoost from a [wheel](https://xgboost.readthedocs.io/en/stable/install.html#nightly-build) with a recent commit.
+
 ## Preparing HIGGS Data
 In this example we showcase a binary classification task based on the [HIGGS dataset](https://archive.ics.uci.edu/dataset/280/higgs), which contains 11 million instances, each with 28 features and 1 class label.
 
@@ -27,47 +29,28 @@ Run the following commands to prepare the data splits and job configurations:
 ```
 
 ### Private Set Intersection (PSI)
-Since not every site will have the same set of data samples, we can use PSI to compare encrypted versions of clients datasets in order to jointly compute the intersection based on common IDs. In this example, the HIGGS dataset does not contain unique identifiers so we add a temporary `uid_{idx}` to each instance and give each site a portion of the HIGGS dataset (rows) that includes a common overlap. Afterwards the identifiers are dropped since they are only used for matching, and training is then done on the intersected data. To learn more about our PSI protocol implementation, see our [psi example](../psi/README.md).
+Since not every site will have the same set of data samples, we can use PSI to compare encrypted versions of the sites' datasets in order to jointly compute the intersection based on common IDs. In this example, the HIGGS dataset does not contain unique identifiers so we add a temporary `uid_{idx}` to each instance and give each site a portion of the HIGGS dataset (rows) that includes a common overlap. Afterwards the identifiers are dropped since they are only used for matching, and training is then done on the intersected data. To learn more about our PSI protocol implementation, see our [psi example](../psi/README.md).
 
 > **_NOTE:_** The uid can be a composition of multiple variabes with a transformation, however in this example we use indices for simplicity. PSI can also be used for computing the intersection of overlapping features, but here we give each site unique features.
 
-## XGBoost Federated Learning Plugin with FLARE
+## Vertical XGBoost Federated Learning Plugin with FLARE
 
-### Installation
+This Vertical XGBoost example leverages the recently added [vertical federated learning support](https://github.com/dmlc/xgboost/issues/8424) in the XGBoost open-source library. The plugin allows for the distributed XGBoost algorithm to operate in a federated manner on vertically split data.
 
-Since the XGBoost federated learning plugin is not available in the official XGBoost releases yet, we must build XGBoost with the plugin from the source code.
-First clone the repo:
-```
-git clone --recursive https://github.com/dmlc/xgboost
-```
-Next, follow the steps [here](https://github.com/dmlc/xgboost/blob/master/plugin/federated/README.md) to install gRPC, build XGBoost with the federated plugin enabled, and install the python package into your virtual environemnt.
+For integrating with FLARE, we can use the predefined `XGBFedController` to run the federated server and control the workflow.
 
-### Integration with FLARE
-The plugin allows the XGBoost internal training parameter `DataSplitMode` to be set to column split mode rather than row split mode for distributed training. Additionally, all communication is done through the federated communicator, such as broadcasting split results and gradients.
 
-Information about the federated communicator is defined in the XGBoost communicator environment:
+Next we can subclass `FedXGBHistogramExecutor` to write our XGBoost training code in the `xgb_train()` method, and subclass `XGBDataLoader` to implement the `load_data()` method. For vertical federated learning, it is important when creating the `xgb.Dmatrix` to set `data_split_mode=1` for column mode, and to specify the presence of a label column `?format=csv&label_column=0` for the csv file.
 
-          communicator_env = {
-              'xgboost_communicator': 'federated',
-              'federated_server_address': self._server_address,
-              'federated_world_size': self._world_size,
-              'federated_rank': rank,
-              "federated_server_cert": self._server_cert_path,
-              "federated_client_key": self._client_key_path,
-              "federated_client_cert": self._client_cert_path
-          }
-
-For integrating with FLARE, a controller can start the gRPC federated server with `xgboost.federated.run_federated_server` and broadcast the train task to the clients. The DMatrix `data_split_mode` is set to `1` for column split mode, and `?format=csv&label_column=0` is used when creating the DMatrix from a csv file to specifiy which column contains the labels. Since only one site contains the labels, other site will not specifiy a label column `?format=csv`. Lastly, booster params for the training are set in the `xgb_params` dict, however not all `tree_methods` are currently supported with the plugin.
-
-> **_NOTE:_** For secure mode, make sure to pass the server certificate, client key, and client certificate into the communicator environment and into the federated server. As of now, GPUs are not yet supported by vertical federated XGBoost.
+> **_NOTE:_** For secure mode, make sure to provide the required certificates for the federated communicator. As of now, GPUs are not yet supported by vertical federated XGBoost.
 
 ## Run the Example
-Run a job using the simulator (modify number of clients and other arguments in `prepare_data.sh` and run beforehand as desired):
+Run a job using the simulator (feel free to modify the number of clients and other arguments in `prepare_data.sh` and `prepare_job_config.sh` and run beforehand as desired):
 ```
 nvflare simulator ./jobs/vertical_xgboost_2 -w /tmp/nvflare/workspaces/vertical_xgboost -n 2 -t 2
 ```
 
-The model will be saved to `higgs.model.federated.vertical.json` in the run directory.
+The model will be saved to `test.model.json`.
 
 ## Results
 Model accuracy can be visualized in tensorboard:

@@ -15,22 +15,25 @@
 import os
 
 import pandas as pd
+import xgboost as xgb
 
 from nvflare.apis.fl_constant import FLContextKey
 from nvflare.apis.fl_context import FLContext
 from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
 
 
-def _get_data_intersection(df, intersection_path):
-    # Note: the order of the intersection must be maintained
-
+def _get_data_intersection(df, intersection_path, id_col):
     with open(intersection_path) as intersection_file:
         intersection = intersection_file.read().splitlines()
 
-    intersection_df = df[df["uid"].isin(intersection)].copy()
-    intersection_df["sort"] = pd.Categorical(intersection_df["uid"], categories=intersection, ordered=True)
+    # Note: the order of the intersection must be maintained
+    intersection_df = df[df[id_col].isin(intersection)].copy()
+    intersection_df["sort"] = pd.Categorical(intersection_df[id_col], categories=intersection, ordered=True)
     intersection_df = intersection_df.sort_values("sort")
-    intersection_df = intersection_df.drop(["uid", "sort"], axis=1)
+    intersection_df = intersection_df.drop([id_col, "sort"], axis=1)
+
+    if intersection_df.empty:
+        raise ValueError("private set intersection must not be empty")
 
     return intersection_df
 
@@ -43,30 +46,38 @@ def _split_train_val(df, train_proportion):
     return train_df, valid_df
 
 
-class HIGGSDataLoader(XGBDataLoader):
-    def __init__(self, data_split_dir, train_proportion):
+class VerticalDataLoader(XGBDataLoader):
+    def __init__(self, data_split_path, label_owner, train_proportion):
         """Reads HIGGS dataset and return data paths to train and valid sets.
 
         Args:
-            data_split_dir: directory containing data splits
+            data_root_dir: directory containing data splits
         """
-        self.data_split_dir = data_split_dir
+        self.data_split_path = data_split_path
+        self.label_owner = label_owner
         self.train_proportion = train_proportion
 
     def load_data(self, fl_ctx: FLContext):
-        job_dir = os.path.dirname(os.path.abspath(fl_ctx.get_prop(FLContextKey.APP_ROOT)))
         client_id = fl_ctx.get_identity_name()
+        job_dir = os.path.dirname(os.path.abspath(fl_ctx.get_prop(FLContextKey.APP_ROOT)))
         psi_dir = os.path.join(job_dir, client_id, "psi")
 
-        df = pd.read_csv(os.path.join(self.data_split_dir, client_id, "higgs.data.csv"))
-        intersection_df = _get_data_intersection(df, os.path.join(psi_dir, "intersection.txt"))
-        if intersection_df.empty:
-            raise ValueError("private set intersection must not be empty")
+        df = pd.read_csv(self.data_split_path)
+        intersection_df = _get_data_intersection(df, os.path.join(psi_dir, "intersection.txt"), "uid")
         train_df, valid_df = _split_train_val(intersection_df, self.train_proportion)
 
-        train_path = os.path.join(psi_dir, "higgs.train.csv")
-        valid_path = os.path.join(psi_dir, "higgs.test.csv")
+        train_path = os.path.join(psi_dir, "train.csv")
+        valid_path = os.path.join(psi_dir, "valid.csv")
         train_df.to_csv(path_or_buf=train_path, header=False, index=False)
         valid_df.to_csv(path_or_buf=valid_path, header=False, index=False)
 
-        return train_path, valid_path
+        if client_id == self.label_owner:
+            label = "&label_column=0"
+        else:
+            label = ""
+
+        # for vertical XGBoost, setting data_split_mode to 1 for column mode
+        dtrain = xgb.DMatrix(train_path + f"?format=csv{label}", data_split_mode=1)
+        dvalid = xgb.DMatrix(valid_path + f"?format=csv{label}", data_split_mode=1)
+
+        return dtrain, dvalid

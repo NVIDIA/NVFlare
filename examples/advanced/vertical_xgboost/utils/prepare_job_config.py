@@ -78,12 +78,12 @@ def _update_meta(meta: dict, args):
 
 def _update_client_config(config: dict, args, site_name: str):
     data_split_name = _get_data_split_name(args, site_name)
-    config["components"][0]["args"]["data_split_dir"] = args.data_root
-    config["executors"][1]["executor"]["args"]["world_size"] = args.site_num
+    config["components"][0]["args"]["data_split_path"] = data_split_name
+    config["components"][2]["args"]["data_split_path"] = data_split_name
 
 
 def _update_server_config(config: dict, args):
-    config["workflows"][1]["args"]["world_size"] = args.site_num
+    pass
 
 
 def _copy_custom_files(src_job_path, src_app_name, dst_job_path, dst_app_name):

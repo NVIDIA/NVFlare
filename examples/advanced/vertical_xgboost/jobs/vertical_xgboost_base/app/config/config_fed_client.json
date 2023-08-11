@@ -18,11 +18,8 @@
         "train"
       ],
       "executor": {
-        "path": "trainer.XGBoostTrainer",
+        "path": "xgb_trainer.XGBoostTrainer",
         "args": {
-          "server_address": "localhost:9091",
-          "world_size": 2,
-          "data_loader_id": "dataloader",
           "num_rounds": 100,
           "early_stopping_rounds": 2,
           "xgb_params": {
@@ -34,7 +31,8 @@
             "tree_method": "approx",
             "grow_policy": "depthwise",
             "eval_metric": "auc"
-          }
+          },
+          "data_loader_id": "dataloader"
         }
       }
     }
@@ -44,9 +42,10 @@
   "components": [
     {
       "id": "dataloader",
-      "path": "higgs_data_loader.HIGGSDataLoader",
+      "path": "vertical_data_loader.VerticalDataLoader",
       "args": {
-        "data_split_dir": "/tmp/nvflare/vertical_xgboost/data",
+        "data_split_path": "/tmp/nvflare/vertical_xgboost/data/site-x/higgs.data.csv",
+        "label_owner": "site-1",
         "train_proportion": 0.8
       }
     },
@@ -61,7 +60,8 @@
       "id": "local_psi",
       "path": "local_psi.LocalPSI",
       "args": {
-        "psi_writer_id": "psi_writer"
+        "psi_writer_id": "psi_writer",
+        "data_split_path": "/tmp/nvflare/vertical_xgboost/data/site-x/higgs.data.csv"
       }
     },
     {

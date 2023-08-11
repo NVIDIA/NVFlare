@@ -18,12 +18,10 @@ from typing import Tuple
 
 import xgboost as xgb
 
-from nvflare.apis.fl_component import FLComponent
 
-
-class XGBDataLoader(FLComponent, ABC):
+class XGBDataLoader(ABC):
     @abstractmethod
-    def load_data(self, client_id) -> Tuple[xgb.core.DMatrix, xgb.core.DMatrix]:
+    def load_data(self) -> Tuple[xgb.core.DMatrix, xgb.core.DMatrix]:
         """Loads data for xgboost.
 
         Returns:
