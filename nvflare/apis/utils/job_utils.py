@@ -56,25 +56,19 @@ def convert_legacy_zipped_app_to_job(zip_data: bytes) -> bytes:
         meta_file = os.path.join(folder_name, JobConstants.META)
         meta_json = os.path.join(folder_name, JobConstants.META_FILE)
         meta_path = None
-        config_loader = None
-        meta_conf_fmt = None
         for ext, fmt in ConfigFormat.config_ext_formats().items():
             meta_file_path = normpath_for_zip(f"{meta_file}{ext}")
-            print(meta_file_path)
             if next((info for info in info_list if info.filename == meta_file_path), None):
+                # Already in job layout
                 meta_path = meta_file_path
                 config_loader = ConfigFactory.get_config_loader(fmt)
-                meta_conf_fmt = fmt
-                break
-
-        if next((info for info in info_list if info.filename == meta_path), None):
-            # Already in job layout
-            meta_data = in_zip.read(meta_path)
-            meta = config_loader.load_config_from_str(meta_data.decode()).to_dict()
-            if JobMetaKey.JOB_FOLDER_NAME.value not in meta:
-                meta[JobMetaKey.JOB_FOLDER_NAME.value] = folder_name
-            else:
-                return zip_data
+                # Already in job layout
+                meta_data = in_zip.read(meta_path)
+                meta = config_loader.load_config_from_str(meta_data.decode()).to_dict()
+                if JobMetaKey.JOB_FOLDER_NAME.value not in meta:
+                    meta[JobMetaKey.JOB_FOLDER_NAME.value] = folder_name
+                else:
+                    return zip_data
 
         writer = io.BytesIO()
         with ZipFile(writer, "w") as out_zip:

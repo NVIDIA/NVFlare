@@ -76,15 +76,10 @@ class ConfigFactory:
         extensions = target_exts if target_fmt else ext2fmt_map.keys()
         for search_dir in search_dirs:
             logger.debug(f"search file basename:'{file_basename}', search dirs = {search_dirs}")
-            print(f"search '{file_basename=}', {search_dirs=}")
             for ext in extensions:
-                print(f"{ext=}")
                 fmt = ext2fmt_map[ext]
-                print(f"{fmt=}")
                 filename = f"{file_basename}{ext}"
-                print(f"{filename=}, {search_dir=}")
                 for root, dirs, files in os.walk(search_dir):
-                    print(root, files, "filename in files:", (filename in files))
                     if filename in files:
                         config_file = os.path.join(root, filename)
                         return fmt, config_file
