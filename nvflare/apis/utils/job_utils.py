@@ -69,6 +69,7 @@ def convert_legacy_zipped_app_to_job(zip_data: bytes) -> bytes:
                     meta[JobMetaKey.JOB_FOLDER_NAME.value] = folder_name
                 else:
                     return zip_data
+                break
 
         writer = io.BytesIO()
         with ZipFile(writer, "w") as out_zip:
