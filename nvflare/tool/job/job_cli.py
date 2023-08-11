@@ -54,7 +54,6 @@ def build_job_template_indices(job_template_dir: str) -> ConfigTree:
     for root, dirs, files in os.walk(job_template_dir):
         config_files = [f for f in files if find_filename_basename(f) in config_file_base_names]
         if len(config_files) > 0:
-            job_temp_name = find_filename_basename(root)
             info_conf = get_template_info_config(root)
             for key in keys:
                 value = info_conf.get(key, "NA") if info_conf else "NA"
@@ -99,7 +98,7 @@ def create_job(cmd_args):
         return
 
     target_template_name = cmd_args.template
-    check_config_exists(target_template_name, template_index_conf)
+    check_template_exists(target_template_name, template_index_conf)
 
     job_template_dir = find_job_template_location()
     src = os.path.join(job_template_dir, target_template_name)
@@ -117,14 +116,14 @@ def show_variables(cmd_args):
     display_template_variables(variable_values)
 
 
-def check_config_exists(target_temp_name, template_index_conf):
+def check_template_exists(target_template_name, template_index_conf):
 
     targets = [os.path.basename(key) for key in template_index_conf.get("templates").keys()]
-    found = target_temp_name in targets
+    found = target_template_name in targets
 
     if not found:
         raise ValueError(
-            f"Invalid template name {target_temp_name}, "
+            f"Invalid template name {target_template_name}, "
             f"please check the available templates using nvflare job list_templates"
         )
 
@@ -420,18 +419,18 @@ def save_merged_configs(merged_conf, tmp_job_dir):
         dst_path = os.path.join(config_dir, f"{base_filename}.json")
         save_config(file_configs, dst_path)
 
-
-def get_upload_dir(startup_dir) -> str:
-    console_config_path = os.path.join(startup_dir, "fed_admin.json")
-    try:
-        with open(console_config_path, "r") as f:
-            console_config = json.load(f)
-            upload_dir = console_config["admin"]["upload_dir"]
-    except IOError as e:
-        raise CLIException(f"failed to load {console_config_path} {e}")
-    except json.decoder.JSONDecodeError as e:
-        raise CLIException(f"failed to load {console_config_path}, please double check the configuration {e}")
-    return upload_dir
+#
+# def get_upload_dir(startup_dir) -> str:
+#     console_config_path = os.path.join(startup_dir, "fed_admin.json")
+#     try:
+#         with open(console_config_path, "r") as f:
+#             console_config = json.load(f)
+#             upload_dir = console_config["admin"]["upload_dir"]
+#     except IOError as e:
+#         raise CLIException(f"failed to load {console_config_path} {e}")
+#     except json.decoder.JSONDecodeError as e:
+#         raise CLIException(f"failed to load {console_config_path}, please double check the configuration {e}")
+#     return upload_dir
 
 
 def prepare_model_exchange_config(job_folder: str, force: bool):
@@ -441,11 +440,6 @@ def prepare_model_exchange_config(job_folder: str, force: bool):
 
     dst_config = load_src_config_template("config_exchange.conf")
     save_config(dst_config, dst_path)
-
-
-def load_predefined_config():
-    file_dir = os.path.dirname(__file__)
-    return CF.parse_file(os.path.join(file_dir, "config/pre_defined.conf"))
 
 
 def prepare_meta_config(cmd_args):
