@@ -112,14 +112,13 @@ def create_job(cmd_args):
     prepare_meta_config(cmd_args)
 
     variable_values = prepare_job_config(cmd_args)
-    display_template_variables(variable_values)
+    display_template_variables(job_folder, variable_values)
 
 
 def show_variables(cmd_args):
     indices: Dict[str, (Dict, Dict)] = build_config_file_indexers(cmd_args.job_folder)
     variable_values = extract_value_from_index(indices_configs=indices)
-    variable_values = extract_value_from_index(indices_configs=indices)
-    display_template_variables(variable_values)
+    display_template_variables(cmd_args.job_folder, variable_values)
 
 
 def check_template_exists(target_template_name, template_index_conf):
@@ -134,8 +133,13 @@ def check_template_exists(target_template_name, template_index_conf):
         )
 
 
-def display_template_variables(variable_values: Dict[str, Dict]):
+def display_template_variables(job_folder, variable_values: Dict[str, Dict]):
     print("\nThe following are the variables you can change in the template\n")
+    print("-" * 100)
+    job_folder_header = fix_length_format(f"job folder: {job_folder}", 100)
+    print(" " * 100)
+    print(" " * 3, job_folder_header)
+    print(" " * 100)
     print("-" * 100)
     file_name_fix_length = 35
     var_name_fix_length = 25
@@ -190,7 +194,6 @@ def display_available_templates(template_index_conf):
     print("-" * 120)
     for file_path in sorted(template_registry.keys()):
         name = os.path.basename(file_path)
-        # print(f"{name=}", f"{file_path=}", f"{template_registry=}")
         template_info = template_registry.get(file_path, None)
         if not template_info:
             template_info = template_registry.get(name)
@@ -399,9 +402,6 @@ def prepare_job_config(cmd_args, tmp_job_dir: Optional[str] = None):
 def update_client_app_script(cmd_args):
     if cmd_args.app_config:
         client_config, config_path = _update_client_app_config_script(cmd_args.job_folder, cmd_args.app_config)
-
-        print(f"2. {client_config=}", config_path)
-        client_config.put("hello", "chester")
         save_config(client_config, config_path)
 
 

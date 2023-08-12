@@ -12,7 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from pyhocon import ConfigFactory as CF
+
 from nvflare.tool.job.config.config_indexer import build_dict_reverse_order_index
+from nvflare.tool.job.config.configer import extract_file_from_dict_by_index, extract_string_with_index
 
 
 class TestConfigIndex:
@@ -69,9 +72,35 @@ class TestConfigIndex:
         for key in expected_key_paths:
             assert key_paths[key] == expected_key_paths[key]
 
-        # indices = expand_indices(key_paths)
-        # for key in indices:
-        #     print("key=", key, ":", indices[key])
-        #
-        # assert indices["z[2].z1.z11"] == ["x.z[2].z1.z11"]
-        # assert len(indices) == 52
+    def test_extract_string_with_index(self):
+        input_string = "components[0].args.data_path"
+        tokens = extract_string_with_index(input_string)
+        assert tokens == [("components", 0, ["args.data_path"])]
+
+    def test_extract_file_from_dict_by_index(self):
+        config_str = """
+                {
+                    "components": [
+                        {
+                          "id": "df_stats_generator",
+                          "path": "df_statistics.DFStatistics",
+                          "args": {
+                            "data_path": "data.csv"
+                          }
+                        },
+                        {
+                          "id": "min_max_cleanser",
+                          "path": "nvflare.app_common.statistics.min_max_cleanser.AddNoiseToMinMax",
+                          "args": {
+                            "min_noise_level": 0.1,
+                            "max_noise_level": 0.3
+                          }
+                        }
+                    ]
+                }
+                """
+        conf = CF.parse_string(config_str)
+        index_conf = CF.from_dict({"data_path": ["components[0].args.data_path"]})
+        result = {}
+        extract_file_from_dict_by_index(conf, index_conf, result)
+        assert result == {"data_path": "data.csv"}

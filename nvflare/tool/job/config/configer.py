@@ -24,7 +24,6 @@ from nvflare.tool.job.config.config_indexer import build_reverse_order_index
 
 def merge_configs_from_cli(cmd_args) -> Dict[str, tuple]:
     cli_config_dict: Dict[str, Dict[str, str]] = get_cli_config(cmd_args)
-    print(f"{cli_config_dict.keys()=}")
     copy_app_config_file(cli_config_dict, cmd_args)
     indices: Dict[str, (Dict, Dict)] = build_config_file_indexers(cmd_args.job_folder)
     return merge_configs(indices, cli_config_dict)
@@ -39,10 +38,8 @@ def copy_app_config_file(cli_config_dict, cmd_args):
             target_dir = cmd_args.job_folder
         else:
             target_dir = config_dir
-        print(f"{target_dir=}")
 
         target_file = os.path.join(target_dir, base_config_filename)
-        print(f"{target_file=}")
         if not os.path.exists(target_file):
             shutil.copyfile(cli_config_file, target_file)
 
@@ -56,19 +53,29 @@ def extract_string_with_index(input_string):
 
     Returns:
         list: A list of tuples containing the extracted components: (string_before, index, string_after).
+
     """
+
     result = []
-    while True:
-        opening_bracket_index = input_string.find("[")
-        closing_bracket_index = input_string.find("]")
-        if opening_bracket_index == -1 or closing_bracket_index == -1:
-            break
+    if not input_string.strip(" "):
+        return result
+
+    opening_bracket_index = input_string.find("[")
+    closing_bracket_index = input_string.find("]")
+    if opening_bracket_index > 0 and closing_bracket_index > 0:
         string_before = input_string[:opening_bracket_index]
         index = int(input_string[opening_bracket_index + 1 : closing_bracket_index])
-        string_after = input_string[closing_bracket_index + 1 :]
+        string_after = input_string[closing_bracket_index + 1 :].strip(". ")
+        if string_after:
+            r = (string_before.strip("."), index, extract_string_with_index(string_after.strip(".")))
+            if r:
+                result.append(r)
+        else:
+            r = (string_before.strip("."), index, string_after)
+            result.append(r)
+    else:
+        result.append(input_string)
 
-        result.append((string_before.strip("."), index, string_after.strip(".")))
-        input_string = f"{string_before}{string_after}"
     result = [elm for elm in result if len(elm) > 0]
     return result
 
@@ -76,36 +83,76 @@ def extract_string_with_index(input_string):
 def extract_value_from_index(indices_configs: Dict[str, Tuple]) -> Dict[str, Dict[str, Any]]:
     result = {}
     for file, (indices_dict, configs_dict) in indices_configs.items():
-        basename = os.path.basename(file)
         conf = CF.from_dict(configs_dict)
         result[file] = {}
-        if len(indices_dict) > 0:
-            for key, key_path_list in indices_dict.items():
-                if len(key_path_list) > 1:
-                    print(
-                        f"Warning: Ambiguity config key: '{key}' for file '{basename}', "
-                        f"more than one key paths with such key: {key_path_list}, first one will be used"
-                    )
+        extract_file_from_dict_by_index(conf, indices_dict, result[file])
 
-                key_path = key_path_list[0]
-                results = extract_string_with_index(key_path)
-                if len(results) > 0:
-                    target_conf = conf
-                    for idx, (before, index, after) in enumerate(results):
-                        before_configs = target_conf.get_list(before)
-                        after_config = before_configs[index]
-                        if idx == len(results) - 1:
-                            if after and isinstance(after_config, ConfigTree):
-                                value = after_config.get(after)
-                            else:
-                                value = after_config
-
-                            result[file][key] = value
-                        else:
-                            target_conf = after_config
-                else:
-                    result[file][key] = conf.get(key_path)
     return result
+
+
+def extract_file_from_dict_by_index(conf, indices_dict, result):
+    if len(indices_dict) == 0:
+        return
+    for key, key_path_list in indices_dict.items():
+        for key_path in key_path_list:
+            tokens = extract_string_with_index(key_path)
+            if isinstance(tokens, List) and tokens:
+                value = extract_value_from_list_index(conf, tokens[0])
+            else:
+                value = conf.get(key_path)
+            result[key] = value
+
+
+def extract_value_from_list_index(conf, input_str):
+    target_conf = conf
+
+    if isinstance(input_str, Tuple):
+        before, index, after = input_str
+        before_configs = target_conf.get_list(before)
+        after_config = before_configs[index]
+        if after:
+            if isinstance(after, List):
+                return extract_value_from_list_index(after_config, after[0])
+            else:
+                if isinstance(after_config, ConfigTree):
+                    return after_config.get(after)
+                else:
+                    return after_config
+        else:
+            return after_config
+    else:
+        return conf.get(input_str)
+
+
+def replace_value_from_list_index(conf, input_str, new_value):
+
+    if isinstance(input_str, Tuple):
+        before, index, after = input_str
+        before_configs = conf.get_list(before)
+        after_config = before_configs[index]
+        if after:
+            if isinstance(after, List):
+                replace_value_from_list_index(after_config, after[0], new_value)
+            else:
+                if isinstance(after_config, ConfigTree):
+                    old_value_type = type(after_config.get(after))
+                    after_config.put(after, old_value_type(new_value))
+                else:
+                    # this kind of like this: a = [1, 2], a[0] -> 1, a[1] = 2
+                    # unlike be able to specify this in CLI.
+                    raise ValueError(
+                        f"unable to substitute value {new_value} for {input_str}," f" suggest direct edit config file"
+                    )
+        else:
+            # this kind of like this: a = [1, 2], a[0] -> 1, a[1] = 2
+            # unlike be able to specify this in CLI.
+            raise ValueError(
+                f"unable to substitute value {new_value} for {input_str}," f" suggest direct edit config file"
+            )
+
+    else:
+        old_value_type = type(conf.get(input_str))
+        conf.put(input_str, old_value_type(new_value))
 
 
 def merge_configs(indices_configs: Dict[str, tuple], cli_file_configs: Dict[str, Dict]) -> Dict[str, tuple]:
@@ -120,6 +167,7 @@ def merge_configs(indices_configs: Dict[str, tuple], cli_file_configs: Dict[str,
         Dict[str, CF]: A dictionary containing merged configurations.
     """
     merged = {}
+    # TODO TODO
     for file, (indices_dict, configs_dict) in indices_configs.items():
         basename = os.path.basename(file)
         conf = CF.from_dict(configs_dict)
@@ -135,26 +183,28 @@ def merge_configs(indices_configs: Dict[str, tuple], cli_file_configs: Dict[str,
                         raise ValueError(f"Invalid config key: '{key}' for file '{basename}'")
 
                     key_path_list = indices_dict[key]
-                    if len(key_path_list) > 1:
-                        raise ValueError(
-                            f"Ambiguity config key: '{key}' for file '{basename}', "
-                            f"more than one key paths with such key: {key_path_list}"
-                        )
+                    for key_path in key_path_list:
+                        # results = extract_string_with_index(key_path)
+                        tokens = extract_string_with_index(key_path)
+                        if isinstance(tokens, List) and tokens:
+                            replace_value_from_list_index(conf, tokens[0], value)
+                        else:
+                            conf.put(key_path, value)
 
-                    key_path = key_path_list[0]
-                    results = extract_string_with_index(key_path)
-                    if len(results) > 0:
-                        target_conf = conf
-                        for idx, (before, index, after) in enumerate(results):
-                            before_configs = target_conf.get_list(before)
-                            after_config = before_configs[index]
-                            if idx == len(results) - 1:
-                                value_type = type(after_config.get(after))
-                                after_config.put(after, value_type(value))
-                            else:
-                                target_conf = after_config
-                    else:
-                        conf.put(key_path, value)
+                        #
+                        #
+                        # if len(results) > 0:
+                        #     target_conf = conf
+                        #     for idx, (before, index, after) in enumerate(results):
+                        #         before_configs = target_conf.get_list(before)
+                        #         after_config = before_configs[index]
+                        #         if idx == len(results) - 1:
+                        #             value_type = type(after_config.get(after))
+                        #             after_config.put(after, value_type(value))
+                        #         else:
+                        #             target_conf = after_config
+                        # else:
+                        #     conf.put(key_path, value)
 
         merged[basename] = (indices_dict, conf)
 

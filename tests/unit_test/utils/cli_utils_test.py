@@ -37,7 +37,7 @@ class TestCLIUtils:
         )
 
     def test_find_startup_kit_location(self):
-        with patch("nvflare.utils.cli_utils.load_config") as mock2:
+        with patch("nvflare..utils.cli_utils.load_config") as mock2:
             conf = CF.parse_string(
                 """
                 startup_kit {
@@ -49,19 +49,22 @@ class TestCLIUtils:
             assert "/tmp/nvflare/poc/example_project/prod_00" == find_startup_kit_location()
 
     def test_create_startup_kit_config(self):
-        prev_conf = CF.parse_string(
-            """
-                poc_workspace {
-                    path = "/tmp/nvflare/poc"
-                }
-            """
-        )
-        config = create_startup_kit_config(
-            nvflare_config=prev_conf, startup_kit_dir="/tmp/nvflare/poc/example_project/prod_00"
-        )
+        with patch("nvflare.utils.cli_utils.check_startup_dir", side_effect=None) as mock:
+            mock.return_value = ""
 
-        assert "/tmp/nvflare/poc" == config.get("poc_workspace.path")
-        assert "/tmp/nvflare/poc/example_project/prod_00" == config.get("startup_kit.path")
+            prev_conf = CF.parse_string(
+                """
+                    poc_workspace {
+                        path = "/tmp/nvflare/poc"
+                    }
+                """
+            )
+            config = create_startup_kit_config(
+                nvflare_config=prev_conf, startup_kit_dir="/tmp/nvflare/poc/example_project/prod_00"
+            )
+
+            assert "/tmp/nvflare/poc" == config.get("poc_workspace.path")
+            assert "/tmp/nvflare/poc/example_project/prod_00" == config.get("startup_kit.path")
 
     @pytest.mark.parametrize(
         "inputs, result", [(([], "a"), ["a"]), ((["a"], "a"), ["a"]), ((["a", "b"], "b"), ["a", "b"])]

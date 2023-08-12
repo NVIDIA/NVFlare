@@ -84,13 +84,6 @@ def create_startup_kit_config(nvflare_config: ConfigTree, startup_kit_dir: Optio
         ConfigTree: The merged configuration tree.
     """
     startup_kit_dir = get_startup_kit_dir(startup_kit_dir)
-    if not startup_kit_dir or not os.path.isdir(startup_kit_dir):
-        raise ValueError(
-            f"startup_kit_dir '{startup_kit_dir}' must be a valid and non-empty path. "
-            f"use 'nvflare poc' command to 'prepare' if you are using POC mode. Or use"
-            f" 'nvflare config' to setup startup_kit_dir location if you are in production"
-        )
-
     conf_str = f"""
         startup_kit {{
             path = {startup_kit_dir}
@@ -102,7 +95,7 @@ def create_startup_kit_config(nvflare_config: ConfigTree, startup_kit_dir: Optio
 
 
 def check_dir(dir_path: str):
-    if not os.path.isdir(dir_path):
+    if not dir_path or not os.path.isdir(dir_path):
         raise ValueError(f"directory {dir_path} doesn't exists")
 
 
@@ -117,8 +110,17 @@ def get_startup_kit_dir(startup_kit_dir: Optional[str] = None) -> str:
         if startup_kit_dir is None or len(startup_kit_dir.strip()) == 0:
             raise ValueError("startup kit directory is not specified")
 
-    check_dir(startup_kit_dir)
+    check_startup_dir(startup_kit_dir)
     return startup_kit_dir
+
+
+def check_startup_dir(startup_kit_dir):
+    if not startup_kit_dir or not os.path.isdir(startup_kit_dir):
+        raise ValueError(
+            f"startup_kit_dir '{startup_kit_dir}' must be a valid and non-empty path. "
+            f"use 'nvflare poc' command to 'prepare' if you are using POC mode. Or use"
+            f" 'nvflare config' to setup startup_kit_dir location if you are in production"
+        )
 
 
 def find_job_template_location(job_template_dir: Optional[str] = None):
@@ -168,7 +170,6 @@ def save_config(dst_config, dst_path, to_json=False):
         dst_config_path = os.path.join(os.path.dirname(dst_path), filename)
 
     config_str = HOCONConverter.to_json(dst_config) if to_json else HOCONConverter.to_hocon(dst_config)
-    print(f"{dst_config_path =}")
     with open(dst_config_path, "w") as outfile:
         outfile.write(f"{config_str}\n")
 

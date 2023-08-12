@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Any, Callable, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional
 
 from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree
@@ -45,6 +45,7 @@ def build_reverse_order_index(config_file_path: str) -> (Dict[str, List[str]], D
     excluded_list.extend(
         [
             "name",
+            "path",
             "id",
             "format_version",
             "tasks",
@@ -82,13 +83,21 @@ def build_list_reverse_order_index(
                 key_path_dict[key_with_index] = result
         elif isinstance(value, dict):
             build_dict_reverse_order_index(value, key_path_dict, root_path=key_path, excluded_keys=excluded_keys)
-        elif isinstance(value, (int, float, str, bool, Callable, Type)):
+        elif is_primitive(value):
             if not (key == "path" and key_path.startswith("components")):
                 result.append(key_path)
                 key_path_dict[key_with_index] = result
         else:
             raise RuntimeError(f"Unhandled data type: {type(value)}")
     return key_path_dict
+
+
+def is_primitive(value):
+    return isinstance(value, int) or isinstance(value, float) or isinstance(value, str) or isinstance(value, bool)
+
+
+def has_no_primitives_in_list(values: List):
+    return any(not is_primitive(x) for x in values)
 
 
 def build_dict_reverse_order_index(
@@ -112,7 +121,7 @@ def build_dict_reverse_order_index(
         key_path = f"{root_path}.{key}" if root_path else key
         result = key_path_dict.get(key, [])
         if isinstance(value, list):
-            if len(value) > 0:
+            if len(value) > 0 and has_no_primitives_in_list(value):
                 key_path_dict = build_list_reverse_order_index(
                     value, key_path_dict, key, root_path=key_path, excluded_keys=excluded_keys
                 )
@@ -124,7 +133,7 @@ def build_dict_reverse_order_index(
             key_path_dict = build_dict_reverse_order_index(
                 value, key_path_dict, root_path=key_path, excluded_keys=excluded_keys
             )
-        elif isinstance(value, (int, float, str, bool, Callable, Type)):
+        elif is_primitive(value):
             if not (key == "path" and key_path.startswith("components")):
                 result.append(key_path)
                 key_path_dict[key] = result
