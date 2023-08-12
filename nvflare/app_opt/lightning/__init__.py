@@ -12,4 +12,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from .api import FLCallback as FLCallback
 from .api import patch as patch

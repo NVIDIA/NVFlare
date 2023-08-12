@@ -193,24 +193,34 @@ class MyDataModule(LightningDataModule):
 
 
 def cli_main():
-    # (1) patch the LightningModule
-    flare.patch(LitAutoEncoder)
+
     cli = LightningCLI(
         LitAutoEncoder,
         MyDataModule,
         seed_everything_default=1234,
         run=False,  # used to de-activate automatic fitting.
-        trainer_defaults={"callbacks": ImageSampler(), "max_epochs": 1},
+        trainer_defaults={
+            "callbacks": [ImageSampler()],
+            "max_epochs": 1,
+        },
         save_config_kwargs={"overwrite": True},
     )
+    # (1) patch the lightning trainer
+    flare.patch(cli.trainer)
+
+    # (2) evaluate the current global model to allow server-side model selection
+    print("--- test global model ---")
+    cli.trainer.test(cli.model, datamodule=cli.datamodule)
+
+    # (3) Perform local training starting with the received global model
+    print("--- train new model ---")
     cli.trainer.fit(cli.model, datamodule=cli.datamodule)
+
+    # (4) optionally test the new local model
+    print("--- test new model ---")
     cli.trainer.test(ckpt_path="best", datamodule=cli.datamodule)
-    # (optional) test on received model
-    test_result = cli.trainer.test(cli.model.get_fl_module(), datamodule=cli.datamodule)
-    # (2) construct trained FLModel
-    output_model = flare.FLModel(params=cli.model.cpu().state_dict(), metrics=test_result[0])
-    # (3) send the model to NVFlare
-    flare.send(output_model)
+
+    print("--- prediction with new best model ---")
     predictions = cli.trainer.predict(ckpt_path="best", datamodule=cli.datamodule)
     print(predictions[0])
 

@@ -55,6 +55,17 @@ class Launcher(ABC):
         pass
 
     @abstractmethod
+    def wait_task(self, task_name: str, fl_ctx: FLContext, timeout: Optional[float] = None) -> None:
+        """Waits for external system to end.
+
+        Args:
+            task_name (str): task name.
+            fl_ctx (FLContext): fl context.
+            timeout (optional, float): time to wait for task.
+        """
+        pass
+
+    @abstractmethod
     def stop_task(self, task_name: str, fl_ctx: FLContext) -> None:
         """Stops external system and free up resources.
 
