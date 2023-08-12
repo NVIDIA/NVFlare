@@ -20,6 +20,8 @@ from zipfile import ZipFile
 
 from nvflare.apis.fl_constant import JobConstants
 from nvflare.apis.job_def import ALL_SITES, JobMetaKey
+from nvflare.fuel.utils.config import ConfigFormat
+from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.fuel.utils.zip_utils import normpath_for_zip, zip_directory_to_bytes
 
 
@@ -71,13 +73,13 @@ def convert_legacy_zipped_app_to_job(zip_data: bytes) -> bytes:
         writer = io.BytesIO()
         with ZipFile(writer, "w") as out_zip:
             if meta:
-                out_zip.writestr(meta_path, json.dumps(meta))
+                out_zip.writestr(meta_json, json.dumps(meta))
                 out_zip.comment = in_zip.comment  # preserve the comment
                 for info in info_list:
                     if info.filename != meta_path:
                         out_zip.writestr(info, in_zip.read(info.filename))
             else:
-                out_zip.writestr(meta_path, _get_default_meta(folder_name))
+                out_zip.writestr(meta_json, _get_default_meta(folder_name))
                 # Push everything else to a sub folder with the same name:
                 # hello-pt/README.md -> hello-pt/hello-pt/README.md
                 for info in info_list:
