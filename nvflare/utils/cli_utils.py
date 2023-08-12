@@ -71,6 +71,7 @@ def load_hidden_config() -> ConfigTree:
     hidden_dir = create_hidden_nvflare_dir()
     hidden_nvflare_config_file = get_hidden_nvflare_config_path(str(hidden_dir))
     nvflare_config = load_config(hidden_nvflare_config_file)
+    print(f"{nvflare_config =}")
     return nvflare_config
 
 
