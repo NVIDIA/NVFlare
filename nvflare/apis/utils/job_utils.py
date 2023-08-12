@@ -54,7 +54,7 @@ def convert_legacy_zipped_app_to_job(zip_data: bytes) -> bytes:
         info_list = in_zip.infolist()
         folder_name = info_list[0].filename.split("/")[0]
         meta_file = os.path.join(folder_name, JobConstants.META)
-        meta_json = os.path.join(folder_name, JobConstants.META_FILE)
+        meta_json = normpath_for_zip(os.path.join(folder_name, JobConstants.META_FILE))
         meta_path = None
         for ext, fmt in ConfigFormat.config_ext_formats().items():
             meta_file_path = normpath_for_zip(f"{meta_file}{ext}")
