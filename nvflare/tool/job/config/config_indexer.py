@@ -37,7 +37,7 @@ def build_reverse_order_index(config_file_path: str) -> Tuple[str, Dict[str, Lis
             "task_data_filters",
             "task_result_filters",
             "exchange_path",
-            "job_folder_name"
+            "job_folder_name",
         ]
     )
     indices: Dict[str, List[str]] = build_dict_reverse_order_index(config, excluded_keys=excluded_list)

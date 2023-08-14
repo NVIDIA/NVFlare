@@ -37,4 +37,3 @@ JOB_CONFIG_VAR_VALUE = "value"
 JOB_TEMPLATE_NAME = "name"
 
 CONFIG_CONF = "config.conf"
-

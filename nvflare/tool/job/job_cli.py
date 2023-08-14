@@ -30,10 +30,23 @@ from nvflare.tool.job.config.configer import (
     extract_value_from_index,
     merge_configs_from_cli,
 )
-from nvflare.tool.job.job_client_const import CONFIG_FILE_BASE_NAME_WO_EXTS, JOB_INFO_KEYS, JOB_TEMPLATE_CONF, \
-    JOB_INFO_CONF, JOB_CONFIG_FILE_NAME, JOB_CONFIG_VAR_NAME, JOB_CONFIG_VAR_VALUE, CONFIG_CONF, JOB_TEMPLATE, \
-    JOB_INFO_DESC, JOB_INFO_CLIENT_TYPE, JOB_INFO_CONTROLLER_TYPE, JOB_INFO_CONTROLLER_TYPE_KEY, \
-    JOB_INFO_CLIENT_TYPE_KEY, JOB_INFO_DESC_KEY
+from nvflare.tool.job.job_client_const import (
+    CONFIG_CONF,
+    CONFIG_FILE_BASE_NAME_WO_EXTS,
+    JOB_CONFIG_FILE_NAME,
+    JOB_CONFIG_VAR_NAME,
+    JOB_CONFIG_VAR_VALUE,
+    JOB_INFO_CLIENT_TYPE,
+    JOB_INFO_CLIENT_TYPE_KEY,
+    JOB_INFO_CONF,
+    JOB_INFO_CONTROLLER_TYPE,
+    JOB_INFO_CONTROLLER_TYPE_KEY,
+    JOB_INFO_DESC,
+    JOB_INFO_DESC_KEY,
+    JOB_INFO_KEYS,
+    JOB_TEMPLATE,
+    JOB_TEMPLATE_CONF,
+)
 from nvflare.utils.cli_utils import (
     find_job_template_location,
     get_curr_dir,
@@ -87,7 +100,7 @@ def get_template_registry_file_path():
 
 
 def get_template_info_config(template_dir):
-    info_conf_path = os.path.join(template_dir,JOB_INFO_CONF)
+    info_conf_path = os.path.join(template_dir, JOB_INFO_CONF)
     return CF.parse_file(info_conf_path) if os.path.isfile(info_conf_path) else None
 
 

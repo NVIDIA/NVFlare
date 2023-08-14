@@ -281,7 +281,12 @@ def build_config_file_indexers(config_dir: str) -> Dict[str, Tuple[Dict[str, Lis
             tokens = os.path.splitext(f)
             name_wo_ext = tokens[0]
             ext = tokens[1]
-            if ext in config_extensions and not f.startswith("._") and name_wo_ext in included and name_wo_ext not in excluded:
+            if (
+                ext in config_extensions
+                and not f.startswith("._")
+                and name_wo_ext in included
+                and name_wo_ext not in excluded
+            ):
                 config_files.append(f)
         for f in config_files:
             f = str(os.path.abspath(os.path.join(root, f)))
