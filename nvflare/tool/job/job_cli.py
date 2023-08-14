@@ -127,9 +127,17 @@ def create_job(cmd_args):
     src = os.path.join(job_template_dir, target_template_name)
     copy_tree(src=src, dst=config_dir)
     prepare_meta_config(cmd_args)
-
+    remove_extra_file(config_dir)
     variable_values = prepare_job_config(cmd_args)
     display_template_variables(job_folder, variable_values)
+
+
+def remove_extra_file(config_dir):
+    extra_file = ["info.md", "info.conf"]
+    for ef in extra_file:
+        file_path = os.path.join(config_dir, ef)
+        if os.path.isfile(file_path):
+            os.remove(file_path)
 
 
 def show_variables(cmd_args):
@@ -260,6 +268,7 @@ def find_admin_user_and_dir() -> Tuple[str, str]:
 
 
 def internal_submit_job(admin_user_dir, username, temp_job_dir):
+    print("trying to connect to the server")
     sess = new_secure_session(username=username, startup_kit_location=admin_user_dir)
     job_id = sess.submit_job(temp_job_dir)
     print(f"job: '{job_id} was submitted")

@@ -37,8 +37,9 @@ from nvflare.security.logging import secure_format_exception
 
 
 def main():
-    if sys.version_info < (3, 7):
-        raise RuntimeError("Please use Python 3.7 or above.")
+    if (3, 7) > sys.version_info >= (3, 11):
+        raise RuntimeError("Please use Python 3.8 or above. and below 3.11 ")
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--workspace", "-m", type=str, help="WORKSPACE folder", required=True)
     parser.add_argument("--fed_client", "-s", type=str, help="client config json file", required=True)

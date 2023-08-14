@@ -190,22 +190,6 @@ def merge_configs(indices_configs: Dict[str, tuple], cli_file_configs: Dict[str,
                             replace_value_from_list_index(conf, tokens[0], value)
                         else:
                             conf.put(key_path, value)
-
-                        #
-                        #
-                        # if len(results) > 0:
-                        #     target_conf = conf
-                        #     for idx, (before, index, after) in enumerate(results):
-                        #         before_configs = target_conf.get_list(before)
-                        #         after_config = before_configs[index]
-                        #         if idx == len(results) - 1:
-                        #             value_type = type(after_config.get(after))
-                        #             after_config.put(after, value_type(value))
-                        #         else:
-                        #             target_conf = after_config
-                        # else:
-                        #     conf.put(key_path, value)
-
         merged[basename] = (indices_dict, conf)
 
     return merged
