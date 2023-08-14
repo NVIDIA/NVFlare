@@ -11,34 +11,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree
 
-from nvflare.fuel.common.excepts import ConfigError
-from nvflare.fuel.utils.class_utils import ModuleScanner
+from nvflare.fuel.utils.config import Config, ConfigFormat
+from nvflare.fuel.utils.config_factory import ConfigFactory
 
 
-def convert_class_names_to_paths(class_names: List[str]):
-    result = []
-    module_scanner = ModuleScanner(["nvflare"], [])
-    for clazz in class_names:
-        module_name = module_scanner.get_module_name(clazz)
-        if module_name is None:
-            raise ConfigError('Cannot find component class "{}"'.format(clazz))
-        class_path = f"{module_name}.{clazz}"
-        result.append(class_path)
-        print(clazz, class_path)
-
-    return result
-
-
-def build_reverse_order_index(config_file_path: str) -> (Dict[str, List[str]], Dict[str, Any]):
-    try:
-        config: ConfigTree = CF.parse_file(config_file_path)
-    except Exception as e:
-        raise RuntimeError(f"filed to parse file {config_file_path}:", e)
+def build_reverse_order_index(config_file_path: str) -> Tuple[str, Dict[str, List[str]], Dict[str, Any]]:
+    config, config_file_path = load_pyhocon_conf(config_file_path)
 
     components: list = config.get("components", None)
     excluded_list = [comp.get("id") for comp in components] if components else []
@@ -54,11 +37,28 @@ def build_reverse_order_index(config_file_path: str) -> (Dict[str, List[str]], D
             "task_data_filters",
             "task_result_filters",
             "exchange_path",
-            "job_folder_name",
+            "job_folder_name"
         ]
     )
     indices: Dict[str, List[str]] = build_dict_reverse_order_index(config, excluded_keys=excluded_list)
-    return indices, config
+    return config_file_path, indices, config
+
+
+def load_pyhocon_conf(config_file_path):
+    try:
+        temp_conf: Config = ConfigFactory.load_config(config_file_path)
+        if temp_conf:
+            config_file_path = temp_conf.file_path
+            if temp_conf.format == ConfigFormat.PYHOCON:
+                config: ConfigTree = temp_conf.conf
+            else:
+                config: ConfigTree = CF.from_dict(temp_conf.to_dict())
+        else:
+            raise ValueError(f"Config is None for file:'{config_file_path}'.")
+
+    except Exception as e:
+        raise RuntimeError(f"filed to parse file {config_file_path}:", e)
+    return config, config_file_path
 
 
 def build_list_reverse_order_index(

@@ -30,6 +30,10 @@ from nvflare.tool.job.config.configer import (
     extract_value_from_index,
     merge_configs_from_cli,
 )
+from nvflare.tool.job.job_client_const import CONFIG_FILE_BASE_NAME_WO_EXTS, JOB_INFO_KEYS, JOB_TEMPLATE_CONF, \
+    JOB_INFO_CONF, JOB_CONFIG_FILE_NAME, JOB_CONFIG_VAR_NAME, JOB_CONFIG_VAR_VALUE, CONFIG_CONF, JOB_TEMPLATE, \
+    JOB_INFO_DESC, JOB_INFO_CLIENT_TYPE, JOB_INFO_CONTROLLER_TYPE, JOB_INFO_CONTROLLER_TYPE_KEY, \
+    JOB_INFO_CLIENT_TYPE_KEY, JOB_INFO_DESC_KEY
 from nvflare.utils.cli_utils import (
     find_job_template_location,
     get_curr_dir,
@@ -54,9 +58,9 @@ def find_filename_basename(f: str):
 
 def build_job_template_indices(job_template_dir: str) -> ConfigTree:
     conf = CF.parse_string("{ templates = {} }")
-    config_file_base_names = ["config_fed_client", "config_fed_server", "config_exchange", "meta"]
+    config_file_base_names = CONFIG_FILE_BASE_NAME_WO_EXTS
     template_conf = conf.get("templates")
-    keys = ["description", "controller_type", "client_category"]
+    keys = JOB_INFO_KEYS
     for root, dirs, files in os.walk(job_template_dir):
         config_files = [f for f in files if find_filename_basename(f) in config_file_base_names]
         if len(config_files) > 0:
@@ -76,14 +80,14 @@ def save_job_template_index_file(conf):
 
 
 def get_template_registry_file_path():
-    filename = "job_templates.conf"
+    filename = JOB_TEMPLATE_CONF
     hidden_nvflare_dir = get_hidden_nvflare_dir()
     file_path = os.path.join(hidden_nvflare_dir, filename)
     return file_path
 
 
 def get_template_info_config(template_dir):
-    info_conf_path = os.path.join(template_dir, "info.conf")
+    info_conf_path = os.path.join(template_dir,JOB_INFO_CONF)
     return CF.parse_file(info_conf_path) if os.path.isfile(info_conf_path) else None
 
 
@@ -144,9 +148,9 @@ def display_template_variables(job_folder, variable_values: Dict[str, Dict]):
     file_name_fix_length = 35
     var_name_fix_length = 25
     var_value_fix_length = 25
-    file_name = fix_length_format("file_name", file_name_fix_length)
-    var_name = fix_length_format("var_name", var_name_fix_length)
-    var_value = fix_length_format("value", var_value_fix_length)
+    file_name = fix_length_format(JOB_CONFIG_FILE_NAME, file_name_fix_length)
+    var_name = fix_length_format(JOB_CONFIG_VAR_NAME, var_name_fix_length)
+    var_value = fix_length_format(JOB_CONFIG_VAR_VALUE, var_value_fix_length)
     print(" " * 3, file_name, var_name, var_value)
     print("-" * 100)
     for file in sorted(variable_values.keys()):
@@ -172,9 +176,9 @@ def list_templates(cmd_args):
 
 def update_job_template_dir(job_template_dir: str):
     hidden_nvflare_dir = get_hidden_nvflare_dir()
-    file_path = os.path.join(hidden_nvflare_dir, "config.conf")
+    file_path = os.path.join(hidden_nvflare_dir, CONFIG_CONF)
     config = CF.parse_file(file_path)
-    config.put("job_template", job_template_dir)
+    config.put(JOB_TEMPLATE, job_template_dir)
     save_config(config, file_path)
 
 
@@ -187,9 +191,9 @@ def display_available_templates(template_index_conf):
     controller_type_fix_length = 20
     client_category_fix_length = 20
     name = fix_length_format("name", name_fix_length)
-    description = fix_length_format("description", description_fix_length)
-    client_category = fix_length_format("client category", client_category_fix_length)
-    controller_type = fix_length_format("controller type", controller_type_fix_length)
+    description = fix_length_format(JOB_INFO_DESC, description_fix_length)
+    client_category = fix_length_format(JOB_INFO_CLIENT_TYPE, client_category_fix_length)
+    controller_type = fix_length_format(JOB_INFO_CONTROLLER_TYPE, controller_type_fix_length)
     print(" " * 2, name, description, controller_type, client_category)
     print("-" * 120)
     for file_path in sorted(template_registry.keys()):
@@ -198,9 +202,9 @@ def display_available_templates(template_index_conf):
         if not template_info:
             template_info = template_registry.get(name)
         name = fix_length_format(name, name_fix_length)
-        description = fix_length_format(template_info.get("description"), description_fix_length)
-        client_category = fix_length_format(template_info.get("client_category"), client_category_fix_length)
-        controller_type = fix_length_format(template_info.get("controller_type"), controller_type_fix_length)
+        description = fix_length_format(template_info.get(JOB_INFO_DESC_KEY), description_fix_length)
+        client_category = fix_length_format(template_info.get(JOB_INFO_CLIENT_TYPE_KEY), client_category_fix_length)
+        controller_type = fix_length_format(template_info.get(JOB_INFO_CONTROLLER_TYPE_KEY), controller_type_fix_length)
         print(" " * 2, name, description, controller_type, client_category)
     print("-" * 120)
 
@@ -427,20 +431,6 @@ def save_merged_configs(merged_conf, tmp_job_dir):
         base_filename = os.path.splitext(base_filename)[0]
         dst_path = os.path.join(config_dir, f"{base_filename}.json")
         save_config(file_configs, dst_path)
-
-
-#
-# def get_upload_dir(startup_dir) -> str:
-#     console_config_path = os.path.join(startup_dir, "fed_admin.json")
-#     try:
-#         with open(console_config_path, "r") as f:
-#             console_config = json.load(f)
-#             upload_dir = console_config["admin"]["upload_dir"]
-#     except IOError as e:
-#         raise CLIException(f"failed to load {console_config_path} {e}")
-#     except json.decoder.JSONDecodeError as e:
-#         raise CLIException(f"failed to load {console_config_path}, please double check the configuration {e}")
-#     return upload_dir
 
 
 def prepare_model_exchange_config(job_folder: str, force: bool):

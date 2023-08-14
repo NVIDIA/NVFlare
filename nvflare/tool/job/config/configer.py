@@ -258,7 +258,7 @@ def parse_cli_config(cli_configs: List[str]) -> Dict[str, Dict[str, str]]:
     return cli_config_dict
 
 
-def build_config_file_indexers(config_dir: str) -> Dict[str, dict]:
+def build_config_file_indexers(config_dir: str) -> Dict[str, Tuple[Dict[str, List[str]], Dict[str, Any]]]:
     """
     Build a dictionary of config file indexers for the given job folder.
 
@@ -270,19 +270,23 @@ def build_config_file_indexers(config_dir: str) -> Dict[str, dict]:
                          and values are their corresponding reverse order indexers.
     """
 
-    excluded = ["info.md", "info.conf"]
-    included = ["config_fed_client.conf", "config_fed_server.conf", "config_exchange.conf", "meta.conf"]
+    excluded = ["info"]
+    included = ["config_fed_client", "config_fed_server", "config_exchange", "meta"]
     config_extensions = ConfigFormat.extensions()
 
     config_file_index = {}
+    config_files = []
     for root, _, files in os.walk(config_dir):
-        config_files = [f for f in files if os.path.splitext(f)[1] in config_extensions and not f.startswith("._")]
-        if included:
-            config_files = [f for f in config_files if f in included]
-        if excluded:
-            config_files = [f for f in config_files if f not in excluded]
+        for f in files:
+            tokens = os.path.splitext(f)
+            name_wo_ext = tokens[0]
+            ext = tokens[1]
+            if ext in config_extensions and not f.startswith("._") and name_wo_ext in included and name_wo_ext not in excluded:
+                config_files.append(f)
         for f in config_files:
             f = str(os.path.abspath(os.path.join(root, f)))
-            config_file_index[f] = build_reverse_order_index(f)
+            if os.path.isfile(f):
+                real_path, indices, config = build_reverse_order_index(str(f))
+                config_file_index[real_path] = (indices, config)
 
     return config_file_index
