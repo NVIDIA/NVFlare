@@ -7,6 +7,6 @@ Hello World Examples** can be run from the `hello_world notebook <https://github
 
    hello_scatter_and_gather
    hello_cross_val
-   Hello Cyclic Weight Transfer (GitHub) <https://github.com/NVIDIA/NVFlare/blob/2.3/examples/hello-cyclic>
+   Hello Cyclic Weight Transfer (GitHub) <https://github.com/NVIDIA/NVFlare/blob/2.3/examples/hello-world/hello-cyclic>
    hello_pt
    hello_tf2
