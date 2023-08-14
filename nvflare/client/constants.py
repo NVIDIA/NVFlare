@@ -16,6 +16,7 @@ from enum import Enum
 
 SYS_ATTRS = ("job_id", "site_name", "total_rounds")
 CONST_ATTRS = ("total_rounds",)
+CONFIG_EXCHANGE = "config_exchange.json"
 
 
 class ModelExchangeFormat(str, Enum):

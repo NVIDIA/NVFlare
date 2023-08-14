@@ -19,6 +19,7 @@ pytorch_lightning, ok = optional_import(module="pytorch_lightning")
 if ok:
     from nvflare.app_common.abstract.fl_model import FLModel as FLModel
     from nvflare.app_common.abstract.fl_model import ParamsType as ParamsType
+    from nvflare.app_opt.lightning import FLCallback as FLCallback
     from nvflare.app_opt.lightning import patch as patch
     from nvflare.client import params_diff as params_diff
     from nvflare.client import send as send

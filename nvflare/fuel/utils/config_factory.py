@@ -83,6 +83,7 @@ class ConfigFactory:
                     if filename in files:
                         config_file = os.path.join(root, filename)
                         return fmt, config_file
+
         return None, None
 
     @staticmethod
