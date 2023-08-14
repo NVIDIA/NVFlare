@@ -10,3 +10,17 @@ Accepted to the 4th Workshop on Distributed, Collaborative, & Federated Learning
 
 ## License
 TBD
+
+## Citation
+
+> Wang, Pochuan, et al. "ConDistFL: Conditional Distillation for Federated Learning from Partially Annotated Data." arXiv preprint arXiv:2308.04070 (2023).
+
+BibTeX
+```
+@article{wang2023condistfl,
+  title={ConDistFL: Conditional Distillation for Federated Learning from Partially Annotated Data},
+  author={Wang, Pochuan and Shen, Chen and Wang, Weichung and Oda, Masahiro and Fuh, Chiou-Shann and Mori, Kensaku and Roth, Holger R},
+  journal={arXiv preprint arXiv:2308.04070},
+  year={2023}
+}
+```
