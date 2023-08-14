@@ -82,7 +82,7 @@ class FedXGBHistogramExecutor(Executor):
         Args:
             num_rounds: number of boosting rounds
             early_stopping_rounds: early stopping rounds
-            xgboost_params: This dict is passed to `xgboost.train()` as the first argument `params`.
+            xgb_params: This dict is passed to `xgboost.train()` as the first argument `params`.
                 It contains all the Booster parameters.
                 Please refer to XGBoost documentation for details:
                 https://xgboost.readthedocs.io/en/stable/python/python_api.html#module-xgboost.training
@@ -117,13 +117,9 @@ class FedXGBHistogramExecutor(Executor):
         ws = engine.get_workspace()
         self.app_dir = ws.get_app_dir(fl_ctx.get_job_id())
 
-        data_loader = engine.get_component(self.data_loader_id)
-        if not isinstance(data_loader, XGBDataLoader):
+        self.data_loader = engine.get_component(self.data_loader_id)
+        if not isinstance(self.data_loader, XGBDataLoader):
             self.system_panic("data_loader should be type XGBDataLoader", fl_ctx)
-        try:
-            self.train_data, self.val_data = data_loader.load_data(self.client_id)
-        except Exception as e:
-            self.system_panic(f"load_data failed: {secure_format_exception(e)}", fl_ctx)
 
     def xgb_train(self, params: XGBoostParams) -> xgb.core.Booster:
         """XGBoost training logic.
@@ -267,6 +263,9 @@ class FedXGBHistogramExecutor(Executor):
 
         try:
             with xgb.collective.CommunicatorContext(**communicator_env):
+                if not self.train_data or not self.val_data:
+                    self.train_data, self.val_data = self.data_loader.load_data(self.client_id, self.app_dir)
+
                 bst = self.xgb_train(params)
 
                 # Save the model.

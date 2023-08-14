@@ -6,7 +6,7 @@
         "PSI"
       ],
       "executor": {
-        "id": "Executor",
+        "id": "psi_executor",
         "name": "PSIExecutor",
         "args": {
           "psi_algo_id": "dh_psi"
@@ -18,7 +18,8 @@
         "train"
       ],
       "executor": {
-        "path": "xgb_trainer.XGBoostTrainer",
+        "id": "xgb_hist_executor",
+        "name": "FedXGBHistogramExecutor",
         "args": {
           "num_rounds": 100,
           "early_stopping_rounds": 2,

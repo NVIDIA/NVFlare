@@ -17,8 +17,6 @@ import os
 import pandas as pd
 import xgboost as xgb
 
-from nvflare.apis.fl_constant import FLContextKey
-from nvflare.apis.fl_context import FLContext
 from nvflare.app_opt.xgboost.data_loader import XGBDataLoader
 
 
@@ -51,16 +49,16 @@ class VerticalDataLoader(XGBDataLoader):
         """Reads HIGGS dataset and return data paths to train and valid sets.
 
         Args:
-            data_root_dir: directory containing data splits
+            data_split_path: path to data split file
+            label_owner: client id that owns the label
+            train_proportion: proportion of intersected data to use for training
         """
         self.data_split_path = data_split_path
         self.label_owner = label_owner
         self.train_proportion = train_proportion
 
-    def load_data(self, fl_ctx: FLContext):
-        client_id = fl_ctx.get_identity_name()
-        job_dir = os.path.dirname(os.path.abspath(fl_ctx.get_prop(FLContextKey.APP_ROOT)))
-        psi_dir = os.path.join(job_dir, client_id, "psi")
+    def load_data(self, client_id, app_dir):
+        psi_dir = os.path.join(os.path.dirname(os.path.abspath(app_dir)), client_id, "psi")
 
         df = pd.read_csv(self.data_split_path)
         intersection_df = _get_data_intersection(df, os.path.join(psi_dir, "intersection.txt"), "uid")

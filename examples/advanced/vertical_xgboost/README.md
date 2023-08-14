@@ -39,8 +39,9 @@ This Vertical XGBoost example leverages the recently added [vertical federated l
 
 For integrating with FLARE, we can use the predefined `XGBFedController` to run the federated server and control the workflow.
 
+Next, we can use `FedXGBHistogramExecutor` and set XGBoost training parameters in `config_fed_client.json`, or define new training logic by overwriting the `xgb_train()` method.
 
-Next we can subclass `FedXGBHistogramExecutor` to write our XGBoost training code in the `xgb_train()` method, and subclass `XGBDataLoader` to implement the `load_data()` method. For vertical federated learning, it is important when creating the `xgb.Dmatrix` to set `data_split_mode=1` for column mode, and to specify the presence of a label column `?format=csv&label_column=0` for the csv file.
+Lastly, we must subclass `XGBDataLoader` and implement the `load_data()` method. For vertical federated learning, it is important when creating the `xgb.Dmatrix` to set `data_split_mode=1` for column mode, and to specify the presence of a label column `?format=csv&label_column=0` for the csv file.
 
 > **_NOTE:_** For secure mode, make sure to provide the required certificates for the federated communicator. As of now, GPUs are not yet supported by vertical federated XGBoost.
 
