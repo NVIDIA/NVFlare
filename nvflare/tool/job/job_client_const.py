@@ -11,7 +11,7 @@ JOB_TEMPLATE_CONF = "job_templates.conf"
 JOB_INFO_CONF = "info.conf"
 JOB_INFO_MD = "info.md"
 
-JOB_INFO_KEYS = [JOB_INFO_DESC, JOB_INFO_CONTROLLER_TYPE_KEY, JOB_INFO_CLIENT_TYPE_KEY]
+JOB_INFO_KEYS = [JOB_INFO_DESC_KEY, JOB_INFO_CONTROLLER_TYPE_KEY, JOB_INFO_CLIENT_TYPE_KEY]
 CONFIG_FILE_BASE_NAME_WO_EXTS = ["config_fed_client", "config_fed_server", "config_exchange", "meta"]
 
 CONFIG_FED_SERVER_CONF = "config_fed_server.conf"
