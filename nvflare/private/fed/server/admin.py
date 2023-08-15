@@ -16,6 +16,7 @@ import threading
 import time
 from typing import List, Optional
 
+from nvflare.apis.shareable import ReservedHeaderKey
 # from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.net_agent import NetAgent
 from nvflare.fuel.f3.cellnet.net_manager import NetManager
@@ -276,6 +277,10 @@ class FedAdminServer(AdminServer):
         Returns:
             A list of ClientReply
         """
+
+        fl_ctx = self.sai.new_context()
+        for _, request in requests.items():
+            request.set_header(ReservedHeaderKey.PEER_PROPS, fl_ctx.get_all_public_props())
 
         return send_requests(
             cell=self.cell,

@@ -58,8 +58,9 @@ class SiteSecurityFilter(CommandFilter):
         return filter_succeed, reasons
 
     def _set_security_data(self, conn: Connection, engine):
-        security_items = {}
         with engine.new_context() as fl_ctx:
+            security_items = fl_ctx.get_prop(FLContextKey.SECURITY_ITEMS, {})
+
             security_items[FLContextKey.USER_NAME] = conn.get_prop(ConnProps.USER_NAME, "")
             security_items[FLContextKey.USER_ORG] = conn.get_prop(ConnProps.USER_ORG, "")
             security_items[FLContextKey.USER_ROLE] = conn.get_prop(ConnProps.USER_ROLE, "")

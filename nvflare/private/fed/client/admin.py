@@ -14,6 +14,8 @@
 
 """The FedAdmin to communicate with the Admin server."""
 from nvflare.apis.fl_constant import FLContextKey
+from nvflare.apis.fl_context import FLContext
+from nvflare.apis.shareable import ReservedHeaderKey
 
 # from nvflare.fuel.f3.cellnet.cell import Cell
 from nvflare.fuel.f3.cellnet.cell import Message as CellMessage
@@ -115,54 +117,61 @@ class FedAdminAgent(object):
 
         processor: RequestProcessor = self.processors.get(topic)
         if processor:
-            try:
-                reply = None
+            with self.app_ctx.new_context() as fl_ctx:
+                peer_props = req.get_header(ReservedHeaderKey.PEER_PROPS)
+                if peer_props:
+                    peer_ctx = FLContext()
+                    peer_ctx.set_public_props(peer_props)
+                    fl_ctx.set_peer_context(peer_ctx)
 
-                # see whether pre-authorization is needed
-                authz_flag = req.get_header(RequestHeader.REQUIRE_AUTHZ)
-                require_authz = authz_flag == "true"
-                if require_authz:
-                    # authorize this command!
-                    cmd = req.get_header(RequestHeader.ADMIN_COMMAND, None)
-                    if cmd:
-                        user = Person(
-                            name=req.get_header(RequestHeader.USER_NAME, ""),
-                            org=req.get_header(RequestHeader.USER_ORG, ""),
-                            role=req.get_header(RequestHeader.USER_ROLE, ""),
-                        )
-                        submitter = Person(
-                            name=req.get_header(RequestHeader.SUBMITTER_NAME, ""),
-                            org=req.get_header(RequestHeader.SUBMITTER_ORG, ""),
-                            role=req.get_header(RequestHeader.SUBMITTER_ROLE, ""),
-                        )
+                try:
+                    reply = None
 
-                        authz_ctx = AuthzContext(user=user, submitter=submitter, right=cmd)
-                        authorized, err = AuthorizationService.authorize(authz_ctx)
-                        if err:
-                            reply = error_reply(err)
-                        elif not authorized:
-                            reply = error_reply("not authorized")
+                    # see whether pre-authorization is needed
+                    authz_flag = req.get_header(RequestHeader.REQUIRE_AUTHZ)
+                    require_authz = authz_flag == "true"
+                    if require_authz:
+                        # authorize this command!
+                        cmd = req.get_header(RequestHeader.ADMIN_COMMAND, None)
+                        if cmd:
+                            user = Person(
+                                name=req.get_header(RequestHeader.USER_NAME, ""),
+                                org=req.get_header(RequestHeader.USER_ORG, ""),
+                                role=req.get_header(RequestHeader.USER_ROLE, ""),
+                            )
+                            submitter = Person(
+                                name=req.get_header(RequestHeader.SUBMITTER_NAME, ""),
+                                org=req.get_header(RequestHeader.SUBMITTER_ORG, ""),
+                                role=req.get_header(RequestHeader.SUBMITTER_ROLE, ""),
+                            )
 
-                        site_security_filter = SiteSecurityFilter()
-                        self._set_security_data(self.app_ctx, req)
-                        ok, messages = site_security_filter.authorization_check(self.app_ctx, cmd)
-                        if not ok:
-                            reply = error_reply(messages)
+                            authz_ctx = AuthzContext(user=user, submitter=submitter, right=cmd)
+                            authorized, err = AuthorizationService.authorize(authz_ctx)
+                            if err:
+                                reply = error_reply(err)
+                            elif not authorized:
+                                reply = error_reply("not authorized")
 
-                    else:
-                        reply = error_reply("requires authz but missing admin command")
+                            site_security_filter = SiteSecurityFilter()
+                            self._set_security_data(self.app_ctx, req)
+                            ok, messages = site_security_filter.authorization_check(self.app_ctx, cmd)
+                            if not ok:
+                                reply = error_reply(messages)
 
-                if not reply:
-                    reply = processor.process(req, self.app_ctx)
-                    if reply is None:
-                        # simply ack
-                        reply = ok_reply()
-                    else:
-                        if not isinstance(reply, Message):
-                            raise RuntimeError(f"processor for topic {topic} failed to produce valid reply")
-            except Exception as e:
-                secure_log_traceback()
-                reply = error_reply(f"exception_occurred: {secure_format_exception(e)}")
+                        else:
+                            reply = error_reply("requires authz but missing admin command")
+
+                    if not reply:
+                        reply = processor.process(req, self.app_ctx)
+                        if reply is None:
+                            # simply ack
+                            reply = ok_reply()
+                        else:
+                            if not isinstance(reply, Message):
+                                raise RuntimeError(f"processor for topic {topic} failed to produce valid reply")
+                except Exception as e:
+                    secure_log_traceback()
+                    reply = error_reply(f"exception_occurred: {secure_format_exception(e)}")
         else:
             reply = error_reply("invalid_request")
         return new_cell_message({}, reply)
