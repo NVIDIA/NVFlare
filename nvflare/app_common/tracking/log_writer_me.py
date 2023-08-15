@@ -19,9 +19,7 @@ from nvflare.apis.analytix import AnalyticsDataType
 from nvflare.apis.event_type import EventType
 from nvflare.apis.fl_component import FLComponent
 from nvflare.apis.fl_context import FLContext
-from nvflare.app_common.metric_exchange.metric_exchanger import MetricExchanger
 from nvflare.app_common.tracking.tracker_types import LogWriterName
-from nvflare.app_common.widgets.streaming import AnalyticsSender
 
 
 class LogWriterForMetricExchanger(FLComponent, ABC):
