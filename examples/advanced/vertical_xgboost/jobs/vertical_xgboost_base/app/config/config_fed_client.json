@@ -46,7 +46,7 @@
       "path": "vertical_data_loader.VerticalDataLoader",
       "args": {
         "data_split_path": "/tmp/nvflare/vertical_xgboost/data/site-x/higgs.data.csv",
-        "label_owner": "site-1",
+        "label_owner": "site-x",
         "train_proportion": 0.8
       }
     },

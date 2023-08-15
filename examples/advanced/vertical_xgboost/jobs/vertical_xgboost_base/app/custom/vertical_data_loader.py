@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import os
+from typing import Optional
 
 import pandas as pd
 import xgboost as xgb
@@ -46,7 +47,7 @@ def _split_train_val(df, train_proportion):
 
 class VerticalDataLoader(XGBDataLoader):
     def __init__(self, data_split_path, label_owner, train_proportion):
-        """Reads HIGGS dataset and return data paths to train and valid sets.
+        """Reads intersection of dataset and returns train and validation XGB data matrices with column split mode.
 
         Args:
             data_split_path: path to data split file
@@ -57,7 +58,9 @@ class VerticalDataLoader(XGBDataLoader):
         self.label_owner = label_owner
         self.train_proportion = train_proportion
 
-    def load_data(self, client_id, app_dir):
+    def load_data(self, client_id: str, app_dir: Optional[str] = None):
+        if not app_dir:
+            raise ValueError(("app_dir is required to locate psi intersection"))
         psi_dir = os.path.join(os.path.dirname(os.path.abspath(app_dir)), client_id, "psi")
 
         df = pd.read_csv(self.data_split_path)

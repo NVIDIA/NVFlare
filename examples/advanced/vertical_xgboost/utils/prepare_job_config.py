@@ -18,9 +18,10 @@ import os
 import pathlib
 import shutil
 
-from nvflare.apis.fl_constant import JobConstants
+from nvflare.apis.fl_constant import JobConstants, WorkspaceConstants
 
 JOB_CONFIGS_ROOT = "jobs"
+CONFIG_FOLDER_NAME = "config"
 
 
 def job_config_args_parser():
@@ -32,6 +33,7 @@ def job_config_args_parser():
         help="Path to dataset files for each site",
     )
     parser.add_argument("--site_num", type=int, default=5, help="Total number of sites")
+    parser.add_argument("--label_owner", type=int, default=1, help="Site that contains the label column")
     parser.add_argument("--site_name_prefix", type=str, default="site-", help="Site name prefix")
     parser.add_argument("--round_num", type=int, default=100, help="Total number of training rounds")
 
@@ -79,6 +81,7 @@ def _update_meta(meta: dict, args):
 def _update_client_config(config: dict, args, site_name: str):
     data_split_name = _get_data_split_name(args, site_name)
     config["components"][0]["args"]["data_split_path"] = data_split_name
+    config["components"][0]["args"]["label_owner"] = f"{args.site_name_prefix}{args.label_owner}"
     config["components"][2]["args"]["data_split_path"] = data_split_name
 
 
@@ -87,17 +90,17 @@ def _update_server_config(config: dict, args):
 
 
 def _copy_custom_files(src_job_path, src_app_name, dst_job_path, dst_app_name):
-    dst_path = dst_job_path / dst_app_name / "custom"
+    dst_path = dst_job_path / dst_app_name / WorkspaceConstants.CUSTOM_FOLDER_NAME
     os.makedirs(dst_path, exist_ok=True)
-    src_path = src_job_path / src_app_name / "custom"
+    src_path = src_job_path / src_app_name / WorkspaceConstants.CUSTOM_FOLDER_NAME
     if os.path.isdir(src_path):
         shutil.copytree(src_path, dst_path, dirs_exist_ok=True)
 
 
 def create_server_app(src_job_path, src_app_name, dst_job_path, site_name, args):
     dst_app_name = f"app_{site_name}"
-    server_config = _read_json(src_job_path / src_app_name / "config" / JobConstants.SERVER_JOB_CONFIG)
-    dst_config_path = dst_job_path / dst_app_name / "config"
+    server_config = _read_json(src_job_path / src_app_name / CONFIG_FOLDER_NAME / JobConstants.SERVER_JOB_CONFIG)
+    dst_config_path = dst_job_path / dst_app_name / CONFIG_FOLDER_NAME
 
     # make target config folders
     if not os.path.exists(dst_config_path):
@@ -110,8 +113,8 @@ def create_server_app(src_job_path, src_app_name, dst_job_path, site_name, args)
 
 def create_client_app(src_job_path, src_app_name, dst_job_path, site_name, args):
     dst_app_name = f"app_{site_name}"
-    client_config = _read_json(src_job_path / src_app_name / "config" / JobConstants.CLIENT_JOB_CONFIG)
-    dst_config_path = dst_job_path / dst_app_name / "config"
+    client_config = _read_json(src_job_path / src_app_name / CONFIG_FOLDER_NAME / JobConstants.CLIENT_JOB_CONFIG)
+    dst_config_path = dst_job_path / dst_app_name / CONFIG_FOLDER_NAME
 
     # make target config folders
     if not os.path.exists(dst_config_path):
