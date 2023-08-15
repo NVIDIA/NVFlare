@@ -11,6 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import inspect
+from importlib import import_module
 from typing import Any, Dict, List, Optional, Tuple
 
 from pyhocon import ConfigFactory as CF
@@ -18,22 +20,27 @@ from pyhocon import ConfigTree
 
 from nvflare.fuel.utils.config import Config, ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
+from nvflare.fuel.utils.import_utils import optional_import
 
 
-def build_reverse_order_index(config_file_path: str) -> Tuple[str, Dict[str, List[str]], Dict[str, Any]]:
+def build_reverse_order_index(config_file_path: str) -> Tuple[str, Dict[str, List[str]], ConfigTree, List]:
     config, config_file_path = load_pyhocon_conf(config_file_path)
 
     components: list = config.get("components", None)
     excluded_list = [comp.get("id") for comp in components] if components else []
+    print("excluded List = ", excluded_list)
     excluded_list.extend(
         [
             "name",
-            "path",
+            # "path",
             "id",
             "format_version",
             "tasks",
             "task_name",
             "train_task_name",
+            "submit_model_task_name",
+            "validation_task_name",
+            "validate_task_name",
             "task_data_filters",
             "task_result_filters",
             "exchange_path",
@@ -41,10 +48,10 @@ def build_reverse_order_index(config_file_path: str) -> Tuple[str, Dict[str, Lis
         ]
     )
     indices: Dict[str, List[str]] = build_dict_reverse_order_index(config, excluded_keys=excluded_list)
-    return config_file_path, indices, config
+    return config_file_path, indices, config, excluded_list
 
 
-def load_pyhocon_conf(config_file_path):
+def load_pyhocon_conf(config_file_path) -> Tuple[ConfigTree, str]:
     try:
         temp_conf: Config = ConfigFactory.load_config(config_file_path)
         if temp_conf:

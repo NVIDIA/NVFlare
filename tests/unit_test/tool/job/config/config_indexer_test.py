@@ -15,7 +15,7 @@
 from pyhocon import ConfigFactory as CF
 
 from nvflare.tool.job.config.config_indexer import build_dict_reverse_order_index
-from nvflare.tool.job.config.configer import extract_file_from_dict_by_index, extract_string_with_index
+from nvflare.tool.job.config.configer import extract_value_from_dict_by_index, extract_string_with_index
 
 
 class TestConfigIndex:
@@ -102,5 +102,5 @@ class TestConfigIndex:
         conf = CF.parse_string(config_str)
         index_conf = CF.from_dict({"data_path": ["components[0].args.data_path"]})
         result = {}
-        extract_file_from_dict_by_index(conf, index_conf, result)
+        extract_value_from_dict_by_index(conf, index_conf, result)
         assert result == {"data_path": "data.csv"}

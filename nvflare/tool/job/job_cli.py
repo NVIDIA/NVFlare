@@ -26,7 +26,7 @@ from nvflare.fuel.flare_api.flare_api import new_secure_session
 from nvflare.fuel.utils.config import ConfigFormat
 from nvflare.fuel.utils.config_factory import ConfigFactory
 from nvflare.tool.job.config.configer import (
-    build_config_file_indexers,
+    build_config_file_indices,
     extract_value_from_index,
     merge_configs_from_cli,
 )
@@ -141,7 +141,7 @@ def remove_extra_file(config_dir):
 
 
 def show_variables(cmd_args):
-    indices: Dict[str, (Dict, Dict)] = build_config_file_indexers(cmd_args.job_folder)
+    indices: Dict[str, (Dict, Dict)] = build_config_file_indices(cmd_args.job_folder)
     variable_values = extract_value_from_index(indices_configs=indices)
     display_template_variables(cmd_args.job_folder, variable_values)
 

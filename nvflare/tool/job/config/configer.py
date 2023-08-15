@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import inspect
 import os
 import shutil
 from typing import Any, Dict, List, Tuple
@@ -19,13 +20,14 @@ from pyhocon import ConfigFactory as CF
 from pyhocon import ConfigTree
 
 from nvflare.fuel.utils.config import ConfigFormat
+from nvflare.fuel.utils.import_utils import optional_import
 from nvflare.tool.job.config.config_indexer import build_reverse_order_index
 
 
 def merge_configs_from_cli(cmd_args) -> Dict[str, tuple]:
     cli_config_dict: Dict[str, Dict[str, str]] = get_cli_config(cmd_args)
     copy_app_config_file(cli_config_dict, cmd_args)
-    indices: Dict[str, (Dict, Dict)] = build_config_file_indexers(cmd_args.job_folder)
+    indices: Dict[str, (Dict, Dict)] = build_config_file_indices(cmd_args.job_folder)
     return merge_configs(indices, cli_config_dict)
 
 
@@ -64,8 +66,8 @@ def extract_string_with_index(input_string):
     closing_bracket_index = input_string.find("]")
     if opening_bracket_index > 0 and closing_bracket_index > 0:
         string_before = input_string[:opening_bracket_index]
-        index = int(input_string[opening_bracket_index + 1 : closing_bracket_index])
-        string_after = input_string[closing_bracket_index + 1 :].strip(". ")
+        index = int(input_string[opening_bracket_index + 1: closing_bracket_index])
+        string_after = input_string[closing_bracket_index + 1:].strip(". ")
         if string_after:
             r = (string_before.strip("."), index, extract_string_with_index(string_after.strip(".")))
             if r:
@@ -82,15 +84,15 @@ def extract_string_with_index(input_string):
 
 def extract_value_from_index(indices_configs: Dict[str, Tuple]) -> Dict[str, Dict[str, Any]]:
     result = {}
-    for file, (indices_dict, configs_dict) in indices_configs.items():
+    for file, (indices_dict, configs_dict, excluded_key_list) in indices_configs.items():
         conf = CF.from_dict(configs_dict)
         result[file] = {}
-        extract_file_from_dict_by_index(conf, indices_dict, result[file])
+        extract_value_from_dict_by_index(conf, indices_dict, result[file], excluded_key_list)
 
     return result
 
 
-def extract_file_from_dict_by_index(conf, indices_dict, result):
+def extract_value_from_dict_by_index(conf, indices_dict, result, excluded_key_list):
     if len(indices_dict) == 0:
         return
     for key, key_path_list in indices_dict.items():
@@ -100,7 +102,24 @@ def extract_file_from_dict_by_index(conf, indices_dict, result):
                 value = extract_value_from_list_index(conf, tokens[0])
             else:
                 value = conf.get(key_path)
-            result[key] = value
+            if key != "path":
+                result[key] = value
+
+            if key == "path":
+                last_dot_index = value.rindex(".")
+                class_path = value[:last_dot_index]
+                class_name = value[last_dot_index + 1:]
+                module, import_flag = optional_import(module=class_path, name=class_name)
+                if import_flag:
+                    params = inspect.signature(module.__init__).parameters
+                    for v in params.values():
+                        if v.name != "self" and v.default is not None and v.name not in excluded_key_list:
+                            if isinstance(v.default, str):
+                                if len(v.default) > 0:
+                                    result[v.name] = v.default
+                            else:
+                                result[v.name] = v.default
+
 
 
 def extract_value_from_list_index(conf, input_str):
@@ -125,7 +144,6 @@ def extract_value_from_list_index(conf, input_str):
 
 
 def replace_value_from_list_index(conf, input_str, new_value):
-
     if isinstance(input_str, Tuple):
         before, index, after = input_str
         before_configs = conf.get_list(before)
@@ -242,7 +260,7 @@ def parse_cli_config(cli_configs: List[str]) -> Dict[str, Dict[str, str]]:
     return cli_config_dict
 
 
-def build_config_file_indexers(config_dir: str) -> Dict[str, Tuple[Dict[str, List[str]], Dict[str, Any]]]:
+def build_config_file_indices(config_dir: str) -> Dict[str, Tuple[Dict[str, List[str]], ConfigTree, List]]:
     """
     Build a dictionary of config file indexers for the given job folder.
 
@@ -250,8 +268,12 @@ def build_config_file_indexers(config_dir: str) -> Dict[str, Tuple[Dict[str, Lis
         config_dir:  Job config directory
 
     Returns:
-        Dict[str, dict]: A dictionary where keys are absolute paths of config files
-                         and values are their corresponding reverse order indexers.
+        Dict[str, Tuple[Dict[str, List[str]], Dict[str, Any]]]
+            key is config file path
+            value is the Tuple of index dict and ConfigTree
+            index dict key is the leaf node key of the configuration
+            index dict value is the list of possible path to this key. num_rounds :[workflows[0].args.num_rounds]
+            ConfigTree is the pyhocon configuration for the corresponding config file.
     """
 
     excluded = ["info"]
@@ -266,16 +288,16 @@ def build_config_file_indexers(config_dir: str) -> Dict[str, Tuple[Dict[str, Lis
             name_wo_ext = tokens[0]
             ext = tokens[1]
             if (
-                ext in config_extensions
-                and not f.startswith("._")
-                and name_wo_ext in included
-                and name_wo_ext not in excluded
+                    ext in config_extensions
+                    and not f.startswith("._")
+                    and name_wo_ext in included
+                    and name_wo_ext not in excluded
             ):
                 config_files.append(f)
         for f in config_files:
             f = str(os.path.abspath(os.path.join(root, f)))
             if os.path.isfile(f):
-                real_path, indices, config = build_reverse_order_index(str(f))
-                config_file_index[real_path] = (indices, config)
+                real_path, indices, config, excluded_key_list = build_reverse_order_index(str(f))
+                config_file_index[real_path] = (indices, config, excluded_key_list)
 
     return config_file_index
