@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import copy
 import threading
 import time
 
@@ -413,7 +413,8 @@ class ClientRunner(FLComponent):
         """
         default_task_fetch_interval = self.default_task_fetch_interval
         self.log_debug(fl_ctx, "fetching task from server ...")
-        task = self.engine.get_task_assignment(fl_ctx)
+        temp_fl_ctx = copy.copy(fl_ctx)
+        task = self.engine.get_task_assignment(temp_fl_ctx)
 
         if not task:
             self.log_debug(fl_ctx, "no task received - will try in {} secs".format(default_task_fetch_interval))
