@@ -15,22 +15,17 @@
 from typing import Dict, Optional
 
 from nvflare.apis.analytix import AnalyticsDataType
-from nvflare.app_common.tracking.log_writer import LogWriter
+from nvflare.app_common.tracking.log_writer_me import LogWriterForMetricExchanger
 from nvflare.app_common.tracking.tracker_types import LogWriterName
 
 
-class MLflowWriterForMetricsExchanger(LogWriter):
-    def __init__(self, metrics_exchanger_id: str):
-        """MLflowWriter mimics the usage of mlflow.
+class MLflowWriterForMetricsExchanger(LogWriterForMetricExchanger):
+    """MLflowWriter mimics the usage of mlflow.
 
-        Users can replace the import of mlflow with MLflowWriter. They would then use
-        MLflowWriter the same as they would use mlflow. MLflowWriter will send log records to
-        the receiver through MetricsExchanger.
-
-        Args:
-            event_type (str, optional): _description_. Defaults to ANALYTIC_EVENT_TYPE.
-        """
-        super().__init__(metrics_exchanger_id=metrics_exchanger_id)
+    Users can replace the import of mlflow with MLflowWriter. They would then use
+    MLflowWriter the same as they would use mlflow. MLflowWriter will send log records to
+    the receiver through MetricsExchanger.
+    """
 
     def get_writer_name(self) -> LogWriterName:
         """Returns "MLFLOW"."""

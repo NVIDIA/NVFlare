@@ -15,18 +15,12 @@
 from typing import Optional
 
 from nvflare.apis.analytix import AnalyticsDataType
-from nvflare.app_common.tracking.log_writer import LogWriter
+from nvflare.app_common.tracking.log_writer_me import LogWriterForMetricExchanger
 from nvflare.app_common.tracking.tracker_types import LogWriterName
 
 
-class TBWriterForMetricsExchanger(LogWriter):
-    def __init__(self, metrics_exchanger_id: str):
-        """Sends experiment tracking data through MetricsExchanger.
-
-        Args:
-            metrics_exchanger_id (str): metrics_exchanger_id for MetricsExchanger
-        """
-        super().__init__(metrics_exchanger_id=metrics_exchanger_id)
+class TBWriterForMetricsExchanger(LogWriterForMetricExchanger):
+    """Sends experiment tracking data through MetricsExchanger."""
 
     def get_writer_name(self) -> LogWriterName:
         return LogWriterName.TORCH_TB
