@@ -23,7 +23,7 @@ from monai.config import IgniteInfo
 from monai.utils import is_scalar, min_version, optional_import
 
 from nvflare.apis.analytix import AnalyticsDataType
-from nvflare.app_common.tracking.log_writer import LogWriter
+from nvflare.app_common.tracking.log_writer_me import LogWriterForMetricExchanger
 from nvflare.app_common.tracking.tracker_types import LogWriterName
 
 Events, _ = optional_import("ignite.engine", IgniteInfo.OPT_IMPORT_VERSION, min_version, "Events")
@@ -40,11 +40,11 @@ ANALYTIC_EVENT_TYPE = "analytix_log_stats"
 DEFAULT_TAG = "Loss"
 
 
-class NVFlareStatsHandler(LogWriter):
+class NVFlareStatsHandler(LogWriterForMetricExchanger):
     """
-    NVFlareStatsHandler defines a set of Ignite Event-handlers for all the NVFlare ``AnalyticsSender`` logics.
+    NVFlareStatsHandler defines a set of Ignite Event-handlers for all the NVFlare ``LogWriterForMetricExchanger`` logics.
     It can be used for any Ignite Engine(trainer, validator and evaluator).
-    And it can support both epoch level and iteration level with pre-defined AnalyticsSender event sender.
+    And it can support both epoch level and iteration level with pre-defined LogWriterForMetricExchanger event sender.
     The expected data source is Ignite ``engine.state.output`` and ``engine.state.metrics``.
 
     Default behaviors:
@@ -147,8 +147,7 @@ class NVFlareStatsHandler(LogWriter):
 
     def _send_stats(self, _engine: Engine, tag: str, value: Any, data_type: AnalyticsDataType, step: int) -> None:
         """
-        Write scale value into TensorBoard.
-        Default to call `AnalyticsSender._add()`.
+        Write value.
 
         Args:
             _engine: Ignite Engine, unused argument.
@@ -200,7 +199,7 @@ class NVFlareStatsHandler(LogWriter):
                 value = loss[name]
                 if not is_scalar(value):
                     warnings.warn(
-                        "ignoring non-scalar output in TensorBoardStatsHandler,"
+                        "ignoring non-scalar output in NVFlareStatsHandler,"
                         " make sure `output_transform(engine.state.output)` returns"
                         " a scalar or dictionary of key and scalar pairs to avoid this warning."
                         " {}:{}".format(name, type(value))
@@ -223,7 +222,7 @@ class NVFlareStatsHandler(LogWriter):
             )
         else:
             warnings.warn(
-                "ignoring non-scalar output in TensorBoardStatsHandler,"
+                "ignoring non-scalar output in NVFlareStatsHandler,"
                 " make sure `output_transform(engine.state.output)` returns"
                 " a scalar or a dictionary of key and scalar pairs to avoid this warning."
                 " {}".format(type(loss))

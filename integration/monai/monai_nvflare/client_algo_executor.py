@@ -109,11 +109,6 @@ class ClientAlgoExecutor(Executor):
         self.log_info(fl_ctx, f"Client trainer got task: {task_name}")
 
         try:
-            self.log_warning(fl_ctx, f"EXECUTING task: {task_name}")
-            import resource
-
-            rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
-            resource.setrlimit(resource.RLIMIT_NOFILE, (4096, rlimit[1]))
             if task_name == self.train_task:
                 return self.train(shareable, fl_ctx, abort_signal)
             elif task_name == self.submit_model_task:
