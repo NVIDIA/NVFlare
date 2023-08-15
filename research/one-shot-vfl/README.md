@@ -37,6 +37,6 @@ and open [cifar10_oneshot_vfl.ipynb](./cifar10_oneshot_vfl.ipynb).
 
 ## 3. Example results
 An example local training curve with an overlap of 10,000 samples is shown below.
-One-shot VFL only requires the client to conduct two uploads and one download, which reduces the communication cost significantly. This CIFAR10 example can achieve a test accuracy of 79.0%, which is nearly the same as the results of vanilla [single-client VFL (split learning)](https://github.com/jeremy313/NVFlare/tree/dev/examples/advanced/vertical_federated_learning/cifar10-splitnn).
+One-shot VFL only requires the client to conduct two uploads and one download, which reduces the communication cost significantly. This CIFAR10 example can achieve a test accuracy of 79.0%, which is nearly the same as the results of vanilla [single-client VFL (split learning)](https://github.com/jeremy313/NVFlare/tree/main/examples/advanced/vertical_federated_learning/cifar10-splitnn).
 
 <img src="./figs/oneshotVFL_results.png" alt="One-shot VFL results" width="600"/>
