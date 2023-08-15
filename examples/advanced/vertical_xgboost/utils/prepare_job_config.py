@@ -85,10 +85,6 @@ def _update_client_config(config: dict, args, site_name: str):
     config["components"][2]["args"]["data_split_path"] = data_split_name
 
 
-def _update_server_config(config: dict, args):
-    pass
-
-
 def _copy_custom_files(src_job_path, src_app_name, dst_job_path, dst_app_name):
     dst_path = dst_job_path / dst_app_name / WorkspaceConstants.CUSTOM_FOLDER_NAME
     os.makedirs(dst_path, exist_ok=True)
@@ -106,7 +102,6 @@ def create_server_app(src_job_path, src_app_name, dst_job_path, site_name, args)
     if not os.path.exists(dst_config_path):
         os.makedirs(dst_config_path)
 
-    _update_server_config(server_config, args)
     server_config_filename = dst_config_path / JobConstants.SERVER_JOB_CONFIG
     _write_json(server_config, server_config_filename)
 
