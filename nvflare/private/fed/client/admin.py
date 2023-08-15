@@ -177,8 +177,9 @@ class FedAdminAgent(object):
         return new_cell_message({}, reply)
 
     def _set_security_data(self, engine, req):
-        security_items = {}
         with engine.new_context() as fl_ctx:
+            security_items = fl_ctx.get_prop(FLContextKey.SECURITY_ITEMS, {})
+
             security_items[FLContextKey.USER_NAME] = req.get_header(RequestHeader.USER_NAME, "")
             security_items[FLContextKey.USER_ORG] = req.get_header(RequestHeader.USER_ORG, "")
             security_items[FLContextKey.USER_ROLE] = req.get_header(RequestHeader.USER_ROLE, "")

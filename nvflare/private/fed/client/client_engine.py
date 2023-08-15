@@ -36,6 +36,7 @@ from .client_engine_internal_spec import ClientEngineInternalSpec
 from .client_executor import ProcessExecutor
 from .client_run_manager import ClientRunInfo
 from .client_status import ClientStatus
+from .fed_client import FederatedClient
 
 
 def _remove_custom_path():
@@ -48,7 +49,7 @@ def _remove_custom_path():
 class ClientEngine(ClientEngineInternalSpec):
     """ClientEngine runs in the client parent process."""
 
-    def __init__(self, client, args, rank, workers=5):
+    def __init__(self, client: FederatedClient, args, rank, workers=5):
         """To init the ClientEngine.
 
         Args:

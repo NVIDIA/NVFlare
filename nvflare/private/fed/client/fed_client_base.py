@@ -247,6 +247,9 @@ class FederatedClientBase:
 
         Args:
             project_name: FL study project name.
+            register_data: customer defined client register data (in a dict)
+            fl_ctx: FLContext
+
         """
         if not self.token:
             try:
@@ -370,8 +373,15 @@ class FederatedClientBase:
             if pool:
                 pool.terminate()
 
-    def register(self, register_data, fl_ctx: FLContext):
-        """Push the local model to multiple servers."""
+    def register(self, register_data: dict, fl_ctx: FLContext):
+        """Push the local model to multiple servers.
+
+        Args:
+            register_data: customer defined client register data (in a dict)
+            fl_ctx: FLContext
+
+        Returns: N/A
+        """
         pool = None
         try:
             pool = ThreadPool(len(self.servers))

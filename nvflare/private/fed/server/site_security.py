@@ -25,6 +25,14 @@ logger = logging.getLogger(__name__)
 
 
 class SiteSecurityFilter(CommandFilter):
+    """
+    SiteSecurityFilter is used to be added in the command execution filter pipeline. The function is to check
+    if the command is authorized to execute. SiteSecurityFilter fires a AUTHORIZE_COMMAND_CHECK event, any handler
+    can listen to this event, and use the FLContext data to perform the authorization security check. Based on the
+    check result, set the AUTHORIZATION_RESULT and AUTHORIZATION_REASON accordingly.
+
+    """
+
     def __init__(self) -> None:
         super().__init__()
 
